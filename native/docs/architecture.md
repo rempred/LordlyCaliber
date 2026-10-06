@@ -4569,3 +4569,50 @@ browser conversion and bundled compile/export/reopen. Evidence is in parent
 Test ROMs/native-portable-cd9229aebfab43e19092d2a600b93734 and
 portable-scene-import-d5beac1f0d7e49eeb368954995d1fc16. This is a local development
 package, not a clean-machine validation or published release. No new dependency.
+
+
+## Ordinary scene sprite Actions
+
+The Actions inspector now creates ordinary scene sprites, changes their poses and
+releases them (Director46/64/66). Creation exposes slot, art bank, animation,
+facing, X/Y, drawing channel, scale and variant. Pose changes preserve-1 inheritance;
+release supports one slot or-1for all. These use the existing native sprite engine
+and existing source-built Director resource export, with no new game-code hook.
+
+Sprite slots0..29 are independent of Actor slots0..27. Automatic allocation checks
+all constructor/restart/query/release references. It honors low-byte constructor
+slots, so0x100 occupies slot0, while query/release retain full words. It refuses to
+assume a free slot when a launch translation selects one dynamically; pose/release
+templates preserve the preceding symbolic reference. Existing opaque source operands
+remain intact. UI edits validate changed explicit art/pose/facing against the current
+ROM; missing poses, bank0 and inheriting both coordinates during creation refuse
+without changing the stored project. Unresolved inherited pose context remains the
+runtime's responsibility rather than being replaced with invented data.
+
+`scene_action_tests sceneSpriteActions authoringBoundaries` passed1411ms. It checks
+native creation/advance/restart/release, slot isolation/aliases/exhaustion/symbolic
+references, bounds, unchanged opaque words, insert/remove/reorder, project folders
+and user-time compilation/export/reopen with all three sprite actions. Candidate:
+parent Test ROMs/native-sprite-actions-DaIbFK under the master filename; reopened
+Director references validate. `ui_tests sceneSpriteActionControls
+sceneSpriteComposition sceneActionInsertion` passed2977ms, including actual Add,
+position changes producing different rendered frames, exact Undo/Redo, invalid
+pose/bank/coordinate refusal, discard and removal. Screenshot inspected. Fullbuild
+30428 passed without compiler warnings. Existing sprite instruction-comparison
+results remain applicable because its C/runtime implementation did not change.
+These are offline authoring/export/preview checks, not natural game loads.
+
+### Special sprite800 investigation boundary
+
+A current-ROM census through the existing browser codec found two retail opcode63
+requests for animation800, bank56: streams01F62730 and01F635DC, both at word749.
+There is no corresponding8000 key in the standard vocabulary (all68banks checked).
+The original constructor probe creates state-1. Original counted decoder z64
+2A3198/live80233968 indexes the program directory directly, so this reads the word
+before that directory. Changing the controlled word changes subsequent pose state.
+A blank result with a zeroed fixture prefix therefore does not establish a valid
+fallback. The desktop retains its explicit missing-pose pause for this unresolved
+launch context. The earlier supplied-record rendering checks for800/801 establish
+drawing only. Probe generator native/build/research-special-sprite.cjs reuses the
+existing scene-sprites-mips.cjs harness and read-only master ROM; its JSON retains
+both controlled-prefix cases. No fresh emulator or natural launch was performed.

@@ -3,6 +3,7 @@
 #include "engine/scene_actions.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_dialogue.h"
+#include "engine/scene_sprites.h"
 #include "rebuild/compiler.h"
 #include <QTemporaryDir>
 #include <QtTest>
@@ -19,6 +20,130 @@ class SceneActionTests : public QObject {
             put32(bytes, at, word);
         }
         return DirectorProgram::decode(bytes);
+    }
+    void sceneSpriteActions() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 5 && scenes.canCreateBlank(entry.key)) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Authored sprites", source, true);
+            const auto base = scenes.program(id);
+            const int point = SceneActions::positions(base).first().command;
+            auto stream = SceneActions::insert(base, point, 0x46);
+            QCOMPARE(stream.commands[point].operands,
+                     QVector<quint32>({0, 30, 1, 2, 0, 0, 0, 100, 0}));
+            QCOMPARE(SceneActions::remove(stream, point).source, base.source);
+            auto withActor = SceneActions::insert(base, point, 0x14);
+            auto separate = SceneActions::insert(withActor, point, 0x46);
+            QCOMPARE(separate.commands[point].operands[0], quint32(0));
+            QCOMPARE(separate.commands[point + 1].operands[0], quint32(0));
+            for (const auto &action : SceneActions::inspect(stream))
+                if (action.command == point) {
+                    QCOMPARE(action.actorOperand, -1);
+                    QCOMPARE(action.fields.size(), 9);
+                }
+            for (const auto &[field, text] : QVector<QPair<int, QString>>{
+                     {0, "29"}, {4, "-17"}, {5, "23"}, {6, "2"}, {7, "125"}, {8, "1"}})
+                stream = SceneActions::edit(stream, point, field, text);
+            const auto authored = stream;
+            auto alias = stream;
+            alias.commands[point].operands[0] = 0x100; // Constructors narrow to the low byte.
+            alias = DirectorProgram::decode(alias.encode());
+            QCOMPARE(SceneActions::insert(alias, point, 0x46).commands[point].operands[0],
+                     quint32(1));
+            QCOMPARE(SceneActions::insert(alias, point + 1, 0x64).commands[point + 1].operands[0],
+                     quint32(0));
+            alias.commands[point].operands[0] = 0x08880001;
+            alias = DirectorProgram::decode(alias.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(alias, point, 0x46));
+            QCOMPARE(SceneActions::insert(alias, point + 1, 0x64).commands[point + 1].operands[0],
+                     quint32(0x08880001));
+            QCOMPARE(SceneActions::insert(alias, point + 1, 0x66).commands[point + 1].operands[0],
+                     quint32(0x08880001));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(stream, point, 0, "30"));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(stream, point, 5, "1.5"));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(stream, point, 8, "256"));
+            auto pose = SceneActions::insert(stream, point + 1, 0x64);
+            QCOMPARE(pose.commands[point + 1].operands,
+                     QVector<quint32>({29, quint32(-1), quint32(-1), 0}));
+            pose = SceneActions::edit(pose, point + 1, 1, "57");
+            pose = SceneActions::edit(pose, point + 1, 2, "0");
+            auto released = SceneActions::insert(pose, point + 2, 0x66);
+            QCOMPARE(released.commands[point + 2].operands, QVector<quint32>({29}));
+            auto reordered = SceneActions::move(released, point + 1, point);
+            QCOMPARE(SceneActions::move(reordered, point, point + 2).source, released.source);
+            QCOMPARE(SceneActions::remove(released, point + 2).source, pose.source);
+            auto exercise = [&](const Rom &rom, const DirectorProgram &p) {
+                SceneSprites sprites(rom);
+                int value = 0;
+                QVERIFY(sprites.service(0x46, p.commands[point].operands, value));
+                const auto record = sprites.sprite(29)->record();
+                QCOMPARE(qint32(u32(record, 0x24)), -17);
+                QCOMPARE(qint32(u32(record, 0x28)), -23);
+                QCOMPARE(u8(record, 0x4a), quint8(2));
+                QCOMPARE(u16(record, 0x48), quint16(125));
+                QCOMPARE(u8(record, 0x4c), quint8(1));
+                QVERIFY(sprites.advancePoses());
+                QVector<quint32> poseArgs, releaseArgs;
+                for (const auto &c : p.commands) {
+                    if (c.opcode == 0x64)
+                        poseArgs = c.operands;
+                    if (c.opcode == 0x66)
+                        releaseArgs = c.operands;
+                }
+                QVERIFY(!poseArgs.isEmpty() && !releaseArgs.isEmpty());
+                QVERIFY(sprites.service(0x64, poseArgs, value));
+                QCOMPARE(u32(sprites.sprite(29)->record(), 0x30), quint32(57));
+                QCOMPARE(u16(sprites.sprite(29)->record(), 0x44), quint16(0));
+                QVERIFY(sprites.service(0x66, releaseArgs, value));
+                QVERIFY(!sprites.sprite(29));
+            };
+            exercise(project.rom(), released);
+            auto crowded = base;
+            for (int i = 0; i < 30; ++i)
+                crowded = SceneActions::insert(crowded, point, 0x46);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(crowded, point, 0x46));
+            auto opaque = authored;
+            opaque.commands[point].operands[6] = 0x12345678;
+            opaque = DirectorProgram::decode(opaque.encode());
+            const auto retained = SceneActions::edit(opaque, point, 4, "19");
+            QCOMPARE(retained.commands[point].operands[6], quint32(0x12345678));
+            // Preserve a working initial presentation and delay before its native exit.
+            auto outputProgram = SceneActions::insert(released, point + 1, 0xe, 30);
+            scenes.replace(id, outputProgram.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, outputProgram.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-sprite-actions-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, outputProgram.source);
+            exercise(reopened.rom(), reopened.scenePrograms()->program(id));
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            qInfo().noquote() << "Authored sprite export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
     }
     void authoringBoundaries() {
         const auto source =

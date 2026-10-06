@@ -1,6 +1,7 @@
 #include "engine/scene_action_control.h"
 #include "engine/scene_actions.h"
 #include <algorithm>
+#include <optional>
 namespace lordly {
 namespace action_detail {
 namespace {
@@ -120,6 +121,17 @@ QString waitReason(const DirectorProgram &p, int before, const action_detail::Co
     }
     return "There is no later yield to retain a pending wait.";
 }
+std::optional<quint32> spriteReference(const DirectorCommand &c) {
+    const bool narrow = c.opcode == 0x46 || c.opcode == 0x63 || c.opcode == 0x64;
+    if (!narrow && c.opcode != 0x65 && c.opcode != 0x66)
+        return {};
+    auto value = c.operands[c.opcode == 0x65 ? 2 : 0];
+    if ((value & 0xffffff00U) == 0x08880000U)
+        return value; // Keep the launch translation, not its token's low byte.
+    if (narrow)
+        value = quint8(value);
+    return value < 30 ? std::optional<quint32>(value) : std::nullopt;
+}
 DirectorCommand command(quint32 op, QVector<quint32> operands = {}) {
     return {0, op, std::move(operands)};
 }
@@ -139,7 +151,10 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0xbf, "Dialogue"},
             {0x13, "Release Actor"},
             {0x15, "Turn Actor"},
-            {0x1c, "Room Actor channel"}};
+            {0x1c, "Room Actor channel"},
+            {0x46, "Create scene sprite"},
+            {0x64, "Set scene sprite pose"},
+            {0x66, "Release scene sprite"}};
 }
 QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
     QVector<SceneActionPosition> result;
@@ -236,8 +251,39 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                 }
             }
         }
+        quint32 spriteSlot = 0;
+        for (int i = before - 1; i >= 0; --i) {
+            if (const auto reference = spriteReference(p.commands[i])) {
+                spriteSlot = *reference;
+                break;
+            }
+        }
         QVector<quint32> operands;
         switch (kind) {
+        case 0x46: {
+            QSet<quint32> used;
+            for (const auto &c : p.commands)
+                if (const auto reference = spriteReference(c)) {
+                    if (*reference >= 30)
+                        throw Error("A sprite slot is selected at launch; an unused slot cannot be "
+                                    "chosen automatically.");
+                    used << *reference;
+                }
+            spriteSlot = 0;
+            while (spriteSlot < 30 && used.contains(spriteSlot))
+                ++spriteSlot;
+            if (spriteSlot == 30)
+                throw Error("All 30 sprite slots are already referenced; select an existing sprite "
+                            "action to edit.");
+            operands = {spriteSlot, 30, 1, 2, 0, 0, 0, 100, 0};
+            break;
+        }
+        case 0x64:
+            operands = {spriteSlot, quint32(-1), quint32(-1), 0};
+            break;
+        case 0x66:
+            operands = {spriteSlot};
+            break;
         case 0x13:
             operands = {slot};
             break;

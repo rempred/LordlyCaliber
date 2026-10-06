@@ -1,5 +1,6 @@
 #include "app/scene_action_editor.h"
 #include "app/scene_command_editor.h"
+#include "engine/actor_art.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -355,6 +356,22 @@ void SceneActionEditor::publishFields() {
                 if (body[operand] != original.commands[action.command + 1].operands[operand] &&
                     body[operand] >= quint32(project_->records(Table::Classes).size()))
                     throw Error("Choose a class that exists in the current project.");
+        }
+        if (action.name == "Create scene sprite" || action.name == "Set scene sprite pose") {
+            const auto &args = program.commands[action.command].operands;
+            const auto &prior = original.commands[action.command].operands;
+            const bool create = action.name == "Create scene sprite";
+            const bool changedPose =
+                args[1] != prior[1] || args[2] != prior[2] || (create && args[3] != prior[3]);
+            if (changedPose && qint32(args[1]) >= 0) {
+                const auto art = ActorArt::load(project_->rom(), int(args[1]));
+                if (qint32(args[2]) >= 0 &&
+                    art.resolve(qint16(args[2]), create ? int(args[3]) : 0) < 0)
+                    throw Error("Choose an animation and facing present in this art bank.");
+            }
+            if (create && (args[4] != prior[4] || args[5] != prior[5]) && args[4] == 0xffffffffU &&
+                args[5] == 0xffffffffU)
+                throw Error("A new sprite cannot inherit both starting coordinates; set X or Y.");
         }
         auto next = *project_->scenePrograms();
         next.replace(key_, program.source);

@@ -135,6 +135,29 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x46:
+            action.name = "Create scene sprite";
+            field("Sprite slot", 0, 1, 0, 29);
+            field("Art bank", 1, 1, 1, 32767);
+            field("Animation", 2, 1, 0, 32767);
+            field("Facing", 3, 1, 0, 9);
+            field("X", 4);
+            field("Y", 5);
+            field("Drawing channel", 6, 1, 0, 255);
+            field("Scale (%)", 7, 1, -32768, 32767);
+            field("Variant", 8, 1, 0, 255);
+            break;
+        case 0x64:
+            action.name = "Set scene sprite pose";
+            field("Sprite slot", 0, 1, 0, 29);
+            field("Art bank (-1 keeps current)", 1, 1, -1, 32767);
+            field("Animation (-1 keeps current)", 2, 1, -1, 32767);
+            field("Variant", 3, 1, 0, 255);
+            break;
+        case 0x66:
+            action.name = "Release scene sprite";
+            field("Sprite slot (-1 selects all)", 0, 1, -1, 29);
+            break;
         case 0x2a:
             action.name = "Set Actor class and pose";
             field("Actor slot (-1 skips)", 0, 1, -1, 27);

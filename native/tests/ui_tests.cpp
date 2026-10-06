@@ -3433,9 +3433,106 @@ class UiTests : public QObject {
             else
                 QCOMPARE(empty.pixelColor(x, y).alpha(), 0);
     }
+    void sceneSpriteActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 5 && scenes.canCreateBlank(entry.key)) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Sprite actions", source, true);
+            auto base = scenes.program(id);
+            const int point = SceneActions::positions(base).first().command;
+            base = SceneActions::insert(base, point, 0xe, 30);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 800);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            QVERIFY(kind && insert);
+            kind->setCurrentIndex(kind->findData(0x46));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[point].opcode, quint32(0x46));
+            QCOMPARE(editor.findChild<QLineEdit *>("sceneActionField0")->text(), QString("0"));
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto first = frame();
+            QVERIFY(!first.isNull());
+            editor.findChild<QLineEdit *>("sceneActionField4")->setText("48");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            QCOMPARE(qint32(project.scenePrograms()->program(id).commands[point].operands[4]), 48);
+            const auto moved = frame();
+            QVERIFY(moved != first);
+            undo.undo();
+            QCOMPARE(frame(), first);
+            undo.redo();
+            QCOMPARE(frame(), moved);
+            const auto accepted = project.scenePrograms()->program(id).source;
+            editor.findChild<QLineEdit *>("sceneActionField2")->setText("800");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            QCOMPARE(editor.findChild<QLineEdit *>("sceneActionField2")->text(), QString("1"));
+            editor.findChild<QLineEdit *>("sceneActionField4")->setText("-1");
+            const auto oneCoordinate = project.scenePrograms()->program(id).source;
+            editor.findChild<QLineEdit *>("sceneActionField5")->setText("-1");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, oneCoordinate);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            // Consecutive field keystrokes intentionally merge within one second.
+            editor.findChild<QLineEdit *>("sceneActionField4")->setText("48");
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-sprite-actions.png"));
+            editor.findChild<QPushButton *>("sceneActionRemove")->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, base.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            // The enclosing Cutscene editor normally refreshes the selected command on Undo.
+            editor.selectScene(id, point);
+            kind->setCurrentIndex(kind->findData(0x64));
+            auto position = editor.findChild<QComboBox *>("sceneActionPosition");
+            position->setCurrentIndex(position->findData(point + 1));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[point + 1].opcode,
+                     quint32(0x64));
+            const auto inherited = project.scenePrograms()->program(id).source;
+            QCOMPARE(editor.findChild<QLineEdit *>("sceneActionField2")->text(), QString("-1"));
+            editor.findChild<QLineEdit *>("sceneActionField1")->setText("0");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, inherited);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            QVERIFY(!editor.property("invalidEdits").toBool());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneSpriteComposition() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
         auto scenes = ScenePrograms::load(rom);
         const auto source = scenes.original().entries().first();
