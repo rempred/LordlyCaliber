@@ -1,5 +1,39 @@
 # Native Lordly Caliber
 
+## Ordered color dithering during artwork import
+
+The shared image-preparation dialog offers an unchecked Ordered dithering option
+for portraits, item icons, Army sprites, combat artwork with reduced color
+precision, and imported private animation frames. Full-RGBA Sprite studio imports
+retain their exact colors and have no dithering control. The preview shows the
+actual pixels that assignment stores; cancellation leaves the project unchanged.
+Stored pixel formats and the source-built export paths are unchanged.
+
+The existing browser importer supplies the 4-by-4 ordered pattern. Native palette
+assignment uses its offset in five-bit color steps. Portrait palette construction
+is unchanged: dithering affects the final nearest-color lookup only when more
+than80 native colors require reduction. Fixed palettes remain fixed. Direct RGB555
+sprites adjust color quantization while keeping all256 separate opacity levels.
+Direct channel endpoints remain0/255; alpha never receives the ordered offset.
+Army/combat assignment still retains an existing exact pixel's duplicate index.
+This adds the browser capability without adopting its entire quantizer or claiming
+identical reduced palettes. No new dependency is introduced.
+
+`artwork_dither_tests` passed in185ms: independently tabulated pattern outputs,
+repeating coordinates, unchanged alpha/input, endpoint retention, sprite encode /
+decode, portrait budget and stable palette, both icon packs, all six Army atlases
+with both palettes, and indexed/RGB16 combat assignment. The browser decoder
+independently qualified retail samples003bac1c:0 and006ca532:56. Retail descriptors
+also contain non-sprite members, and that scan found noRGBA32 combat sample.
+`ui_tests portraitDitherAssignment spriteLayerImagePreparation iconArtworkEditing
+portraitArtworkEditing armyArtworkEditing combatArtworkEditing` passed in5498ms:
+prepared portrait preview versus stored pixels, cancellation, undo, project reopen,
+and existing default-off import workflows. The preparation capture was inspected.
+`sequence_editor_tests importedFrameAndUndo` passed in932ms, including dithered
+private frame pixels, undo and project persistence. No ROM export was repeated:
+this changes image preparation, not stored resource formats or rebuild allocation.
+
+
 ## Stored sprite-color picker
 
 Sprite studio can browse colors stored in the selected layer, current frame or

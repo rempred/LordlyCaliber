@@ -1,4 +1,5 @@
 #include "engine/sprite_object.h"
+#include "engine/artwork_dither.h"
 #include "game/images/sepia.h"
 namespace lordly {
 namespace {
@@ -61,7 +62,7 @@ SpriteFrame SpriteFrame::oriented(int width, int height, bool flipX, bool flipY)
         }
     return result;
 }
-SpriteObject SpriteObject::fromImage(const RasterImage &image) {
+SpriteObject SpriteObject::fromImage(const RasterImage &image, bool dither) {
     if (image.width < 1 || image.height < 1 || image.width > 8192 || image.height > 8192 ||
         qint64(image.width) * image.height > 4194304 ||
         qint64(image.width) * image.height * 4 != image.rgba.size())
@@ -81,7 +82,7 @@ SpriteObject SpriteObject::fromImage(const RasterImage &image) {
         for (int x = 0; x < image.width; ++x) {
             const int pixel = (y * image.width + x) * 4;
             const auto channel = [&](int c) {
-                return (u8(image.rgba, pixel + c) * 31 + 127) / 255;
+                return artworkChannel5(u8(image.rgba, pixel + c), x, y, dither);
             };
             put16(bytes, 16 + y * colorStride + x * 2,
                   quint16((channel(0) << 11) | (channel(1) << 6) | (channel(2) << 1) | 1));

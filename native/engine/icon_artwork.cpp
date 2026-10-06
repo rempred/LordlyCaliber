@@ -1,4 +1,5 @@
 #include "engine/icon_artwork.h"
+#include "engine/artwork_dither.h"
 #include "engine/resource.h"
 #include <QJsonArray>
 #include <QSet>
@@ -208,8 +209,8 @@ QVector<quint16> IconArtwork::palette(int index) const {
     }
     return result;
 }
-QByteArray IconArtwork::mapImage(quint16 item, const QImage &input, bool existing,
-                                 int threshold) const {
+QByteArray IconArtwork::mapImage(quint16 item, const QImage &input, bool existing, int threshold,
+                                 bool dither) const {
     const int index = packIndex(item);
     if (input.size() != QSize(16, 16) || threshold < 1 || threshold > 255)
         throw Error("Icon assignment needs a 16 × 16 image and alpha threshold 1–255");
@@ -218,12 +219,13 @@ QByteArray IconArtwork::mapImage(quint16 item, const QImage &input, bool existin
     QByteArray result(512, 0);
     for (int y = 0; y < 16; ++y)
         for (int x = 0; x < 16; ++x) {
-            const auto pixel = image.pixelColor(x, y);
+            const auto source = image.pixelColor(x, y);
+            const auto pixel = dither && existing ? orderedColor8(source, x, y) : source;
             quint16 word = u16(packs_[index].source, specs()[index].transparent * 2);
             if (pixel.alpha() >= threshold) {
-                word = quint16((((pixel.red() * 31 + 127) / 255) << 11) |
-                               (((pixel.green() * 31 + 127) / 255) << 6) |
-                               (((pixel.blue() * 31 + 127) / 255) << 1) | 1);
+                word = quint16((artworkChannel5(pixel.red(), x, y, dither && !existing) << 11) |
+                               (artworkChannel5(pixel.green(), x, y, dither && !existing) << 6) |
+                               (artworkChannel5(pixel.blue(), x, y, dither && !existing) << 1) | 1);
                 if (existing) {
                     int best = std::numeric_limits<int>::max();
                     for (const auto candidate : colors) {

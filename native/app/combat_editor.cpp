@@ -562,10 +562,11 @@ void CombatEditor::prepareImage(const QImage &image) {
          "Assign combat sprite image",
          "The current sprite palette and native opacity precision determine the exported pixels.",
          false,
-         false},
-        [&](const QImage &target, int) {
+         false,
+         sprite.colorFormat() != 3},
+        [&](const QImage &target, int, bool dither) {
             auto next = *project_->combatArtwork();
-            const auto pixels = next.mapImage(id, child, target);
+            const auto pixels = next.mapImage(id, child, target, dither);
             next.setPixels(id, child, pixels);
             return ArtImageMapping{pixels.color + pixels.alpha, next.image(id, child)};
         });

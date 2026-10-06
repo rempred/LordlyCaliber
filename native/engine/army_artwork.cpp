@@ -1,4 +1,5 @@
 #include "engine/army_artwork.h"
+#include "engine/artwork_dither.h"
 #include "engine/resource.h"
 #include <algorithm>
 #include <limits>
@@ -318,7 +319,7 @@ QImage ArmyArtwork::image(int atlas, int model, int ordinal) const {
     return result;
 }
 QByteArray ArmyArtwork::mapImage(int atlas, int ordinal, const QImage &image, int threshold,
-                                 const QByteArray &previous) const {
+                                 const QByteArray &previous, bool dither) const {
     const auto &spec = validate(atlas);
     const auto colors = palette(atlas, ordinal);
     if (image.size() != QSize(spec.width, spec.height) || threshold < 1 || threshold > 255 ||
@@ -328,7 +329,7 @@ QByteArray ArmyArtwork::mapImage(int atlas, int ordinal, const QImage &image, in
     QMap<QRgb, int> cache;
     for (int y = 0; y < spec.height; ++y)
         for (int x = 0; x < spec.width; ++x) {
-            const auto value = image.pixelColor(x, y);
+            auto value = image.pixelColor(x, y);
             int chosen = spec.transparent.first();
             if (!previous.isEmpty()) {
                 const auto old = quint8(previous[y * spec.width + x]);
@@ -339,6 +340,8 @@ QByteArray ArmyArtwork::mapImage(int atlas, int ordinal, const QImage &image, in
                 }
             }
             if (value.alpha() >= threshold) {
+                if (dither)
+                    value = orderedColor8(value, x, y);
                 const auto rgb = value.rgb();
                 if (cache.contains(rgb))
                     chosen = cache[rgb];

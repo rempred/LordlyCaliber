@@ -405,9 +405,12 @@ void ArtEditor::prepareImage(const QImage &image) {
         {{16, 16},
          "art",
          "Assign image to item icon",
-         "The preview uses this pack's shared palette and one-bit transparency."},
-        [&](const QImage &target, int alpha) {
-            const auto words = project_->iconArtwork()->mapImage(item, target, true, alpha);
+         "The preview uses this pack's shared palette and one-bit transparency.",
+         false,
+         true,
+         true},
+        [&](const QImage &target, int alpha, bool dither) {
+            const auto words = project_->iconArtwork()->mapImage(item, target, true, alpha, dither);
             auto next = *project_->iconArtwork();
             next.setWords(item, words);
             return ArtImageMapping{words, next.image(item)};

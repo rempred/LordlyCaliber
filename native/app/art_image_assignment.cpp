@@ -1,6 +1,7 @@
 #include "app/art_image_assignment.h"
 #include "engine/rom.h"
 #include "engine/sprite_library.h"
+#include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
@@ -27,7 +28,7 @@ QImage loadArtworkImage(const QString &path) {
 }
 std::optional<QByteArray>
 prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignment &options,
-                    const std::function<ArtImageMapping(const QImage &, int)> &convert) {
+                    const std::function<ArtImageMapping(const QImage &, int, bool)> &convert) {
     if (source.isNull() || source.width() > 4096 || source.height() > 4096 ||
         options.target.isEmpty())
         throw Error("Invalid artwork image dimensions");
@@ -79,6 +80,12 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
         form->addRow("Opaque background", &fill);
     else if (options.binaryAlpha)
         form->addRow("Opaque from alpha", &alpha);
+    QCheckBox dither("Ordered dithering");
+    dither.setObjectName(options.objectPrefix + "ImportDither");
+    dither.setToolTip("Use a repeating 4 × 4 color pattern to soften color-reduction bands. "
+                      "Opacity is unchanged.");
+    if (options.allowDither)
+        form->addRow("Color reduction", &dither);
     auto status = new QLabel;
     status->setWordWrap(true);
     layout->addWidget(status);
@@ -110,7 +117,8 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
                 painter.setRenderHint(QPainter::SmoothPixmapTransform, sampling.currentIndex() == 1);
                 painter.drawImage(placement, source);
             }
-            const auto mapped = convert(target, alpha.value());
+            const auto mapped =
+                convert(target, alpha.value(), options.allowDither && dither.isChecked());
             if (mapped.image.size() != options.target || mapped.data.isEmpty())
                 throw Error("Artwork conversion returned an invalid preview");
             prepared = mapped.data;
@@ -128,6 +136,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
             buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
         }
     };
+    QObject::connect(&dither, &QCheckBox::toggled, &dialog, update);
     QObject::connect(&fit, &QComboBox::currentIndexChanged, &dialog, update);
     QObject::connect(&sampling, &QComboBox::currentIndexChanged, &dialog, update);
     QObject::connect(&zoom, &QDoubleSpinBox::valueChanged, &dialog, update);

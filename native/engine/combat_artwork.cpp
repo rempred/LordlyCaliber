@@ -1,6 +1,7 @@
-#include "engine/direct_descriptors.h"
 #include "engine/combat_artwork.h"
 #include "engine/animation_sequences.h"
+#include "engine/artwork_dither.h"
+#include "engine/direct_descriptors.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QRegularExpression>
@@ -254,7 +255,8 @@ QMap<QString, QByteArray> CombatArtwork::decodedResources() const {
         result[it.key()] = original(it.key()).rebuild(it.value());
     return result;
 }
-SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage &image) const {
+SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage &image,
+                                     bool dither) const {
     const auto sprite = original(id);
     if (image.size() != QSize(sprite.width(), sprite.height()))
         throw Error("Imported combat artwork must match its stored dimensions");
@@ -266,7 +268,7 @@ SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage 
     for (int y = 0; y < image.height(); ++y)
         for (int x = 0; x < image.width(); ++x) {
             const int pixel = y * image.width() + x;
-            const auto color = image.pixelColor(x, y);
+            auto color = image.pixelColor(x, y);
             if (!result.alpha.isEmpty())
                 put8(result.alpha, pixel,
                      quint8(sprite.alphaFormat() ? color.alpha() : (color.alpha() + 8) / 17));
@@ -275,6 +277,8 @@ SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage 
                 (!result.alpha.isEmpty() || color.alpha() == old.pixelColor(x, y).alpha()))
                 continue;
             if (sprite.colorFormat() == 1) {
+                if (dither)
+                    color = orderedColor8(color, x, y);
                 int best = 0, distance = std::numeric_limits<int>::max();
                 for (int i = 0; i < 256; ++i) {
                     const auto word = u16(colors, i * 2);
@@ -292,9 +296,9 @@ SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage 
                 put8(result.color, pixel, quint8(best));
             } else if (sprite.colorFormat() == 2) {
                 const auto word =
-                    quint16((((color.red() * 31 + 127) / 255) << 11) |
-                            (((color.green() * 31 + 127) / 255) << 6) |
-                            (((color.blue() * 31 + 127) / 255) << 1) |
+                    quint16((artworkChannel5(color.red(), x, y, dither) << 11) |
+                            (artworkChannel5(color.green(), x, y, dither) << 6) |
+                            (artworkChannel5(color.blue(), x, y, dither) << 1) |
                             (result.alpha.isEmpty() ? (color.alpha() >= 128 ? 1 : 0)
                                                     : u16(result.color, pixel * 2) & 1));
                 put16(result.color, pixel * bytes, word);

@@ -24,7 +24,7 @@ class AvatarArtwork {
     static QByteArray pack(const QByteArray &words);
     static QImage render(const QByteArray &words);
     static QByteArray mapImage(const QImage &, bool reduceColors = false,
-                               QColor background = Qt::black);
+                               QColor background = Qt::black, bool orderedDither = false);
 
   private:
     AvatarLibrary library_;

@@ -547,11 +547,15 @@ void ArmyEditor::prepareImage(const QImage &image) {
                              "army",
                              "Assign Army sprite image",
                              "The selected fixed palette determines the preview. Both palettes "
-                             "share the resulting pixel indices."},
-                            [&](const QImage &target, int threshold) {
+                             "share the resulting pixel indices.",
+                             false,
+                             true,
+                             true},
+                            [&](const QImage &target, int threshold, bool dither) {
                                 auto next = *project_->armyArtwork();
-                                const auto pixels = next.mapImage(atlas, ordinal, target, threshold,
-                                                                  next.indices(atlas, model));
+                                const auto pixels =
+                                    next.mapImage(atlas, ordinal, target, threshold,
+                                                  next.indices(atlas, model), dither);
                                 next.setIndices(atlas, model, pixels);
                                 return ArtImageMapping{pixels, next.image(atlas, model, ordinal)};
                             });

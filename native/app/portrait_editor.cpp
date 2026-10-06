@@ -428,9 +428,12 @@ void PortraitEditor::prepareImage(const QImage &image) {
                              "Assign portrait image",
                              "Preview the crop and final 80-color game image. Transparent areas "
                              "use the opaque background.",
+                             true,
+                             true,
                              true},
-                            [](const QImage &target, int) {
-                                const auto words = AvatarArtwork::mapImage(target, true);
+                            [](const QImage &target, int, bool dither) {
+                                const auto words =
+                                    AvatarArtwork::mapImage(target, true, Qt::black, dither);
                                 return ArtImageMapping{words, AvatarArtwork::render(words)};
                             });
     if (prepared) {

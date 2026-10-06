@@ -1,39 +1,38 @@
 #include "app/actor_pose_editor.h"
-#include "app/scene_preview.h"
-#include "app/tools_editor.h"
+#include "app/animation_editor.h"
+#include "app/animation_override_editor.h"
+#include "app/army_editor.h"
+#include "app/art_editor.h"
+#include "app/combat_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
-#include "app/save_editor.h"
-#include "app/sprite_editor.h"
-#include "app/art_editor.h"
 #include "app/portrait_editor.h"
-#include "app/army_editor.h"
-#include "app/combat_editor.h"
-#include "app/animation_editor.h"
-#include "app/animation_override_editor.h"
-#include <QDialogButtonBox>
-#include "game/classes/save_format.h"
-#include <QUndoGroup>
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
+#include "app/save_editor.h"
 #include "app/scenario_editor.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
+#include "app/scene_preview.h"
 #include "app/shop_editor.h"
+#include "app/sprite_editor.h"
 #include "app/text_workspace.h"
+#include "app/tools_editor.h"
 #include "app/transform_preview.h"
 #include "app/value_editor.h"
 #include "engine/scene_import.h"
 #include "engine/sprite_sources.h"
+#include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -48,23 +47,99 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
-#include <QMessageBox>
 #include <QMenu>
+#include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
-#include <QPainter>
+#include <QUndoGroup>
 #include <QtTest>
 #include <bit>
 using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void portraitDitherAssignment() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            QImage source(40, 48, QImage::Format_RGBA8888);
+            for (int y = 0; y < 48; ++y)
+                for (int x = 0; x < 40; ++x)
+                    source.setPixelColor(x, y, {x * 255 / 39, y * 255 / 47, (x * 7 + y * 3) % 256});
+            const auto asset = SpriteAsset::fromImage("Dither example", source);
+            auto library = project.sprites();
+            library.replace(asset);
+            project.setSprites(library);
+            PortraitEditor editor(&project, &undo, [] {});
+            editor.resize(1250, 790);
+            editor.show();
+            editor.selectPortrait(1, 0);
+            auto choices = editor.findChild<QComboBox *>("portraitLibrary");
+            choices->setCurrentIndex(choices->findData(asset.id));
+            const auto before = project.avatarArtwork()->json();
+            const auto expected = AvatarArtwork::mapImage(source, true, Qt::black, true);
+            bool visited = false;
+            const auto visit = [&](bool accept) {
+                QTimer::singleShot(0, &editor, [&, accept] {
+                    auto dialog = editor.findChild<QDialog *>("portraitImagePreparation");
+                    QVERIFY(dialog);
+                    auto cleanup = qScopeGuard([&] { dialog->reject(); });
+                    auto check = dialog->findChild<QCheckBox *>("portraitImportDither");
+                    QVERIFY(check);
+                    QVERIFY(!check->isChecked());
+                    check->setChecked(true);
+                    const auto expectedPixmap =
+                        QPixmap::fromImage(AvatarArtwork::render(expected).scaled(200, 240));
+                    bool matches = false;
+                    for (auto label : dialog->findChildren<QLabel *>())
+                        if (!label->pixmap().isNull() &&
+                            label->pixmap().toImage() == expectedPixmap.toImage())
+                            matches = true;
+                    QVERIFY(matches);
+                    QCOMPARE(project.avatarArtwork()->json(), before);
+                    QCOMPARE(undo.count(), 0);
+                    QVERIFY(dialog->grab().save("portrait-dither-preparation.png"));
+                    visited = true;
+                    if (accept) {
+                        cleanup.dismiss();
+                        dialog->accept();
+                    }
+                });
+                editor.findChild<QPushButton *>("portraitAssignLibrary")->click();
+            };
+            visit(false);
+            QVERIFY(visited);
+            QCOMPARE(project.avatarArtwork()->json(), before);
+            QCOMPARE(undo.count(), 0);
+            visited = false;
+            visit(true);
+            QVERIFY(visited);
+            QCOMPARE(project.avatarArtwork()->words(project.classData(), 1, 0), expected);
+            QCOMPARE(undo.count(), 1);
+            undo.undo();
+            QCOMPARE(project.avatarArtwork()->json(), before);
+            undo.redo();
+            QCOMPARE(project.avatarArtwork()->words(project.classData(), 1, 0), expected);
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.avatarArtwork()->words(restored.classData(), 1, 0), expected);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void spriteVideoExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

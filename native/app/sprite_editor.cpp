@@ -815,8 +815,9 @@ void SpriteEditor::importLayerImage(const QString &path) {
         this, loadArtworkImage(path),
         {size, "spriteLayer", "Prepare layer image",
          "Replace the selected layer's pixels. Its size and position stay the same; fit, crop or "
-         "place the image below. Color and partial transparency are retained.", false, false},
-        [](const QImage &image, int) {
+         "place the image below. Color and partial transparency are retained.",
+         false, false},
+        [](const QImage &image, int, bool) {
             const auto rgba = image.convertToFormat(QImage::Format_RGBA8888);
             return ArtImageMapping{QByteArray(reinterpret_cast<const char *>(rgba.constBits()),
                                                rgba.sizeInBytes()), rgba};

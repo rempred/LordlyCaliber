@@ -40,7 +40,7 @@ class ArmyArtwork {
     QImage image(int atlas, int model, int palette = 0) const;
     QVector<quint16> palette(int atlas, int ordinal = 0) const;
     QByteArray mapImage(int atlas, int palette, const QImage &, int alphaThreshold = 128,
-                        const QByteArray &previousIndices = {}) const;
+                        const QByteArray &previousIndices = {}, bool orderedDither = false) const;
     void setIndices(int atlas, int model, const QByteArray &);
     void restore(int atlas, int model);
     bool modified() const {

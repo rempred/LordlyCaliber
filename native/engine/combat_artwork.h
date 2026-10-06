@@ -28,7 +28,8 @@ class CombatArtwork {
     SpritePixels pixels(const QString &, int child) const;
     QByteArray palette(const QString &, int child) const;
     QImage image(const QString &, int child) const;
-    SpritePixels mapImage(const QString &, int child, const QImage &) const;
+    SpritePixels mapImage(const QString &, int child, const QImage &,
+                          bool orderedDither = false) const;
     void setPixels(const QString &, int child, const SpritePixels &);
     void restore(const QString &, int child);
     bool modified() const {

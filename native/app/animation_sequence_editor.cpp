@@ -474,12 +474,13 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
         {image.size(), "sequence", "Import private frame",
          "Insert a new frame before the selected instruction. Colors use the game's 5-bit RGB "
          "precision; opacity retains all 256 levels. Other frames keep their artwork.",
-         false, false},
-        [](const QImage &target, int) {
+         false, false, true},
+        [](const QImage &target, int, bool dither) {
             const auto rgba = target.convertToFormat(QImage::Format_RGBA8888);
             const auto sprite = SpriteObject::fromImage(
                 {rgba.width(), rgba.height(),
-                 QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())});
+                 QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())},
+                dither);
             const auto pixels = sprite.frame(0).image;
             return ArtImageMapping{sprite.source(),
                                    QImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()),

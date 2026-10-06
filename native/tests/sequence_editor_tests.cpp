@@ -225,11 +225,15 @@ class SequenceEditorTests : public QObject {
             QImage input(3, 2, QImage::Format_RGBA8888);
             input.fill(QColor(171, 205, 239, 128));
             QVERIFY(input.save(file));
-            const auto respond = [](bool accept) {
-                QTimer::singleShot(50, [accept] {
+            const auto respond = [](bool accept, bool dither = false) {
+                QTimer::singleShot(50, [accept, dither] {
                     auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
                     if (!dialog)
                         return;
+                    auto check = dialog->findChild<QCheckBox *>("sequenceImportDither");
+                    QVERIFY(check);
+                    QVERIFY(!check->isChecked());
+                    check->setChecked(dither);
                     auto buttons = dialog->findChild<QDialogButtonBox *>();
                     buttons->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)
                         ->click();
@@ -264,13 +268,20 @@ class SequenceEditorTests : public QObject {
             project.setSprites(library);
             undo.undo();
             undo.redo(); // Refresh the asset choices through the shared undo path.
-            respond(true);
+            respond(true, true);
             editor.findChild<QPushButton *>("sequenceImportLibrary")->click();
             auto notice = editor.findChild<QLabel *>("sequenceNotice");
             QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
             QCOMPARE(project.animationSequences()->find(2, 0)->members().size(), 113);
             QCOMPARE(layers->count(), 1);
             QVERIFY(layers->item(0)->text().contains("art 108"));
+            const auto expected = SpriteObject::fromImage(
+                {3, 2,
+                 QByteArray(reinterpret_cast<const char *>(input.constBits()),
+                            input.sizeInBytes())},
+                true);
+            QCOMPARE(project.animationSequences()->find(2, 0)->sprite(108), expected.source());
+            QVERIFY(expected.source() != project.animationSequences()->find(2, 0)->sprite(107));
             project.saveFolder(folder.filePath("project"));
             auto reopened = Project::fromRom(project.rom());
             reopened.applyManifest(Project::readProject(folder.filePath("project")));

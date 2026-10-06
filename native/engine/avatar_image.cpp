@@ -1,8 +1,10 @@
+#include "engine/artwork_dither.h"
 #include "engine/avatar_artwork.h"
 #include <algorithm>
 #include <limits>
 namespace lordly {
-QByteArray AvatarArtwork::mapImage(const QImage &input, bool reduce, QColor background) {
+QByteArray AvatarArtwork::mapImage(const QImage &input, bool reduce, QColor background,
+                                   bool dither) {
     if (input.size() != QSize(40, 48) || !background.isValid() || background.alpha() != 255)
         throw Error("Portrait assignment needs 40 by 48 pixels and an opaque background");
     QMap<quint16, int> histogram;
@@ -85,6 +87,28 @@ QByteArray AvatarArtwork::mapImage(const QImage &input, bool reduce, QColor back
         palette.append(quint16(((sums[0] + total / 2) / total) << 11 |
                                ((sums[1] + total / 2) / total) << 6 |
                                ((sums[2] + total / 2) / total) << 1 | 1));
+    }
+    if (dither) {
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 40; ++x) {
+                const auto source = u16(result, (y * 40 + x) * 2);
+                double best = std::numeric_limits<double>::max();
+                quint16 chosen = 1;
+                for (const auto color : palette) {
+                    double distance = 0;
+                    for (int a = 0; a < 3; ++a) {
+                        const auto delta =
+                            channel5(source, a) + orderedColorOffset(x, y) - channel5(color, a);
+                        distance += delta * delta * (a == 0 ? 77 : a == 1 ? 150 : 29);
+                    }
+                    if (distance < best) {
+                        best = distance;
+                        chosen = color;
+                    }
+                }
+                put16(result, (y * 40 + x) * 2, chosen);
+            }
+        return result;
     }
     QMap<quint16, quint16> mapped;
     for (auto it = histogram.cbegin(); it != histogram.cend(); ++it) {

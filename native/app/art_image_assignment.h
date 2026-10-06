@@ -14,9 +14,10 @@ struct ArtImageAssignment {
     QString objectPrefix, title, description;
     bool opaque = false;
     bool binaryAlpha = true;
+    bool allowDither = false;
 };
 QImage loadArtworkImage(const QString &path);
-std::optional<QByteArray>
-prepareArtworkImage(QWidget *, const QImage &, const ArtImageAssignment &,
-                    const std::function<ArtImageMapping(const QImage &, int alphaThreshold)> &);
+std::optional<QByteArray> prepareArtworkImage(
+    QWidget *, const QImage &, const ArtImageAssignment &,
+    const std::function<ArtImageMapping(const QImage &, int alphaThreshold, bool orderedDither)> &);
 } // namespace lordly

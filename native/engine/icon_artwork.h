@@ -24,7 +24,7 @@ class IconArtwork {
     QImage image(quint16 item) const;
     QVector<quint16> palette(int pack) const;
     QByteArray mapImage(quint16 item, const QImage &, bool existingPalette = true,
-                        int alphaThreshold = 128) const;
+                        int alphaThreshold = 128, bool orderedDither = false) const;
     void setWords(quint16 item, const QByteArray &);
     void restore(quint16 item);
     bool modified() const {
