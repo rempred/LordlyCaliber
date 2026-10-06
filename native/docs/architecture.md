@@ -5,14 +5,15 @@
 The Save workspace now has a Squads page for the30 persistent player-unit rows.
 It uses the original Army loader's flag selection, paired five-member/cell arrays,
 zero empty members and zero-based grid positions. The first saved member is the
-leader. Special IDs of100 or more remain visible and preserved; they are not
-mistaken for empty slots. Formation moves can swap occupied cells before one
+leader. Soldier group IDs100–219 remain visible and movable; they are not
+mistaken for empty slots. Higher unknown IDs are preserved and their formation
+changes are rejected. Formation moves can swap occupied cells before one
 atomic Apply/undo operation. Unity and the four game tactics also edit there.
 
 Regular battery slots0/1 support these edits. Suspend saves and runtime states
 retain read-only squad views until their active copies can be coordinated.
 Membership IDs, leader, flags, carried items and unknown bytes remain intact.
-Special-member formation movement is explicitly unsupported. Ordinary formation
+Soldier movement retains its indexed HP and companion data. Formation
 validation checks distinct cells, five-place capacity and large-member spacing.
 Size uses the original primary/secondary-class choice through `ClassData::unitSize`,
 so independent secondary classes and edited class records affect validation.
@@ -32,6 +33,15 @@ and runtime read-only controls. The full build passed with no compiler warnings.
 The updated capture was inspected. These checks
 do not establish a natural Army menu launch or active-state cache coherence.
 
+
+Soldier follow-up: original Army placement owner ROMC2F70..C37E8 was qualified
+against the complete captured bytes, and its C2FEC..C3044 block selects class pair1/1
+for Soldier members before coercing zero size to one. The saved Soldier arrays
+contain120 entries for IDs100–219. `save_document_tests squadFormation` passed
+in2065ms with range-end movement, full-memory preservation, original decoder,
+217 formation conversions and the original Soldier size block. `ui_tests
+saveSquadEditing` passed in909ms with Soldier movement/undo and unknown-ID rejection.
+The full application build also passed.
 
 ## Initial scenario site counts
 

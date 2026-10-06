@@ -21,7 +21,9 @@ if (process.argv[3] !== 'verify') {
     for (const [index, flags, ids, cells] of [
         [0, 1, [1, 2, 3, 0, 0], [0, 4, 8, 0, 0]],
         [1, 0x81, [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
-        [2, 1, [2, 100, 0, 0, 0], [1, 7, 0, 0, 0]]
+        [2, 1, [2, 100, 0, 0, 0], [1, 7, 0, 0, 0]],
+        [3, 1, [2, 219, 0, 0, 0], [1, 7, 0, 0, 0]],
+        [4, 1, [2, 220, 0, 0, 0], [1, 7, 0, 0, 0]]
     ]) {
         const at = 0x801971f0 + index * 25;
         m.w8(at, index + 1); m.w8(at + 1, flags);
@@ -41,11 +43,17 @@ if (process.argv[3] !== 'verify') {
     }
     m.load(payload, Buffer.from(fixture.payload, 'hex'));
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x800742f4, 0x80000100, 5000000);
-    assert.deepEqual(Buffer.from(m.ram.slice(0x1971f0, 0x1971f0 + 75)), Buffer.from(fixture.units, 'hex'));
+    assert.deepEqual(Buffer.from(m.ram.slice(0x1971f0, 0x1971f0 + 125)), Buffer.from(fixture.units, 'hex'));
     // Whole-function identity was qualified against the Army snapshot. Execute
     // only field conversion blocks here; OS, menu allocation and natural load
     // are outside this reference check.
     const delta = 0x801135a0, live = at => (at + delta) >>> 0;
+    m.load(live(0xc2fec), rom.subarray(0xc2fec, 0xc3044));
+    for (const id of [100, 101, 219]) {
+        m.set('s6', id); m.set('sp', 0x803f0000);
+        m.call(live(0xc2fec), live(0xc3044));
+        assert.equal(m.get('a0'), fixture.soldierSize, `Soldier placement size ${id}`);
+    }
     m.load(live(0xc188c), rom.subarray(0xc188c, 0xc192c));
     m.load(live(0xc1ed0), rom.subarray(0xc1ed0, 0xc1f58));
     const saved = 0x80310000, active = 0x80311000, root = 0x80260000;

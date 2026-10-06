@@ -81,8 +81,10 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
 QString SaveUnitEditor::memberName(int id) const {
     if (!id)
         return "Empty";
+    if (id >= 220)
+        return QString("Unknown member %1").arg(id);
     if (id >= 100)
-        return QString("Special member %1").arg(id);
+        return QString("Soldiers %1").arg(id - 99);
     try {
         return editor_->document()->value(SaveTable::Characters, id, "name").toString();
     } catch (const Error &) {

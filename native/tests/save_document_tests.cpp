@@ -54,7 +54,7 @@ class SaveDocumentTests : public QObject {
                                          unsigned(expanded.size())));
             for (const auto &input : {battery, swapped, expanded}) {
                 auto doc = SaveDocument::open(rom, input);
-                QCOMPARE(doc.units().size(), 2);
+                QCOMPARE(doc.units().size(), 4);
                 QCOMPARE(doc.units()[0].index, 0);
                 QCOMPARE(doc.units()[1].index, 2);
                 QCOMPARE(doc.units()[1].members[1], 100);
@@ -80,7 +80,7 @@ class SaveDocumentTests : public QObject {
                 QVERIFY_THROWS_EXCEPTION(Error,
                                          doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 4, classes));
                 QVERIFY_THROWS_EXCEPTION(Error,
-                                         doc.planUnitEdit(2, {2, 7, 0, 0, 0}, 23, 2, classes));
+                                         doc.planUnitEdit(4, {2, 7, 0, 0, 0}, 23, 2, classes));
                 QCOMPARE(doc.memory(), expected);
                 doc.selectSlot(1);
                 QCOMPARE(doc.memory(), before);
@@ -93,9 +93,21 @@ class SaveDocumentTests : public QObject {
             }
             auto raw = SaveDocument::open(rom, read("unit-ram.bin"));
             QVERIFY(!raw.canEditUnits());
-            QCOMPARE(raw.units().size(), 2);
+            QCOMPARE(raw.units().size(), 4);
             QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes));
             auto doc = SaveDocument::open(rom, battery);
+            for (int index : {2, 3}) {
+                const auto before = doc.memory();
+                const auto edit = doc.planUnitEdit(index, {0, 8, 0, 0, 0}, 23, 2, classes);
+                doc.apply(edit, true);
+                auto expected = before;
+                expected[0x1971f0 + index * 25 + 7] = 0;
+                expected[0x1971f0 + index * 25 + 8] = 8;
+                QCOMPARE(doc.memory(), expected); // Includes all Soldier HP and companion bytes.
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                doc.apply(edit, false);
+                QCOMPARE(doc.memory(), before);
+            }
             int large = -1;
             for (int id = 1; id < classes.entries().size(); ++id)
                 if (classes.unitSize(id, id) == 2) {
@@ -124,8 +136,10 @@ class SaveDocumentTests : public QObject {
                                          {"secondary", secondary},
                                          {"expected", classes.unitSize(primary, secondary)}};
             doc.apply(doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes), true);
+            for (int index : {2, 3})
+                doc.apply(doc.planUnitEdit(index, {0, 8, 0, 0, 0}, 23, 2, classes), true);
             QJsonArray cases;
-            for (int secondId : {2, 100})
+            for (int secondId : {2, 100, 219})
                 for (int leader = 0; leader < 9; ++leader)
                     for (int member = 0; member < 9; ++member) {
                         if (leader == member)
@@ -151,8 +165,9 @@ class SaveDocumentTests : public QObject {
                 QJsonDocument(
                     QJsonObject{
                         {"payload", QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
-                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 75).toHex())},
+                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 125).toHex())},
                         {"cases", cases},
+                        {"soldierSize", std::max(1, classes.unitSize(1, 1))},
                         {"sizes", sizes}})
                     .toJson());
             run(true);

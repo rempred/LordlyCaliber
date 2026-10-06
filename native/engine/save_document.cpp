@@ -520,15 +520,19 @@ SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int 
                     throw Error("Preserve the unused member's formation byte");
                 continue;
             }
-            if (id >= 100)
-                throw Error("Formation editing for special member IDs is not yet supported");
+            if (id >= 220)
+                throw Error("Formation editing for unknown member IDs is not supported");
             if (cell < 0 || cell > 8 || occupied.contains(cell))
                 throw Error("Each member needs a different formation cell");
             occupied.insert(cell);
-            const int type = u8(ram_, roster + id * stride + 17);
+            // Original Army placement owner C2FEC..C3044 supplies class pair1/1
+            // for Soldier groups. The saved HP/companion arrays contain120
+            // entries, addressed by member IDs100..219; preserve those entries.
+            const int type = id >= 100 ? 1 : u8(ram_, roster + id * stride + 17);
             if (type < 1 || type >= classes.entries().size())
                 throw Error("Squad member refers to an unavailable character or class");
-            const int size = classes.unitSize(type, u8(ram_, roster + id * stride + 18));
+            const int secondary = id >= 100 ? 1 : u8(ram_, roster + id * stride + 18);
+            const int size = classes.unitSize(type, secondary);
             if (size > 2)
                 throw Error("Squad member uses an unknown class size");
             capacity += size == 2 ? 2 : 1;
