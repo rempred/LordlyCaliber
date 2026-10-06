@@ -742,6 +742,77 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }
+SaveChange SaveDocument::planDisbandUnit(int index) const {
+    if (!canEditUnits())
+        throw Error("Squad disbanding requires a regular battery-save slot");
+    const auto list = units();
+    const auto found = std::find_if(list.begin(), list.end(),
+                                    [&](const auto &unit) { return unit.index == index; });
+    if (found == list.end())
+        throw Error("Choose an existing saved squad");
+    const int at = 0x1971f0 + index * 25, leader = found->members[0];
+    if (leader < 1 || leader >= 100)
+        throw Error("The squad needs a valid ordinary leader before disbanding");
+    if (lordly_army_fixed_leader(quint8(leader), quint8(memberClasses(leader).first)))
+        throw Error("The game keeps this character's class as a fixed squad leader");
+    bool legion = u8(ram_, at + 1) & 2;
+    for (int row = 0; row < 10; ++row) {
+        const int base = 0x1969b8 + row * 11;
+        if (u8(ram_, base + 1) & 1)
+            for (int slot = 0; slot < 5; ++slot)
+                legion |= u8(ram_, base + 2 + slot) == index;
+    }
+    if (legion)
+        throw Error(
+            "This squad belongs to a legion; its legion links must be updated before disbanding");
+    QSet<int> ranks;
+    for (const auto &unit : list) {
+        const int rank = u8(ram_, 0x1977d8 + unit.index);
+        if (rank >= list.size() || ranks.contains(rank))
+            throw Error(
+                "Existing Army order is inconsistent; resolve it before disbanding a squad");
+        ranks << rank;
+    }
+    int pool = reserveSoldiers();
+    for (int member : found->members)
+        if (member) {
+            memberClasses(member);
+            int references = 0;
+            for (const auto &unit : list)
+                references += int(std::count(unit.members.begin(), unit.members.end(), member));
+            if (references != 1 ||
+                (member < 100 && member != leader && (u8(ram_, roster + member * stride + 51) & 2)))
+                throw Error("A member has conflicting squad or leader membership");
+            if (member >= 100)
+                pool += soldiersInGroup(member);
+        }
+    if (pool > 255)
+        throw Error("Disbanding these groups would overflow the saved Soldier reserve");
+    auto candidate = *this;
+    // The original Army loader already clears saved flag1. Disband empties the
+    // active squad and the writer then skips it, retaining the inactive payload.
+    candidate.apply(candidate.planBytes(at + 1, QByteArray(1, char(u8(ram_, at + 1) & ~1))), true);
+    const int flag = roster + leader * stride + 51;
+    candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) & ~2))), true);
+    for (int member : found->members)
+        if (member >= 100) {
+            candidate.apply(candidate.planBytes(0x190f84 + (member - 100) * 2, QByteArray(2, 0)),
+                            true);
+            candidate.apply(candidate.planBytes(0x191074 + member - 100, QByteArray(1, 0)), true);
+        }
+    candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(pool))), true);
+    auto order = ram_.mid(0x1977d8, 30);
+    const int prior = u8(order, index);
+    for (const auto &unit : list)
+        if (u8(order, unit.index) > prior)
+            put8(order, unit.index, quint8(u8(order, unit.index) - 1));
+    put8(order, index, 31);
+    candidate.apply(candidate.planBytes(0x1977d8, order), true);
+    // Owned consumables already include carried copies. Clearing membership
+    // releases their assignment on the next native inventory rebuild.
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 int SaveDocument::reserveSoldiers() const {
     return u8(ram_, 0x190f81);
 }

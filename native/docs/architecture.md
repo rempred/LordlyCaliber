@@ -5130,3 +5130,41 @@ leaders, squad editing/drafts and the general save workspace. Export/reopen and
 Undo/Redo pass. No natural inventory/menu or emulator operation is claimed.
 
 The complete native build passed (squad-stock-final-build.log).
+
+
+## Disbanding saved squads
+
+Normal battery squads outside legions can now be disbanded as one Undo action.
+Ordinary members return to reserve; the leader flag is cleared. Each Soldier
+group returns its original HP-derived count and clears indexed HP/companion data.
+Carried items become available without changing owned totals. The Army order
+compacts, and the saved row loses flag1 while preserving its inactive payload,
+matching the loader/disband/writer sequence. Later creation can reuse the record
+and number, replacing stale members and supplies. The last squad can be removed;
+creation remains available afterward.
+
+The operation refuses fixed leaders, missing/unknown/duplicate members, conflicting
+nonleader flags, inconsistent order, Soldier reserve overflow and runtime/suspend
+saves. Saved commander flag2 or membership in any flag1 legion row also refuses
+until coordinated legion changes are implemented. Pending drafts disable the UI
+action; no partial mutation or implicit inventory increase occurs.
+
+Disband B6FE8..B7164 (380 bytes), member release B77F0..B78AC (188 bytes), saved
+legion membership writer C20D0..C217C (172 bytes), and fixed-leader check at
+C82C8..C82EC (36 bytes) all match the read-only Army snapshot under801135A0.
+Legions use ten11-byte saved records at RAM801969B8 with five squad IDs at+2..+6.
+The independent fixture materializes squads, reconstructs inventory assignment,
+runs the complete disband and persistent writer, and compares resulting inactive
+payload, Army ranks, characters, Soldiers and unchanged ownership.
+
+`save_document_tests squadDisbanding squadCreation squadInventoryStock` passed
+10697ms. New coverage includes six original disband/store sequences and six
+original save decodes, ordinary and multiple Soldier members, last squad, both
+slots/three layouts, exact whole-memory preservation, released-slot recreation,
+Undo/reopen and invalid-state refusal. `ui_tests saveSquadDisbandControls
+saveSquadStockControls saveSquadCreationControls saveSquadDraftProtection` passed
+4548ms: selection/list removal, Soldier reserve count, drafts, Undo/Redo, empty
+army, protected/legion refusal and export/reopen. Capture inspected. This does
+not claim natural Army-menu or legion-disband behavior.
+
+The complete native build passed (squad-disband-final-build.log).

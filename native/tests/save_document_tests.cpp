@@ -14,6 +14,177 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadDisbanding() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess p;
+                p.start("node", {QFINDTESTDATA("army-disband-mips.cjs"), work.path(), mode});
+                if (!p.waitForFinished(30000) || p.exitCode())
+                    throw Error(QString::fromUtf8(p.readAllStandardError()));
+                qInfo().noquote() << p.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing disband fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 42, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal disband fixture");
+                }
+                return out;
+            };
+            QJsonArray cases, saves;
+            for (const auto &name : {"disband.bin", "disband-multi.bin", "disband-last.bin"}) {
+                const auto battery = batteryFor(name);
+                auto swapped = battery, expanded = battery;
+                for (int i = 0; i < swapped.size(); i += 4) {
+                    std::swap(swapped[i], swapped[i + 3]);
+                    std::swap(swapped[i + 1], swapped[i + 2]);
+                }
+                QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                             unsigned(expanded.size())));
+                const QVector<int> indexes = QString::fromLatin1(name) == "disband.bin"
+                                                 ? QVector<int>{0, 2, 3, 5}
+                                                 : QVector<int>{2};
+                for (const auto &input : {battery, swapped, expanded})
+                    for (int slot : {0, 1})
+                        for (int index : indexes) {
+                            auto doc = SaveDocument::open(rom, input);
+                            doc.selectSlot(slot);
+                            const auto before = doc.memory();
+                            const auto list = doc.units();
+                            const int at = 0x1971f0 + index * 25, leader = u8(before, at + 2),
+                                      prior = u8(before, 0x1977d8 + index),
+                                      available = doc.consumableAvailable(9);
+                            const auto change = doc.planDisbandUnit(index);
+                            doc.apply(change, true);
+                            auto expected = before;
+                            expected[at + 1] = char(u8(before, at + 1) & ~1);
+                            expected[0x193bc0 + leader * 56 + 51] =
+                                char(u8(before, 0x193bc0 + leader * 56 + 51) & ~2);
+                            int returned = 0;
+                            for (int i = 0; i < 5; ++i) {
+                                const int id = u8(before, at + 2 + i);
+                                if (id >= 100) {
+                                    returned += id == 101 ? 2 : 1;
+                                    put16(expected, 0x190f84 + (id - 100) * 2, 0);
+                                    expected[0x191074 + id - 100] = 0;
+                                }
+                            }
+                            expected[0x190f81] = char(u8(before, 0x190f81) + returned);
+                            expected[0x1977d8 + index] = 31;
+                            for (const auto &unit : list)
+                                if (unit.index != index &&
+                                    u8(before, 0x1977d8 + unit.index) > prior)
+                                    expected[0x1977d8 + unit.index] =
+                                        char(u8(before, 0x1977d8 + unit.index) - 1);
+                            QCOMPARE(doc.memory(), expected);
+                            QCOMPARE(doc.units().size(), list.size() - 1);
+                            QVERIFY(doc.reserveMembers().contains(leader));
+                            QCOMPARE(doc.consumableAvailable(9), available + 1);
+                            doc.validateUnitSupplyEdits(project);
+                            auto reopened = SaveDocument::open(rom, doc.serialize());
+                            reopened.selectSlot(slot);
+                            QCOMPARE(reopened.memory(), expected);
+                            if (input == battery && slot == 0) {
+                                cases << QJsonObject{
+                                    {"index", index},
+                                    {"before",
+                                     QString::fromLatin1(before.mid(0x1971f0, 750).toHex())},
+                                    {"record", QString::fromLatin1(expected.mid(at, 25).toHex())},
+                                    {"order",
+                                     QString::fromLatin1(before.mid(0x1977d8, 30).toHex())},
+                                    {"afterOrder",
+                                     QString::fromLatin1(expected.mid(0x1977d8, 30).toHex())},
+                                    {"characters",
+                                     QString::fromLatin1(before.mid(0x193bc0, 5600).toHex())},
+                                    {"afterCharacters",
+                                     QString::fromLatin1(expected.mid(0x193bc0, 5600).toHex())},
+                                    {"soldiers",
+                                     QString::fromLatin1(before.mid(0x190f80, 364).toHex())},
+                                    {"afterSoldiers",
+                                     QString::fromLatin1(expected.mid(0x190f80, 364).toHex())},
+                                    {"inventory",
+                                     QString::fromLatin1(before.mid(0x193ac0, 160).toHex())}};
+                                saves << QJsonObject{
+                                    {"payload",
+                                     QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                                    {"units",
+                                     QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                    {"order",
+                                     QString::fromLatin1(expected.mid(0x1977d8, 30).toHex())},
+                                    {"characters",
+                                     QString::fromLatin1(expected.mid(0x193bc0, 5600).toHex())},
+                                    {"soldiers",
+                                     QString::fromLatin1(expected.mid(0x190f80, 364).toHex())}};
+                            }
+                            // The released slot and number can be reused without restoring stale
+                            // members/items.
+                            const auto recreate = doc.planCreateUnit(10, 4, project.classData());
+                            doc.apply(recreate, true);
+                            QCOMPARE(doc.units().size(), list.size());
+                            bool found = false;
+                            for (const auto &unit : doc.units())
+                                if (unit.members[0] == 10) {
+                                    found = true;
+                                    QCOMPARE(unit.index,
+                                             QString::fromLatin1(name) == "disband-last.bin"
+                                                 ? 0
+                                                 : index);
+                                    QCOMPARE(unit.supplies, QVector<int>(10, 0));
+                                }
+                            QVERIFY(found);
+                            doc.apply(recreate, false);
+                            QCOMPARE(doc.memory(), expected);
+                            const auto saved = doc.serialize();
+                            doc.apply(change, false);
+                            QCOMPARE(doc.serialize(), input);
+                            doc.apply(change, true);
+                            QCOMPARE(doc.serialize(), saved);
+                            doc.apply(change, false);
+                            doc.selectSlot(15);
+                            QVERIFY_THROWS_EXCEPTION(Error, doc.planDisbandUnit(index));
+                            QCOMPARE(doc.serialize(), input);
+                        }
+            }
+            for (const auto &name :
+                 {"disband-overflow.bin", "disband-duplicate.bin", "disband-fixed.bin",
+                  "disband-missing.bin", "disband-order.bin", "disband-legion.bin"}) {
+                const auto input = batteryFor(name);
+                auto doc = SaveDocument::open(rom, input);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planDisbandUnit(2));
+                if (QString::fromLatin1(name) == "disband-legion.bin")
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planDisbandUnit(5));
+                QCOMPARE(doc.serialize(), input);
+            }
+            auto flagged = SaveDocument::open(rom, batteryFor("disband-flags.bin"));
+            QVERIFY_THROWS_EXCEPTION(Error, flagged.planDisbandUnit(0));
+            auto doc = SaveDocument::open(rom, batteryFor("disband.bin"));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planDisbandUnit(4));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planDisbandUnit(1));
+            auto raw = SaveDocument::open(rom, doc.memory());
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planDisbandUnit(0));
+            atomicWrite(work.filePath("disband-verify.json"),
+                        QJsonDocument(QJsonObject{{"cases", cases}, {"saves", saves}}).toJson());
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadInventoryStock() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -61,6 +61,13 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     leader_ = new QPushButton("Make selected member the squad leader");
     leader_->setObjectName("saveChangeLeader");
     body->addWidget(leader_);
+    disband_ = new QPushButton("Disband this squad to reserve");
+    disband_->setObjectName("saveDisbandUnit");
+    body->addWidget(disband_);
+    connect(disband_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->disbandUnit(units_->currentItem()->data(Qt::UserRole).toInt());
+    });
     connect(leader_, &QPushButton::clicked, this, [this] {
         if (units_->currentItem())
             editor_->changeUnitLeader(units_->currentItem()->data(Qt::UserRole).toInt(),
@@ -423,6 +430,12 @@ void SaveUnitEditor::refreshSwapTargets() {
     draftNote_->setVisible(pending);
     refreshSupplies(pending);
     refreshCreation(pending);
+    disband_->setEnabled(editor_->document() && editor_->document()->canEditUnits() &&
+                         units_->currentItem() && !pending);
+    disband_->setToolTip(
+        pending ? "Apply squad edits before disbanding"
+                : "Returns ordinary members and Soldiers to reserve and releases carried items "
+                  "without changing total ownership; Undo restores the whole squad");
     const bool enabled = ready && !pending && targetMember_->currentIndex() >= 0;
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"
                                                             : "Swap selected members");
