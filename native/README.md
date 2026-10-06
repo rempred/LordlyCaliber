@@ -94,3 +94,6 @@ Their text link opens the referenced entry in the dialogue workspace.
 
 Select an action and a destination to move it. Moves retain complete waits and
 dialogue sequences; separate native control sections remain in place.
+
+Actor actions include turning, room drawing-channel assignment and release. New
+follow-up actions inherit a nearby Actor slot; all values remain editable.

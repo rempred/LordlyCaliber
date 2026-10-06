@@ -1,6 +1,7 @@
 #include "engine/director_session.h"
 #include "engine/project.h"
 #include "engine/scene_actions.h"
+#include "engine/scene_actors.h"
 #include "engine/scene_dialogue.h"
 #include "rebuild/compiler.h"
 #include <QTemporaryDir>
@@ -401,6 +402,108 @@ class SceneActionTests : public QObject {
             QCOMPARE(crc, reopened.rom().bytes());
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             qInfo().noquote() << "Rebuilt reordered actions" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void actorActionServices() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId templateId;
+            for (auto id : scenes.scenes())
+                if (scenes.canCreateBlank(id)) {
+                    templateId = id;
+                    break;
+                }
+            QVERIFY(templateId);
+            const auto id = scenes.createScene("Actor action controls", templateId, true);
+            auto source = SceneActions::insert(scenes.program(id), 3, 0x14);
+            source = SceneActions::insert(source, 4, 0x1c);
+            source = SceneActions::edit(source, 4, 1, "3");
+            source = SceneActions::insert(source, 5, 0x15);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(source, 5, 3, "0"));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(source, 5, 1, "4"));
+            source = SceneActions::edit(source, 5, 3, "-1");
+            source = SceneActions::insert(source, 6, 0xe, 30);
+            source = SceneActions::insert(source, 12, 0x13);
+            SceneActors actors(project.rom(), 0, 0, [](int, float, float) { return 0.f; });
+            int value = 0;
+            const auto create = source.commands[3], channel = source.commands[4],
+                       turn = source.commands[5], release = source.commands[12];
+            QVERIFY(actors.service(create.opcode, create.operands, value));
+            QVERIFY(actors.actor(0));
+            auto expected = actors.actor(0)->record();
+            put8(expected, 0x13e, 3);
+            QVERIFY(actors.service(channel.opcode, channel.operands, value));
+            QCOMPARE(actors.actor(0)->record(), expected);
+            QVERIFY(actors.service(turn.opcode, turn.operands, value));
+            int updates = 0;
+            while (actors.turnJob(0).present() && updates < 100) {
+                actors.advanceTurns();
+                ++updates;
+            }
+            // ROM phases [0,9,6,3]: 0->1 with direction -1 has nine steps at cadence3.
+            QCOMPARE(updates, 25);
+            QVERIFY(!actors.turnJob(0).present());
+            QCOMPARE(u8(actors.actor(0)->record(), 0x13f), quint8(1));
+            const auto pose = SceneActions::insert(source, 5, 3).commands[5];
+            const auto priorPose = actors.actor(0)->record();
+            QVERIFY(actors.service(pose.opcode, pose.operands, value));
+            QCOMPARE(actors.actor(0)->record().mid(0x11c, 12), priorPose.mid(0x11c, 12));
+            QCOMPARE(u32(actors.actor(0)->record(), 0xe8), u32(priorPose, 0xe8));
+            QCOMPARE(u8(actors.actor(0)->record(), 0x13f), quint8(1));
+            auto second = create.operands;
+            second[0] = 1;
+            QVERIFY(actors.service(0x14, second, value));
+            QVERIFY(actors.service(0x1c, {quint32(-1), 4}, value));
+            QCOMPARE(u8(actors.actor(0)->record(), 0x13e), quint8(4));
+            QCOMPARE(u8(actors.actor(1)->record(), 0x13e), quint8(4));
+            actors.setMode(2);
+            const auto retained = actors.actor(0)->record();
+            QVERIFY(actors.service(0x1c, {0, 7}, value));
+            QCOMPARE(actors.actor(0)->record(), retained);
+            QVERIFY(actors.service(release.opcode, release.operands, value));
+            QVERIFY(!actors.actor(0));
+            QVERIFY(actors.actor(1));
+            QVERIFY(actors.service(0x13, {quint32(-1)}, value));
+            QVERIFY(!actors.actor(1));
+            auto unusual = source;
+            unusual.commands[4].operands[1] = 0x10003;
+            unusual = DirectorProgram::decode(unusual.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(unusual, 4, 1, "3"));
+            QCOMPARE(SceneActions::edit(unusual, 4, 0, "1").commands[4].operands[1],
+                     quint32(0x10003));
+            scenes.replace(id, source.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, source.source);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-actor-actions-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, source.source);
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Rebuilt Actor controls" << destination;
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

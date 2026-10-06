@@ -135,7 +135,10 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x48, "Actor opacity"},
             {0xe, "Wait"},
             {0xb5, "Wait (A button can skip)"},
-            {0xbf, "Dialogue"}};
+            {0xbf, "Dialogue"},
+            {0x13, "Release Actor"},
+            {0x15, "Turn Actor"},
+            {0x1c, "Room Actor channel"}};
 }
 QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
     QVector<SceneActionPosition> result;
@@ -210,10 +213,40 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         if (state.arm < 0)
             added << command(2);
     } else {
+        quint32 slot = 0, facing = 0;
+        for (int i = before - 1; i >= 0; --i) {
+            const auto &c = p.commands[i];
+            if ((c.opcode == 3 || c.opcode == 0x14 || c.opcode == 7 || c.opcode == 0x15 ||
+                 c.opcode == 0x1c || c.opcode == 0x1d || c.opcode == 0x48) &&
+                c.operands[0] < 28) {
+                slot = c.operands[0];
+                break;
+            }
+        }
+        for (int i = before - 1; i >= 0; --i) {
+            const auto &c = p.commands[i];
+            if ((c.opcode == 3 || c.opcode == 0x14 || c.opcode == 0x15) && c.operands[0] == slot) {
+                const auto value = c.operands[c.opcode == 0x15 ? 2 : 3];
+                if (value < 4) {
+                    facing = value;
+                    break;
+                }
+            }
+        }
         QVector<quint32> operands;
         switch (kind) {
+        case 0x13:
+            operands = {slot};
+            break;
+        case 0x15:
+            operands = {slot, facing, (facing + 1) % 4, 1, 30};
+            break;
+        case 0x1c:
+            operands = {slot, 0};
+            break;
         case 3:
-            operands = {0, 1, 0, 0, 0, 0, 0, 0};
+            operands = {slot,           quint32(-1),    quint32(-1),    quint32(-1),
+                        quint32(-1000), quint32(-1000), quint32(-1000), quint32(-1)};
             break;
         case 0x14: {
             QSet<quint32> used;
@@ -222,10 +255,10 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                 for (int i = 0; i < names.size(); ++i)
                     if (names[i].contains("actor_slot") || names[i] == "actor_selector")
                         used << c.operands[i];
-                if (c.opcode == 7 || c.opcode == 0xa6)
+                if (c.opcode == 7 || c.opcode == 0x1c || c.opcode == 0xa6)
                     used << c.operands[0];
             }
-            quint32 slot = 0;
+            slot = 0;
             while (slot < 28 && used.contains(slot))
                 ++slot;
             if (slot == 28)
@@ -235,16 +268,16 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
             break;
         }
         case 7:
-            operands = {0, quint32(-1000), quint32(-1000), 0, 0, 30, 0};
+            operands = {slot, quint32(-1000), quint32(-1000), 0, 0, 30, 0};
             break;
         case 0x1b:
             operands = {30, 0, 0, 0, quint32(-1), 255};
             break;
         case 0x1d:
-            operands = {0, 100};
+            operands = {slot, 100};
             break;
         case 0x48:
-            operands = {0, 255};
+            operands = {slot, 255};
             break;
         case 0x35:
         case 0x36:

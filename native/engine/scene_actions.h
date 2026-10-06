@@ -7,6 +7,7 @@ struct SceneActionField {
     qint64 minimum = -2147483648LL, maximum = 2147483647LL;
     qint64 bias = 0;
     QVector<QPair<int, int>> mirrors;
+    QVector<qint64> choices;
     QString text(quint32 word) const;
     quint32 parse(const QString &) const;
     bool canonical(quint32 word) const;

@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Actor action controls
+
+The Actions inspector supports Turn Actor, Room Actor Channel and Release Actor.
+Turn fields expose cardinal start/target, native phase direction and update budget;
+only -1/+1 direction values are accepted. Room channels retain their mode-zero
+transform/draw meaning and warn that an automatic divider can reassign them. Actor
+selectors support the exact -1/all sentinel where the underlying command does.
+Noncanonical words stay intact and read-only in typed fields.
+
+Follow-up templates use the nearest preceding Actor reference, with the last known
+cardinal facing for a turn. This is an editable script default, not a claim about
+dynamic launch occupants. New pose actions preserve existing art, animation,
+facing, variant and position. The coordinate tooltip explains the original X/Y
+sentinel test: both -1 keep the entire XYZ tuple; otherwise all three are replaced.
+
+`scene_action_tests actorActionServices authoringBoundaries actionOrdering
+exactFields` passed in 4843 ms. A current-ROM Actor received an exact channel-byte
+change; turn0->1/direction-1/budget30 completed after25 updates at facing1; all-slot
+assignment, mode-two channel preservation, individual/all release and pose defaults
+passed. Noncanonical channel words remain intact. The authored scene saved,
+compiled, exported and reopened with bounds/CRC/master checks. Candidate: parent
+Test ROMs/native-actor-actions-HmmXCC. The existing `scene_runtime_tests
+turnsAgainstMips` passed its266 original-instruction cases in1014 ms.
+
+`ui_tests sceneActionInsertion structuredSceneActions` passed in4451 ms: direction0
+refusal, valid correction, shared invalid-input guards and Actor slot continuity
+from creation to turn/channel, plus prior editing/order/dialogue checks. The capture
+was inspected. The full native build passed without compiler warnings. Rendering and natural
+game launch are not newly qualified by these adapter tests.
+
 ## Action ordering
 
 Move action relocates a selected complete action before a named destination,
@@ -4201,3 +4231,14 @@ motion code changed after its passing check.
 Original code2B3FE4..2B4104 and2B4FB4..2B5044 match retained opening RAM at
 8023F1E4 and802401B4. The constants' whole80-byte blockRAM80243C98..80243CE8
 uniquely matchesROM2B8A98..2B8AE8. Data placement is not inferred from code offsets.
+
+## Latest checked portable development package
+
+The local package native/dist/LordlyCaliber-0.5-dev-20261005-234219.zip contains
+d5608b1 (action ordering), before the later Actor control additions. The isolated
+check-package.ps1 passed startup, bundled user-time compilation, export, independent
+Knight STR300 readback, reopen and source preservation. check-scene-import-package.ps1
+also passed browser scene conversion, bundled compilation/export/reopen and2648
+expected scene bytes. Neither check claims a clean Windows installation or a release.
+Evidence remains in parent Test ROMs/native-portable-8ce057af4f004b86b870a0ccd79d513b
+and portable-scene-import-bc9a98241986451d8e791481747b5091.

@@ -5,7 +5,7 @@
 namespace lordly {
 bool SceneActionField::canonical(quint32 word) const {
     const auto value = qint64(qint32(word)) - bias;
-    return value >= minimum && value <= maximum;
+    return value >= minimum && value <= maximum && (choices.isEmpty() || choices.contains(value));
 }
 QString SceneActionField::text(quint32 word) const {
     return scale == 1 ? QString::number(qint64(qint32(word)) - bias)
@@ -35,6 +35,12 @@ quint32 SceneActionField::parse(const QString &text) const {
             scale == 1
                 ? "Enter a whole number within this field's range."
                 : "Enter a position or angle with at most three decimal places within its range.");
+    if (!choices.isEmpty() && !choices.contains(value)) {
+        QStringList labels;
+        for (auto choice : choices)
+            labels << QString::number(choice);
+        throw Error("Choose one of: " + labels.join(", "));
+    }
     return quint32(value + bias);
 }
 QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
@@ -90,6 +96,24 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x13:
+            action.name = "Release Actor";
+            field("Actor slot (-1 selects all)", 0, 1, -1, 27);
+            break;
+        case 0x15:
+            action.name = "Turn Actor";
+            field("Actor slot", 0, 1, 0, 27);
+            field("Start facing", 1, 1, 0, 3);
+            field("Target facing", 2, 1, 0, 3);
+            field("Turn phase direction", 3, 1, -1, 1);
+            action.fields.last().choices = {-1, 1};
+            field("Duration budget (updates)", 4, 1, 1, 32767);
+            break;
+        case 0x1c:
+            action.name = "Room Actor channel";
+            field("Actor slot (-1 selects all)", 0, 1, -1, 27);
+            field("Drawing channel", 1, 1, 0, 19);
+            break;
         case 0xbf:
             action.name = "Dialogue window";
             if (action_detail::completeDialogue(program, i)) {

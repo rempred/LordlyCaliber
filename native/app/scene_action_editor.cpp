@@ -212,6 +212,23 @@ void SceneActionEditor::showAction() {
                 input->setToolTip("Duration 1 moves immediately. Otherwise, a nonzero speed "
                                   "determines the travel time; speed 0 uses the duration.");
         }
+        if (!f.choices.isEmpty() && f.canonical(word)) {
+            QStringList labels;
+            for (auto choice : f.choices)
+                labels << QString::number(choice);
+            input->setToolTip("Choose " + labels.join(" or ") +
+                              ". Change the sign to turn the other way.");
+        }
+        if (action.name == "Set Actor pose and position" && i > 0)
+            input->setToolTip(i >= 4 && i <= 6 ? "X and Y both -1 keep all coordinates. Otherwise "
+                                                 "X, Y and Z replace the position together."
+                                               : "Use -1 to keep the Actor's current value.");
+        if (action.name == "Room Actor channel")
+            input->setToolTip("Room scenes use drawing channels for transforms and layer order. An "
+                              "active automatic divider can reassign the channel.");
+        if (action.name == "Turn Actor" && i == 4)
+            input->setToolTip("The game rounds this budget to its turning steps. Start and target "
+                              "facings must differ; very short budgets can wrap the native timer.");
         fields_->addRow(f.name, input);
         connect(input, &QLineEdit::textChanged, this, [this] { publishFields(); });
     }

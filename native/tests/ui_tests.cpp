@@ -152,6 +152,24 @@ class UiTests : public QObject {
             auto orderedProject = Project::fromRom(project.rom()); orderedProject.applyManifest(Project::readProject(work.path()));
             QCOMPARE(orderedProject.scenePrograms()->program(id).source, reordered.source);
             QApplication::processEvents(); QVERIFY(editor.grab().save("native-action-order.png"));
+            kind->setCurrentIndex(kind->findData(0x14)); add->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[3].opcode, quint32(0x14));
+            position->setCurrentIndex(position->findData(4)); kind->setCurrentIndex(kind->findData(0x15)); add->click();
+            auto direction = actions->findChild<QLineEdit *>("sceneActionField3");
+            QVERIFY(direction); QCOMPARE(direction->accessibleName(), QString("Turn phase direction"));
+            const auto beforeTurn = project.scenePrograms()->program(id).source;
+            direction->setText("0"); QVERIFY(actions->property("invalidEdits").toBool());
+            QVERIFY(!add->isEnabled()); QVERIFY(!move->isEnabled()); QCOMPARE(project.scenePrograms()->program(id).source, beforeTurn);
+            direction->setText("-1"); QVERIFY(!actions->property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).commands[4].operands[3], quint32(-1));
+            position->setCurrentIndex(position->findData(5)); kind->setCurrentIndex(kind->findData(0x1c)); add->click();
+            auto channel = actions->findChild<QLineEdit *>("sceneActionField1");
+            QVERIFY(channel); QCOMPARE(channel->accessibleName(), QString("Drawing channel")); channel->setText("3");
+            QCOMPARE(project.scenePrograms()->program(id).commands[5].operands[1], quint32(3));
+            const auto actorControls = project.scenePrograms()->program(id);
+            QCOMPARE(actorControls.commands[4].operands[0], actorControls.commands[3].operands[0]);
+            QCOMPARE(actorControls.commands[5].operands[0], actorControls.commands[3].operands[0]);
+            QApplication::processEvents(); QVERIFY(editor.grab().save("native-actor-actions.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void structuredSceneActions() {
