@@ -283,34 +283,34 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     });
     connect(reset, &QPushButton::clicked, this, &ScenePreview::restart);
     auto actors = new QHBoxLayout;
-    actors->addWidget(new QLabel("Live Actor"));
-    liveActors_ = new QComboBox;
-    liveActors_->setObjectName("sceneLiveActors");
-    liveActors_->setMinimumContentsLength(10);
-    actors->addWidget(liveActors_);
-    actorState_ = new QLabel("No active Actors");
-    actorState_->setObjectName("sceneActorState");
-    actorState_->setWordWrap(true);
-    actors->addWidget(actorState_, 1);
-    findActor_ = new QPushButton("Find Actor action");
-    findActor_->setObjectName("sceneFindActorAction");
-    findActor_->setToolTip("Find the selected slot's placement or first supported action in the "
-                           "current script. Conditions may give a slot more than one action.");
-    findActor_->setEnabled(false);
-    findActor_->hide();
-    actors->addWidget(findActor_);
+    actors->addWidget(new QLabel("Live object"));
+    liveObjects_ = new QComboBox;
+    liveObjects_->setObjectName("sceneLiveActors");
+    liveObjects_->setMinimumContentsLength(10);
+    actors->addWidget(liveObjects_);
+    objectState_ = new QLabel("No active Actors");
+    objectState_->setObjectName("sceneActorState");
+    objectState_->setWordWrap(true);
+    actors->addWidget(objectState_, 1);
+    findObject_ = new QPushButton("Find Actor action");
+    findObject_->setObjectName("sceneFindActorAction");
+    findObject_->setToolTip("Find the selected slot's placement or first supported action in the "
+                            "current script. Conditions may give a slot more than one action.");
+    findObject_->setEnabled(false);
+    findObject_->hide();
+    actors->addWidget(findObject_);
     layout->addLayout(actors);
-    connect(liveActors_, &QComboBox::currentIndexChanged, this, [this] {
-        if (liveActors_->currentIndex() >= 0)
-            selectedActorSlot_ = liveActors_->currentData().toInt();
-        presentSelectedActor();
+    connect(liveObjects_, &QComboBox::currentIndexChanged, this, [this] {
+        if (liveObjects_->currentIndex() >= 0)
+            selectedObject_ = {SceneObjectKind(liveObjects_->currentData(Qt::UserRole + 1).toInt()),
+                               liveObjects_->currentData().toInt()};
+        presentSelectedObject();
     });
-    connect(findActor_, &QPushButton::clicked, this, [this] {
-        if (!current_ || liveActors_->currentIndex() < 0)
+    connect(findObject_, &QPushButton::clicked, this, [this] {
+        if (!current_ || liveObjects_->currentIndex() < 0)
             return;
         stop();
-        emit findActorAction(current_->playback.director().selector(),
-                             liveActors_->currentData().toInt());
+        findSelectedAction();
     });
     connect(position_, &QSpinBox::valueChanged, this, &ScenePreview::seek);
     connect(launchImage_, &QComboBox::currentIndexChanged, this, [this] {
@@ -473,28 +473,29 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
     if (object == view_->viewport()) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto mouse = static_cast<QMouseEvent *>(event);
-            actorPress_ = mouse->button() == Qt::LeftButton && mouse->modifiers() == Qt::NoModifier
-                              ? std::optional<QPoint>{mouse->position().toPoint()}
-                              : std::nullopt;
+            selectionPress_ =
+                mouse->button() == Qt::LeftButton && mouse->modifiers() == Qt::NoModifier
+                    ? std::optional<QPoint>{mouse->position().toPoint()}
+                    : std::nullopt;
         } else if (event->type() == QEvent::MouseButtonRelease ||
                    event->type() == QEvent::MouseButtonDblClick) {
             const auto mouse = static_cast<QMouseEvent *>(event);
             const bool doubleClick = event->type() == QEvent::MouseButtonDblClick;
             const bool click =
-                doubleClick ||
-                (actorPress_ && (mouse->position().toPoint() - *actorPress_).manhattanLength() <
+                doubleClick || (selectionPress_ &&
+                                (mouse->position().toPoint() - *selectionPress_).manhattanLength() <
                                     QApplication::startDragDistance());
-            actorPress_.reset();
+            selectionPress_.reset();
             if (click && mouse->button() == Qt::LeftButton &&
                 mouse->modifiers() == Qt::NoModifier) {
                 const auto point = view_->mapToScene(mouse->position().toPoint());
-                const int slot = actorAt({qFloor(point.x()), qFloor(point.y())});
-                if (slot >= 0) {
+                const auto target = objectAt({qFloor(point.x()), qFloor(point.y())});
+                if (target) {
                     stop();
-                    selectedActorSlot_ = slot;
-                    presentActors();
-                    if (doubleClick && actorNavigationEnabled_)
-                        emit findActorAction(current_->playback.director().selector(), slot);
+                    selectedObject_ = target;
+                    presentObjects();
+                    if (doubleClick && objectNavigationEnabled_)
+                        findSelectedAction();
                 }
             }
         }
@@ -580,7 +581,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
             throw Error("Select a layered or world preview mode for this scene");
         resources_ = programs.runtimeDirectors();
-        if (selector_ != resource.selectors.first()) selectedActorSlot_ = -1;
+        if (selector_ != resource.selectors.first()) selectedObject_ = {};
         selector_ = resource.selectors.first();
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
@@ -872,12 +873,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     {
         QPainter painter(&frame);
-        auto overlay = [&](const QImage &image, double opacity = 1.) {
+        auto overlay = [&](const QImage &image, double opacity = 1., bool coverSelection = true) {
             painter.save();
             painter.setOpacity(opacity);
             painter.drawImage(0, 0, image);
             painter.restore();
-            selection.cover(image, opacity);
+            if (coverSelection)
+                selection.cover(image, opacity);
         };
         if (mode_ == 0) {
             const int count = channelCount;
@@ -912,19 +914,20 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                             source, channel, drawing.cameras().actor(), parent, backgroundColor);
                     }
                     ActorRenderer::paint(background, layers);
+                    selection.cover(background);
                     if (presentation) {
                         // ROM2B2868 pops the image/last trail matrix before
                         // calling29A930(1,1). Special sprites inherit this
                         // channel's parent, independently of image geometry.
-                        ActorRenderer::paint(background,
-                                             spriteRenderer_.project(
-                                                 drawing.sprites(), 1, 1, drawing.cameras().actor(),
-                                                 parent, {255, 255, 255},
-                                                 drawing.effects().colorRecord(1), sepia));
+                        const auto specialSprites = spriteRenderer_.project(
+                            drawing.sprites(), 1, 1, drawing.cameras().actor(), parent,
+                            {255, 255, 255}, drawing.effects().colorRecord(1), sepia);
+                        ActorRenderer::paint(background, specialSprites);
+                        selection.sprites(specialSprites);
                         if (!drawing.sprites().draws(1, 1).isEmpty())
                             environment = {0, 0, 0, 1};
                     }
-                    overlay(background);
+                    overlay(background, 1., false);
                 }
                 const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,
                                                              drawing.cameras().actor(), parent,
@@ -933,7 +936,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);
                     ActorRenderer::paint(spriteFrame, sprites);
-                    overlay(spriteFrame);
+                    selection.sprites(sprites);
+                    overlay(spriteFrame, 1., false);
                 }
                 if (!drawing.sprites().draws(channel, 0).isEmpty())
                     environment = {0, 0, 0, 1};
@@ -942,7 +946,9 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                                                    {255, 255, 255},
                                                    environment,
                                                    sepia,
-                                                   &drawing.effects(), {}, &selection});
+                                                   &drawing.effects(),
+                                                   {},
+                                                   &selection});
                 painter.drawImage(0, 0, rendered.image);
                 environment = rendered.environment;
                 if (drawing.iris() && !drawing.iris()->record().isEmpty() &&
@@ -975,11 +981,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                                                    tint(pass ? WorldColorPass::AfterForegroundProps
                                                              : WorldColorPass::BackgroundProps),
                                                    false, environment, -5, -905, sepia));
-                ActorRenderer::paint(
-                    flat, spriteRenderer_.project(drawing.sprites(), pass, 0, camera, parent,
-                                                  {255, 255, 255},
-                                                  drawing.effects().colorRecord(pass), sepia));
-                overlay(flat);
+                selection.cover(flat);
+                const auto sprites = spriteRenderer_.project(
+                    drawing.sprites(), pass, 0, camera, parent, {255, 255, 255},
+                    drawing.effects().colorRecord(pass), sepia);
+                ActorRenderer::paint(flat, sprites);
+                selection.sprites(sprites);
+                overlay(flat, 1., false);
                 if (!drawing.sprites().draws(pass, 0).isEmpty())
                     environment = {0, 0, 0, 1};
             };
@@ -1186,80 +1194,121 @@ void ScenePreview::continueSeek() {
         stop();
     present();
 }
-void ScenePreview::setActorNavigationEnabled(bool enabled) {
-    actorNavigationEnabled_ = enabled;
-    findActor_->setVisible(enabled);
-    presentSelectedActor();
+void ScenePreview::setObjectNavigationEnabled(bool enabled) {
+    objectNavigationEnabled_ = enabled;
+    findObject_->setVisible(enabled);
+    presentSelectedObject();
+}
+SceneSelectionTarget ScenePreview::objectAt(QPoint point) const {
+    return current_ && !current_->playback.display().black() ? current_->selection.objectAt(point)
+                                                             : SceneSelectionTarget{};
 }
 int ScenePreview::actorAt(QPoint point) const {
-    return current_ && !current_->playback.display().black() ? current_->selection.actorAt(point) : -1;
+    const auto target = objectAt(point);
+    return target.kind == SceneObjectKind::Actor ? target.slot : -1;
 }
-void ScenePreview::presentActors() {
-    QVector<int> actorSlots;
-    if (current_)
+int ScenePreview::spriteAt(QPoint point) const {
+    const auto target = objectAt(point);
+    return target.kind == SceneObjectKind::Sprite ? target.slot : -1;
+}
+void ScenePreview::findSelectedAction() {
+    if (!current_ || !selectedObject_ || liveObjects_->currentIndex() < 0)
+        return;
+    const int selector = current_->playback.director().selector();
+    if (selectedObject_.kind == SceneObjectKind::Actor)
+        emit findActorAction(selector, selectedObject_.slot);
+    else
+        emit findSpriteAction(selector, selectedObject_.slot);
+}
+void ScenePreview::presentObjects() {
+    QVector<SceneSelectionTarget> objects;
+    if (current_) {
         for (int slot = 0; slot < 28; ++slot)
             if (current_->playback.actors().actor(slot))
-                actorSlots << slot;
-    bool changed = liveActors_->count() != actorSlots.size();
-    if (!changed)
-        for (int row = 0; row < actorSlots.size(); ++row)
-            if (liveActors_->itemData(row).toInt() != actorSlots[row]) {
-                changed = true;
-                break;
-            }
-    const QSignalBlocker guard(liveActors_);
-    if (changed) {
-        liveActors_->clear();
-        for (int slot : actorSlots)
-            liveActors_->addItem(QString("Actor %1").arg(slot), slot);
+                objects << SceneSelectionTarget{SceneObjectKind::Actor, slot};
+        for (int slot = 0; slot < 30; ++slot)
+            if (current_->playback.sprites().sprite(slot))
+                objects << SceneSelectionTarget{SceneObjectKind::Sprite, slot};
     }
-    if (selectedActorSlot_ < 0 && liveActors_->count())
-        selectedActorSlot_ = liveActors_->itemData(0).toInt();
-    const int selected = liveActors_->findData(selectedActorSlot_);
-    if (liveActors_->currentIndex() != selected)
-        liveActors_->setCurrentIndex(selected);
-    liveActors_->setEnabled(liveActors_->count() > 0);
-    presentSelectedActor();
+    bool changed = liveObjects_->count() != objects.size();
+    for (int row = 0; !changed && row < objects.size(); ++row)
+        changed = liveObjects_->itemData(row).toInt() != objects[row].slot ||
+                  liveObjects_->itemData(row, Qt::UserRole + 1).toInt() != int(objects[row].kind);
+    const QSignalBlocker guard(liveObjects_);
+    if (changed) {
+        liveObjects_->clear();
+        for (const auto &object : objects) {
+            liveObjects_->addItem(
+                QString("%1 %2")
+                    .arg(object.kind == SceneObjectKind::Actor ? "Actor" : "Sprite")
+                    .arg(object.slot),
+                object.slot);
+            liveObjects_->setItemData(liveObjects_->count() - 1, int(object.kind),
+                                      Qt::UserRole + 1);
+        }
+    }
+    if (!selectedObject_ && !objects.isEmpty())
+        selectedObject_ = objects.first();
+    const int selected = int(objects.indexOf(selectedObject_));
+    if (liveObjects_->currentIndex() != selected)
+        liveObjects_->setCurrentIndex(selected);
+    liveObjects_->setEnabled(!objects.isEmpty());
+    presentSelectedObject();
 }
-void ScenePreview::presentSelectedActor() {
-    const int slot = liveActors_->currentIndex() < 0 ? -1 : liveActors_->currentData().toInt();
-    const bool present =
-        current_ && slot >= 0 && current_->playback.actors().actor(slot).has_value();
-    findActor_->setEnabled(present && actorNavigationEnabled_);
-    presentActorOutline();
+void ScenePreview::presentSelectedObject() {
+    const int slot = liveObjects_->currentIndex() < 0 ? -1 : selectedObject_.slot;
+    const bool actor = selectedObject_.kind == SceneObjectKind::Actor;
+    const bool present = current_ && slot >= 0 &&
+                         (actor ? current_->playback.actors().actor(slot).has_value()
+                                : current_->playback.sprites().sprite(slot) != nullptr);
+    findObject_->setText(actor ? "Find Actor action" : "Find sprite action");
+    findObject_->setEnabled(present && objectNavigationEnabled_);
+    presentSelectionOutline();
     if (!present) {
-        actorState_->setText(
-            selectedActorSlot_ < 0
-                ? "No active Actors"
-                : QString("Actor %1 is not active at this step").arg(selectedActorSlot_));
+        objectState_->setText(!selectedObject_ ? "No active Actors or sprites"
+                                               : QString("%1 %2 is not active at this step")
+                                                     .arg(actor ? "Actor" : "Sprite")
+                                                     .arg(selectedObject_.slot));
         return;
     }
-    const auto &actor = *current_->playback.actors().actor(slot);
-    const auto record = actor.record();
+    if (!actor) {
+        const auto record = current_->playback.sprites().sprite(slot)->record();
+        objectState_->setText(
+            QString("Art bank %1 · Animation %2 · X %3 · Y %4 · Channel %5 · Scale %6%")
+                .arg(qint32(u32(record, 0x30)))
+                .arg(qint16(u16(record, 0x44)))
+                .arg(qint32(u32(record, 0x24)))
+                .arg(qint32(0U - u32(record, 0x28)))
+                .arg(u8(record, 0x4a))
+                .arg(qint16(u16(record, 0x48))));
+        return;
+    }
+    const auto &instance = *current_->playback.actors().actor(slot);
+    const auto record = instance.record();
     const auto source = qint32(u32(record, 0xe8)), owner = qint32(u32(record, 0xec));
-    const auto kind = actor.pose().art().isBody()
+    const auto kind = instance.pose().art().isBody()
                           ? QString("Class pair %1 / %2").arg(source).arg(owner)
                           : QString("Art bank %1").arg(source);
-    actorState_->setText(QString("%1 · X %2 · Y %3 · Z %4")
-                             .arg(kind)
-                             .arg(std::bit_cast<float>(u32(record, 0x11c)), 0, 'f', 3)
-                             .arg(std::bit_cast<float>(u32(record, 0x120)), 0, 'f', 3)
-                             .arg(std::bit_cast<float>(u32(record, 0x124)), 0, 'f', 3));
+    objectState_->setText(QString("%1 · X %2 · Y %3 · Z %4")
+                              .arg(kind)
+                              .arg(std::bit_cast<float>(u32(record, 0x11c)), 0, 'f', 3)
+                              .arg(std::bit_cast<float>(u32(record, 0x120)), 0, 'f', 3)
+                              .arg(std::bit_cast<float>(u32(record, 0x124)), 0, 'f', 3));
 }
-void ScenePreview::presentActorOutline() {
-    delete actorOutline_;
-    actorOutline_ = nullptr;
-    if (!current_ || current_->playback.display().black() || liveActors_->currentIndex() < 0)
+void ScenePreview::presentSelectionOutline() {
+    delete selectionOutline_;
+    selectionOutline_ = nullptr;
+    if (!current_ || current_->playback.display().black() || liveObjects_->currentIndex() < 0)
         return;
-    const auto bounds = current_->selection.actorBounds(liveActors_->currentData().toInt());
+    const auto bounds = current_->selection.bounds(selectedObject_);
     if (bounds.isEmpty())
         return;
-    QPen pen(QColor("#54d6ff"));
+    QPen pen(QColor(selectedObject_.kind == SceneObjectKind::Actor ? "#54d6ff" : "#ffd166"));
     pen.setCosmetic(true);
     pen.setStyle(Qt::DashLine);
-    actorOutline_ = canvas_->addRect(bounds.adjusted(-1, -1, 1, 1), pen);
-    actorOutline_->setZValue(1);
-    actorOutline_->setAcceptedMouseButtons(Qt::NoButton);
+    selectionOutline_ = canvas_->addRect(bounds.adjusted(-1, -1, 1, 1), pen);
+    selectionOutline_->setZValue(1);
+    selectionOutline_->setAcceptedMouseButtons(Qt::NoButton);
 }
 void ScenePreview::present() {
     const QSignalBlocker block(position_);
@@ -1274,7 +1323,7 @@ void ScenePreview::present() {
                                  (!current_->playback.panels().empty() || hasDialogue()));
     panelControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
-    actorOutline_ = nullptr;
+    selectionOutline_ = nullptr;
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
     setProperty("sceneStopped", !current_ || current_->stopped);
@@ -1288,12 +1337,12 @@ void ScenePreview::present() {
     if (!current_) {
         frame_ = {};
         status_->setText("No active scene.");
-        presentActors();
+        presentObjects();
         return;
     }
     frame_ = current_->playback.display().present(current_->frame);
     canvas_->addPixmap(QPixmap::fromImage(frame_));
-    presentActors();
+    presentObjects();
 
     const auto &director = current_->playback.director();
     status_->setText(QString("Step %1 · selector %2 · word %3%4%5")

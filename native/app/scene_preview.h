@@ -36,10 +36,13 @@ class ScenePreview : public QWidget {
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
-    void setActorNavigationEnabled(bool enabled);
+    void setObjectNavigationEnabled(bool enabled);
     int actorAt(QPoint) const;
+    int spriteAt(QPoint) const;
+    SceneSelectionTarget objectAt(QPoint) const;
   signals:
     void findActorAction(int selector, int slot);
+    void findSpriteAction(int selector, int slot);
 
   public:
     const QImage &renderedFrame() const {
@@ -74,9 +77,9 @@ class ScenePreview : public QWidget {
     void continueSeek();
     void step();
     void present();
-    void presentActors();
-    void presentSelectedActor();
-    void presentActorOutline();
+    void presentObjects();
+    void presentSelectedObject();
+    void presentSelectionOutline();
     void stop();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
@@ -112,16 +115,17 @@ class ScenePreview : public QWidget {
     QSpinBox *position_, *rate_;
     QPushButton *play_, *step_, *skip_;
     QLabel *status_, *context_;
-    QComboBox *liveActors_;
-    QLabel *actorState_;
-    QPushButton *findActor_;
-    int selectedActorSlot_ = -1;
-    bool actorNavigationEnabled_ = false;
-    std::optional<QPoint> actorPress_;
+    QComboBox *liveObjects_;
+    QLabel *objectState_;
+    QPushButton *findObject_;
+    SceneSelectionTarget selectedObject_;
+    void findSelectedAction();
+    bool objectNavigationEnabled_ = false;
+    std::optional<QPoint> selectionPress_;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;
-    QGraphicsRectItem *actorOutline_ = nullptr;
+    QGraphicsRectItem *selectionOutline_ = nullptr;
     QGraphicsView *view_;
     QWidget *imageControlsUi_;
     QWidget *panelControlsUi_;

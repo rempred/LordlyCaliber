@@ -18,6 +18,7 @@ class SceneActionEditor : public QWidget {
     void selectScene(SceneId, int command);
     void selectCommand(int command);
     bool selectActor(int slot);
+    bool selectSprite(int slot);
   signals:
     void commandSelected(int command);
     void editDialogue(int selector, int entry);

@@ -96,3 +96,7 @@ Repeat-briefing confirmation (preset2) now joins end-briefing confirmation,
 briefing choices, map help and reward panels. Duplicate-preset completion queries
 match native identity rules, and Yes/No labels read the correct current-ROM strings.
 Original multi-panel/input/lifecycle and desktop replay checks pass.
+
+Visible scene sprites now join Actors in the live-object picker and rendered-frame
+selection. Their identities remain separate, with real draw-order occlusion,
+current-state readback, seek retention and action/source-command navigation.

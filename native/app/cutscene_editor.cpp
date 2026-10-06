@@ -306,39 +306,61 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     if (project_) {
         actionEditor_ = new SceneActionEditor(project_, undo_, changed);
         pages->addTab(actionEditor_, "Actions");
-        scenePreview_->setActorNavigationEnabled(true);
+        scenePreview_->setObjectNavigationEnabled(true);
+        auto findObject = [this, pages](int selector, SceneSelectionTarget object) {
+            const int slot = object.slot;
+            if (invalidSceneInput())
+                return;
+            SceneId target;
+            for (const auto &id : programs().scenes())
+                if (programs().resource(id).selectors.contains(selector)) {
+                    target = id;
+                    break;
+                }
+            if (!target) {
+                sceneStatus_->setText("The playback script has no editable scene in this project.");
+                return;
+            }
+            if (selectedScene() != target) {
+                for (int row = 0; row < scenes_->count(); ++row) {
+                    const auto item = scenes_->item(row);
+                    if (item->data(Qt::UserRole).toUInt() == target.nativeKey &&
+                        item->data(Qt::UserRole + 1).toString() == target.authoredId) {
+                        scenes_->setCurrentRow(row);
+                        break;
+                    }
+                }
+            }
+            const bool actor = object.kind == SceneObjectKind::Actor;
+            if (actor ? actionEditor_->selectActor(slot) : actionEditor_->selectSprite(slot)) {
+                pages->setCurrentWidget(actionEditor_);
+                return;
+            }
+            if (!actor) {
+                const auto program = programs().program(target);
+                for (int i = 0; i < program.commands.size(); ++i) {
+                    const auto &c = program.commands[i];
+                    if (c.opcode == 0x63 && (c.operands[0] & 0xffffff00U) != 0x08880000U &&
+                        quint8(c.operands[0]) == slot) {
+                        commands_->setCurrentCell(i, 0);
+                        commandEditor_->selectCommand(target, i);
+                        pages->setCurrentWidget(commandEditor_->parentWidget());
+                        return;
+                    }
+                }
+            }
+            sceneStatus_->setText(QString("%1 %2 has no directly editable action in this script; "
+                                          "it may come from launch context.")
+                                      .arg(actor ? "Actor" : "Sprite")
+                                      .arg(slot));
+        };
         connect(scenePreview_, &ScenePreview::findActorAction, this,
-                [this, pages](int selector, int slot) {
-                    if (invalidSceneInput())
-                        return;
-                    SceneId target;
-                    for (const auto &id : programs().scenes())
-                        if (programs().resource(id).selectors.contains(selector)) {
-                            target = id;
-                            break;
-                        }
-                    if (!target) {
-                        sceneStatus_->setText(
-                            "The playback script has no editable scene in this project.");
-                        return;
-                    }
-                    if (selectedScene() != target) {
-                        for (int row = 0; row < scenes_->count(); ++row) {
-                            const auto item = scenes_->item(row);
-                            if (item->data(Qt::UserRole).toUInt() == target.nativeKey &&
-                                item->data(Qt::UserRole + 1).toString() == target.authoredId) {
-                                scenes_->setCurrentRow(row);
-                                break;
-                            }
-                        }
-                    }
-                    if (actionEditor_->selectActor(slot))
-                        pages->setCurrentWidget(actionEditor_);
-                    else
-                        sceneStatus_->setText(
-                            QString("Actor %1 has no directly editable action in this script; "
-                                    "it may come from launch context.")
-                                .arg(slot));
+                [findObject](int selector, int slot) {
+                    findObject(selector, {SceneObjectKind::Actor, slot});
+                });
+        connect(scenePreview_, &ScenePreview::findSpriteAction, this,
+                [findObject](int selector, int slot) {
+                    findObject(selector, {SceneObjectKind::Sprite, slot});
                 });
         connect(actionEditor_, &SceneActionEditor::editDialogue, this,
                 [dialogue, pages](int selector, int entry) {

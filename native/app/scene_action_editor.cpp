@@ -119,6 +119,35 @@ void SceneActionEditor::selectScene(SceneId key, int command) {
     key_ = key;
     refresh(command);
 }
+bool SceneActionEditor::selectSprite(int slot) {
+    if (editing_ || property("invalidEdits").toBool() || !key_ || slot < 0 || slot >= 30)
+        return false;
+    const auto program = project_->scenePrograms()->program(key_);
+    int selected = -1;
+    for (int row = 0; row < actions_.size(); ++row) {
+        const auto &command = program.commands[actions_[row].command];
+        if (command.opcode != 0x46 && command.opcode != 0x64 && command.opcode != 0x66)
+            continue;
+        const auto value = command.operands[0];
+        if ((value & 0xffffff00U) == 0x08880000U)
+            continue;
+        if ((command.opcode == 0x66 ? qint32(value) : int(quint8(value))) != slot)
+            continue;
+        if (selected < 0)
+            selected = row;
+        if (command.opcode == 0x46) {
+            selected = row;
+            break;
+        }
+    }
+    if (selected < 0)
+        return false;
+    const QSignalBlocker guard(list_);
+    list_->setCurrentRow(selected);
+    showAction();
+    emit commandSelected(actions_[selected].command);
+    return true;
+}
 bool SceneActionEditor::selectActor(int slot) {
     if (editing_ || property("invalidEdits").toBool() || !key_ || slot < 0 || slot > 27)
         return false;

@@ -4616,3 +4616,30 @@ launch context. The earlier supplied-record rendering checks for800/801 establis
 drawing only. Probe generator native/build/research-special-sprite.cjs reuses the
 existing scene-sprites-mips.cjs harness and read-only master ROM; its JSON retains
 both controlled-prefix cases. No fresh emulator or natural launch was performed.
+
+
+## Selecting visible scene sprites
+
+The live-object picker and rendered-frame selection now distinguish Actor and
+sprite slots, including identical numeric slot IDs. Sprite layers enter the
+selection snapshot in their actual render order in layered rooms, world flat
+passes and image-owner special passes. Foreground scenery, later Actors, dialogue,
+crops and screen covers retain their occlusion. This adds selection bookkeeping
+without changing frame composition or advancing game state.
+
+Selected sprites expose current art, animation, script-sign XY, channel and scale.
+Click pauses and selects; double-click navigates to creation or a supported direct
+action. Extended placement commands without Actions fields open the exact Commands
+row instead. Symbolic launch operands are not guessed. A yellow UI-only outline
+marks sprites; Actors retain blue. Selection survives absent steps and seek replay,
+and an open dropdown is rebuilt only when membership changes.
+
+`scene_runtime_tests visibleSpriteSelection visibleActorSelection
+sceneActorCompositionAndRollback` passed in106ms: overlapping typed targets,
+transparent holes, scenery, clipping/fades and bounds, plus existing Actor/render
+rollback cases. `ui_tests spritePreviewSelection classActorCreationControls
+savedStoryCastPreview sceneSpriteComposition sceneRoomComposition` passed in6232ms.
+Actual Actor0/Sprite0 click and double-click routing, readback, absent-step/replay,
+raw extended-command navigation and exact project/frame preservation pass. The
+captured sprite selection was inspected. This checks desktop picking and interaction;
+no new game-code or natural-launch qualification is claimed.

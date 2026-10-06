@@ -28,6 +28,51 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void visibleSpriteSelection() {
+        ActorRasterLayer actor;
+        actor.slot = 3;
+        actor.image = QImage(4, 4, QImage::Format_RGBA8888);
+        actor.image.fill(Qt::red);
+        actor.plane.mapping = {1, 0, 0, 0, 1, 0, 10, 20, 1};
+        actor.plane.clip = {{10, 20}, {14, 20}, {14, 24}, {10, 24}};
+        auto sprite = actor;
+        sprite.image.fill(Qt::blue);
+        sprite.image.setPixelColor(1, 1, Qt::transparent);
+        SceneSelection selection;
+        selection.actors({actor});
+        selection.sprites({sprite});
+        QCOMPARE(selection.objectAt({10, 20}).kind, SceneObjectKind::Sprite);
+        QCOMPARE(selection.spriteAt({10, 20}), 3);
+        QCOMPARE(selection.actorAt({10, 20}), -1);
+        QCOMPARE(selection.objectAt({11, 21}).kind, SceneObjectKind::Actor);
+        QCOMPARE(selection.actorAt({11, 21}), 3);
+        QCOMPARE(selection.spriteAt({11, 21}), -1);
+        QCOMPARE(selection.spriteBounds(3), QRectF(10, 20, 4, 4));
+        QCOMPARE(selection.actorBounds(3), QRectF(10, 20, 4, 4));
+        QVERIFY(selection.bounds({}).isEmpty());
+        auto front = actor;
+        front.slot = 7;
+        front.image.fill(Qt::transparent);
+        front.image.setPixelColor(0, 0, Qt::green);
+        selection.actors({front});
+        QCOMPARE(selection.actorAt({10, 20}), 7);
+        QCOMPARE(selection.spriteAt({12, 20}), 3);
+        auto scenery = sprite;
+        scenery.image.fill(Qt::transparent);
+        scenery.image.setPixelColor(2, 0, Qt::black);
+        selection.cover(QVector<ActorRasterLayer>{scenery});
+        QVERIFY(!selection.objectAt({12, 20}));
+        QCOMPARE(selection.spriteAt({13, 20}), 3);
+        selection.clip({10, 20, 3, 4});
+        QVERIFY(!selection.objectAt({13, 20}));
+        QCOMPARE(selection.actorAt({10, 20}), 7);
+        auto faded = selection;
+        faded.cover(quint8(128));
+        QCOMPARE(faded.actorAt({10, 20}), 7);
+        faded.cover(quint8(255));
+        QVERIFY(!faded.objectAt({10, 20}));
+        QVERIFY(!selection.objectAt({-1, 0}));
+    }
     void visibleActorSelection() {
         ActorRasterLayer back;
         back.slot = 3;

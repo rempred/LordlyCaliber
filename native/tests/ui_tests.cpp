@@ -3433,6 +3433,122 @@ class UiTests : public QObject {
             else
                 QCOMPARE(empty.pixelColor(x, y).alpha(), 0);
     }
+    void spritePreviewSelection() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : programs.original().entries())
+                if (entry.program.resourceClass() == 5 && programs.canCreateBlank(entry.key)) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = programs.createScene("Sprite selection", source, true);
+            auto program = programs.program(id);
+            const int point = SceneActions::positions(program).first().command;
+            program = SceneActions::insert(program, point, 0x14);
+            for (const auto &[field, text] :
+                 QVector<QPair<int, QString>>{{1, "30"}, {2, "1"}, {3, "2"}, {4, "-60.000"}})
+                program = SceneActions::edit(program, point, field, text);
+            program = SceneActions::insert(program, point + 1, 0x46);
+            program = SceneActions::edit(program, point + 1, 4, "48");
+            program = SceneActions::insert(program, point + 2, 0xe, 30);
+            programs.replace(id, program.source);
+            project.setScenePrograms(programs.json());
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 1000);
+            editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId)
+                    scenes->setCurrentRow(i);
+            auto preview = editor.findChild<ScenePreview *>();
+            auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
+            pages->setCurrentWidget(preview);
+            auto seek = preview->findChild<QSpinBox *>("scenePosition");
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QVERIFY(!preview->property("sceneStopped").toBool());
+            auto objects = preview->findChild<QComboBox *>("sceneLiveActors");
+            QCOMPARE(objects->count(), 2);
+            QCOMPARE(objects->itemText(0), QString("Actor 0"));
+            QCOMPARE(objects->itemText(1), QString("Sprite 0"));
+            auto findPixel = [&] {
+                for (int y = 0; y < 240; ++y)
+                    for (int x = 0; x < 320; ++x)
+                        if (preview->spriteAt({x, y}) == 0)
+                            return QPoint(x, y);
+                return QPoint(-1, -1);
+            };
+            const auto pixel = findPixel();
+            QVERIFY(pixel.x() >= 0);
+            QCOMPARE(preview->actorAt(pixel), -1);
+            const auto frame = preview->renderedFrame();
+            const auto before = project.scenePrograms()->json();
+            auto view = preview->findChild<QGraphicsView *>("sceneCanvas");
+            QCoreApplication::processEvents();
+            const auto viewportPoint = view->mapFromScene(QPointF(pixel) + QPointF(.5, .5));
+            QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
+            QCOMPARE(objects->currentText(), QString("Sprite 0"));
+            QCOMPARE(objects->currentData(Qt::UserRole + 1).toInt(), int(SceneObjectKind::Sprite));
+            QVERIFY(preview->findChild<QLabel *>("sceneActorState")->text().contains("X 48"));
+            QCOMPARE(preview->renderedFrame(), frame);
+            QCOMPARE(project.scenePrograms()->json(), before);
+            seek->setValue(0);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+            QCOMPARE(preview->spriteAt(pixel), -1);
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QCOMPARE(preview->spriteAt(pixel), 0);
+            QCOMPARE(preview->renderedFrame(), frame);
+            QCOMPARE(objects->currentText(), QString("Sprite 0"));
+            QSignalSpy selected(preview, &ScenePreview::findSpriteAction);
+            QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
+            QCOMPARE(selected.count(), 1);
+            auto actions = editor.findChild<SceneActionEditor *>();
+            QCOMPARE(pages->currentWidget(), actions);
+            QVERIFY(actions->findChild<QListWidget *>("sceneActionList")
+                        ->currentItem()
+                        ->text()
+                        .contains("Create scene sprite"));
+            QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField0")->text(), QString("0"));
+            QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField4")->text(), QString("48"));
+            QCOMPARE(project.scenePrograms()->json(), before);
+            pages->setCurrentWidget(preview);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-sprite-selection.png"));
+            // Extended placement has no Actions fields yet: navigate to its exact source command.
+            auto extended = *project.scenePrograms();
+            auto raw = extended.program(id);
+            raw.commands[point + 1].opcode = 0x63;
+            raw.commands[point + 1].operands = {0, 30,  1,           0,           48,
+                                                0, 180, quint32(-1), quint32(-1), quint32(-1)};
+            extended.replace(id, raw.encode());
+            pushSceneProgramChange(&project, &undo, "Use extended sprite placement", extended);
+            pages->setCurrentWidget(preview);
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QVERIFY(!preview->property("sceneStopped").toBool());
+            const auto rawPixel = findPixel();
+            QVERIFY(rawPixel.x() >= 0);
+            QCoreApplication::processEvents();
+            QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               view->mapFromScene(QPointF(rawPixel) + QPointF(.5, .5)));
+            auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
+            QCOMPARE(commands->currentRow(), point + 1);
+            QVERIFY(pages->currentWidget()->isAncestorOf(commands));
+            QCOMPARE(project.scenePrograms()->program(id).source, raw.encode());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneSpriteActionControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -29,26 +29,31 @@ int alphaAt(const QVector<ActorRasterLayer> &layers, QPoint point) {
 void SceneSelection::actors(const QVector<ActorRasterLayer> &layers) {
     for (const auto &layer : layers)
         if (!layer.shadow)
-            entries_ << Entry{layer.slot, {layer}};
+            entries_ << Entry{{SceneObjectKind::Actor, layer.slot}, {layer}};
+}
+void SceneSelection::sprites(const QVector<ActorRasterLayer> &layers) {
+    for (const auto &layer : layers)
+        if (!layer.shadow)
+            entries_ << Entry{{SceneObjectKind::Sprite, layer.slot}, {layer}};
 }
 void SceneSelection::cover(const QVector<ActorRasterLayer> &layers) {
     if (!layers.isEmpty())
-        entries_ << Entry{-1, layers};
+        entries_ << Entry{{}, layers};
 }
 void SceneSelection::cover(QImage image, double opacity) {
     if (!image.isNull() && opacity > 0)
-        entries_ << Entry{-1, {}, image.convertToFormat(QImage::Format_Alpha8), opacity};
+        entries_ << Entry{{}, {}, image.convertToFormat(QImage::Format_Alpha8), opacity};
 }
 void SceneSelection::cover(quint8 alpha) {
     if (alpha)
-        entries_ << Entry{-1, {}, {}, 1., alpha};
+        entries_ << Entry{{}, {}, {}, 1., alpha};
 }
 void SceneSelection::clip(QRect rectangle) {
-    entries_ << Entry{-1, {}, {}, 1., -1, rectangle};
+    entries_ << Entry{{}, {}, {}, 1., -1, rectangle};
 }
-int SceneSelection::actorAt(QPoint point) const {
+SceneSelectionTarget SceneSelection::objectAt(QPoint point) const {
     if (!QRect(0, 0, 320, 240).contains(point))
-        return -1;
+        return {};
     double remaining = 1.;
     for (auto i = entries_.crbegin(); i != entries_.crend(); ++i) {
         const int alpha =
@@ -58,18 +63,28 @@ int SceneSelection::actorAt(QPoint point) const {
                 ? (i->image.rect().contains(point) ? i->image.pixelColor(point).alpha() : 0)
                 : alphaAt(i->layers, point);
         const double coverage = qBound(0., alpha * i->opacity / 255., 1.);
-        if (i->slot >= 0 && coverage * remaining >= 1. / 255.)
-            return i->slot;
+        if (i->target && coverage * remaining >= 1. / 255.)
+            return i->target;
         remaining *= 1. - coverage;
         if (remaining < 1. / 255.)
-            return -1;
+            return {};
     }
-    return -1;
+    return {};
 }
-QRectF SceneSelection::actorBounds(int slot) const {
+int SceneSelection::actorAt(QPoint point) const {
+    const auto target = objectAt(point);
+    return target.kind == SceneObjectKind::Actor ? target.slot : -1;
+}
+int SceneSelection::spriteAt(QPoint point) const {
+    const auto target = objectAt(point);
+    return target.kind == SceneObjectKind::Sprite ? target.slot : -1;
+}
+QRectF SceneSelection::bounds(SceneSelectionTarget target) const {
+    if (!target)
+        return {};
     QRectF bounds;
     for (const auto &entry : entries_)
-        if (entry.slot == slot)
+        if (entry.target == target)
             for (const auto &layer : entry.layers)
                 bounds = bounds.united(QPolygonF(layer.plane.clip).boundingRect());
     return bounds.intersected(QRectF(0, 0, 320, 240));
