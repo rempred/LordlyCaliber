@@ -11,6 +11,156 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadFormation() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](bool verify) {
+                QProcess process;
+                QStringList args{QFINDTESTDATA("save-unit-mips.cjs"), work.path()};
+                if (verify)
+                    args << "verify";
+                process.start("node", args);
+                QVERIFY(process.waitForFinished(30000));
+                QVERIFY2(process.exitCode() == 0, process.readAllStandardError().constData());
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            auto read = [&](const QString &file) {
+                QFile f(work.filePath(file));
+                if (!f.open(QIODevice::ReadOnly))
+                    throw Error("Missing squad fixture");
+                return f.readAll();
+            };
+            run(false);
+            QByteArray battery(0x10000, char(0x6d));
+            for (int slot : {0, 1, 15}) {
+                const int at = int(lc_save_record_offset(slot, 0));
+                battery[at + 12] = 0;
+                battery.replace(at + 0x2a, 6180, read("unit-payload.bin"));
+                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(battery.data() + at),
+                                            lc_save_record_size(slot, 0), slot, 0));
+            }
+            auto swapped = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            auto expanded = battery;
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto doc = SaveDocument::open(rom, input);
+                QCOMPARE(doc.units().size(), 2);
+                QCOMPARE(doc.units()[0].index, 0);
+                QCOMPARE(doc.units()[1].index, 2);
+                QCOMPARE(doc.units()[1].members[1], 100);
+                QCOMPARE(doc.units()[0].cells, QVector<int>({0, 4, 8, 0, 0}));
+                const auto before = doc.memory();
+                const auto edit = doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes);
+                doc.apply(edit, true);
+                auto expected = before;
+                expected[0x1971f7] = 1;
+                expected[0x1971f8] = 2;
+                expected[0x1971fc] = 99;
+                expected[0x197207] = 3;
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 1, 8, 0, 0}, 99, 3, classes));
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 9, 8, 0, 0}, 99, 3, classes));
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 2, 8, 1, 0}, 99, 3, classes));
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 101, 3, classes));
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 4, classes));
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(2, {2, 7, 0, 0, 0}, 23, 2, classes));
+                QCOMPARE(doc.memory(), expected);
+                doc.selectSlot(1);
+                QCOMPARE(doc.memory(), before);
+                doc.selectSlot(15);
+                QVERIFY(!doc.canEditUnits());
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes));
+                doc.apply(edit, false);
+                QCOMPARE(doc.serialize(), input);
+            }
+            auto raw = SaveDocument::open(rom, read("unit-ram.bin"));
+            QVERIFY(!raw.canEditUnits());
+            QCOMPARE(raw.units().size(), 2);
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes));
+            auto doc = SaveDocument::open(rom, battery);
+            int large = -1;
+            for (int id = 1; id < classes.entries().size(); ++id)
+                if (classes.unitSize(id, id) == 2) {
+                    large = id;
+                    break;
+                }
+            QVERIFY(large > 0);
+            auto larger = doc;
+            larger.apply(larger.planEdit(SaveTable::Characters, 3, "class", large), true);
+            larger.apply(larger.planEdit(SaveTable::Characters, 3, "secondaryClass", large), true);
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     larger.planUnitEdit(0, {1, 5, 8, 0, 0}, 23, 2, classes));
+            // Corner8 is two rows from cells0/2, so its neighboring cells stay clear.
+            larger.apply(larger.planUnitEdit(0, {0, 2, 8, 0, 0}, 23, 2, classes), true);
+            for (int id : {1, 2}) {
+                larger.apply(larger.planEdit(SaveTable::Characters, id, "class", large), true);
+                larger.apply(larger.planEdit(SaveTable::Characters, id, "secondaryClass", large),
+                             true);
+            }
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     larger.planUnitEdit(0, {0, 6, 8, 0, 0}, 23, 2, classes));
+            QJsonArray sizes;
+            for (int primary = 0; primary < classes.entries().size(); ++primary)
+                for (int secondary = 0; secondary < classes.entries().size(); ++secondary)
+                    sizes << QJsonObject{{"primary", primary},
+                                         {"secondary", secondary},
+                                         {"expected", classes.unitSize(primary, secondary)}};
+            doc.apply(doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes), true);
+            QJsonArray cases;
+            for (int secondId : {2, 100})
+                for (int leader = 0; leader < 9; ++leader)
+                    for (int member = 0; member < 9; ++member) {
+                        if (leader == member)
+                            continue;
+                        QByteArray record(25, 0);
+                        put8(record, 2, 1);
+                        put8(record, 3, quint8(secondId));
+                        put8(record, 7, quint8(leader));
+                        put8(record, 8, quint8(member));
+                        QJsonArray grid;
+                        for (int cell = 0; cell < 9; ++cell)
+                            grid << (cell == leader ? 1 : cell == member ? secondId : 255);
+                        cases << QJsonObject{{"record", QString::fromLatin1(record.toHex())},
+                                             {"leaderCell", leader},
+                                             {"grid", grid}};
+                    }
+            cases << QJsonObject{
+                {"record", QString::fromLatin1(doc.memory().mid(0x1971f0, 25).toHex())},
+                {"leaderCell", 1},
+                {"grid", QJsonArray{255, 1, 2, 255, 255, 255, 255, 255, 3}}};
+            atomicWrite(
+                work.filePath("unit-verify.json"),
+                QJsonDocument(
+                    QJsonObject{
+                        {"payload", QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 75).toHex())},
+                        {"cases", cases},
+                        {"sizes", sizes}})
+                    .toJson());
+            run(true);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void editsPreserveNativeSaves() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

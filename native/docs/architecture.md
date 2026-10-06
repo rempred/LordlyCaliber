@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Saved squad formations
+
+The Save workspace now has a Squads page for the30 persistent player-unit rows.
+It uses the original Army loader's flag selection, paired five-member/cell arrays,
+zero empty members and zero-based grid positions. The first saved member is the
+leader. Special IDs of100 or more remain visible and preserved; they are not
+mistaken for empty slots. Formation moves can swap occupied cells before one
+atomic Apply/undo operation. Unity and the four game tactics also edit there.
+
+Regular battery slots0/1 support these edits. Suspend saves and runtime states
+retain read-only squad views until their active copies can be coordinated.
+Membership IDs, leader, flags, carried items and unknown bytes remain intact.
+Special-member formation movement is explicitly unsupported. Ordinary formation
+validation checks distinct cells, five-place capacity and large-member spacing.
+Size uses the original primary/secondary-class choice through `ClassData::unitSize`,
+so independent secondary classes and edited class records affect validation.
+
+`SaveDocument::planBytes` shares the existing packed-codec writing/checksum path
+between scalar edits and atomic squad edits. It emits only changed file spans.
+`save_document_tests squadFormation editsPreserveNativeSaves` passed in6256ms:
+native/word-swapped/expanded SRAM, unchanged other slots, exact undo, invalid
+formation/value rejection, original decoder, calendar and compressed-state
+regressions. The follow-up `squadFormation` passed in1297ms with27,225 original
+class-size pairs and145 original Army materialize/store comparisons, including
+special IDs, leader pairing, large-member boundaries and edited packed data.
+`ui_tests saveSquadEditing saveWorkspaceEditing` passed in2654ms; the final
+`saveSquadEditing` check passed in478ms after the size correction:
+staged occupied-cell swap, Apply/undo/redo, export/reopen, unknown-member refusal
+and runtime read-only controls. The full build passed with no compiler warnings.
+The updated capture was inspected. These checks
+do not establish a natural Army menu launch or active-state cache coherence.
+
+
 ## Initial scenario site counts
 
 Site lists now use the original initializer's placement count and its six scenario

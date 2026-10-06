@@ -29,6 +29,7 @@ class SaveEditor : public QWidget {
         return !undo_->isClean();
     }
     bool edit(SaveTable, int row, const QString &key, const QVariant &);
+    bool editUnit(int index, const QVector<int> &cells, int unity, int tactic);
     void apply(const SaveChange &, bool forward);
   signals:
     void changed();

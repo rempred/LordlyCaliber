@@ -1,6 +1,8 @@
 #include "engine/save_document.h"
+#include "engine/class_data.h"
 #include "game/classes/save_format.h"
 #include <QtEndian>
+#include <QSet>
 #include <QtZlib/zlib.h>
 #include <algorithm>
 #include <cmath>
@@ -416,24 +418,30 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
             throw Error(
                 "That date has no such day; choose a valid day before changing month or year");
     }
-    if (replacement == ram_.mid(at, field.bytes))
+    return planBytes(at, replacement);
+}
+SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const {
+    SaveChange result;
+    result.slot = slot_;
+    const int width = int(replacement.size());
+    if (replacement == ram_.mid(at, width))
         return result;
     auto next = data_;
-    int first = at, size = field.bytes;
+    int first = at, size = width;
     if (battery()) {
         auto edited = ram_;
-        edited.replace(at, field.bytes, replacement);
-        QVector<bool> mapped(field.bytes, false);
+        edited.replace(at, width, replacement);
+        QVector<bool> mapped(width, false);
         const int packed = recordOffset(slot_, expanded_) + 0x2a;
         for (const auto &cell : codec_) {
-            if (cell.address >= at + field.bytes || cell.address + cell.bytes <= at)
+            if (cell.address >= at + width || cell.address + cell.bytes <= at)
                 continue;
             const quint32 v = number(edited, cell.address, cell.bytes);
             const auto max = cell.bits == 32 ? 0xffffffffU : (1U << cell.bits) - 1;
             if (!cell.sign && v > max)
                 throw Error("Value exceeds its packed-save field width");
             for (int i = std::max(at, cell.address);
-                 i < std::min(at + field.bytes, cell.address + cell.bytes); ++i)
+                 i < std::min(at + width, cell.address + cell.bytes); ++i)
                 mapped[i - at] = true;
             for (int i = 0; i < cell.bits; ++i) {
                 const int bit = cell.bit + i, pos = packed + bit / 8, mask = 1 << (7 - bit % 8);
@@ -442,7 +450,7 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
                      quint8((old & ~mask) | (((v >> (cell.bits - 1 - i)) & 1) ? mask : 0)));
             }
         }
-        for (int i = 0; i < field.bytes; ++i)
+        for (int i = 0; i < width; ++i)
             if (!mapped[i] && replacement[i] != ram_[at + i])
                 throw Error("Field byte is not persisted by this save format");
         first = recordOffset(slot_, expanded_);
@@ -451,7 +459,7 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
                                  slot_, expanded_))
             throw Error("Cannot sign edited save");
     } else
-        next.replace(at, field.bytes, replacement);
+        next.replace(at, width, replacement);
     for (int pos = first; pos < first + size;) {
         if (next[pos] == data_[pos]) {
             ++pos;
@@ -463,6 +471,85 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
         result.spans.append({start, data_.mid(start, pos - start), next.mid(start, pos - start)});
     }
     return result;
+}
+QVector<SaveUnit> SaveDocument::units() const {
+    QVector<SaveUnit> result;
+    for (int i = 0; i < 30; ++i) {
+        const int at = 0x1971f0 + i * 25;
+        // Army materialization at z64 C1820..C1830 selects these persistent rows.
+        if ((u8(ram_, at + 1) & 0x81) != 1)
+            continue;
+        SaveUnit unit;
+        unit.index = i;
+        unit.label = u8(ram_, at);
+        unit.unity = u8(ram_, at + 12);
+        unit.tactic = u8(ram_, at + 23);
+        for (int member = 0; member < 5; ++member) {
+            unit.members << u8(ram_, at + 2 + member);
+            unit.cells << u8(ram_, at + 7 + member);
+        }
+        result << unit;
+    }
+    return result;
+}
+bool SaveDocument::canEditUnits() const {
+    return battery() && (slot_ == 0 || slot_ == 1);
+}
+SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
+                                      const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Squad edits require a regular battery-save slot; active runtime copies are "
+                    "not yet coordinated");
+    const auto list = units();
+    const auto it = std::find_if(list.begin(), list.end(),
+                                 [&](const auto &unit) { return unit.index == index; });
+    if (it == list.end() || cells.size() != 5)
+        throw Error("Choose an existing saved squad");
+    const auto &unit = *it;
+    if ((unity != unit.unity && (unity < 0 || unity > 100)) ||
+        (tactic != unit.tactic && (tactic < 0 || tactic > 3)))
+        throw Error("Unity must be 0–100 and the tactic must be one of the four game choices");
+    if (cells != unit.cells) {
+        QSet<int> occupied;
+        QVector<QPair<int, int>> sizes;
+        int capacity = 0;
+        for (int i = 0; i < 5; ++i) {
+            const int id = unit.members[i], cell = cells[i];
+            if (!id) {
+                if (cell != unit.cells[i])
+                    throw Error("Preserve the unused member's formation byte");
+                continue;
+            }
+            if (id >= 100)
+                throw Error("Formation editing for special member IDs is not yet supported");
+            if (cell < 0 || cell > 8 || occupied.contains(cell))
+                throw Error("Each member needs a different formation cell");
+            occupied.insert(cell);
+            const int type = u8(ram_, roster + id * stride + 17);
+            if (type < 1 || type >= classes.entries().size())
+                throw Error("Squad member refers to an unavailable character or class");
+            const int size = classes.unitSize(type, u8(ram_, roster + id * stride + 18));
+            if (size > 2)
+                throw Error("Squad member uses an unknown class size");
+            capacity += size == 2 ? 2 : 1;
+            sizes << qMakePair(cell, size);
+        }
+        if (capacity > 5)
+            throw Error("Squad exceeds its five formation places");
+        for (const auto &a : sizes)
+            if (a.second == 2)
+                for (const auto &b : sizes)
+                    if (a.first != b.first && std::abs(a.first / 3 - b.first / 3) <= 1 &&
+                        std::abs(a.first % 3 - b.first % 3) <= 1)
+                        throw Error("A large member needs adjacent formation cells clear");
+    }
+    const int at = 0x1971f0 + index * 25;
+    auto record = ram_.mid(at, 25);
+    for (int i = 0; i < 5; ++i)
+        put8(record, 7 + i, quint8(cells[i]));
+    put8(record, 12, quint8(unity));
+    put8(record, 23, quint8(tactic));
+    return planBytes(at, record);
 }
 void SaveDocument::apply(const SaveChange &change, bool forward) {
     for (const auto &span : change.spans) {

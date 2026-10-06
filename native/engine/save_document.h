@@ -3,6 +3,7 @@
 #include <QVariant>
 #include <QVector>
 namespace lordly {
+class ClassData;
 enum class SaveTable { Characters, Equipment, Consumables, Game };
 struct SaveField {
     QString key, label;
@@ -22,6 +23,10 @@ struct SaveSpan {
 struct SaveChange {
     int slot = -1;
     QVector<SaveSpan> spans;
+};
+struct SaveUnit {
+    int index = 0, label = 0, unity = 0, tactic = 0;
+    QVector<int> members, cells;
 };
 class SaveDocument {
   public:
@@ -43,6 +48,10 @@ class SaveDocument {
     QVector<SaveField> fields(SaveTable) const;
     QVariant value(SaveTable, int row, const QString &key) const;
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
+    QVector<SaveUnit> units() const;
+    bool canEditUnits() const;
+    SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
+                            const ClassData &) const;
     void apply(const SaveChange &, bool forward);
     QByteArray serialize() const;
     void setClassCount(int);
@@ -68,5 +77,6 @@ class SaveDocument {
     int classCount_ = 165, slot_ = -1, chunkSize_ = 0x20000;
     bool swapped_ = false, expanded_ = false;
     int daysInMonth(unsigned year, unsigned month) const;
+    SaveChange planBytes(int address, const QByteArray &replacement) const;
 };
 } // namespace lordly

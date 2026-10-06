@@ -1102,6 +1102,81 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveSquadEditing() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("save-unit-mips.cjs"),
+                                     work.path()});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+            QFile payload(work.filePath("unit-payload.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 800);
+            editor.show();
+            editor.loadBytes(input);
+            auto panel = editor.findChild<QWidget *>("saveSquads");
+            editor.findChild<QTabWidget *>()->setCurrentWidget(panel);
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
+            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+            auto tactic = editor.findChild<QComboBox *>("saveUnitTactic");
+            auto apply = editor.findChild<QPushButton *>("saveUnitApply");
+            QCOMPARE(units->count(), 2);
+            QCOMPARE(members->item(0)->text(), QString("Member1 · Leader"));
+            QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
+            members->setCurrentRow(0);
+            editor.findChild<QPushButton *>("saveUnitCell4")
+                ->click(); // Swap the leader and member2.
+            unity->setValue(99);
+            tactic->setCurrentIndex(tactic->findData(3));
+            QCOMPARE(editor.document()->serialize(), input);
+            QCOMPARE(editor.undoStack()->count(), 0);
+            apply->click();
+            QCOMPARE(editor.undoStack()->count(), 1);
+            QCOMPARE(editor.document()->units()[0].cells, QVector<int>({4, 0, 8, 0, 0}));
+            QCOMPARE(editor.document()->units()[0].unity, 99);
+            QCOMPARE(editor.document()->units()[0].tactic, 3);
+            const auto expected = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), expected);
+            QVERIFY(editor.grab().save("save-squads.png"));
+            const auto output = work.filePath("squads.SaveRAM");
+            editor.exportFile(output);
+            QFile saved(output);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            const auto reopened = SaveDocument::open(rom, saved.readAll());
+            QCOMPARE(reopened.memory(), editor.document()->memory());
+            units->setCurrentRow(1);
+            QVERIFY(members->item(1)->text().contains("Special member 100"));
+            members->setCurrentRow(1);
+            editor.findChild<QPushButton *>("saveUnitCell8")->click();
+            apply->click();
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("special member"));
+            QCOMPARE(editor.document()->serialize(), expected);
+            QFile raw(work.filePath("unit-ram.bin"));
+            QVERIFY(raw.open(QIODevice::ReadOnly));
+            editor.loadBytes(raw.readAll());
+            QVERIFY(!apply->isEnabled());
+            QVERIFY(!editor.findChild<QPushButton *>("saveUnitCell0")->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveWorkspaceEditing() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

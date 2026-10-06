@@ -1,4 +1,5 @@
 #include "app/save_editor.h"
+#include "app/save_unit_editor.h"
 #include <QAbstractTableModel>
 #include <QComboBox>
 #include <QFile>
@@ -244,6 +245,7 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
                 &QSortFilterProxyModel::setFilterFixedString);
         tables_->addTab(page, title);
     }
+    tables_->addTab(new SaveUnitEditor(this), "Squads");
     auto note = new QLabel(
         "Save files have their own undo history and are exported separately from ROM projects. "
         "Character IDs, unit membership, body codes, fatigue and unknown fields are preserved.");
@@ -362,6 +364,20 @@ bool SaveEditor::edit(SaveTable table, int row, const QString &key, const QVaria
 }
 void SaveEditor::apply(const SaveChange &change, bool forward) {
     document_->apply(change, forward);
+}
+bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int tactic) {
+    if (!document_)
+        return false;
+    try {
+        auto change = document_->planUnitEdit(index, cells, unity, tactic, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "squad"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
 }
 void SaveEditor::refresh() {
     const QSignalBlocker guard(slots_);

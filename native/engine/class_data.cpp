@@ -249,6 +249,14 @@ void ClassData::validate(const ClassAsset &asset) {
     if (asset.name.isEmpty() || asset.name.contains(char(0)))
         throw Error("Class names must be nonempty encoded text without a terminator");
 }
+int ClassData::unitSize(int primary, int secondary) const {
+    if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
+        throw Error("Character size refers to an unavailable class");
+    // Resident ROM43D1C..43D70: retain the primary class when its declared
+    // secondary matches; otherwise use the character's independent secondary.
+    const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
+    return u8(entries_[selected].record, unitSizeOffset);
+}
 ClassData ClassData::loadRetail(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision() != 0)
