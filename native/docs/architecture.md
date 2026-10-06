@@ -5261,3 +5261,37 @@ controls, draft refusal, Undo/Redo, subsequent squad disband and export/reopen.
 The capture was inspected. No natural Army-menu execution is claimed.
 
 The complete native build passed (legion-follower-final-build.log).
+
+
+## Joining saved legions
+
+An independent squad can join an existing legion's first free follower position.
+The Squads page lists targets with Soldier-supported space as used/capacity.
+Capacity is one plus the number of valid, uniquely assigned Soldier groups in
+the command squad; this is the original BBB34 count plus1. Joining refuses a
+full legion, conflicting membership, malformed command formation/group references,
+non-command-type2 commander, deployed candidate or absent/incapacitated ordinary
+leader. It keeps all squad/roster/Soldier/inventory bytes and refreshes only the
+legion membership and derived movement/count fields. One Undo restores the save.
+
+Original assignment DA7D4..DA964 (400 bytes), commit DA964..DAA84 (288 bytes),
+Soldier count BBB34..BBB9C (104 bytes), squad eligibility BFEEC..C01DC (752 bytes)
+and24-byte eligibility call at D7DD4 match the read-only Army capture with delta
+801135A0. The reference executes the full assignment and commit with eligibility
+mask25/mode1, full writer and original packed codec. Capacity is also checked
+through the original count helper. Synthetic Army allocation remains distinct
+from a natural menu run.
+
+`save_document_tests legionJoining legionFollowerRemoval legionDisbanding`
+passed in14876ms. New coverage includes48 product operations (two candidate
+squads, all four follower positions, both slots and three layouts), eight complete
+original join/store/codec sequences and eight original decodes. Full-memory
+preservation, exact Undo, reopen, full/capacity/deployed/incapacitated/zero-HP/
+invalid-group/commander/shared-membership refusals pass. Existing detach/disband
+checks pass. `ui_tests saveLegionJoinControls saveLegionFollowerControls
+saveLegionDisbandControls` passed in2824ms, covering target labels, draft guards,
+Undo/Redo, subsequent detachment, export/reopen and full-legion button state.
+Capture inspected. Coordination when changing a command squad's Soldiers and
+new legion creation remain the next integration work.
+
+The complete native build passed (legion-join-final-build.log).

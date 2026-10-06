@@ -27,7 +27,8 @@ class SaveUnitEditor final : public QWidget {
     QVector<QPushButton *> grid_;
     QSpinBox *unity_;
     QComboBox *tactic_, *newLeader_, *newCell_;
-    QPushButton *create_, *disband_, *disbandLegion_, *detachLegion_;
+    QPushButton *create_, *disband_, *disbandLegion_, *detachLegion_, *joinLegion_;
+    QComboBox *legionTarget_;
     QLabel *legion_;
     int shownLegion_ = -1;
     QComboBox *targetUnit_, *targetMember_;

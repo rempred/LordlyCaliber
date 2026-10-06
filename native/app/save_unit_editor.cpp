@@ -61,6 +61,20 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     legion_ = new QLabel;
     legion_->setObjectName("saveUnitLegion");
     body->addWidget(legion_);
+    auto legionRow = new QHBoxLayout;
+    legionRow->addWidget(new QLabel("Assign this squad to"));
+    legionTarget_ = new QComboBox;
+    legionTarget_->setObjectName("saveLegionTarget");
+    legionRow->addWidget(legionTarget_, 1);
+    joinLegion_ = new QPushButton("Join legion");
+    joinLegion_->setObjectName("saveJoinLegion");
+    legionRow->addWidget(joinLegion_);
+    body->addLayout(legionRow);
+    connect(joinLegion_, &QPushButton::clicked, this, [this] {
+        if (legionTarget_->currentIndex() >= 0 && units_->currentItem())
+            editor_->joinLegion(legionTarget_->currentData().toInt(),
+                                units_->currentItem()->data(Qt::UserRole).toInt());
+    });
     detachLegion_ = new QPushButton("Detach this squad from its legion");
     detachLegion_->setObjectName("saveDetachLegionUnit");
     body->addWidget(detachLegion_);
@@ -461,6 +475,34 @@ void SaveUnitEditor::refreshSwapTargets() {
                 legion_->setText(QString("Legion %1 · %2 squads").arg(legion.label).arg(count));
                 break;
             }
+    const int priorLegion = legionTarget_->currentData().toInt();
+    legionTarget_->clear();
+    if (editor_->document() && editor_->document()->canEditUnits() && shownLegion_ < 0)
+        for (const auto &target : editor_->document()->legions()) {
+            try {
+                const int capacity = editor_->document()->legionCapacity(target.index);
+                const int used = int(std::count_if(target.units.begin(), target.units.end(),
+                                                   [](int id) { return id != 255; }));
+                if (used < capacity)
+                    legionTarget_->addItem(QString("Legion %1 (%2/%3 squads)")
+                                               .arg(target.label)
+                                               .arg(used)
+                                               .arg(capacity),
+                                           target.index);
+            } catch (const Error &) {
+                // Malformed legion membership cannot be a safe join target.
+            }
+        }
+    const int targetRow = legionTarget_->findData(priorLegion);
+    if (targetRow >= 0)
+        legionTarget_->setCurrentIndex(targetRow);
+    const bool canJoin = units_->currentItem() && legionTarget_->count() && !pending;
+    legionTarget_->setEnabled(canJoin);
+    joinLegion_->setEnabled(canJoin);
+    joinLegion_->setToolTip(
+        pending ? "Apply squad edits before changing legion membership"
+                : "Assigns this independent squad to the first free follower position. "
+                  "Each follower requires a Soldier group in the command squad.");
     detachLegion_->setEnabled(follower && editor_->document()->canEditUnits() && !pending);
     detachLegion_->setToolTip(
         pending ? "Apply squad edits before changing legion membership"

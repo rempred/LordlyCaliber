@@ -18,6 +18,18 @@ if(mode==='generate'){
  const variant=(name,edit)=>{m.load(0x80000000,original);m.set('sp',0x803f0000);edit();m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);fs.writeFileSync(path.join(dir,name),read(payload,6180));};
  variant('legions.bin',()=>{});
  variant('legion-last.bin',()=>{for(const i of[2,4])m.w8(legions+i*11+1,0);for(let i=5;i<15;++i)m.w8(squads+i*25+1,1);m.load(order,Buffer.from([0,7,7,7,7,7]));});
+ const joinFixture=(missing)=>{m.load(squads+2,Buffer.from([1,100,101,102,103]));m.load(squads+7,Buffer.from([4,0,2,6,8]));
+  m.w8(squads+2*25+3,0);m.w8(squads+2*25+8,0);for(let i=0;i<4;++i){m.w16(0x80190f84+i*2,83);m.w8(0x80191074+i,2);}
+  m.w8(legions+2+missing,255);m.w8(legions+10,7);m.w8(squads+15*25+24,3);m.w8(squads+16*25+24,7);};
+ for(let pos=1;pos<5;++pos)variant(`legion-join-${pos}.bin`,()=>joinFixture(pos));
+ variant('legion-join-deployed.bin',()=>{joinFixture(1);m.w8(squads+15*25+1,5);});
+ variant('legion-join-incapacitated.bin',()=>{joinFixture(1);m.w8(roster+16*56+51,6);});
+ variant('legion-join-zero-hp.bin',()=>{joinFixture(1);m.w16(roster+16*56+24,0);});
+ variant('legion-join-full.bin',()=>{joinFixture(1);m.w8(legions+3,1);});
+ variant('legion-join-capacity.bin',()=>{joinFixture(1);m.load(squads+4,Buffer.alloc(3));m.load(squads+9,Buffer.alloc(3));});
+ variant('legion-join-dead-group.bin',()=>{joinFixture(1);m.w16(0x80190f84,0);});
+ variant('legion-join-command.bin',()=>{joinFixture(1);m.w8(roster+56+17,5);m.w8(roster+56+18,5);});
+ variant('legion-join-shared.bin',()=>{joinFixture(1);m.w8(legions+6*11+1,129);m.w8(legions+6*11+2,15);});
  variant('legion-movement.bin',()=>[7,3,1,6,5].forEach((type,i)=>m.w8(squads+i*25+24,type)));
  variant('legion-member-hidden.bin',()=>{m.w8(legions+6*11+1,129);m.w8(legions+6*11+2,0);});
  variant('legion-order-duplicate.bin',()=>m.w8(order+1,4));
@@ -29,7 +41,7 @@ if(mode==='generate'){
  variant('legion-unrepresented.bin',()=>m.w8(legions+7*11+1,1));
  console.log('Generated saved legions through original save encoder.');process.exit(0);
 }
-assert.ok(['verify','verify-detach'].includes(mode));const detach=mode==='verify-detach',data=JSON.parse(fs.readFileSync(path.join(dir,detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
+assert.ok(['verify','verify-detach','verify-join'].includes(mode));const detach=mode==='verify-detach',join=mode==='verify-join',data=JSON.parse(fs.readFileSync(path.join(dir,join?'legion-join-verify.json':detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
 for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buffer.from(row.legions,'hex'),chars=Buffer.from(row.characters,'hex');
  m.load(root,Buffer.alloc(0x3000));m.w32(0x80196af8,root);m.set('sp',0x803f0000);m.load(squads,units);m.load(legions,groups);m.load(roster,chars);m.load(0x80190f80,Buffer.from(row.soldiers,'hex'));m.load(0x80193ac0,Buffer.from(row.inventory,'hex'));
  const ranks=Buffer.from(row.unitOrder,'hex');m.load(0x801977d8,Buffer.alloc(30,255));let count=0;
@@ -44,15 +56,20 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
  }
  m.w32(root+704,count-grouped);m.w32(root+708,count);m.w32(root+1500,legionCount);
  const leaderEligibility=()=>{m.set('a0',18);m.set('a1',0x100);m.set('a2',5);m.call(live(0xc01dc));return m.get('v0')>>>0;};
- assert.equal(leaderEligibility(),10,'ordinary candidate cannot command a current legion');
+ if(!join)assert.equal(leaderEligibility(),10,'ordinary candidate cannot command a current legion');
  m.set('a0',row.index);
- if(detach){m.set('a1',row.slot);m.call(live(0xb726c));const active=root+4308+row.index*14;
+ if(join){
+  m.set('a0',row.unit);m.set('a1',25);m.set('a2',1);m.call(live(0xbfeec));assert.equal(m.get('v0')>>>0,0xffffffff,'original candidate eligibility');
+  m.set('a0',0);m.call(live(0xbbb34));assert.equal(m.get('v0')+1,5,'original commander Soldier capacity');
+  m.set('a0',row.index);m.set('a1',row.unit);m.set('a2',row.slot);m.call(live(0xda7d4));
+  m.set('a0',row.index);m.call(live(0xda964));
+ }else if(detach){m.set('a1',row.slot);m.call(live(0xb726c));const active=root+4308+row.index*14;
   m.set('a0',row.index);m.call(live(0xbd26c));m.w8(active+10,m.get('v0'));
   m.set('a0',row.index);m.call(live(0xbd318));m.w8(active+11,m.get('v0'));
  }else m.call(live(0xb7164));
- assert.equal(leaderEligibility(),!detach&&row.index===0?0xffffffff:10,'restriction follows actual legion membership');
+ if(!join)assert.equal(leaderEligibility(),!detach&&row.index===0?0xffffffff:10,'restriction follows actual legion membership');
  m.call(live(0xc1d68));
- if(detach){m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);
+ if(detach||join){m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);
   m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);}
 
  assert.deepEqual(read(squads,750),Buffer.from(row.afterUnits,'hex'),'whole saved squad records');
@@ -62,4 +79,4 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
 }
 for(const row of data.saves){m.load(payload,Buffer.from(row.payload,'hex'));m.set('sp',0x803f0000);m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);
  assert.deepEqual(read(squads,750),Buffer.from(row.units,'hex'));assert.deepEqual(read(legions,110),Buffer.from(row.legions,'hex'));assert.deepEqual(read(order,6),Buffer.from(row.order,'hex'));}
-console.log(`PASS ${data.cases.length} original legion ${detach?'detach':'disband'}/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);
+console.log(`PASS ${data.cases.length} original legion ${join?'join':detach?'detach':'disband'}/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);

@@ -628,6 +628,72 @@ SaveChange SaveDocument::planDetachLegionUnit(int index, int unit) const {
     legion.units[slot] = slot < 3 ? legion.units[slot + 2] : 255;
     if (slot < 3)
         legion.units[slot + 2] = 255;
+    return planLegionMembers(legion);
+}
+int SaveDocument::legionCapacity(int index) const {
+    const auto legion = editableLegion(index);
+    const auto squads = units();
+    const auto &commander = *std::find_if(squads.begin(), squads.end(), [&](const auto &unit) {
+        return unit.index == legion.units[0];
+    });
+    int capacity = 1;
+    QSet<int> groups;
+    for (int member : commander.members)
+        if (member >= 100) {
+            soldiersInGroup(member);
+            int references = 0;
+            for (const auto &row : squads)
+                references += int(std::count(row.members.begin(), row.members.end(), member));
+            if (groups.contains(member) || references != 1 ||
+                !u16(ram_, 0x190f84 + (member - 100) * 2))
+                throw Error("The command squad has an invalid or conflicting Soldier group");
+            groups << member;
+            ++capacity;
+        }
+    return capacity;
+}
+SaveChange SaveDocument::planJoinLegion(int index, int unit, const ClassData &classes) const {
+    auto legion = editableLegion(index);
+    const auto squads = units();
+    const auto found = std::find_if(squads.begin(), squads.end(),
+                                    [&](const auto &row) { return row.index == unit; });
+    if (found == squads.end())
+        throw Error("Choose an existing independent squad");
+    for (int row = 0; row < 10; ++row) {
+        const int base = 0x1969b8 + row * 11;
+        if (u8(ram_, base + 1) & 1)
+            for (int slot = 0; slot < 5; ++slot)
+                if (u8(ram_, base + 2 + slot) == unit)
+                    throw Error("Detach this squad from its current legion first");
+    }
+    const int count = int(
+        std::count_if(legion.units.begin(), legion.units.end(), [](int id) { return id != 255; }));
+    if (count >= legionCapacity(index))
+        throw Error(
+            "The command squad needs one Soldier group for each follower; this legion is full");
+    const int leader = found->members[0];
+    if (leader < 1 || leader >= 100)
+        throw Error("The joining squad needs an ordinary leader");
+    memberClasses(leader);
+    if ((u8(ram_, 0x1971f0 + unit * 25 + 1) & 4) || (u8(ram_, roster + leader * stride + 51) & 4) ||
+        !u16(ram_, roster + leader * stride + 24))
+        throw Error("A deployed squad or incapacitated leader cannot join a legion");
+    validateFormation(*found, classes);
+    const auto commander = std::find_if(squads.begin(), squads.end(), [&](const auto &row) {
+        return row.index == legion.units[0];
+    });
+    const auto pair = memberClasses(commander->members[0]);
+    if (classes.commandType(pair.first, pair.second) != 2)
+        throw Error("The legion's command squad requires a leader with command type 2");
+    validateFormation(*commander, classes);
+    const auto slot = std::find(legion.units.begin() + 1, legion.units.end(), 255);
+    if (slot == legion.units.end())
+        throw Error("The legion has no empty follower position");
+    *slot = unit;
+    return planLegionMembers(legion);
+}
+SaveChange SaveDocument::planLegionMembers(const SaveLegion &legion) const {
+    const int index = legion.index;
     const int at = 0x1969b8 + index * 11;
     auto record = ram_.mid(at, 11);
     QVector<int> types;

@@ -57,6 +57,8 @@ class SaveDocument {
     QVector<SaveLegion> legions() const;
     SaveChange planDisbandLegion(int index) const;
     SaveChange planDetachLegionUnit(int index, int unit) const;
+    int legionCapacity(int index) const;
+    SaveChange planJoinLegion(int index, int unit, const ClassData &) const;
     QVector<int> reserveMembers() const;
     QVector<int> newUnitLeaders(const ClassData &) const;
     SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;
@@ -108,6 +110,7 @@ class SaveDocument {
     SaveChange planBytes(int address, const QByteArray &replacement) const;
     SaveChange difference(const QByteArray &next, int first, int size) const;
     SaveLegion editableLegion(int index) const;
+    SaveChange planLegionMembers(const SaveLegion &) const;
     QPair<int, int> memberClasses(int id) const;
     QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;
