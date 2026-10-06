@@ -5093,3 +5093,40 @@ export and reopen. Existing exchange/draft/squad UI cases passed in the initial
 4341ms run. Capture inspected. No natural menu or active-state validation claimed.
 
 The complete native build passed (squad-creation-final-build.log).
+
+
+## Carried consumables and owned stock
+
+Save supply choices now require unassigned copies in owned inventory. Assigning
+copies to one squad reduces availability to every other squad; removing a carried
+copy restores availability without changing ownership. Quantity edits cannot
+reduce ownership below assigned copies. Direct edits and export validate these
+relationships, while untouched unusual source assignments remain intact and can
+be reduced. Duplicate inventory entries refuse new assignments. The UI retains
+an existing choice even when no additional copies remain and otherwise offers
+only available stock, with Undo/Redo and draft protection unchanged.
+
+The40 consumable/treasure records at RAM80193AC0 are four bytes each: ID halfword,
+runtime assigned byte at+2, and owned byte at+3. The earlier field combined both
+bytes into a quantity; native runtime editing now reads/writes only+3, preserves
++2, and uses the byte range255 (retail battery ownership remains7-bit, max127).
+The assignment byte is not stored by the battery codec. Resident ROM41674..
+41774/RAM8016B774..8016B874 clears it and counts carried items in every player row
+with flag1, including menu-excluded flag81 rows. The full256-byte block matches
+the existing read-only Army snapshot under residentdelta8012A100. Army ROMCBA10..
+CBA30 (32 bytes, delta801135A0) subtracts assigned from owned for availability.
+The product treats negative availability as zero and refuses further assignment.
+
+`save_document_tests` ran all cases after the shared fixture gained owned stock
+for its carried items. Every prior case passed in18888ms; the new reference first
+retained its previous derived assignment byte between decodes. Resetting that
+non-serialized fixture state before each decode resolved it. Focused
+`squadInventoryStock` passed1347ms: five original decode/assignment/availability
+sequences, both normal slots and three battery layouts, whole-memory preservation,
+stock exhaustion/release, quantity refusal, missing/duplicate entries, untouched
+overassignment and runtime assigned-byte preservation. All eight UI cases passed
+9001ms, including new stock controls, creation, direct exchange, Soldier reserve,
+leaders, squad editing/drafts and the general save workspace. Export/reopen and
+Undo/Redo pass. No natural inventory/menu or emulator operation is claimed.
+
+The complete native build passed (squad-stock-final-build.log).

@@ -14,6 +14,167 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadInventoryStock() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess p;
+                p.start("node", {QFINDTESTDATA("squad-stock-mips.cjs"), work.path(), mode});
+                if (!p.waitForFinished(30000) || p.exitCode())
+                    throw Error(QString::fromUtf8(p.readAllStandardError()));
+                qInfo().noquote() << p.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing stock fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 42, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal stock fixture");
+                }
+                return out;
+            };
+            const auto battery = batteryFor("stock-two.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            QJsonArray cases;
+            auto reference = [&](const SaveDocument &doc, int slot) {
+                QJsonArray assigned, available;
+                const auto &ram = doc.memory();
+                for (int row = 0; row < 40; ++row) {
+                    int count = 0, id = u16(ram, 0x193ac0 + row * 4);
+                    for (int unit = 0; unit < 30; ++unit)
+                        if (id && (u8(ram, 0x1971f0 + unit * 25 + 1) & 1))
+                            for (int item = 0; item < 10; ++item)
+                                count += u8(ram, 0x1971f0 + unit * 25 + 13 + item) == id;
+                    assigned << count;
+                    available << (id ? doc.consumableAvailable(id) : 0);
+                }
+                cases << QJsonObject{
+                    {"assigned", assigned},
+                    {"available", available},
+                    {"units", QString::fromLatin1(ram.mid(0x1971f0, 750).toHex())},
+                    {"inventory", QString::fromLatin1(ram.mid(0x193ac0, 160).toHex())},
+                    {"payload",
+                     QString::fromLatin1(doc.serialize()
+                                             .mid(int(lc_save_record_offset(slot, 0)) + 42, 6180)
+                                             .toHex())}};
+            };
+            for (const auto &input : {battery, swapped, expanded})
+                for (int slot : {0, 1}) {
+                    auto doc = SaveDocument::open(rom, input);
+                    doc.selectSlot(slot);
+                    const auto before = doc.memory();
+                    QCOMPARE(doc.consumableAvailable(24), 2);
+                    auto values = doc.units()[0].supplies;
+                    values[1] = 24;
+                    const auto first = doc.planUnitSupplies(0, values, project);
+                    doc.apply(first, true);
+                    auto expected = before;
+                    expected[0x1971f0 + 14] = 24;
+                    QCOMPARE(doc.memory(), expected);
+                    QCOMPARE(doc.consumableAvailable(24), 1);
+                    auto secondValues = doc.units()[1].supplies;
+                    secondValues[1] = 24;
+                    const auto second = doc.planUnitSupplies(2, secondValues, project);
+                    doc.apply(second, true);
+                    expected[0x1971f0 + 2 * 25 + 14] = 24;
+                    QCOMPARE(doc.memory(), expected);
+                    QCOMPARE(doc.consumableAvailable(24), 0);
+                    auto thirdValues = doc.units().last().supplies;
+                    thirdValues[1] = 24;
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(5, thirdValues, project));
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             doc.planEdit(SaveTable::Consumables, 23, "count", 1));
+                    QCOMPARE(doc.value(SaveTable::Consumables, 23, "count").toInt(), 2);
+                    doc.validateUnitSupplyEdits(project);
+                    if (input == battery)
+                        reference(doc, slot);
+                    auto reopened = SaveDocument::open(rom, doc.serialize());
+                    reopened.selectSlot(slot);
+                    QCOMPARE(reopened.memory(), expected);
+                    values[1] = 0;
+                    const auto remove = doc.planUnitSupplies(0, values, project);
+                    doc.apply(remove, true);
+                    QCOMPARE(doc.consumableAvailable(24), 1);
+                    const auto reduce = doc.planEdit(SaveTable::Consumables, 23, "count", 1);
+                    doc.apply(reduce, true);
+                    QCOMPARE(doc.consumableAvailable(24), 0);
+                    doc.validateUnitSupplyEdits(project);
+                    if (input == battery)
+                        reference(doc, slot);
+                    doc.apply(reduce, false);
+                    doc.apply(remove, false);
+                    doc.apply(second, false);
+                    doc.apply(first, false);
+                    QCOMPARE(doc.serialize(), input);
+                    // The excluded flag81 row still reserves its carried item, as native
+                    // bookkeeping does.
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             doc.planEdit(SaveTable::Consumables, 8, "count", 5));
+                    const auto six = doc.planEdit(SaveTable::Consumables, 8, "count", 6);
+                    doc.apply(six, true);
+                    QCOMPARE(doc.consumableAvailable(9), 0);
+                    doc.apply(six, false);
+                }
+            for (const auto &name :
+                 {"stock-empty.bin", "stock-missing.bin", "stock-duplicate.bin"}) {
+                const auto input = batteryFor(name);
+                auto doc = SaveDocument::open(rom, input);
+                auto values = doc.units()[0].supplies;
+                values[1] = 24;
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(0, values, project));
+                QCOMPARE(doc.serialize(), input);
+                doc.validateUnitSupplyEdits(project);
+            }
+            auto odd = SaveDocument::open(rom, batteryFor("stock-source-overassigned.bin"));
+            odd.validateUnitSupplyEdits(project);
+            QCOMPARE(odd.consumableAvailable(9), 0);
+            auto values = odd.units()[0].supplies;
+            values[0] = 0;
+            odd.apply(odd.planUnitSupplies(0, values, project), true);
+            odd.validateUnitSupplyEdits(project);
+            reference(odd, 0);
+            auto memory = SaveDocument::open(rom, battery).memory();
+            const int at = 0x193ac0 + 23 * 4;
+            memory[at + 2] = 3;
+            memory[at + 3] = 7;
+            auto runtime = SaveDocument::open(rom, memory);
+            QCOMPARE(runtime.value(SaveTable::Consumables, 23, "count").toInt(), 7);
+            const auto change = runtime.planEdit(SaveTable::Consumables, 23, "count", 9);
+            runtime.apply(change, true);
+            auto expected = memory;
+            expected[at + 3] = 9;
+            QCOMPARE(runtime.memory(), expected);
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     runtime.planEdit(SaveTable::Consumables, 23, "count", 2));
+            runtime.apply(change, false);
+            QCOMPARE(runtime.memory(), memory);
+            atomicWrite(work.filePath("stock-verify.json"),
+                        QJsonDocument(QJsonObject{{"cases", cases}}).toJson());
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadCreation() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

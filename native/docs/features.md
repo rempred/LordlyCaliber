@@ -152,3 +152,9 @@ Saved player squads can now be created from eligible reserve leaders, including
 an empty army, with native number/record allocation, appended Army order, leader
 flags, initial fields, Undo and export/reopening. Lists display saved squad numbers.
 Deletion, legion coordination and active-state membership remain unfinished.
+
+
+Carried consumables now share owned stock across squads: choices require free
+copies, removals restore availability, and ownership cannot fall below assigned
+copies. Runtime inventory quantity editing preserves the separate assignment
+byte. Original bookkeeping, save export/reopen and desktop workflows pass.

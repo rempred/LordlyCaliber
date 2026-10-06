@@ -240,6 +240,21 @@ void SaveDocument::validateUnitSupplyEdits(const Project &project) const {
             continue;
         const auto before = original.decode(slot);
         current.selectSlot(slot);
+        original.selectSlot(slot);
+        QSet<int> changedOwnership;
+        for (int row = 0; row < 40; ++row) {
+            const int at = 0x193ac0 + row * 4, id = u16(current.ram_, at);
+            if (id && before.mid(at, 4) != current.ram_.mid(at, 4))
+                changedOwnership << id;
+        }
+        for (int id = 1; id < 256; ++id) {
+            const int assigned = current.consumableAssigned(id);
+            if ((changedOwnership.contains(id) || assigned > original.consumableAssigned(id)) &&
+                assigned > current.consumableOwned(id))
+                throw Error(QString("Item %1 in slot %2 has more assigned copies than owned")
+                                .arg(id)
+                                .arg(slot + 1));
+        }
         for (const auto &unit : current.units()) {
             const int at = 0x1971f0 + unit.index * 25 + 13;
             if (before.mid(at, 10) == current.ram_.mid(at, 10))
@@ -369,7 +384,7 @@ QVector<SaveField> SaveDocument::fields(SaveTable table) const {
     }
     if (table == SaveTable::Consumables)
         return {{"id", "Consumable / treasure ID", 0, 2, 0, 44},
-                {"count", "Count", 2, 2, 0, battery() ? 127U : 65535U}};
+                {"count", "Owned", 3, 1, 0, battery() ? 127U : 255U}};
     if (table == SaveTable::Equipment)
         return {{"id", "Equipment ID", 0, 2, 0, 277},
                 {"owned", "Owned", 3, 1, 0, battery() ? 127U : 255U}};
@@ -458,6 +473,13 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
         if (u8(date, 3) < 1 || u8(date, 3) > daysInMonth(u16(date, 0), u8(date, 2)))
             throw Error(
                 "That date has no such day; choose a valid day before changing month or year");
+    }
+    if (table == SaveTable::Consumables && key == "count") {
+        const int assigned = battery() ? consumableAssigned(u16(ram_, base)) : u8(ram_, base + 2);
+        if (u8(replacement, 0) < assigned)
+            throw Error(
+                QString("This item has %1 copies assigned to squads; owned count cannot be lower")
+                    .arg(assigned));
     }
     return planBytes(at, replacement);
 }
@@ -577,6 +599,36 @@ int SaveDocument::unitCarryingCapacity(int index, const ClassData &classes) cons
         }
     throw Error("Choose an existing saved squad");
 }
+int SaveDocument::consumableOwned(int id) const {
+    int count = 0, references = 0;
+    for (int row = 0; row < 40; ++row) {
+        const int at = 0x193ac0 + row * 4;
+        if (id && u16(ram_, at) == id) {
+            count = u8(ram_, at + 3);
+            ++references;
+        }
+    }
+    if (references > 1)
+        throw Error("This carried item has duplicate inventory entries");
+    return count;
+}
+int SaveDocument::consumableAssigned(int id) const {
+    if (!id)
+        return 0;
+    int count = 0;
+    // Resident 41674..41774 includes every player row with flag1, including
+    // rows temporarily excluded from the Army menu by flag80.
+    for (int unit = 0; unit < 30; ++unit) {
+        const int at = 0x1971f0 + unit * 25;
+        if (u8(ram_, at + 1) & 1)
+            for (int slot = 0; slot < 10; ++slot)
+                count += u8(ram_, at + 13 + slot) == id;
+    }
+    return count;
+}
+int SaveDocument::consumableAvailable(int id) const {
+    return std::max(0, consumableOwned(id) - consumableAssigned(id));
+}
 SaveChange SaveDocument::planUnitSupplies(int index, const QVector<int> &supplies,
                                           const Project &project) const {
     if (!canEditUnits())
@@ -594,6 +646,16 @@ SaveChange SaveDocument::planUnitSupplies(int index, const QVector<int> &supplie
             throw Error("Choose an item supported by the Army carrying list");
         count += id != 0;
     }
+    QSet<int> checked;
+    for (int id : supplies)
+        if (id && !checked.contains(id)) {
+            checked << id;
+            const int added = int(std::count(supplies.begin(), supplies.end(), id)) -
+                              int(std::count(it->supplies.begin(), it->supplies.end(), id));
+            if (added > 0 && added > consumableAvailable(id))
+                throw Error(
+                    QString("Item %1 does not have enough unassigned copies in inventory").arg(id));
+        }
     const int at = 0x1971f0 + index * 25;
     auto record = ram_.mid(at, 25);
     if (supplies != it->supplies && count > unitCarryingCapacity(index, project.classData()))

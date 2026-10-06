@@ -60,6 +60,7 @@ class SaveDocument {
     static QVector<int> carryableItems(const Project &);
     int maximumUnitSupply(int index, int slot) const;
     int unitCarryingCapacity(int index, const ClassData &) const;
+    int consumableAvailable(int id) const;
     SaveChange planUnitSupplies(int index, const QVector<int> &, const Project &) const;
     SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                             const ClassData &) const;
@@ -103,6 +104,8 @@ class SaveDocument {
     void validateFormation(const SaveUnit &, const ClassData &) const;
     void validateTransferMember(int, const QVector<SaveUnit> &) const;
     int unitMovementType(const SaveUnit &, const ClassData &) const;
+    int consumableOwned(int id) const;
+    int consumableAssigned(int id) const;
     SaveChange planMembershipChange(const QVector<SaveUnit> &, const ClassData &,
                                     bool resetUnity = true) const;
 };

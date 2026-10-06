@@ -520,14 +520,25 @@ void SaveUnitEditor::refreshSupplies(bool pending) {
         box->clear();
         box->addItem("Empty", 0);
         for (int id : allowed)
-            if (selected >= 0 && id <= editor_->document()->maximumUnitSupply(selected, i))
-                box->addItem(editor_->project()->record(Table::Consumables, id).name.simplified(),
-                             id);
+            if (selected >= 0 && id <= editor_->document()->maximumUnitSupply(selected, i)) {
+                int available = 0;
+                try {
+                    available = editor_->document()->consumableAvailable(id);
+                } catch (const Error &) {
+                    continue;
+                }
+                if (id == values[i] || available > 0)
+                    box->addItem(
+                        editor_->project()->record(Table::Consumables, id).name.simplified(), id);
+            }
         if (box->findData(values[i]) < 0)
             box->addItem(QString("Keep existing item %1").arg(values[i]), values[i]);
         box->setCurrentIndex(box->findData(values[i]));
         box->setEnabled(editable && !pending);
-        box->setToolTip(pending ? "Apply squad changes before editing carried items" : reason);
+        box->setToolTip(pending            ? "Apply squad changes before editing carried items"
+                        : reason.isEmpty() ? "Choose an unassigned copy from owned inventory; "
+                                             "removing a carried item makes it available again"
+                                           : reason);
     }
     const int used =
         int(std::count_if(values.begin(), values.end(), [](int id) { return id != 0; }));

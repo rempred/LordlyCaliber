@@ -76,6 +76,8 @@ if (process.argv[3] !== 'verify') {
     m.w8(0x80190f80, 45); m.w8(0x80190f81, 9); m.w16(0x80190f82, 300);
     m.w16(0x80190f84, 83); m.w16(0x80190f84 + 119 * 2, 44);
     m.w8(0x80191074, 2); m.w8(0x80191074 + 119, 5);
+    // Saved owned inventory includes all carried copies; allocation is rebuilt at load.
+    for(let id=1;id<=31;++id){m.w16(0x80193ac0+(id-1)*4,id);m.w8(0x80193ac3+(id-1)*4,20);}
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x80074494, 0x80000100, 5000000);
     fs.writeFileSync(path.join(dir, 'unit-payload.bin'), Buffer.from(m.ram.slice(m.phys(payload), m.phys(payload) + 6180)));
     fs.writeFileSync(path.join(dir, 'unit-ram.bin'), Buffer.from(m.ram));

@@ -1632,6 +1632,72 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveSquadStockControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("squad-stock-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("stock-two.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1150);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto supply = editor.findChild<QComboBox *>("saveUnitSupply1");
+            QVERIFY(units && supply);
+            units->setCurrentRow(0);
+            QVERIFY(supply->findData(24) >= 0);
+            supply->setCurrentIndex(supply->findData(24));
+            QCOMPARE(editor.document()->consumableAvailable(24), 1);
+            units->setCurrentRow(1);
+            supply->setCurrentIndex(supply->findData(24));
+            QCOMPARE(editor.document()->consumableAvailable(24), 0);
+            units->setCurrentRow(4);
+            QCOMPARE(supply->findData(24), -1);
+            QVERIFY(!editor.edit(SaveTable::Consumables, 23, "count", 1));
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("assigned"));
+            units->setCurrentRow(0);
+            QVERIFY(supply->findData(24) >= 0);
+            supply->setCurrentIndex(supply->findData(0));
+            QCOMPARE(editor.document()->consumableAvailable(24), 1);
+            units->setCurrentRow(4);
+            QVERIFY(supply->findData(24) >= 0);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->consumableAvailable(24), 0);
+            QCOMPARE(supply->findData(24), -1);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->consumableAvailable(24), 1);
+            QVERIFY(supply->findData(24) >= 0);
+            const auto filename = work.filePath("stock.SaveRAM");
+            editor.exportFile(filename);
+            QFile file(filename);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveSquadCreationControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
