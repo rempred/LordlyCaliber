@@ -508,6 +508,109 @@ class SceneActionTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void bodyActionFields() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            auto source = program({0x2a, 0, 0x58, 0, 0, 0, 0x58, 0x7d, 0x80000002, 0x80000000,
+                                   0x80000001, 0xff000008});
+            auto edited = SceneActions::edit(source, 0, 1, "84");
+            edited = SceneActions::edit(edited, 0, 2, "85");
+            auto expected = source.source;
+            put32(expected, 8, 0x54);
+            put32(expected, 24, 0x55);
+            QCOMPARE(edited.source, expected);
+            QCOMPARE(SceneActions::inspect(edited).first().actorOperand, 0);
+            SceneActors actors(project.rom(), 2, 0, [](int, float, float) { return 0.f; });
+            actors.supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+            int value = 0;
+            QVERIFY(actors.service(0x14, {0, 1, 0, 0, 12375, 0, quint32(-2500), 0, 0}, value));
+            const auto position = actors.actor(0)->record().mid(0x11c, 12);
+            QVERIFY(actors.service(0x2a, edited.commands[0].operands, value));
+            QCOMPARE(u32(actors.actor(0)->record(), 0xe8), quint32(0x54));
+            QCOMPARE(u32(actors.actor(0)->record(), 0xec), quint32(0x55));
+            QCOMPARE(u16(actors.actor(0)->record(), 0x138), quint16(0));
+            QCOMPARE(actors.actor(0)->record().mid(0x11c, 12), position);
+            auto retained = edited;
+            for (int field : {1, 2, 3})
+                retained = SceneActions::edit(retained, 0, field, "-1");
+            QVERIFY(actors.service(0x2a, retained.commands[0].operands, value));
+            QCOMPARE(u32(actors.actor(0)->record(), 0xe8), quint32(0x54));
+            QCOMPARE(u32(actors.actor(0)->record(), 0xec), quint32(0x55));
+            const auto before = actors.actor(0)->record();
+            QVERIFY(actors.service(
+                0x2a, SceneActions::edit(edited, 0, 0, "-1").commands[0].operands, value));
+            QCOMPARE(actors.actor(0)->record(), before);
+            actors.setMode(0);
+            QVERIFY(actors.service(0x2a, source.commands[0].operands, value));
+            QCOMPARE(actors.actor(0)->record(), before);
+            auto opaque = source;
+            opaque.commands[0].operands[3] = 0x10000;
+            opaque.commands[0].operands[4] = 0x20000;
+            opaque.commands[0].operands[1] = 0x08880001;
+            opaque = DirectorProgram::decode(opaque.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(opaque, 0, 1, "84"));
+            const auto changed = SceneActions::edit(opaque, 0, 3, "1");
+            auto preserved = opaque.source;
+            put32(preserved, 12, 1);
+            QCOMPARE(changed.source, preserved);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(source, 0, 2, "256"));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(source, 0, 3, "32768"));
+            auto referenced = source;
+            referenced.commands[0].operands[0] = 5;
+            referenced = DirectorProgram::decode(referenced.encode());
+            QCOMPARE(SceneActions::insert(referenced, 1, 7).commands[1].operands[0], quint32(5));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            const SceneId id(0x1fa8bf4 - 0x594284);
+            const auto native = scenes.program(id);
+            int command = -1;
+            for (int i = 0; i < native.commands.size(); ++i)
+                if (native.commands[i].opcode == 0x2a) {
+                    command = i;
+                    break;
+                }
+            QVERIFY(command >= 0);
+            const int pose = native.commands[command].operands[2] == 0 ? 1 : 0;
+            const auto authored = SceneActions::edit(native, command, 3, QString::number(pose));
+            auto expectedNative = native.source;
+            put32(expectedNative, (native.commands[command].word + 3) * 4, quint32(pose));
+            QCOMPARE(authored.source, expectedNative);
+            scenes.replace(id, authored.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, expectedNative);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-body-action-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            const auto &directors = reopened.scenePrograms()->original();
+            for (int selector : scenes.resource(id).selectors)
+                QCOMPARE(directors.entries()[directors.selectors()[selector]].program.source,
+                         expectedNative);
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Rebuilt body action" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void exactFields() {
         SceneActionField coordinate{"X", 0, 0, 1000};
         for (const qint32 value : {qint32(-2147483647 - 1), -12375, -1, 0, 1, 12375, 2147483647})

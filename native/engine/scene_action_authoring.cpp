@@ -217,7 +217,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         for (int i = before - 1; i >= 0; --i) {
             const auto &c = p.commands[i];
             if ((c.opcode == 3 || c.opcode == 0x14 || c.opcode == 7 || c.opcode == 0x15 ||
-                 c.opcode == 0x1c || c.opcode == 0x1d || c.opcode == 0x48) &&
+                 c.opcode == 0x1c || c.opcode == 0x1d || c.opcode == 0x48 || c.opcode == 0x2a) &&
                 c.operands[0] < 28) {
                 slot = c.operands[0];
                 break;

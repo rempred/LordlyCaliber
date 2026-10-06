@@ -104,6 +104,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         case 0x1c:
         case 0x1d:
         case 0x48:
+        case 0x2a:
             action.actorOperand = 0;
             break;
         case 0xbf:
@@ -113,6 +114,15 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             break;
         }
         switch (c.opcode) {
+        case 0x2a:
+            action.name = "Set Actor class and pose";
+            field("Actor slot (-1 skips)", 0, 1, -1, 27);
+            field("Primary class (-1 keeps current)", 1, 1, -1, 255);
+            field("Secondary class (-1 keeps current)", 5, 1, -1, 255);
+            field("Pose ID (-1 keeps current)", 2, 1, -1, 32767);
+            // Keep the independent body flags exactly as authored. Their two
+            // operands are not interchangeable with ordinary Actor facing.
+            break;
         case 0x13:
             action.name = "Release Actor";
             field("Actor slot (-1 selects all)", 0, 1, -1, 27);

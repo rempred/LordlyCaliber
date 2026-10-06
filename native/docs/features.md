@@ -30,6 +30,10 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Existing class-body actions now expose class-pair and pose fields with native retain
+sentinels, preserved body flags, readable symbolic launch values, undo, persistence
+and compiled export/reopen. Generic body creation still requires its launch context.
+
 Live Actor inspection shows current class pairs/art banks and XYZ, retains selected
 slots across seeking, and navigates to the active script's Actor placement/action
 with incomplete-input protection. This is slot-based navigation, not branch provenance.

@@ -173,11 +173,63 @@ class UiTests : public QObject {
             QApplication::processEvents(); QVERIFY(editor.grab().save("native-actor-actions.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
+    void bodyActionEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenePrograms();
+        const SceneId key(0x1fa8bf4 - 0x594284);
+        const auto original = project.scenePrograms()->program(key);
+        int command = -1;
+        for (int i = 0; i < original.commands.size(); ++i)
+            if (original.commands[i].opcode == 0x2a) {
+                command = i;
+                break;
+            }
+        QVERIFY(command >= 0);
+        QUndoStack undo;
+        SceneActionEditor editor(&project, &undo, [] {});
+        editor.resize(1100, 700);
+        editor.show();
+        editor.selectScene(key, command);
+        auto primary = editor.findChild<QLineEdit *>("sceneActionField1");
+        auto secondary = editor.findChild<QLineEdit *>("sceneActionField2");
+        auto pose = editor.findChild<QLineEdit *>("sceneActionField3");
+        QVERIFY(primary && secondary && pose);
+        QVERIFY(primary->isReadOnly() && secondary->isReadOnly());
+        QVERIFY(primary->toolTip().contains("launch event"));
+        QVERIFY(!pose->isReadOnly());
+        const int changed = original.commands[command].operands[2] == 0 ? 1 : 0;
+        pose->setText(QString::number(changed));
+        QMetaObject::invokeMethod(pose, "editingFinished");
+        QCOMPARE(undo.count(), 1);
+        auto expected = original.source;
+        put32(expected, (original.commands[command].word + 3) * 4, quint32(changed));
+        QCOMPARE(project.scenePrograms()->program(key).source, expected);
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->program(key).source, original.source);
+        undo.redo();
+        QCOMPARE(project.scenePrograms()->program(key).source, expected);
+        editor.selectScene(key, command);
+        QCoreApplication::processEvents();
+        QTRY_VERIFY(editor.findChild<QLineEdit *>("sceneActionField3")->isVisible());
+        QCOMPARE(editor.findChild<QLineEdit *>("sceneActionField3")->text(), QString::number(changed));
+        QVERIFY(editor.findChild<QLineEdit *>("sceneActionField1")->text().startsWith("Launch value "));
+        QVERIFY(editor.grab().save("native-body-action.png"));
+        QTemporaryDir work;
+        project.saveFolder(work.filePath("project"));
+        auto reopened = Project::fromRom(project.rom());
+        reopened.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(reopened.scenePrograms()->program(key).source, expected);
+    }
     void structuredSceneActions() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         try {
-            auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
             QUndoStack undo;
             CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
             editor.resize(1400, 850); editor.show();
@@ -220,7 +272,9 @@ class UiTests : public QObject {
             QCOMPARE(reopened.scenePrograms()->program(0x1a14970).source, expected);
             editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
             QVERIFY(editor.grab().save("native-scene-actions.png"));
-        } catch (const std::exception &e) { QFAIL(e.what()); }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
     }
     void cutsceneBackgroundSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

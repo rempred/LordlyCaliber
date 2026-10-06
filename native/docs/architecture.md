@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Existing class-body action fields
+
+The Actions inspector recognizes native0x2A as Set Actor class and pose. It exposes
+the slot, primary/secondary class and pose ID with the exact -1 retain/skip
+sentinels. Symbolic launch operands remain read-only and display Launch valueN.
+The two independent body-flag operands remain intact; they are not ordinary facing
+fields. Noncanonical encodings remain intact in Commands. Later action templates
+now recognize a class-body command's Actor slot when choosing their default.
+
+This edits existing commands. It does not add a generic body-creation template or
+invent a caller army/appearance context. The existing maintained C selection and
+native preview service remain unchanged, including the mode-two restriction.
+
+`scene_action_tests bodyActionFields` passed in1910ms. Pair54/55 and pose0 reached
+the native Actor record with preservedXYZ; retain/skip and mode-zero no-op cases
+passed. Opaque flags/symbolic source and unrelated words stayed exact. A one-word
+pose edit in01FA8BF4 saved, source-built and reopened via stable Director selectors,
+with allocation bounds, CRC and master preservation checked (parent Test ROMs/
+native-body-action-dKJoba). The first reopen test incorrectly used the old physical
+resource key after relocation; the selector-based check corrects that test.
+`exactFields` and `authoringBoundaries` also passed. UI bodyActionEditing plus the
+live-cast/structured-actions/insertion regressions passed5830ms; the final readable
+symbolic-label check passed698ms. The final post-layout visibility/value check
+passed707ms and its capture was inspected. The full native build passed without
+compiler warnings. No natural event launch or new generic roster context is claimed.
+
 ## Live Actor inspection and action navigation
 
 Scene playback lists its currently instantiated Actor slots and displays the chosen

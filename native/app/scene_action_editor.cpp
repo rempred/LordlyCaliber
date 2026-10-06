@@ -138,6 +138,7 @@ bool SceneActionEditor::selectActor(int slot) {
     }
     if (selected < 0)
         return false;
+    const QSignalBlocker guard(list_);
     list_->setCurrentRow(selected);
     showAction();
     emit commandSelected(actions_[selected].command);
@@ -249,6 +250,18 @@ void SceneActionEditor::showAction() {
             input->setToolTip(i >= 4 && i <= 6 ? "X and Y both -1 keep all coordinates. Otherwise "
                                                  "X, Y and Z replace the position together."
                                                : "Use -1 to keep the Actor's current value.");
+        if (action.name == "Set Actor class and pose") {
+            if ((word & 0xffffff00U) == 0x08880000U) {
+                input->setText(QString("Launch value %1").arg(word & 255));
+                input->setToolTip(
+                    "The launch event supplies this value. Its symbolic source remains unchanged.");
+            } else if (f.canonical(word)) {
+                input->setToolTip(
+                    "World scenes apply this to an existing Actor. -1 retains the current "
+                    "value (or skips the command for the slot). Positions are retained; "
+                    "these fields preserve the command's body flags.");
+            }
+        }
         if (action.name == "Room Actor channel")
             input->setToolTip("Room scenes use drawing channels for transforms and layer order. An "
                               "active automatic divider can reassign the channel.");
