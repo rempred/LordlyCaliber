@@ -5039,3 +5039,13 @@ and mixed-member choices, pending drafts, Undo/Redo, file export and reopen work
 the capture was inspected. No natural Army-menu or active-state behavior is claimed.
 
 The complete native build passed (direct-exchange-final-build.log).
+
+
+Portable development package LordlyCaliber-0.5-dev-20261006-052744 includes the
+Soldier reserve, leader and direct exchange workflows through806caf9. Isolated
+check-package.ps1 passed startup, bundled compilation/export, independent record
+readback, reopening and source preservation (2.18 s). The scene package check
+passed browser import,2648 expected program bytes, compilation/export and reopening
+(6.84 s). Evidence directories are parent Test ROMs/native-portable-
+b1a1ef8392704528abc15b7ff9f4211a and portable-scene-import-
+b52082dcc0ea4451859f48c13021a3d4. No clean-machine or natural-game claim.
