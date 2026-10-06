@@ -407,6 +407,20 @@ bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int t
         return false;
     }
 }
+bool SaveEditor::createLegion(int unit) {
+    if (!document_ || !allowImmediateEdit())
+        return false;
+    try {
+        auto change = document_->planCreateLegion(unit, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "create legion"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 bool SaveEditor::joinLegion(int index, int unit) {
     if (!document_ || !allowImmediateEdit())
         return false;

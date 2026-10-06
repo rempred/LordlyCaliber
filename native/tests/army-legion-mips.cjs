@@ -22,6 +22,16 @@ if(mode==='generate'){
   m.w8(squads+2*25+3,0);m.w8(squads+2*25+8,0);for(let i=0;i<4;++i){m.w16(0x80190f84+i*2,83);m.w8(0x80191074+i,2);}
   m.w8(legions+2+missing,255);m.w8(legions+10,7);m.w8(squads+15*25+24,3);m.w8(squads+16*25+24,7);};
  for(let pos=1;pos<5;++pos)variant(`legion-join-${pos}.bin`,()=>joinFixture(pos));
+ const createFixture=()=>{for(const id of[16,17]){m.w8(roster+id*56+17,33);m.w8(roster+id*56+18,33);}m.w8(squads+15*25+3,104);m.w8(squads+15*25+8,8);m.w16(0x80190f84+8,83);m.w8(0x80191078,2);};
+ variant('legion-create-holes.bin',createFixture);
+ variant('legion-create-empty.bin',()=>{createFixture();for(const i of[0,2,4])m.w8(legions+i*11+1,0);m.load(order,Buffer.alloc(6,7));});
+ variant('legion-create-contiguous.bin',()=>{createFixture();for(const i of[2,4])m.w8(legions+i*11+1,0);m.load(order,Buffer.from([0,7,7,7,7,7]));});
+ variant('legion-create-full.bin',()=>{createFixture();for(let i=0;i<6;++i)m.load(legions+i*11,Buffer.from([i+1,1,i,255,255,255,255,0,1,2,2]));m.load(order,Buffer.from([0,1,2,3,4,5]));});
+ variant('legion-create-order.bin',()=>{createFixture();m.w8(order+1,4);});
+ variant('legion-create-number.bin',()=>{createFixture();m.w8(legions+2*11,1);});
+ variant('legion-create-deployed.bin',()=>{createFixture();m.w8(squads+15*25+1,5);});
+ variant('legion-create-dead.bin',()=>{createFixture();m.w16(roster+16*56+24,0);});
+ variant('legion-create-group.bin',()=>{createFixture();m.w16(0x80190f84+8,0);});
  const coordinate=()=>{joinFixture(1);m.w8(roster+17,44);m.w8(roster+18,44);};
  variant('legion-coordinate.bin',coordinate);
  variant('legion-coordinate-swap.bin',()=>{coordinate();m.w8(squads+15*25+3,18);m.w8(squads+15*25+8,8);});
@@ -46,7 +56,7 @@ if(mode==='generate'){
  variant('legion-unrepresented.bin',()=>m.w8(legions+7*11+1,1));
  console.log('Generated saved legions through original save encoder.');process.exit(0);
 }
-assert.ok(['verify','verify-detach','verify-join','verify-coordination'].includes(mode));const detach=mode==='verify-detach',join=mode==='verify-join',coordinate=mode==='verify-coordination',data=JSON.parse(fs.readFileSync(path.join(dir,coordinate?'legion-coordination-verify.json':join?'legion-join-verify.json':detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
+assert.ok(['verify','verify-detach','verify-join','verify-coordination','verify-create'].includes(mode));const detach=mode==='verify-detach',join=mode==='verify-join',coordinate=mode==='verify-coordination',create=mode==='verify-create',data=JSON.parse(fs.readFileSync(path.join(dir,create?'legion-create-verify.json':coordinate?'legion-coordination-verify.json':join?'legion-join-verify.json':detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
 for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buffer.from(row.legions,'hex'),chars=Buffer.from(row.characters,'hex');
  m.load(root,Buffer.alloc(0x3000));m.w32(0x80196af8,root);m.set('sp',0x803f0000);m.load(squads,units);m.load(legions,groups);m.load(roster,chars);m.load(0x80190f80,Buffer.from(row.soldiers,'hex'));m.load(0x80193ac0,Buffer.from(row.inventory,'hex'));
  const ranks=Buffer.from(row.unitOrder,'hex');m.load(0x801977d8,Buffer.alloc(30,255));let count=0;
@@ -61,9 +71,12 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
  }
  m.w32(root+704,count-grouped);m.w32(root+708,count);m.w32(root+1500,legionCount);
  const leaderEligibility=()=>{m.set('a0',18);m.set('a1',0x100);m.set('a2',5);m.call(live(0xc01dc));return m.get('v0')>>>0;};
- if(!join&&!coordinate)assert.equal(leaderEligibility(),10,'ordinary candidate cannot command a current legion');
+ if(!join&&!coordinate&&!create)assert.equal(leaderEligibility(),10,'ordinary candidate cannot command a current legion');
  m.set('a0',row.index);
- if(coordinate){for(const unit of row.changed){m.set('a0',unit);m.call(live(0xb8300));}}else if(join){
+ if(create){m.call(live(0xda730));m.set('a0',10);m.set('a1',row.unit);m.set('a2',0);m.call(live(0xda7d4));
+  m.call(live(0xda66c));assert.equal(m.get('v0'),row.index,'first free active legion');m.set('a0',row.index);m.call(live(0xda514));
+  assert.deepEqual(read(order,6).map(v=>v===255?7:v),Buffer.from(row.afterOrder,'hex'),'native pre-store order appends creation');
+ }else if(coordinate){for(const unit of row.changed){m.set('a0',unit);m.call(live(0xb8300));}}else if(join){
   m.set('a0',row.unit);m.set('a1',25);m.set('a2',1);m.call(live(0xbfeec));assert.equal(m.get('v0')>>>0,0xffffffff,'original candidate eligibility');
   m.set('a0',0);m.call(live(0xbbb34));assert.equal(m.get('v0')+1,5,'original commander Soldier capacity');
   m.set('a0',row.index);m.set('a1',row.unit);m.set('a2',row.slot);m.call(live(0xda7d4));
@@ -72,9 +85,17 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
   m.set('a0',row.index);m.call(live(0xbd26c));m.w8(active+10,m.get('v0'));
   m.set('a0',row.index);m.call(live(0xbd318));m.w8(active+11,m.get('v0'));
  }else m.call(live(0xb7164));
- if(!join&&!coordinate)assert.equal(leaderEligibility(),!detach&&row.index===0?0xffffffff:10,'restriction follows actual legion membership');
+ if(!join&&!coordinate&&!create)assert.equal(leaderEligibility(),!detach&&row.index===0?0xffffffff:10,'restriction follows actual legion membership');
  m.call(live(0xc1d68));
- if(detach||join||coordinate){m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);
+ if(create){
+  const rawOrder=Buffer.from(row.afterOrder,'hex');rawOrder[row.index]=row.index;
+  assert.deepEqual(read(order,6).map(v=>v===255?7:v),rawOrder,'original new-record order overwrite is precisely accounted for');
+  // Native C2090 overwrites an order entry when allocating into a hole. Preserve
+  // the complete pre-store order, then prove native order refresh accepts it.
+  m.load(order,Buffer.alloc(10,255));Buffer.from(row.afterOrder,'hex').forEach((v,i)=>m.w8(order+i,v===7?255:v));
+  m.call(live(0xbb0cc));assert.deepEqual(read(order,6).map(v=>v===255?7:v),Buffer.from(row.afterOrder,'hex'),'product creation order is stable through native refresh');
+ }
+ if(detach||join||coordinate||create){m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);
   m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);}
 
  if(coordinate){for(const unit of row.changed)assert.equal(m.r8(squads+unit*25+24),Buffer.from(row.afterUnits,'hex')[unit*25+24],'native squad movement');}
@@ -85,4 +106,4 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
 }
 for(const row of data.saves){m.load(payload,Buffer.from(row.payload,'hex'));m.set('sp',0x803f0000);m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);
  assert.deepEqual(read(squads,750),Buffer.from(row.units,'hex'));assert.deepEqual(read(legions,110),Buffer.from(row.legions,'hex'));assert.deepEqual(read(order,6),Buffer.from(row.order,'hex'));}
-console.log(`PASS ${data.cases.length} original legion ${coordinate?'finalizer':join?'join':detach?'detach':'disband'}/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);
+console.log(`PASS ${data.cases.length} original legion ${create?'create':coordinate?'finalizer':join?'join':detach?'detach':'disband'}/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);

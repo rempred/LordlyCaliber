@@ -41,6 +41,7 @@ class SaveEditor : public QWidget {
     bool disbandLegion(int index);
     bool detachLegionUnit(int index, int unit);
     bool joinLegion(int index, int unit);
+    bool createLegion(int unit);
     bool swapUnitMembers(int fromUnit, int fromMember, int toUnit, int toMember);
     bool transferUnitMember(int fromUnit, int fromMember, int toUnit, int cell);
     bool moveToReserve(int fromUnit, int fromMember);

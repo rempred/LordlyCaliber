@@ -58,6 +58,8 @@ class SaveDocument {
     SaveChange planDisbandLegion(int index) const;
     SaveChange planDetachLegionUnit(int index, int unit) const;
     int legionCapacity(int index) const;
+    QVector<int> newLegionCommanders(const ClassData &) const;
+    SaveChange planCreateLegion(int unit, const ClassData &) const;
     SaveChange planJoinLegion(int index, int unit, const ClassData &) const;
     QVector<int> reserveMembers() const;
     QVector<int> newUnitLeaders(const ClassData &) const;

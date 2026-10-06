@@ -5330,3 +5330,44 @@ export/reopen and exact Undo/Redo. This changes behavior without adding controls
 No natural Army-menu run is claimed. New legion creation remains next.
 
 The complete native build passed (legion-coordination-final-build.log).
+
+
+## Creating saved legions
+
+The Squads page can create a legion from an independent, undeployed squad with
+a living command-type2 leader. It allocates a free representable saved record
+and unused legion number1..6, preserves the command squad, sets its saved
+commander flag and appends one order entry. Followers join through the existing
+Join legion control within Soldier-supported capacity. Formation, group identity,
+current membership, six-legion capacity, number/order consistency and saved-order
+representation are checked. One Undo restores all affected bytes. A legion may
+start with only its commander and can be disbanded/recreated without stale data.
+
+Original scratch initialization DA730..DA77C (76 bytes), commit DA514..DA66C
+(344 bytes), free-index DA66C..DA69C (48 bytes) and number allocation DA69C..DA730
+(148 bytes) match the read-only Army capture under delta801135A0. The reference
+runs initialization, scratch commander assignment, allocation/commit, full writer
+and packed codec. New record fields match, including saved+8=1 and the low3-bit
+count-derived value2 for a lone commander.
+
+There is an intentional order correction. Original BB0CC appends the new active
+index, but C2090 later overwrites order[activeIndex] with its saved index. Reusing
+a hole can therefore duplicate an entry: existing[0,2,4] becomes[0,1,4,1] after
+creating1, despite the pre-store list[0,2,4,1]. A later original refresh repairs
+membership but changes order. The product retains the complete pre-store list.
+Tests account for the exact original overwrite, compare the other record bytes,
+and prove the product's unique complete list is stable through original BB0CC.
+They do not claim byte-identical reproduction of that original ordering defect.
+
+`save_document_tests legionCreation legionJoining legionSquadCoordination`
+passed in12295ms. Creation covers36 operations (empty, contiguous and vacant-slot
+armies; two commanders; both slots; three layouts), six original creation/store/
+codec comparisons and six original save decodes. Exact memory changes, capacity,
+join, disband/recreate, Undo/reopen and invalid/full/order/number/deployed/dead/
+group guards pass. `ui_tests saveLegionCreationControls saveLegionJoinControls
+saveLegionSquadCoordination` passed in4051ms. Creation, follower assignment,
+capacity states, drafts, full Undo and export/reopen pass; capture inspected.
+No natural Army-menu execution or full Save completion is claimed.
+
+The strengthened original-order assertion passed `legionCreation` in3967ms.
+The complete native build passed (legion-create-final-build.log).

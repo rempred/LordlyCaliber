@@ -61,6 +61,13 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     legion_ = new QLabel;
     legion_->setObjectName("saveUnitLegion");
     body->addWidget(legion_);
+    createLegion_ = new QPushButton("Create a legion from this command squad");
+    createLegion_->setObjectName("saveCreateLegion");
+    body->addWidget(createLegion_);
+    connect(createLegion_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->createLegion(units_->currentItem()->data(Qt::UserRole).toInt());
+    });
     auto legionRow = new QHBoxLayout;
     legionRow->addWidget(new QLabel("Assign this squad to"));
     legionTarget_ = new QComboBox;
@@ -475,6 +482,16 @@ void SaveUnitEditor::refreshSwapTargets() {
                 legion_->setText(QString("Legion %1 · %2 squads").arg(legion.label).arg(count));
                 break;
             }
+    createLegion_->setEnabled(editor_->document() && units_->currentItem() && !pending &&
+                              editor_->document()->legions().size() < 6 &&
+                              editor_->document()
+                                  ->newLegionCommanders(editor_->project()->classData())
+                                  .contains(units_->currentItem()->data(Qt::UserRole).toInt()));
+    createLegion_->setToolTip(
+        pending ? "Apply squad edits before creating a legion"
+                : "Starts a legion with this independent command squad. Add followers with Join "
+                  "legion; "
+                  "each follower requires one Soldier group in the command squad.");
     const int priorLegion = legionTarget_->currentData().toInt();
     legionTarget_->clear();
     if (editor_->document() && editor_->document()->canEditUnits() && shownLegion_ < 0)

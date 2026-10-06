@@ -97,3 +97,11 @@ dialogue sequences; separate native control sections remain in place.
 
 Actor actions include turning, room drawing-channel assignment and release. New
 follow-up actions inherit a nearby Actor slot; all values remain editable.
+
+
+In the Save workspace, regular battery slots support squad creation/disbanding,
+member and Soldier reserve transfers, leader changes, carried-item stock checks,
+and legion creation, joining, detachment and disbanding. Legion capacity follows
+the command squad's Soldier groups. These edits have a separate Undo history;
+export the edited save separately from the ROM project. Active runtime and
+suspend-save squad membership remains read-only.

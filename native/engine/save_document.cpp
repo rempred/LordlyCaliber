@@ -630,6 +630,93 @@ SaveChange SaveDocument::planDetachLegionUnit(int index, int unit) const {
         legion.units[slot + 2] = 255;
     return planLegionMembers(legion);
 }
+QVector<int> SaveDocument::newLegionCommanders(const ClassData &classes) const {
+    QVector<int> result;
+    if (!canEditUnits())
+        return result;
+    for (const auto &unit : units()) {
+        bool assigned = false;
+        for (int row = 0; row < 10; ++row) {
+            const int at = 0x1969b8 + row * 11;
+            if (u8(ram_, at + 1) & 1)
+                for (int slot = 0; slot < 5; ++slot)
+                    assigned |= u8(ram_, at + 2 + slot) == unit.index;
+        }
+        const int leader = unit.members[0];
+        if (assigned || leader < 1 || leader >= 100 ||
+            (u8(ram_, 0x1971f0 + unit.index * 25 + 1) & 4) ||
+            (u8(ram_, roster + leader * stride + 51) & 4) ||
+            !u16(ram_, roster + leader * stride + 24))
+            continue;
+        try {
+            const auto pair = memberClasses(leader);
+            if (classes.commandType(pair.first, pair.second) == 2)
+                result << unit.index;
+        } catch (const Error &) {
+            // Unknown character/class references do not qualify as commanders.
+        }
+    }
+    return result;
+}
+SaveChange SaveDocument::planCreateLegion(int unit, const ClassData &classes) const {
+    if (!newLegionCommanders(classes).contains(unit))
+        throw Error("Choose an independent, undeployed squad with a living command-type2 leader");
+    const auto all = legions();
+    if (all.size() >= 6)
+        throw Error("The regular save already contains six legions");
+    QSet<int> present, labels, ordered;
+    for (const auto &legion : all) {
+        editableLegion(legion.index);
+        if (legion.label < 1 || legion.label > 6 || labels.contains(legion.label))
+            throw Error("Existing legion numbers are inconsistent");
+        present << legion.index;
+        labels << legion.label;
+    }
+    QByteArray order(6, 7);
+    int count = 0;
+    for (int slot = 0; slot < 6; ++slot) {
+        const int id = u8(ram_, 0x193ab0 + slot);
+        if (id == 7)
+            continue;
+        if (!present.contains(id) || ordered.contains(id))
+            throw Error("Saved legion order is inconsistent");
+        ordered << id;
+        order[count++] = char(id);
+    }
+    if (ordered != present)
+        throw Error("Saved legion order cannot represent every active legion");
+    int index = 0;
+    while (index < 7 && (u8(ram_, 0x1969b8 + index * 11 + 1) & 1))
+        ++index;
+    if (index == 7)
+        throw Error("No free legion record can be represented by the regular save order");
+    int label = 1;
+    while (labels.contains(label))
+        ++label;
+    const auto squads = units();
+    const auto commander = std::find_if(squads.begin(), squads.end(),
+                                        [&](const auto &row) { return row.index == unit; });
+    validateFormation(*commander, classes);
+    QByteArray record(11, 0);
+    put8(record, 0, quint8(label));
+    put8(record, 1, 1);
+    put8(record, 2, quint8(unit));
+    for (int i = 3; i < 7; ++i)
+        put8(record, i, 255);
+    put8(record, 8, 1);
+    auto candidate = *this;
+    candidate.apply(candidate.planBytes(0x1969b8 + index * 11, record), true);
+    candidate.legionCapacity(index); // Validate any supporting groups before exposing the change.
+    candidate.apply(candidate.planLegionMembers({index, label, {unit, 255, 255, 255, 255}}), true);
+    const int flag = 0x1971f0 + unit * 25 + 1;
+    candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) | 2))), true);
+    // Keep a complete unique order. Native C2090 can overwrite an earlier entry
+    // when the new active index reuses a hole; its subsequent list repair changes order.
+    order[count] = char(index);
+    candidate.apply(candidate.planBytes(0x193ab0, order), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 int SaveDocument::legionCapacity(int index) const {
     const auto legion = editableLegion(index);
     const auto squads = units();
