@@ -17,6 +17,7 @@
 #include "app/save_editor.h"
 #include "app/scenario_editor.h"
 #include "app/scene_command_editor.h"
+#include "app/scene_action_editor.h"
 #include "app/scene_event_editor.h"
 #include "app/scene_preview.h"
 #include "app/shop_editor.h"
@@ -69,6 +70,55 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void structuredSceneActions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850); editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_VERIFY_WITH_TIMEOUT(scenes->count() > 1000, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole).toUInt() == 0x1a14970) { scenes->setCurrentRow(i); break; }
+            const auto source = project.scenePrograms()->program(0x1a14970);
+            int command = -1;
+            for (const auto &a : SceneActions::inspect(source)) if (a.name == "Move Actor") { command = a.command; break; }
+            QVERIFY(command >= 0);
+            auto actions = editor.findChild<SceneActionEditor *>("sceneActionEditor");
+            QVERIFY(actions);
+            auto list = actions->findChild<QListWidget *>("sceneActionList");
+            for (int i = 0; i < list->count(); ++i)
+                if (list->item(i)->data(Qt::UserRole).toInt() == command) { list->setCurrentRow(i); break; }
+            auto field = actions->findChild<QLineEdit *>("sceneActionField3");
+            QVERIFY(field); QCOMPARE(field->accessibleName(), QString("Target X"));
+            QCOMPARE(editor.findChild<QTableWidget *>("cutsceneCommands")->currentRow(), command);
+            field->setText("-12.375");
+            auto expected = source.source; put32(expected, source.commands[command].word * 4 + 16, quint32(-12375));
+            QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            QCOMPARE(editor.findChild<QLineEdit *>("sceneOperand3")->text(), QString("-12375"));
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, source.source);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            field = actions->findChild<QLineEdit *>("sceneActionField3");
+            QVERIFY(field); QCOMPARE(field->text(), QString("-12.375"));
+            field->setText("-"); QVERIFY(actions->property("invalidEdits").toBool());
+            QVERIFY(!scenes->isEnabled());
+            QVERIFY(!editor.findChild<SceneCommandEditor *>("sceneCommandEditor")->isEnabled());
+            QVERIFY(!editor.findChild<QComboBox *>("cutsceneBackgroundChoice")->isEnabled());
+            QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            actions->findChild<QPushButton *>("sceneActionDiscard")->click();
+            QVERIFY(!actions->property("invalidEdits").toBool()); QVERIFY(scenes->isEnabled());
+            auto raw = editor.findChild<QLineEdit *>("sceneOperand3");
+            raw->setText("-"); QVERIFY(!actions->isEnabled());
+            editor.findChild<QPushButton *>("sceneCommandDiscard")->click(); QVERIFY(actions->isEnabled());
+            QTemporaryDir work; project.saveFolder(work.path());
+            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(reopened.scenePrograms()->program(0x1a14970).source, expected);
+            editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
+            QVERIFY(editor.grab().save("native-scene-actions.png"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void cutsceneBackgroundSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

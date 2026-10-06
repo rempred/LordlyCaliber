@@ -18,6 +18,7 @@ class QTabWidget;
 namespace lordly {
 class Project;
 class SceneCommandEditor;
+class SceneActionEditor;
 class TransformPreview;
 class ScenePreview;
 class CutsceneEditor : public QWidget {
@@ -42,6 +43,8 @@ class CutsceneEditor : public QWidget {
     void refreshBackgroundEdit();
     void previewBackgroundChoice();
     void applyBackgroundChoice(bool restore);
+    bool invalidSceneInput() const;
+    void refreshSceneInputState();
     Rom rom_;
     Project *project_ = nullptr;
     QUndoStack *undo_ = nullptr;
@@ -50,6 +53,7 @@ class CutsceneEditor : public QWidget {
     QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
                 *removeScene_ = nullptr, *wipeScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
+    SceneActionEditor *actionEditor_ = nullptr;
     TransformPreview *transformPreview_ = nullptr;
     ScenePreview *scenePreview_ = nullptr;
     std::optional<Directors> directors_;

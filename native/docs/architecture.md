@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Native action fields
+
+The Cutscenes Actions inspector derives structured fields directly from the native
+scene program. It covers Actor creation/state/movement, both cameras, screen fades,
+scale/opacity and exact registered-counter wait compounds, including A-skippable
+waits. Positions and camera angles use exact three-decimal conversion from the
+stored signed words. Durations remain game update counts, not guessed wall-clock
+timestamps. Rows retain script order; native conditions still control execution.
+Noncanonical encodings remain intact and read-only in the typed fields, with the
+Commands inspector available. No second action document or browser compiler is
+introduced into native editing.
+
+A recognized wait retains its arm, handoff, barrier, yield, comparison and reset;
+only its target changes. Unknown control arrangements are not silently flattened.
+New action insertion and timeline scheduling remain separate unfinished work.
+The two inspectors share scene undo and selection. Incomplete input in either
+blocks the other, scene selection and background editing, and reaches the existing
+save/export guard. Movement tooltips explain the current-position sentinel and
+speed/duration precedence from the maintained motion source.
+
+`scene_action_tests` passed in2824ms: exact negative/32-bit coordinate conversion,
+precision and overflow refusals, untouched-word and noncanonical-byte preservation,
+ordinary/skippable waits with equality/greater-or-equal gates at1/2/30/120 updates,
+A-skip and counter reset through the maintained native dispatcher. Its existing
+original-MIPS qualification is reused; this is not a new full-game timing claim.
+A real movement edit in resource01A14970 also persisted, compiled, exported and
+reopened with valid references, allocation bounds, CRC and preserved master.
+Candidate: parent Test ROMs/native-scene-action-MthcdN. `ui_tests
+structuredSceneActions cutsceneBackgroundSelection` passed in2333ms, covering shared
+selection/undo, incomplete-input guards, background regression and project reopen.
+The Actions capture was inspected. The complete native build passed without compiler warnings.
+
 ## Cutscene background authoring
 
 Background preview now offers current-ROM scene groups or environments, preview

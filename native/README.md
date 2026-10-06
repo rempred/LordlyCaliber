@@ -57,6 +57,13 @@ background. Restore original and Undo preserve your other scene edits. Actor pos
 do not move with the setting. Inherited or gameplay-chosen scenery remains controlled
 by the game; those scenes explain why direct selection is unavailable.
 
+The Cutscenes Actions tab edits movement, placement, cameras, fades, scale, opacity
+and recognized waits with named fields. Coordinates use game units and durations use
+update counts. The list follows script order; conditions can change when actions run.
+Actions and Commands share Undo. Complete or discard unfinished input before saving,
+exporting or choosing another scene. New action insertion and timeline scheduling
+are still being migrated.
+
 For scripting:
 
 ```powershell

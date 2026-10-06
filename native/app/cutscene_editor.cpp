@@ -1,4 +1,5 @@
 #include "app/cutscene_editor.h"
+#include "app/scene_action_editor.h"
 #include <QUndoStack>
 #include "app/actor_pose_editor.h"
 #include "app/sprite_library_command.h"
@@ -207,21 +208,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 commandEditor_->selectCommand(selectedScene(), row);
         });
         connect(commandEditor_, &SceneCommandEditor::programChanged, this, [this] {
-            const bool valid = !commandEditor_->property("invalidEdits").toBool();
-            commands_->setEnabled(valid);
-            scenes_->setEnabled(valid);
-            mode_->setEnabled(valid);
-            if (!valid) {
-                backgroundChoice_->setEnabled(false);
-                backgroundApply_->setEnabled(false);
-                backgroundRestore_->setEnabled(false);
-            }
-            if (valid)
-                reloadScenes();
-            else
-                for (auto button :
-                     {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
-                    button->setEnabled(false);
+            refreshSceneInputState();
         });
     } else
         pages->addTab(commands_, "Source commands");
@@ -316,6 +303,16 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             });
     if (project_)
         pages->addTab(new SceneEventEditor(project_, undo_, changed), "Event launches");
+    if (project_) {
+        actionEditor_ = new SceneActionEditor(project_, undo_, changed);
+        pages->addTab(actionEditor_, "Actions");
+        connect(actionEditor_, &SceneActionEditor::commandSelected, this,
+                [this](int command) { commands_->setCurrentCell(command, 0); });
+        connect(actionEditor_, &SceneActionEditor::validityChanged, this,
+                &CutsceneEditor::refreshSceneInputState);
+        connect(commands_, &QTableWidget::currentCellChanged, this,
+                [this](int command, int, int, int) { actionEditor_->selectCommand(command); });
+    }
     detailLayout->addWidget(pages, 1);
     split->addWidget(details);
     split->setSizes({310, 1000});
@@ -346,6 +343,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     });
     connect(catalogTabs_, &QTabWidget::currentChanged, this, [this, pages](int tab) {
         pages->setTabEnabled(1, tab == 0);
+        if (actionEditor_) pages->setTabEnabled(pages->indexOf(actionEditor_), tab == 0);
         mode_->setEnabled(tab == 0);
         requests_->setEnabled(tab == 0);
         images_->setEnabled(tab == 0);
@@ -398,6 +396,28 @@ SceneId CutsceneEditor::selectedScene() const {
     const auto authored = item->data(Qt::UserRole + 1).toString();
     return authored.isEmpty() ? SceneId(item->data(Qt::UserRole).toUInt())
                               : SceneId::authored(authored);
+}
+bool CutsceneEditor::invalidSceneInput() const {
+    return (commandEditor_ && commandEditor_->property("invalidEdits").toBool()) ||
+           (actionEditor_ && actionEditor_->property("invalidEdits").toBool());
+}
+void CutsceneEditor::refreshSceneInputState() {
+    const bool valid = !invalidSceneInput();
+    commands_->setEnabled(valid);
+    scenes_->setEnabled(valid);
+    mode_->setEnabled(valid);
+    if (commandEditor_)
+        commandEditor_->setEnabled(!actionEditor_ || !actionEditor_->property("invalidEdits").toBool());
+    if (actionEditor_)
+        actionEditor_->setEnabled(!commandEditor_ || !commandEditor_->property("invalidEdits").toBool());
+    if (valid) reloadScenes();
+    else {
+        backgroundChoice_->setEnabled(false);
+        backgroundApply_->setEnabled(false);
+        backgroundRestore_->setEnabled(false);
+        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
+            button->setEnabled(false);
+    }
 }
 const ScenePrograms &CutsceneEditor::programs() const {
     return project_ ? *project_->scenePrograms() : *readOnlyPrograms_;
@@ -550,7 +570,7 @@ void CutsceneEditor::removeScene() {
     }
 }
 void CutsceneEditor::selectScene() {
-    if (commandEditor_ && commandEditor_->property("invalidEdits").toBool())
+    if (invalidSceneInput())
         return;
     if (!directors_ || !scenes_->currentItem() || catalogTabs_->currentIndex() != 0)
         return;
@@ -606,6 +626,8 @@ void CutsceneEditor::selectScene() {
                               0);
     if (commandEditor_)
         commandEditor_->selectCommand(key, commands_->currentRow());
+    if (actionEditor_)
+        actionEditor_->selectScene(key, commands_->currentRow());
     const QSignalBlocker block(requests_);
     requests_->clear();
     for (const auto &r : backgrounds_.requests)

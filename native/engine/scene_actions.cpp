@@ -1,0 +1,141 @@
+#include "engine/scene_actions.h"
+#include <QRegularExpression>
+#include <limits>
+namespace lordly {
+bool SceneActionField::canonical(quint32 word) const {
+    const auto value = qint64(qint32(word));
+    return value >= minimum && value <= maximum;
+}
+QString SceneActionField::text(quint32 word) const {
+    return scale == 1 ? QString::number(qint32(word))
+                      : QString::number(double(qint32(word)) / scale, 'f', 3);
+}
+quint32 SceneActionField::parse(const QString &text) const {
+    const auto input = text.trimmed();
+    qint64 value = 0;
+    bool valid = false;
+    if (scale == 1)
+        value = input.toLongLong(&valid, input.startsWith("0x", Qt::CaseInsensitive) ? 16 : 10);
+    else {
+        const auto match = QRegularExpression("^([+-]?)([0-9]+)(?:\\.([0-9]{1,3}))?$").match(input);
+        if (match.hasMatch()) {
+            const auto whole = match.captured(2).toLongLong(&valid);
+            const auto fraction = match.captured(3).leftJustified(3, '0').toInt();
+            if (valid && whole <= (std::numeric_limits<qint64>::max() - fraction) / scale) {
+                value = whole * scale + fraction;
+                if (match.captured(1) == "-")
+                    value = -value;
+            } else
+                valid = false;
+        }
+    }
+    if (!valid || value < minimum || value > maximum)
+        throw Error(
+            scale == 1
+                ? "Enter a whole number within this field's range."
+                : "Enter a position or angle with at most three decimal places within its range.");
+    return quint32(value);
+}
+QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
+    QVector<SceneAction> result;
+    const auto &commands = program.commands;
+    for (int i = 0; i < commands.size(); ++i) {
+        const auto &c = commands[i];
+        SceneAction action{i, 1, {}, {}};
+        auto field = [&](QString name, int operand, int scale = 1, qint64 minimum = -2147483648LL,
+                         qint64 maximum = 2147483647LL, int offset = 0) {
+            action.fields << SceneActionField{name, offset, operand, scale, minimum, maximum};
+        };
+        bool wait = i + 5 < commands.size() && c.opcode == 1 && commands[i + 1].opcode == 0 &&
+                    commands[i + 2].opcode == 0x80000002 && commands[i + 3].opcode == 0x80000000 &&
+                    (commands[i + 4].opcode == 0xe || commands[i + 4].opcode == 0xb5) &&
+                    commands[i + 4].operands.size() == 2 && commands[i + 5].opcode == 2;
+        if (wait) {
+            const auto &query = commands[i + 4];
+            wait = (query.operands[0] == 0 || query.operands[0] == 2) && query.operands[1] > 0 &&
+                   query.operands[1] <= 0x7fffffff;
+        }
+        if (wait) {
+            action.name = commands[i + 4].opcode == 0xb5 ? "Wait (A button can skip)" : "Wait";
+            action.commandCount = 6;
+            field("Duration (updates)", 1, 1, 1, 2147483647, 4);
+            result << action;
+            i += 5;
+            continue;
+        }
+        switch (c.opcode) {
+        case 3:
+        case 0x14:
+            action.name = c.opcode == 3 ? "Set Actor pose and position" : "Create Actor";
+            field("Actor slot", 0, 1, c.opcode == 3 ? -1 : 0, 27);
+            field("Art bank", 1);
+            field("Animation", 2);
+            field("Facing", 3);
+            field("X", 4, 1000);
+            field("Y", 5, 1000);
+            field("Z", 6, 1000);
+            if (c.opcode == 0x14)
+                field("Depth flag", 7, 1, 0, 255);
+            field("Variant", c.opcode == 3 ? 7 : 8);
+            break;
+        case 7:
+            action.name = "Move Actor";
+            field("Actor slot", 0, 1, 0, 27);
+            field("Start X", 1, 1000);
+            field("Start Z", 2, 1000);
+            field("Target X", 3, 1000);
+            field("Target Z", 4, 1000);
+            field("Duration (updates)", 5);
+            field("Speed", 6);
+            break;
+        case 0x1b:
+            action.name = "Screen fade";
+            field("Duration (updates)", 0, 1, 0, 65535);
+            field("Red", 1, 1, 0, 255);
+            field("Green", 2, 1, 0, 255);
+            field("Blue", 3, 1, 0, 255);
+            field("Start opacity (-1 keeps current)", 4, 1, -1, 255);
+            field("Target opacity", 5, 1, 0, 255);
+            break;
+        case 0x1d:
+        case 0x48:
+            action.name = c.opcode == 0x1d ? "Scale Actor" : "Actor opacity";
+            field("Actor slot (-1 selects all)", 0, 1, -1, 27);
+            field(c.opcode == 0x1d ? "Scale (%)" : "Opacity", 1, 1,
+                  c.opcode == 0x1d ? -2147483648LL : 0, c.opcode == 0x1d ? 2147483647LL : 255);
+            break;
+        case 0x35:
+        case 0x36:
+            action.name = c.opcode == 0x36 ? "Actor camera" : "Background camera";
+            field("Target X", 0, 1000);
+            field("Target Y", 1, 1000);
+            field("Target Z", 2, 1000);
+            field("Eye X", 3, 1000);
+            field("Eye Y", 4, 1000);
+            field("Eye Z", 5, 1000);
+            field("Field of view (degrees)", 6, 1000);
+            break;
+        default:
+            continue;
+        }
+        result << action;
+    }
+    return result;
+}
+DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCommand, int field,
+                                   const QString &value) {
+    for (const auto &action : inspect(program))
+        if (action.command == actionCommand) {
+            if (field < 0 || field >= action.fields.size())
+                throw Error("Select an action field");
+            const auto &f = action.fields[field];
+            const auto &source = program.commands[action.command + f.commandOffset];
+            if (!f.canonical(source.operands[f.operand]))
+                throw Error("This source encoding requires the Commands inspector");
+            auto result = program;
+            result.commands[action.command + f.commandOffset].operands[f.operand] = f.parse(value);
+            return DirectorProgram::decode(result.encode());
+        }
+    throw Error("Select a supported scene action");
+}
+} // namespace lordly

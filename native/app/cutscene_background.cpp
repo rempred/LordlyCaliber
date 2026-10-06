@@ -72,7 +72,7 @@ void CutsceneEditor::refreshBackgroundEdit() {
             selected = 0;
         }
         backgroundChoice_->setCurrentIndex(selected);
-        const bool valid = !commandEditor_->property("invalidEdits").toBool();
+        const bool valid = !invalidSceneInput();
         backgroundChoice_->setEnabled(valid && !backgroundOptions_[route].isEmpty());
         const auto original = BackgroundEdit::inspect(rom_, programs().resource(key).program);
         backgroundRestore_->setEnabled(valid && original.editable() &&
@@ -88,7 +88,7 @@ void CutsceneEditor::previewBackgroundChoice() {
         return;
     const int selector = backgroundChoice_->currentData().toInt();
     const bool pending = selector >= 0 && selector != backgroundEdit_.selector;
-    backgroundApply_->setEnabled(pending && !commandEditor_->property("invalidEdits").toBool());
+    backgroundApply_->setEnabled(pending && !invalidSceneInput());
     backgroundHelp_->setText(
         pending
             ? "Previewing this choice. Apply to change the scene; Actor positions stay as authored."
@@ -103,7 +103,7 @@ void CutsceneEditor::previewBackgroundChoice() {
     selectImage(images_->currentData().toString());
 }
 void CutsceneEditor::applyBackgroundChoice(bool restore) {
-    if (!project_ || commandEditor_->property("invalidEdits").toBool())
+    if (!project_ || invalidSceneInput())
         return;
     try {
         const auto key = selectedScene();
