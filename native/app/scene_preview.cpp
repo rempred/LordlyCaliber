@@ -1,5 +1,6 @@
 #include "app/scene_preview.h"
 #include "engine/class_data.h"
+#include "engine/save_document.h"
 #include "engine/scene_images.h"
 #include "engine/scene_story_cast.h"
 #include "engine/text.h"
@@ -8,6 +9,7 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QGridLayout>
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QLabel>
@@ -39,29 +41,92 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     launchImageUi_->hide();
     layout->addWidget(launchImageUi_);
     storyCastUi_ = new QWidget;
-    auto castRow = new QHBoxLayout(storyCastUi_);
+    auto castRow = new QGridLayout(storyCastUi_);
     castRow->setContentsMargins(0, 0, 0, 0);
-    castRow->addWidget(new QLabel("Preview cast"));
+    castRow->addWidget(new QLabel("Primary class"), 0, 0);
+    castRow->addWidget(new QLabel("Secondary class"), 1, 0);
     const auto classes = ClassData::load(rom_);
+    classCount_ = int(classes.entries().size());
     const auto sample = SceneStoryCast::sample();
+    castSource_ = new QLabel("Sample cast");
+    castSource_->setObjectName("sceneCastSource");
+    castSource_->setWordWrap(true);
+    auto changedCast = [this] {
+        if (!storyCastEnabled_)
+            return;
+        castSource_->setText("Manual preview cast");
+        inputHistory_.clear();
+        pressedHistory_.clear();
+        restart();
+    };
     for (int i = 0; i < 5; ++i) {
         auto choice = storyCast_[i] = new QComboBox;
+        auto secondary = storySecondary_[i] = new QComboBox;
         choice->setObjectName(QString("sceneCast%1").arg(i));
-        choice->setToolTip(
-            "Declared sample cast for this preview; the game selects from the player's army.");
+        secondary->setObjectName(QString("sceneCastSecondary%1").arg(i));
+        choice->setAccessibleName(QString("Actor %1 primary class").arg(i));
+        secondary->setAccessibleName(QString("Actor %1 secondary class").arg(i));
+        choice->setToolTip("Primary class controls this story Actor's dialogue branch.");
+        secondary->setToolTip(
+            "Retain the independent secondary class supplied by the launch event.");
         for (int id : SceneStoryCast::choices())
-            if (id < classes.entries().size())
+            if (id < classCount_)
                 choice->addItem(decodeText(classes.entries()[id].name), id);
+        for (int id = 1; id < classCount_; ++id)
+            secondary->addItem(decodeText(classes.entries()[id].name), id);
         choice->setCurrentIndex(choice->findData(sample[i].primary));
-        castRow->addWidget(choice, 1);
-        connect(choice, &QComboBox::currentIndexChanged, this, [this] {
-            if (!storyCastEnabled_)
-                return;
-            inputHistory_.clear();
-            pressedHistory_.clear();
-            restart();
+        secondary->setCurrentIndex(secondary->findData(sample[i].secondary));
+        castRow->addWidget(choice, 0, i + 1);
+        castRow->addWidget(secondary, 1, i + 1);
+        castRow->setColumnStretch(i + 1, 1);
+        connect(choice, &QComboBox::currentIndexChanged, this, [this, i, changedCast] {
+            const QSignalBlocker guard(storySecondary_[i]);
+            storySecondary_[i]->setCurrentIndex(
+                storySecondary_[i]->findData(storyCast_[i]->currentData()));
+            changedCast();
         });
+        connect(secondary, &QComboBox::currentIndexChanged, this, changedCast);
     }
+    auto castTools = new QHBoxLayout;
+    savedCast_ = new QPushButton("Use open save");
+    savedCast_->setObjectName("sceneUseSavedCast");
+    savedCast_->setEnabled(false);
+    savedCast_->setToolTip("Use the five class pairs stored in the Save workspace's selected slot. "
+                           "This does not rerun the story event's army selection.");
+    auto resetCast = new QPushButton("Use sample cast");
+    resetCast->setObjectName("sceneResetCast");
+    castTools->addWidget(savedCast_);
+    castTools->addWidget(resetCast);
+    castTools->addWidget(castSource_, 1);
+    castRow->addLayout(castTools, 2, 0, 1, 6);
+    auto applyCast = [this](const std::array<StoryCastMember, 5> &cast, const QString &source) {
+        for (int i = 0; i < 5; ++i) {
+            const QSignalBlocker primary(storyCast_[i]), secondary(storySecondary_[i]);
+            storyCast_[i]->setCurrentIndex(storyCast_[i]->findData(cast[i].primary));
+            storySecondary_[i]->setCurrentIndex(storySecondary_[i]->findData(cast[i].secondary));
+        }
+        castSource_->setText(source);
+        inputHistory_.clear();
+        pressedHistory_.clear();
+        if (storyCastEnabled_)
+            restart();
+    };
+    connect(resetCast, &QPushButton::clicked, this,
+            [applyCast] { applyCast(SceneStoryCast::sample(), "Sample cast"); });
+    connect(savedCast_, &QPushButton::clicked, this, [this, applyCast] {
+        try {
+            const auto save = saveProvider_ ? saveProvider_() : nullptr;
+            if (!save)
+                throw Error("Open a save in the Save workspace and select a slot first");
+            const auto cast = SceneStoryCast::saved(*save, classCount_);
+            const auto slot = save->selectedSlot();
+            applyCast(cast, slot < 0     ? "Saved launch cast from the open runtime state"
+                            : slot == 15 ? "Saved launch cast from the suspend slot"
+                                         : QString("Saved launch cast from slot %1").arg(slot + 1));
+        } catch (const Error &e) {
+            castSource_->setText(QString("Cast unchanged: %1").arg(QString::fromUtf8(e.what())));
+        }
+    });
     storyCastUi_->hide();
     layout->addWidget(storyCastUi_);
     dialogueNamesUi_ = new QWidget;
@@ -282,11 +347,31 @@ ScenePreview::~ScenePreview() {
 }
 void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provider) {
     portraits_=std::move(provider);
-    if(dialogueDrawing_)dialogueDrawing_->setPortraitProvider(portraits_);
+    if (dialogueDrawing_)
+        dialogueDrawing_->setPortraitProvider(portraits_);
     refreshPortraits();
 }
 void ScenePreview::setBodyAnimations(BodyAnimationData::Pointer animations) {
-    bodyAnimations_=std::move(animations);
+    bodyAnimations_ = std::move(animations);
+    const auto classes = bodyAnimations_ ? bodyAnimations_->classes() : ClassData::load(rom_);
+    classCount_ = int(classes.entries().size());
+    bool removed = false;
+    for (int i = 0; i < 5; ++i) {
+        const QSignalBlocker primary(storyCast_[i]), secondary(storySecondary_[i]);
+        for (int row = 0; row < storyCast_[i]->count(); ++row)
+            storyCast_[i]->setItemText(
+                row, decodeText(classes.entries()[storyCast_[i]->itemData(row).toInt()].name));
+        const int prior = storySecondary_[i]->currentData().toInt();
+        storySecondary_[i]->clear();
+        for (int id = 1; id < classCount_; ++id)
+            storySecondary_[i]->addItem(decodeText(classes.entries()[id].name), id);
+        const int selected =
+            prior > 0 && prior < classCount_ ? prior : storyCast_[i]->currentData().toInt();
+        removed |= selected != prior;
+        storySecondary_[i]->setCurrentIndex(storySecondary_[i]->findData(selected));
+    }
+    if (removed)
+        castSource_->setText("A removed preview class was reset to its primary class");
     refreshPortraits();
 }
 void ScenePreview::setArtwork(const ActorArtworkEdits &edits) {
@@ -297,8 +382,8 @@ void ScenePreview::setArtwork(const ActorArtworkEdits &edits) {
     refreshPortraits();
 }
 void ScenePreview::refreshPortraits() {
-    if(current_) {
-        const auto target=seekTarget_>=0?seekTarget_:tick_;
+    if (current_) {
+        const auto target = seekTarget_ >= 0 ? seekTarget_ : tick_;
         restart();
         seek(target);
     }
@@ -467,7 +552,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             "Scattered props use a fixed preview seed. Launch bindings and audio remain "
             "unfinished.");
         if (storyCastEnabled_)
-            context_->setText(context_->text() + "\nThis scene uses the selected sample cast. Its "
+            context_->setText(context_->text() + "\nThis scene uses the selected preview class pairs. Its "
                                                  "authored positions stay unchanged.");
         context_->setText(
             context_->text() +
@@ -487,6 +572,10 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         present();
         status_->setText(QString::fromUtf8(e.what()));
     }
+}
+void ScenePreview::setSaveProvider(std::function<const SaveDocument *()> provider) {
+    saveProvider_ = std::move(provider);
+    savedCast_->setEnabled(bool(saveProvider_));
 }
 void ScenePreview::restart() {
     stop();
@@ -520,7 +609,7 @@ void ScenePreview::restart() {
             auto cast = SceneStoryCast::sample();
             for (int i = 0; i < 5; ++i)
                 cast[i] = {quint8(storyCast_[i]->currentData().toInt()),
-                           quint8(storyCast_[i]->currentData().toInt())};
+                           quint8(storySecondary_[i]->currentData().toInt())};
             start.translations = SceneStoryCast::translations(cast);
         }
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,

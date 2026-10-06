@@ -9,6 +9,8 @@
 #include "engine/scene_playback.h"
 #include "engine/scene_panels.h"
 #include "engine/scene_story_cast.h"
+#include "engine/save_document.h"
+#include "game/classes/save_format.h"
 #include "engine/scene_programs.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
@@ -155,7 +157,7 @@ class SceneRuntimeTests : public QObject {
         QVERIFY(SceneStoryCast::supports(resource.program));
         const auto source = resource.program.encode();
         const std::array<StoryCastMember, 5> casts[]{
-            SceneStoryCast::sample(), {{{0x54, 0x54}, {0x56, 0x56}, {0x61, 0x61}, {4, 4}, {2, 2}}}};
+            SceneStoryCast::sample(), {{{0x54, 0x55}, {0x56, 0x57}, {0x61, 0x61}, {4, 4}, {2, 2}}}};
         for (const auto &cast : casts) {
             ScenePlaybackStart start;
             start.mode = 2;
@@ -194,6 +196,78 @@ class SceneRuntimeTests : public QObject {
         auto invalid = SceneStoryCast::sample();
         invalid[0].primary = 0x33;
         QVERIFY_THROWS_EXCEPTION(Error, SceneStoryCast::translations(invalid));
+    }
+    void savedStoryCast() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFINDTESTDATA("story-cast-save-mips.cjs"), work.path()});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+            qInfo().noquote() << generator.readAllStandardOutput();
+            auto read = [&](const QString &name) {
+                QFile f(work.filePath(name));
+                if (!f.open(QIODevice::ReadOnly))
+                    throw Error("Missing saved-cast fixture");
+                return f.readAll();
+            };
+            QByteArray battery(0x10000, char(0x6d));
+            for (int slot : {0, 1}) {
+                const int at = int(lc_save_record_offset(slot, 0));
+                battery[at + 12] = 0;
+                battery.replace(at + 0x2a, 6180, read(QString("cast-%1.bin").arg(slot)));
+                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(battery.data() + at),
+                                            lc_save_record_size(slot, 0), slot, 0));
+            }
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            const std::array<StoryCastMember, 5> expected[]{
+                {{{0x54, 0x55}, {0x56, 0x57}, {0x61, 0x61}, {4, 4}, {2, 2}}},
+                SceneStoryCast::sample()};
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto save = SaveDocument::open(rom, input);
+                for (int slot : {0, 1}) {
+                    save.selectSlot(slot);
+                    const auto memory = save.memory();
+                    const auto cast = SceneStoryCast::saved(save, 165);
+                    const auto translations = SceneStoryCast::translations(cast);
+                    for (int i = 0; i < 5; ++i) {
+                        QCOMPARE(cast[i].primary, expected[slot][i].primary);
+                        QCOMPARE(cast[i].secondary, expected[slot][i].secondary);
+                        QCOMPARE(translations.values[i + 1], quint16(expected[slot][i].primary));
+                        QCOMPARE(translations.values[i + 6], quint16(expected[slot][i].secondary));
+                    }
+                    QCOMPARE(save.memory(), memory);
+                    QCOMPARE(save.serialize(), input);
+                }
+            }
+            const auto raw = read("cast-0-ram.bin");
+            const auto saved = SceneStoryCast::saved(SaveDocument::open(rom, raw), 165);
+            QCOMPARE(saved[0].primary, quint8(0x54));
+            QCOMPARE(saved[0].secondary, quint8(0x55));
+            auto invalid = raw;
+            invalid[0x19367c] = 0;
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     SceneStoryCast::saved(SaveDocument::open(rom, invalid), 165));
+            invalid = raw;
+            put8(invalid, 0x193681, 255);
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     SceneStoryCast::saved(SaveDocument::open(rom, invalid), 165));
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     SceneStoryCast::saved(SaveDocument::open(rom, raw), 32));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
     }
     void confirmationPanelsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

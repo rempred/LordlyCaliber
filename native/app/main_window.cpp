@@ -238,6 +238,10 @@ void MainWindow::installProject(Project project) {
         undoGroup_->addStack(save->undoStack());
         connect(save, &SaveEditor::changed, this, &MainWindow::updateStatus);
         workspaces_->addTab(save, "Save");
+        if (auto cutscenes = workspaces_->findChild<CutsceneEditor *>())
+            cutscenes->setSaveProvider([save]() -> const SaveDocument * {
+                return save->document() ? &*save->document() : nullptr;
+            });
     }
     updateStatus();
 }

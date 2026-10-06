@@ -31,6 +31,7 @@
 #include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
 #include <QAction>
+#include <QAbstractProxyModel>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -1984,6 +1985,144 @@ class UiTests : public QObject {
         QCOMPARE(scenes.json(), before);
         preview.selectScene(scenes, scenes.original().entries().first().key, 2);
         QVERIFY(!first->isVisible());
+    }
+    void savedStoryCastPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess generator;
+        generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("story-cast-save-mips.cjs"),
+                                 work.path()});
+        QVERIFY(generator.waitForFinished(30000));
+        QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+        QByteArray battery(0x10000, 0);
+        for (int slot : {0, 1}) {
+            QFile f(work.filePath(QString("cast-%1.bin").arg(slot)));
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const int at = int(lc_save_record_offset(slot, 0));
+            battery.replace(at + 0x2a, 6180, f.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(battery.data() + at),
+                                        lc_save_record_size(slot, 0), slot, 0));
+        }
+        MainWindow window;
+        window.resize(1600, 1050);
+        window.show();
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SaveEditor *>(), 20000);
+        auto save = window.findChild<SaveEditor *>();
+        auto cutscenes = window.findChild<CutsceneEditor *>();
+        auto preview = window.findChild<ScenePreview *>();
+        QVERIFY(save && cutscenes && preview);
+        window.findChild<QTabWidget *>()->setCurrentWidget(cutscenes);
+        cutscenes->findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(preview);
+        auto sceneList = cutscenes->findChild<QListWidget *>("cutsceneScenes");
+        QVERIFY(sceneList);
+        QTRY_VERIFY_WITH_TIMEOUT(sceneList->count() >= 1498, 20000);
+        for (int row = 0; row < sceneList->count(); ++row)
+            if (sceneList->item(row)->data(Qt::UserRole).toUInt() == 0x1fa8bf4 - 0x594284)
+                sceneList->setCurrentRow(row);
+        auto scenes = ScenePrograms::load(rom);
+        const quint32 key = 0x1fa8bf4 - 0x594284;
+        auto program = scenes.program(key);
+        for (auto &command : program.commands)
+            if (command.opcode == 0x1b) {
+                command.operands[4] = 0;
+                command.operands[5] = 0;
+                break;
+            }
+        scenes.replace(key, program.encode());
+        const auto before = scenes.json();
+        preview->selectScene(scenes, key, 2);
+        auto use = preview->findChild<QPushButton *>("sceneUseSavedCast");
+        auto reset = preview->findChild<QPushButton *>("sceneResetCast");
+        auto source = preview->findChild<QLabel *>("sceneCastSource");
+        auto primary = preview->findChild<QComboBox *>("sceneCast0");
+        auto secondary = preview->findChild<QComboBox *>("sceneCastSecondary0");
+        auto position = preview->findChild<QSpinBox *>("scenePosition");
+        auto status = preview->findChild<QLabel *>("scenePlaybackStatus");
+        QVERIFY(use->isEnabled());
+        use->click();
+        QVERIFY(source->text().contains("Open a save"));
+        QCOMPARE(primary->currentData().toInt(), 0x58);
+        save->loadBytes(battery);
+        use->click();
+        QCOMPARE(primary->currentData().toInt(), 0x54);
+        QCOMPARE(secondary->currentData().toInt(), 0x55);
+        QVERIFY(source->text().contains("slot 1"));
+        QVERIFY2(!preview->property("sceneStopped").toBool(), qPrintable(status->text()));
+        QCoreApplication::processEvents();
+        QVERIFY(preview->isVisible());
+        position->setValue(3);
+        QTRY_VERIFY2(preview->property("sceneTick").toInt() == 3, qPrintable(status->text()));
+        QVERIFY2(!preview->property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto fromSave = preview->renderedFrame();
+        position->setValue(1);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
+        position->setValue(3);
+        QTRY_VERIFY2(preview->property("sceneTick").toInt() == 3, qPrintable(status->text()));
+        QCOMPARE(preview->renderedFrame(), fromSave);
+        QCoreApplication::processEvents();
+        QVERIFY(window.grab().save("scene-saved-cast.png"));
+        secondary->setCurrentIndex(secondary->findData(0x54));
+        QCOMPARE(preview->property("sceneTick").toInt(), 0);
+        QCOMPARE(primary->currentData().toInt(), 0x54);
+        QCOMPARE(source->text(), QString("Manual preview cast"));
+        use->click();
+        QCOMPARE(secondary->currentData().toInt(), 0x55);
+        auto slot = save->findChild<QComboBox *>("saveSlot");
+        slot->setCurrentIndex(slot->findData(1));
+        use->click();
+        QCOMPARE(primary->currentData().toInt(), 0x58);
+        QCOMPARE(secondary->currentData().toInt(), 0x58);
+        QVERIFY(source->text().contains("slot 2"));
+        auto invalid = save->document()->memory();
+        put8(invalid, 0x193681, 255);
+        save->loadBytes(invalid);
+        use->click();
+        QVERIFY(source->text().contains("Cast unchanged"));
+        QCOMPARE(primary->currentData().toInt(), 0x58);
+        QCOMPARE(secondary->currentData().toInt(), 0x58);
+        QCOMPARE(save->document()->serialize(), invalid);
+        save->loadBytes(battery);
+        use->click();
+        reset->click();
+        QCOMPARE(primary->currentData().toInt(), 0x58);
+        QCOMPARE(secondary->currentData().toInt(), 0x58);
+        QCOMPARE(source->text(), QString("Sample cast"));
+        auto proxy = qobject_cast<QAbstractProxyModel *>(window.findChild<QTableView *>("classesTable")->model());
+        QVERIFY(proxy);
+        auto classes = qobject_cast<RecordModel *>(proxy->sourceModel());
+        QVERIFY(classes);
+        const int added = classes->appendClass(0x55, "Cast companion");
+        QCOMPARE(added, 165);
+        QCOMPARE(secondary->itemText(secondary->findData(added)), QString("Cast companion"));
+        auto withAdded = save->document()->memory();
+        put8(withAdded, 0x193681, quint8(added));
+        save->loadBytes(withAdded);
+        use->click();
+        QCOMPARE(primary->currentData().toInt(), 0x54);
+        QCOMPARE(secondary->currentData().toInt(), added);
+        position->setValue(3);
+        QTRY_VERIFY2(preview->property("sceneTick").toInt() == 3, qPrintable(status->text()));
+        QVERIFY2(!preview->property("sceneStopped").toBool(), qPrintable(status->text()));
+        // The active project undo stack removes the new class, not any save bytes.
+        auto undoGroup = window.findChild<QUndoGroup *>();
+        QVERIFY(undoGroup);
+        undoGroup->undo();
+        QCOMPARE(secondary->findData(added), -1);
+        QCOMPARE(secondary->currentData().toInt(), 0x54);
+        QVERIFY(source->text().contains("removed preview class"));
+        QCOMPARE(save->document()->serialize(), withAdded);
+        save->loadBytes(battery);
+        reset->click();
+        QCOMPARE(save->document()->serialize(), battery);
+        QCOMPARE(save->undoStack()->count(), 0);
+        QCOMPARE(scenes.json(), before);
+        QVERIFY(!window.isWindowModified());
     }
     void panelPreviewSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

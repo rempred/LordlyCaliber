@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/director_session.h"
 namespace lordly {
+class SaveDocument;
 struct StoryCastMember {
     quint8 primary, secondary;
 };
@@ -11,6 +12,7 @@ class SceneStoryCast {
     static bool supports(const DirectorProgram &);
     static QVector<int> choices();
     static std::array<StoryCastMember, 5> sample();
+    static std::array<StoryCastMember, 5> saved(const SaveDocument &, int classCount);
     static DirectorLaunchTranslations translations(const std::array<StoryCastMember, 5> &);
 };
 } // namespace lordly

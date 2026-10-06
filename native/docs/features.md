@@ -30,9 +30,12 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
-Dynamic event66/67 scenes expose five preview cast selectors. Launch translations
-change bodies and dialogue branches while preserving authored coordinates; these
-sample choices do not edit the game army or scene source.
+Dynamic event66/67 scenes expose five paired primary/secondary preview selectors.
+They can use the open Save workspace's selected-slot launch cast, with source labels,
+validation and sample restore. Project class additions/names and undo reach the
+selectors. Launch translations change bodies and dialogue branches while preserving
+authored coordinates; these choices do not edit the game army or scene source.
+Saved inputs do not rerun the parent event's current-army cast selection.
 Scene playback now displays edited dialogue with native text/window execution,
 current-ROM artwork, explicit preview names and recorded confirm/choice input.
 Window state and input survive seeking and checkpoints. Actor anchors use current

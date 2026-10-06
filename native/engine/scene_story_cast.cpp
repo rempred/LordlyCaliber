@@ -1,4 +1,5 @@
 #include "engine/scene_story_cast.h"
+#include "engine/save_document.h"
 namespace lordly {
 bool SceneStoryCast::supports(const DirectorProgram &program) {
     QSet<int> indexes, sources, owners;
@@ -27,6 +28,24 @@ QVector<int> SceneStoryCast::choices() {
 }
 std::array<StoryCastMember, 5> SceneStoryCast::sample() {
     return {{{0x58, 0x58}, {0x59, 0x59}, {0x5a, 0x5a}, {0x5b, 0x5b}, {0x5c, 0x5c}}};
+}
+std::array<StoryCastMember, 5> SceneStoryCast::saved(const SaveDocument &save, int classCount) {
+    // Event source-bank getters ROM46314/46324, resident RAM80170414/80170424.
+    // The current-ROM save descriptor preserves all ten bytes. These are the
+    // saved launch inputs, not a new execution of event67's army selection.
+    const auto &memory = save.memory();
+    if (memory.size() < 0x193686)
+        throw Error("The selected save has no complete story launch cast");
+    std::array<StoryCastMember, 5> cast;
+    const auto allowed = choices();
+    for (int i = 0; i < 5; ++i) {
+        cast[i] = {u8(memory, 0x19367c + i), u8(memory, 0x193681 + i)};
+        if (!allowed.contains(cast[i].primary) || cast[i].primary >= classCount ||
+            !cast[i].secondary || cast[i].secondary >= classCount)
+            throw Error("The selected save has no compatible five-person story launch cast; "
+                        "choose preview classes manually");
+    }
+    return cast;
 }
 DirectorLaunchTranslations
 SceneStoryCast::translations(const std::array<StoryCastMember, 5> &cast) {

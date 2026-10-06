@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Saved story-cast preview inputs
+
+The five-person story preview now has independent primary/secondary selectors and
+Use open save / Use sample cast controls. The open Save workspace's selected slot
+supplies its ten saved launch-bank bytes. The preview reports the source slot,
+validates all pairs before applying them, and preserves the current cast if the
+save is absent or incompatible. It never edits the save, scene or project.
+
+Primary changes choose their matching secondary as an editable default; manual
+secondary changes preserve the primary. Project class names and additions reach
+the selectors. Undoing a class addition clears an invalid secondary reference,
+returns it to the current primary and explains the change. Seeking restarts with
+the chosen pairs and retains the existing preview input-history rules.
+
+These are saved launch inputs, not a fresh execution of event67's army selection.
+The original source-bank getters are resident ROM46314/46324, RAM80170414/80170424,
+reading8019367C..80 and80193681..85. The current-ROM save descriptor preserves all
+ten bytes at eight bits each. The existing row66 classifier/translation contract
+and literal scene coordinates remain unchanged; full roster launch state is separate.
+
+`scene_runtime_tests savedStoryCast storyCastLaunch` passed in515ms: original
+getter checks for20 source bytes, original-packer fixtures, both slots in three
+battery layouts plus raw RAM, distinct secondary pairs, refusal cases, exact
+save/master preservation and Actor class/coordinate readback. `ui_tests
+savedStoryCastPreview storyCastPreview stagedAnimationPreviewAndUndo` passed
+in3250ms through the MainWindow/Save/Cutscenes connection, including deterministic
+seek, missing/invalid input, slot changes, added class165 and its removal by undo.
+The saved-cast capture was inspected. The full native build passed without
+compiler warnings. Initial fixture/async-catalog setup errors
+were corrected; they did not indicate a native runtime failure. These checks do
+not establish a natural story-event launch or infer the current army's new cast.
+
 ## Saved nonleader transfers
 
 The Save Squads page now moves ordinary nonleaders to empty cells in another

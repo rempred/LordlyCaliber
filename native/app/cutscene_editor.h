@@ -17,6 +17,7 @@ class QGraphicsPixmapItem;
 class QTabWidget;
 namespace lordly {
 class Project;
+class SaveDocument;
 class SceneCommandEditor;
 class SceneActionEditor;
 class TransformPreview;
@@ -26,6 +27,7 @@ class CutsceneEditor : public QWidget {
   public:
     explicit CutsceneEditor(const Rom &rom, QWidget *parent = nullptr, Project *project = nullptr,
                             QUndoStack *undo = nullptr, std::function<void()> changed = {});
+    void setSaveProvider(std::function<const SaveDocument *()>);
 
   private:
     void selectScene();

@@ -394,6 +394,9 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         }
     }));
 }
+void CutsceneEditor::setSaveProvider(std::function<const SaveDocument *()> provider) {
+    scenePreview_->setSaveProvider(std::move(provider));
+}
 SceneId CutsceneEditor::selectedScene() const {
     const auto item = scenes_->currentItem();
     if (!item)

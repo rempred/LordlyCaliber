@@ -19,6 +19,7 @@ class QGraphicsScene;
 class QComboBox;
 class QLineEdit;
 namespace lordly {
+class SaveDocument;
 // Interactive PC reference stage. Unknown game services stop the preview.
 // Completed draw snapshots keep ordinary UI repaints from advancing tint.
 class ScenePreview : public QWidget {
@@ -32,6 +33,7 @@ class ScenePreview : public QWidget {
     void refreshPortraits();
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
+    void setSaveProvider(std::function<const SaveDocument *()> provider);
     const QImage &renderedFrame() const {
         return frame_;
     }
@@ -107,7 +109,11 @@ class ScenePreview : public QWidget {
     QWidget *launchImageUi_;
     QComboBox *launchImage_;
     QWidget *storyCastUi_;
-    std::array<QComboBox *, 5> storyCast_{};
+    std::array<QComboBox *, 5> storyCast_{}, storySecondary_{};
+    std::function<const SaveDocument *()> saveProvider_;
+    QPushButton *savedCast_;
+    QLabel *castSource_;
+    int classCount_ = 0;
     bool storyCastEnabled_ = false;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
