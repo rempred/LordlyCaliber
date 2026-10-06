@@ -791,7 +791,13 @@ class SceneRuntimeTests : public QObject {
                 QSKIP("Private ROM required");
             const auto rom = Rom::open(path);
             auto scenes = ScenePrograms::load(rom);
-            const auto source = scenes.original().entries().first();
+            DirectorResource source;
+        for (const auto &candidate : scenes.original().entries())
+            if (!candidate.selectors.isEmpty() && candidate.selectors.first() != 0) {
+                source = candidate;
+                break;
+            }
+        QVERIFY(source.key);
             QVector<quint32> words{0x3a, 2, 0, 0, 0, 70, 70, 130, 8};
             for (int i = 0; i < 40; ++i)
                 words << 0 << 0x80000000U;
@@ -948,11 +954,154 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(motion.record(),beforeJob);QCOMPARE(context,invalidContext);QCOMPARE(channel,beforeChannel);
         qInfo()<<updates<<"original image-motion update snapshots agree";
     }
+    void pathSpritePlayback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        DirectorResource source;
+        for (const auto &candidate : scenes.original().entries())
+            if (!candidate.selectors.isEmpty() && candidate.selectors.first() != 0) {
+                source = candidate;
+                break;
+            }
+        QVERIFY(source.key);
+        const QVector<quint32> words{
+            0x49,        0,
+            3,           0,
+            90,          quint32(-1),
+            3,           0,
+            0,           1,
+            0x63,        0,
+            30,          1,
+            0,           48,
+            0,           180,
+            quint32(-1), 0,
+            quint32(-1), 0,
+            0x80000000U, 0x63,
+            0,           0,
+            0,           0,
+            0,           0,
+            180,         4,
+            0,           0,
+            0,           0x80000000U,
+            0x4b,        0,
+            0,           0,
+            0x80000000U, 0x63,
+            0,           0,
+            0,           0,
+            0,           0,
+            180,         quint32(-1),
+            0,           0,
+            0,           0x80000000U,
+            0x80000001U, 0xff000000U | quint32(source.program.resourceClass())};
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(source.key, bytes);
+        ScenePlaybackStart start;
+        start.mode = 0;
+        ScenePlayback scene(rom, scenes.runtimeDirectors(), source.selectors.first(), start,
+                            SceneCameras::freshModeTwo(rom));
+        scene.supplyImageView(QByteArray(0x848, 0));
+        const auto empty = [](LordlySceneService) { return true; };
+        QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+        QVERIFY(scene.sprites().sprite(0));
+        const auto first = scene.sprites().sprite(0)->record();
+        QCOMPARE(qint16(u16(first, 0x40)), scene.ribbons().rotation(-1, 0));
+        const auto identity = scene.sprites().identity(0);
+        auto checkpoint = scene;
+        QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+        QCOMPARE(qint16(u16(scene.sprites().sprite(0)->record(), 0x40)),
+                 SceneRibbons(rom).rotation(4, 0));
+        QCOMPARE(scene.sprites().identity(0), identity);
+        QCOMPARE(checkpoint.sprites().sprite(0)->record(), first);
+        QCOMPARE(checkpoint.advance(empty), ScenePlayback::Advanced);
+        QCOMPARE(checkpoint.sprites().sprite(0)->record(), scene.sprites().sprite(0)->record());
+        QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+        QVERIFY(scene.ribbons().empty());
+        QVERIFY(!checkpoint.ribbons().empty());
+        const auto angle = u16(scene.sprites().sprite(0)->record(), 0x40);
+        QCOMPARE(scene.advance(empty), ScenePlayback::Suspended);
+        QVERIFY(scene.reason().contains("existing sampled scene path"));
+        QCOMPARE(scene.sprites().identity(0), identity);
+        QCOMPARE(u16(scene.sprites().sprite(0)->record(), 0x40), angle);
+        // The pending replacement is passed to path lookup, while failed lookup
+        // retains the prior sprite rather than committing half of a command.
+        SceneSprites sprites(rom);
+        int value = 0;
+        QVERIFY(sprites.service(0x46, {0, 30, 1, 0, 12, 13, 1, 100, 0}, value));
+        const auto before = sprites.sprite(0)->record();
+        bool called = false;
+        SceneSprites::PreparedRotation reject = [&](qint32 group, qint32 entry, int slot,
+                                                    const SpritePosePlayer &prepared) -> qint16 {
+            called = group == 3 && entry == 0 && slot == 0 &&
+                     qint32(u32(prepared.record(), 0x24)) == 48 &&
+                     qint32(u32(prepared.record(), 0x28)) == -23;
+            throw Error("Missing linked path marker");
+        };
+        QVERIFY_THROWS_EXCEPTION(
+            Error,
+            sprites.service(0x63, {0, 30, 1, 0, 48, 23, 180, 3, 0, quint32(-1)}, value, reject));
+        QVERIFY(called);
+        QCOMPARE(sprites.sprite(0)->record(), before);
+        // A custom resource path links its first point to the sprite being
+        // replaced. It must see the prepared position, not the previous record.
+        auto customBytes = rom.bytes();
+        const auto groupTable = u32(customBytes, 0x1a8d7a6 + 0x594280 + 4 + 4 * 4);
+        QByteArray points(24, 0);
+        put32(points, 0, 0);
+        put32(points, 12, quint32(-1));
+        put32(points, 16, 48);
+        put32(points, 20, 100);
+        QByteArray packed(4, 0);
+        put32(packed, 0, quint32(points.size()));
+        packed += encodeLzss(points);
+        const auto at = customBytes.size();
+        put32(customBytes, groupTable + 0x594280 + 4, quint32(at - 0x594280));
+        customBytes.resize(at + 4);
+        put32(customBytes, at, quint32(packed.size()));
+        customBytes += packed;
+        while (customBytes.size() % 4) customBytes.append(char(0));
+        const auto customRom = Rom::fromBytes(customBytes);
+        auto customScenes = ScenePrograms::load(customRom);
+        const QVector<quint32> linkedWords{
+            0x46,0,30,1,0,999,13,1,100,0,
+            0x63,0,30,1,0,48,23,180,4,0,quint32(-1),
+            0,0x80000000U,0x80000001U,
+            0xff000000U|quint32(source.program.resourceClass())};
+        QByteArray linkedBytes(linkedWords.size()*4,0);
+        for(int i=0;i<linkedWords.size();++i)put32(linkedBytes,i*4,linkedWords[i]);
+        customScenes.replace(source.key,linkedBytes);
+        ScenePlayback linked(customRom,customScenes.runtimeDirectors(),source.selectors.first(),
+                             start,SceneCameras::freshModeTwo(customRom));
+        QCOMPARE(linked.advance(empty),ScenePlayback::Advanced);
+        QVERIFY(linked.sprites().sprite(0));
+        QCOMPARE(qint16(u16(linked.sprites().sprite(0)->record(),0x40)),qint16(0));
+        QCOMPARE(qint32(u32(linked.sprites().sprite(0)->record(),0x24)),48);
+    }
     void imageMotionPlayback() {
-        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
-        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);const auto source=scenes.original().entries().first();
-        const QVector<quint32> words{0x76,0,0,99,12,6,1,3,0,0x80000000U,0x80000001U,0xff000000U|quint32(source.program.resourceClass())};
-        QByteArray script(words.size()*4,0);for(int i=0;i<words.size();++i)put32(script,i*4,words[i]);scenes.replace(source.key,script);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        DirectorResource source;
+        for (const auto &candidate : scenes.original().entries())
+            if (!candidate.selectors.isEmpty() && candidate.selectors.first() != 0) {
+                source = candidate;
+                break;
+            }
+        QVERIFY(source.key);
+        const QVector<quint32> words{
+            0x76, 0,           0,           99,
+            12,   6,           1,           3,
+            0,    0x80000000U, 0x80000001U, 0xff000000U | quint32(source.program.resourceClass())};
+        QByteArray script(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(script, i * 4, words[i]);
+        scenes.replace(source.key, script);
         ScenePlaybackStart start;start.mode=0;
         ScenePlayback scene(rom,scenes.runtimeDirectors(),source.selectors.first(),start,SceneCameras::freshModeTwo(rom));
         const auto empty=[](LordlySceneService){return true;};

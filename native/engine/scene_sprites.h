@@ -14,8 +14,11 @@ class SceneSprites {
     // The path owner resolves sampled/resource headings and owns the native
     // temporary resource-path slot 19 lifecycle. Declining must not mutate it.
     using Rotation = std::function<qint16(qint32 group, qint32 entry)>;
+    using PreparedRotation =
+        std::function<qint16(qint32 group, qint32 entry, int slot, const SpritePosePlayer &)>;
     explicit SceneSprites(const Rom &rom) : rom_(rom) {}
-    bool service(quint32 opcode, const QVector<quint32> &args, int &value);
+    bool service(quint32 opcode, const QVector<quint32> &args, int &value,
+                 const PreparedRotation &rotation = {});
     bool advancePoses(int instructionBudget = 256);
     const SpritePosePlayer *sprite(int slot) const;
     void supplyRecord(int slot, const QByteArray &record);

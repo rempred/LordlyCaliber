@@ -1,5 +1,30 @@
 #include "path_curve.h"
 #include <math.h>
+float lordly_path_angle(float numerator, float denominator, const LordlyPathAngleConstants *c) {
+    if (denominator == 0.f) {
+        if (numerator == 0.f)
+            return 0.f;
+        return c->axis[numerator > 0.f ? 0 : 1];
+    }
+    float ratio = numerator / denominator;
+    float t = fabsf(ratio) <= 1.f ? ratio : 1.f / ratio;
+    float fraction = 0.f;
+    for (int n = 14; n >= 1; --n) {
+        float product = (float)(n * n) * t;
+        product = product * t;
+        float divisor = (float)(n * 2 + 1) + fraction;
+        fraction = product / divisor;
+    }
+    float angle = t / (1.f + fraction);
+    if (ratio > 1.f)
+        angle = (float)(c->quadrant[0] - (double)angle);
+    if (ratio < -1.f)
+        angle = (float)(c->quadrant[1] - (double)angle);
+    if (denominator > 0.f)
+        return angle;
+    return numerator > 0.f ? (float)((double)angle + c->quadrant[2])
+                           : (float)((double)angle - c->quadrant[3]);
+}
 static uint32_t get32(const uint8_t *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }

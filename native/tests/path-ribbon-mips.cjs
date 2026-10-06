@@ -24,12 +24,22 @@ for(const pc of [0x80070f30,0x80071c04])m.trap(pc,c=>{const size=c.get('a0');c.s
 m.trap(0x800712c4,c=>c.set('v0',0));m.trap(0x80089a10,c=>c.set('v0',0));
 m.trap(0x80093380,c=>m.load(c.get('a0'),Buffer.alloc(c.get('a1'))));
 m.trap(0x80080998,c=>m.load(c.get('a0'),read(c.get('a1'),c.get('a2'))));
-m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
+// Execute the game's continued-fraction atan2; host libm changes integer headings.
+m.load(0x8009cfe0,rom.subarray(0x2d3e0,0x2d850));
+m.load(0x800aed00,rom.subarray(0x3f100,0x3f500));
+m.load(0x8024189c,rom.subarray(0x2b669c,0x2b68b4));
+m.load(0x80242140,rom.subarray(0x2b6f40,0x2b7098));
 m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
 m.trap(0x80242298,c=>{}); // Vertex packing only; actual centerline/edges execute.
 m.trap(0x80240ae0,c=>{const x=c.r32(c.get('a0')),y=c.r32(c.get('a1'));points.forEach((p,i)=>{c.writeFloat(x+i*4,p[0]);c.writeFloat(y+i*4,p[1]);});c.set('v0',points.length);});
 function initialize(){heap=0x80310000;m.load(ctx,Buffer.alloc(0x848));m.load(root,Buffer.alloc(0x2400));m.w32(0x8022a970,ctx);m.w32(0x8022a974,root);m.w16(0x800e8100,0);}
 const stored=key=>Buffer.from(OB64.art.readResource(rom,key).stored);
+const angles=[];
+for(const x of [-32768,-512,-23,-1,-0.001,0,0.001,1,23,512,32767])
+ for(const y of [-32768,-512,-31,-1,-0.001,0,0.001,1,31,512,32767]){
+  m.setSingle(12,x);m.setSingle(14,y);call(0x8009cfe0);
+  angles.push({x,y,bits:m.fp[0]});
+ }
 const directory=stored(0x1a8d7a6),rows=[];let nulls=0;
 for(let group=0;group<directory.length/4;group++){
  const table=stored(directory.readUInt32BE(group*4));
@@ -53,9 +63,13 @@ for(let group=0;group<directory.length/4;group++){
    call(0x8024049c);steps.push({set,release,record:read(record,0x88).toString('hex')});
   }
   for(let i=0;i<9;++i)call(0x8024049c);assert.equal(m.r32(root+0x19f4),0);
-  rows.push({group,entry,key,points,markers,args,sampled,initial,steps});
+  initialize();points.forEach((p,i)=>{m.writeFloat(sourceX+i*4,p[0]);m.writeFloat(sourceY+i*4,p[1]);});
+  const temporary=0x80303800;m.load(temporary,Buffer.alloc(0x70));
+  call(0x8024189c,[sourceX,sourceY,points.length,temporary]);
+  const resourceHeading=m.r16(temporary+8)<<16>>16;
+  rows.push({group,entry,key,points,markers,args,sampled,initial,steps,resourceHeading});
  }
 }
 assert.equal(rows.length,121);assert.equal(nulls,13);
-fs.writeFileSync(process.argv[3],JSON.stringify({rows,nulls}));
-console.log(`${rows.length} retail paths: 400-sample curves, full constructor state and45 update/retarget/fade snapshots each. Native sampler/builder/reveal code executes; browser decompression, marker coordinates, allocation, libm and vertex packing controlled.`);
+fs.writeFileSync(process.argv[3],JSON.stringify({rows,nulls,angles}));
+console.log(`${rows.length} retail paths: 400-sample curves, full constructor state and45 update/retarget/fade snapshots each. Native sampler/builder/reveal/atan2 and temporary resource-path heading code execute; browser decompression, marker coordinates, allocation, sin/cos and vertex packing controlled.`);

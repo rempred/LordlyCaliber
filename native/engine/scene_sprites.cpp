@@ -77,7 +77,8 @@ SpritePosePlayer SceneSprites::create(const QVector<quint32> &args) const {
     advanceImmediate(result);
     return result;
 }
-bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &value,
+                           const PreparedRotation &rotationSource) {
     int width;
     switch (opcode) {
     case 0x46:
@@ -131,9 +132,10 @@ bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &va
         if (args[8] == 0xffffffffU)
             rotation = half(args[6]);
         else {
-            if (!rotation_)
+            if (!rotationSource && !rotation_)
                 throw Error("Scene-sprite rotation requires its current path state");
-            rotation = rotation_(word(args[7]), word(args[8]));
+            rotation = rotationSource ? rotationSource(word(args[7]), word(args[8]), slot, *next)
+                                      : rotation_(word(args[7]), word(args[8]));
         }
         next->setRotation(rotation);
         sprites_[slot] = std::move(next);

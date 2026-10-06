@@ -314,6 +314,29 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         schedule_.alternate = 0;
         return true;
     }
+    if (opcode == 0x63) {
+        // This callback is consumed synchronously. Copies/checkpoints retain no
+        // pointer to an earlier playback owner or its path records.
+        return sprites_.service(
+            opcode, args, value,
+            [this](qint32 group, qint32 entry, int slot, const SpritePosePlayer &prepared) {
+                QMap<int, QPointF> markers;
+                if (group != -1) {
+                    for (int i = 0; i < 30; ++i)
+                        if (const auto sprite = sprites_.sprite(i)) {
+                            const auto record = sprite->record();
+                            markers[i] = QPointF(float(qint32(u32(record, 0x24))),
+                                                 float(qint32(u32(record, 0x28))));
+                        }
+                    // Native creation precedes path lookup; a linked point can
+                    // reference this new/replaced sprite, including immediate pose motion.
+                    const auto record = prepared.record();
+                    markers[slot] =
+                        QPointF(float(qint32(u32(record, 0x24))), float(qint32(u32(record, 0x28))));
+                }
+                return ribbons_.rotation(group, entry, markers);
+            });
+    }
     if ((audio_ && audio_->service(opcode, args)) || actors_.service(opcode, args, value) ||
         sprites_.service(opcode, args, value) ||
         projection_.service(schedule_.mode, opcode, args) ||

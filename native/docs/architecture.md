@@ -4675,3 +4675,44 @@ invalid input, read-only launch values, selection routing and raw-path fallback
 pass. Capture inspected. The underlying sprite runtime and source remain unchanged,
 so their existing original-instruction comparisons apply. Natural event launch is
 not established by these authoring/export checks.
+
+
+## Sprite orientation from native paths
+
+Scene playback now supplies Director63 with sampled-path and resource-path headings.
+The visible ribbon owner retains native starting/ending headings in record+74/+76;
+resource lookup evaluates a temporary path without replacing a visible ribbon.
+Both derive the starting tangent from sample2 minus sample0 after the original
+400-sample length pass and dense resampling. Separate current-ROM degree constants
+remain distinct. Missing sampled paths, invalid/empty resources and missing linked
+markers suspend explicitly and preserve the prior sprite.
+
+The heading calculation uses maintained C reconstructed from resident ROM2D3E0 /
+RAM8009CFE0, including its single-precision continued fraction and ROM constants.
+Host atan2 is not equivalent at integer truncation boundaries: numerator1,
+denominator1 produces44 degrees with the original routine, versus45 using host
+libm. This C is a desktop adaptation, not an accepted matching-Decomp claim.
+Resource sampler ROM2B669C and sampled builder ROM2B7424 use overlay delta7FF8B200;
+the early-boot mapping is used only for the resident angle routine/constants.
+
+Path lookup receives the staged new/replacement sprite after its immediate pose
+update, so linked points can see the correct position before commit. The callback
+is synchronous and not retained in snapshots. Resource-path evaluation owns no
+persistent native slot19 in this implementation; other unimplemented path owners
+continue to suspend when their commands/services are requested.
+
+`image_tests pathRibbonsAgainstMips` passed1208ms. The fixture executes the actual
+angle, both path samplers and existing ribbon lifecycle instructions.121 finite
+axis/diagonal/ratio cases match the C's float bits; all121 nonempty retail paths
+match starting/ending sampled headings and temporary-resource headings. Existing
+curve and45 update snapshots per path still agree. Allocation, decoding, sin/cos
+and vertex packing remain controlled; the original atan2 is no longer substituted.
+`scene_runtime_tests pathSpritePlayback imageMotionPlayback irisPlaybackLifecycle`
+passed504ms: both heading routes, independent copied owners, missing-path retention,
+prepared-sprite rollback and a custom in-memory resource linked to the replaced
+sprite pass. The last two older fixtures now select a non-title script; their old
+first-resource selector0 ran the title scheduler and skipped the expected updates.
+`ui_tests pathSpritePreviewSeek pathRibbonPreviewSeek` passed2963ms; visible sprites
+and ribbons replay exactly through35->124->35 and restart. Earlier direct-rotation
+and sprite-selection UI regressions also pass. Capture inspected. This qualifies
+offline runtime and desktop preview, not a natural event launch or N64 rasterization.

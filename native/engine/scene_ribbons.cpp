@@ -56,6 +56,39 @@ SceneRibbons::SceneRibbons(const Rom &rom) : rom_(rom) {
                                        u32(rom.bytes(), 0x2a8b94));
     for (int i = 0; i < 5; ++i)
         margins_[i] = qint16(u16(rom.bytes(), 0x2b8b00 + i * 2));
+    auto real = [&](int at) {
+        return std::bit_cast<double>((quint64(u32(rom.bytes(), at)) << 32) |
+                                     u32(rom.bytes(), at + 4));
+    };
+    for (int i = 0; i < 2; ++i)
+        angles_.axis[i] = std::bit_cast<float>(u32(rom.bytes(), 0x3f140 + i * 4));
+    for (int i = 0; i < 4; ++i)
+        angles_.quadrant[i] = real(0x3f148 + i * 8);
+    headingConstants_[0] = {real(0x2b8b40), real(0x2b8b48)}; // Sampled scene path.
+    headingConstants_[1] = {real(0x2b8b28), real(0x2b8b30)}; // Temporary resource path.
+}
+qint16 SceneRibbons::heading(QPointF from, QPointF to, bool resourcePath) const {
+    const float dx = float(to.x()) - float(from.x()), dy = float(to.y()) - float(from.y());
+    if (!std::isfinite(dx) || !std::isfinite(dy))
+        throw Error("Path heading has nonfinite coordinates");
+    const double radians = lordly_path_angle(dx, dy, &angles_);
+    const auto &constants = headingConstants_[resourcePath ? 1 : 0];
+    const float degrees = float(radians * constants[0] / constants[1]);
+    if (!std::isfinite(degrees) || degrees < -32768.f || degrees > 32767.f)
+        throw Error("Path heading exceeds the native rotation range");
+    return qint16(degrees);
+}
+qint16 SceneRibbons::rotation(qint32 group, qint32 entry, const QMap<int, QPointF> &markers) const {
+    if (group == -1) {
+        if (entry < 0 || entry >= 20 || !ribbons_[entry])
+            throw Error("Sprite rotation requires an existing sampled scene path");
+        return qint16(u16(ribbons_[entry]->record, 0x74));
+    }
+    // The native temporary path is a separate owner from the visible ribbons.
+    // Decode/evaluate it locally, retaining no slot or pointer after this call.
+    const auto path =
+        load({19, quint32(group), quint32(entry), 100, quint32(-1), 1, 0, 0, 0}, markers);
+    return heading(path.samples[0], path.samples[2], true);
 }
 SceneRibbon SceneRibbons::load(const QVector<quint32> &args,
                                const QMap<int, QPointF> &markers) const {
@@ -121,6 +154,8 @@ SceneRibbon SceneRibbons::load(const QVector<quint32> &args,
     put32(rec, 0x58, count - 2);
     put32(rec, 0x64, std::bit_cast<quint32>(length));
     put32(rec, 0x68, 5);
+    put16(rec, 0x74, quint16(heading(r.samples[0], r.samples[2], false)));
+    put16(rec, 0x76, quint16(heading(r.samples[r.samples.size() - 2], r.samples.last(), false)));
     put8(rec, 0x82, width);
     put8(rec, 0x83, palette);
     put8(rec, 0x84, quint8(args[8]));

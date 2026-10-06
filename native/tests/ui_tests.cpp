@@ -2248,11 +2248,124 @@ class UiTests : public QObject {
         preview.selectScene(scenes,id,0);position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
         skip->click();position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
     }
+    void pathSpritePreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 source = 0;
+        for (const auto &entry : scenes.original().entries())
+            if (entry.program.resourceClass() == 4) {
+                source = entry.key;
+                break;
+            }
+        QVERIFY(source);
+        const auto id = scenes.createScene("Path-oriented sprites", source, false);
+        QVector<quint32> words{0x80000007U,
+                               47,
+                               0x3a,
+                               1,
+                               0,
+                               0,
+                               0,
+                               70,
+                               70,
+                               130,
+                               8,
+                               0,
+                               0x80000000U,
+                               0x49,
+                               0,
+                               3,
+                               0,
+                               90,
+                               quint32(-1),
+                               3,
+                               0,
+                               0,
+                               1,
+                               0x63,
+                               0,
+                               30,
+                               1,
+                               0,
+                               quint32(-36),
+                               0,
+                               180,
+                               3,
+                               0,
+                               quint32(-1),
+                               0x63,
+                               1,
+                               30,
+                               1,
+                               0,
+                               48,
+                               0,
+                               180,
+                               quint32(-1),
+                               0,
+                               quint32(-1)};
+        for (int i = 0; i < 140; ++i) {
+            if (i == 65)
+                words << 0x63 << 0 << 0 << 0 << 0 << 0 << 0 << 180 << 4 << 0 << 0;
+            words << 0 << 0x80000000U;
+        }
+        words << 0x80000001U << 0xff000004U;
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        ScenePreview preview(rom);
+        preview.resize(1200, 900);
+        preview.show();
+        preview.selectScene(scenes, id, 0);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto objects = preview.findChild<QComboBox *>("sceneLiveActors");
+        position->setValue(35);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 35);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QCOMPARE(objects->count(), 2);
+        const auto first = preview.renderedFrame();
+        bool visible = false;
+        for (int y = 0; y < 240 && !visible; ++y)
+            for (int x = 0; x < 320 && !visible; ++x)
+                visible = preview.spriteAt({x, y}) >= 0;
+        QVERIFY(visible);
+        position->setValue(124);
+        QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 124, 20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto later = preview.renderedFrame();
+        QVERIFY(later != first);
+        position->setValue(35);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 35);
+        QCOMPARE(preview.renderedFrame(), first);
+        position->setValue(124);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 124);
+        QCOMPARE(preview.renderedFrame(), later);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        position->setValue(35);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 35);
+        QCOMPARE(preview.renderedFrame(), first);
+        QCoreApplication::processEvents();
+        QVERIFY(preview.grab().save("scene-path-sprites.png"));
+    }
     void pathRibbonPreviewSeek() {
-        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
-        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
-        for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
-        QVERIFY(source);const auto id=scenes.createScene("Path ribbon playback",source,false);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 source = 0;
+        for (const auto &entry : scenes.original().entries())
+            if (entry.program.resourceClass() == 4) {
+                source = entry.key;
+                break;
+            }
+        QVERIFY(source);
+        const auto id = scenes.createScene("Path ribbon playback", source, false);
         QVector<quint32> words{0x80000007U,47,0x3a,1,0,0,0,70,70,130,8,0,0x80000000U,
                                0x49,0,3,0,90,0xffffffffU,3,0,0,1};
         for(int i=0;i<140;++i)words<<0<<0x80000000U;

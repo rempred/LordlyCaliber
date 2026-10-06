@@ -166,66 +166,134 @@ class ImageTests : public QObject {
     }
     void pathRibbonsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
-        QTemporaryDir work; QProcess reference;
-        reference.start("node", {QFINDTESTDATA("path-ribbon-mips.cjs"), path, work.filePath("paths.json")});
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node",
+                        {QFINDTESTDATA("path-ribbon-mips.cjs"), path, work.filePath("paths.json")});
         QVERIFY(reference.waitForFinished(60000));
         QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
-        QFile file(work.filePath("paths.json")); QVERIFY(file.open(QIODevice::ReadOnly));
-        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QFile file(work.filePath("paths.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        const auto rows = fixture["rows"].toArray();
         QCOMPARE(rows.size(), 121);
-        const auto timeScale = std::bit_cast<double>((quint64(u32(rom.bytes(),0x2a8b90))<<32)|u32(rom.bytes(),0x2a8b94));
+        LordlyPathAngleConstants constants{};
+        for (int i = 0; i < 2; ++i)
+            constants.axis[i] = std::bit_cast<float>(u32(rom.bytes(), 0x3f140 + i * 4));
+        for (int i = 0; i < 4; ++i)
+            constants.quadrant[i] =
+                std::bit_cast<double>((quint64(u32(rom.bytes(), 0x3f148 + i * 8)) << 32) |
+                                      u32(rom.bytes(), 0x3f14c + i * 8));
+        const auto angles = fixture["angles"].toArray();
+        QCOMPARE(angles.size(), 121);
+        for (const auto &v : angles) {
+            const auto a = v.toObject();
+            QCOMPARE(std::bit_cast<quint32>(lordly_path_angle(
+                         float(a["x"].toDouble()), float(a["y"].toDouble()), &constants)),
+                     quint32(a["bits"].toInteger()));
+        }
+        const auto timeScale = std::bit_cast<double>((quint64(u32(rom.bytes(), 0x2a8b90)) << 32) |
+                                                     u32(rom.bytes(), 0x2a8b94));
         for (const auto &v : rows) {
             const auto row = v.toObject();
-            QVector<float> x,y,sx(400),sy(400);
-            for (const auto &p : row["points"].toArray()) {x << float(p.toArray()[0].toDouble()); y << float(p.toArray()[1].toDouble());}
-            QVERIFY(lordly_path_sample(sx.data(),sy.data(),400,int(x.size()),x.constData(),y.constData(),timeScale));
-            for (int axis=0;axis<2;++axis) {
-                QByteArray actual(1600,0);
-                for(int i=0;i<400;++i) put32(actual,i*4,std::bit_cast<quint32>(axis?sy[i]:sx[i]));
-                QCOMPARE(actual,QByteArray::fromHex(row["sampled"].toArray()[axis].toString().toLatin1()));
+            QVector<float> x, y, sx(400), sy(400);
+            for (const auto &p : row["points"].toArray()) {
+                x << float(p.toArray()[0].toDouble());
+                y << float(p.toArray()[1].toDouble());
             }
-            SceneRibbons ribbons(rom); QMap<int,QPointF> markers;
+            QVERIFY(lordly_path_sample(sx.data(), sy.data(), 400, int(x.size()), x.constData(),
+                                       y.constData(), timeScale));
+            for (int axis = 0; axis < 2; ++axis) {
+                QByteArray actual(1600, 0);
+                for (int i = 0; i < 400; ++i)
+                    put32(actual, i * 4, std::bit_cast<quint32>(axis ? sy[i] : sx[i]));
+                QCOMPARE(actual,
+                         QByteArray::fromHex(row["sampled"].toArray()[axis].toString().toLatin1()));
+            }
+            SceneRibbons ribbons(rom);
+            QMap<int, QPointF> markers;
             const auto supplied = row["markers"].toObject();
-            for(auto it=supplied.begin();it!=supplied.end();++it) markers[it.key().toInt()]={it.value().toArray()[0].toDouble(),it.value().toArray()[1].toDouble()};
-            QVector<quint32> args;for(const auto &a:row["args"].toArray())args<<quint32(a.toInteger());
-            int result=0;QVERIFY(ribbons.service(0x49,args,result,markers));
-            const auto &r=*ribbons.ribbons()[0];QCOMPARE(r.key,quint32(row["key"].toInteger()));
-            QCOMPARE(r.points.size(),x.size());for(int i=0;i<x.size();++i)QCOMPARE(r.points[i],QPointF(x[i],y[i]));
-            auto compare=[](const QByteArray &actual,const QByteArray &expected){
-                QCOMPARE(actual.mid(0xc,0x50),expected.mid(0xc,0x50));
-                QCOMPARE(actual.mid(0x64,8),expected.mid(0x64,8));
-                QCOMPARE(actual.mid(0x80),expected.mid(0x80));
+            for (auto it = supplied.begin(); it != supplied.end(); ++it)
+                markers[it.key().toInt()] = {it.value().toArray()[0].toDouble(),
+                                             it.value().toArray()[1].toDouble()};
+            QVector<quint32> args;
+            for (const auto &a : row["args"].toArray())
+                args << quint32(a.toInteger());
+            int result = 0;
+            QVERIFY(ribbons.service(0x49, args, result, markers));
+            const auto &r = *ribbons.ribbons()[0];
+            QCOMPARE(r.key, quint32(row["key"].toInteger()));
+            QCOMPARE(r.points.size(), x.size());
+            for (int i = 0; i < x.size(); ++i)
+                QCOMPARE(r.points[i], QPointF(x[i], y[i]));
+            auto compare = [](const QByteArray &actual, const QByteArray &expected) {
+                QCOMPARE(actual.mid(0xc, 0x50), expected.mid(0xc, 0x50));
+                QCOMPARE(actual.mid(0x64, 8), expected.mid(0x64, 8));
+                QCOMPARE(actual.mid(0x74, 4), expected.mid(0x74, 4));
+                QCOMPARE(actual.mid(0x80), expected.mid(0x80));
             };
-            compare(r.record,QByteArray::fromHex(row["initial"].toString().toLatin1()));
-            for(const auto &stepValue:row["steps"].toArray()) {
-                const auto step=stepValue.toObject();
-                if(step["set"].isArray()) {const auto set=step["set"].toArray();QVERIFY(ribbons.service(0x4a,{0,quint32(set[0].toInteger()),quint32(set[1].toInteger())},result));}
-                if(!step["release"].isNull())QVERIFY(ribbons.service(0x4b,{0,1},result));
-                ribbons.advance();QVERIFY(ribbons.ribbons()[0]);
-                const auto expected=QByteArray::fromHex(step["record"].toString().toLatin1());
-                compare(ribbons.ribbons()[0]->record,expected);
-                QVERIFY(ribbons.service(0x4c,{0,0,0},result));QCOMPARE(result,int(u8(expected,0x85)));
+            compare(r.record, QByteArray::fromHex(row["initial"].toString().toLatin1()));
+            QCOMPARE(ribbons.rotation(-1, 0), qint16(u16(r.record, 0x74)));
+            QCOMPARE(ribbons.rotation(row["group"].toInt(), row["entry"].toInt(), markers),
+                     qint16(row["resourceHeading"].toInt()));
+            const auto retained = r.record;
+            QVERIFY_THROWS_EXCEPTION(Error, ribbons.rotation(-1, 19));
+            QVERIFY_THROWS_EXCEPTION(Error, ribbons.rotation(-1, 20));
+            QVERIFY_THROWS_EXCEPTION(Error, ribbons.rotation(59, 0));
+            QCOMPARE(ribbons.ribbons()[0]->record, retained);
+            for (const auto &stepValue : row["steps"].toArray()) {
+                const auto step = stepValue.toObject();
+                if (step["set"].isArray()) {
+                    const auto set = step["set"].toArray();
+                    QVERIFY(ribbons.service(
+                        0x4a, {0, quint32(set[0].toInteger()), quint32(set[1].toInteger())},
+                        result));
+                }
+                if (!step["release"].isNull())
+                    QVERIFY(ribbons.service(0x4b, {0, 1}, result));
+                ribbons.advance();
+                QVERIFY(ribbons.ribbons()[0]);
+                const auto expected = QByteArray::fromHex(step["record"].toString().toLatin1());
+                compare(ribbons.ribbons()[0]->record, expected);
+                QVERIFY(ribbons.service(0x4c, {0, 0, 0}, result));
+                QCOMPARE(result, int(u8(expected, 0x85)));
             }
-            for(int i=0;i<9;++i)ribbons.advance();QVERIFY(ribbons.empty());
-            QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4c,{0,0,0},result));
+            for (int i = 0; i < 9; ++i)
+                ribbons.advance();
+            QVERIFY(ribbons.empty());
+            QVERIFY_THROWS_EXCEPTION(Error, ribbons.service(0x4c, {0, 0, 0}, result));
         }
-        SceneRibbons ribbons(rom);int result=0;
-        const QVector<quint32> args{0,3,0,90,0xffffffffU,3,0,0,1};
-        QVERIFY(ribbons.service(0x49,args,result));const auto before=ribbons.ribbons()[0]->record;
-        QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4a,{0,101,0xffffffffU},result));
-        QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4a,{0,0,99},result));
-        auto invalid=args;invalid[1]=1000;QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x49,invalid,result));
-        invalid=args;invalid[6]=0xffffffffU;QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x49,invalid,result));
-        QCOMPARE(ribbons.ribbons()[0]->record,before);
-        QVERIFY(ribbons.service(0x4b,{0xffffffffU,0},result));QVERIFY(ribbons.empty());
+        SceneRibbons ribbons(rom);
+        int result = 0;
+        const QVector<quint32> args{0, 3, 0, 90, 0xffffffffU, 3, 0, 0, 1};
+        QVERIFY(ribbons.service(0x49, args, result));
+        const auto before = ribbons.ribbons()[0]->record;
+        QVERIFY_THROWS_EXCEPTION(Error, ribbons.service(0x4a, {0, 101, 0xffffffffU}, result));
+        QVERIFY_THROWS_EXCEPTION(Error, ribbons.service(0x4a, {0, 0, 99}, result));
+        auto invalid = args;
+        invalid[1] = 1000;
+        QVERIFY_THROWS_EXCEPTION(Error, ribbons.service(0x49, invalid, result));
+        invalid = args;
+        invalid[6] = 0xffffffffU;
+        QVERIFY_THROWS_EXCEPTION(Error, ribbons.service(0x49, invalid, result));
+        QCOMPARE(ribbons.ribbons()[0]->record, before);
+        QVERIFY(ribbons.service(0x4b, {0xffffffffU, 0}, result));
+        QVERIFY(ribbons.empty());
     }
     void imageManualAgainstMips() {
-        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
-        const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;
-        reference.start("node",{QFINDTESTDATA("image-manual-mips.cjs"),path,work.filePath("manual.json")});
-        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("image-manual-mips.cjs"), path, work.filePath("manual.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
         QFile file(work.filePath("manual.json"));QVERIFY(file.open(QIODevice::ReadOnly));
         const auto rows=QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();QCOMPARE(rows.size(),1214);
         auto bytes=[](const QJsonObject &o,const char *key){return QByteArray::fromHex(o[key].toString().toLatin1());};

@@ -104,3 +104,7 @@ current-state readback, seek retention and action/source-command navigation.
 Direct sprite rotation Actions now create or reuse native sprites with explicit
 angles, safe source-field preservation, shared undo, visible preview and compiled
 export/reopening. Launch-supplied action coordinates remain read-only.
+
+Path-oriented sprites now obtain sampled and resource-path headings during playback,
+including the game's angle approximation and linked replacement positions. Original
+instruction comparisons and desktop checkpoint seeking pass; missing paths pause.

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/scene_camera.h"
+#include "game/director/path_curve.h"
 #include <QImage>
 #include <QMap>
 #include <optional>
@@ -15,6 +16,7 @@ class SceneRibbons {
   public:
     explicit SceneRibbons(const Rom &);
     SceneRibbon load(const QVector<quint32> &args, const QMap<int, QPointF> &markers = {}) const;
+    qint16 rotation(qint32 group, qint32 entry, const QMap<int, QPointF> &markers = {}) const;
     bool service(quint32 opcode, const QVector<quint32> &args, int &result,
                  const QMap<int, QPointF> &markers = {});
     void advance();
@@ -27,6 +29,9 @@ class SceneRibbons {
   private:
     Rom rom_;
     double timeScale_;
+    LordlyPathAngleConstants angles_{};
+    std::array<std::array<double, 2>, 2> headingConstants_{};
+    qint16 heading(QPointF from, QPointF to, bool resourcePath) const;
     std::array<int16_t, 5> margins_;
     std::array<std::optional<SceneRibbon>, 20> ribbons_;
 };
