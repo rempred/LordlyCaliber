@@ -68,6 +68,17 @@ QJsonValue ScenePlaybackInputs::known(const QString &name) const {
     const auto group = json_[name].toObject();
     return group["status"] == "known" ? group["value"] : QJsonValue{};
 }
+QJsonObject ScenePlaybackInputs::services() const {
+    const auto external = known("externalProducers");
+    return external.isObject() ? external.toObject() : known("capturedResume").toObject()["resourceServices"].toObject();
+}
+quint16 ScenePlaybackInputs::textSpeed(quint16 fallback) const {
+    const auto initial = services()["initialDialogue"].toObject();
+    return initial.isEmpty() ? fallback : u16(memory(initial["memory"].toArray(), 0x800e9c0c, 2), 0);
+}
+bool ScenePlaybackInputs::automaticPages() const {
+    return services()["resourceSchedule"].toObject()["pageAdvancePolicy"] == "automatic";
+}
 QString ScenePlaybackInputs::description() const {
     auto result = QString("Playback inputs: %1\nSource: %2 · declared %3")
         .arg(json_["invocationId"].toString(), json_["sourceIdentity"].toString(), json_["evidenceGrade"].toString());
@@ -174,7 +185,20 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
         for (int f = 0; f < 6; ++f) put32(record, 64 + f * 4, std::bit_cast<quint32>(float(channels[i].toObject()[fields[f]].toDouble())));
         playback.transforms().supplyChannel(i, record);
     }
-    const auto color = known("externalProducers").toObject()["initialColor"].toObject();
+    const auto external = services();
+    const auto initial = external["initialDialogue"].toObject();
+    if (!initial.isEmpty()) {
+        const int director = external["resourceSchedule"].toObject()["directorSlot"].toInt(-1);
+        const auto pool = memory(initial["memory"].toArray(), 0x800e82c8, 6 * 168);
+        for (int i = 0; i < 6; ++i)
+            if (i != director && (u16(pool, i * 168) & 0x8000))
+                throw Error("Imported initial dialogue contains an active inherited owner requiring its payload");
+        if (playback.dialogue())
+            playback.dialogue()->resources.setContext({1,
+                qint32(u32(memory(initial["memory"].toArray(), 0x800c4c20, 4), 0)),
+                u16(memory(initial["memory"].toArray(), 0x800c4c26, 2), 0)});
+    }
+    const auto color = external["initialColor"].toObject();
     if (!color.isEmpty()) playback.fade() = SceneFade(bytes(color["recordHex"], 12), true);
     const auto resume = known("capturedResume").toObject();
     if (!resume.isEmpty()) {
@@ -199,6 +223,11 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
                 throw Error("Captured scheduler requires its active secondary sprite records");
             const auto projection = u32(primary, 0x19f0);
             if (projection) playback.projection() = SceneProjection(memory(regions, projection, 76));
+            if (resume["entry"] == "normal-mode-two-continuous") {
+                std::array<quint32, 4> gains{};
+                for (int i = 0; i < 4; ++i) gains[i] = u32(memory(regions, 0x800eb2e0 + 8*i, 4), 0);
+                playback.supplyAudio(SceneAudio({0, {}, 0, 1}, gains));
+            }
         }
         const auto query = playback.director().restoreMovementQuery(actors["observedParserCursor"].toInt(-1));
         const int slot = qint32(query.operands[2]);
@@ -226,7 +255,7 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
     }
 }
 std::optional<quint16> ScenePlaybackInputs::controller(int update) const {
-    const auto controller = known("externalProducers").toObject()["resourceSchedule"].toObject()["controller"].toObject();
+    const auto controller = services()["resourceSchedule"].toObject()["controller"].toObject();
     if (controller.isEmpty() || update > controller["throughPass"].toInt(-1)) return {};
     quint16 result = 0;
     for (const auto &entry : controller["changes"].toArray()) {
@@ -239,11 +268,10 @@ std::optional<quint16> ScenePlaybackInputs::controller(int update) const {
 QString ScenePlaybackInputs::boundary() const {
     if (captured() && resumeLimit() < 0) return "Captured Actor snapshot: no elapsed updates. Parser cursor is an observation; resume state is unknown.";
     QStringList unsupported;
-    if (known("capturedResume").toObject().contains("resourceServices")) unsupported << "capturedResume.resourceServices";
     for (const auto name : {"bodyPoseSetups", "subordinateServices", "rosterConstruction", "rosterResets", "rosterStateServices", "directActorCreates"})
         if (!known(name).isNull() && !known(name).isUndefined()) unsupported << QString::fromLatin1(name);
-    const auto external = known("externalProducers").toObject();
-    for (const auto name : {"initialDialogue", "directorLaunch"})
+    const auto external = services();
+    for (const auto name : {"directorLaunch"})
         if (external.contains(name)) unsupported << "externalProducers." + QString::fromLatin1(name);
     for (const auto name : {"menuCreates", "colorCreates", "poseCalls", "dialogueCreates"})
         if (!external[name].toArray().isEmpty()) unsupported << "externalProducers." + QString::fromLatin1(name);

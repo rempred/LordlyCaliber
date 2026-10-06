@@ -987,10 +987,10 @@ void ScenePreview::restart() {
         }
         dialogueEnvironment_ = DialoguePlayback::environment(rom_);
         playback.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
-        playback.dialogue()->context = SceneDialogueContext::preview(std::move(names));
+        playback.dialogue()->context = SceneDialogueContext::preview(std::move(names), inputs ? inputs->textSpeed(512) : 512);
         // Silent preview has no resident voices and starts on route zero with unity buses.
         // Preserve typed requests for an eventual backend; never invent voice lifetimes.
-        playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767}));
+        playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767, 32767, 32767}));
         playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
         if (inputs) inputs->supply(playback);
         const auto launch = SceneImages::launch(startupProgram);
@@ -1421,6 +1421,12 @@ void ScenePreview::step() {
     try {
         if (preparing_ && tick_ % 45 == 0)
             pendingPressed_ |= 0x8000;
+        quint16 pageAdvance = 0;
+        if (const auto inputs = activeInputs(); inputs && inputs->automaticPages() && next.dialogue)
+            for (int slot = 0; slot < 6; ++slot) {
+                const int state = next.dialogue->state(slot, next.playback.dialogue()->resources);
+                if (state == 3 || state == 6) { pageAdvance = 0x8000; break; }
+            }
         if (!inputHistory_.contains(tick_))
             inputHistory_.insert(tick_, liveInput_);
         if (!pressedHistory_.contains(tick_))
@@ -1485,7 +1491,7 @@ void ScenePreview::step() {
             const auto pressed = pressedHistory_.value(tick_);
             next.dialogue->advance(
                 state.resources, state.windows, environment,
-                {state.context->textParameter(), pressed, quint16(pressed & 0x0c00), 0});
+                {state.context->textParameter(), quint16(pressed | pageAdvance), quint16(pressed & 0x0c00), 0});
         }
         render(next, complete);
         next.stopped = result != ScenePlayback::Advanced;

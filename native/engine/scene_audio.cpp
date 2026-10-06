@@ -1,7 +1,7 @@
 #include "engine/scene_audio.h"
 #include <algorithm>
 namespace lordly {
-SceneAudio::SceneAudio(LordlyAudioInputs inputs, std::array<quint32, 2> gains) : inputs_(inputs) {
+SceneAudio::SceneAudio(LordlyAudioInputs inputs, std::array<quint32, 4> gains) : inputs_(inputs) {
     std::copy(gains.cbegin(), gains.cend(), state_.gains);
 }
 void SceneAudio::emitRequest(void *user, int kind, int context, uint32_t value, uint32_t extra) {

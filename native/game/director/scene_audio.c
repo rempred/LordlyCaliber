@@ -66,7 +66,7 @@ int lordly_audio_command(LordlySceneAudio *s, const LordlyAudioInputs *in, uint3
             if (context >= 2 && context <= 6)
                 level = 32767;
             else {
-                if (a[1] > 1)
+                if (a[1] > 3)
                     return 0;
                 level = s->gains[a[1]];
             }

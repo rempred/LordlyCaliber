@@ -8,6 +8,9 @@ class ScenePlaybackInputs {
     static ScenePlaybackInputs parse(const QByteArray &, const QString &assetId);
     const QJsonObject &json() const { return json_; }
     QJsonValue known(const QString &) const;
+    QJsonObject services() const;
+    quint16 textSpeed(quint16 fallback) const;
+    bool automaticPages() const;
     QString description() const;
     bool captured() const { return known("capturedSnapshot").isObject(); }
     int resumeLimit() const { return known("capturedResume").toObject()["updates"].toInt(-1); }

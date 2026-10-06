@@ -470,7 +470,7 @@ class SceneRuntimeTests : public QObject {
             inputs.route = qint16(sequence["route"].toInt());
             inputs.controller_suppressed = sequence["suppressed"].toInt();
             inputs.scene_present = 1;
-            SceneAudio audio(inputs, {6000, 14000});
+            SceneAudio audio(inputs, {6000, 14000, 9000, 21000});
             for (const auto &value : sequence["steps"].toArray()) {
                 const auto step = value.toObject();
                 for (int i = 0; i < 7; ++i)

@@ -588,13 +588,19 @@ class UiTests : public QObject {
             QCOMPARE(project.manifest(), unchanged); QCOMPARE(undo.count(), 0);
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
+    void importedGraduationCapture_data() {
+        QTest::addColumn<bool>("continuous");
+        QTest::newRow("held") << false;
+        QTest::newRow("continuous") << true;
+    }
     void importedGraduationCapture() {
+        QFETCH(bool, continuous);
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
         try {
             const auto rom = Rom::open(path);
             const auto programs = ScenePrograms::load(rom);
-            QFile file(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath("../../tests/fixtures/cutscene-graduation-resume.json"));
+            QFile file(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath(continuous ? "../../tests/fixtures/cutscene-graduation-continuous.json" : "../../tests/fixtures/cutscene-graduation-resume.json"));
             QVERIFY(file.open(QIODevice::ReadOnly));
             const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
             ScenePreview preview(rom); preview.resize(1000, 900); preview.show();
@@ -602,13 +608,12 @@ class UiTests : public QObject {
             preview.importPlaybackInputs(QJsonDocument(fixture["input"].toObject()).toJson(QJsonDocument::Compact));
             auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
             QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
-            preview.seekToUpdate(100);
-            QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 30000);
-            QCOMPARE(preview.property("sceneTick").toInt(), 69);
-            QVERIFY2(status->text().contains("declared 69 updates"), qPrintable(status->text()));
+            preview.seekToUpdate(69);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 69, 30000);
+            if (!continuous) QVERIFY2(status->text().contains("declared 69 updates"), qPrintable(status->text()));
             auto objects = preview.findChild<QComboBox *>("sceneLiveActors");
             QCOMPARE(objects->count(), 8); objects->setCurrentIndex(objects->findData(1));
-            const auto expected = fixture["expected"].toArray().last().toObject();
+            const auto expected = fixture["expected"].toArray()[68].toObject();
             QCOMPARE(expected["update"].toInt(), 69);
             QByteArray record;
             for (const auto &entry : expected["actors"].toArray()) if (entry.toObject()["slot"].toInt() == 1)
@@ -625,6 +630,22 @@ class UiTests : public QObject {
             preview.seekToUpdate(69); QTRY_COMPARE(preview.property("sceneTick").toInt(), 69);
             QCOMPARE(preview.renderedFrame(), frame);
             QVERIFY(preview.grab().save("native-imported-graduation.png"));
+            if (continuous) {
+                preview.seekToUpdate(1000);
+                QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 30000);
+                QVERIFY2(status->text().contains("Scene released"), qPrintable(status->text()));
+                QVERIFY(preview.property("sceneTick").toInt() < 1000);
+                qInfo() << "Imported continuous capture released at update" << preview.property("sceneTick").toInt();
+                auto neutral = fixture["input"].toObject();
+                auto group = neutral["capturedResume"].toObject(); auto resume = group["value"].toObject();
+                auto services = resume["resourceServices"].toObject(); auto schedule = services["resourceSchedule"].toObject();
+                schedule["pageAdvancePolicy"] = "neutral"; services["resourceSchedule"] = schedule;
+                resume["resourceServices"] = services; group["value"] = resume; neutral["capturedResume"] = group;
+                preview.importPlaybackInputs(QJsonDocument(neutral).toJson(QJsonDocument::Compact));
+                preview.seekToUpdate(400); QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 400, 30000);
+                QVERIFY(!preview.property("sceneStopped").toBool());
+                QVERIFY(preview.property("sceneDialogueState").toInt() == 3 || preview.property("sceneDialogueState").toInt() == 6);
+            }
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void sceneTimedPlacementAndHold() {

@@ -11,7 +11,7 @@ struct SceneAudioRequest {
 };
 class SceneAudio {
   public:
-    SceneAudio(LordlyAudioInputs inputs, std::array<quint32, 2> gains);
+    SceneAudio(LordlyAudioInputs inputs, std::array<quint32, 4> gains);
     bool service(quint32, const QVector<quint32> &);
     void advance();
     void supplyInputs(LordlyAudioInputs inputs) {

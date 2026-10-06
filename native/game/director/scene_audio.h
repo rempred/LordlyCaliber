@@ -30,7 +30,7 @@ typedef struct {
     uint8_t pending[3];
     int envelope_present;
     int16_t step, level, remaining, group;
-    uint32_t gains[2];
+    uint32_t gains[4];
 } LordlySceneAudio;
 typedef void (*LordlyAudioSink)(void *, int kind, int context, uint32_t value, uint32_t extra);
 int lordly_audio_command(LordlySceneAudio *, const LordlyAudioInputs *, uint32_t opcode,

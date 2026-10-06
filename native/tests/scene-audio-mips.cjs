@@ -34,7 +34,7 @@ const results=[];
 function run(commands,route=0,count=0,suppressed=0) {
  voices=Array(7).fill(count);guard=suppressed;calls=[];
  m.load(root,Buffer.alloc(0x1cc0));m.w32(0x8022a974,root);m.w32(0x8022a8c4,0);
- m.w16(0x8022a994,route);m.w32(0x800eb2e0,6000);m.w32(0x800eb2e8,14000);
+ m.w16(0x8022a994,route);[6000,14000,9000,21000].forEach((gain,i)=>m.w32(0x800eb2e0+8*i,gain));
  for(let i=0;i<7;++i){m.w32(0x8022a8a8+i*4,context(i));m.w32(context(i)+0x24,100+i);}
  const steps=[];
  for(const command of commands){
@@ -60,5 +60,7 @@ for(let context=0;context<8;++context)for(const values of [[-1,-1,-1],[128,-1,-1
 for(let group=0;group<8;++group)for(const step of [-65539,-5,0,5,65539,2147483647])
  run([[180,group,group%2,step,3],[0],[0],[180,group,99,-7,2],[0],[0],[0]]);
 for(const pending of [0,256,700])run([[180,0,0,-5,20],[110,0,0,pending],[0],[-1],[0],[0]],9,2);
+// Graduation's closing fade reads gain-table entry3 before starting its envelope.
+run([[180,0,3,-500,30],[0],[0]]);
 fs.writeFileSync(process.argv[3],JSON.stringify({results}));
 console.log(`${results.length} original audio sequences; ${results.reduce((n,r)=>n+r.steps.length,0)} snapshots`);
