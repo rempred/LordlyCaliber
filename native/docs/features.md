@@ -122,7 +122,13 @@ dialogue payloads still name that unsupported context; normal native playback
 computes those services directly. These are not required inputs for scene editing.
 The final invalid-import context/controls rollback check passes (742ms). Room
 controls stay inside the settled layout; its final full-route check passes
-(46.5s), and the settled screenshot was inspected. Final portable integration follows.
+(46.5s), and the settled screenshot was inspected. Portable ZIP: native/dist/LordlyCaliber-0.5-dev-20261006-161230.zip, product
+commit b1c788a. GUI and CLI rebuilt together. Isolated package startup,
+bundled compilation/export, independent class readback, reopening and source
+preservation pass (2.6s); browser scene conversion/export/reopen matches all2648
+expected bytes (7.5s). Logs: build/native-final-portable-check.log and
+build/native-final-portable-scenes.log. No clean-machine or full-game run is
+claimed. Nothing was pushed or published.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear
