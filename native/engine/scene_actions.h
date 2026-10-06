@@ -13,11 +13,13 @@ struct SceneActionField {
     quint32 parse(const QString &) const;
     bool canonical(quint32 word) const;
 };
+enum class SceneActionTiming { None, Counter, SharedCounter, Completion };
 struct SceneAction {
     int command = 0, commandCount = 1;
     QString name;
     QVector<SceneActionField> fields;
     int actorOperand = -1;
+    SceneActionTiming timing = SceneActionTiming::None;
 };
 struct SceneActionPosition {
     int command = 0;

@@ -392,12 +392,15 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Construct scene image"
+        action.name == "Wait for image transition"
+            ? "Continues only when the image transition and its echo tail have both finished. "
+              "Uses the native completion query and leaves the timed-wait counter unchanged."
+        : action.name == "Construct scene image"
             ? "Builds the vignette and starting transform from the launch image once. Keep this "
               "before Image transition. Removing it may leave later transitions without an image."
         : action.name == "Image transition"
             ? "Runs on the scene's constructed image. Echoes drain after the duration; this action "
-              "does not wait for them. Forward settles the image, enabling later pan/zoom."
+              "does not wait for them. Add Wait for image transition before later pan/zoom."
         : action.name == "Pan and zoom image"
             ? "Pans the scene's image and requests its zoom state. Start -1/-1 uses the current "
               "position; differences of one unit or less do not pan. Zoom becomes available after "
@@ -580,13 +583,13 @@ void SceneActionEditor::updateStructureControls() {
     kind_->setEnabled(valid);
     position_->setEnabled(valid);
     text_->setEnabled(valid);
-    const bool wait = kind_->currentData().toUInt() == 0xe ||
-                      kind_->currentData().toUInt() == 0xb5 ||
-                      kind_->currentData().toUInt() == 0xbf;
+    const bool wait =
+        kind_->currentData().toUInt() == 0xe || kind_->currentData().toUInt() == 0xb5 ||
+        kind_->currentData().toUInt() == 0xbf || kind_->currentData().toUInt() == 0x54;
     const bool body = kind_->currentData().toUInt() == 0x2a;
-    const bool image = kind_->currentData().toUInt() == 0x76 ||
-                       kind_->currentData().toUInt() == 0x50 ||
-                       kind_->currentData().toUInt() == 0x3a;
+    const bool image =
+        kind_->currentData().toUInt() == 0x76 || kind_->currentData().toUInt() == 0x50 ||
+        kind_->currentData().toUInt() == 0x3a || kind_->currentData().toUInt() == 0x54;
     const int type = valid ? project_->scenePrograms()->program(key_).resourceClass() : -1;
     const bool allowed = (!wait || position_->currentData(Qt::UserRole + 1).toBool()) &&
                          (!body || type == 1 || type == 8) && (!image || type == 4 || type == 5);

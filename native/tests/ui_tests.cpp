@@ -3682,6 +3682,107 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void imageTransitionCompletionWaitControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image completion controls", source, false);
+            const QVector<quint32> words{
+                0x80000007U, 47,   0x3a,        1,           0,           0,          0,
+                70,          70,   130,         8,           0x50,        0,          20,
+                4,           0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U};
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            const int point = 3;
+            auto base = SceneActions::insert(DirectorProgram::decode(bytes), point, 0x46);
+            base = SceneActions::insert(base, point + 1, 0xe, 70);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 700);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            kind->setCurrentIndex(kind->findData(0x54));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            const auto accepted = project.scenePrograms()->program(id).source;
+            QVERIFY(!editor.findChild<QLineEdit *>("sceneActionField0"));
+            QVERIFY(
+                editor.findChild<QLabel *>("sceneActionStatus")->text().contains("both finished"));
+            ScenePreview preview(project.rom());
+            preview.resize(850, 700);
+            preview.show();
+            auto live = preview.findChild<QComboBox *>("sceneLiveActors");
+            QVERIFY(live);
+            auto sprite = [&] {
+                for (int i = 0; i < live->count(); ++i)
+                    if (live->itemData(i, Qt::UserRole + 1).toInt() ==
+                            int(SceneObjectKind::Sprite) &&
+                        live->itemData(i).toInt() == 0)
+                        return true;
+                return false;
+            };
+            auto select = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+            };
+            select();
+            QVERIFY(!sprite());
+            auto seek = preview.findChild<QSpinBox *>("scenePosition");
+            seek->setValue(24);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 24);
+            QVERIFY2(!preview.property("sceneStopped").toBool(),
+                     qPrintable(preview.findChild<QLabel *>("scenePlaybackStatus")->text()));
+            QVERIFY(!sprite());
+            const auto draining = preview.renderedFrame();
+            seek->setValue(60);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 60);
+            QVERIFY(sprite());
+            const auto finished = preview.renderedFrame();
+            seek->setValue(24);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 24);
+            QVERIFY(!sprite());
+            QCOMPARE(preview.renderedFrame(), draining);
+            seek->setValue(60);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 60);
+            QVERIFY(sprite());
+            QCOMPARE(preview.renderedFrame(), finished);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, base.source);
+            select();
+            QVERIFY(sprite());
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            select();
+            QVERIFY(!sprite());
+            editor.selectScene(id, point);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-image-completion-wait.png"));
+            editor.findChild<QPushButton *>("sceneActionRemove")->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, base.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void imageConstructionActionControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -57,6 +57,14 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
                          qint64 maximum = 2147483647LL, int offset = 0) {
             action.fields << SceneActionField{name, offset, operand, scale, minimum, maximum};
         };
+        if (action_detail::completeImageTransitionWait(program, i)) {
+            action.name = "Wait for image transition";
+            action.commandCount = 4;
+            action.timing = SceneActionTiming::Completion;
+            result << action;
+            i += 3;
+            continue;
+        }
         bool wait = i + 5 < commands.size() && c.opcode == 1 && commands[i + 1].opcode == 0 &&
                     commands[i + 2].opcode == 0x80000002 && commands[i + 3].opcode == 0x80000000 &&
                     (commands[i + 4].opcode == 0xe || commands[i + 4].opcode == 0xb5) &&
@@ -69,6 +77,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         if (wait) {
             action.name = commands[i + 4].opcode == 0xb5 ? "Wait (A button can skip)" : "Wait";
             action.commandCount = 6;
+            action.timing = SceneActionTiming::Counter;
             field("Duration (updates)", 1, 1, 1, 2147483647, 4);
             result << action;
             i += 5;
@@ -92,6 +101,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             action.name = commands[i + 3].opcode == 0xb5 ? "Wait (shared counter, A can skip)"
                                                          : "Wait (shared counter)";
             action.commandCount = 4;
+            action.timing = SceneActionTiming::SharedCounter;
             field("Duration (updates)", 1, 1, 1, 2147483647 - state.target, 3);
             action.fields[0].bias = state.target;
             result << action;
@@ -269,6 +279,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             if (action_detail::completeDialogue(program, i)) {
                 action.name = "Dialogue";
                 action.commandCount = 7;
+                action.timing = SceneActionTiming::Completion;
                 field("Window ID", 0, 1, 0, 255);
                 action.fields.last().mirrors = {{4, 2}, {5, 0}, {6, 0}};
             }
@@ -391,7 +402,7 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
                 throw Error("This source encoding requires the Commands inspector");
             auto result = program;
             const auto replacement = f.parse(value);
-            if (action.commandCount == 4) {
+            if (action.timing == SceneActionTiming::SharedCounter) {
                 const qint64 target = qint32(source.operands[f.operand]);
                 action_detail::shiftGates(
                     result, action_detail::remainingGates(program, action.command + 4, target),

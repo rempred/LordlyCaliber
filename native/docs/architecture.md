@@ -4882,3 +4882,30 @@ state; regeneration changed that description alone. No natural game-load or
 exact N64 raster claim follows from these authoring checks.
 
 The complete native build passed (image-construction-actions-final-build.log).
+
+
+## Waiting for image completion
+
+Wait for image transition emits an atomic handoff/barrier/yield/query54-equals-zero
+block. It waits through interpolation (1) and echo draining (-1), and advances on
+finished (0). It neither starts nor clears the timed-wait counter. New insertion
+and relocation require a supported wait boundary outside an active counter span;
+ambiguous or partial condition blocks remain in Commands. SceneAction now names
+its timing category explicitly, avoiding the old assumption that every four-
+command action is a shared-counter wait. Dialogue and timed-wait semantics remain
+unchanged. Inspector help links transition authoring to the completion wait.
+
+The full `scene_action_tests` suite passed: 19 checks, 35257 ms. The new case
+executes the recovered dispatcher against actual image-echo C updates for
+1/20/255-update transitions, no/short/long echoes, and a following timed wait.
+It checks query phases, release timing, unmodified counter during the transition,
+move/remove, partial/unsafe layouts and compiled project export/reopening.
+References/allocation/CRC/source checks pass. Candidate: parent Test ROMs/
+native-image-completion-wait-tziFch. `ui_tests imageTransitionCompletionWaitControls
+imageConstructionActionControls imageTransitionActionControls
+imageMotionActionControls` passed (1886 ms): a following sprite stays absent
+during draining, appears after completion, and replays exactly through seek;
+Undo/Redo and removal also pass. Capture inspected. These checks reuse the
+qualified image runtime and do not establish natural game load or full emulation.
+
+The complete native build passed (image-completion-wait-final-build.log).

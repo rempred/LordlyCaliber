@@ -25,6 +25,156 @@ class SceneActionTests : public QObject {
         }
         return DirectorProgram::decode(bytes);
     }
+    void imageTransitionCompletionWait() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image completion wait", source, false);
+            const auto base =
+                program({0x80000007U, 47,   0x3a,        1,           0,           0,          0,
+                         70,          70,   130,         8,           0x50,        0,          20,
+                         4,           0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            const int point = 3;
+            const auto p = SceneActions::insert(base, point, 0x54);
+            const auto actions = SceneActions::inspect(p);
+            const auto wait = std::find_if(actions.begin(), actions.end(),
+                                           [&](const auto &a) { return a.command == point; });
+            QVERIFY(wait != actions.end());
+            QCOMPARE(wait->name, QString("Wait for image transition"));
+            QCOMPARE(wait->commandCount, 4);
+            QVERIFY(wait->fields.isEmpty());
+            QCOMPARE(wait->timing, SceneActionTiming::Completion);
+            QCOMPARE(p.commands[point + 3].operands, QVector<quint32>({0, 0}));
+            QCOMPARE(SceneActions::remove(p, point).source, base.source);
+            auto withFade = SceneActions::insert(p, point + 4, 0x1b);
+            const auto moved = SceneActions::move(withFade, point, point + 5);
+            QCOMPARE(SceneActions::move(moved, point + 1, point).source, withFade.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(p, point, 0, "5"));
+            auto partial = p;
+            partial.commands[point + 3].operands[1] = 1;
+            partial = DirectorProgram::decode(partial.encode());
+            for (const auto &a : SceneActions::inspect(partial))
+                QVERIFY(a.command != point);
+            const auto armed = program(
+                {1, 0x48, 0, 255, 2, 0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(armed, 1, 0x54));
+            const auto branched = program(
+                {0x80000005U, 10, 0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(branched, 1, 0x54));
+            auto world = base;
+            put32(world.source, world.source.size() - 4, 0xff000001U);
+            world = DirectorProgram::decode(world.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(world, point, 0x54));
+            auto exercise = [&](const Rom &rom, ScenePrograms resources) {
+                for (const auto &[duration, tail] :
+                     QVector<QPair<int, int>>{{1, 0}, {20, 4}, {255, 1}})
+                    for (int timed : {0, 3}) {
+                        auto edited = SceneActions::edit(resources.program(id), 2, 1,
+                                                         QString::number(duration));
+                        edited = SceneActions::edit(edited, 2, 2, QString::number(tail));
+                        if (timed)
+                            edited = SceneActions::insert(edited, point + 4, 0xe, timed);
+                        resources.replace(id, edited.source);
+                        DirectorSession session(resources.runtimeDirectors(),
+                                                resources.resource(id).selectors.first(), 0);
+                        auto image = SceneImagePresentation::load(rom, 47);
+                        auto context = image.initialContext();
+                        auto channel = SceneTransforms{}.channel(1);
+                        auto query = [&] {
+                            return lordly_image_echo_query(
+                                reinterpret_cast<const uint8_t *>(context.constData()));
+                        };
+                        bool released = false;
+                        int update = 0, completed = -1;
+                        bool running = false, draining = false;
+                        auto service = [&](quint32 opcode, const QVector<quint32> &args,
+                                           int &value) {
+                            if (opcode == 0x3a)
+                                image.construct(rom, args,
+                                                SceneCameras::freshModeTwo(rom).registered(),
+                                                context);
+                            else if (opcode == 0x50)
+                                image.startEcho(args, context, channel);
+                            else if (opcode == 0x54)
+                                value = qint32(query());
+                            else if (opcode == 0x7d)
+                                released = true;
+                            return true;
+                        };
+                        QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                        for (update = 1; update <= 280 && !released; ++update) {
+                            image.advanceEcho(rom, context);
+                            session.advanceCounter();
+                            const auto state = query();
+                            running |= state == 1;
+                            draining |= state == quint32(-1);
+                            if (!state && completed < 0)
+                                completed = update;
+                            const auto result = session.dispatch(service);
+                            const bool expected = completed >= 0 && update == completed + timed;
+                            QCOMPARE(released, expected);
+                            QCOMPARE(result,
+                                     expected ? LORDLY_DIRECTOR_RELEASE : LORDLY_DIRECTOR_YIELD);
+                            if (completed < 0)
+                                QCOMPARE(session.state().counter, quint32(0));
+                        }
+                        QVERIFY(released);
+                        QVERIFY(draining);
+                        if (duration > 1)
+                            QVERIFY(running);
+                        QCOMPARE(update - 1, completed + timed);
+                        QCOMPARE(session.state().counter, quint32(0));
+                        for (auto live : image.echo().live)
+                            QCOMPARE(live, uint8_t(0));
+                        // Each scenario starts from the same authored stream, without the prior
+                        // timed suffix.
+                        resources.replace(id, p.source);
+                    }
+            };
+            scenes.replace(id, p.source);
+            exercise(project.rom(), scenes);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, p.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-image-completion-wait-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            exercise(reopened.rom(), *reopened.scenePrograms());
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Image completion wait export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void imageConstructionAction() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

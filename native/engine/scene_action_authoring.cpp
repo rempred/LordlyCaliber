@@ -22,6 +22,12 @@ bool completeDialogue(const DirectorProgram &p, int index) {
            c[index + 5].operands == QVector<quint32>{id} && c[index + 6].opcode == 5 &&
            c[index + 6].operands == QVector<quint32>{id};
 }
+bool completeImageTransitionWait(const DirectorProgram &p, int index) {
+    const auto &c = p.commands;
+    return index >= 0 && index + 3 < c.size() && c[index].opcode == 0 &&
+           c[index + 1].opcode == 0x80000002 && c[index + 2].opcode == 0x80000000 &&
+           c[index + 3].opcode == 0x54 && c[index + 3].operands == QVector<quint32>{0, 0};
+}
 QVector<CounterState> counterStates(const DirectorProgram &program) {
     QVector<CounterState> result;
     CounterState state;
@@ -29,13 +35,16 @@ QVector<CounterState> counterStates(const DirectorProgram &program) {
     for (int i = 0; i < program.commands.size(); ++i) {
         result << state;
         const auto &c = program.commands[i];
-        if (completeDialogue(program, i)) {
+        const int completion = completeDialogue(program, i)              ? 7
+                               : completeImageTransitionWait(program, i) ? 4
+                                                                         : 0;
+        if (completion) {
             const auto after = CounterState{state.known && state.arm < 0, state.arm, state.target};
-            for (int n = 0; n < 6; ++n)
+            for (int n = 1; n < completion; ++n)
                 result << CounterState{false, state.arm, state.target};
             state = after;
-            queriesSinceYield = 1; // Completion query succeeds before resume/close.
-            i += 6;
+            queriesSinceYield = 1;
+            i += completion - 1;
             continue;
         }
         if (c.opcode == 0x80000000)
@@ -167,6 +176,7 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x46, "Create scene sprite"},
             {0x76, "Pan and zoom image"},
             {0x50, "Image transition"},
+            {0x54, "Wait for image transition"},
             {0x3a, "Construct scene image"},
             {0x49, "Create path ribbon"},
             {0x4a, "Set path ribbon endpoint"},
@@ -210,7 +220,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         throw Error("Choose a supported action and insertion position.");
     if (kind == 0x2a && p.resourceClass() != 1 && p.resourceClass() != 8)
         throw Error("Create class Actor requires a fresh environment scene (class 1 or 8).");
-    if ((kind == 0x76 || kind == 0x50 || kind == 0x3a) && p.resourceClass() != 4 &&
+    if ((kind == 0x76 || kind == 0x50 || kind == 0x3a || kind == 0x54) && p.resourceClass() != 4 &&
         p.resourceClass() != 5)
         throw Error("This action requires an image scene (class 4 or 5).");
     if (kind == 0x3a) {
@@ -230,7 +240,13 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
     }
     auto result = p;
     QVector<DirectorCommand> added;
-    if (kind == 0xbf) {
+    if (kind == 0x54) {
+        if (!point->canWait)
+            throw Error(point->waitReason);
+        if (action_detail::counterStates(p)[before].arm >= 0)
+            throw Error("Insert a completion wait outside the active counter span.");
+        added << command(0) << command(0x80000002) << command(0x80000000) << command(0x54, {0, 0});
+    } else if (kind == 0xbf) {
         if (!point->canWait)
             throw Error(point->waitReason);
         const auto state = action_detail::counterStates(p)[before];
@@ -478,7 +494,8 @@ DirectorProgram SceneActions::move(const DirectorProgram &p, int index, int befo
     auto result = remove(p, index);
     if (before > index)
         before -= source->commandCount;
-    if (source->commandCount == 4 || source->commandCount == 6) {
+    if (source->timing == SceneActionTiming::Counter ||
+        source->timing == SceneActionTiming::SharedCounter) {
         const auto &field = source->fields.first();
         const auto &query = p.commands[index + field.commandOffset];
         const int duration = int(qint64(qint32(query.operands[1])) - field.bias);
@@ -491,10 +508,11 @@ DirectorProgram SceneActions::move(const DirectorProgram &p, int index, int befo
                                         [before](const auto &v) { return v.command == before; });
         if (point == remaining.end())
             throw Error("Removing this action changes the destination's control boundary.");
-        if (source->commandCount == 7 &&
+        if (source->timing == SceneActionTiming::Completion &&
             (!point->canWait || action_detail::counterStates(result)[before].arm >= 0))
-            throw Error("Dialogue must remain outside an active counter span at a supported wait "
-                        "boundary.");
+            throw Error(
+                "A completion wait must remain outside an active counter span at a supported wait "
+                "boundary.");
         for (int i = 0; i < source->commandCount; ++i)
             result.commands.insert(before + i, p.commands[index + i]);
     }
@@ -506,16 +524,17 @@ DirectorProgram SceneActions::remove(const DirectorProgram &p, int index) {
     for (const auto &a : inspect(p))
         if (a.command == index) {
             auto result = p;
-            if (p.commands[index].opcode == 0xbf && a.commandCount != 7)
+            if (p.commands[index].opcode == 0xbf && a.timing != SceneActionTiming::Completion)
                 throw Error(
                     "This window has a separate control layout; use Commands to remove it.");
-            if (a.commandCount == 6 || a.commandCount == 7) {
+            if (a.timing == SceneActionTiming::Counter ||
+                a.timing == SceneActionTiming::Completion) {
                 const auto state = action_detail::counterStates(p)[index];
                 if (!state.known || state.arm >= 0)
                     throw Error("This action follows uncertain counter state; use Commands to "
                                 "change its structure.");
             }
-            if (a.commandCount == 4) {
+            if (a.timing == SceneActionTiming::SharedCounter) {
                 const auto state = action_detail::counterStates(p)[index];
                 const qint64 duration = qint32(p.commands[index + 3].operands[1]) - state.target;
                 action_detail::shiftGates(
