@@ -14,10 +14,12 @@ const rows=model.entries.map(entry=>{
    ? ['actor_slot','art_bank','animation_key','facing','x_milliunits','y_milliunits','z_milliunits','depth_flag','variant']
    : entry.opcodeU32 === 3
    ? ['actor_slot','art_bank','animation_key','facing','x_milliunits','y_milliunits','z_milliunits','variant'] : null;
+ // Runtime-qualified corrections to the older browser feature reference.
+ const descriptions={0x54:'Returns 1 during image interpolation, -1 while echo trails drain, and 0 when finished.'};
  const span=entry.widthKind==='terminal-with-trailer'?2:entry.staticWordSpan;
  assert.equal(span,semantic.sourceWordSpan);assert.equal(span-1,semantic.operandRoles.length);
  assert.equal(entry.queryRecordKind,semantic.queryRecordKind);
- return {opcode:entry.opcodeU32,words:span,name:semantic.name,description:semantic.semanticSummary,
+ return {opcode:entry.opcodeU32,words:span,name:semantic.name,description:descriptions[entry.opcodeU32] || semantic.semanticSummary,
   operands:actorOperands || semantic.operandRoles,query:entry.queryRecordKind,mode:entry.directorModeRequirement};
 });
 const names={};for(const scene of data.scenes){

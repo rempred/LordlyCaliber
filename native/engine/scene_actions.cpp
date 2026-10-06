@@ -138,6 +138,18 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x3a:
+            action.name = "Construct scene image";
+            field("Drawing channel", 0, 1, 1, 19);
+            field("X", 1);
+            field("Y", 2);
+            field("Horizontal scale (%)", 4);
+            field("Vertical scale (%)", 5);
+            field("Vignette opacity cap", 6, 1, 0, 255);
+            field("Orientation preset (0 or 8)", 7, 1, 0, 8);
+            action.fields.last().choices = {0, 8};
+            // Preserve the ignored payload and unrecognized orientation flags.
+            break;
         case 0x50:
             action.name = "Image transition";
             field("Direction (0 forward, 1 reverse)", 0, 1, 0, 1);

@@ -123,3 +123,7 @@ Undo/Redo, project persistence and source-built ROM export/reopen are checked.
 
 Image transition Actions now expose direction, byte-sized duration and echo tail;
 editing, persistence, source-built export/reopen and preview replay are checked.
+
+Image construction Actions now expose native position, signed scales, vignette
+opacity, orientation and drawing channel. Construction order, pixel/source
+preservation, editing, persistence and compiled export/reopen are checked.

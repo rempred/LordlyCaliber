@@ -3682,6 +3682,108 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void imageConstructionActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image construction controls", source, false);
+            const QVector<quint32> words{0x80000007U, 47,          0x7d,       0x80000002U,
+                                         0x80000000U, 0x80000001U, 0xff000004U};
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            const int point = 1;
+            const auto base = SceneActions::insert(DirectorProgram::decode(bytes), point, 0xe, 70);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 750);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            auto field = [&](int i) {
+                return editor.findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            kind->setCurrentIndex(kind->findData(0x3a));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            QCOMPARE(field(0)->text(), QString("1"));
+            QCOMPARE(field(3)->text(), QString("70"));
+            QCOMPARE(field(5)->text(), QString("130"));
+            const auto once = project.scenePrograms()->program(id).source;
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, once);
+            QVERIFY(editor.findChild<QLabel *>("sceneActionStatus")
+                        ->text()
+                        .contains("already constructs"));
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto initial = frame();
+            undo.clear();
+            field(1)->setText("60");
+            const auto translated = frame();
+            QVERIFY(translated != initial);
+            undo.undo();
+            QCOMPARE(frame(), initial);
+            undo.redo();
+            QCOMPARE(frame(), translated);
+            editor.selectScene(id, point);
+            undo.clear();
+            field(3)->setText("-70");
+            const auto mirrored = frame();
+            QVERIFY(mirrored != translated);
+            undo.undo();
+            QCOMPARE(frame(), translated);
+            undo.redo();
+            QCOMPARE(frame(), mirrored);
+            editor.selectScene(id, point);
+            undo.clear();
+            field(5)->setText("0");
+            const auto transparent = frame();
+            QVERIFY(transparent != mirrored);
+            undo.undo();
+            QCOMPARE(frame(), mirrored);
+            undo.redo();
+            QCOMPARE(frame(), transparent);
+            editor.selectScene(id, point);
+            field(5)->setText("210");
+            field(6)->setText("0");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto accepted = project.scenePrograms()->program(id).source;
+            field(0)->setText("0");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-image-construction-actions.png"));
+            editor.findChild<QPushButton *>("sceneActionRemove")->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, base.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void imageTransitionActionControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

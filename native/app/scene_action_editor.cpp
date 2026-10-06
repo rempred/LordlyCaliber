@@ -318,6 +318,22 @@ void SceneActionEditor::showAction() {
             input->setToolTip("A point other than -1 writes only the stored milestone. Otherwise "
                               "the percentage is updated. This never clears an earlier milestone, "
                               "rewinds revealed geometry or restarts the activity flag.");
+        if (action.name == "Construct scene image" && f.canonical(word)) {
+            if (i == 0)
+                input->setToolTip("Image drawing channel 1 through 19. Channel 0 uses a separate "
+                                  "game drawing owner and remains available in Commands.");
+            else if (i == 3 || i == 4)
+                input->setToolTip(
+                    "Signed percentage. Negative values mirror this axis; zero "
+                    "collapses it. The transform must fit native fixed-point limits.");
+            else if (i == 5)
+                input->setToolTip("Maximum alpha for the half-resolution vignette. The original "
+                                  "image pixels remain intact.");
+            else if (i == 6)
+                input->setToolTip(
+                    "0 applies the native -90-degree Y / +5-degree Z preset; "
+                    "8 uses 0-degree Y / -5-degree Z. Other encoded flag words are preserved.");
+        }
         if (action.name == "Image transition" && f.canonical(word)) {
             if (i == 0)
                 input->setToolTip(
@@ -376,7 +392,10 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Image transition"
+        action.name == "Construct scene image"
+            ? "Builds the vignette and starting transform from the launch image once. Keep this "
+              "before Image transition. Removing it may leave later transitions without an image."
+        : action.name == "Image transition"
             ? "Runs on the scene's constructed image. Echoes drain after the duration; this action "
               "does not wait for them. Forward settles the image, enabling later pan/zoom."
         : action.name == "Pan and zoom image"
@@ -565,8 +584,9 @@ void SceneActionEditor::updateStructureControls() {
                       kind_->currentData().toUInt() == 0xb5 ||
                       kind_->currentData().toUInt() == 0xbf;
     const bool body = kind_->currentData().toUInt() == 0x2a;
-    const bool image =
-        kind_->currentData().toUInt() == 0x76 || kind_->currentData().toUInt() == 0x50;
+    const bool image = kind_->currentData().toUInt() == 0x76 ||
+                       kind_->currentData().toUInt() == 0x50 ||
+                       kind_->currentData().toUInt() == 0x3a;
     const int type = valid ? project_->scenePrograms()->program(key_).resourceClass() : -1;
     const bool allowed = (!wait || position_->currentData(Qt::UserRole + 1).toBool()) &&
                          (!body || type == 1 || type == 8) && (!image || type == 4 || type == 5);

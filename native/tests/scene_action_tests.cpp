@@ -25,6 +25,132 @@ class SceneActionTests : public QObject {
         }
         return DirectorProgram::decode(bytes);
     }
+    void imageConstructionAction() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image construction action", source, false);
+            const auto base = program(
+                {0x80000007U, 47, 0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            const int point = 1;
+            auto p = SceneActions::insert(base, point, 0x3a);
+            const auto defaultArgs = p.commands[point].operands;
+            QCOMPARE(defaultArgs, QVector<quint32>({1, 0, 0, 0, 70, 70, 130, 8}));
+            QCOMPARE(SceneActions::remove(p, point).source, base.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(p, point, 0x3a));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(base, point, 0x50));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(p, point, 0x50));
+            const auto transition = SceneActions::insert(p, point + 1, 0x50);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::move(transition, point, point + 2));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::move(transition, point + 1, point));
+            auto reversed = transition;
+            std::swap(reversed.commands[point], reversed.commands[point + 1]);
+            reversed = DirectorProgram::decode(reversed.encode());
+            QCOMPARE(SceneActions::move(reversed, point + 1, point).source, transition.source);
+            const auto missing = SceneActions::remove(reversed, point + 1);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(missing, point + 1, 0x3a));
+            QCOMPARE(SceneActions::insert(missing, point, 0x3a).source, transition.source);
+            for (const auto &[field, text] : QVector<QPair<int, QString>>{
+                     {0, "2"}, {1, "20"}, {2, "-10"}, {3, "40"}, {4, "90"}, {5, "210"}, {6, "0"}})
+                p = SceneActions::edit(p, point, field, text);
+            for (const auto &[field, text] :
+                 QVector<QPair<int, QString>>{{0, "0"}, {0, "20"}, {5, "256"}, {6, "4"}})
+                QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(p, point, field, text));
+            auto opaque = p;
+            opaque.commands[point].operands[3] = 0x12345678;
+            opaque.commands[point].operands[7] = 0x104;
+            opaque = DirectorProgram::decode(opaque.encode());
+            const auto retained = SceneActions::edit(opaque, point, 1, "30");
+            QCOMPARE(retained.commands[point].operands[3], quint32(0x12345678));
+            QCOMPARE(retained.commands[point].operands[7], quint32(0x104));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(opaque, point, 6, "8"));
+            auto symbolic = p;
+            symbolic.commands[point].operands[1] = 0x08880003;
+            symbolic = DirectorProgram::decode(symbolic.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(symbolic, point, 1, "0"));
+            QCOMPARE(SceneActions::edit(symbolic, point, 5, "100").commands[point].operands[1],
+                     quint32(0x08880003));
+            auto world = base;
+            put32(world.source, world.source.size() - 4, 0xff000001U);
+            world = DirectorProgram::decode(world.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(world, point, 0x3a));
+            auto exercise = [&](const Rom &rom, const DirectorProgram &p) {
+                auto image = SceneImagePresentation::load(rom, 47), original = image;
+                const auto sourcePixels = image.source();
+                auto context = image.initialContext(), old = context;
+                const auto camera = SceneCameras::freshModeTwo(rom).registered();
+                original.construct(rom, defaultArgs, camera, old);
+                image.construct(rom, p.commands[point].operands, camera, context);
+                QCOMPARE(image.slot(), 2);
+                QCOMPARE(u8(context, 0x838), quint8(2));
+                QCOMPARE(u8(context, 0x83d), quint8(210));
+                QVERIFY(context.first(64) != old.first(64));
+                QVERIFY(context.mid(0x798, 64) != old.mid(0x798, 64));
+                QVERIFY(image.processed() != original.processed());
+                QCOMPARE(image.source(), sourcePixels);
+                int maximum = 0;
+                for (int y = 0; y < image.processed().height(); ++y)
+                    for (int x = 0; x < image.processed().width(); ++x)
+                        maximum = std::max(maximum, image.processed().pixelColor(x, y).alpha());
+                QCOMPARE(maximum, 210);
+                const auto accepted = context;
+                const auto processed = image.processed();
+                QVERIFY_THROWS_EXCEPTION(Error, image.construct(rom, defaultArgs, camera, context));
+                QCOMPARE(context, accepted);
+                QCOMPARE(image.processed(), processed);
+                auto mirrored = SceneImagePresentation::load(rom, 47);
+                auto mirrorContext = mirrored.initialContext();
+                auto args = p.commands[point].operands;
+                args[4] = quint32(-40);
+                mirrored.construct(rom, args, camera, mirrorContext);
+                QVERIFY(mirrorContext.first(64) != context.first(64));
+                QCOMPARE(mirrored.processed(), image.processed());
+            };
+            exercise(project.rom(), p);
+            p = SceneActions::insert(p, point + 1, 0xe, 60);
+            scenes.replace(id, p.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, p.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-image-construction-action-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            exercise(reopened.rom(), reopened.scenePrograms()->program(id));
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Image construction Actions export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void imageTransitionAction() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
@@ -293,8 +419,7 @@ class SceneActionTests : public QObject {
             const auto id = scenes.createScene("Ribbon Actions", source, false);
             const auto base = program({0x80000007U, 47, 0x3a, 1, 0, 0, 0, 70, 70, 130, 8, 0x7d,
                                        0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
-            const int point = SceneActions::positions(base).first().command;
-            QCOMPARE(point, 2);
+            const int point = 2; // Insert after the independently editable image construction.
             auto p = SceneActions::insert(base, point, 0x49);
             QCOMPARE(p.commands[point].operands,
                      QVector<quint32>({0, 3, 0, 100, quint32(-1), 3, 0, 0, 1}));
@@ -754,7 +879,7 @@ class SceneActionTests : public QObject {
         QCOMPARE(points[0].command, 3);
         QVERIFY(points[0].canWait);
         for (auto kind : SceneActions::kinds().keys()) {
-            if (kind == 0x2a) {
+            if (kind == 0x2a || kind == 0x50) {
                 QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(source, 3, kind));
                 continue;
             }

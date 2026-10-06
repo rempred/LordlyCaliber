@@ -4848,3 +4848,37 @@ corrected the fixture without changing the runtime. Natural game load and exact
 N64 raster output are not established by these checks.
 
 The complete native build passed (image-transition-actions-final-build.log).
+
+
+## Image construction Actions
+
+Director3A now exposes channel 1..19, position, signed scales, vignette alpha cap
+and orientation presets 0/8. Negative scales mirror an axis; zero collapses it.
+The ignored payload, symbolic inputs and unfamiliar flag words remain intact.
+Channel zero's separate drawing owner is still unimplemented, so its original
+value remains read-only in this inspector. Native fixed-point range failures
+continue to report through preview rather than changing the stored script.
+Templates require image scenes and refuse a second constructor. New transitions
+require a preceding constructor. Moving actions cannot invert that order, but
+can repair an existing reversed order. Removing construction is explicit and
+can leave dependent transitions incomplete; the inspector states that limit.
+These are script-order guards, not a proof about arbitrary branch execution.
+
+The original matrix/vignette runtime is unchanged. The construction test checks
+native context matrices, alpha cap, source pixel preservation, signed scales,
+duplicate-start rollback, opaque fields and structural rules, then persists,
+compiles, exports and reopens with resource/allocation/CRC/source checks.
+Candidate: parent Test ROMs/native-image-construction-action-CPukzu. The complete
+Actions suite's first seven cases passed (11091 ms) before its generic insertion
+fixture hit the new transition prerequisite. That fixture now expects the error;
+all remaining nine cases passed (18545 ms), including waits, dialogue, action
+ordering, Actor/class fields and exports. Passing earlier cases were reused.
+`ui_tests imageConstructionActionControls imageTransitionActionControls
+imageMotionActionControls ribbonActionControls pathSpriteActionControls` passed
+(1858 ms), covering visible construction fields, Undo/Redo, invalid input,
+removal and related workflows. Capture inspected. The grammar generator now
+corrects query54's older browser description to include the signed -1 drain
+state; regeneration changed that description alone. No natural game-load or
+exact N64 raster claim follows from these authoring checks.
+
+The complete native build passed (image-construction-actions-final-build.log).
