@@ -5224,3 +5224,40 @@ drafts, Undo/Redo, subsequent leader/squad actions and export/reopen pass. The
 capture was inspected. Legion creation and individual follower changes remain.
 
 The complete native build passed (legion-disband-final-build.log).
+
+
+## Detaching saved legion followers
+
+The Squads page can detach its selected follower without disbanding the legion
+or changing squad contents. The commander cannot detach through this action;
+whole-legion disband remains available. Rear slots3/4 move into front slots1/2
+only when the corresponding front follower leaves, matching B726C. The remaining
+legion's movement type is aggregated from saved squad movement with the ROM
+priority table; its count-derived byte is11 minus the remaining squad count.
+The original normal-save codec stores that byte's low3bits, so counts3/2/1 reopen
+as0/1/2. The product follows that original saved representation explicitly.
+
+The shared editable-legion validator refuses duplicate/missing/shared members,
+including references from excluded flag81 rows. Detachment retains order and
+all other legion fields, character flags, Soldier state, supplies and Unity.
+It is one save Undo action, protected by unapplied squad drafts and restricted
+to normal battery slots.
+
+Complete original removal B726C..B7360 (244 bytes), movement BD26C..BD318
+(172 bytes), count-derived value BD318..BD36C (84 bytes), and the64-byte caller
+at C74B0 match the read-only Army capture under delta801135A0. The reference
+runs removal, both derived-field routines, the full writer and original packed
+encoder/decoder. Small-legion truncation is therefore checked against original
+instructions, not assumed from a plausible field layout.
+
+`save_document_tests legionFollowerRemoval legionDisbanding` passed in11487ms:
+144 product detach operations across two fixture armies, both slots and three
+layouts;24 native removal/store/codec comparisons and24 independent original
+decodes; all follower positions, mixed movement types, successive removals down
+to a lone commander, unchanged unrelated memory, Undo/reopen and guarded invalid
+states. Existing whole-legion disband still passes. `ui_tests
+saveLegionFollowerControls saveLegionDisbandControls` passed in1569ms, including
+controls, draft refusal, Undo/Redo, subsequent squad disband and export/reopen.
+The capture was inspected. No natural Army-menu execution is claimed.
+
+The complete native build passed (legion-follower-final-build.log).

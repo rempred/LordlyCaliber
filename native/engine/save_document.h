@@ -56,6 +56,7 @@ class SaveDocument {
     QVector<SaveUnit> units() const;
     QVector<SaveLegion> legions() const;
     SaveChange planDisbandLegion(int index) const;
+    SaveChange planDetachLegionUnit(int index, int unit) const;
     QVector<int> reserveMembers() const;
     QVector<int> newUnitLeaders(const ClassData &) const;
     SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;
@@ -106,6 +107,7 @@ class SaveDocument {
     int daysInMonth(unsigned year, unsigned month) const;
     SaveChange planBytes(int address, const QByteArray &replacement) const;
     SaveChange difference(const QByteArray &next, int first, int size) const;
+    SaveLegion editableLegion(int index) const;
     QPair<int, int> memberClasses(int id) const;
     QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;

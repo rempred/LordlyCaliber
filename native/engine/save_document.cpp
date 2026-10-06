@@ -555,16 +555,40 @@ QVector<SaveLegion> SaveDocument::legions() const {
     }
     return result;
 }
-SaveChange SaveDocument::planDisbandLegion(int index) const {
+SaveLegion SaveDocument::editableLegion(int index) const {
     if (!canEditUnits())
-        throw Error("Legion disbanding requires a regular battery-save slot");
+        throw Error("Legion changes require a regular battery-save slot");
     const auto all = legions();
     const auto found = std::find_if(all.begin(), all.end(),
                                     [&](const auto &legion) { return legion.index == index; });
     if (found == all.end())
         throw Error("Choose an existing saved legion");
     const auto squads = units();
-    QSet<int> present, ordered, members;
+    QSet<int> members;
+    for (int id : found->units)
+        if (id != 255) {
+            if (id < 0 || id >= 30 || members.contains(id) ||
+                std::none_of(
+                    squads.begin(), squads.end(),
+                    [&](const auto &unit) { return unit.index == id; }))
+                throw Error("The legion has an invalid or duplicate squad reference");
+            for (int row = 0; row < 10; ++row) {
+                const int base = 0x1969b8 + row * 11;
+                if (row != index && (u8(ram_, base + 1) & 1))
+                    for (int slot = 0; slot < 5; ++slot)
+                        if (u8(ram_, base + 2 + slot) == id)
+                            throw Error("A squad is assigned to more than one legion");
+            }
+            members << id;
+        }
+    if (found->units[0] == 255 || members.isEmpty())
+        throw Error("The legion has no command squad");
+    return *found;
+}
+SaveChange SaveDocument::planDisbandLegion(int index) const {
+    editableLegion(index);
+    const auto all = legions();
+    QSet<int> present, ordered;
     for (const auto &legion : all)
         present << legion.index;
     QVector<int> order;
@@ -582,20 +606,6 @@ SaveChange SaveDocument::planDisbandLegion(int index) const {
     }
     if (ordered != present)
         throw Error("Saved legion order cannot represent every active legion");
-    for (int id : found->units)
-        if (id != 255) {
-            if (id < 0 || id >= 30 || members.contains(id) ||
-                std::none_of(
-                    squads.begin(), squads.end(),
-                    [&](const auto &unit) { return unit.index == id; }))
-                throw Error("The legion has an invalid or duplicate squad reference");
-            for (const auto &legion : all)
-                if (legion.index != index && legion.units.contains(id))
-                    throw Error("A squad is assigned to more than one legion");
-            members << id;
-        }
-    if (found->units[0] == 255 || members.isEmpty())
-        throw Error("The legion has no command squad");
     auto candidate = *this;
     const int flag = 0x1969b8 + index * 11 + 1;
     candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) & ~1))), true);
@@ -607,6 +617,40 @@ SaveChange SaveDocument::planDisbandLegion(int index) const {
     candidate.apply(candidate.planBytes(0x193ab0, bytes), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
+}
+SaveChange SaveDocument::planDetachLegionUnit(int index, int unit) const {
+    auto legion = editableLegion(index);
+    const int slot = int(legion.units.indexOf(unit));
+    if (slot <= 0 || unit == 255)
+        throw Error(
+            "Choose a follower squad; removing the command squad requires disbanding the legion");
+    // B726C shifts the rear entry in the same formation column into slots1/2.
+    legion.units[slot] = slot < 3 ? legion.units[slot + 2] : 255;
+    if (slot < 3)
+        legion.units[slot + 2] = 255;
+    const int at = 0x1969b8 + index * 11;
+    auto record = ram_.mid(at, 11);
+    QVector<int> types;
+    int count = 0;
+    for (int i = 0; i < 5; ++i) {
+        put8(record, 2 + i, quint8(legion.units[i]));
+        const int id = legion.units[i];
+        const int type = id == 255 ? 0 : u8(ram_, 0x1971f0 + id * 25 + 24);
+        if (type > 7)
+            throw Error("A legion squad has an unsupported movement type");
+        types << type;
+        count += id != 255;
+    }
+    int movement = 7;
+    for (auto type : movementOrder_)
+        if (types.contains(quint8(type))) {
+            movement = quint8(type);
+            break;
+        }
+    put8(record, 9, quint8(movement));
+    // BD318 produces11-count; the original normal-save codec stores its low3bits.
+    put8(record, 10, quint8((11 - count) & 7));
+    return planBytes(at, record);
 }
 QVector<SaveUnit> SaveDocument::units() const {
     QVector<SaveUnit> result;

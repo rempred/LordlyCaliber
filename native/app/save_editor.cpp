@@ -407,6 +407,20 @@ bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int t
         return false;
     }
 }
+bool SaveEditor::detachLegionUnit(int index, int unit) {
+    if (!document_ || !allowImmediateEdit())
+        return false;
+    try {
+        auto change = document_->planDetachLegionUnit(index, unit);
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "detach squad from legion"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 bool SaveEditor::disbandLegion(int index) {
     if (!document_ || !allowImmediateEdit())
         return false;

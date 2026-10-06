@@ -18,6 +18,8 @@ if(mode==='generate'){
  const variant=(name,edit)=>{m.load(0x80000000,original);m.set('sp',0x803f0000);edit();m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);fs.writeFileSync(path.join(dir,name),read(payload,6180));};
  variant('legions.bin',()=>{});
  variant('legion-last.bin',()=>{for(const i of[2,4])m.w8(legions+i*11+1,0);for(let i=5;i<15;++i)m.w8(squads+i*25+1,1);m.load(order,Buffer.from([0,7,7,7,7,7]));});
+ variant('legion-movement.bin',()=>[7,3,1,6,5].forEach((type,i)=>m.w8(squads+i*25+24,type)));
+ variant('legion-member-hidden.bin',()=>{m.w8(legions+6*11+1,129);m.w8(legions+6*11+2,0);});
  variant('legion-order-duplicate.bin',()=>m.w8(order+1,4));
  variant('legion-order-missing.bin',()=>m.w8(order+2,7));
  variant('legion-member-duplicate.bin',()=>m.w8(legions+3,0));
@@ -27,7 +29,7 @@ if(mode==='generate'){
  variant('legion-unrepresented.bin',()=>m.w8(legions+7*11+1,1));
  console.log('Generated saved legions through original save encoder.');process.exit(0);
 }
-assert.equal(mode,'verify');const data=JSON.parse(fs.readFileSync(path.join(dir,'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
+assert.ok(['verify','verify-detach'].includes(mode));const detach=mode==='verify-detach',data=JSON.parse(fs.readFileSync(path.join(dir,detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
 for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buffer.from(row.legions,'hex'),chars=Buffer.from(row.characters,'hex');
  m.load(root,Buffer.alloc(0x3000));m.w32(0x80196af8,root);m.set('sp',0x803f0000);m.load(squads,units);m.load(legions,groups);m.load(roster,chars);m.load(0x80190f80,Buffer.from(row.soldiers,'hex'));m.load(0x80193ac0,Buffer.from(row.inventory,'hex'));
  const ranks=Buffer.from(row.unitOrder,'hex');m.load(0x801977d8,Buffer.alloc(30,255));let count=0;
@@ -43,9 +45,16 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
  m.w32(root+704,count-grouped);m.w32(root+708,count);m.w32(root+1500,legionCount);
  const leaderEligibility=()=>{m.set('a0',18);m.set('a1',0x100);m.set('a2',5);m.call(live(0xc01dc));return m.get('v0')>>>0;};
  assert.equal(leaderEligibility(),10,'ordinary candidate cannot command a current legion');
- m.set('a0',row.index);m.call(live(0xb7164));
- assert.equal(leaderEligibility(),row.index===0?0xffffffff:10,'restriction follows actual legion membership');
+ m.set('a0',row.index);
+ if(detach){m.set('a1',row.slot);m.call(live(0xb726c));const active=root+4308+row.index*14;
+  m.set('a0',row.index);m.call(live(0xbd26c));m.w8(active+10,m.get('v0'));
+  m.set('a0',row.index);m.call(live(0xbd318));m.w8(active+11,m.get('v0'));
+ }else m.call(live(0xb7164));
+ assert.equal(leaderEligibility(),!detach&&row.index===0?0xffffffff:10,'restriction follows actual legion membership');
  m.call(live(0xc1d68));
+ if(detach){m.set('a0',payload);m.set('a1',descriptor);m.call(0x80074494,0x80000100,5000000);
+  m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);}
+
  assert.deepEqual(read(squads,750),Buffer.from(row.afterUnits,'hex'),'whole saved squad records');
  assert.deepEqual(read(legions,110),Buffer.from(row.afterLegions,'hex'),'whole saved legion records');
  assert.deepEqual(read(order,6).map(v=>v===255?7:v),Buffer.from(row.afterOrder,'hex'),'saved legion order');
@@ -53,4 +62,4 @@ for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buf
 }
 for(const row of data.saves){m.load(payload,Buffer.from(row.payload,'hex'));m.set('sp',0x803f0000);m.set('a0',payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);
  assert.deepEqual(read(squads,750),Buffer.from(row.units,'hex'));assert.deepEqual(read(legions,110),Buffer.from(row.legions,'hex'));assert.deepEqual(read(order,6),Buffer.from(row.order,'hex'));}
-console.log(`PASS ${data.cases.length} original legion disband/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);
+console.log(`PASS ${data.cases.length} original legion ${detach?'detach':'disband'}/store sequences and ${data.saves.length} original save decodes. Synthetic Army allocation; no natural menu run.`);

@@ -61,6 +61,14 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     legion_ = new QLabel;
     legion_->setObjectName("saveUnitLegion");
     body->addWidget(legion_);
+    detachLegion_ = new QPushButton("Detach this squad from its legion");
+    detachLegion_->setObjectName("saveDetachLegionUnit");
+    body->addWidget(detachLegion_);
+    connect(detachLegion_, &QPushButton::clicked, this, [this] {
+        if (shownLegion_ >= 0 && units_->currentItem())
+            editor_->detachLegionUnit(shownLegion_,
+                                      units_->currentItem()->data(Qt::UserRole).toInt());
+    });
     disbandLegion_ = new QPushButton("Disband legion, keep its squads");
     disbandLegion_->setObjectName("saveDisbandLegion");
     body->addWidget(disbandLegion_);
@@ -441,16 +449,23 @@ void SaveUnitEditor::refreshSwapTargets() {
     refreshSupplies(pending);
     refreshCreation(pending);
     shownLegion_ = -1;
+    bool follower = false;
     legion_->setText("Independent squad");
     if (editor_->document() && units_->currentItem())
         for (const auto &legion : editor_->document()->legions())
             if (legion.units.contains(units_->currentItem()->data(Qt::UserRole).toInt())) {
                 shownLegion_ = legion.index;
+                follower = legion.units[0] != units_->currentItem()->data(Qt::UserRole).toInt();
                 const int count = int(std::count_if(legion.units.begin(), legion.units.end(),
                                                     [](int id) { return id != 255; }));
                 legion_->setText(QString("Legion %1 · %2 squads").arg(legion.label).arg(count));
                 break;
             }
+    detachLegion_->setEnabled(follower && editor_->document()->canEditUnits() && !pending);
+    detachLegion_->setToolTip(
+        pending ? "Apply squad edits before changing legion membership"
+                : "Keeps this squad and its contents; the remaining legion retains its commander. "
+                  "Use Disband legion to release the command squad.");
     disbandLegion_->setEnabled(shownLegion_ >= 0 && editor_->document()->canEditUnits() &&
                                !pending);
     disbandLegion_->setToolTip(pending

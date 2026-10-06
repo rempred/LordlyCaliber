@@ -1632,6 +1632,84 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveLegionFollowerControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-legion-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("legions.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1200);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
+            auto label = editor.findChild<QLabel *>("saveUnitLegion");
+            auto detach = editor.findChild<QPushButton *>("saveDetachLegionUnit");
+            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+            QVERIFY(units && members && label && detach && unity);
+            units->setCurrentRow(0);
+            QVERIFY(!detach->isEnabled());
+            units->setCurrentRow(1);
+            QVERIFY(detach->isEnabled());
+            unity->setValue(22);
+            QVERIFY(!detach->isEnabled());
+            QVERIFY(!editor.detachLegionUnit(0, 1));
+            unity->setValue(23);
+            detach->click();
+            QCOMPARE(units->count(), 17);
+            QCOMPARE(label->text(), QString("Independent squad"));
+            QVERIFY(!detach->isEnabled());
+            QCOMPARE(editor.document()->legions()[0].units, QVector<int>({0, 3, 2, 255, 4}));
+            const auto result = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            QVERIFY(detach->isEnabled());
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), result);
+            editor.findChild<QPushButton *>("saveDisbandUnit")->click();
+            QCOMPARE(units->count(), 16);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), result);
+            const auto filename = work.filePath("detach-legion.SaveRAM");
+            editor.exportFile(filename);
+            QFile file(filename);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
+            units->setCurrentRow(3);
+            QVERIFY(label->text().contains("4 squads"));
+            QVERIFY(detach->isEnabled());
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("save-detach-legion.png"));
+            detach->click();
+            QCOMPARE(editor.document()->legions()[0].units, QVector<int>({0, 255, 2, 255, 4}));
+            QCOMPARE(label->text(), QString("Independent squad"));
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.loadBytes(editor.document()->memory());
+            QVERIFY(!detach->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveLegionDisbandControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
