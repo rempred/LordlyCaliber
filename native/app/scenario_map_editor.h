@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <functional>
 class QLabel;
+class QCheckBox;
 class QListWidget;
 class QSpinBox;
 class QPushButton;
@@ -31,6 +32,7 @@ class ScenarioMapEditor : public QWidget {
     QLabel *notice_, *reference_, *referenceName_, *selection_;
     QSpinBox *x_, *z_;
     QPushButton *apply_, *fields_;
+    QCheckBox *terrain_;
     int key_ = -1;
     bool loading_ = false;
 };

@@ -1,5 +1,47 @@
 # Native Lordly Caliber
 
+## Calibrated Scenario terrain references
+
+The map canvas now draws49 current-ROM terrain images behind the existing world
+coordinate grid, markers and route links. Terrain can be hidden independently of
+Grid/Labels. The view labels this as approximate calibration. Placement bytes,
+selection, pan/zoom, drag conversion, undo and export keep their existing paths.
+The image is clipped to the playable coordinate grid; parts of that grid outside
+the available illustration remain untextured.
+
+`game/scenarios/map-images.json` contains numeric image/world rectangles and decoded
+image identities. `native/tools/generate_map_image_alignment.py` generates it from
+the parent `tools/native_map_image_probe.cjs` and `tools/native_map_alignment_probe.py`
+report. The research inputs are the user's ROM and the existing manually adjusted
+`wiki/scenario-map-calibration.json` reference registrations. The parent probe fits
+24 image scales and all translations using masked normalized RGB correlation,
+then refines independent X/Y scale and translation. Each image quadrant is also
+excluded from both global search and refinement, then checked against that fit.
+The complete57-image analysis took294.8seconds locally and reuses identical image
+pairs. The product ships no reference artwork, NumPy or research-image dependency.
+
+Included fits have overall correlation >=0.75, every excluded quadrant >=0.60,
+maximum normalized rectangle-parameter drift <=0.015 and an existing site-fitted
+manual reference. The49 selections pass these checks. Runtime source-image hashes
+and dimensions prevent reuse of a calibration after the artwork changes. Unknown
+or changed images continue to load as separate references. Keys39,47,48,51,52,53,
+60 and61 retain that fallback: their reference images differ in terrain/building
+detail or fail regional stability. Seven scenarios have no selected ROM image.
+This is registration to an existing manual reference, not a recovered game image
+projection or full terrain simulation. Original placement differences remain open.
+
+`map_tests coordinateEncoding calibratedTerrain` passed in350ms: exact grid
+conversion, all64 scenarios/57 image selections/49 qualified alignments, absent
+images and a well-formed replacement image that must retain coordinates while
+losing its old calibration. The replacement fixture remains in memory.
+`ui_tests scenarioMapEditing` passed in1865ms: terrain visibility without project
+or undo changes, zoom/pan/drag, all three movable object types, field navigation,
+undo, project save, compiled ROM export, checksum and reopening. The map capture
+was inspected. Its candidate is under parent `Test ROMs/native-map-edit-EtCNXW/`.
+An old mangled separator in that test's treasure lookup was corrected during this
+check. The original source ROM and stored scenario coordinate formats are unchanged.
+
+
 ## Ordered color dithering during artwork import
 
 The shared image-preparation dialog offers an unchecked Ordered dithering option
@@ -3195,9 +3237,9 @@ supports zoom/pan and overlapping-object selection, and opens the corresponding
 field editor. Squad/waypoint/treasure movement uses the existing model and undo
 commands, including coordinate-mode conversion and its nonzero-Z sentinel.
 Persistence, compiled export, checksum and reopening are checked from UI edits.
-The ROM terrain image remains a separate reference until its projection onto the
-grid is verified. Special placement differences and dynamic group behavior are
-explicit limits; this is an initial-placement editor, not live mission execution.
+Qualified ROM terrain images now use the approximate calibration described above;
+other images retain a separate reference. Special placement differences and dynamic
+group behavior are explicit limits; this is an initial-placement editor, not live mission execution.
 
 The native archive writer produces LH5 streams with an 8 KiB match window and
 bounded block sizes. Rebuilding a member preserves its original header metadata

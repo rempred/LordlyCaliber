@@ -1,11 +1,54 @@
 #include "engine/scenario_map.h"
 #include "engine/archive.h"
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMap>
 #include <algorithm>
 #include <bit>
 #include <cmath>
 
 namespace lordly {
 namespace {
+struct ImageAlignment {
+    QByteArray sourceHash;
+    QSize size;
+    QRectF bounds;
+};
+const QMap<int, ImageAlignment> &imageAlignments() {
+    static const auto values = [] {
+        QFile file(":/game/scenarios/map-images.json");
+        if (!file.open(QIODevice::ReadOnly))
+            throw Error("Missing map image calibration");
+        const auto object = QJsonDocument::fromJson(file.readAll()).object();
+        if (object["schema"].toInt() != 1 || !object["maps"].isArray())
+            throw Error("Invalid map image calibration");
+        QMap<int, ImageAlignment> result;
+        for (const auto &value : object["maps"].toArray()) {
+            const auto row = value.toObject();
+            const int key = row["scenario"].toInt();
+            const auto hash = row["imageSha256"].toString().toLatin1();
+            const auto b = row["worldBounds"].toArray();
+            const QSize size(row["width"].toInt(), row["height"].toInt());
+            if (key < 1 || key > 64 || result.contains(key) || hash.size() != 64 ||
+                QByteArray::fromHex(hash).toHex().toUpper() != hash || b.size() != 4 ||
+                size.isEmpty() || size.width() > 8192 || size.height() > 8192)
+                throw Error("Invalid map image calibration row");
+            for (const auto &coordinate : b)
+                if (!coordinate.isDouble() || !std::isfinite(coordinate.toDouble()) ||
+                    std::abs(coordinate.toDouble()) > 10000)
+                    throw Error("Invalid calibrated map coordinate");
+            const QRectF bounds(QPointF(b[0].toDouble(), b[1].toDouble()),
+                                QPointF(b[2].toDouble(), b[3].toDouble()));
+            if (bounds.width() <= 0 || bounds.height() <= 0)
+                throw Error("Empty calibrated map rectangle");
+            result.insert(key, {hash, size, bounds});
+        }
+        return result;
+    }();
+    return values;
+}
 quint32 le32(const QByteArray &data, qsizetype at) {
     return quint32(u8(data, at)) | (quint32(u8(data, at + 1)) << 8) |
            (quint32(u8(data, at + 2)) << 16) | (quint32(u8(data, at + 3)) << 24);
@@ -85,9 +128,27 @@ ScenarioMap ScenarioMap::load(const Rom &rom, int key) {
             u8(data, end - 1) || !member.name.startsWith("s_map"))
             throw Error("Map image archive differs from its directory");
         result.imageName = member.name;
-        result.image = decodeN64Image(member.decode(rom));
+        const auto decoded = member.decode(rom);
+        result.image = decodeN64Image(decoded);
+        const auto &calibrations = imageAlignments();
+        const auto found = calibrations.constFind(key);
+        if (found != calibrations.cend() &&
+            found->size == QSize(result.image->width, result.image->height) &&
+            found->sourceHash == sha256(decoded).toUpper())
+            result.imageBounds = found->bounds;
     }
     return result;
+}
+std::optional<QRectF> ScenarioMap::imageGridBounds() const {
+    if (!imageBounds)
+        return {};
+    if (bounds.width() <= 0 || bounds.height() <= 0)
+        throw Error("Invalid map bounds");
+    const auto point = [&](QPointF p) {
+        return QPointF((p.x() - bounds.left()) / bounds.width() * 256.,
+                       (p.y() - bounds.top()) / bounds.height() * 256.);
+    };
+    return QRectF(point(imageBounds->topLeft()), point(imageBounds->bottomRight()));
 }
 QPointF ScenarioMap::world(int x, int z) const {
     if (x < 0 || x > 255 || z < 0 || z > 255)

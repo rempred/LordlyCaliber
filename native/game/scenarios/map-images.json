@@ -1,0 +1,804 @@
+{
+  "schema": 1,
+  "generator": "native/tools/generate_map_image_alignment.py",
+  "inputs": [
+    "tools/native_map_alignment_probe.py",
+    "wiki/scenario-map-calibration.json",
+    "US Rev 0 ROM terrain images identified by decoded SHA-256"
+  ],
+  "meaning": "Approximate image registration composed with existing manual world coordinates.",
+  "maps": [
+    {
+      "scenario": 1,
+      "width": 224,
+      "height": 160,
+      "imageSha256": "4D4B580F18B9D06BF2E3A4C1C122019370B594B428183479B3DE8CCD30D8B160",
+      "worldBounds": [
+        -14.893387268852129,
+        -12.754556543017504,
+        15.70084645898128,
+        9.01527887678782
+      ],
+      "fitScore": 0.9245798974783535,
+      "excludedRegionScore": 0.8508180176572758,
+      "maximumParameterDrift": 0.0050000000000000044
+    },
+    {
+      "scenario": 2,
+      "width": 172,
+      "height": 212,
+      "imageSha256": "593DDCAD9CA04244FCC4B21B5C8111C0F8E5E8DA62D5D7FAD60A1F022A068919",
+      "worldBounds": [
+        -14.66080990447941,
+        -17.611477380137295,
+        9.186810736495133,
+        11.80777850461647
+      ],
+      "fitScore": 0.8522982257717415,
+      "excludedRegionScore": 0.7968215984660368,
+      "maximumParameterDrift": 0.005156250000000084
+    },
+    {
+      "scenario": 3,
+      "width": 152,
+      "height": 156,
+      "imageSha256": "5A1473EF82116DB05923AE57B5EAFA0EDB8902C723A92491F7D6566E8533A595",
+      "worldBounds": [
+        -11.238423728950295,
+        -11.18106610115324,
+        9.989227813056129,
+        10.701928761643043
+      ],
+      "fitScore": 0.8725409515908141,
+      "excludedRegionScore": 0.8423034418419718,
+      "maximumParameterDrift": 0.01456250000000009
+    },
+    {
+      "scenario": 4,
+      "width": 240,
+      "height": 144,
+      "imageSha256": "B475E396E30A2D7CDFA65CA8EC080A9A317094E5EF0FA46C742FA7EBCAE8E96C",
+      "worldBounds": [
+        -16.57100862274994,
+        -9.297971088536874,
+        16.601091410320116,
+        10.558175014962709
+      ],
+      "fitScore": 0.8678303121784366,
+      "excludedRegionScore": 0.831737909718204,
+      "maximumParameterDrift": 0.005968750000000411
+    },
+    {
+      "scenario": 5,
+      "width": 152,
+      "height": 148,
+      "imageSha256": "5C0B9A72946DDF993148FDEB821FD2DDAE013F7D54D548ADA49CB77DBDFF582E",
+      "worldBounds": [
+        -10.435094336802916,
+        -9.759716475018259,
+        10.397452368824498,
+        10.450140698077506
+      ],
+      "fitScore": 0.85343135746922,
+      "excludedRegionScore": 0.795447862663633,
+      "maximumParameterDrift": 0.0005000000000000004
+    },
+    {
+      "scenario": 6,
+      "width": 200,
+      "height": 252,
+      "imageSha256": "9D0E766E7F3EA6B191C4E1B4E4FE7C451B533CCC488CB8BFBEC2E62341F347E4",
+      "worldBounds": [
+        -14.913252101097171,
+        -17.618528245092914,
+        12.788481934263359,
+        17.247416570953437
+      ],
+      "fitScore": 0.8626244735601927,
+      "excludedRegionScore": 0.7713737371068154,
+      "maximumParameterDrift": 0.011156249999999979
+    },
+    {
+      "scenario": 7,
+      "width": 144,
+      "height": 152,
+      "imageSha256": "1BF3BC6376B886F18DECCC826F741FF84FE28F0A1CAC0CF0FE356F7304BBAB60",
+      "worldBounds": [
+        -10.44358768555706,
+        -10.582049041850162,
+        8.782564487953076,
+        10.185776688758727
+      ],
+      "fitScore": 0.8661673272792506,
+      "excludedRegionScore": 0.7844085200597033,
+      "maximumParameterDrift": 0.009749999999999981
+    },
+    {
+      "scenario": 8,
+      "width": 248,
+      "height": 188,
+      "imageSha256": "9F283DEE8E80D4F33BED929C8503ADFAA9C8F6D9F36860D7EFEEDE3EF9B2D8A2",
+      "worldBounds": [
+        -17.045026321253292,
+        -12.84319842042278,
+        16.572288496023727,
+        12.82325100774735
+      ],
+      "fitScore": 0.8664058983871443,
+      "excludedRegionScore": 0.7989838857389365,
+      "maximumParameterDrift": 0.006968750000000079
+    },
+    {
+      "scenario": 9,
+      "width": 144,
+      "height": 140,
+      "imageSha256": "393FBB7FE78374220645A5CCF95AF9C9DA0849E2FE2CFFF8397FB73A736ADE3B",
+      "worldBounds": [
+        -9.924558291230353,
+        -8.890261980213497,
+        9.77624579958857,
+        10.007439377159866
+      ],
+      "fitScore": 0.862623604079007,
+      "excludedRegionScore": 0.7947646725964261,
+      "maximumParameterDrift": 0.006749999999999978
+    },
+    {
+      "scenario": 11,
+      "width": 152,
+      "height": 156,
+      "imageSha256": "5A1473EF82116DB05923AE57B5EAFA0EDB8902C723A92491F7D6566E8533A595",
+      "worldBounds": [
+        -11.238423728950295,
+        -11.18106610115324,
+        9.989227813056129,
+        10.701928761643043
+      ],
+      "fitScore": 0.8725409515908141,
+      "excludedRegionScore": 0.8423034418419718,
+      "maximumParameterDrift": 0.01456250000000009
+    },
+    {
+      "scenario": 12,
+      "width": 240,
+      "height": 144,
+      "imageSha256": "B475E396E30A2D7CDFA65CA8EC080A9A317094E5EF0FA46C742FA7EBCAE8E96C",
+      "worldBounds": [
+        -16.5675039062261,
+        -9.203257465204201,
+        16.578403169652162,
+        10.54360465567545
+      ],
+      "fitScore": 0.8678638170393678,
+      "excludedRegionScore": 0.810370302010202,
+      "maximumParameterDrift": 0.005781250000000071
+    },
+    {
+      "scenario": 13,
+      "width": 164,
+      "height": 164,
+      "imageSha256": "95F0C9C010BCC81C044EE167C3C5CCA56C70EA47443A10C6A5EE85CB86AF44EB",
+      "worldBounds": [
+        -11.216256444760203,
+        -11.269647816992604,
+        11.517653382589273,
+        11.486933573385887
+      ],
+      "fitScore": 0.8856031228165648,
+      "excludedRegionScore": 0.8363496276261286,
+      "maximumParameterDrift": 0.005843749999999925
+    },
+    {
+      "scenario": 14,
+      "width": 216,
+      "height": 148,
+      "imageSha256": "3B806DC9E275F6DADCC330F65754E2F34F1ACE60DEFB51DDDE1AB9666BF4FAD2",
+      "worldBounds": [
+        -14.997953140179515,
+        -10.747281772954514,
+        14.562638710509718,
+        9.575229387558737
+      ],
+      "fitScore": 0.9252671499863868,
+      "excludedRegionScore": 0.8148170132489441,
+      "maximumParameterDrift": 0.006781250000000183
+    },
+    {
+      "scenario": 15,
+      "width": 152,
+      "height": 240,
+      "imageSha256": "6778E1ECBE2654A1A61596F4D3C8CA22468A7ACAD16E86DCDEC197FED336DF7D",
+      "worldBounds": [
+        -10.72856475831505,
+        -15.653898282856062,
+        9.990158825778598,
+        16.998569086882867
+      ],
+      "fitScore": 0.8594610610458424,
+      "excludedRegionScore": 0.7790711761259947,
+      "maximumParameterDrift": 0.008156250000000531
+    },
+    {
+      "scenario": 16,
+      "width": 152,
+      "height": 240,
+      "imageSha256": "6778E1ECBE2654A1A61596F4D3C8CA22468A7ACAD16E86DCDEC197FED336DF7D",
+      "worldBounds": [
+        -10.728082272891678,
+        -15.652241959707197,
+        9.988569583393769,
+        16.996960391104203
+      ],
+      "fitScore": 0.8594610610458424,
+      "excludedRegionScore": 0.7790711761259947,
+      "maximumParameterDrift": 0.008156250000000531
+    },
+    {
+      "scenario": 17,
+      "width": 208,
+      "height": 264,
+      "imageSha256": "57598A12F79CE1F129E52EA0C9517B2567DEE68C3A5918DF1FFF86AB9649955E",
+      "worldBounds": [
+        -15.588190181195946,
+        -18.587767837722105,
+        13.176118158714036,
+        17.92094096320174
+      ],
+      "fitScore": 0.8664928801811826,
+      "excludedRegionScore": 0.7722441673770986,
+      "maximumParameterDrift": 0.007875000000000076
+    },
+    {
+      "scenario": 18,
+      "width": 160,
+      "height": 148,
+      "imageSha256": "C25945518E5F1887C66A2D2CA0387BE054A39A3DCBF427EFE2CB638C85666B8D",
+      "worldBounds": [
+        -10.20581245555013,
+        -10.105534233739652,
+        11.802470914012687,
+        10.16675152037838
+      ],
+      "fitScore": 0.8613379113890498,
+      "excludedRegionScore": 0.7402653752448047,
+      "maximumParameterDrift": 0.009656249999999977
+    },
+    {
+      "scenario": 19,
+      "width": 256,
+      "height": 156,
+      "imageSha256": "DDE8C0B5A083F3FBE3AE6F761396EAB5E992A3454C372793F06E36854046FF35",
+      "worldBounds": [
+        -18.5510864585503,
+        -11.668581463752172,
+        16.940755076969815,
+        9.80643667014182
+      ],
+      "fitScore": 0.8707182794207933,
+      "excludedRegionScore": 0.8481381183246978,
+      "maximumParameterDrift": 0.008656249999999976
+    },
+    {
+      "scenario": 20,
+      "width": 188,
+      "height": 212,
+      "imageSha256": "57CE746A99980F68AB2C4F913B73ADBC9D3DD6F1DAD70FAFCBDC339FCFFD245B",
+      "worldBounds": [
+        -13.343922772196148,
+        -14.763592494898917,
+        12.925494856087814,
+        14.317683700712438
+      ],
+      "fitScore": 0.8804564625083919,
+      "excludedRegionScore": 0.8434347004916614,
+      "maximumParameterDrift": 0.0037812500000000693
+    },
+    {
+      "scenario": 21,
+      "width": 188,
+      "height": 212,
+      "imageSha256": "57CE746A99980F68AB2C4F913B73ADBC9D3DD6F1DAD70FAFCBDC339FCFFD245B",
+      "worldBounds": [
+        -13.343922772196148,
+        -14.763592494898917,
+        12.925494856087814,
+        14.317683700712438
+      ],
+      "fitScore": 0.8804564625083919,
+      "excludedRegionScore": 0.8434347004916614,
+      "maximumParameterDrift": 0.0037812500000000693
+    },
+    {
+      "scenario": 23,
+      "width": 248,
+      "height": 188,
+      "imageSha256": "9F283DEE8E80D4F33BED929C8503ADFAA9C8F6D9F36860D7EFEEDE3EF9B2D8A2",
+      "worldBounds": [
+        -17.045026321253292,
+        -12.84319842042278,
+        16.572288496023727,
+        12.82325100774735
+      ],
+      "fitScore": 0.8664058983871443,
+      "excludedRegionScore": 0.7989838857389365,
+      "maximumParameterDrift": 0.006968750000000079
+    },
+    {
+      "scenario": 24,
+      "width": 240,
+      "height": 212,
+      "imageSha256": "193A8E6E7CEFA79C9451B633414A5A0DCB8D733F734B5284A22158ECB8ACFFA1",
+      "worldBounds": [
+        -16.638361858688576,
+        -14.973153103505677,
+        16.78525791482212,
+        14.507938213678198
+      ],
+      "fitScore": 0.8864906990326795,
+      "excludedRegionScore": 0.8472100225558745,
+      "maximumParameterDrift": 0.0068750000000000755
+    },
+    {
+      "scenario": 25,
+      "width": 124,
+      "height": 260,
+      "imageSha256": "9D047BC4FFB487D9A419861A11E56D4F8123000F3977BD6D914F554FBAEEF947",
+      "worldBounds": [
+        -8.145485290071413,
+        -17.612239171273103,
+        8.673051474523218,
+        17.853348593580982
+      ],
+      "fitScore": 0.8925084594924477,
+      "excludedRegionScore": 0.8709393212277878,
+      "maximumParameterDrift": 0.008187500000000902
+    },
+    {
+      "scenario": 26,
+      "width": 188,
+      "height": 204,
+      "imageSha256": "457DC86B89818D1F47F9810664E2E56666BEAB07D64FF2D761C084D5BC5ACB03",
+      "worldBounds": [
+        -14.113863494893305,
+        -13.959734363602287,
+        11.57380380000364,
+        14.112668179290566
+      ],
+      "fitScore": 0.8017421613444403,
+      "excludedRegionScore": 0.687421556976294,
+      "maximumParameterDrift": 0.009031250000000268
+    },
+    {
+      "scenario": 27,
+      "width": 196,
+      "height": 236,
+      "imageSha256": "2E3A2A7AC3F4B80FF3242148A5A57518B3963D8E74698441D81A5D30E73240E9",
+      "worldBounds": [
+        -13.708936728551162,
+        -16.7314012742832,
+        13.901897920839515,
+        15.436908516375775
+      ],
+      "fitScore": 0.8461591750255266,
+      "excludedRegionScore": 0.6041008161560615,
+      "maximumParameterDrift": 0.013281250000000355
+    },
+    {
+      "scenario": 28,
+      "width": 200,
+      "height": 204,
+      "imageSha256": "2C4BB30C296E31108E2CE477B6C0B68E574D2B62326736932D2085404383F076",
+      "worldBounds": [
+        -14.547653894663934,
+        -13.812062337251996,
+        12.780211470199788,
+        14.259350190094784
+      ],
+      "fitScore": 0.8099479514994781,
+      "excludedRegionScore": 0.6845365429925517,
+      "maximumParameterDrift": 0.007531250000000211
+    },
+    {
+      "scenario": 29,
+      "width": 200,
+      "height": 204,
+      "imageSha256": "2C4BB30C296E31108E2CE477B6C0B68E574D2B62326736932D2085404383F076",
+      "worldBounds": [
+        -14.547653894663934,
+        -13.812062337251996,
+        12.780211470199788,
+        14.259350190094784
+      ],
+      "fitScore": 0.8099479514994781,
+      "excludedRegionScore": 0.6845365429925517,
+      "maximumParameterDrift": 0.007531250000000211
+    },
+    {
+      "scenario": 30,
+      "width": 148,
+      "height": 156,
+      "imageSha256": "8FD8EEDE424171F51279D0939ECA8AB53934A9F9BDE72D3928E7FCA55FADE15B",
+      "worldBounds": [
+        -9.564729620111716,
+        -10.501166957171575,
+        10.645151037920986,
+        10.826407970296673
+      ],
+      "fitScore": 0.9466538018204022,
+      "excludedRegionScore": 0.7690547932822664,
+      "maximumParameterDrift": 0.003500000000000003
+    },
+    {
+      "scenario": 31,
+      "width": 156,
+      "height": 164,
+      "imageSha256": "091CAA0C6C6DC7E07DCC9332B43A5DFFD278760823E5FE860801CE61727C7CA8",
+      "worldBounds": [
+        -11.267523173631101,
+        -10.81807084712035,
+        10.322587883183726,
+        11.670449156029825
+      ],
+      "fitScore": 0.9421484255857656,
+      "excludedRegionScore": 0.8058635808444854,
+      "maximumParameterDrift": 0.005749999999999977
+    },
+    {
+      "scenario": 32,
+      "width": 156,
+      "height": 164,
+      "imageSha256": "091CAA0C6C6DC7E07DCC9332B43A5DFFD278760823E5FE860801CE61727C7CA8",
+      "worldBounds": [
+        -11.267523173631101,
+        -10.81807084712035,
+        10.322587883183726,
+        11.670449156029825
+      ],
+      "fitScore": 0.9421484255857656,
+      "excludedRegionScore": 0.8058635808444854,
+      "maximumParameterDrift": 0.005749999999999977
+    },
+    {
+      "scenario": 33,
+      "width": 228,
+      "height": 152,
+      "imageSha256": "9C823B4F2606B007E91BFF212775DC25F00265C31800E2560F1B6CB4ABE8AF54",
+      "worldBounds": [
+        -16.84321619377914,
+        -11.51099132648611,
+        14.965419486484478,
+        9.861038748866925
+      ],
+      "fitScore": 0.8693545396519664,
+      "excludedRegionScore": 0.6977602875992057,
+      "maximumParameterDrift": 0.014156249999999981
+    },
+    {
+      "scenario": 34,
+      "width": 148,
+      "height": 156,
+      "imageSha256": "8FD8EEDE424171F51279D0939ECA8AB53934A9F9BDE72D3928E7FCA55FADE15B",
+      "worldBounds": [
+        -9.568547899928106,
+        -10.529098662773144,
+        10.641332758104596,
+        10.798476264695106
+      ],
+      "fitScore": 0.9466538018204022,
+      "excludedRegionScore": 0.7690547932822664,
+      "maximumParameterDrift": 0.003500000000000003
+    },
+    {
+      "scenario": 36,
+      "width": 240,
+      "height": 212,
+      "imageSha256": "193A8E6E7CEFA79C9451B633414A5A0DCB8D733F734B5284A22158ECB8ACFFA1",
+      "worldBounds": [
+        -16.638361858688576,
+        -14.973153103505677,
+        16.78525791482212,
+        14.507938213678198
+      ],
+      "fitScore": 0.8864906990326795,
+      "excludedRegionScore": 0.8472100225558745,
+      "maximumParameterDrift": 0.0068750000000000755
+    },
+    {
+      "scenario": 37,
+      "width": 148,
+      "height": 156,
+      "imageSha256": "9D1EDD8CCA5D05BBF572DBF75F9AEF296B1677C70EA1483FE0AED61294D96888",
+      "worldBounds": [
+        -10.010811620466633,
+        -10.944788330499646,
+        10.242866713625562,
+        11.032286936724615
+      ],
+      "fitScore": 0.8707234912495386,
+      "excludedRegionScore": 0.8308480626806656,
+      "maximumParameterDrift": 0.004906249999999945
+    },
+    {
+      "scenario": 38,
+      "width": 148,
+      "height": 156,
+      "imageSha256": "9D1EDD8CCA5D05BBF572DBF75F9AEF296B1677C70EA1483FE0AED61294D96888",
+      "worldBounds": [
+        -10.018120553704355,
+        -10.952096081040818,
+        10.23555778038784,
+        11.024979186183444
+      ],
+      "fitScore": 0.8707234912495386,
+      "excludedRegionScore": 0.8308480626806656,
+      "maximumParameterDrift": 0.004906249999999945
+    },
+    {
+      "scenario": 40,
+      "width": 288,
+      "height": 160,
+      "imageSha256": "87A94C5362C1B7B26AB45D1CE8D21D2CA4D99483220F8866991DFD6C327397BB",
+      "worldBounds": [
+        -20.16196714979156,
+        -11.160935476154744,
+        19.262118441758552,
+        10.718082628611509
+      ],
+      "fitScore": 0.8470929159485779,
+      "excludedRegionScore": 0.7301070285974417,
+      "maximumParameterDrift": 0.006156249999999974
+    },
+    {
+      "scenario": 41,
+      "width": 248,
+      "height": 256,
+      "imageSha256": "7E1E8617486A00A77A33F40B74A893B7B8513665C120B81B04FC54BD7055A245",
+      "worldBounds": [
+        -17.009827585770005,
+        -17.78412389017918,
+        17.125465464738323,
+        17.73693477304204
+      ],
+      "fitScore": 0.9516867839013434,
+      "excludedRegionScore": 0.8640760599756023,
+      "maximumParameterDrift": 0.009499999999999731
+    },
+    {
+      "scenario": 42,
+      "width": 244,
+      "height": 236,
+      "imageSha256": "83AECB3D3F5E43A0EB8CB52A301F33A69B276EA11A43736F79DBB2FE7ABD3B54",
+      "worldBounds": [
+        -16.427983302577022,
+        -16.321817624921426,
+        16.716381414389122,
+        15.807938101774766
+      ],
+      "fitScore": 0.9657060895644011,
+      "excludedRegionScore": 0.9018866825898162,
+      "maximumParameterDrift": 0.007499999999999951
+    },
+    {
+      "scenario": 43,
+      "width": 152,
+      "height": 152,
+      "imageSha256": "0E766B2469207F8BDEF11003ECD3A909BAD831BEBE1F6B9A4E1D50CA57991767",
+      "worldBounds": [
+        -11.367773423590862,
+        -10.469438115314361,
+        9.358219185664229,
+        10.165632324704161
+      ],
+      "fitScore": 0.8301987861975068,
+      "excludedRegionScore": 0.6193702901060374,
+      "maximumParameterDrift": 0.006500000000000006
+    },
+    {
+      "scenario": 44,
+      "width": 256,
+      "height": 136,
+      "imageSha256": "2BA790CBFC15602406DEAA75A62B1400DA30C4F401494E51B7B62786A75C9CE5",
+      "worldBounds": [
+        -18.095990348327977,
+        -9.007725488384981,
+        17.101424773347063,
+        10.022796898100399
+      ],
+      "fitScore": 0.8902784478428354,
+      "excludedRegionScore": 0.7881591955609588,
+      "maximumParameterDrift": 0.0050000000000001155
+    },
+    {
+      "scenario": 45,
+      "width": 156,
+      "height": 176,
+      "imageSha256": "18B324FAD36B507E716E1962EB09DBA59D1BBE840664073507441DD9F4806E38",
+      "worldBounds": [
+        -10.900100166333372,
+        -13.781015845817201,
+        10.230939940577318,
+        10.087520154560568
+      ],
+      "fitScore": 0.9165452659527672,
+      "excludedRegionScore": 0.7448625638320836,
+      "maximumParameterDrift": 0.006812500000000221
+    },
+    {
+      "scenario": 46,
+      "width": 156,
+      "height": 176,
+      "imageSha256": "18B324FAD36B507E716E1962EB09DBA59D1BBE840664073507441DD9F4806E38",
+      "worldBounds": [
+        -10.894443106498544,
+        -13.755087857256804,
+        10.236597000412145,
+        10.113448143120968
+      ],
+      "fitScore": 0.9165452659527672,
+      "excludedRegionScore": 0.7448625638320836,
+      "maximumParameterDrift": 0.006812500000000221
+    },
+    {
+      "scenario": 49,
+      "width": 268,
+      "height": 248,
+      "imageSha256": "071A91BBD26F35155E74F15A7D3A11F5E9868BF0FB21450554C7E9690748AB9F",
+      "worldBounds": [
+        -18.770797792826105,
+        -17.59233859674177,
+        18.64504200929468,
+        16.852663056433812
+      ],
+      "fitScore": 0.8428082787586217,
+      "excludedRegionScore": 0.7931868848661776,
+      "maximumParameterDrift": 0.007999999999999896
+    },
+    {
+      "scenario": 50,
+      "width": 152,
+      "height": 156,
+      "imageSha256": "0B65F0FA94A885D6370818F496253C98F7269086AEB9CE6CA7180727EF335167",
+      "worldBounds": [
+        -10.31069135855186,
+        -9.869112339865524,
+        10.744152607070761,
+        11.6831217289648
+      ],
+      "fitScore": 0.8792099997828884,
+      "excludedRegionScore": 0.7655536676840212,
+      "maximumParameterDrift": 0.002000000000000113
+    },
+    {
+      "scenario": 55,
+      "width": 288,
+      "height": 160,
+      "imageSha256": "87A94C5362C1B7B26AB45D1CE8D21D2CA4D99483220F8866991DFD6C327397BB",
+      "worldBounds": [
+        -20.18998917271472,
+        -11.140857441836852,
+        19.234096418835392,
+        10.738160662929399
+      ],
+      "fitScore": 0.8470929159485779,
+      "excludedRegionScore": 0.7301070285974417,
+      "maximumParameterDrift": 0.006156249999999974
+    },
+    {
+      "scenario": 56,
+      "width": 248,
+      "height": 256,
+      "imageSha256": "7E1E8617486A00A77A33F40B74A893B7B8513665C120B81B04FC54BD7055A245",
+      "worldBounds": [
+        -17.009827585770005,
+        -17.78412389017918,
+        17.125465464738323,
+        17.73693477304204
+      ],
+      "fitScore": 0.9516867839013434,
+      "excludedRegionScore": 0.8640760599756023,
+      "maximumParameterDrift": 0.009499999999999731
+    },
+    {
+      "scenario": 57,
+      "width": 244,
+      "height": 236,
+      "imageSha256": "83AECB3D3F5E43A0EB8CB52A301F33A69B276EA11A43736F79DBB2FE7ABD3B54",
+      "worldBounds": [
+        -16.456175753655515,
+        -16.380838045998967,
+        16.68818896331063,
+        15.748917680697225
+      ],
+      "fitScore": 0.9657060895644011,
+      "excludedRegionScore": 0.9018866825898162,
+      "maximumParameterDrift": 0.007499999999999951
+    },
+    {
+      "scenario": 58,
+      "width": 152,
+      "height": 152,
+      "imageSha256": "0E766B2469207F8BDEF11003ECD3A909BAD831BEBE1F6B9A4E1D50CA57991767",
+      "worldBounds": [
+        -11.4639889627851,
+        -10.534026124653307,
+        9.469263620144961,
+        10.30739506713908
+      ],
+      "fitScore": 0.8301987861975068,
+      "excludedRegionScore": 0.6193702901060374,
+      "maximumParameterDrift": 0.006500000000000006
+    },
+    {
+      "scenario": 59,
+      "width": 164,
+      "height": 200,
+      "imageSha256": "6BCBB1B3E39DDBDC5914E1AB05C3B1563E7D916C19C560D31C920745B50A7064",
+      "worldBounds": [
+        -11.223673250076342,
+        -14.788807228171393,
+        11.314728589506897,
+        12.691354308830531
+      ],
+      "fitScore": 0.8639443625505485,
+      "excludedRegionScore": 0.8139965546729317,
+      "maximumParameterDrift": 0.0024374999999998703
+    }
+  ],
+  "excluded": [
+    {
+      "scenario": 39,
+      "reasons": [
+        "weak excluded-region match",
+        "unstable region exclusion"
+      ]
+    },
+    {
+      "scenario": 47,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    },
+    {
+      "scenario": 48,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    },
+    {
+      "scenario": 51,
+      "reasons": [
+        "weak overall image match"
+      ]
+    },
+    {
+      "scenario": 52,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    },
+    {
+      "scenario": 53,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    },
+    {
+      "scenario": 60,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    },
+    {
+      "scenario": 61,
+      "reasons": [
+        "weak overall image match",
+        "weak excluded-region match"
+      ]
+    }
+  ]
+}

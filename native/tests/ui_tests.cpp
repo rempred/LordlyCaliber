@@ -60,6 +60,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUndoGroup>
+#include <QWheelEvent>
 #include <QtTest>
 #include <bit>
 using namespace lordly;
@@ -3521,6 +3522,21 @@ class UiTests : public QObject {
             auto x = editor.findChild<QSpinBox *>("mapX"), z = editor.findChild<QSpinBox *>("mapZ");
             auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
             QVERIFY(objects && apply && fields && x && z && canvas);
+            auto terrain = editor.findChild<QCheckBox *>("mapTerrain");
+            QVERIFY(terrain);
+            QVERIFY(terrain->isEnabled());
+            QVERIFY(terrain->isChecked());
+            QVERIFY(editor.findChild<QLabel *>("mapTerrainStatus")->text().contains("approximate"));
+            const auto terrainImage = canvas->grab().toImage();
+            const auto dataBeforeToggle = project.scenarios()->json();
+            const auto undoBeforeToggle = undo.count();
+            terrain->setChecked(false);
+            const auto withoutTerrain = canvas->grab().toImage();
+            QVERIFY(withoutTerrain != terrainImage);
+            terrain->setChecked(true);
+            QCOMPARE(canvas->grab().toImage(), terrainImage);
+            QCOMPARE(project.scenarios()->json(), dataBeforeToggle);
+            QCOMPARE(undo.count(), undoBeforeToggle);
             QVERIFY(objects->count() > project.scenarios()->scenario(1).squads.size());
             const auto original = project.scenarios()->json(),
                        originalWorld = project.world()->json();
@@ -3542,16 +3558,25 @@ class UiTests : public QObject {
             QCOMPARE(project.scenarios()->json(), centered);
             const QPoint center(canvas->width() / 2, canvas->height() / 2);
             const int shift = (std::min(canvas->width(), canvas->height()) - 72) / 4;
-            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, center);
-            QTest::mouseMove(canvas, center + QPoint(shift, -shift), 20);
-            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier,
-                                center + QPoint(shift, -shift));
+            const QPoint pan(24, -18), anchor = center + pan;
+            QTest::mousePress(canvas, Qt::RightButton, Qt::NoModifier, center);
+            QTest::mouseMove(canvas, anchor, 20);
+            QTest::mouseRelease(canvas, Qt::RightButton, Qt::NoModifier, anchor);
+            QWheelEvent wheel(anchor, canvas->mapToGlobal(anchor), QPoint(), QPoint(0, 120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(canvas, &wheel);
+            const int zoomedShift = qRound(shift * std::pow(1.0015, 120));
+            const QPoint destination = anchor + QPoint(zoomedShift, -zoomedShift);
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, anchor);
+            QTest::mouseMove(canvas, destination, 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, destination);
             const auto moved = project.scenarios()->scenario(1).layout.deployments[0];
             QVERIFY(std::abs(int(u8(moved, 3)) - 192) <= 1);
             QVERIFY(std::abs(int(u8(moved, 4)) - 64) <= 1);
             undo.undo();
             QCOMPARE(project.scenarios()->json(), centered);
             undo.redo();
+            editor.findChild<QPushButton *>("mapFit")->click();
             int waypointItem = -1, treasureItem = -1, siteItem = -1;
             const int nodeId = u8(project.scenarios()->scenario(1).layout.nodes[waypoint], 0);
             const auto townName =
@@ -3560,7 +3585,7 @@ class UiTests : public QObject {
                 const auto label = objects->item(i)->text();
                 if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
                     waypointItem = i;
-                if (label.startsWith("Treasure 1 Ã‚Â·"))
+                if (label.startsWith("Treasure 1 ·"))
                     treasureItem = i;
                 if (label == townName)
                     siteItem = i;

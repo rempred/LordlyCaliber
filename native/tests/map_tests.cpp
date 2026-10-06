@@ -1,3 +1,4 @@
+#include "engine/archive.h"
 #include "engine/scenario_map.h"
 #include <QFile>
 #include <QJsonArray>
@@ -10,10 +11,71 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void calibratedTerrain() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto first = ScenarioMap::load(rom, 1);
+            QVERIFY(first.imageBounds);
+            QVERIFY(first.imageGridBounds());
+            const auto second = ScenarioMap::load(rom, 2);
+            QVERIFY(second.imageBounds);
+            // Independent manual reference points: the world origin is near the
+            // center of the matched Tenne/Volmus reference images, not the grid origin.
+            QVERIFY(first.imageBounds->contains(QPointF(0, 0)));
+            QVERIFY(second.imageBounds->contains(QPointF(0, 0)));
+            int calibrated = 0, images = 0;
+            for (int key = 1; key <= 64; ++key) {
+                const auto map = ScenarioMap::load(rom, key);
+                images += map.image.has_value();
+                if (map.imageBounds) {
+                    QVERIFY(map.image);
+                    const auto grid = map.imageGridBounds();
+                    QVERIFY(grid);
+                    QVERIFY(grid->width() > 0 && grid->height() > 0);
+                    ++calibrated;
+                }
+            }
+            qInfo() << "Calibrated" << calibrated << "of" << images << "ROM image selections";
+            QCOMPARE(calibrated, 49);
+            QCOMPARE(images, 57);
+            QVERIFY(!ScenarioMap::load(rom, 10).imageBounds);
+            // A different but well-formed current-ROM image must still load, while
+            // its old alignment must not be reused just because dimensions match.
+            auto changed = rom.bytes();
+            const auto key = u32(changed, 0x1e512a6 + 5 * 4);
+            const auto member = LhaMember::read(changed, key + 0x594284);
+            auto decoded = member.decode(rom);
+            decoded[8] ^= 1;
+            const auto encoded = member.rebuild(rom, decoded);
+            const auto at = changed.size();
+            changed.append(QByteArray(4, 0));
+            changed.append(encoded);
+            changed.append(char(0));
+            while (changed.size() % 4)
+                changed.append(char(0));
+            put32(changed, at, quint32(encoded.size() + 1));
+            put32(changed, 0x1e512a6 + 5 * 4, quint32(at - 0x594280));
+            const auto replaced = ScenarioMap::load(Rom::fromBytes(changed), 1);
+            QVERIFY(replaced.image);
+            QVERIFY(!replaced.imageBounds);
+            QVERIFY(!replaced.imageGridBounds());
+            QCOMPARE(replaced.bounds, first.bounds);
+            QCOMPARE(replaced.points, first.points);
+            QVERIFY(replaced.image->rgba != first.image->rgba);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void coordinateEncoding() {
         ScenarioMap map;
         map.bounds = QRectF(-10, -20, 32, 64);
         map.points = {{2, 3}, {4, 5}};
+        QVERIFY(!map.imageGridBounds());
+        map.imageBounds = QRectF(-14, -12, 48, 40);
+        QCOMPARE(map.imageGridBounds().value(), QRectF(-32, 32, 384, 160));
         QCOMPARE(map.world(128, 128), QPointF(6, 12));
         QCOMPARE(map.placement(1, 0).value(), QPointF(2, 3));
         QVERIFY(!map.placement(0, 0));

@@ -14,6 +14,8 @@ struct ScenarioMap {
     QString imageName;
     QString placementNotice;
     std::optional<RasterImage> image;
+    std::optional<QRectF> imageBounds; // Calibrated approximate world rectangle, source-bound.
+    std::optional<QRectF> imageGridBounds() const;
     static ScenarioMap load(const Rom &rom, int key);
     QPointF world(int x, int z) const;
     QPoint bytes(QPointF position, bool selectorEncoding) const;

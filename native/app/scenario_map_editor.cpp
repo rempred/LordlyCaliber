@@ -40,7 +40,9 @@ class MapCanvas : public QWidget {
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
     int current = -1;
-    bool grid = true, labels = true;
+    bool grid = true, labels = true, showTerrain = true;
+    QImage terrain;
+    QRectF terrainBounds;
     void cancelDrag() {
         drag_ = -1;
         dragging_ = false;
@@ -67,6 +69,14 @@ class MapCanvas : public QWidget {
         p.fillRect(rect(), QColor("#141e29"));
         const QRectF area(toPixel({0, 0}), toPixel({256, 256}));
         p.fillRect(area, QColor("#1c2c39"));
+        if (showTerrain && !terrain.isNull()) {
+            p.save();
+            p.setClipRect(area);
+            p.drawImage(
+                QRectF(toPixel(terrainBounds.topLeft()), toPixel(terrainBounds.bottomRight())),
+                terrain);
+            p.restore();
+        }
         p.setPen(QColor("#526678"));
         p.drawRect(area);
         if (grid)
@@ -217,12 +227,18 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     auto layout = new QVBoxLayout(this);
     auto toolbar = new QHBoxLayout;
     auto fit = new QPushButton("Fit map");
+    fit->setObjectName("mapFit");
     toolbar->addWidget(fit);
     auto grid = new QCheckBox("Grid"), labels = new QCheckBox("Labels");
     grid->setChecked(true);
     labels->setChecked(true);
     toolbar->addWidget(grid);
     toolbar->addWidget(labels);
+    terrain_ = new QCheckBox("Terrain");
+    terrain_->setObjectName("mapTerrain");
+    terrain_->setToolTip("Show the calibrated terrain reference. Alignment is approximate.");
+    terrain_->setChecked(true);
+    toolbar->addWidget(terrain_);
     toolbar->addStretch();
     layout->addLayout(toolbar);
     auto split = new QSplitter;
@@ -256,6 +272,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     side->addWidget(fields_);
     referenceName_ = new QLabel;
     referenceName_->setWordWrap(true);
+    referenceName_->setObjectName("mapTerrainStatus");
     side->addWidget(referenceName_);
     reference_ = new QLabel;
     reference_->setAlignment(Qt::AlignCenter);
@@ -279,6 +296,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         move(row, m.bytes(world, canvas_->markers[row].kind != MapObject::Treasure));
     };
     connect(fit, &QPushButton::clicked, this, [this] { canvas_->resetView(); });
+    connect(terrain_, &QCheckBox::toggled, this, [this](bool value) {
+        canvas_->showTerrain = value;
+        canvas_->update();
+    });
     connect(grid, &QCheckBox::toggled, this, [this](bool value) {
         canvas_->grid = value;
         canvas_->update();
@@ -313,6 +334,9 @@ void ScenarioMapEditor::refresh(int key) {
     canvas_->edges.clear();
     canvas_->current = -1;
     reference_->clear();
+    canvas_->terrain = {};
+    canvas_->terrainBounds = {};
+    terrain_->setEnabled(false);
     referenceName_->clear();
     notice_->clear();
     try {
@@ -382,8 +406,15 @@ void ScenarioMapEditor::refresh(int key) {
                          r.width * 4, QImage::Format_RGBA8888);
             reference_->setPixmap(QPixmap::fromImage(image).scaled(260, 170, Qt::KeepAspectRatio,
                                                                    Qt::FastTransformation));
-            referenceName_->setText("ROM terrain reference · " + map.imageName +
-                                    "\nTerrain-to-grid alignment is not yet verified.");
+            if (const auto bounds = map.imageGridBounds()) {
+                canvas_->terrain = image.copy();
+                canvas_->terrainBounds = *bounds;
+                terrain_->setEnabled(true);
+            }
+            referenceName_->setText("ROM terrain · " + map.imageName +
+                                    (map.imageBounds
+                                         ? "\nCalibrated alignment (approximate)."
+                                         : "\nNo calibrated alignment for this image."));
         } else
             referenceName_->setText("This scenario has no ROM map image.");
         notice_->setText("Initial placements · Drag squads, waypoints or treasure to set "
