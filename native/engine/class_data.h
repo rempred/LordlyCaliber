@@ -61,7 +61,8 @@ class ClassData {
   public:
     // Native records include the twelve-byte header. Modder B59 names the
     // final body byte, at full-record offset 71, not full-record offset 59.
-    static constexpr int unitSizeOffset = 4, movementTypeOffset = 44, itemCapacityOffset = 71;
+    static constexpr int unitSizeOffset = 4, commandTypeOffset = 6, movementTypeOffset = 44,
+                         itemCapacityOffset = 71;
     static ClassData load(const Rom &rom);
     static ClassData loadRetail(const Rom &rom);
     const QVector<ClassAsset> &entries() const {
@@ -75,6 +76,7 @@ class ClassData {
     int unitSize(int primary, int secondary) const;
     int carryingCapacity(int primary, int secondary) const;
     int movementType(int primary, int secondary) const;
+    int commandType(int primary, int secondary) const;
     int unitMovementType(const QVector<QPair<int, int>> &members, const QByteArray &priority) const;
     ClassDataImage build(quint32 ramBase, quint32 ramEnd = 0x80400000U) const;
 

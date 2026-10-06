@@ -1632,6 +1632,94 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveLeaderControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-leader-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing leader fixture");
+                QByteArray input(0x10000, 0);
+                input.replace(0x3a, 6180, file.readAll());
+                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                         0x1850, 0, 0))
+                    throw Error("Cannot seal leader save");
+                return input;
+            };
+            const auto input = batteryFor("unit-payload.bin");
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1150);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
+            auto leader = editor.findChild<QPushButton *>("saveChangeLeader");
+            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+            QVERIFY(units && members && leader && unity);
+            units->setCurrentRow(0);
+            QVERIFY(!leader->isEnabled());
+            members->setCurrentRow(2);
+            QVERIFY(leader->isEnabled());
+            unity->setValue(22);
+            QVERIFY(!leader->isEnabled());
+            unity->setValue(23);
+            QVERIFY(leader->isEnabled());
+            leader->click();
+            QCOMPARE(editor.document()->units()[0].members, QVector<int>({3, 1, 2, 0, 0}));
+            QCOMPARE(editor.document()->units()[0].cells, QVector<int>({8, 0, 4, 0, 0}));
+            QCOMPARE(editor.document()->units()[0].unity, 23);
+            QVERIFY(units->item(0)->text().contains("Member3"));
+            QVERIFY(members->item(0)->text().contains("Leader"));
+            const auto changed = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), changed);
+            const auto filename = work.filePath("leader.SaveRAM");
+            editor.exportFile(filename);
+            QFile output(filename);
+            QVERIFY(output.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, output.readAll()).memory(),
+                     editor.document()->memory());
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("save-leader-change.png"));
+            units->setCurrentRow(1);
+            members->setCurrentRow(1);
+            QVERIFY(!leader->isEnabled());
+            editor.loadBytes(batteryFor("fixed-leader-81.bin"));
+            units->setCurrentRow(0);
+            members->setCurrentRow(1);
+            const auto fixed = editor.document()->serialize();
+            leader->click();
+            QCOMPARE(editor.document()->serialize(), fixed);
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("fixed squad leader"));
+            editor.loadBytes(batteryFor("commander-bad.bin"));
+            units->setCurrentRow(0);
+            members->setCurrentRow(1);
+            const auto legion = editor.document()->serialize();
+            leader->click();
+            QCOMPARE(editor.document()->serialize(), legion);
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("commands a legion"));
+            editor.loadBytes(editor.document()->memory());
+            QVERIFY(!leader->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveSoldierReserveControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

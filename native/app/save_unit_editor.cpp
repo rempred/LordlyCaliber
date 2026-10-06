@@ -33,6 +33,14 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     members_->setObjectName("saveUnitMembers");
     members_->setMaximumHeight(150);
     body->addWidget(members_);
+    leader_ = new QPushButton("Make selected member the squad leader");
+    leader_->setObjectName("saveChangeLeader");
+    body->addWidget(leader_);
+    connect(leader_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->changeUnitLeader(units_->currentItem()->data(Qt::UserRole).toInt(),
+                                      members_->currentRow());
+    });
     auto help =
         new QLabel("Select a member, then choose a formation cell. Occupied cells swap members.");
     help->setWordWrap(true);
@@ -274,12 +282,13 @@ void SaveUnitEditor::showUnit() {
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
     note_->setText(
-        editable ? "Edit formations, Unity, tactics and carried items. Move ordinary nonleaders "
-                   "between squads or reserve, or create/disband Soldier groups. Ordinary "
-                   "membership changes reset Unity; Soldier reserve changes retain it. "
-                   "Movement type is recalculated."
-                 : "Squads are read-only in suspend saves and runtime states. Formation "
-                   "edits require a regular battery-save slot.");
+        editable
+            ? "Edit formations, Unity, tactics and carried items. Move ordinary nonleaders "
+              "between squads or reserve, or create/disband Soldier groups. Ordinary "
+              "membership changes reset Unity; Soldier reserve changes retain it. "
+              "Leader changes retain Unity and formation positions. Movement type is recalculated."
+            : "Squads are read-only in suspend saves and runtime states. Formation "
+              "edits require a regular battery-save slot.");
     apply_->setEnabled(editable && !ids_.isEmpty());
     unity_->setEnabled(apply_->isEnabled());
     tactic_->setEnabled(apply_->isEnabled());
@@ -393,6 +402,12 @@ void SaveUnitEditor::refreshSwapTargets() {
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"
                                                             : "Swap selected members");
     swap_->setEnabled(enabled);
+    leader_->setEnabled(ready && !pending);
+    leader_->setToolTip(
+        pending ? "Apply squad edits before changing the leader"
+                : "Keeps formation positions, Unity and legion membership; updates both character "
+                  "leader flags. "
+                  "Fixed leaders and incompatible legion commanders cannot be replaced.");
     targetUnit_->setEnabled(ready && !pending);
     targetMember_->setEnabled(ready && !pending);
     if (reserveMember_->findData(oldReserve) >= 0)

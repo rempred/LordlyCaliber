@@ -35,6 +35,7 @@ class SaveEditor : public QWidget {
     bool edit(SaveTable, int row, const QString &key, const QVariant &);
     bool editUnitSupplies(int index, const QVector<int> &);
     bool editUnit(int index, const QVector<int> &cells, int unity, int tactic);
+    bool changeUnitLeader(int index, int member);
     bool swapUnitMembers(int fromUnit, int fromMember, int toUnit, int toMember);
     bool transferUnitMember(int fromUnit, int fromMember, int toUnit, int cell);
     bool moveToReserve(int fromUnit, int fromMember);

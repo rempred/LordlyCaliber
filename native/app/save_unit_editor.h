@@ -30,7 +30,7 @@ class SaveUnitEditor final : public QWidget {
     QComboBox *reserveMember_, *reserveCell_;
     QPushButton *toReserve_, *fromReserve_, *addSoldier_;
     QLabel *soldierPool_;
-    QPushButton *swap_;
+    QPushButton *swap_, *leader_;
     QPushButton *apply_, *discard_;
     QLabel *draftNote_;
     int shownUnit_ = -1;

@@ -407,6 +407,20 @@ bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int t
         return false;
     }
 }
+bool SaveEditor::changeUnitLeader(int index, int member) {
+    if (!document_ || !allowImmediateEdit())
+        return false;
+    try {
+        auto change = document_->planUnitLeader(index, member, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "change squad leader"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 bool SaveEditor::swapUnitMembers(int fromUnit, int fromMember, int toUnit, int toMember) {
     if (!document_ || !allowImmediateEdit())
         return false;

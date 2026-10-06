@@ -4963,3 +4963,41 @@ again (1823 ms). The final capture was inspected. Natural Army-menu execution,
 full-game behavior and active-state editing are not claimed by these checks.
 
 The complete native build passed (soldier-reserve-final-build.log).
+
+
+## Saved squad leader changes
+
+Normal battery squads can make an existing ordinary member their leader. The
+edit keeps grid positions and Unity, serializes the leader first followed by
+other occupied cells in native grid order, clears the previous character's
+leader bit and sets the new one, and recalculates movement. These coordinated
+changes are one save Undo action. Other character flags, supplies, legion links
+and unrelated saved fields remain intact.
+
+Maintained host C reconstructs the original fixed-leader predicate: ordinary
+members with primary class81..83 or163 cannot be replaced. Commander flag2 in
+the saved squad requires the new leader's paired-class command type to remain2.
+The getter reads full-record byte6 using the primary's declared-secondary match,
+including appended classes. Demoting an incompatible legion commander is refused
+until coordinated legion editing exists. Soldier/unknown/empty members, missing
+or duplicate references, conflicting target leader flags and runtime/suspend
+inputs also refuse. Pending squad drafts disable the new button.
+
+Complete original bytes match the read-only Army snapshot: setter ROMB7910..
+B7978 (104 bytes), fixed-leader predicateBEA34..BEA90 (92 bytes), resident paired
+getter43DC4..43E18 (84 bytes), and saved-commander flag blockC20D0..C2114
+(68 bytes). Armydelta801135A0 and residentdelta8012A100 remain distinct. The
+persistent writer clears character bit2 and marks each serialized leader; its
+leader-first/grid-order block is exercised alongside the setter.
+
+`save_document_tests squadLeaderChanges soldierReserveLifecycle reserveMembership`
+passed (3889 ms). New evidence:2560 original protected-leader cases,27556 paired
+class reads including newclass165,8 setter/writer sequences,6 original packed
+save decodes, three battery layouts, whole-memory checks, Undo, reopen and
+failure boundaries. `ui_tests saveLeaderControls saveSoldierReserveControls
+saveSquadEditing saveSquadDraftProtection` passed (4065 ms): actual controls,
+labels/order, pending drafts, restricted leaders/commanders, Undo and exported
+save reopening. Capture inspected. These are controlled instruction and file
+checks, not natural Army-menu or active-state validation.
+
+The complete native build passed (squad-leader-final-build.log).

@@ -1,6 +1,7 @@
 #include "engine/save_document.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
+#include "game/army/leader.h"
 #include "game/army/soldier_reserve.h"
 #include "game/classes/save_format.h"
 #include <QSet>
@@ -754,6 +755,63 @@ SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int 
     put8(record, 12, quint8(unity));
     put8(record, 23, quint8(tactic));
     return planBytes(at, record);
+}
+SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Leader changes require a regular battery-save slot");
+    if (member < 1 || member > 4)
+        throw Error("Choose an ordinary nonleader member of this squad");
+    const auto list = units();
+    const auto found = std::find_if(list.begin(), list.end(),
+                                    [&](const auto &unit) { return unit.index == index; });
+    if (found == list.end())
+        throw Error("Choose an existing saved squad");
+    auto unit = *found;
+    const int prior = unit.members[0], next = unit.members[member];
+    if (prior < 1 || prior >= 100 || next < 1 || next >= 100 || prior == next)
+        throw Error("Both leaders must be ordinary characters present in the squad");
+    const auto oldClasses = memberClasses(prior), newClasses = memberClasses(next);
+    if (lordly_army_fixed_leader(quint8(prior), quint8(oldClasses.first)))
+        throw Error("The game keeps this character's class as a fixed squad leader");
+    for (int id : {prior, next}) {
+        int references = 0;
+        for (const auto &saved : list)
+            references += int(std::count(saved.members.begin(), saved.members.end(), id));
+        if (references != 1)
+            throw Error("A selected character has conflicting squad membership");
+    }
+    const int oldAt = roster + prior * stride + 51, newAt = roster + next * stride + 51;
+    if (u8(ram_, newAt) & 2)
+        throw Error("The selected member already has a conflicting leader flag");
+    const int at = 0x1971f0 + index * 25;
+    if ((u8(ram_, at + 1) & 2) && classes.commandType(newClasses.first, newClasses.second) != 2)
+        throw Error(
+            "This squad commands a legion; its replacement leader must have command type 2");
+    validateFormation(unit, classes);
+    QVector<QPair<int, int>> others;
+    for (int i = 0; i < 5; ++i)
+        if (unit.members[i] && i != member)
+            others << qMakePair(unit.cells[i], unit.members[i]);
+    std::sort(others.begin(), others.end());
+    auto record = ram_.mid(at, 25);
+    // The native writer puts the leader first, then other occupied grid cells.
+    for (int i = 0; i < 5; ++i) {
+        put8(record, 2 + i,
+             i == 0               ? quint8(next)
+             : i <= others.size() ? quint8(others[i - 1].second)
+                                  : 0);
+        put8(record, 7 + i,
+             i == 0               ? quint8(unit.cells[member])
+             : i <= others.size() ? quint8(others[i - 1].first)
+                                  : 0);
+    }
+    put8(record, 24, quint8(unitMovementType(unit, classes)));
+    auto candidate = *this;
+    candidate.apply(candidate.planBytes(at, record), true);
+    candidate.apply(candidate.planBytes(oldAt, QByteArray(1, char(u8(ram_, oldAt) & ~2))), true);
+    candidate.apply(candidate.planBytes(newAt, QByteArray(1, char(u8(ram_, newAt) | 2))), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
 }
 SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
                                       const ClassData &classes) const {

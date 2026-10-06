@@ -61,6 +61,7 @@ class SaveDocument {
     SaveChange planUnitSupplies(int index, const QVector<int> &, const Project &) const;
     SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                             const ClassData &) const;
+    SaveChange planUnitLeader(int index, int member, const ClassData &) const;
     SaveChange planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
                             const ClassData &) const;
     SaveChange planUnitTransfer(int fromUnit, int fromMember, int toUnit, int cell,

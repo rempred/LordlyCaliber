@@ -134,3 +134,7 @@ state, including echo draining, with counter isolation and export/replay checks.
 Normal battery squads now support Soldier reserve creation/disband with native
 HP/count/allocation behavior, Unity preservation, atomic Undo and save export.
 Direct Soldier transfer/swap and active/suspend lifecycle work remain open.
+
+Normal battery squad leaders can now change with coordinated saved order and
+character flags, Unity/position preservation, original fixed-leader and legion
+command-type checks, atomic Undo and save export. Legion demotion remains guarded.

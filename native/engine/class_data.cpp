@@ -271,6 +271,13 @@ int ClassData::movementType(int primary, int secondary) const {
     const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
     return u8(entries_[selected].record, movementTypeOffset);
 }
+int ClassData::commandType(int primary, int secondary) const {
+    if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
+        throw Error("Character command type refers to an unavailable class");
+    // Resident ROM43DC4..43E18: same primary/secondary selection, header byte6.
+    const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
+    return u8(entries_[selected].record, commandTypeOffset);
+}
 int ClassData::unitMovementType(const QVector<QPair<int, int>> &members,
                                 const QByteArray &priority) const {
     if (members.size() > 5 || priority.size() != 7)

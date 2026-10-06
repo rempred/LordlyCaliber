@@ -2,6 +2,7 @@
 #include "engine/save_document.h"
 #include "game/classes/save_format.h"
 #include "game/army/soldier_reserve.h"
+#include "game/army/leader.h"
 #include <array>
 #include <QFile>
 #include <QJsonDocument>
@@ -13,6 +14,155 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadLeaderChanges() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            auto classes = Project::fromRom(rom).classData();
+            QCOMPARE(classes.append(33, classes.entries()[33].name), 165);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess process;
+                process.start("node", {QFINDTESTDATA("army-leader-mips.cjs"), work.path(), mode});
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing leader fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 0x2a, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal leader fixture");
+                }
+                return out;
+            };
+            QJsonArray fixed, types, cases, saves;
+            QByteArray records;
+            for (const auto &entry : classes.entries())
+                records += entry.record;
+            for (int id = 0; id < 256; ++id)
+                for (int primary : {0, 2, 80, 81, 82, 83, 84, 163, 164, 255})
+                    fixed << QJsonObject{
+                        {"member", id},
+                        {"primary", primary},
+                        {"fixed", lordly_army_fixed_leader(quint8(id), quint8(primary))}};
+            for (int primary = 0; primary < classes.entries().size(); ++primary)
+                for (int secondary = 0; secondary < classes.entries().size(); ++secondary)
+                    types << QJsonArray{primary, secondary,
+                                        classes.commandType(primary, secondary)};
+            QVERIFY_THROWS_EXCEPTION(Error, classes.commandType(166, 1));
+            const auto battery = batteryFor("unit-payload.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            auto record = [&](const SaveDocument &doc, const QByteArray &before, int cell,
+                              bool capture) {
+                cases << QJsonObject{
+                    {"before", QString::fromLatin1(before.mid(0x1971f0, 25).toHex())},
+                    {"after", QString::fromLatin1(doc.memory().mid(0x1971f0, 25).toHex())},
+                    {"characters", QString::fromLatin1(before.mid(0x193bc0, 5600).toHex())},
+                    {"cell", cell}};
+                if (capture) {
+                    const auto bytes = doc.serialize();
+                    const auto at = lc_save_record_offset(doc.selectedSlot(), doc.expanded());
+                    saves << QJsonObject{
+                        {"payload", QString::fromLatin1(bytes.mid(int(at) + 0x2a, 6180).toHex())},
+                        {"characters",
+                         QString::fromLatin1(doc.memory().mid(0x193bc0, 5600).toHex())},
+                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 750).toHex())}};
+                }
+            };
+            for (const auto &input : {battery, swapped, expanded})
+                for (int member : {1, 2}) {
+                    auto doc = SaveDocument::open(rom, input, 166);
+                    const auto before = doc.memory();
+                    const auto change = doc.planUnitLeader(0, member, classes);
+                    doc.apply(change, true);
+                    auto expected = before;
+                    const QVector<int> ids =
+                        member == 1 ? QVector<int>{2, 1, 3} : QVector<int>{3, 1, 2};
+                    const QVector<int> cells =
+                        member == 1 ? QVector<int>{4, 0, 8} : QVector<int>{8, 0, 4};
+                    for (int i = 0; i < 3; ++i) {
+                        expected[0x1971f0 + 2 + i] = char(ids[i]);
+                        expected[0x1971f0 + 7 + i] = char(cells[i]);
+                    }
+                    expected[0x193bc0 + 56 + 51] = char(u8(before, 0x193bc0 + 56 + 51) & ~2);
+                    expected[0x193bc0 + ids[0] * 56 + 51] =
+                        char(u8(before, 0x193bc0 + ids[0] * 56 + 51) | 2);
+                    QCOMPARE(doc.memory(), expected);
+                    QCOMPARE(doc.units()[0].unity, 23);
+                    QCOMPARE(SaveDocument::open(rom, doc.serialize(), 166).memory(), expected);
+                    record(doc, before, cells[0], input != swapped);
+                    doc.apply(change, false);
+                    QCOMPARE(doc.serialize(), input);
+                    doc.selectSlot(1);
+                    const auto second = doc.planUnitLeader(0, member, classes);
+                    doc.apply(second, true);
+                    QCOMPARE(doc.memory(), expected);
+                    doc.apply(second, false);
+                    QCOMPARE(doc.serialize(), input);
+                    doc.selectSlot(15);
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitLeader(0, member, classes));
+                }
+            for (const auto &name :
+                 {"fixed-leader-81.bin", "fixed-leader-82.bin", "fixed-leader-83.bin",
+                  "fixed-leader-163.bin", "commander-bad.bin", "commander-pair.bin",
+                  "leader-conflict.bin", "leader-duplicate.bin", "leader-missing.bin"}) {
+                const auto doc = SaveDocument::open(rom, batteryFor(name), 166);
+                const auto before = doc.serialize();
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitLeader(0, 1, classes));
+                QCOMPARE(doc.serialize(), before);
+            }
+            for (const auto &name : {"commander-good.bin", "commander-new.bin"}) {
+                auto doc = SaveDocument::open(rom, batteryFor(name), 166);
+                const auto before = doc.memory();
+                doc.apply(doc.planUnitLeader(0, 1, classes), true);
+                QCOMPARE(doc.units()[0].members[0], 2);
+                QCOMPARE(u8(doc.memory(), 0x1971f1), quint8(3));
+                QCOMPARE(doc.units()[0].unity, 23);
+                QCOMPARE(doc.memory().mid(0x1969b8, 110), before.mid(0x1969b8, 110));
+                record(doc, before, 4, true);
+                QCOMPARE(SaveDocument::open(rom, doc.serialize(), 166).memory(), doc.memory());
+            }
+            const auto doc = SaveDocument::open(rom, battery, 166);
+            for (const auto pair : {qMakePair(0, 0), qMakePair(0, 4), qMakePair(2, 1),
+                                    qMakePair(4, 1), qMakePair(30, 1)})
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitLeader(pair.first, pair.second, classes));
+            const auto raw = SaveDocument::open(rom, doc.memory(), 166);
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitLeader(0, 1, classes));
+            QFile reference(work.filePath("leader-verify.json"));
+            QVERIFY(reference.open(QIODevice::WriteOnly));
+            reference.write(
+                QJsonDocument(QJsonObject{{"fixed", fixed},
+                                          {"types", types},
+                                          {"classes", QString::fromLatin1(records.toHex())},
+                                          {"cases", cases},
+                                          {"saves", saves}})
+                    .toJson());
+            reference.close();
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void soldierReserveLifecycle() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
