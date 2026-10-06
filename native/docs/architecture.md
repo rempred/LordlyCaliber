@@ -4747,3 +4747,18 @@ inspected. `image_tests pathRibbonsAgainstMips` passed1343ms after the shared-re
 refactor, and `sprite_runtime_tests lifecycleAgainstMips
 lifecycleBoundsAndMissingContext` passed352ms. These remain offline authoring,
 preview and exported-resource checks rather than a natural game load.
+
+
+## Checked portable sprite/path package
+
+Portable development ZIP `LordlyCaliber-0.5-dev-20261006-034012.zip` contains618fc5b,
+including the new sprite Actions, typed preview selection and native path headings.
+It supersedes022437 as the most recently checked package. `check-package.ps1`
+passed in2.31s with isolated GUI startup, bundled user-time compilation/export,
+independent Knight STR300 readback, reopening and master preservation. Evidence:
+parent Test ROMs/native-portable-70c65668e1b040e39565fedfd76ed43e.
+`check-scene-import-package.ps1` passed in7.20s with2648 independently expected
+scene-program bytes, browser-project conversion, bundled compilation/export and
+reopening. Evidence: parent Test ROMs/portable-scene-import-
+8feef5ed57374be7a0dcfe95ce2340c3. These are isolated-environment checks on this
+machine. Clean-machine and natural game-load validation remain unperformed.
