@@ -71,6 +71,148 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneChoiceAuthoring() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            project.loadDialogues();
+            auto scenes = *project.scenePrograms();
+            const auto id =
+                scenes.createScene("Desktop two-option choice", 0x1fa8bf4 - 0x594284, true);
+            project.setScenePrograms(scenes.json());
+            const auto blank = scenes.program(id);
+            const auto originalText = project.dialogues()->json();
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1150, 650);
+            editor.show();
+            editor.selectScene(id, SceneActions::positions(blank).last().command);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto position = editor.findChild<QComboBox *>("sceneActionPosition");
+            auto add = editor.findChild<QPushButton *>("sceneActionInsert");
+            auto editOptions = [&](const QString &first, const QString &second, bool accept) {
+                QTimer::singleShot(0, &editor, [&, first, second, accept] {
+                    auto dialog = editor.findChild<QDialog *>("sceneChoiceDialog");
+                    QVERIFY(dialog);
+                    auto a = dialog->findChild<QLineEdit *>("sceneChoiceOption1");
+                    auto b = dialog->findChild<QLineEdit *>("sceneChoiceOption2");
+                    auto buttons = dialog->findChild<QDialogButtonBox *>();
+                    a->setText("@");
+                    QVERIFY(!buttons->button(QDialogButtonBox::Ok)->isEnabled());
+                    a->setText(first);
+                    b->setText(second);
+                    QVERIFY(buttons->button(QDialogButtonBox::Ok)->isEnabled());
+                    buttons->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)
+                        ->click();
+                });
+            };
+            kind->setCurrentIndex(kind->findData(SceneActions::Choice));
+            QVERIFY(add->isEnabled());
+            editOptions("Continue", "Return", false);
+            add->click();
+            QCOMPARE(undo.count(), 0);
+            QCOMPARE(project.dialogues()->json(), originalText);
+            editOptions("Continue", "Return", true);
+            add->click();
+            QCOMPARE(undo.count(), 1);
+            const auto added = project.scenePrograms()->program(id);
+            QCOMPARE(SceneActions::choices(added).size(), 1);
+            auto choice = SceneActions::choices(added).first();
+            const int entry = added.commands[choice.command].operands[2];
+            QCOMPARE(SceneActions::choiceOptions(
+                         project.dialogues()->entry(Dialogues::Table::Primary, 5, entry))
+                         ->first,
+                     QString("Continue"));
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            QCOMPARE(project.dialogues()->json(), originalText);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, added.source);
+            editor.selectScene(id, choice.command);
+            editOptions("Proceed", "Go back", true);
+            editor.findChild<QPushButton *>("sceneActionEditText")->click();
+            QCOMPARE(undo.count(), 2);
+            QCOMPARE(SceneActions::choiceOptions(
+                         project.dialogues()->entry(Dialogues::Table::Primary, 5, entry))
+                         ->second,
+                     QString("Go back"));
+            undo.undo();
+            QCOMPARE(SceneActions::choiceOptions(
+                         project.dialogues()->entry(Dialogues::Table::Primary, 5, entry))
+                         ->second,
+                     QString("Return"));
+            undo.redo();
+            for (int option : {1, 2}) {
+                choice = SceneActions::choices(project.scenePrograms()->program(id)).first();
+                int end = option == 1 ? choice.firstEnd : choice.secondEnd;
+                editor.selectScene(id, choice.command);
+                position->setCurrentIndex(position->findData(end));
+                QVERIFY(position->currentText().contains(QString("After option %1").arg(option)));
+                kind->setCurrentIndex(kind->findData(0x1b));
+                QVERIFY(add->isEnabled());
+                add->click();
+                editor.findChild<QLineEdit *>("sceneActionField0")->setText("1");
+                editor.findChild<QLineEdit *>(QString("sceneActionField%1").arg(option))
+                    ->setText("255");
+                editor.findChild<QLineEdit *>("sceneActionField4")->setText("0");
+                editor.findChild<QLineEdit *>("sceneActionField5")->setText("255");
+                choice = SceneActions::choices(project.scenePrograms()->program(id)).first();
+                end = option == 1 ? choice.firstEnd : choice.secondEnd;
+                position->setCurrentIndex(position->findData(end));
+                kind->setCurrentIndex(kind->findData(0xe));
+                QVERIFY(add->isEnabled());
+                add->click();
+                editor.findChild<QLineEdit *>("sceneActionField0")->setText("3");
+            }
+            const auto complete = project.scenePrograms()->program(id).source;
+            editor.selectScene(
+                id, SceneActions::choices(project.scenePrograms()->program(id)).first().firstBegin);
+            QVERIFY(editor.findChild<QListWidget *>("sceneActionList")
+                        ->currentItem()
+                        ->text()
+                        .startsWith("Option 1"));
+            QVERIFY(editor.grab().save("native-choice-authoring.png"));
+            QTemporaryDir work;
+            project.saveFolder(work.path());
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(restored.scenePrograms()->program(id).source, complete);
+            QImage outcomes[2];
+            for (int option : {1, 2}) {
+                ScenePreview preview(restored.rom());
+                preview.resize(1250, 900);
+                preview.show();
+                preview.selectScene(*restored.scenePrograms(), id, 2, restored.dialogues());
+                auto step = preview.findChild<QPushButton *>("sceneStep");
+                QVERIFY(step);
+                auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+                for (int i = 0; i < 300 && preview.property("sceneDialogueState").toInt() != 7; ++i)
+                    step->click();
+                QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+                QCOMPARE(preview.property("sceneDialogueState").toInt(), 7);
+                if (option == 2)
+                    preview.findChild<QPushButton *>("panelDown")->click();
+                preview.findChild<QPushButton *>("panelConfirm")->click();
+                for (int i = 0; i < 200 && !preview.property("sceneStopped").toBool(); ++i)
+                    step->click();
+                QVERIFY2(status->text().contains("Scene released"), qPrintable(status->text()));
+                outcomes[option - 1] = preview.renderedFrame();
+            }
+            QVERIFY(outcomes[0] != outcomes[1]);
+            QCOMPARE(project.scenePrograms()->program(id).source, complete);
+            editor.selectScene(
+                id, SceneActions::choices(project.scenePrograms()->program(id)).first().command);
+            editor.findChild<QPushButton *>("sceneActionRemove")->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, complete);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneActorClassChoices() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

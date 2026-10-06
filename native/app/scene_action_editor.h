@@ -33,6 +33,7 @@ class SceneActionEditor : public QWidget {
     void updateStructureControls();
     enum class Change { Add, Remove, Move };
     void changeStructure(Change);
+    void changeChoice(bool create);
     QComboBox *kind_, *position_;
     QPushButton *insert_, *remove_, *move_, *text_;
     Project *project_;

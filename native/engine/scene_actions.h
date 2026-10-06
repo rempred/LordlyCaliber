@@ -27,11 +27,28 @@ struct SceneActionPosition {
     bool canWait = false;
     QString waitReason;
 };
+struct SceneChoice {
+    int command = 0;
+    int firstBegin = 0, firstEnd = 0, secondBegin = 0, secondEnd = 0, end = 0;
+    int option(int index) const {
+        return index >= secondBegin && index <= secondEnd ? 2
+               : index >= firstBegin && index <= firstEnd ? 1
+                                                          : 0;
+    }
+    bool control(int index) const {
+        return (index >= command && index < firstBegin) ||
+               (index >= firstEnd && index < secondBegin) || (index >= secondEnd && index < end);
+    }
+};
 class SceneActions {
   public:
     // Authoring choice; encodes the reuse form of Director 0x63.
     static constexpr quint32 RotateSprite = 0x10063;
     static constexpr quint32 CreatePathSprite = 0x20063, OrientSprite = 0x30063;
+    static constexpr quint32 Choice = 0x100bf;
+    static QVector<SceneChoice> choices(const DirectorProgram &);
+    static QByteArray choiceText(const QString &first, const QString &second);
+    static std::optional<QPair<QString, QString>> choiceOptions(const QByteArray &);
     static QVector<SceneAction> inspect(const DirectorProgram &);
     static QVector<SceneActionPosition> positions(const DirectorProgram &);
     static QMap<quint32, QString> kinds();

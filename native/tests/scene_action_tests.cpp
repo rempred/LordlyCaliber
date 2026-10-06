@@ -3,6 +3,7 @@
 #include "engine/scene_actions.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_dialogue.h"
+#include "engine/dialogue_session.h"
 #include "engine/scene_sprites.h"
 #include "engine/scene_ribbons.h"
 #include "engine/scene_image_motion.h"
@@ -1164,6 +1165,135 @@ class SceneActionTests : public QObject {
             QCOMPARE(checksum, rom.bytes());
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             qInfo().noquote() << "Rebuilt and reopened" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void choiceActions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            project.loadDialogues();
+            auto scenes = *project.scenePrograms();
+            const auto id = scenes.createScene("Two branch choice", 0x1fa8bf4 - 0x594284, true);
+            const auto blank = scenes.program(id);
+            const int at = SceneActions::positions(blank).last().command;
+            auto p = SceneActions::insert(blank, at, SceneActions::Choice);
+            QCOMPARE(SceneActions::choices(p).size(), 1);
+            QCOMPARE(SceneActions::remove(p, at).source, blank.source);
+            p = SceneActions::edit(p, at, 0, "7");
+            QCOMPARE(SceneActions::choices(p).size(), 1); // Every close/query follows the new ID.
+            auto text = *project.dialogues();
+            const auto bytes = SceneActions::choiceText("Continue", "Return");
+            const int entry = text.appendEntry(Dialogues::Table::Primary, 5, bytes);
+            p = SceneActions::edit(p, at, 2, QString::number(entry));
+            for (int option : {1, 2}) {
+                auto choice = SceneActions::choices(p).first();
+                const int end = option == 1 ? choice.firstEnd : choice.secondEnd;
+                p = SceneActions::insert(p, end, 0x48);
+                p = SceneActions::edit(p, end, 1, QString::number(option * 70));
+                p = SceneActions::insert(p, end + 1, 0xe, 3);
+            }
+            auto choice = SceneActions::choices(p).first();
+            const auto moved = SceneActions::move(p, choice.firstBegin, choice.secondEnd);
+            auto after = SceneActions::choices(moved).first();
+            QCOMPARE(SceneActions::move(moved, after.secondEnd - 1, after.firstBegin).source,
+                     p.source);
+            const auto movedChoice = SceneActions::insert(p, choice.end, 0x48);
+            const auto reordered = SceneActions::move(movedChoice, at, choice.end + 1);
+            QCOMPARE(SceneActions::move(reordered, at + 1, at).source, movedChoice.source);
+            QCOMPARE(SceneActions::remove(p, at).source, blank.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::choiceText("@1", "Return"));
+            QCOMPARE(SceneActions::choiceOptions(bytes)->second, QString("Return"));
+            // A foreign jump into a choice prevents treating the block as independently movable.
+            auto shared = p;
+            shared.commands.insert(choice.end, {0, 0x59, {p.commands[at + 7].operands[0]}});
+            shared = DirectorProgram::decode(shared.encode());
+            QVERIFY(SceneActions::choices(shared).isEmpty());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::remove(shared, at));
+            scenes.replace(id, p.source);
+            project.setScenePrograms(scenes.json());
+            project.setDialogues(text.json());
+            auto exercise = [&](const Project &current) {
+                for (int option : {1, 2}) {
+                    SceneResources pool({8, 0xffff, 13});
+                    SceneDialogue windows(0);
+                    DialoguePlayback playback(current.rom(), current.dialogues());
+                    auto environment = DialoguePlayback::environment(current.rom());
+                    environment.substitutions[48] = QByteArray("Joe\0", 4);
+                    DirectorSession director(
+                        current.scenePrograms()->runtimeDirectors(),
+                        current.scenePrograms()->resource(id).selectors.first(), 0);
+                    QVector<int> observed;
+                    auto service = [&](quint32 op, const QVector<quint32> &args, int &value) {
+                        if (op == 0xbf)
+                            windows.create(args, pool);
+                        else if (op == 0x25)
+                            value = windows.control(args[2]);
+                        else if (op == 0x10)
+                            value = windows.query(args[2], pool);
+                        else if (op == 5)
+                            windows.close(args[0], pool);
+                        else if (op == 0x48)
+                            observed << int(args[1]);
+                        return true;
+                    };
+                    bool down = false, confirmed = false, released = false;
+                    for (int update = 0; update < 300 && !released; ++update) {
+                        DialogueInput input{8192, 0, 0, 0};
+                        if (playback.state(0, pool) == 7 && !confirmed) {
+                            if (option == 2 && !down) {
+                                input.repeat = 0x400;
+                                down = true;
+                            } else {
+                                input.pressed = 0x8000;
+                                confirmed = true;
+                            }
+                        }
+                        playback.advance(pool, windows, environment, input);
+                        director.advanceCounter();
+                        const int result = director.dispatch(service);
+                        QVERIFY2(result == LORDLY_DIRECTOR_YIELD ||
+                                     result == LORDLY_DIRECTOR_RELEASE,
+                                 qPrintable(director.reason()));
+                        released = result == LORDLY_DIRECTOR_RELEASE;
+                    }
+                    QVERIFY(confirmed);
+                    QVERIFY(released);
+                    QCOMPARE(observed, QVector<int>{option * 70});
+                }
+            };
+            exercise(project);
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, p.source);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-choice-action-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            reopened.loadDialogues();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            QCOMPARE(SceneActions::choices(reopened.scenePrograms()->program(id)).size(), 1);
+            QCOMPARE(reopened.dialogues()->entry(Dialogues::Table::Primary, 5, entry), bytes);
+            exercise(reopened);
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote()
+                << "Both real text selections, branch waits and exported/reopened choices passed:"
+                << destination;
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

@@ -1,6 +1,7 @@
 #include "engine/scene_action_control.h"
 #include "engine/scene_actions.h"
 #include <algorithm>
+#include <functional>
 #include <optional>
 namespace lordly {
 namespace action_detail {
@@ -29,42 +30,64 @@ bool completeImageTransitionWait(const DirectorProgram &p, int index) {
            c[index + 3].opcode == 0x54 && c[index + 3].operands == QVector<quint32>{0, 0};
 }
 QVector<CounterState> counterStates(const DirectorProgram &program) {
-    QVector<CounterState> result;
-    CounterState state;
-    int queriesSinceYield = 0;
-    for (int i = 0; i < program.commands.size(); ++i) {
-        result << state;
-        const auto &c = program.commands[i];
-        const int completion = completeDialogue(program, i)              ? 7
-                               : completeImageTransitionWait(program, i) ? 4
-                                                                         : 0;
-        if (completion) {
-            const auto after = CounterState{state.known && state.arm < 0, state.arm, state.target};
-            for (int n = 1; n < completion; ++n)
-                result << CounterState{false, state.arm, state.target};
-            state = after;
-            queriesSinceYield = 1;
-            i += completion - 1;
-            continue;
-        }
-        if (c.opcode == 0x80000000)
-            queriesSinceYield = 0;
-        if (c.opcode == 1)
-            state = {state.known, i, 0};
-        else if (c.opcode == 2)
-            state = {state.known, -1, 0};
-        else if (c.opcode == 0xe || c.opcode == 0xb5) {
-            if (++queriesSinceYield > 1 || state.arm < 0 ||
-                (c.operands[0] != 0 && c.operands[0] != 2) || qint32(c.operands[1]) < state.target)
+    QVector<CounterState> result(program.commands.size());
+    const auto choices = SceneActions::choices(program);
+    std::function<CounterState(int, int, CounterState)> walk;
+    walk = [&](int begin, int end, CounterState state) {
+        int queriesSinceYield = 0;
+        for (int i = begin; i < end; ++i) {
+            result[i] = state;
+            const auto choice = std::find_if(choices.begin(), choices.end(),
+                                             [i](const auto &v) { return v.command == i; });
+            if (choice != choices.end()) {
+                for (int n = i + 1; n < choice->end; ++n)
+                    result[n] = {false, -1, 0};
+                const CounterState entry{state.known && state.arm < 0, -1, 0};
+                const auto first = walk(choice->firstBegin, choice->firstEnd, entry);
+                result[choice->firstEnd] = first;
+                const auto second = walk(choice->secondBegin, choice->secondEnd, entry);
+                result[choice->secondEnd] = second;
+                state = {first.known && second.known && first.arm < 0 && second.arm < 0, -1, 0};
+                queriesSinceYield = 1;
+                i = choice->end - 1;
+                continue;
+            }
+            const auto &c = program.commands[i];
+            const int completion = completeDialogue(program, i)              ? 7
+                                   : completeImageTransitionWait(program, i) ? 4
+                                                                             : 0;
+            if (completion) {
+                const auto after =
+                    CounterState{state.known && state.arm < 0, state.arm, state.target};
+                for (int n = 1; n < completion; ++n)
+                    result[i + n] = {false, state.arm, state.target};
+                state = after;
+                queriesSinceYield = 1;
+                i += completion - 1;
+                continue;
+            }
+            if (c.opcode == 0x80000000)
+                queriesSinceYield = 0;
+            if (c.opcode == 1)
+                state = {state.known, i, 0};
+            else if (c.opcode == 2)
+                state = {state.known, -1, 0};
+            else if (c.opcode == 0xe || c.opcode == 0xb5) {
+                if (++queriesSinceYield > 1 || state.arm < 0 ||
+                    (c.operands[0] != 0 && c.operands[0] != 2) ||
+                    qint32(c.operands[1]) < state.target)
+                    state.known = false;
+                state.target = qint32(c.operands[1]);
+            } else if (uncertainControl(c))
                 state.known = false;
-            state.target = qint32(c.operands[1]);
-        } else if (uncertainControl(c))
-            state.known = false;
-        else if (state.arm >= 0 && c.opcode == 0x80000000 &&
-                 (i + 1 == program.commands.size() || (program.commands[i + 1].opcode != 0xe &&
-                                                       program.commands[i + 1].opcode != 0xb5)))
-            state.known = false;
-    }
+            else if (state.arm >= 0 && c.opcode == 0x80000000 &&
+                     (i + 1 == program.commands.size() || (program.commands[i + 1].opcode != 0xe &&
+                                                           program.commands[i + 1].opcode != 0xb5)))
+                state.known = false;
+        }
+        return state;
+    };
+    walk(0, int(program.commands.size()), {});
     return result;
 }
 QVector<int> remainingGates(const DirectorProgram &program, int before, qint64 previous) {
@@ -170,6 +193,7 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0xe, "Wait"},
             {0xb5, "Wait (A button can skip)"},
             {0xbf, "Dialogue"},
+            {Choice, "Choice (two options)"},
             {0x13, "Release Actor"},
             {0x15, "Turn Actor"},
             {0x1c, "Room Actor channel"},
@@ -191,6 +215,7 @@ QMap<quint32, QString> SceneActions::kinds() {
 QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
     QVector<SceneActionPosition> result;
     const auto actions = inspect(p);
+    const auto choices = SceneActions::choices(p);
     const auto states = action_detail::counterStates(p);
     const int lead = action_detail::setupEnd(p);
     for (int i = lead; i < p.commands.size(); ++i) {
@@ -203,10 +228,22 @@ QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
             }
         if (c.opcode == 0x7d || (c.opcode == 0x39 && c.operands == QVector<quint32>{0}))
             name = "scene exit";
+        QString branch;
+        for (const auto &choice : choices) {
+            const int option = choice.option(i);
+            if (!option)
+                continue;
+            branch = QString("After option %1 (choice at word %2) · ")
+                         .arg(option)
+                         .arg(p.commands[choice.command].word);
+            if (i == choice.firstEnd || i == choice.secondEnd)
+                name = "end of branch";
+        }
         if (name.isEmpty())
             continue;
         const auto reason = waitReason(p, i, states[i]);
-        result << SceneActionPosition{i, QString("Before %1 · word %2").arg(name).arg(c.word),
+        result << SceneActionPosition{i,
+                                      branch + QString("Before %1 · word %2").arg(name).arg(c.word),
                                       reason.isEmpty(), reason};
     }
     return result;
@@ -246,7 +283,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         if (action_detail::counterStates(p)[before].arm >= 0)
             throw Error("Insert a completion wait outside the active counter span.");
         added << command(0) << command(0x80000002) << command(0x80000000) << command(0x54, {0, 0});
-    } else if (kind == 0xbf) {
+    } else if (kind == 0xbf || kind == Choice) {
         if (!point->canWait)
             throw Error(point->waitReason);
         const auto state = action_detail::counterStates(p)[before];
@@ -266,8 +303,29 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         if (id == 256)
             throw Error("Every dialogue window ID is referenced; edit an existing window.");
         added << command(0xbf, {id, 5, 0, 0, 7, 160, 0, 1, 0, 1, 0, 0, 1}) << command(0)
-              << command(0x80000002) << command(0x80000000) << command(0x10, {0, 2, id})
-              << command(6, {id}) << command(5, {id});
+              << command(0x80000002) << command(0x80000000);
+        if (kind == Choice) {
+            QSet<quint32> labels;
+            // Include references as well as definitions so an unresolved reference
+            // cannot accidentally acquire a new destination.
+            for (const auto &c : p.commands)
+                for (auto value : c.operands)
+                    labels << value;
+            quint32 next = 0x7000;
+            auto label = [&] {
+                while (labels.contains(next))
+                    ++next;
+                return next++;
+            };
+            const auto a = label(), b = label(), join = label();
+            added << command(0x56) << command(0x25, {0, 1, 3}) << command(5, {id})
+                  << command(0x59, {a}) << command(0x80000002) << command(0x25, {0, 255, 3})
+                  << command(5, {id}) << command(0x59, {b}) << command(0x80000002)
+                  << command(0x80000000) << command(0x80000005, {a}) << command(0x10, {0, 1, id})
+                  << command(0x59, {join}) << command(0x80000005, {b}) << command(0x10, {0, 1, id})
+                  << command(0x59, {join}) << command(0x80000005, {join});
+        } else
+            added << command(0x10, {0, 2, id}) << command(6, {id}) << command(5, {id});
     } else if (kind == 0xe || kind == 0xb5) {
         if (!point->canWait)
             throw Error(point->waitReason);
@@ -477,11 +535,18 @@ DirectorProgram SceneActions::move(const DirectorProgram &p, int index, int befo
         throw Error("Select an action and a supported destination.");
     if (before >= index && before <= index + source->commandCount)
         return p;
-    // Keep event/branch blocks intact. Relocation only crosses complete, known actions.
+    const auto choices = SceneActions::choices(p);
+    // Only recognized choice boundaries may be crossed. Unknown native control remains intact.
     const int end = std::max(index + source->commandCount, before);
     for (int cursor = std::min(index, before); cursor < end;) {
         const auto next = std::find_if(actions.begin(), actions.end(),
                                        [cursor](const auto &a) { return a.command == cursor; });
+        const bool choiceControl = std::any_of(
+            choices.begin(), choices.end(), [cursor](const auto &v) { return v.control(cursor); });
+        if (choiceControl) {
+            ++cursor;
+            continue;
+        }
         if (next == actions.end())
             throw Error("This move crosses a separate native control section; edit that section in "
                         "Commands.");

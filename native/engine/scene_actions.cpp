@@ -49,10 +49,13 @@ quint32 SceneActionField::parse(const QString &text) const {
 QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
     QVector<SceneAction> result;
     const auto &commands = program.commands;
+    const auto choices = SceneActions::choices(program);
     const auto counterStates = action_detail::counterStates(program);
     for (int i = 0; i < commands.size(); ++i) {
         const auto &c = commands[i];
         SceneAction action{i, 1, {}, {}};
+        const auto choice = std::find_if(choices.begin(), choices.end(),
+                                         [i](const auto &v) { return v.command == i; });
         auto field = [&](QString name, int operand, int scale = 1, qint64 minimum = -2147483648LL,
                          qint64 maximum = 2147483647LL, int offset = 0) {
             action.fields << SceneActionField{name, offset, operand, scale, minimum, maximum};
@@ -276,7 +279,14 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             break;
         case 0xbf:
             action.name = "Dialogue window";
-            if (action_detail::completeDialogue(program, i)) {
+            if (choice != choices.end()) {
+                action.name = "Choice";
+                action.commandCount = choice->end - i;
+                action.timing = SceneActionTiming::Completion;
+                field("Window ID", 0, 1, 0, 255);
+                action.fields.last().mirrors = {
+                    {6, 0}, {10, 0}, {15, 2}, {choice->secondBegin - 1 - i, 2}};
+            } else if (action_detail::completeDialogue(program, i)) {
                 action.name = "Dialogue";
                 action.commandCount = 7;
                 action.timing = SceneActionTiming::Completion;
@@ -350,7 +360,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         result << action;
-        i += action.commandCount - 1;
+        i += choice != choices.end() ? 13 : action.commandCount - 1;
     }
     return result;
 }

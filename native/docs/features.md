@@ -30,6 +30,19 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Two-option Choices now have native Actions authoring, editable option text,
+branch insertion positions and branch-aware move/remove. Creating a choice owns
+its new dialogue entry and Director block in one Undo operation. Reopened ROMs
+recover the native choice layout without editor-only metadata. Preview controls
+select either option through the real text interpreter; only its actions execute.
+`scene_action_tests choiceActions authoringBoundaries insertedWaitTimingAndExport
+ actionOrdering` passed (5278ms), including source-built export/reopen, branch waits,
+checksum and source preservation. `ui_tests sceneChoiceAuthoring` passed (956ms)
+for cancellation, validation, atomic Undo, options, branch fields and two different
+preview outcomes. Existing dialogue/action checks also pass. No natural-game
+validation is claimed.
+
+
 Existing class-body actions now expose class-pair and pose fields with native retain
 sentinels, preserved body flags, readable symbolic launch values, undo, persistence
 and compiled export/reopen. Generic body creation still requires its launch context.

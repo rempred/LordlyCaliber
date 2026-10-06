@@ -3,6 +3,8 @@
 #include "engine/actor_art.h"
 #include "engine/scene_ribbons.h"
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -15,6 +17,30 @@
 #include <QUndoStack>
 #include <QVBoxLayout>
 namespace lordly {
+namespace {
+class ChoiceCommand final : public QUndoCommand {
+  public:
+    ChoiceCommand(Project *project, const QString &label, const ScenePrograms &scenes,
+                  const Dialogues &dialogues)
+        : QUndoCommand(label), project_(project), beforeScenes_(project->scenePrograms()->json()),
+          beforeText_(project->dialogues()->json()), afterScenes_(scenes.json()),
+          afterText_(dialogues.json()) {}
+    void undo() override {
+        apply(beforeScenes_, beforeText_);
+    }
+    void redo() override {
+        apply(afterScenes_, afterText_);
+    }
+
+  private:
+    void apply(const QJsonObject &scenes, const QJsonObject &text) {
+        project_->setDialogues(text);
+        project_->setScenePrograms(scenes);
+    }
+    Project *project_;
+    QJsonObject beforeScenes_, beforeText_, afterScenes_, afterText_;
+};
+} // namespace
 SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
                                      std::function<void()> changed, QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
@@ -75,6 +101,10 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
             return;
         const auto program = project_->scenePrograms()->program(key_);
         const auto &c = program.commands[actions_[row].command];
+        if (actions_[row].name == "Choice") {
+            changeChoice(false);
+            return;
+        }
         if (c.opcode == 0xbf)
             emit editDialogue(quint16(c.operands[1]), quint16(c.operands[2]));
     });
@@ -182,7 +212,7 @@ void SceneActionEditor::selectCommand(int command) {
     if (editing_ || property("invalidEdits").toBool())
         return;
     const QSignalBlocker block(list_);
-    for (int row = 0; row < actions_.size(); ++row)
+    for (int row = int(actions_.size()) - 1; row >= 0; --row)
         if (command >= actions_[row].command &&
             command < actions_[row].command + actions_[row].commandCount) {
             if (list_->currentRow() != row) {
@@ -213,13 +243,20 @@ void SceneActionEditor::refresh(int command) {
         if (insertion < 0)
             insertion = position_->findData(priorPosition);
         position_->setCurrentIndex(insertion < 0 ? position_->count() - 1 : insertion);
+        const auto choices = SceneActions::choices(program);
         for (const auto &action : actions_) {
-            auto item = new QListWidgetItem(
-                QString("%1 · word %2").arg(action.name).arg(program.commands[action.command].word),
-                list_);
+            QString branch;
+            for (const auto &choice : choices)
+                if (choice.option(action.command))
+                    branch = QString("Option %1 · ").arg(choice.option(action.command));
+            auto item =
+                new QListWidgetItem(branch + QString("%1 · word %2")
+                                                 .arg(action.name)
+                                                 .arg(program.commands[action.command].word),
+                                    list_);
             item->setData(Qt::UserRole, action.command);
         }
-        for (int row = 0; row < actions_.size(); ++row)
+        for (int row = int(actions_.size()) - 1; row >= 0; --row)
             if (command >= actions_[row].command &&
                 command < actions_[row].command + actions_[row].commandCount) {
                 list_->setCurrentRow(row);
@@ -251,6 +288,8 @@ void SceneActionEditor::showAction() {
         return;
     }
     const auto &action = actions_[row];
+    text_->setText(action.name == "Choice" ? "Edit choice options" : "Edit dialogue text");
+    remove_->setText(action.name == "Choice" ? "Remove choice and its branches" : "Remove action");
     const auto program = project_->scenePrograms()->program(key_);
     for (int i = 0; i < action.fields.size(); ++i) {
         const auto &f = action.fields[i];
@@ -585,7 +624,8 @@ void SceneActionEditor::updateStructureControls() {
     text_->setEnabled(valid);
     const bool wait =
         kind_->currentData().toUInt() == 0xe || kind_->currentData().toUInt() == 0xb5 ||
-        kind_->currentData().toUInt() == 0xbf || kind_->currentData().toUInt() == 0x54;
+        kind_->currentData().toUInt() == 0xbf || kind_->currentData().toUInt() == 0x54 ||
+        kind_->currentData().toUInt() == SceneActions::Choice;
     const bool body = kind_->currentData().toUInt() == 0x2a;
     const bool image =
         kind_->currentData().toUInt() == 0x76 || kind_->currentData().toUInt() == 0x50 ||
@@ -628,6 +668,10 @@ void SceneActionEditor::updateStructureControls() {
                                        : reason);
 }
 void SceneActionEditor::changeStructure(Change operation) {
+    if (operation == Change::Add && kind_->currentData().toUInt() == SceneActions::Choice) {
+        changeChoice(true);
+        return;
+    }
     if (!key_ || property("invalidEdits").toBool())
         return;
     try {
@@ -660,6 +704,104 @@ void SceneActionEditor::changeStructure(Change operation) {
         editing_ = false;
         refresh(command);
         emit commandSelected(command);
+        if (changed_)
+            changed_();
+    } catch (const std::exception &e) {
+        editing_ = false;
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
+void SceneActionEditor::changeChoice(bool create) {
+    if (!key_ || property("invalidEdits").toBool())
+        return;
+    try {
+        project_->loadDialogues();
+        auto program = project_->scenePrograms()->program(key_);
+        const int row = list_->currentRow();
+        if (!create && (row < 0 || row >= actions_.size()))
+            return;
+        const int at = create ? position_->currentData().toInt() : actions_[row].command;
+        int archive = 5, entry = -1;
+        auto table = Dialogues::Table::Primary;
+        QPair<QString, QString> options{"Yes", "No"};
+        if (!create) {
+            const auto &c = program.commands[at];
+            archive = quint16(c.operands[1]);
+            entry = quint16(c.operands[2]);
+            table = entry & 0x8000 ? Dialogues::Table::Alternate : Dialogues::Table::Primary;
+            entry &= 0x3fff;
+            const auto parsed =
+                SceneActions::choiceOptions(project_->dialogues()->entry(table, archive, entry));
+            if (!parsed) {
+                emit editDialogue(archive, quint16(c.operands[2]));
+                return;
+            }
+            options = *parsed;
+        }
+        QDialog dialog(this);
+        dialog.setObjectName("sceneChoiceDialog");
+        dialog.setWindowTitle(create ? "Add choice" : "Edit choice options");
+        auto layout = new QVBoxLayout(&dialog);
+        auto help =
+            new QLabel("Write two options, up to 24 characters each. Add branch actions using "
+                       "the After option 1 / After option 2 positions.");
+        help->setWordWrap(true);
+        layout->addWidget(help);
+        auto form = new QFormLayout;
+        auto first = new QLineEdit(options.first), second = new QLineEdit(options.second);
+        first->setObjectName("sceneChoiceOption1");
+        second->setObjectName("sceneChoiceOption2");
+        first->setMaxLength(24);
+        second->setMaxLength(24);
+        form->addRow("Option 1", first);
+        form->addRow("Option 2", second);
+        layout->addLayout(form);
+        auto status = new QLabel;
+        status->setWordWrap(true);
+        layout->addWidget(status);
+        auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        layout->addWidget(buttons);
+        auto validate = [&] {
+            try {
+                SceneActions::choiceText(first->text(), second->text());
+                status->clear();
+                buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
+            } catch (const std::exception &e) {
+                status->setText(QString::fromUtf8(e.what()));
+                buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
+            }
+        };
+        connect(first, &QLineEdit::textChanged, &dialog, validate);
+        connect(second, &QLineEdit::textChanged, &dialog, validate);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        const auto text = SceneActions::choiceText(first->text(), second->text());
+        auto dialogues = *project_->dialogues();
+        if (create) {
+            entry = dialogues.appendEntry(table, archive, text);
+            if (entry > 0x3fff)
+                throw Error("This dialogue archive has no remaining entry IDs.");
+            program = SceneActions::insert(program, at, SceneActions::Choice);
+            program.commands[at].operands[2] = quint32(entry);
+            program = DirectorProgram::decode(program.encode());
+        } else {
+            if (dialogues.entry(table, archive, entry) == text)
+                return;
+            dialogues.setEntry(table, archive, entry, text);
+        }
+        auto scenes = *project_->scenePrograms();
+        scenes.replace(key_, program.source);
+        auto validation = *project_;
+        validation.setDialogues(dialogues.json());
+        validation.setScenePrograms(scenes.json());
+        editing_ = true;
+        undo_->push(new ChoiceCommand(project_, create ? "Add choice" : "Edit choice options",
+                                      scenes, dialogues));
+        editing_ = false;
+        refresh(at);
+        emit commandSelected(at);
         if (changed_)
             changed_();
     } catch (const std::exception &e) {
