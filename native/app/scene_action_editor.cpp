@@ -2,6 +2,7 @@
 #include "app/scene_command_editor.h"
 #include "engine/actor_art.h"
 #include "engine/scene_ribbons.h"
+#include "engine/scene_timed_authoring.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -89,6 +90,16 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
     remove_->setObjectName("sceneActionRemove");
     add->addWidget(remove_);
     layout->addLayout(add);
+    auto timeline = new QHBoxLayout;
+    insertTimed_ = new QPushButton("Add at playhead");
+    insertTimed_->setObjectName("sceneActionInsertAtPlayhead");
+    insertTimed_->setToolTip("Insert at the preview's current update. Timed waits are split while preserving their remaining duration.");
+    timeline->addWidget(insertTimed_);
+    hold_ = new QPushButton("Hold until finished"); hold_->setObjectName("sceneHoldUntilFinished"); hold_->hide();
+    timeline->addWidget(hold_); timeline->addStretch(); layout->addLayout(timeline);
+    exitWarning_ = new QLabel; exitWarning_->setObjectName("sceneExitWarning"); exitWarning_->setWordWrap(true); layout->addWidget(exitWarning_);
+    connect(insertTimed_, &QPushButton::clicked, this, &SceneActionEditor::insertAtPlayhead);
+    connect(hold_, &QPushButton::clicked, this, &SceneActionEditor::holdBeforeExit);
     notice_ = new QLabel("Select an action to edit.");
     notice_->setObjectName("sceneActionStatus");
     notice_->setWordWrap(true);
@@ -161,6 +172,7 @@ void SceneActionEditor::selectScene(SceneId key, int command) {
     if (editing_ || property("invalidEdits").toBool())
         return;
     key_ = key;
+    exitWarning_->clear(); hold_->hide(); exitWord_ = -1;
     refresh(command);
 }
 bool SceneActionEditor::selectSprite(int slot) {
@@ -301,6 +313,63 @@ void SceneActionEditor::updateTimeline(SceneId id, const QMap<int, int> &times, 
         if (active) label.prepend("At playhead · ");
         item->setText(label);
     }
+}
+void SceneActionEditor::reportExit(SceneId id, int word, const QSet<int> &actors, bool fade, int pan, bool paused) {
+    if (id != key_) return;
+    exitWord_ = word; unfinishedActors_ = actors; unfinishedFade_ = fade; unfinishedPan_ = pan;
+    const bool cutOff = word >= 0 && (!actors.isEmpty() || fade || pan > 0);
+    hold_->setVisible(cutOff); hold_->setEnabled(cutOff && !paused && !property("invalidEdits").toBool());
+    QStringList pending;
+    auto orderedSlots = actors.values(); std::sort(orderedSlots.begin(), orderedSlots.end());
+    for (int slot : orderedSlots) pending << QString("Actor %1 movement").arg(slot);
+    if (fade) pending << "screen fade";
+    if (pan > 0) pending << QString("camera pan (%1 updates remaining)").arg(pan);
+    exitWarning_->setText(!cutOff ? QString{} : "This exit cuts short: " + pending.join(", ") +
+        (paused ? ". Resume paused movement before adding a completion wait." : ". Hold until finished adds waits before the exit."));
+}
+void SceneActionEditor::insertAtPlayhead() {
+    if (!key_ || property("invalidEdits").toBool()) return;
+    try {
+        const int tick = previewTick_;
+        const auto edit = insertSceneActionAtTime(project_->scenePrograms()->program(key_), commandTimes_, tick, kind_->currentData().toUInt());
+        auto next = *project_->scenePrograms(); next.replace(key_, edit.program.source);
+        editing_ = true; pushSceneProgramChange(project_, undo_, "Add action at playhead", next); editing_ = false;
+        refresh(edit.command); emit commandSelected(edit.command);
+        if (changed_) changed_();
+        emit previewUpdateRequested(tick);
+    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
+}
+void SceneActionEditor::placeActorAtPlayhead(int slot, SceneVector position) {
+    if (!key_ || property("invalidEdits").toBool()) return;
+    try {
+        const int tick = previewTick_;
+        const auto program = project_->scenePrograms()->program(key_);
+        const int row = list_->currentRow();
+        if (row >= 0 && row < actions_.size()) {
+            const int at = actions_[row].command;
+            if (program.commands[at].opcode == 7 && program.commands[at].operands[0] == quint32(slot) && actions_[row].name == "Move Actor") {
+                applyPosition(at, position); emit previewUpdateRequested(tick); return;
+            }
+        }
+        const auto edit = placeSceneActorAtTime(program, commandTimes_, tick, slot, position);
+        auto next = *project_->scenePrograms(); next.replace(key_, edit.program.source);
+        editing_ = true; pushSceneProgramChange(project_, undo_, "Place Actor at playhead", next); editing_ = false;
+        refresh(edit.command); emit commandSelected(edit.command);
+        if (changed_) changed_();
+        emit previewUpdateRequested(tick);
+    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
+}
+void SceneActionEditor::holdBeforeExit() {
+    if (!key_ || property("invalidEdits").toBool() || exitWord_ < 0) return;
+    try {
+        auto next = *project_->scenePrograms(); const auto program = next.program(key_);
+        int exit = -1;
+        for (int i = 0; i < program.commands.size(); ++i) if (program.commands[i].word == exitWord_) { exit = i; break; }
+        next.replace(key_, holdSceneBeforeExit(program, exit, unfinishedActors_, unfinishedFade_, unfinishedPan_).source);
+        editing_ = true; pushSceneProgramChange(project_, undo_, "Hold scene until actions finish", next); editing_ = false;
+        refresh(exit); emit commandSelected(exit);
+        if (changed_) changed_();
+    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
 }
 void SceneActionEditor::showAction() {
     positionPick_->hide();

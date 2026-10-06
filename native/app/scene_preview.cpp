@@ -524,6 +524,52 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (draggingActor_ >= 0) {
+        if ((object == view_ || object == view_->viewport()) && event->type() == QEvent::KeyPress &&
+            static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+            cancelPositionPick();
+            present();
+            return true;
+        }
+        if (object == view_->viewport() && event->type() == QEvent::MouseMove) {
+            const auto mouse = static_cast<QMouseEvent *>(event);
+            const auto point = view_->mapToScene(mouse->position().toPoint());
+            if (selectionPress_ && (mouse->position().toPoint() - *selectionPress_).manhattanLength() <
+                                      QApplication::startDragDistance()) return true;
+            try {
+                const auto &playback = current_->playback;
+                const auto position = playback.actors().positionAt(draggingActor_, dragOrigin_ + point - dragPress_,
+                    playback.cameras(), playback.transforms(), playback.lighting());
+                if (!std::isfinite(position.x) || !std::isfinite(position.z) ||
+                    std::abs(position.x) > 2147483. || std::abs(position.z) > 2147483.)
+                    throw Error("Actor position exceeds game coordinates");
+                auto draft = *current_;
+                const auto x = quint32(qint32(std::round(position.x * 1000.)));
+                const auto z = quint32(qint32(std::round(position.z * 1000.)));
+                int value = 0;
+                const auto startX = x == quint32(-1000) && z == quint32(-1000) ? quint32(-999) : x;
+                draft.playback.actors().service(7, {quint32(draggingActor_), startX, z, x, z, 0, 0}, value);
+                render(draft, false);
+                dragPosition_ = position;
+                canvas_->clear(); selectionOutline_ = nullptr;
+                canvas_->addPixmap(QPixmap::fromImage(draft.playback.display().present(draft.frame)));
+                placementHelp_->setText(QString("Actor %1 · X %2 · Z %3. Release to place; Escape cancels.")
+                    .arg(draggingActor_).arg(position.x, 0, 'f', 3).arg(position.z, 0, 'f', 3));
+            } catch (const std::exception &e) {
+                dragPosition_.reset();
+                placementHelp_->setText(QString::fromUtf8(e.what()));
+            }
+            return true;
+        }
+        if (object == view_->viewport() && event->type() == QEvent::MouseButtonRelease) {
+            const int slot = draggingActor_;
+            const auto position = dragPosition_;
+            cancelPositionPick();
+            present();
+            if (position) emit actorPlacedAtPlayhead(slot, *position);
+            return true;
+        }
+    }
     if (placementCommand_ >= 0) {
         if ((object == view_ || object == view_->viewport()) && event->type() == QEvent::KeyPress &&
             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
@@ -561,6 +607,28 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                 mouse->button() == Qt::LeftButton && mouse->modifiers() == Qt::NoModifier
                     ? std::optional<QPoint>{mouse->position().toPoint()}
                     : std::nullopt;
+            if (selectionPress_ && objectNavigationEnabled_ && current_ && !preparing_ &&
+                current_->playback.director().selector() == selector_) {
+                const auto point = view_->mapToScene(*selectionPress_);
+                const auto target = objectAt({qFloor(point.x()), qFloor(point.y())});
+                if (target && target.kind == SceneObjectKind::Actor) {
+                    try {
+                        const auto &playback = current_->playback;
+                        const auto &origin = playback.actors().actor(target.slot)->pose().actor().position;
+                        dragOrigin_ = playback.actors().projectPosition(target.slot, {origin.x, origin.y, origin.z},
+                            playback.cameras(), playback.transforms(), playback.lighting());
+                        stop();
+                        selectedObject_ = target;
+                        presentObjects();
+                        dragPress_ = point; draggingActor_ = target.slot; dragPosition_.reset();
+                        view_->setDragMode(QGraphicsView::NoDrag);
+                        view_->setFocus();
+                        return true;
+                    } catch (const std::exception &e) {
+                        placementHelp_->setText(QString::fromUtf8(e.what()));
+                    }
+                }
+            }
         } else if (event->type() == QEvent::MouseButtonRelease ||
                    event->type() == QEvent::MouseButtonDblClick) {
             const auto mouse = static_cast<QMouseEvent *>(event);
@@ -780,6 +848,7 @@ void ScenePreview::restart() {
     checkpoints_.clear();
     commandTimes_.clear();
     commandSeekNotice_.clear();
+    deferredSeekTick_ = -1;
     tick_ = 0;
     preparing_ = false;
     liveInput_ = {};
@@ -1339,10 +1408,23 @@ void ScenePreview::step() {
                 const auto result = next.playback.advance(
                     empty, [&](quint32 op, const QVector<quint32> &args, int &value) {
                         return referenceCommand(next, op, args, &value);
-                    }, 10000, 64, [&](quint32 key, int word, quint32) {
+                    }, 10000, 64, [&](quint32 key, int word, quint32 opcode) {
                         if (selector_ < 0 || key != resources_->selectors().value(selector_)) return;
                         if (!observedTimes.contains(word)) observedTimes[word] = preparing_ ? 0 : tick_ + 1;
                         next.activeWord = word;
+                        if (opcode == 0x7d) {
+                            next.exitWord = word;
+                            next.unfinishedActors.clear(); next.pausedMovement = false;
+                            for (int slot = 0; slot < 28; ++slot) {
+                                const auto &motion = next.playback.actors().motion(slot);
+                                if (next.playback.actors().actor(slot) && motion.present && motion.remaining) {
+                                    next.unfinishedActors.insert(slot);
+                                    next.pausedMovement |= motion.pause != 0;
+                                }
+                            }
+                            next.unfinishedFade = next.playback.fade().slotActive() && next.playback.fade().remaining() > 0;
+                            next.unfinishedPan = next.playback.projection().remaining();
+                        }
                     });
                 next.playback.dialogue()->project = {};
                 return result;
@@ -1378,8 +1460,14 @@ void ScenePreview::step() {
 void ScenePreview::seek(int tick) {
     beginSeek(tick, -1);
 }
+void ScenePreview::seekToUpdate(int tick) {
+    commandSeekNotice_.clear();
+    if (preparing_) { commandSeekWord_ = -1; deferredSeekTick_ = tick; return; }
+    beginSeek(tick, -1);
+}
 void ScenePreview::seekToCommand(int word) {
     commandSeekNotice_.clear();
+    deferredSeekTick_ = -1;
     if (preparing_) {
         commandSeekWord_ = word;
         return;
@@ -1429,6 +1517,8 @@ void ScenePreview::continueSeek() {
         }
         if (current_->playback.selectedSceneEntered()) {
             const int pendingCommand = commandSeekWord_;
+            const int pendingTick = deferredSeekTick_;
+            deferredSeekTick_ = -1;
             preparing_ = false;
             stop();
             tick_ = 0;
@@ -1437,6 +1527,7 @@ void ScenePreview::continueSeek() {
             checkpoints_.clear();
             checkpoints_.insert(0, *current_);
             if (pendingCommand >= 0) { seekToCommand(pendingCommand); return; }
+            if (pendingTick >= 0) { seekToUpdate(pendingTick); return; }
         } else if (current_->stopped || tick_ >= 10000) {
             preparing_ = false;
             current_->stopped = true;
@@ -1477,6 +1568,7 @@ void ScenePreview::setObjectNavigationEnabled(bool enabled) {
     presentSelectedObject();
 }
 void ScenePreview::cancelPositionPick() {
+    draggingActor_ = -1; dragPosition_.reset(); selectionPress_.reset();
     placementCommand_ = placementSlot_ = -1;
     placementHelp_->clear(); cancelPlacement_->hide();
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
@@ -1631,6 +1723,7 @@ void ScenePreview::presentSelectionOutline() {
 }
 void ScenePreview::present() {
     emit timelineChanged(sceneId_, commandTimes_, current_ ? current_->activeWord : -1, tick_);
+    reportExit();
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
@@ -1696,5 +1789,11 @@ void ScenePreview::present() {
             status_->text() +
             QString("\nSilent audio preview: %1 native service requests; no resident voices.")
                 .arg(current_->playback.audio()->requestCount()));
+}
+void ScenePreview::reportExit() {
+    emit exitReached(sceneId_, current_ ? current_->exitWord : -1,
+                     current_ ? current_->unfinishedActors : QSet<int>{},
+                     current_ && current_->unfinishedFade, current_ ? current_->unfinishedPan : 0,
+                     current_ && current_->pausedMovement);
 }
 } // namespace lordly

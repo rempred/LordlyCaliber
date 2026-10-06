@@ -320,6 +320,15 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Variant", c.opcode == 3 ? 7 : 8);
             break;
         case 7:
+            if (!c.operands[5] && !c.operands[6] &&
+                (c.operands[1] == c.operands[3] || (c.operands[3] == quint32(-1000) && c.operands[4] == quint32(-1000) && c.operands[1] == quint32(-999))) &&
+                c.operands[2] == c.operands[4]) {
+                action.name = "Place Actor";
+                field("Actor slot", 0, 1, 0, 27);
+                field("X", 3, 1000); action.fields.last().mirrors = {{0, 1}};
+                field("Z", 4, 1000); action.fields.last().mirrors = {{0, 2}};
+                break;
+            }
             action.name = "Move Actor";
             field("Actor slot", 0, 1, 0, 27);
             field("Start X", 1, 1000);
@@ -438,6 +447,11 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
             result.commands[action.command + f.commandOffset].operands[f.operand] = replacement;
             for (const auto &[offset, operand] : f.mirrors)
                 result.commands[action.command + offset].operands[operand] = replacement;
+            if (action.name == "Place Actor") {
+                auto &args = result.commands[action.command].operands;
+                args[1] = args[3] == quint32(-1000) && args[4] == quint32(-1000) ? quint32(-999) : args[3];
+                args[2] = args[4];
+            }
             return DirectorProgram::decode(result.encode());
         }
     throw Error("Select a supported scene action");

@@ -41,6 +41,8 @@ class ScenePreview : public QWidget {
     void setObjectNavigationEnabled(bool enabled);
     void beginPositionPick(int command, int slot);
     void seekToCommand(int word);
+    void seekToUpdate(int tick);
+    void reportExit();
     const QMap<int, int> &commandTimes() const { return commandTimes_; }
     int activeWord() const { return current_ ? current_->activeWord : -1; }
     int actorAt(QPoint) const;
@@ -50,7 +52,9 @@ class ScenePreview : public QWidget {
     void findActorAction(int selector, int slot);
     void findSpriteAction(int selector, int slot);
     void positionPicked(int command, SceneVector position);
+    void actorPlacedAtPlayhead(int slot, SceneVector position);
     void timelineChanged(SceneId, const QMap<int, int> &commandTimes, int activeWord, int tick);
+    void exitReached(SceneId, int word, const QSet<int> &actors, bool fade, int panUpdates, bool paused);
 
   public:
     const QImage &renderedFrame() const {
@@ -80,6 +84,9 @@ class ScenePreview : public QWidget {
         quint32 texturePhase = 0;
         std::optional<DialoguePlayback> dialogue;
         int activeWord = -1;
+        int exitWord = -1, unfinishedPan = 0;
+        QSet<int> unfinishedActors;
+        bool unfinishedFade = false, pausedMovement = false;
     };
     void restart();
     void seek(int tick);
@@ -119,6 +126,7 @@ class ScenePreview : public QWidget {
     QMap<int, int> commandTimes_;
     SceneId sceneId_;
     int commandSeekWord_ = -1;
+    int deferredSeekTick_ = -1;
     QString commandSeekNotice_;
     QMap<int, LordlyImageInput> inputHistory_;
     QMap<int, quint16> pressedHistory_;
@@ -140,6 +148,9 @@ class ScenePreview : public QWidget {
     QPushButton *cancelPlacement_;
     bool objectNavigationEnabled_ = false;
     std::optional<QPoint> selectionPress_;
+    int draggingActor_ = -1;
+    QPointF dragPress_, dragOrigin_;
+    std::optional<SceneVector> dragPosition_;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;

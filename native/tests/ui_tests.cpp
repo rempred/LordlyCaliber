@@ -27,6 +27,7 @@
 #include "app/transform_preview.h"
 #include "app/value_editor.h"
 #include "engine/scene_import.h"
+#include "engine/scene_timed_authoring.h"
 #include "engine/sprite_sources.h"
 #include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
@@ -490,6 +491,149 @@ class UiTests : public QObject {
         QCOMPARE(list->item(fade)->text(), text);
         QCOMPARE(project.scenePrograms()->json(), before); QCOMPARE(undo.count(), 0);
     }
+    void sceneTimedPlacementAndHold() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and export tools required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            const auto id = programs.createScene("Timed placement and hold", 0x1fa8bf4 - 0x594284, true);
+            auto p = SceneActions::insert(programs.program(id), 1, 0x2a);
+            p = SceneActions::edit(p, 1, 1, "84");
+            p = SceneActions::edit(p, 1, 2, "85");
+            p = SceneActions::insert(p, SceneActions::positions(p).last().command, 0xe, 5);
+            programs.replace(id, p.source); project.setScenePrograms(programs.json());
+            const auto original = p.source;
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 900); editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) scenes->setCurrentRow(i);
+            auto actions = editor.findChild<SceneActionEditor *>();
+            auto preview = editor.findChild<ScenePreview *>();
+            auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
+            pages->setCurrentWidget(preview);
+            preview->seekToUpdate(3);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+            auto state = preview->findChild<QLabel *>("sceneActorState");
+            const auto before = preview->renderedFrame();
+            QPoint actorPixel(-1, -1);
+            for (int y = 0; y < 240 && actorPixel.x() < 0; ++y)
+                for (int x = 0; x < 320; ++x) if (preview->actorAt({x, y}) == 0) { actorPixel = {x, y}; break; }
+            QVERIFY(actorPixel.x() >= 0);
+            auto view = preview->findChild<QGraphicsView *>("sceneCanvas");
+            const auto pixel = view->mapFromScene(QPointF(actorPixel) + QPointF(.5, .5));
+            const auto destination = pixel + QPoint(35, 0);
+            QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, pixel);
+            QTest::mouseMove(view->viewport(), destination);
+            QTest::keyClick(view, Qt::Key_Escape);
+            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, destination);
+            QCOMPARE(undo.count(), 0); QCOMPARE(project.scenePrograms()->program(id).source, original);
+            QCOMPARE(preview->renderedFrame(), before);
+            QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, pixel);
+            QTest::mouseMove(view->viewport(), destination);
+            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, destination);
+            QCOMPARE(undo.count(), 1);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+            QVERIFY(preview->renderedFrame() != before);
+            QVERIFY(state->text().startsWith("Class pair 84 / 85"));
+            QVERIFY(state->text().contains("Y 0.000"));
+            const auto placed = project.scenePrograms()->program(id);
+            int place = -1;
+            for (const auto &action : SceneActions::inspect(placed)) if (action.name == "Place Actor") place = action.command;
+            QVERIFY(place >= 0);
+            QCOMPARE(preview->commandTimes().value(placed.commands[place].word, -1), 3);
+            const auto placedState = state->text();
+            preview->seekToUpdate(2); QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QVERIFY(state->text() != placedState);
+            preview->seekToUpdate(3); QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+            QCOMPARE(state->text(), placedState);
+            preview->seekToUpdate(10); QTRY_VERIFY(preview->property("sceneStopped").toBool());
+            QCOMPARE(preview->property("sceneTick").toInt(), 6); // Splitting the wait preserves the exit.
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, original);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, placed.source);
+
+            // Add at playhead uses the same preserved timing; no selection-based insertion.
+            preview->seekToUpdate(3); QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+            pages->setCurrentWidget(actions);
+            auto kind = actions->findChild<QComboBox *>("sceneActionKind");
+            kind->setCurrentIndex(kind->findData(0x1b));
+            actions->findChild<QPushButton *>("sceneActionInsertAtPlayhead")->click();
+            QCOMPARE(undo.index(), 2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+            auto field = actions->findChild<QLineEdit *>("sceneActionField0");
+            QVERIFY(field); field->setText("10");
+            // Concurrent movement and pan deliberately continue beyond the six-update exit.
+            p = project.scenePrograms()->program(id);
+            auto exit = SceneActions::positions(p).last().command;
+            p = SceneActions::insert(p, exit, 7);
+            p.commands[exit].operands = {0, quint32(-1000), quint32(-1000), 80000, 10000, 10, 0};
+            p = DirectorProgram::decode(p.encode());
+            exit = SceneActions::positions(p).last().command;
+            p = SceneActions::insert(p, exit, 0x2c);
+            p = SceneActions::edit(p, exit, 4, "8");
+            auto changed = *project.scenePrograms(); changed.replace(id, p.source);
+            pushSceneProgramChange(&project, &undo, "Concurrent actions", changed);
+            pages->setCurrentWidget(preview);
+            preview->seekToUpdate(30); QTRY_VERIFY(preview->property("sceneStopped").toBool());
+            QCOMPARE(preview->property("sceneTick").toInt(), 6);
+            auto warning = actions->findChild<QLabel *>("sceneExitWarning");
+            QVERIFY2(warning->text().contains("Actor 0 movement"), qPrintable(warning->text()));
+            QVERIFY(warning->text().contains("screen fade"));
+            QVERIFY(warning->text().contains("camera pan"));
+            pages->setCurrentWidget(actions);
+            auto hold = actions->findChild<QPushButton *>("sceneHoldUntilFinished");
+            QVERIFY(hold->isVisible() && hold->isEnabled());
+            const int beforeHold = undo.index();
+            hold->click(); QCOMPARE(undo.index(), beforeHold + 1);
+            const auto held = project.scenePrograms()->program(id).source;
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, p.source);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, held);
+            pages->setCurrentWidget(preview);
+            preview->seekToUpdate(60); QTRY_VERIFY(preview->property("sceneStopped").toBool());
+            QVERIFY(preview->property("sceneTick").toInt() >= 16);
+            QVERIFY2(warning->text().isEmpty(), qPrintable(warning->text()));
+            QVERIFY2(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("Scene released"),
+                     qPrintable(preview->findChild<QLabel *>("scenePlaybackStatus")->text()));
+            const auto heldFrame = preview->renderedFrame();
+            const int heldTick = preview->property("sceneTick").toInt();
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, held);
+            const auto built = rebuild(restored, tools, work.path());
+            const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir output(QDir(root).filePath("native-timed-scene-XXXXXX"));
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, candidate);
+            const auto reopenedRom = Rom::open(candidate);
+            const auto reopened = ScenePrograms::load(reopenedRom);
+            const int selector = restored.scenePrograms()->resource(id).selectors.first();
+            const SceneId reopenedId(reopened.original().selectors()[selector]);
+            QCOMPARE(reopened.program(reopenedId).source, held);
+            ScenePreview check(reopenedRom); check.selectScene(reopened, reopenedId, 2);
+            check.seekToUpdate(60); QTRY_VERIFY(check.property("sceneStopped").toBool());
+            QCOMPARE(check.property("sceneTick").toInt(), heldTick);
+            QCOMPARE(check.renderedFrame(), heldFrame);
+            // Editing both fields to the native retain-position sentinel must still place.
+            auto negative = SceneActions::edit(placed, place, 1, "-1");
+            negative = SceneActions::edit(negative, place, 2, "-1");
+            auto negativePrograms = *project.scenePrograms(); negativePrograms.replace(id, negative.source);
+            ScenePreview negativePreview(project.rom()); negativePreview.selectScene(negativePrograms, id, 2);
+            negativePreview.seekToUpdate(3); QTRY_COMPARE(negativePreview.property("sceneTick").toInt(), 3);
+            QVERIFY2(negativePreview.findChild<QLabel *>("sceneActorState")->text().contains("X -1.000 · Y 0.000 · Z -1.000"),
+                     qPrintable(negativePreview.findChild<QLabel *>("sceneActorState")->text()));
+            auto checksum = built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum, built.image);
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            output.setAutoRemove(false); qInfo().noquote() << "Timed scene export:" << candidate;
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void sceneActorClassChoices() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -674,11 +818,11 @@ class UiTests : public QObject {
             auto view = preview->findChild<QGraphicsView *>("sceneCanvas");
             const auto viewportPoint = view->mapFromScene(QPointF(actorPixel) + QPointF(.5, .5));
             const auto beforeClick = project.scenePrograms()->json();
-            QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
+            QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::ControlModifier, viewportPoint);
             QTest::mouseMove(view->viewport(), viewportPoint + QPoint(40, 0));
-            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::ControlModifier,
                                 viewportPoint + QPoint(40, 0));
-            QCOMPARE(actors->currentIndex(), -1); // Dragging preserves selection.
+            QCOMPARE(actors->currentIndex(), -1); // Control-drag pans without editing.
             QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
             QCOMPARE(actors->currentData().toInt(), 5);
             QCOMPARE(preview->property("sceneTick").toInt(), 2);

@@ -62,8 +62,23 @@ backward seeking, stale-scene rejection and unchanged project; existing
 `storyCompleteReplay` completes1349 updates with exact seek samples (17.5s total).
 Dispatcher snapshot/continuation checks pass (0.33s). Logs:
 `build/Release/scene-action-timing-replay.txt`, `scene-observer-director.txt`.
-Adding/dragging at the playhead, completion warning/hold, and playback-input
-import remain pending.
+Add at playhead and Actor dragging now insert native actions at reached boundaries
+or split a timed wait while retaining its later deadline. Selected movement actions
+update their destination instead. Drag previews preserve grab point/height, Escape
+cancels, Control-drag pans, and a placement commits one Undo. The special native
+(-1,-1) retain sentinel is avoided for deliberate placement at those coordinates.
+Executed exits report pending movement/fade/pan; Hold until finished inserts native
+completion queries plus the observed remaining pan duration. Paused motion must be
+resumed first. Condition/completion-wait interiors require selecting an executed
+action boundary instead of guessing a new branch.
+`ui_tests sceneTimedPlacementAndHold classActorCreationControls
+sceneActionExecutionTimeline sceneCompletionControls` passes (8.0s). The new flow
+checks drag cancellation, class identity/height, update3 placement, unchanged
+update6 exit, Undo, warning/hold, project persistence, compiled export/reopen,
+identical reopened playback, checksum and master preservation. The added sentinel
+field-edit check also passes (2.4s with the same export flow). Logs:
+`build/Release/scene-timed-authoring.txt`, `scene-timed-sentinel.txt`.
+Playback-input import and final portable integration remain.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear
