@@ -116,3 +116,7 @@ reopening. Context-dependent path availability is checked during playback.
 Path ribbons now have creation, endpoint and release Actions with native precedence,
 independent slots, current-ROM point limits, dependent-endpoint validation, visible
 palette/reveal edits, undo and compiled export/reopening.
+
+Image-scene Actions now expose native pan/zoom rates and duration, preserve unused
+and symbolic operands, and explain transition prerequisites. Editing, preview,
+Undo/Redo, project persistence and source-built ROM export/reopen are checked.

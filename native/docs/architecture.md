@@ -4796,3 +4796,28 @@ release behavior and existing path workflows. Capture inspected. The unchanged
 runtime's `image_tests pathRibbonsAgainstMips` passed1180ms. Fullbuild26391 passed
 without compiler warnings. Natural game load and arbitrary branch-derived path
 ownership are not established by these authoring/preview checks.
+
+
+## Image motion Actions
+
+Director76 is now exposed as Pan and zoom image, with signed start/target
+coordinates, normal/reduced zoom, and a positive update count. Templates require
+an image scene (resource class 4/5). The unused operand and launch-selected inputs
+remain intact. Both starts -1 use the current position; explicit starts calculate
+rates without repositioning. Inclusive one-unit deltas do not pan. Zoom requires
+the initial image transition to finish. Job release follows the final movement
+update. Field help states these native behaviors; runtime C is unchanged.
+
+`scene_action_tests imageMotionAction authoringBoundaries` passed (1615 ms):
+native records/lifetime, deadband, opaque/symbolic inputs, scene class limits,
+project persistence and compiled export/reopen. References, allocation bounds,
+CIC checksum and source preservation pass. Candidate: parent Test ROMs/
+native-image-motion-action-uOIkUz. `ui_tests imageMotionActionControls
+imagePresentationPlayback ribbonActionControls` passed (2165 ms), covering visible
+pan/zoom, exact Undo/Redo and seek replay, invalid input, removal and existing
+image/ribbon workflows. Capture inspected. The first UI fixture correctly produced
+no zoom from native state 0; it now runs the initial transition before testing
+zoom. This changed the fixture/help, not runtime behavior. Existing original-MIPS
+motion evidence remains applicable. Natural game load remains unperformed.
+
+The complete native build passed after this change (image-motion-actions-final-build.log).

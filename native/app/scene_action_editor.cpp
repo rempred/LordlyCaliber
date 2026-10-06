@@ -318,6 +318,20 @@ void SceneActionEditor::showAction() {
             input->setToolTip("A point other than -1 writes only the stored milestone. Otherwise "
                               "the percentage is updated. This never clears an earlier milestone, "
                               "rewinds revealed geometry or restarts the activity flag.");
+        if (action.name == "Pan and zoom image" && f.canonical(word)) {
+            if (i < 2)
+                input->setToolTip("Set both start coordinates to -1 to use the current position. "
+                                  "These values calculate movement rates; they do not reposition "
+                                  "the image immediately.");
+            else if (i == 4)
+                input->setToolTip(
+                    "After the initial image transition completes, normal requests scale 1.0 "
+                    "and reduced requests 0.7. An in-progress zoom retains the game's reversal "
+                    "timing.");
+            else if (i == 5)
+                input->setToolTip("Positive update count. Movement ends after this many updates; "
+                                  "the job releases on the following update.");
+        }
         const bool classField =
             (action.name == "Set Actor class and pose" || action.name == "Create class Actor") &&
             (i == 1 || i == 2);
@@ -349,7 +363,11 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Set path ribbon endpoint"
+        action.name == "Pan and zoom image"
+            ? "Pans the scene's image and requests its zoom state. Start -1/-1 uses the current "
+              "position; differences of one unit or less do not pan. Zoom becomes available after "
+              "the initial image transition. Add a Wait to delay later actions."
+        : action.name == "Set path ribbon endpoint"
             ? "Changes the reveal limit. A stored point takes precedence over later percentage "
               "changes; this action does not rewind or restart the ribbon."
         : action.name == "Create path ribbon"
@@ -531,12 +549,14 @@ void SceneActionEditor::updateStructureControls() {
                       kind_->currentData().toUInt() == 0xb5 ||
                       kind_->currentData().toUInt() == 0xbf;
     const bool body = kind_->currentData().toUInt() == 0x2a;
+    const bool image = kind_->currentData().toUInt() == 0x76;
     const int type = valid ? project_->scenePrograms()->program(key_).resourceClass() : -1;
     const bool allowed = (!wait || position_->currentData(Qt::UserRole + 1).toBool()) &&
-                         (!body || type == 1 || type == 8);
+                         (!body || type == 1 || type == 8) && (!image || type == 4 || type == 5);
     insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
     insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
                         : body  ? "Create class Actor requires a fresh environment scene."
+                        : image ? "Image motion requires an image scene."
                                 : position_->currentData(Qt::ToolTipRole).toString());
     bool canRemove = false;
     QString reason;

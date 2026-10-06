@@ -3682,6 +3682,97 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void imageMotionActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image motion controls", source, false);
+            const QVector<quint32> words{
+                0x80000007U, 47,   0x3a,        1,           0,           0,          0,
+                70,          70,   130,         8,           0x50,        0,          1,
+                0,           0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U};
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            // The initial image transition establishes the native zoom state.
+            const auto ready = SceneActions::insert(DirectorProgram::decode(bytes), 3, 0xe, 3);
+            const int point = 9;
+            auto base = SceneActions::insert(ready, point, 0xe, 40);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 850);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            auto field = [&](int i) {
+                return editor.findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            kind->setCurrentIndex(kind->findData(0x76));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            QCOMPARE(field(0)->text(), QString("-1"));
+            QCOMPARE(field(1)->text(), QString("-1"));
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                for (int i = 0; i < 12; ++i)
+                    preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto still = frame();
+            field(2)->setText("50");
+            field(5)->setText("20");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto panned = frame();
+            QVERIFY(panned != still);
+            undo.clear();
+            field(4)->setText("1");
+            const auto zoomed = frame();
+            QVERIFY(zoomed != panned);
+            undo.undo();
+            QCOMPARE(frame(), panned);
+            undo.redo();
+            QCOMPARE(frame(), zoomed);
+            editor.selectScene(id, point);
+            const auto accepted = project.scenePrograms()->program(id).source;
+            field(5)->setText("0");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            auto seek = preview.findChild<QSpinBox *>("scenePosition");
+            seek->setValue(20);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 20);
+            QVERIFY(preview.renderedFrame() != zoomed);
+            seek->setValue(12);
+            QTRY_COMPARE(preview.property("sceneTick").toInt(), 12);
+            QCOMPARE(preview.renderedFrame(), zoomed);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-image-motion-actions.png"));
+            editor.findChild<QPushButton *>("sceneActionRemove")->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, base.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void ribbonActionControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

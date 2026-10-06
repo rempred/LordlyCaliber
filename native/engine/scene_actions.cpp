@@ -138,6 +138,16 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x76:
+            action.name = "Pan and zoom image";
+            field("Start X", 0);
+            field("Start Y", 1);
+            field("Target X", 3);
+            field("Target Y", 4);
+            field("Zoom (0 normal, 1 reduced)", 5, 1, 0, 1);
+            field("Duration (updates)", 6, 1, 1, 2147483647);
+            // Operand2 is unused by the native starter and remains unchanged.
+            break;
         case 0x49:
             action.name = "Create path ribbon";
             field("Path slot", 0, 1, 0, 19);

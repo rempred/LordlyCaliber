@@ -165,6 +165,7 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x15, "Turn Actor"},
             {0x1c, "Room Actor channel"},
             {0x46, "Create scene sprite"},
+            {0x76, "Pan and zoom image"},
             {0x49, "Create path ribbon"},
             {0x4a, "Set path ribbon endpoint"},
             {0x4b, "Release path ribbon"},
@@ -207,6 +208,8 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         throw Error("Choose a supported action and insertion position.");
     if (kind == 0x2a && p.resourceClass() != 1 && p.resourceClass() != 8)
         throw Error("Create class Actor requires a fresh environment scene (class 1 or 8).");
+    if (kind == 0x76 && p.resourceClass() != 4 && p.resourceClass() != 5)
+        throw Error("Image motion requires an image scene (class 4 or 5).");
     auto result = p;
     QVector<DirectorCommand> added;
     if (kind == 0xbf) {
@@ -285,6 +288,9 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                 break;
             }
         switch (kind) {
+        case 0x76:
+            operands = {quint32(-1), quint32(-1), 0, 0, 0, 0, 30};
+            break;
         case 0x49: {
             QSet<quint32> used;
             for (const auto &c : p.commands) {
