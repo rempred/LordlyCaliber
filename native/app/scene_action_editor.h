@@ -28,9 +28,10 @@ class SceneActionEditor : public QWidget {
     void publishFields();
     void validity(bool valid);
     void updateStructureControls();
-    void changeStructure(bool remove);
+    enum class Change { Add, Remove, Move };
+    void changeStructure(Change);
     QComboBox *kind_, *position_;
-    QPushButton *insert_, *remove_, *text_;
+    QPushButton *insert_, *remove_, *move_, *text_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;

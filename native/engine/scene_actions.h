@@ -29,6 +29,7 @@ class SceneActions {
     static QMap<quint32, QString> kinds();
     static DirectorProgram insert(const DirectorProgram &, int before, quint32 kind,
                                   int ticks = 30);
+    static DirectorProgram move(const DirectorProgram &, int actionCommand, int before);
     static DirectorProgram remove(const DirectorProgram &, int actionCommand);
     static DirectorProgram edit(const DirectorProgram &, int actionCommand, int field,
                                 const QString &value);

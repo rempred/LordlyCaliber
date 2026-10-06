@@ -91,3 +91,6 @@ unsupported control layouts explain why a structured wait cannot be inserted.
 
 Dialogue actions keep window creation, completion, resume and close together.
 Their text link opens the referenced entry in the dialogue workspace.
+
+Select an action and a destination to move it. Moves retain complete waits and
+dialogue sequences; separate native control sections remain in place.

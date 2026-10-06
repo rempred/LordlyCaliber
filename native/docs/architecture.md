@@ -1,5 +1,29 @@
 # Native Lordly Caliber
 
+## Action ordering
+
+Move action relocates a selected complete action before a named destination,
+retaining selection and one shared Undo operation. Ordinary operands and connected
+dialogue IDs stay intact. Waits are regenerated for the destination's counter span
+with their relative duration and original comparison rule; later deadlines shift
+consistently. Movement across separate native control sections is refused. Initial
+setup remains in place, and dialogue cannot move into an active counter span.
+
+`scene_action_tests actionOrdering authoringBoundaries insertedWaitTimingAndExport
+dialogueActions` passed in 8068 ms. A movement moved from update 0 to 3 while the
+exit stayed at 7; moving the first wait past a scale action changed that action
+from update 3 to 0 without changing exit time. A shared wait moved between gates,
+retaining scale/exit at20 while movement changed from10 to0. Exact ordinary-word
+preservation, reverse moves, setup/control refusals and comparison retention pass.
+The reordered scene persisted and rebuilt/reopened with allocation bounds, checksum
+and master preservation checks. Candidate: parent Test ROMs/native-action-order-bWjIGw.
+Existing wait and dialogue authoring checks also pass; this is dispatcher ordering,
+not a new claim about rendered movement or natural game launch.
+
+`ui_tests sceneActionInsertion structuredSceneActions` passed in 4375 ms, including
+moving connected dialogue before a wait, selected-action synchronization, undo/redo
+and reopening. The capture was inspected. The complete native build passed without compiler warnings.
+
 ## Connected dialogue actions
 
 The Actions inspector now creates a complete dialogue window/completion/resume/close

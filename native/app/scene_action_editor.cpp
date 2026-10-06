@@ -52,6 +52,9 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
     insert_ = new QPushButton("Add action");
     insert_->setObjectName("sceneActionInsert");
     add->addWidget(insert_);
+    move_ = new QPushButton("Move action");
+    move_->setObjectName("sceneActionMove");
+    add->addWidget(move_);
     remove_ = new QPushButton("Remove action");
     remove_->setObjectName("sceneActionRemove");
     add->addWidget(remove_);
@@ -87,8 +90,9 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
     connect(kind_, &QComboBox::currentIndexChanged, this, [this] { updateStructureControls(); });
     connect(position_, &QComboBox::currentIndexChanged, this,
             [this] { updateStructureControls(); });
-    connect(insert_, &QPushButton::clicked, this, [this] { changeStructure(false); });
-    connect(remove_, &QPushButton::clicked, this, [this] { changeStructure(true); });
+    connect(insert_, &QPushButton::clicked, this, [this] { changeStructure(Change::Add); });
+    connect(remove_, &QPushButton::clicked, this, [this] { changeStructure(Change::Remove); });
+    connect(move_, &QPushButton::clicked, this, [this] { changeStructure(Change::Move); });
     connect(discard_, &QPushButton::clicked, this, [this] {
         editing_ = true;
         validity(true);
@@ -269,24 +273,52 @@ void SceneActionEditor::updateStructureControls() {
     }
     remove_->setEnabled(canRemove);
     remove_->setToolTip(reason);
+    bool canMove = false;
+    reason.clear();
+    if (valid && row >= 0 && row < actions_.size() && position_->currentIndex() >= 0) {
+        try {
+            const auto source = project_->scenePrograms()->program(key_);
+            canMove =
+                SceneActions::move(source, actions_[row].command, position_->currentData().toInt())
+                    .source != source.source;
+        } catch (const std::exception &e) {
+            reason = QString::fromUtf8(e.what());
+        }
+    }
+    move_->setEnabled(canMove);
+    move_->setToolTip(reason.isEmpty() ? "Move the selected action before the chosen destination."
+                                       : reason);
 }
-void SceneActionEditor::changeStructure(bool remove) {
+void SceneActionEditor::changeStructure(Change operation) {
     if (!key_ || property("invalidEdits").toBool())
         return;
     try {
         const auto program = project_->scenePrograms()->program(key_);
         const int row = list_->currentRow();
-        if (remove && (row < 0 || row >= actions_.size()))
+        if (operation != Change::Add && (row < 0 || row >= actions_.size()))
             return;
-        const int command = remove ? actions_[row].command : position_->currentData().toInt();
+        const int destination = position_->currentData().toInt();
+        int command = operation == Change::Add ? destination : actions_[row].command;
+        DirectorProgram replacement;
+        QString label;
+        if (operation == Change::Add) {
+            replacement = SceneActions::insert(program, destination, kind_->currentData().toUInt());
+            label = "Add scene action";
+        } else if (operation == Change::Remove) {
+            replacement = SceneActions::remove(program, command);
+            label = "Remove scene action";
+        } else {
+            replacement = SceneActions::move(program, command, destination);
+            if (replacement.source == program.source)
+                return;
+            command =
+                destination > command ? destination - actions_[row].commandCount : destination;
+            label = "Move scene action";
+        }
         auto next = *project_->scenePrograms();
-        next.replace(
-            key_, (remove ? SceneActions::remove(program, command)
-                          : SceneActions::insert(program, command, kind_->currentData().toUInt()))
-                      .source);
+        next.replace(key_, replacement.source);
         editing_ = true;
-        pushSceneProgramChange(project_, undo_, remove ? "Remove scene action" : "Add scene action",
-                               next);
+        pushSceneProgramChange(project_, undo_, label, next);
         editing_ = false;
         refresh(command);
         emit commandSelected(command);

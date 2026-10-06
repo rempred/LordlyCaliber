@@ -140,6 +140,18 @@ class UiTests : public QObject {
             QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField0")->text(), QString("7"));
             QApplication::processEvents();
             QVERIFY(editor.grab().save("native-dialogue-action.png"));
+            position->setCurrentIndex(position->findData(3));
+            auto move = actions->findChild<QPushButton *>("sceneActionMove");
+            QVERIFY(move->isEnabled());
+            const auto reordered = SceneActions::move(connected, dialogueCommand, 3);
+            move->click(); QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
+            QCOMPARE(actions->findChild<QListWidget *>("sceneActionList")->currentItem()->data(Qt::UserRole).toInt(), 3);
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
+            project.saveFolder(work.path());
+            auto orderedProject = Project::fromRom(project.rom()); orderedProject.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(orderedProject.scenePrograms()->program(id).source, reordered.source);
+            QApplication::processEvents(); QVERIFY(editor.grab().save("native-action-order.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void structuredSceneActions() {

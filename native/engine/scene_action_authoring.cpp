@@ -260,6 +260,52 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         result.commands.insert(before + i, added[i]);
     return DirectorProgram::decode(result.encode());
 }
+DirectorProgram SceneActions::move(const DirectorProgram &p, int index, int before) {
+    const auto actions = inspect(p);
+    const auto source = std::find_if(actions.begin(), actions.end(),
+                                     [index](const auto &a) { return a.command == index; });
+    const auto points = positions(p);
+    const auto destination = std::find_if(points.begin(), points.end(),
+                                          [before](const auto &v) { return v.command == before; });
+    if (source == actions.end() || destination == points.end())
+        throw Error("Select an action and a supported destination.");
+    if (before >= index && before <= index + source->commandCount)
+        return p;
+    // Keep event/branch blocks intact. Relocation only crosses complete, known actions.
+    const int end = std::max(index + source->commandCount, before);
+    for (int cursor = std::min(index, before); cursor < end;) {
+        const auto next = std::find_if(actions.begin(), actions.end(),
+                                       [cursor](const auto &a) { return a.command == cursor; });
+        if (next == actions.end())
+            throw Error("This move crosses a separate native control section; edit that section in "
+                        "Commands.");
+        cursor += next->commandCount;
+    }
+    auto result = remove(p, index);
+    if (before > index)
+        before -= source->commandCount;
+    if (source->commandCount == 4 || source->commandCount == 6) {
+        const auto &field = source->fields.first();
+        const auto &query = p.commands[index + field.commandOffset];
+        const int duration = int(qint64(qint32(query.operands[1])) - field.bias);
+        result = insert(result, before, query.opcode, duration);
+        const int gate = result.commands[before].opcode == 1 ? before + 4 : before + 3;
+        result.commands[gate].operands[0] = query.operands[0];
+    } else {
+        const auto remaining = positions(result);
+        const auto point = std::find_if(remaining.begin(), remaining.end(),
+                                        [before](const auto &v) { return v.command == before; });
+        if (point == remaining.end())
+            throw Error("Removing this action changes the destination's control boundary.");
+        if (source->commandCount == 7 &&
+            (!point->canWait || action_detail::counterStates(result)[before].arm >= 0))
+            throw Error("Dialogue must remain outside an active counter span at a supported wait "
+                        "boundary.");
+        for (int i = 0; i < source->commandCount; ++i)
+            result.commands.insert(before + i, p.commands[index + i]);
+    }
+    return DirectorProgram::decode(result.encode());
+}
 DirectorProgram SceneActions::remove(const DirectorProgram &p, int index) {
     if (index < action_detail::setupEnd(p))
         throw Error("The scene's initial setup must remain before its actions.");

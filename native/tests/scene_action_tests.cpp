@@ -301,6 +301,110 @@ class SceneActionTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void actionOrdering() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId templateId;
+            for (auto id : scenes.scenes())
+                if (scenes.canCreateBlank(id)) {
+                    templateId = id;
+                    break;
+                }
+            QVERIFY(templateId);
+            const auto id = scenes.createScene("Action order", templateId, true);
+            auto source = SceneActions::insert(scenes.program(id), 3, 0x14);
+            source = SceneActions::insert(source, 4, 7);
+            source = SceneActions::insert(source, 5, 0xe, 3);
+            source = SceneActions::insert(source, 11, 0x1d);
+            source = SceneActions::insert(source, 12, 0xb5, 4);
+            auto expected = source;
+            const auto movement = expected.commands.takeAt(4);
+            expected.commands.insert(10, movement);
+            const auto moved = SceneActions::move(source, 4, 11);
+            QCOMPARE(moved.source, expected.encode());
+            QCOMPARE(SceneActions::move(moved, 10, 4).source, source.source);
+            QCOMPARE(SceneActions::move(source, 4, 5).source, source.source);
+            const auto waitMoved = SceneActions::move(source, 5, 12);
+            QCOMPARE(waitMoved.commands[10].opcode, quint32(0xe));
+            QCOMPARE(waitMoved.commands[10].operands, QVector<quint32>({2, 3}));
+            auto run = [&](const DirectorProgram &p, int moveAt, int scaleAt, int releaseAt) {
+                auto current = scenes;
+                current.replace(id, p.source);
+                DirectorSession session(current.runtimeDirectors(),
+                                        current.resource(id).selectors.first(), 0);
+                QVector<int> moves, scales;
+                int released = -1, tick = 0;
+                auto service = [&](quint32 op, const QVector<quint32> &, int &) {
+                    if (op == 7)
+                        moves << tick;
+                    if (op == 0x1d)
+                        scales << tick;
+                    if (op == 0x7d)
+                        released = tick;
+                    return true;
+                };
+                QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                for (tick = 1; tick <= releaseAt; ++tick) {
+                    session.advanceCounter();
+                    QCOMPARE(session.dispatch(service),
+                             tick == releaseAt ? LORDLY_DIRECTOR_RELEASE : LORDLY_DIRECTOR_YIELD);
+                }
+                QCOMPARE(moves, QVector<int>{moveAt});
+                QCOMPARE(scales, QVector<int>{scaleAt});
+                QCOMPARE(released, releaseAt);
+            };
+            run(source, 0, 3, 7);
+            run(moved, 3, 3, 7);
+            run(waitMoved, 0, 0, 7);
+            const auto shared = program(
+                {1, 0,    0x80000002, 0x80000000, 0xe,        0,          10,  7, 0,  0,    0, 0,
+                 0, 1,    0,          0,          0x80000002, 0x80000000, 0xe, 2, 20, 0x1d, 0, 100,
+                 2, 0x7d, 0x80000002, 0x80000000, 0x80000001, 0xff000005});
+            const auto sharedMoved = SceneActions::move(shared, 1, 10);
+            run(shared, 10, 20, 20);
+            run(sharedMoved, 0, 20, 20);
+            QCOMPARE(sharedMoved.commands[9].operands, QVector<quint32>({0, 20}));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::move(shared, 1, 12));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::move(source, 1, 11));
+            auto opaque = source;
+            opaque.commands.insert(5, {0, 0x12, {}});
+            opaque = DirectorProgram::decode(opaque.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::move(opaque, 4, 12));
+            scenes.replace(id, moved.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, moved.source);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-action-order-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, moved.source);
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Rebuilt reordered actions" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void exactFields() {
         SceneActionField coordinate{"X", 0, 0, 1000};
         for (const qint32 value : {qint32(-2147483647 - 1), -12375, -1, 0, 1, 12375, 2147483647})
