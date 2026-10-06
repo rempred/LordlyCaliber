@@ -6,8 +6,10 @@
 #include "engine/scene_story_cast.h"
 #include "engine/text.h"
 #include <QComboBox>
+#include <QApplication>
 #include <QElapsedTimer>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGridLayout>
@@ -15,6 +17,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -252,6 +255,8 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     view_ = new QGraphicsView(canvas_);
     view_->setObjectName("sceneCanvas");
     view_->installEventFilter(this);
+    view_->viewport()->installEventFilter(this);
+    view_->setToolTip("Click a visible Actor to select it; double-click to find its action. Drag to pan.");
     view_->setBackgroundBrush(QColor("#252931"));
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     layout->addWidget(view_, 1);
@@ -465,6 +470,35 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (object == view_->viewport()) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto mouse = static_cast<QMouseEvent *>(event);
+            actorPress_ = mouse->button() == Qt::LeftButton && mouse->modifiers() == Qt::NoModifier
+                              ? std::optional<QPoint>{mouse->position().toPoint()}
+                              : std::nullopt;
+        } else if (event->type() == QEvent::MouseButtonRelease ||
+                   event->type() == QEvent::MouseButtonDblClick) {
+            const auto mouse = static_cast<QMouseEvent *>(event);
+            const bool doubleClick = event->type() == QEvent::MouseButtonDblClick;
+            const bool click =
+                doubleClick ||
+                (actorPress_ && (mouse->position().toPoint() - *actorPress_).manhattanLength() <
+                                    QApplication::startDragDistance());
+            actorPress_.reset();
+            if (click && mouse->button() == Qt::LeftButton &&
+                mouse->modifiers() == Qt::NoModifier) {
+                const auto point = view_->mapToScene(mouse->position().toPoint());
+                const int slot = actorAt({qFloor(point.x()), qFloor(point.y())});
+                if (slot >= 0) {
+                    stop();
+                    selectedActorSlot_ = slot;
+                    presentActors();
+                    if (doubleClick && actorNavigationEnabled_)
+                        emit findActorAction(current_->playback.director().selector(), slot);
+                }
+            }
+        }
+    }
     if (object == view_ && event->type() == QEvent::Resize)
         QTimer::singleShot(0, this,
                            [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
@@ -826,6 +860,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
+    SceneSelection selection;
     const int channelCount =
         drawing.iris()
             ? drawing.iris()->count()
@@ -837,6 +872,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     {
         QPainter painter(&frame);
+        auto overlay = [&](const QImage &image, double opacity = 1.) {
+            painter.save();
+            painter.setOpacity(opacity);
+            painter.drawImage(0, 0, image);
+            painter.restore();
+            selection.cover(image, opacity);
+        };
         if (mode_ == 0) {
             const int count = channelCount;
             for (int channel = 0; channel < count; ++channel) {
@@ -882,7 +924,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                         if (!drawing.sprites().draws(1, 1).isEmpty())
                             environment = {0, 0, 0, 1};
                     }
-                    painter.drawImage(0, 0, background);
+                    overlay(background);
                 }
                 const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,
                                                              drawing.cameras().actor(), parent,
@@ -891,7 +933,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);
                     ActorRenderer::paint(spriteFrame, sprites);
-                    painter.drawImage(0, 0, spriteFrame);
+                    overlay(spriteFrame);
                 }
                 if (!drawing.sprites().draws(channel, 0).isEmpty())
                     environment = {0, 0, 0, 1};
@@ -900,13 +942,12 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                                                    {255, 255, 255},
                                                    environment,
                                                    sepia,
-                                                   &drawing.effects()});
+                                                   &drawing.effects(), {}, &selection});
                 painter.drawImage(0, 0, rendered.image);
                 environment = rendered.environment;
                 if (drawing.iris() && !drawing.iris()->record().isEmpty() &&
                     u8(drawing.iris()->record(), 21) == channel)
-                    painter.drawImage(
-                        0, 0, drawing.iris()->render(rom_, drawing.cameras().actor(), parent));
+                    overlay(drawing.iris()->render(rom_, drawing.cameras().actor(), parent));
             }
         } else {
             const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
@@ -938,7 +979,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     flat, spriteRenderer_.project(drawing.sprites(), pass, 0, camera, parent,
                                                   {255, 255, 255},
                                                   drawing.effects().colorRecord(pass), sepia));
-                painter.drawImage(0, 0, flat);
+                overlay(flat);
                 if (!drawing.sprites().draws(pass, 0).isEmpty())
                     environment = {0, 0, 0, 1};
             };
@@ -949,23 +990,25 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                  {255, 255, 255},
                  environment,
                  sepia,
-                 &drawing.effects()},
+                 &drawing.effects(),
+                 {},
+                 &selection},
                 [&](int, int index, QImage &image, ActorRenderState &state) {
                     if (!next.worldProps || index < 0 || index >= next.worldProps->props().size())
                         throw Error("Stage drawing refers to an unavailable object");
-                    ActorRenderer::paint(
-                        image, objectRenderer_.project(
+                    const auto layers = objectRenderer_.project(
                                    next.worldProps->props()[index], index,
                                    drawing.cameras().actor(), camera, parent, {255, 255, 255},
-                                   state, tint(WorldColorPass::Objects), next.texturePhase, sepia));
+                                   state, tint(WorldColorPass::Objects), next.texturePhase, sepia);
+                    ActorRenderer::paint(image, layers);
+                    selection.cover(layers);
                 });
             painter.drawImage(0, 0, rendered.image);
             environment = rendered.environment;
             drawFlat(1);
         }
         if (mode_ == 0 && !drawing.ribbons().empty())
-            painter.drawImage(
-                0, 0, drawing.ribbons().render(drawing.cameras().actor(), *drawing.imageView()));
+            overlay(drawing.ribbons().render(drawing.cameras().actor(), *drawing.imageView()));
         if (drawing.effects().vignette()) {
             const auto camera = mode_ == 2
                                     ? SceneCamera::orthographic(SceneWorldDrawing::clipMatrix())
@@ -975,43 +1018,45 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     ? SceneWorldDrawing::modelMatrix(SceneProjection{})
                     : drawing.transforms().layerMatrix(
                           (next.backgrounds ? qMax(1, next.backgrounds->channelCount()) : 20) - 1);
-            painter.drawImage(0, 0, SceneCapture::vignette(camera, parent));
+            overlay(SceneCapture::vignette(camera, parent));
         }
         if (mode_ == 2 && !drawing.effects().specialBlackRecord().isEmpty()) {
             const auto special =
                 renderer_.special(drawing.actors(), drawing.effects(), {0, 0, 0, 0, 0, 0},
-                                  {drawing.cameras().actor(), {255, 255, 255}, environment, sepia});
+                                  {drawing.cameras().actor(), {255, 255, 255}, environment, sepia,
+                                   nullptr, {}, &selection});
             painter.drawImage(0, 0, special.image);
             environment = special.environment;
         }
         const auto &capture = drawing.effects().capture();
         if ((capture.selector() == 2 || capture.selector() == 3) && !capture.frame().isNull()) {
-            painter.setOpacity(capture.alpha() / 255.);
-            painter.drawImage(0, 0, capture.frame());
-            painter.setOpacity(1);
+            overlay(capture.frame(), capture.alpha() / 255.);
         }
         const auto clip = drawing.titleScene() ? frame.rect() : drawing.crop().clip();
         painter.save();
         painter.setClipRegion(QRegion(frame.rect()).subtracted(QRegion(clip)));
         painter.fillRect(frame.rect(), Qt::black);
         painter.restore();
+        selection.clip(clip);
         if (!drawing.panels().empty())
-            painter.drawImage(0, 0, drawing.panels().render());
+            overlay(drawing.panels().render());
         if (drawing.titleScene())
-            painter.drawImage(0, 0, drawing.titleReveal().render(drawing.highResolution()));
+            overlay(drawing.titleReveal().render(drawing.highResolution()));
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));
+            selection.cover(rgba[3]);
         }
         if (next.dialogue && drawing.dialogue()) {
             const auto pixels =
                 next.dialogue->image(drawing.dialogue()->resources, *dialogueDrawing_);
-            const QImage overlay(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
+            const QImage dialogueImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
                                  pixels.width, pixels.height, QImage::Format_RGBA8888);
-            painter.drawImage(0, 0, overlay);
+            overlay(dialogueImage.copy()); // Retain owned pixels after the local buffer expires.
         }
     }
     next.frame = std::move(frame);
+    next.selection = std::move(selection);
     QSet<quint32> retained;
     for (const auto handle : next.backgroundHandles)
         retained.insert(handle);
@@ -1146,6 +1191,9 @@ void ScenePreview::setActorNavigationEnabled(bool enabled) {
     findActor_->setVisible(enabled);
     presentSelectedActor();
 }
+int ScenePreview::actorAt(QPoint point) const {
+    return current_ && !current_->playback.display().black() ? current_->selection.actorAt(point) : -1;
+}
 void ScenePreview::presentActors() {
     QVector<int> actorSlots;
     if (current_)
@@ -1178,6 +1226,7 @@ void ScenePreview::presentSelectedActor() {
     const bool present =
         current_ && slot >= 0 && current_->playback.actors().actor(slot).has_value();
     findActor_->setEnabled(present && actorNavigationEnabled_);
+    presentActorOutline();
     if (!present) {
         actorState_->setText(
             selectedActorSlot_ < 0
@@ -1197,10 +1246,24 @@ void ScenePreview::presentSelectedActor() {
                              .arg(std::bit_cast<float>(u32(record, 0x120)), 0, 'f', 3)
                              .arg(std::bit_cast<float>(u32(record, 0x124)), 0, 'f', 3));
 }
+void ScenePreview::presentActorOutline() {
+    delete actorOutline_;
+    actorOutline_ = nullptr;
+    if (!current_ || current_->playback.display().black() || liveActors_->currentIndex() < 0)
+        return;
+    const auto bounds = current_->selection.actorBounds(liveActors_->currentData().toInt());
+    if (bounds.isEmpty())
+        return;
+    QPen pen(QColor("#54d6ff"));
+    pen.setCosmetic(true);
+    pen.setStyle(Qt::DashLine);
+    actorOutline_ = canvas_->addRect(bounds.adjusted(-1, -1, 1, 1), pen);
+    actorOutline_->setZValue(1);
+    actorOutline_->setAcceptedMouseButtons(Qt::NoButton);
+}
 void ScenePreview::present() {
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
-    presentActors();
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
     step_->setEnabled(play_->isEnabled());
     skip_->setVisible(current_ && current_->playback.skipArmed());
@@ -1211,6 +1274,7 @@ void ScenePreview::present() {
                                  (!current_->playback.panels().empty() || hasDialogue()));
     panelControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
+    actorOutline_ = nullptr;
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
     setProperty("sceneStopped", !current_ || current_->stopped);
@@ -1224,10 +1288,12 @@ void ScenePreview::present() {
     if (!current_) {
         frame_ = {};
         status_->setText("No active scene.");
+        presentActors();
         return;
     }
     frame_ = current_->playback.display().present(current_->frame);
     canvas_->addPixmap(QPixmap::fromImage(frame_));
+    presentActors();
 
     const auto &director = current_->playback.director();
     status_->setText(QString("Step %1 · selector %2 · word %3%4%5")

@@ -1,4 +1,5 @@
 #include "engine/scene_actor_renderer.h"
+#include "engine/scene_selection.h"
 #include <bit>
 namespace lordly {
 SceneActorFrame SceneActorRenderer::special(const SceneActors &actors, SceneEffects &effects,
@@ -6,6 +7,8 @@ SceneActorFrame SceneActorRenderer::special(const SceneActors &actors, SceneEffe
                                             const SceneActorRenderContext &context) {
     SceneActorFrame result{QImage(320, 240, QImage::Format_RGBA8888), {}, context.environment};
     result.image.fill(QColor(0, 0, 0, effects.specialBlackAlpha()));
+    if (context.selection)
+        context.selection->cover(effects.specialBlackAlpha());
     const auto passes = effects.specialActorPasses(actors.actorRecords());
     if (passes.isEmpty())
         return result;
@@ -25,6 +28,8 @@ SceneActorFrame SceneActorRenderer::special(const SceneActors &actors, SceneEffe
                                                                    context.bodyPaletteReplacement}}
                                   : std::nullopt);
         ActorRenderer::paint(result.image, layers);
+        if (context.selection)
+            context.selection->actors(layers);
         result.layers += layers;
     }
     result.environment = state.environment();
@@ -94,6 +99,8 @@ SceneActorFrame SceneActorRenderer::draw(SceneActors &actors,
                                                  context.bodyPaletteReplacement}}
                 : std::nullopt);
         ActorRenderer::paint(result.image, layers);
+        if (context.selection)
+            context.selection->actors(layers);
         result.layers += layers;
     }
     result.environment = state.environment();

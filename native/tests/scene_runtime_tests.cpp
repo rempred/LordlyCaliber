@@ -5,6 +5,7 @@
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_actor_renderer.h"
+#include "engine/scene_selection.h"
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_panels.h"
@@ -27,6 +28,66 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void visibleActorSelection() {
+        ActorRasterLayer back;
+        back.slot = 3;
+        back.image = QImage(4, 4, QImage::Format_RGBA8888);
+        back.image.fill(Qt::red);
+        back.plane.mapping = {1, 0, 0, 0, 1, 0, 10, 20, 1};
+        back.plane.clip = {{10, 20}, {14, 20}, {14, 24}, {10, 24}};
+        auto front = back;
+        front.slot = 7;
+        front.image.fill(Qt::blue);
+        front.image.setPixelColor(1, 1, Qt::transparent);
+        SceneSelection selected;
+        selected.actors({back, front});
+        QCOMPARE(selected.actorAt({10, 20}), 7);
+        QCOMPARE(selected.actorAt({11, 21}), 3);
+        QCOMPARE(selected.actorAt({14, 20}), -1);
+        QCOMPARE(selected.actorAt({-1, 20}), -1);
+        auto shadow = back;
+        shadow.slot = 19;
+        shadow.shadow = true;
+        selected.actors({shadow});
+        QCOMPARE(selected.actorAt({10, 20}), 7);
+        auto prop = back;
+        prop.image.fill(Qt::transparent);
+        prop.image.setPixelColor(0, 0, Qt::black);
+        selected.cover(QVector<ActorRasterLayer>{prop});
+        QCOMPARE(selected.actorAt({10, 20}), -1);
+        QCOMPARE(selected.actorAt({11, 21}), 3);
+        QImage overlay(320, 240, QImage::Format_RGBA8888);
+        overlay.fill(Qt::transparent);
+        overlay.setPixelColor(11, 21, Qt::black);
+        auto translucent = selected;
+        translucent.cover(overlay, .5);
+        QCOMPARE(translucent.actorAt({11, 21}), 3);
+        selected.cover(overlay);
+        QCOMPARE(selected.actorAt({11, 21}), -1);
+        selected.clip({0, 0, 12, 240});
+        QCOMPARE(selected.actorAt({12, 22}), -1);
+        QCOMPARE(selected.actorAt({11, 22}), 7);
+        selected.cover(quint8(255));
+        QCOMPARE(selected.actorAt({11, 22}), -1);
+        // Independent full-frame composition checks the click-pixel rasterizer's
+        // clipping and non-affine mapping against the actual renderer.
+        front.plane.mapping = {2, .3, .001, -.1, 1.7, .002, 100, 40, 1};
+        front.plane.clip = {{100, 41}, {107, 42}, {105, 47}, {99, 46}};
+        QImage image(320, 240, QImage::Format_RGBA8888);
+        image.fill(Qt::transparent);
+        ActorRenderer::paint(image, {front});
+        SceneSelection projected;
+        projected.actors({front});
+        int visible = 0;
+        for (int y = 37; y < 52; ++y)
+            for (int x = 96; x < 113; ++x) {
+                const bool painted = image.pixelColor(x, y).alpha() > 0;
+                QCOMPARE(projected.actorAt({x, y}), painted ? 7 : -1);
+                visible += painted;
+            }
+        QVERIFY(visible > 10);
+        QCOMPARE(projected.actorAt({320, 240}), -1);
+    }
     void rewardPanelAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

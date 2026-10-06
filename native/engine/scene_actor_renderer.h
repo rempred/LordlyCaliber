@@ -3,6 +3,7 @@
 #include "engine/scene_actors.h"
 #include "engine/scene_effects.h"
 namespace lordly {
+class SceneSelection;
 struct SceneActorRenderContext {
     SceneCamera camera;
     std::array<qint16, 3> globalRgb;
@@ -10,6 +11,7 @@ struct SceneActorRenderContext {
     bool sepia = false;
     SceneEffects *effects = nullptr;
     std::optional<quint8> bodyPaletteReplacement;
+    SceneSelection *selection = nullptr; // Tentative draw data; discard if composition fails.
 };
 struct SceneActorFrame {
     QImage image;

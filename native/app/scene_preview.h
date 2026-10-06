@@ -4,6 +4,7 @@
 #include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_programs.h"
+#include "engine/scene_selection.h"
 #include "engine/scene_world_drawing.h"
 #include "engine/sprite_renderer.h"
 #include "engine/stage_object_renderer.h"
@@ -16,6 +17,7 @@ class QSpinBox;
 class QTimer;
 class QGraphicsView;
 class QGraphicsScene;
+class QGraphicsRectItem;
 class QComboBox;
 class QLineEdit;
 namespace lordly {
@@ -35,6 +37,7 @@ class ScenePreview : public QWidget {
     void setBodyAnimations(BodyAnimationData::Pointer);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
     void setActorNavigationEnabled(bool enabled);
+    int actorAt(QPoint) const;
   signals:
     void findActorAction(int selector, int slot);
 
@@ -53,6 +56,7 @@ class ScenePreview : public QWidget {
         QImage frame;
         QString reason, backgroundName;
         bool stopped = false;
+        SceneSelection selection;
         std::optional<SceneBackgroundRenderer> backgrounds;
         QMap<quint32, SceneBackgroundChannel> backgroundResources;
         std::array<quint32, 20> backgroundHandles{};
@@ -72,6 +76,7 @@ class ScenePreview : public QWidget {
     void present();
     void presentActors();
     void presentSelectedActor();
+    void presentActorOutline();
     void stop();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
@@ -112,9 +117,11 @@ class ScenePreview : public QWidget {
     QPushButton *findActor_;
     int selectedActorSlot_ = -1;
     bool actorNavigationEnabled_ = false;
+    std::optional<QPoint> actorPress_;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;
+    QGraphicsRectItem *actorOutline_ = nullptr;
     QGraphicsView *view_;
     QWidget *imageControlsUi_;
     QWidget *panelControlsUi_;

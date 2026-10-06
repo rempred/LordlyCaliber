@@ -159,7 +159,34 @@ class UiTests : public QObject {
             QCoreApplication::processEvents();
             QVERIFY(preview->isVisible());
             QVERIFY(editor.grab().save("native-created-class-actor.png"));
-            preview->findChild<QPushButton *>("sceneFindActorAction")->click();
+            QPoint actorPixel(-1, -1);
+            for (int y = 0; y < 240 && actorPixel.x() < 0; ++y)
+                for (int x = 0; x < 320; ++x)
+                    if (preview->actorAt({x, y}) == 5) {
+                        actorPixel = {x, y};
+                        break;
+                    }
+            QVERIFY(actorPixel.x() >= 0);
+            actors->setCurrentIndex(-1);
+            auto view = preview->findChild<QGraphicsView *>("sceneCanvas");
+            const auto viewportPoint = view->mapFromScene(QPointF(actorPixel) + QPointF(.5, .5));
+            const auto beforeClick = project.scenePrograms()->json();
+            QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
+            QTest::mouseMove(view->viewport(), viewportPoint + QPoint(40, 0));
+            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint + QPoint(40, 0));
+            QCOMPARE(actors->currentIndex(), -1); // Dragging preserves selection.
+            QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
+            QCOMPARE(actors->currentData().toInt(), 5);
+            QCOMPARE(preview->property("sceneTick").toInt(), 2);
+            QCOMPARE(preview->renderedFrame(), frame);
+            QCOMPARE(project.scenePrograms()->json(), beforeClick);
+            seek->setValue(0);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+            QCOMPARE(preview->actorAt(actorPixel), -1);
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QCOMPARE(preview->actorAt(actorPixel), 5);
+            QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
             QCOMPARE(pages->currentWidget(), actions);
             QCOMPARE(field(0)->text(), QString("5"));
             QCOMPARE(field(1)->text(), QString("84"));
@@ -3068,9 +3095,26 @@ class UiTests : public QObject {
         { QPainter painter(&expected); painter.drawImage(0, 0, actorFrame); }
         const auto front = run(room + actor + QVector<quint32>{0x1c, 0, 6});
         QCOMPARE(front, expected);
+        QVector<QPoint> frontPicks;
+        for (int y = 24; y < 215; ++y)
+            for (int x = 0; x < 319; ++x)
+                if (preview.actorAt({x, y}) == 0)
+                    frontPicks << QPoint(x, y);
+        QVERIFY(!frontPicks.isEmpty());
         const auto behind = run(room + actor);
         QVERIFY(behind != front);
         QVERIFY(behind != background);
+        int occluded = 0, visible = 0;
+        for (const auto point : frontPicks) {
+            if (preview.actorAt(point) < 0) {
+                QCOMPARE(behind.pixelColor(point), background.pixelColor(point));
+                ++occluded;
+            } else {
+                QCOMPARE(preview.actorAt(point), 0);
+                ++visible;
+            }
+        }
+        QVERIFY(occluded > 0 && visible > 0);
         QVERIFY(preview.grab().save("scene-room-composition.png"));
         const auto empty = run({0x80000006U, 23});
         QVERIFY(!preview.property("sceneStopped").toBool());

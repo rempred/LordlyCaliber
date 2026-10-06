@@ -60,6 +60,11 @@ scenes. Its slot, independent class pair, pose and placement edit as one action;
 removal and ordering also keep both commands together. Preview equipment comes from
 the class defaults, as stated in the preview context. Army member bindings and
 event-selected cast still need their own launch data.
+
+In Scene playback, click a visible Actor to select its live slot and pause, or
+double-click to open its action. Selection follows the rendered layers, including
+transparent holes and foreground occlusion. Dragging pans. The outline shows the
+selected projected extent; it is an editor overlay and is not part of the scene.
 Typed SceneId values distinguish native resource keys from authored UUIDs. No
 fabricated ROM key is assigned to a scene before it has an exported allocation.
 

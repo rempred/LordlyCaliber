@@ -1,5 +1,33 @@
 # Native Lordly Caliber
 
+## Selecting visible Actors in the scene
+
+Clicking an Actor selects its live slot and pauses playback; double-clicking opens
+its action when editing is enabled. Dragging retains the existing pan behavior.
+A cosmetic outline shows the selected Actor's projected extent, independently of
+the rendered/exported frame. Dropdown selection and absent-step retention remain.
+
+Each completed render snapshot retains ordered Actor layer geometry and cover
+alpha. Picking rasterizes only the clicked pixel with the same Qt mapping and
+clipping as scene composition. Transparent holes pass through to lower Actors;
+opaque foregrounds, scene objects, masks, dialogue and screen covers block them.
+Shadows are not selection targets. Partially transparent covers retain a target
+while its contribution remains at least one alpha byte. Screen cover images store
+alpha only, and ordinary playback does not rasterize an extra selection frame.
+Captured imagery has no invented live Actor identity. This follows the current
+desktop rendering approximation, not an additional N64 rasterizer claim.
+
+`scene_runtime_tests visibleActorSelection sceneActorCompositionAndRollback`
+passed in 112ms. Synthetic overlapping layers, transparent holes, shadows,
+projected/scissored pixels, opaque and translucent covers and crop masks pass;
+the pixel picker agrees with independent full-frame Qt composition. Existing
+Actor tint/order/atomic rollback checks pass unchanged.
+`ui_tests classActorCreationControls sceneRoomComposition sceneSpriteComposition
+savedStoryCastPreview` passed in 4536ms. Actual click, drag and double-click input,
+backward seeking, project/frame preservation, real room foreground occlusion,
+sprite composition and saved-cast dropdown behavior pass. The final outline
+capture was inspected. No ROM output changes are introduced by selection.
+
 ## Creating class Actors
 
 The Actions inspector now offers Create class Actor for fresh environment resource

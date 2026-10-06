@@ -106,6 +106,7 @@ target_sources(lordly_engine PRIVATE engine/actor_matrices.cpp game/director/act
 target_sources(lordly_engine PRIVATE engine/scene_actor_drawing.cpp)
 target_sources(lordly_engine PRIVATE engine/actor_world_matrices.cpp game/director/actor_world_matrix.c)
 target_sources(lordly_engine PRIVATE engine/color_combiner.cpp engine/actor_render_state.cpp engine/scene_actor_renderer.cpp)
+target_sources(lordly_engine PRIVATE engine/scene_selection.cpp)
 
 target_sources(lordly_engine PRIVATE engine/scene_draw_queue.cpp game/director/scene_draw_queue.c)
 target_sources(lordly_engine PRIVATE engine/scene_resources.cpp game/director/ui_resource.c)
