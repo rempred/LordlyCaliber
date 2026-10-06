@@ -1,0 +1,247 @@
+#include "engine/scene_action_control.h"
+#include "engine/scene_actions.h"
+#include <algorithm>
+namespace lordly {
+namespace action_detail {
+namespace {
+bool uncertainControl(const DirectorCommand &c) {
+    return (Directors::grammar()[c.opcode].queryWords && c.opcode != 0xe && c.opcode != 0xb5) ||
+           c.opcode == 0x56 || c.opcode == 0x59 || c.opcode == 0x99 || c.opcode == 0x9a ||
+           c.opcode == 0xbb || c.opcode == 0x39 || c.opcode == 0x80000003 || c.opcode == 0x80000005;
+}
+} // namespace
+QVector<CounterState> counterStates(const DirectorProgram &program) {
+    QVector<CounterState> result;
+    CounterState state;
+    for (int i = 0; i < program.commands.size(); ++i) {
+        result << state;
+        const auto &c = program.commands[i];
+        if (c.opcode == 1)
+            state = {state.known, i, 0};
+        else if (c.opcode == 2)
+            state = {state.known, -1, 0};
+        else if (c.opcode == 0xe || c.opcode == 0xb5) {
+            if (state.arm < 0 || (c.operands[0] != 0 && c.operands[0] != 2) ||
+                qint32(c.operands[1]) < state.target)
+                state.known = false;
+            state.target = qint32(c.operands[1]);
+        } else if (uncertainControl(c))
+            state.known = false;
+        else if (state.arm >= 0 && c.opcode == 0x80000000 &&
+                 (i + 1 == program.commands.size() || (program.commands[i + 1].opcode != 0xe &&
+                                                       program.commands[i + 1].opcode != 0xb5)))
+            state.known = false;
+    }
+    return result;
+}
+QVector<int> remainingGates(const DirectorProgram &program, int before, qint64 previous) {
+    QVector<int> gates;
+    for (int i = before; i < program.commands.size(); ++i) {
+        const auto &c = program.commands[i];
+        if (c.opcode == 2)
+            return gates;
+        if (c.opcode == 1 || c.opcode == 0x7d || c.opcode == 0x80000001 || uncertainControl(c))
+            break;
+        if (c.opcode == 0xe || c.opcode == 0xb5) {
+            const qint64 target = qint32(c.operands[1]);
+            if ((c.operands[0] != 0 && c.operands[0] != 2) || target < previous)
+                break;
+            previous = target;
+            gates << i;
+        }
+    }
+    throw Error("The shared counter has no unambiguous reset after this position.");
+}
+void shiftGates(DirectorProgram &program, const QVector<int> &gates, qint64 delta) {
+    for (int i : gates) {
+        const auto target = qint64(qint32(program.commands[i].operands[1])) + delta;
+        if (target < 0 || target > 0x7fffffff)
+            throw Error("This wait would move a counter deadline outside its supported range.");
+        program.commands[i].operands[1] = quint32(target);
+    }
+}
+int setupEnd(const DirectorProgram &program) {
+    int lead = 0;
+    const auto &c = program.commands;
+    while (lead < c.size() && (c[lead].opcode == 0x80000006 || c[lead].opcode == 0x80000007))
+        ++lead;
+    if ((program.resourceClass() == 4 || program.resourceClass() == 5) && lead + 1 < c.size() &&
+        ((c[lead].opcode == 0x35 && c[lead + 1].opcode == 0x36) ||
+         (c[lead].opcode == 0x36 && c[lead + 1].opcode == 0x35)))
+        lead += 2;
+    return lead;
+}
+} // namespace action_detail
+namespace {
+QString waitReason(const DirectorProgram &p, int before, const action_detail::CounterState &state) {
+    if (!state.known)
+        return "This position has branch-dependent counter state.";
+    try {
+        if (state.arm >= 0)
+            action_detail::remainingGates(p, before, state.target);
+        // The recovered failure scanner visits raw operand words too. Require its
+        // first yield and immediately preceding barrier to be actual commands.
+        const int first = p.commands[before].word;
+        for (int word = first; word < p.source.size() / 4; ++word) {
+            if (u32(p.source, word * 4) != 0x80000000)
+                continue;
+            for (int i = before + 1; i < p.commands.size(); ++i)
+                if (p.commands[i].word == word && p.commands[i - 1].opcode == 0x80000002)
+                    return {};
+            return "The next yield has no adjacent condition barrier; adding a wait could restart "
+                   "the scene.";
+        }
+    } catch (const std::exception &e) {
+        return QString::fromUtf8(e.what());
+    }
+    return "There is no later yield to retain a pending wait.";
+}
+DirectorCommand command(quint32 op, QVector<quint32> operands = {}) {
+    return {0, op, std::move(operands)};
+}
+} // namespace
+QMap<quint32, QString> SceneActions::kinds() {
+    return {{3, "Set Actor pose and position"},
+            {0x14, "Create Actor"},
+            {7, "Move Actor"},
+            {0x35, "Background camera"},
+            {0x36, "Actor camera"},
+            {0x1b, "Screen fade"},
+            {0x1d, "Scale Actor"},
+            {0x48, "Actor opacity"},
+            {0xe, "Wait"},
+            {0xb5, "Wait (A button can skip)"}};
+}
+QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
+    QVector<SceneActionPosition> result;
+    const auto actions = inspect(p);
+    const auto states = action_detail::counterStates(p);
+    const int lead = action_detail::setupEnd(p);
+    for (int i = lead; i < p.commands.size(); ++i) {
+        const auto &c = p.commands[i];
+        QString name;
+        for (const auto &a : actions)
+            if (a.command == i) {
+                name = a.name;
+                break;
+            }
+        if (c.opcode == 0x7d || (c.opcode == 0x39 && c.operands == QVector<quint32>{0}))
+            name = "scene exit";
+        if (name.isEmpty())
+            continue;
+        const auto reason = waitReason(p, i, states[i]);
+        result << SceneActionPosition{i, QString("Before %1 · word %2").arg(name).arg(c.word),
+                                      reason.isEmpty(), reason};
+    }
+    return result;
+}
+DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint32 kind,
+                                     int ticks) {
+    const auto points = positions(p);
+    const auto point = std::find_if(points.begin(), points.end(),
+                                    [before](const auto &v) { return v.command == before; });
+    if (point == points.end() || !kinds().contains(kind))
+        throw Error("Choose a supported action and insertion position.");
+    auto result = p;
+    QVector<DirectorCommand> added;
+    if (kind == 0xe || kind == 0xb5) {
+        if (!point->canWait)
+            throw Error(point->waitReason);
+        if (ticks < 1)
+            throw Error("A wait requires at least one update.");
+        const auto state = action_detail::counterStates(p)[before];
+        const qint64 target = state.target + ticks;
+        if (target > 0x7fffffff)
+            throw Error("The wait exceeds the counter range.");
+        if (state.arm >= 0)
+            action_detail::shiftGates(
+                result, action_detail::remainingGates(p, before, state.target), ticks);
+        else
+            added << command(1);
+        added << command(0) << command(0x80000002) << command(0x80000000)
+              << command(kind, {2, quint32(target)});
+        if (state.arm < 0)
+            added << command(2);
+    } else {
+        QVector<quint32> operands;
+        switch (kind) {
+        case 3:
+            operands = {0, 1, 0, 0, 0, 0, 0, 0};
+            break;
+        case 0x14: {
+            QSet<quint32> used;
+            for (const auto &c : p.commands) {
+                const auto names = Directors::grammar()[c.opcode].operands;
+                for (int i = 0; i < names.size(); ++i)
+                    if (names[i].contains("actor_slot") || names[i] == "actor_selector")
+                        used << c.operands[i];
+                if (c.opcode == 7 || c.opcode == 0xa6)
+                    used << c.operands[0];
+            }
+            quint32 slot = 0;
+            while (slot < 28 && used.contains(slot))
+                ++slot;
+            if (slot == 28)
+                throw Error(
+                    "All 28 Actor slots are already referenced; select an existing Actor to edit.");
+            operands = {slot, 1, 0, 0, 0, 0, 0, 0, 0};
+            break;
+        }
+        case 7:
+            operands = {0, quint32(-1000), quint32(-1000), 0, 0, 30, 0};
+            break;
+        case 0x1b:
+            operands = {30, 0, 0, 0, quint32(-1), 255};
+            break;
+        case 0x1d:
+            operands = {0, 100};
+            break;
+        case 0x48:
+            operands = {0, 255};
+            break;
+        case 0x35:
+        case 0x36:
+            operands = {0, 0, 0, 0, 0, 100000, 45000};
+            for (int i = 0; i < before; ++i)
+                if (p.commands[i].opcode == kind)
+                    operands = p.commands[i].operands;
+            break;
+        }
+        added << command(kind, operands);
+    }
+    for (int i = 0; i < added.size(); ++i)
+        result.commands.insert(before + i, added[i]);
+    return DirectorProgram::decode(result.encode());
+}
+DirectorProgram SceneActions::remove(const DirectorProgram &p, int index) {
+    if (index < action_detail::setupEnd(p))
+        throw Error("The scene's initial setup must remain before its actions.");
+    for (const auto &a : inspect(p))
+        if (a.command == index) {
+            auto result = p;
+            if (a.commandCount == 6) {
+                const auto state = action_detail::counterStates(p)[index];
+                if (!state.known || state.arm >= 0)
+                    throw Error("This complete wait replaces an earlier counter state; use "
+                                "Commands to change its structure.");
+            }
+            if (a.commandCount == 4) {
+                const auto state = action_detail::counterStates(p)[index];
+                const qint64 duration = qint32(p.commands[index + 3].operands[1]) - state.target;
+                action_detail::shiftGates(
+                    result, action_detail::remainingGates(p, index + 4, state.target + duration),
+                    -duration);
+            }
+            // Operands can be scanner targets. Removing one must not silently change
+            // unrelated native control flow; leave that unusual case in Commands.
+            for (int i = index; i < index + a.commandCount; ++i)
+                for (auto value : p.commands[i].operands)
+                    if (value == 0x80000000 || value == 0x80000002 || value == 0x80000005)
+                        throw Error("This action contains native scan markers; use Commands to "
+                                    "edit its structure.");
+            result.commands.remove(index, a.commandCount);
+            return DirectorProgram::decode(result.encode());
+        }
+    throw Error("Select an action to remove.");
+}
+} // namespace lordly

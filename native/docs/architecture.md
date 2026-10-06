@@ -1,5 +1,34 @@
 # Native Lordly Caliber
 
+## Native action insertion and removal
+
+The Actions inspector adds placement, movement, camera, fade, scale, opacity and
+wait actions at named script positions, and removes complete actions with shared
+project undo. Initial background/camera setup remains ahead of new content. Actor
+creation defaults to a slot not referenced by recognized script operands; dynamic
+launch occupants still require the author to choose the intended slot.
+
+Wait insertion checks the native raw-word scan, including operand words, for a
+real barrier/yield boundary. Outside a counter span it emits an arm/wait/reset
+compound. Inside a known monotonic span it adds a gate and shifts later targets
+through the reset. Shared wait fields show relative duration; editing or removing
+one shifts those targets consistently. Branch-dependent counters, extra yields,
+unknown resets, nonmonotonic targets and overflow refuse structured wait insertion.
+The original commands remain available. This is script authoring, not a claim that
+all branches have one absolute timeline. Native dispatcher C is unchanged.
+
+`scene_action_tests` passed in 4442 ms, including sequential 3+4 waits; a controlled
+10/20 movement/exit span becoming 40/50 with a 30-update insertion, 17/27 after
+editing to 7, and exact original bytes after removal; setup/boundary guards;
+project persistence and two source-built exports/reopens. The authored export is
+in parent Test ROMs/native-action-insert-vcseOx. References, bounds, CRC and master
+preservation pass. `ui_tests sceneActionInsertion structuredSceneActions
+cutsceneBackgroundSelection` passed in 3619 ms: Add/Remove, undo/redo, invalid-input
+guards, project reopen and previous inspector/background behavior. The capture was
+inspected. The additional branch/extra-yield guards passed with the timing/export cases in
+2379 ms (candidate native-action-insert-LVMbTq); the two affected UI cases passed
+again in 2117 ms. The complete native build passed without compiler warnings. These tests do not establish natural game launch or pixel accuracy.
+
 ## Native action fields
 
 The Cutscenes Actions inspector derives structured fields directly from the native
@@ -14,7 +43,7 @@ introduced into native editing.
 
 A recognized wait retains its arm, handoff, barrier, yield, comparison and reset;
 only its target changes. Unknown control arrangements are not silently flattened.
-New action insertion and timeline scheduling remain separate unfinished work.
+Structured timeline scheduling remains separate unfinished work.
 The two inspectors share scene undo and selection. Incomplete input in either
 blocks the other, scene selection and background editing, and reaches the existing
 save/export guard. Movement tooltips explain the current-position sentinel and

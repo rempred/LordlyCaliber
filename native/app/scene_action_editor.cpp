@@ -1,6 +1,8 @@
 #include "app/scene_action_editor.h"
 #include "app/scene_command_editor.h"
+#include <QComboBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -34,6 +36,26 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
     split->addWidget(area);
     split->setSizes({350, 500});
     layout->addWidget(split, 1);
+    auto add = new QHBoxLayout;
+    kind_ = new QComboBox;
+    kind_->setObjectName("sceneActionKind");
+    const auto kinds = SceneActions::kinds();
+    for (auto [kind, label] : kinds.asKeyValueRange())
+        kind_->addItem(label, kind);
+    kind_->setCurrentIndex(kind_->findData(7));
+    add->addWidget(kind_);
+    position_ = new QComboBox;
+    position_->setObjectName("sceneActionPosition");
+    position_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    position_->setMinimumContentsLength(20);
+    add->addWidget(position_, 1);
+    insert_ = new QPushButton("Add action");
+    insert_->setObjectName("sceneActionInsert");
+    add->addWidget(insert_);
+    remove_ = new QPushButton("Remove action");
+    remove_->setObjectName("sceneActionRemove");
+    add->addWidget(remove_);
+    layout->addLayout(add);
     notice_ = new QLabel("Select an action to edit.");
     notice_->setObjectName("sceneActionStatus");
     notice_->setWordWrap(true);
@@ -49,6 +71,11 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
         if (row >= 0 && row < actions_.size())
             emit commandSelected(actions_[row].command);
     });
+    connect(kind_, &QComboBox::currentIndexChanged, this, [this] { updateStructureControls(); });
+    connect(position_, &QComboBox::currentIndexChanged, this,
+            [this] { updateStructureControls(); });
+    connect(insert_, &QPushButton::clicked, this, [this] { changeStructure(false); });
+    connect(remove_, &QPushButton::clicked, this, [this] { changeStructure(true); });
     connect(discard_, &QPushButton::clicked, this, [this] {
         editing_ = true;
         validity(true);
@@ -63,6 +90,7 @@ void SceneActionEditor::validity(bool valid) {
     setProperty("invalidEdits", !valid);
     list_->setEnabled(valid);
     discard_->setEnabled(!valid);
+    updateStructureControls();
     if (wasInvalid != !valid)
         emit validityChanged();
 }
@@ -92,9 +120,21 @@ void SceneActionEditor::refresh(int command) {
     const QSignalBlocker block(list_);
     list_->clear();
     actions_.clear();
+    const QSignalBlocker positionBlock(position_);
+    const auto priorPosition = position_->currentData().toInt();
+    position_->clear();
     if (key_) {
         const auto program = project_->scenePrograms()->program(key_);
         actions_ = SceneActions::inspect(program);
+        for (const auto &point : SceneActions::positions(program)) {
+            position_->addItem(point.label, point.command);
+            position_->setItemData(position_->count() - 1, point.canWait, Qt::UserRole + 1);
+            position_->setItemData(position_->count() - 1, point.waitReason, Qt::ToolTipRole);
+        }
+        int insertion = position_->findData(command);
+        if (insertion < 0)
+            insertion = position_->findData(priorPosition);
+        position_->setCurrentIndex(insertion < 0 ? position_->count() - 1 : insertion);
         for (const auto &action : actions_) {
             auto item = new QListWidgetItem(
                 QString("%1 · word %2").arg(action.name).arg(program.commands[action.command].word),
@@ -114,6 +154,12 @@ void SceneActionEditor::showAction() {
     while (fields_->rowCount())
         fields_->removeRow(0);
     const int row = list_->currentRow();
+    if (row >= 0 && row < actions_.size()) {
+        const int position = position_->findData(actions_[row].command);
+        if (position >= 0)
+            position_->setCurrentIndex(position);
+    }
+    updateStructureControls();
     if (!key_ || row < 0 || row >= actions_.size()) {
         notice_->setText(
             actions_.isEmpty()
@@ -180,5 +226,55 @@ void SceneActionEditor::publishFields() {
     }
     if (changed_)
         changed_();
+}
+void SceneActionEditor::updateStructureControls() {
+    const bool valid = key_ && !property("invalidEdits").toBool();
+    kind_->setEnabled(valid);
+    position_->setEnabled(valid);
+    const bool wait = kind_->currentData().toUInt() == 0xe || kind_->currentData().toUInt() == 0xb5;
+    const bool allowed = !wait || position_->currentData(Qt::UserRole + 1).toBool();
+    insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
+    insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
+                                : position_->currentData(Qt::ToolTipRole).toString());
+    bool canRemove = false;
+    QString reason;
+    const int row = list_->currentRow();
+    if (valid && row >= 0 && row < actions_.size()) {
+        try {
+            SceneActions::remove(project_->scenePrograms()->program(key_), actions_[row].command);
+            canRemove = true;
+        } catch (const std::exception &e) {
+            reason = QString::fromUtf8(e.what());
+        }
+    }
+    remove_->setEnabled(canRemove);
+    remove_->setToolTip(reason);
+}
+void SceneActionEditor::changeStructure(bool remove) {
+    if (!key_ || property("invalidEdits").toBool())
+        return;
+    try {
+        const auto program = project_->scenePrograms()->program(key_);
+        const int row = list_->currentRow();
+        if (remove && (row < 0 || row >= actions_.size()))
+            return;
+        const int command = remove ? actions_[row].command : position_->currentData().toInt();
+        auto next = *project_->scenePrograms();
+        next.replace(
+            key_, (remove ? SceneActions::remove(program, command)
+                          : SceneActions::insert(program, command, kind_->currentData().toUInt()))
+                      .source);
+        editing_ = true;
+        pushSceneProgramChange(project_, undo_, remove ? "Remove scene action" : "Add scene action",
+                               next);
+        editing_ = false;
+        refresh(command);
+        emit commandSelected(command);
+        if (changed_)
+            changed_();
+    } catch (const std::exception &e) {
+        editing_ = false;
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
 }
 } // namespace lordly

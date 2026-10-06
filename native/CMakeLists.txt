@@ -33,7 +33,7 @@ qt_add_resources(lordly_engine chaos_sources PREFIX "/" BASE . FILES game/tools/
 target_sources(lordly_engine PRIVATE engine/background_image.cpp engine/huff_image.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_images.cpp engine/raw_image.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_background_edit.cpp)
-target_sources(lordly_engine PRIVATE engine/scene_actions.cpp)
+target_sources(lordly_engine PRIVATE engine/scene_actions.cpp engine/scene_action_authoring.cpp)
 qt_add_resources(lordly_engine background_edit_sources PREFIX "/" BASE . FILES game/director/background-owners.json)
 target_sources(lordly_engine PRIVATE engine/sprite_object.cpp)
 target_sources(lordly_engine PRIVATE engine/combat_artwork.cpp engine/combat_artwork_export.cpp)

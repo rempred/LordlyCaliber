@@ -84,3 +84,7 @@ Private-ROM cases need the authenticated tools under
 `native/tools/package.ps1` creates a fresh development ZIP. Nothing is published
 by these commands. Qt and other dependency notices, sources and toolchain build
 recipes accompany the ZIP. See `THIRD-PARTY.md`.
+
+The Cutscenes Actions page also adds and removes actions at named script positions.
+Waits preserve native counter spans and adjust later deadlines when possible;
+unsupported control layouts explain why a structured wait cannot be inserted.

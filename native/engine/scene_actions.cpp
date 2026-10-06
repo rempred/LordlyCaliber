@@ -1,13 +1,14 @@
 #include "engine/scene_actions.h"
+#include "engine/scene_action_control.h"
 #include <QRegularExpression>
 #include <limits>
 namespace lordly {
 bool SceneActionField::canonical(quint32 word) const {
-    const auto value = qint64(qint32(word));
+    const auto value = qint64(qint32(word)) - bias;
     return value >= minimum && value <= maximum;
 }
 QString SceneActionField::text(quint32 word) const {
-    return scale == 1 ? QString::number(qint32(word))
+    return scale == 1 ? QString::number(qint64(qint32(word)) - bias)
                       : QString::number(double(qint32(word)) / scale, 'f', 3);
 }
 quint32 SceneActionField::parse(const QString &text) const {
@@ -34,11 +35,12 @@ quint32 SceneActionField::parse(const QString &text) const {
             scale == 1
                 ? "Enter a whole number within this field's range."
                 : "Enter a position or angle with at most three decimal places within its range.");
-    return quint32(value);
+    return quint32(value + bias);
 }
 QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
     QVector<SceneAction> result;
     const auto &commands = program.commands;
+    const auto counterStates = action_detail::counterStates(program);
     for (int i = 0; i < commands.size(); ++i) {
         const auto &c = commands[i];
         SceneAction action{i, 1, {}, {}};
@@ -61,6 +63,30 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Duration (updates)", 1, 1, 1, 2147483647, 4);
             result << action;
             i += 5;
+            continue;
+        }
+        const auto &state = counterStates[i];
+        bool sharedWait = state.known && state.arm >= 0 && i + 3 < commands.size() &&
+                          c.opcode == 0 && commands[i + 1].opcode == 0x80000002 &&
+                          commands[i + 2].opcode == 0x80000000 &&
+                          (commands[i + 3].opcode == 0xe || commands[i + 3].opcode == 0xb5) &&
+                          (commands[i + 3].operands[0] == 0 || commands[i + 3].operands[0] == 2) &&
+                          qint32(commands[i + 3].operands[1]) > state.target;
+        if (sharedWait) {
+            try {
+                action_detail::remainingGates(program, i + 4, qint32(commands[i + 3].operands[1]));
+            } catch (const Error &) {
+                sharedWait = false;
+            }
+        }
+        if (sharedWait) {
+            action.name = commands[i + 3].opcode == 0xb5 ? "Wait (shared counter, A can skip)"
+                                                         : "Wait (shared counter)";
+            action.commandCount = 4;
+            field("Duration (updates)", 1, 1, 1, 2147483647 - state.target, 3);
+            action.fields[0].bias = state.target;
+            result << action;
+            i += 3;
             continue;
         }
         switch (c.opcode) {
@@ -133,7 +159,14 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
             if (!f.canonical(source.operands[f.operand]))
                 throw Error("This source encoding requires the Commands inspector");
             auto result = program;
-            result.commands[action.command + f.commandOffset].operands[f.operand] = f.parse(value);
+            const auto replacement = f.parse(value);
+            if (action.commandCount == 4) {
+                const qint64 target = qint32(source.operands[f.operand]);
+                action_detail::shiftGates(
+                    result, action_detail::remainingGates(program, action.command + 4, target),
+                    qint64(qint32(replacement)) - target);
+            }
+            result.commands[action.command + f.commandOffset].operands[f.operand] = replacement;
             return DirectorProgram::decode(result.encode());
         }
     throw Error("Select a supported scene action");

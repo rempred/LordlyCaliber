@@ -70,6 +70,47 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneActionInsertion() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
+            auto programs = *project.scenePrograms(); SceneId source;
+            for (auto id : programs.scenes()) if (programs.canCreateBlank(id)) { source = id; break; }
+            QVERIFY(source);
+            const auto id = programs.createScene("Desktop action authoring", source, true);
+            project.setScenePrograms(programs.json()); const auto blank = programs.program(id);
+            QUndoStack undo; CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850); editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_VERIFY_WITH_TIMEOUT(scenes->count() > 1000, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) { scenes->setCurrentRow(i); break; }
+            auto actions = editor.findChild<SceneActionEditor *>("sceneActionEditor");
+            auto kind = actions->findChild<QComboBox *>("sceneActionKind");
+            auto position = actions->findChild<QComboBox *>("sceneActionPosition");
+            auto add = actions->findChild<QPushButton *>("sceneActionInsert");
+            auto remove = actions->findChild<QPushButton *>("sceneActionRemove");
+            QCOMPARE(position->count(), 1); QCOMPARE(position->currentData().toInt(), 3);
+            kind->setCurrentIndex(kind->findData(0xe)); QVERIFY(add->isEnabled()); add->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, SceneActions::insert(blank, 3, 0xe).source);
+            auto duration = actions->findChild<QLineEdit *>("sceneActionField0");
+            QVERIFY(duration); duration->setText("7");
+            const auto expected = SceneActions::insert(blank, 3, 0xe, 7).source;
+            QCOMPARE(project.scenePrograms()->program(id).source, expected);
+            duration->setText("-"); QVERIFY(!add->isEnabled()); QVERIFY(!remove->isEnabled());
+            actions->findChild<QPushButton *>("sceneActionDiscard")->click();
+            QVERIFY(remove->isEnabled()); remove->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, expected);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo(); QTemporaryDir work; project.saveFolder(work.path());
+            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(reopened.scenePrograms()->program(id).source, expected);
+            editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
+            QVERIFY(editor.grab().save("native-action-insertion.png"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void structuredSceneActions() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <functional>
 class QUndoStack;
+class QComboBox;
 class QListWidget;
 class QFormLayout;
 class QLabel;
@@ -25,6 +26,10 @@ class SceneActionEditor : public QWidget {
     void showAction();
     void publishFields();
     void validity(bool valid);
+    void updateStructureControls();
+    void changeStructure(bool remove);
+    QComboBox *kind_, *position_;
+    QPushButton *insert_, *remove_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
