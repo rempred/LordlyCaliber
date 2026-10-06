@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+## Blank environment scenes
+
+New scene now offers qualified environment templates as well as the existing room
+templates. Resource classes 1 and 8 must have one explicit initial environment
+request, no additional presentation requests, a matching native launch scan and
+a supported release exit. The existing wipe implementation retains that setup
+and exit. Caller-selected environments, presentation handoffs and unresolved
+parent-event relaunches remain unavailable as blank templates. Room creation is
+unchanged. The dialog labels the two kinds and prefers the selected scene.
+
+`director_tests blankEnvironmentScenes` passed in 1611ms: both classes preserve
+independently expected setup/exit bytes, dispatch setup and release, reject the
+unsupported contexts without mutation, save projects and source-build/export/reopen
+with distinct UUIDs/selectors, valid allocation bounds and CRC. The master ROM stays
+unchanged. Candidate: parent `Test ROMs/native-blank-environment-VdnJSs`.
+The existing room identity/export regression passed; the first new test had an
+incorrect expected service list, corrected to include background setup.
+`ui_tests blankEnvironmentCreationControls authoredSceneCreationControls` passed
+in 1581ms, covering environment selection, creation, undo/redo and persistence,
+plus the existing room editing/duplication workflow. Natural event launch is not
+claimed by these desktop and export checks.
+
 ## Existing class-body action fields
 
 The Actions inspector recognizes native0x2A as Set Actor class and pose. It exposes

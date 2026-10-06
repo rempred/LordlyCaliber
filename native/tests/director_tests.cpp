@@ -262,6 +262,105 @@ class DirectorTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void blankEnvironmentScenes() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            QVector<SceneId> created;
+            for (int type : {1, 8}) {
+                SceneId source;
+                for (const auto &resource : scenes.original().entries()) {
+                    const auto &program = resource.program;
+                    if (program.resourceClass() == type && scenes.canCreateBlank(resource.key) &&
+                        program.source.last(20).first(12) ==
+                            QByteArray::fromHex("0000007d8000000280000000")) {
+                        source = resource.key;
+                        break;
+                    }
+                }
+                QVERIFY(source);
+                const auto original = scenes.program(source);
+                const auto id =
+                    scenes.createScene(QString("Empty environment %1").arg(type), source, true);
+                created << id;
+                const auto blank = scenes.program(id);
+                // Independent byte expectation: one background request and the original exit.
+                QCOMPARE(blank.source, original.source.first(8) + original.source.last(20));
+                QCOMPARE(blank.resourceClass(), type);
+                QCOMPARE(scenes.program(source).source, original.source);
+                DirectorSession session(scenes.runtimeDirectors(),
+                                        scenes.resource(id).selectors.first(), 2);
+                QVector<quint32> calls;
+                QCOMPARE(session.dispatch([&](quint32 op, const QVector<quint32> &, int &) {
+                    calls << op;
+                    return true;
+                }),
+                         LORDLY_DIRECTOR_RELEASE);
+                QCOMPARE(calls, (QVector<quint32>{0x80000006, 0x7d}));
+                const auto accepted = scenes.json();
+                auto refuse = [&](DirectorProgram invalid) {
+                    scenes.replace(source, invalid.encode());
+                    QVERIFY(!scenes.canCreateBlank(source));
+                    const auto before = scenes.json();
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             scenes.createScene("Unsafe template", source, true));
+                    QCOMPARE(scenes.json(), before);
+                    scenes.apply(accepted);
+                };
+                auto invalid = original;
+                invalid.commands[0].operands[0] = quint32(-1);
+                refuse(invalid); // Environment supplied by gameplay state.
+                invalid = original;
+                invalid.commands.insert(1, {0, 0x80000006, {0}});
+                refuse(invalid); // A later setup request would be lost.
+                invalid = blank;
+                invalid.commands.insert(1, {0, 0xbb, {}});
+                refuse(invalid); // Parent event relaunch cannot become an empty handoff.
+                invalid = blank;
+                invalid.commands[1] = {0, 0x39, {0}};
+                refuse(invalid); // Presentation return still needs its caller's context.
+            }
+            QVERIFY(created[0] != created[1]);
+            QVERIFY(scenes.resource(created[0]).selectors != scenes.resource(created[1]).selectors);
+            scenes.validateReferences(project.rom());
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->json(), scenes.json());
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-blank-environment-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            for (const auto &id : created) {
+                QCOMPARE(reopened.scenePrograms()->program(id).source, scenes.program(id).source);
+                QCOMPARE(reopened.scenePrograms()->resource(id).selectors,
+                         scenes.resource(id).selectors);
+            }
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Blank environment candidate:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void changedSceneReferences() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

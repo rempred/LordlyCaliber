@@ -1,12 +1,37 @@
 #include "engine/scene_programs.h"
 #include "engine/dialogues.h"
 #include "engine/legacy_scene_arena.h"
+#include "engine/scene_images.h"
+#include "engine/scene_import.h"
 #include "game/director/control_flow.h"
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QUuid>
 #include <optional>
 namespace lordly {
+namespace {
+DirectorProgram blankSceneProgram(const DirectorProgram &initial) {
+    const auto &bytes = initial.source;
+    if (initial.resourceClass() == 5 && bytes.size() >= 92 && u32(bytes, 0) == 0x80000006 &&
+        u32(bytes, 8) == 0x36 && u32(bytes, 40) == 0x35 &&
+        bytes.last(20) == QByteArray::fromHex("0000007d800000028000000080000001ff000005"))
+        return DirectorProgram::decode(bytes.first(72) + bytes.last(20));
+    const auto &commands = initial.commands;
+    if ((initial.resourceClass() != 1 && initial.resourceClass() != 8) || commands.isEmpty() ||
+        commands.first().opcode != 0x80000006 || commands.first().operands[0] > 32767)
+        throw Error(
+            "Choose a room setup or a fresh environment scene with an explicit background.");
+    for (int i = 1; i < commands.size(); ++i)
+        if (commands[i].opcode == 0x80000006 || commands[i].opcode == 0x80000007)
+            throw Error("This scene has additional presentation requests; duplicate it instead.");
+    if (SceneImages::launch(initial).environment != int(commands.first().operands[0]))
+        throw Error("This scene's launch scan does not match its initial environment request.");
+    const auto blank = wipeSceneProgram(initial);
+    if (blank.commands.size() < 2 || blank.commands[1].opcode != 0x7d)
+        throw Error("A new environment scene needs a supported release exit.");
+    return blank;
+}
+} // namespace
 ScenePrograms ScenePrograms::load(const Rom &rom) {
     ScenePrograms result(Directors::load(rom));
     const auto placement = SceneProgramResources::placement(rom);
@@ -168,10 +193,12 @@ QVector<int> ScenePrograms::availableSelectors() const {
 }
 bool ScenePrograms::canCreateBlank(SceneId source) const {
     const auto initial = program(source);
-    const auto &bytes = initial.source;
-    return initial.resourceClass() == 5 && bytes.size() >= 92 && u32(bytes, 0) == 0x80000006 &&
-           u32(bytes, 8) == 0x36 && u32(bytes, 40) == 0x35 &&
-           bytes.last(20) == QByteArray::fromHex("0000007d800000028000000080000001ff000005");
+    try {
+        blankSceneProgram(initial);
+        return true;
+    } catch (const Error &) {
+        return false;
+    }
 }
 SceneId ScenePrograms::createScene(const QString &name, SceneId source, bool blank) {
     if (name.trimmed().isEmpty() || name.size() > 120)
@@ -180,13 +207,8 @@ SceneId ScenePrograms::createScene(const QString &name, SceneId source, bool bla
     if (free.isEmpty())
         throw Error("No unclaimed scene selectors remain");
     auto initial = program(source);
-    if (blank) {
-        const auto &bytes = initial.source;
-        if (!canCreateBlank(source))
-            throw Error("This scene does not provide the class-five setup and exit needed for a "
-                        "blank scene");
-        initial = DirectorProgram::decode(bytes.first(72) + bytes.last(20));
-    }
+    if (blank)
+        initial = blankSceneProgram(initial);
     if (initial.resourceClass() < 0)
         throw Error("New scenes require a complete resource class");
     const auto uuid = QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-');

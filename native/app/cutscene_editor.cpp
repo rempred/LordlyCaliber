@@ -535,13 +535,16 @@ void CutsceneEditor::createScene(bool blank) {
                 const auto label = id.authoredId.isEmpty()
                                        ? scene.name
                                        : programs().authoredScenes()[id.authoredId].name;
-                templates->addItem(label, id.nativeKey);
+                const auto route =
+                    programs().program(id).resourceClass() == 5 ? "Room" : "Environment";
+                templates->addItem(QString("%1 · %2").arg(route, label), id.nativeKey);
                 templates->setItemData(templates->count() - 1, id.authoredId, Qt::UserRole + 1);
                 if (id == source)
                     templates->setCurrentIndex(templates->count() - 1);
             }
             if (!templates->count())
-                throw Error("This ROM has no intact class-five setup template for a blank scene");
+                throw Error(
+                    "This ROM has no supported room or environment setup for a blank scene");
             layout->addRow("Setup template", templates);
         } else if (source) {
             const auto &scene = programs().resource(source);

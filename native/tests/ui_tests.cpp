@@ -3594,6 +3594,12 @@ class UiTests : public QObject {
                 auto name = dialog->findChild<QLineEdit *>("newSceneName");
                 auto choices = dialog->findChild<QComboBox *>("newSceneTemplate");
                 sawDialog = name && choices && choices->count() > 0;
+                if (choices)
+                    for (int i = 0; i < choices->count(); ++i)
+                        if (choices->itemText(i).startsWith("Room ·")) {
+                            choices->setCurrentIndex(i);
+                            break;
+                        }
                 if (name)
                     name->setText("A new adventure");
                 dialog->accept();
@@ -3662,6 +3668,53 @@ class UiTests : public QObject {
             }
         editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentIndex(1);
         QVERIFY(editor.grab().save("native-new-scene.png"));
+    }
+    void blankEnvironmentCreationControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        editor.resize(1300, 950);
+        editor.show();
+        auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1498, 10000);
+        const SceneId source(0x1fa8bf4 - 0x594284);
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->data(Qt::UserRole).toUInt() == source.nativeKey)
+                list->setCurrentRow(i);
+        QCOMPARE(list->currentItem()->data(Qt::UserRole).toUInt(), source.nativeKey);
+        const auto original = project.scenePrograms()->program(source).source;
+        bool selectedEnvironment = false;
+        QTimer::singleShot(0, &editor, [&] {
+            if (auto dialog = editor.findChild<QDialog *>("sceneCreateDialog")) {
+                auto choices = dialog->findChild<QComboBox *>("newSceneTemplate");
+                selectedEnvironment = choices &&
+                                      choices->currentData().toUInt() == source.nativeKey &&
+                                      choices->currentText().startsWith("Environment ·");
+                dialog->findChild<QLineEdit *>("newSceneName")->setText("A new world scene");
+                dialog->accept();
+            }
+        });
+        editor.findChild<QPushButton *>("sceneCreate")->click();
+        QVERIFY(selectedEnvironment);
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 1);
+        const auto authored = project.scenePrograms()->authoredScenes().first();
+        const auto id = SceneId::authored(authored.id);
+        QCOMPARE(authored.current.source, original.first(8) + original.last(20));
+        QCOMPARE(project.scenePrograms()->program(source).source, original);
+        QCOMPARE(list->currentItem()->data(Qt::UserRole + 1).toString(), authored.id);
+        QCOMPARE(undo.count(), 1);
+        undo.undo();
+        QVERIFY(project.scenePrograms()->authoredScenes().isEmpty());
+        undo.redo();
+        QCOMPARE(project.scenePrograms()->program(id).source, authored.current.source);
+        QTemporaryDir work;
+        project.saveFolder(work.filePath("project"));
+        auto reopened = Project::fromRom(project.rom());
+        reopened.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(reopened.scenePrograms()->program(id).source, authored.current.source);
     }
     void sceneCommandEditingAndPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
