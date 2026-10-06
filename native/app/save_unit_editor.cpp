@@ -22,6 +22,31 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     note_ = new QLabel;
     note_->setWordWrap(true);
     layout->addWidget(note_);
+    auto creation = new QHBoxLayout;
+    creation->addWidget(new QLabel("New squad leader"));
+    newLeader_ = new QComboBox;
+    newLeader_->setObjectName("saveNewUnitLeader");
+    creation->addWidget(newLeader_, 1);
+    creation->addWidget(new QLabel("Formation cell"));
+    newCell_ = new QComboBox;
+    newCell_->setObjectName("saveNewUnitCell");
+    for (int cell = 0; cell < 9; ++cell)
+        newCell_->addItem(QString::number(cell + 1), cell);
+    newCell_->setCurrentIndex(4);
+    creation->addWidget(newCell_);
+    create_ = new QPushButton("Create squad");
+    create_->setObjectName("saveCreateUnit");
+    creation->addWidget(create_);
+    layout->addLayout(creation);
+    connect(create_, &QPushButton::clicked, this, [this] {
+        const int leader = newLeader_->currentData().toInt();
+        if (editor_->createUnit(leader, newCell_->currentData().toInt()))
+            for (int row = 0; row < units_->count(); ++row)
+                for (const auto &unit : editor_->document()->units())
+                    if (unit.index == units_->item(row)->data(Qt::UserRole).toInt() &&
+                        unit.members[0] == leader)
+                        units_->setCurrentRow(row);
+    });
     auto split = new QSplitter;
     layout->addWidget(split, 1);
     units_ = new QListWidget;
@@ -235,8 +260,7 @@ void SaveUnitEditor::refresh() {
     if (editor_->document())
         for (const auto &unit : editor_->document()->units()) {
             auto item = new QListWidgetItem(
-                QString("Squad %1 · %2").arg(unit.index + 1).arg(memberName(unit.members[0])),
-                units_);
+                QString("Squad %1 · %2").arg(unit.label).arg(memberName(unit.members[0])), units_);
             item->setData(Qt::UserRole, unit.index);
             if (unit.index == prior)
                 units_->setCurrentItem(item);
@@ -359,7 +383,7 @@ void SaveUnitEditor::refreshSwapTargets() {
                 eligible |= unit.members[i] < 220;
             if (eligible)
                 targetUnit_->addItem(
-                    QString("Squad %1 · %2").arg(unit.index + 1).arg(memberName(unit.members[0])),
+                    QString("Squad %1 · %2").arg(unit.label).arg(memberName(unit.members[0])),
                     unit.index);
         }
         if (targetUnit_->findData(oldUnit) >= 0)
@@ -398,6 +422,7 @@ void SaveUnitEditor::refreshSwapTargets() {
     discard_->setEnabled(pending);
     draftNote_->setVisible(pending);
     refreshSupplies(pending);
+    refreshCreation(pending);
     const bool enabled = ready && !pending && targetMember_->currentIndex() >= 0;
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"
                                                             : "Swap selected members");
@@ -444,6 +469,27 @@ void SaveUnitEditor::refreshSwapTargets() {
     swap_->setToolTip(pending ? "Apply squad edits before moving members"
                               : "Move or swap nonleaders, retaining Unity and Soldier HP/state; "
                                 "carried items must fit");
+}
+void SaveUnitEditor::refreshCreation(bool pending) {
+    const QSignalBlocker guard(newLeader_);
+    const int prior = newLeader_->currentData().toInt();
+    newLeader_->clear();
+    bool available = false;
+    if (editor_->document() && editor_->document()->canEditUnits()) {
+        const auto &doc = *editor_->document();
+        for (int id : doc.newUnitLeaders(editor_->project()->classData()))
+            newLeader_->addItem(memberName(id), id);
+        available = doc.units().size() < 30 && newLeader_->count() > 0;
+    }
+    if (newLeader_->findData(prior) >= 0)
+        newLeader_->setCurrentIndex(newLeader_->findData(prior));
+    create_->setEnabled(available && !pending);
+    newLeader_->setEnabled(available && !pending);
+    newCell_->setEnabled(available && !pending);
+    create_->setToolTip(
+        pending ? "Apply squad edits before creating another squad"
+                : "Uses an eligible reserve character and the first unused squad number; "
+                  "starts with zero Unity, Autonomous tactics and no carried items");
 }
 void SaveUnitEditor::refreshSupplies(bool pending) {
     QVector<int> values(10, 0);

@@ -14,6 +14,156 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadCreation() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess process;
+                process.start("node", {QFINDTESTDATA("army-create-mips.cjs"), work.path(), mode});
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing creation fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 42, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal creation fixture");
+                }
+                return out;
+            };
+            QJsonArray eligibility, cases, saves;
+            for (const auto &name : {"create.bin", "create-dead.bin", "create-unavailable.bin"})
+                for (int primary : {1, 2, 33, 44, 83, 163})
+                    for (int secondary : {primary, 2}) {
+                        auto doc = SaveDocument::open(rom, batteryFor(name));
+                        doc.apply(doc.planEdit(SaveTable::Characters, 10, "class", primary), true);
+                        doc.apply(
+                            doc.planEdit(SaveTable::Characters, 10, "secondaryClass", secondary),
+                            true);
+                        eligibility
+                            << QJsonObject{{"primary", primary},
+                                           {"secondary", secondary},
+                                           {"flags", u8(doc.memory(), 0x193bc0 + 10 * 56 + 51)},
+                                           {"hp", u16(doc.memory(), 0x193bc0 + 10 * 56 + 24)},
+                                           {"allowed", doc.newUnitLeaders(classes).contains(10)}};
+                    }
+            for (const auto &name : {"create.bin", "create-empty.bin"}) {
+                const bool empty = QString::fromLatin1(name).contains("empty");
+                const auto battery = batteryFor(name);
+                auto swapped = battery, expanded = battery;
+                for (int i = 0; i < swapped.size(); i += 4) {
+                    std::swap(swapped[i], swapped[i + 3]);
+                    std::swap(swapped[i + 1], swapped[i + 2]);
+                }
+                QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                             unsigned(expanded.size())));
+                for (const auto &input : {battery, swapped, expanded})
+                    for (int slot : {0, 1}) {
+                        auto doc = SaveDocument::open(rom, input);
+                        doc.selectSlot(slot);
+                        const auto before = doc.memory();
+                        const int index = empty ? 0 : 6, label = empty ? 1 : 2,
+                                  count = empty ? 0 : 5;
+                        for (int leader : {10, 11})
+                            for (int cell : {0, 4, 8}) {
+                                const auto change = doc.planCreateUnit(leader, cell, classes);
+                                doc.apply(change, true);
+                                auto expected = before;
+                                QByteArray record(25, 0);
+                                record[0] = char(label);
+                                record[1] = 1;
+                                record[2] = char(leader);
+                                record[7] = char(cell);
+                                const int primary = u8(before, 0x193bc0 + leader * 56 + 17);
+                                record[24] = char(classes.movementType(primary, primary));
+                                expected.replace(0x1971f0 + index * 25, 25, record);
+                                expected[0x1977d8 + index] = char(count);
+                                expected[0x193bc0 + leader * 56 + 51] =
+                                    char(u8(before, 0x193bc0 + leader * 56 + 51) | 2);
+                                QCOMPARE(doc.memory(), expected);
+                                QCOMPARE(doc.units().size(), count + 1);
+                                QVERIFY(!doc.reserveMembers().contains(leader));
+                                auto reopened = SaveDocument::open(rom, doc.serialize());
+                                reopened.selectSlot(slot);
+                                QCOMPARE(reopened.memory(), expected);
+                                if (input == battery && slot == 0) {
+                                    cases << QJsonObject{
+                                        {"leader", leader},
+                                        {"cell", cell},
+                                        {"index", index},
+                                        {"record", QString::fromLatin1(record.toHex())},
+                                        {"before",
+                                         QString::fromLatin1(before.mid(0x1971f0, 750).toHex())},
+                                        {"characters",
+                                         QString::fromLatin1(before.mid(0x193bc0, 5600).toHex())},
+                                        {"order",
+                                         QString::fromLatin1(before.mid(0x1977d8, 30).toHex())},
+                                        {"afterOrder",
+                                         QString::fromLatin1(expected.mid(0x1977d8, 30).toHex())}};
+                                    saves << QJsonObject{
+                                        {"payload", QString::fromLatin1(
+                                                        doc.serialize().mid(0x3a, 6180).toHex())},
+                                        {"units",
+                                         QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                        {"characters",
+                                         QString::fromLatin1(expected.mid(0x193bc0, 5600).toHex())},
+                                        {"order",
+                                         QString::fromLatin1(expected.mid(0x1977d8, 30).toHex())}};
+                                }
+                                const auto saved = doc.serialize();
+                                doc.apply(change, false);
+                                QCOMPARE(doc.serialize(), input);
+                                doc.apply(change, true);
+                                QCOMPARE(doc.serialize(), saved);
+                                doc.apply(change, false);
+                            }
+                        QVERIFY_THROWS_EXCEPTION(Error, doc.planCreateUnit(10, 9, classes));
+                        QVERIFY_THROWS_EXCEPTION(Error, doc.planCreateUnit(100, 4, classes));
+                        doc.selectSlot(15);
+                        QVERIFY_THROWS_EXCEPTION(Error, doc.planCreateUnit(10, 4, classes));
+                        QCOMPARE(doc.serialize(), input);
+                    }
+            }
+            for (const auto &name :
+                 {"create-full.bin", "create-no-record.bin", "create-order-conflict.bin",
+                  "create-number-conflict.bin", "create-dead.bin", "create-unavailable.bin",
+                  "create-no-command.bin", "create-flag-conflict.bin"}) {
+                const auto input = batteryFor(name);
+                auto doc = SaveDocument::open(rom, input);
+                const int leader = QString::fromLatin1(name) == "create-full.bin" ? 40 : 10;
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planCreateUnit(leader, 4, classes));
+                QCOMPARE(doc.serialize(), input);
+            }
+            auto doc = SaveDocument::open(rom, batteryFor("create.bin"));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planCreateUnit(1, 4, classes));
+            auto raw = SaveDocument::open(rom, doc.memory());
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planCreateUnit(10, 4, classes));
+            atomicWrite(
+                work.filePath("create-verify.json"),
+                QJsonDocument(
+                    QJsonObject{{"eligibility", eligibility}, {"cases", cases}, {"saves", saves}})
+                    .toJson());
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void directMemberExchanges() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -146,3 +146,9 @@ moves still reset Unity. HP, companion state, group IDs and the Soldier reserve
 are preserved by direct exchange; native instruction, save roundtrip, UI and
 Undo checks pass. Squad creation/deletion, legion coordination and active-state
 membership edits remain unfinished.
+
+
+Saved player squads can now be created from eligible reserve leaders, including
+an empty army, with native number/record allocation, appended Army order, leader
+flags, initial fields, Undo and export/reopening. Lists display saved squad numbers.
+Deletion, legion coordination and active-state membership remain unfinished.

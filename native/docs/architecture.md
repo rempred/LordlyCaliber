@@ -5049,3 +5049,47 @@ passed browser import,2648 expected program bytes, compilation/export and reopen
 (6.84 s). Evidence directories are parent Test ROMs/native-portable-
 b1a1ef8392704528abc15b7ff9f4211a and portable-scene-import-
 b52082dcc0ea4451859f48c13021a3d4. No clean-machine or natural-game claim.
+
+
+## Creating saved player squads
+
+Regular battery slots now create a squad from an eligible ordinary reserve
+character, including in an empty army. The caller chooses a formation cell. The
+first free player record and unused squad number are assigned; the squad is
+appended to Army order, starts with zero Unity, Autonomous tactics and no carried
+items, and receives the leader's derived movement. Character status bit2 is set.
+Creation is atomic and undoable; other records, inventory and Soldier data remain
+intact. Squad labels in both lists now show the saved squad number rather than
+its storage index. Pending formation drafts disable creation.
+
+Leader eligibility follows the original mode3 selection: ordinary reserve member,
+present class, nonzero paired command type, status flag4 clear and positive current
+HP. Conflicting leader flags, occupied/full saved records, inconsistent existing
+numbers/order, invalid cells and runtime/suspend formats refuse. No inaccessible
+record beyond the30 player slots is allocated. The saved order at RAM801977D8 is
+a rank indexed by saved record; the Army menu temporarily uses it as a list of
+active indexes. The writer inverts that list back to ranks, with a packed empty
+sentinel31. Creating a squad preserves the existing permutation and appends one.
+
+The complete new-squad commit B75C8..B77F0 (552 bytes), allocation/number helpers
+B8600..B86C4 (196 bytes), active initializer B851C..B85B4 (152 bytes), order helper
+BAFA0..BB0CC (300 bytes), and selection function C01DC..C0A30 (2132 bytes) match
+the existing read-only Army snapshot under delta801135A0. The original full writer
+C1D68..C2328 retains its prior qualification. Its live normal record allocation
+scans50 slots; the editor remains within the30 supported player records.
+
+`save_document_tests squadCreation` passed (4564 ms):36 original eligibility cases,
+12 full original creation/persistent-writer sequences,12 original save decodes,
+72 product operations across two input armies, two leaders, three cells, both
+slots and three layouts, whole-memory preservation, Undo and reopen/refusals.
+The fixture initially chose class2, whose command type is zero; correcting it to
+class5 made the intended valid case eligible. The small JS instruction runner
+needed big-endian SWL for the original bzero; a fixture-local extension runs260
+original bzero alignment/length cases with adjacent-byte preservation. No game
+routine was replaced. Existing direct exchange and reserve cases passed in the
+initial5643ms run. `ui_tests saveSquadCreationControls` passed (909 ms), including
+empty-army creation, selected new squad/number, drafts, full/order refusal, Undo,
+export and reopen. Existing exchange/draft/squad UI cases passed in the initial
+4341ms run. Capture inspected. No natural menu or active-state validation claimed.
+
+The complete native build passed (squad-creation-final-build.log).

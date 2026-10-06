@@ -51,6 +51,8 @@ class SaveDocument {
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
     QVector<SaveUnit> units() const;
     QVector<int> reserveMembers() const;
+    QVector<int> newUnitLeaders(const ClassData &) const;
+    SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;
     int reserveSoldiers() const;
     int soldiersInGroup(int member) const;
     SaveChange planSoldierGroup(int toUnit, int cell, const ClassData &) const;

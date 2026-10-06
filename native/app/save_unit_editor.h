@@ -20,12 +20,14 @@ class SaveUnitEditor final : public QWidget {
     void showUnit();
     void drawFormation();
     void refreshSwapTargets();
+    void refreshCreation(bool pending);
     QString memberName(int id) const;
     SaveEditor *editor_;
     QListWidget *units_, *members_;
     QVector<QPushButton *> grid_;
     QSpinBox *unity_;
-    QComboBox *tactic_;
+    QComboBox *tactic_, *newLeader_, *newCell_;
+    QPushButton *create_;
     QComboBox *targetUnit_, *targetMember_;
     QComboBox *reserveMember_, *reserveCell_;
     QPushButton *toReserve_, *fromReserve_, *addSoldier_;

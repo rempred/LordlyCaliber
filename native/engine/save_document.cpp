@@ -618,6 +618,68 @@ QVector<int> SaveDocument::reserveMembers() const {
             result << id;
     return result;
 }
+QVector<int> SaveDocument::newUnitLeaders(const ClassData &classes) const {
+    QVector<int> result;
+    for (int id : reserveMembers()) {
+        const int at = roster + id * stride;
+        const auto pair = memberClasses(id);
+        // Army selection mode3 at C063C..C06B0: command type, assignment,
+        // present primary class, status bit4 clear and positive current HP.
+        if (pair.first < classes.entries().size() && pair.second < classes.entries().size() &&
+            classes.commandType(pair.first, pair.second) && !(u8(ram_, at + 51) & 4) &&
+            u16(ram_, at + 24))
+            result << id;
+    }
+    return result;
+}
+SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Squad creation requires a regular battery-save slot");
+    if (cell < 0 || cell > 8 || !newUnitLeaders(classes).contains(leader))
+        throw Error("Choose an available reserve leader with command ability and positive HP");
+    const auto list = units();
+    if (list.size() >= 30)
+        throw Error("All thirty player squads are in use");
+    QSet<int> labels, ranks;
+    for (const auto &unit : list) {
+        const int rank = u8(ram_, 0x1977d8 + unit.index);
+        if (unit.label < 1 || unit.label > 30 || labels.contains(unit.label) ||
+            rank >= list.size() || ranks.contains(rank))
+            throw Error("Existing squad numbers or Army order are inconsistent; resolve them "
+                        "before creating a squad");
+        labels << unit.label;
+        ranks << rank;
+    }
+    int index = 0, label = 1;
+    while (index < 30 && (u8(ram_, 0x1971f0 + index * 25 + 1) & 1))
+        ++index;
+    if (index == 30)
+        throw Error("No free saved player-squad record is available");
+    while (labels.contains(label))
+        ++label;
+    SaveUnit unit;
+    unit.index = index;
+    unit.label = label;
+    unit.members = {leader, 0, 0, 0, 0};
+    unit.cells = {cell, 0, 0, 0, 0};
+    validateFormation(unit, classes);
+    // New-squad commit B75C8..B77F0 sets first unused number, zero Unity,
+    // tactic and supplies. The persistent writer clears its newly allocated row.
+    QByteArray record(25, 0);
+    put8(record, 0, quint8(label));
+    put8(record, 1, 1);
+    put8(record, 2, quint8(leader));
+    put8(record, 7, quint8(cell));
+    put8(record, 24, quint8(unitMovementType(unit, classes)));
+    auto candidate = *this;
+    candidate.apply(candidate.planBytes(0x1971f0 + index * 25, record), true);
+    const int flag = roster + leader * stride + 51;
+    candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) | 2))), true);
+    // Persistent order is rank indexed by saved record, not a list of record IDs.
+    candidate.apply(candidate.planBytes(0x1977d8 + index, QByteArray(1, char(list.size()))), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 int SaveDocument::reserveSoldiers() const {
     return u8(ram_, 0x190f81);
 }

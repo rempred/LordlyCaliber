@@ -1632,6 +1632,96 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveSquadCreationControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-create-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            auto inputFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing creation fixture");
+                QByteArray out(0x10000, 0);
+                out.replace(0x3a, 6180, file.readAll());
+                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + 0x10),
+                                         0x1850, 0, 0))
+                    throw Error("Cannot seal creation fixture");
+                return out;
+            };
+            const auto input = inputFor("create.bin");
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1150);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto leaders = editor.findChild<QComboBox *>("saveNewUnitLeader");
+            auto cells = editor.findChild<QComboBox *>("saveNewUnitCell");
+            auto create = editor.findChild<QPushButton *>("saveCreateUnit");
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+            QVERIFY(leaders && cells && create && units && unity);
+            leaders->setCurrentIndex(leaders->findData(10));
+            cells->setCurrentIndex(cells->findData(8));
+            QVERIFY(create->isEnabled());
+            unity->setValue(22);
+            QVERIFY(!create->isEnabled());
+            unity->setValue(23);
+            QVERIFY(create->isEnabled());
+            create->click();
+            QCOMPARE(editor.document()->units().size(), 6);
+            QCOMPARE(units->currentItem()->data(Qt::UserRole).toInt(), 6);
+            QVERIFY(units->currentItem()->text().startsWith("Squad 2"));
+            QCOMPARE(unity->value(), 0);
+            QCOMPARE(leaders->findData(10), -1);
+            QCOMPARE(editor.document()->units().last().members[0], 10);
+            QCOMPARE(editor.document()->units().last().cells[0], 8);
+            const auto created = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            QVERIFY(leaders->findData(10) >= 0);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), created);
+            const auto filename = work.filePath("created-squad.SaveRAM");
+            editor.exportFile(filename);
+            QFile file(filename);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
+            units->setCurrentRow(units->count() - 1);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("save-create-squad.png"));
+            editor.loadBytes(inputFor("create-empty.bin"));
+            QCOMPARE(units->count(), 0);
+            QVERIFY(create->isEnabled());
+            leaders->setCurrentIndex(leaders->findData(11));
+            cells->setCurrentIndex(4);
+            create->click();
+            QCOMPARE(units->count(), 1);
+            QCOMPARE(editor.document()->units()[0].members[0], 11);
+            QCOMPARE(editor.document()->units()[0].label, 1);
+            editor.loadBytes(inputFor("create-full.bin"));
+            QVERIFY(!create->isEnabled());
+            editor.loadBytes(inputFor("create-order-conflict.bin"));
+            leaders->setCurrentIndex(leaders->findData(10));
+            create->click();
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("inconsistent"));
+            QCOMPARE(editor.document()->units().size(), 5);
+            editor.loadBytes(editor.document()->memory());
+            QVERIFY(!create->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveDirectExchangeControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
