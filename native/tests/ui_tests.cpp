@@ -656,6 +656,98 @@ class UiTests : public QObject {
             QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("icon-artwork-workspace.png"));
         }catch(const Error &e){QFAIL(e.what());}
     }
+    void spriteUsedColorPicker() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        SpriteEditor editor(&project, &undo, [] {});
+        editor.resize(1500, 900);
+        editor.show();
+        auto asset = SpriteAsset::blank("Color scopes", {300, 1});
+        asset.kind = "sequence";
+        for (int x = 0; x < 300; ++x)
+            asset.frames[0].layers[0].image.setPixel(x, 0,
+                                                     qRgba(x & 255, x >> 8, 17, 64 + x % 128));
+        auto hidden = asset.frames[0].layers[0];
+        hidden.id = SpriteLibrary::newId();
+        hidden.visible = false;
+        hidden.image = QImage(1, 1, QImage::Format_RGBA8888);
+        const QColor hiddenColor(8, 9, 10, 0);
+        hidden.image.fill(hiddenColor);
+        asset.frames[0].layers << hidden;
+        auto second = asset.frames[0];
+        second.id = SpriteLibrary::newId();
+        second.layers.resize(1);
+        second.layers[0].image.fill(QColor(2, 3, 4, 7));
+        asset.frames << second;
+        editor.addAsset(asset);
+        editor.findChild<QListWidget *>("spriteLayers")->setCurrentRow(1);
+        const auto original = project.sprites().json();
+        const auto initialUndo = undo.count();
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<QDialog *>("spriteUsedColorsDialog");
+            QVERIFY(dialog);
+            struct Cleanup {
+                QDialog *d;
+                ~Cleanup() {
+                    if (d->isVisible())
+                        d->reject();
+                }
+            } cleanup{dialog};
+            QTRY_VERIFY_WITH_TIMEOUT(dialog->property("colorsReady").toBool(), 10000);
+            auto scope = dialog->findChild<QComboBox *>("spriteColorScope");
+            auto grid = dialog->findChild<QListWidget *>("spriteUsedColorGrid");
+            auto count = dialog->findChild<QLabel *>("spriteColorCount");
+            QVERIFY(count->text().startsWith("300 used colors"));
+            QCOMPARE(grid->count(), 128);
+            const auto first = grid->item(0)->data(Qt::UserRole);
+            dialog->findChild<QPushButton *>("spriteColorsNext")->click();
+            QVERIFY(grid->item(0)->data(Qt::UserRole) != first);
+            scope->setCurrentIndex(2);
+            scope->setCurrentIndex(0);
+            scope->setCurrentIndex(1);
+            QTRY_VERIFY_WITH_TIMEOUT(dialog->property("colorsReady").toBool(), 10000);
+            QVERIFY(count->text().startsWith("301 used colors"));
+            scope->setCurrentIndex(2);
+            QTRY_VERIFY_WITH_TIMEOUT(dialog->property("colorsReady").toBool(), 10000);
+            QVERIFY(count->text().startsWith("302 used colors"));
+            auto item = grid->item(0);
+            QCOMPARE(item->data(Qt::UserRole).toUInt(), hiddenColor.rgba());
+            grid->setFocus();
+            QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              grid->visualItemRect(item).center());
+            QTest::keyClick(grid, Qt::Key_Right);
+            QTest::keyClick(grid, Qt::Key_Left);
+            QCOMPARE(grid->currentItem()->data(Qt::UserRole).toUInt(), hiddenColor.rgba());
+            QVERIFY(dialog->grab().save("sprite-used-colors.png"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        editor.findChild<QPushButton *>("spriteUsedColors")->click();
+        QCOMPARE(editor.findChild<QPushButton *>("spriteColor")->text(),
+                 hiddenColor.name(QColor::HexArgb));
+        QCOMPARE(project.sprites().json(), original);
+        QCOMPARE(undo.count(), initialUndo);
+        QTimer::singleShot(0, &editor, [&] {
+            auto d = editor.findChild<QDialog *>("spriteUsedColorsDialog");
+            QVERIFY(d);
+            d->findChild<QComboBox *>("spriteColorScope")->setCurrentIndex(2);
+            d->reject();
+        });
+        editor.findChild<QPushButton *>("spriteUsedColors")->click();
+        QCOMPARE(editor.findChild<QPushButton *>("spriteColor")->text(),
+                 hiddenColor.name(QColor::HexArgb));
+        QCOMPARE(project.sprites().json(), original);
+        QCOMPARE(undo.count(), initialUndo);
+        auto canvas = editor.findChild<SpriteCanvas *>();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(2 * canvas->zoom() + 2, 2));
+        QCOMPARE(project.sprites().asset(asset.id).frames[0].layers[0].image.pixelColor(2, 0),
+                 hiddenColor);
+        undo.undo();
+        QCOMPARE(project.sprites().json(), original);
+    }
     void spriteWorkspaceEditing() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

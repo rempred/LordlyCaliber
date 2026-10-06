@@ -1,5 +1,6 @@
 #include "app/sprite_editor.h"
 #include "app/art_image_assignment.h"
+#include "app/sprite_color_dialog.h"
 #include <QApplication>
 #include <QBuffer>
 #include <QCheckBox>
@@ -210,6 +211,18 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
         if (color.isValid())
             updateColor(color);
     });
+    connect(
+        button(tools, "Used colors...", "spriteUsedColors"), &QPushButton::clicked, this, [this] {
+            play_->setChecked(false);
+            canvas_->cancelStroke();
+            if (const auto asset = current()) {
+                const int frame = frames_->currentRow();
+                const int layer =
+                    int(asset->frames[frame].layers.size()) - 1 - layers_->currentRow();
+                if (const auto color = chooseSpriteUsedColor(this, *asset, frame, layer, color_))
+                    updateColor(*color);
+            }
+        });
     tools->addWidget(new QLabel("Brush"));
     auto brush = spin("spriteBrush", 1, 64);
     tools->addWidget(brush);

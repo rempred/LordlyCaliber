@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Stored sprite-color picker
+
+Sprite studio can browse colors stored in the selected layer, current frame or
+entire sequence and reuse an exact RGBA value for painting. Hidden layers and RGB
+under zero alpha are included. The picker pauses playback, presents128 swatches
+per page with keyboard navigation and RGBA labels, and does not edit project data
+or undo history when choosing/cancelling a color.
+
+The engine collects four-byte color words within the existing64-million-pixel
+asset budget, sorts by alpha then RGB, removes duplicates and releases spare
+storage. It avoids an unbounded widget population and the larger per-entry cost of
+a hash set. Collection and sorting have cancellation checks. The dialog serializes
+background jobs, cancels superseded scopes and accepts only the latest result.
+Read-only access to the shared result avoids a large copy on the UI thread.
+Workers capture asset/token values and retain no UI references after cancellation.
+
+`sprite_library_tests usedColors` passed in7ms: hand-specified RGBA scopes, duplicate
+removal, invisible layers, distinct hidden RGB, invalid selections, unchanged input
+and cancellation during collection/sorting. `ui_tests spriteUsedColorPicker
+spriteWorkspaceEditing` passed in501ms: rapid scope changes,128-color paging,
+keyboard selection, exact alpha-zero painting, cancellation, unchanged project and
+undo until painting, and the existing sprite editing regression. The picker capture
+was inspected. Collection speed on maximum-budget projects has not been benchmarked;
+these checks establish behavior and cancellation, not a worst-case timing guarantee.
+
+
 ## Repeat-briefing confirmation and shared preset queries
 
 Main panel preset2 now opens the current-ROM repeat-briefing confirmation through

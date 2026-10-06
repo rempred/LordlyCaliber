@@ -1,11 +1,12 @@
 #include "engine/project.h"
+#include "engine/sprite_colors.h"
+#include "engine/sprite_sources.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
-#include "engine/sprite_sources.h"
 using namespace lordly;
 namespace {
 QByteArray pixels(const QImage &image) {
@@ -60,6 +61,48 @@ QVector<SpriteAsset> examples() {
 class SpriteLibraryTests : public QObject {
     Q_OBJECT
   private slots:
+    void usedColors() {
+        auto asset = SpriteAsset::blank("Stored colors", {3, 1});
+        asset.kind = "sequence";
+        const QRgb hidden = qRgba(11, 22, 33, 0), red = qRgba(200, 20, 10, 128),
+                   blue = qRgba(0, 0, 200, 255), green = qRgba(0, 100, 0, 64);
+        auto &layer = asset.frames[0].layers[0];
+        layer.image.setPixel(0, 0, hidden);
+        layer.image.setPixel(1, 0, red);
+        layer.image.setPixel(2, 0, hidden);
+        auto invisible = layer;
+        invisible.id = SpriteLibrary::newId();
+        invisible.visible = false;
+        invisible.image = QImage(1, 1, QImage::Format_RGBA8888);
+        invisible.image.fill(QColor::fromRgba(blue));
+        asset.frames[0].layers << invisible;
+        auto second = asset.frames[0];
+        second.id = SpriteLibrary::newId();
+        second.layers.resize(1);
+        second.layers[0].image.fill(QColor::fromRgba(green));
+        asset.frames << second;
+        const auto before = asset;
+        QCOMPARE(*spriteUsedColors(asset, SpriteColorScope::Layer, 0, 0),
+                 (QVector<QRgb>{hidden, red}));
+        QCOMPARE(*spriteUsedColors(asset, SpriteColorScope::Frame, 0, 0),
+                 (QVector<QRgb>{hidden, red, blue}));
+        QCOMPARE(*spriteUsedColors(asset, SpriteColorScope::Sequence, 0, 0),
+                 (QVector<QRgb>{hidden, green, red, blue}));
+        QCOMPARE(*spriteUsedColors(asset, SpriteColorScope::Layer, 0, 1), (QVector<QRgb>{blue}));
+        QCOMPARE(asset, before);
+        QVERIFY_THROWS_EXCEPTION(Error, spriteUsedColors(asset, SpriteColorScope(9), 0, 0));
+        QVERIFY_THROWS_EXCEPTION(Error, spriteUsedColors(asset, SpriteColorScope::Layer, 0, 9));
+        QVERIFY(!spriteUsedColors(asset, SpriteColorScope::Sequence, 0, 0, [] { return true; }));
+        auto large = SpriteAsset::blank("Cancellation", {512, 512});
+        for (int y = 0; y < 512; ++y)
+            for (int x = 0; x < 512; ++x)
+                large.frames[0].layers[0].image.setPixel(x, y,
+                                                         qRgba(x & 255, y & 255, x >> 8, 255));
+        int checks = 0;
+        QVERIFY(!spriteUsedColors(large, SpriteColorScope::Layer, 0, 0,
+                                  [&] { return ++checks == 40; }));
+        QCOMPARE(checks, 40);
+    }
     void gameFramePlacement() {
         ActorFrameLayer first;
         first.metadata = {7, {-1, -1}, 2, 1, 0, 2048, 1024};
