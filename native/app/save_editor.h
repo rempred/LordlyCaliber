@@ -39,6 +39,7 @@ class SaveEditor : public QWidget {
     bool transferUnitMember(int fromUnit, int fromMember, int toUnit, int cell);
     bool moveToReserve(int fromUnit, int fromMember);
     bool addFromReserve(int member, int toUnit, int cell);
+    bool addSoldierGroup(int toUnit, int cell);
     void apply(const SaveChange &, bool forward);
   signals:
     void changed();

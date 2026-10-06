@@ -106,6 +106,12 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     fromReserve_ = new QPushButton("Add reserve character to this squad");
     fromReserve_->setObjectName("saveAddFromReserve");
     body->addWidget(fromReserve_);
+    soldierPool_ = new QLabel;
+    soldierPool_->setObjectName("saveSoldierPool");
+    body->addWidget(soldierPool_);
+    addSoldier_ = new QPushButton("Create Soldier group in this squad");
+    addSoldier_->setObjectName("saveAddSoldierGroup");
+    body->addWidget(addSoldier_);
     auto suppliesGroup = new QGroupBox("Carried items");
     auto suppliesLayout = new QGridLayout(suppliesGroup);
     suppliesLayout->setColumnStretch(1, 1);
@@ -188,6 +194,11 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
                                     units_->currentItem()->data(Qt::UserRole).toInt(),
                                     reserveCell_->currentData().toInt());
     });
+    connect(addSoldier_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->addSoldierGroup(units_->currentItem()->data(Qt::UserRole).toInt(),
+                                     reserveCell_->currentData().toInt());
+    });
     connect(editor_, &SaveEditor::refreshed, this, [this] { refresh(); });
     refresh();
 }
@@ -201,7 +212,7 @@ QString SaveUnitEditor::memberName(int id) const {
     if (id >= 220)
         return QString("Unknown member %1").arg(id);
     if (id >= 100)
-        return QString("Soldiers %1").arg(id - 99);
+        return QString("Soldier group %1").arg(id - 99);
     try {
         return editor_->document()->value(SaveTable::Characters, id, "name").toString();
     } catch (const Error &) {
@@ -262,13 +273,13 @@ void SaveUnitEditor::showUnit() {
         }
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
-    note_->setText(editable
-                       ? "Edit formations, Unity, tactics and carried items. Move ordinary "
-                         "nonleaders between squads or "
-                         "reserve. Membership changes reset affected squads' Unity and recalculate "
-                         "movement type."
-                       : "Squads are read-only in suspend saves and runtime states. Formation "
-                         "edits require a regular battery-save slot.");
+    note_->setText(
+        editable ? "Edit formations, Unity, tactics and carried items. Move ordinary nonleaders "
+                   "between squads or reserve, or create/disband Soldier groups. Ordinary "
+                   "membership changes reset Unity; Soldier reserve changes retain it. "
+                   "Movement type is recalculated."
+                 : "Squads are read-only in suspend saves and runtime states. Formation "
+                   "edits require a regular battery-save slot.");
     apply_->setEnabled(editable && !ids_.isEmpty());
     unity_->setEnabled(apply_->isEnabled());
     tactic_->setEnabled(apply_->isEnabled());
@@ -305,12 +316,14 @@ void SaveUnitEditor::refreshSwapTargets() {
               oldCell = reserveCell_->currentData().toInt();
     reserveMember_->clear();
     reserveCell_->clear();
-    bool ready = false, pending = false;
+    bool ready = false, returnReady = false, soldier = false, pending = false;
+    int pool = 0, returning = 0;
     bool acceptsReserve = false;
     if (editor_->document() && units_->currentItem()) {
         const auto &doc = *editor_->document();
         const int selected = units_->currentItem()->data(Qt::UserRole).toInt();
         const auto all = doc.units();
+        pool = doc.reserveSoldiers();
         for (int id : doc.reserveMembers())
             reserveMember_->addItem(memberName(id), id);
         for (const auto &unit : all) {
@@ -364,8 +377,12 @@ void SaveUnitEditor::refreshSwapTargets() {
         if (targetMember_->findData(oldMember) >= 0)
             targetMember_->setCurrentIndex(targetMember_->findData(oldMember));
         const int member = members_->currentRow();
-        ready = doc.canEditUnits() && member > 0 && member < ids_.size() && ids_[member] > 0 &&
-                ids_[member] < 100;
+        returnReady = doc.canEditUnits() && member > 0 && member < ids_.size() &&
+                      ids_[member] > 0 && ids_[member] < 220;
+        soldier = returnReady && ids_[member] >= 100;
+        ready = returnReady && !soldier;
+        if (soldier)
+            returning = doc.soldiersInGroup(ids_[member]);
     }
     editor_->setUnitDraftPending(pending);
     units_->setEnabled(!pending);
@@ -382,15 +399,29 @@ void SaveUnitEditor::refreshSwapTargets() {
         reserveMember_->setCurrentIndex(reserveMember_->findData(oldReserve));
     if (reserveCell_->findData(oldCell) >= 0)
         reserveCell_->setCurrentIndex(reserveCell_->findData(oldCell));
-    toReserve_->setEnabled(ready && !pending);
+    toReserve_->setEnabled(returnReady && !pending);
+    toReserve_->setText(soldier ? "Disband selected Soldier group"
+                                : "Move selected member to reserve");
+    soldierPool_->setText(QString("Soldiers in reserve: %1").arg(pool));
+    const bool freeCell = acceptsReserve && !pending && reserveCell_->currentIndex() >= 0;
+    addSoldier_->setEnabled(freeCell && pool > 0);
+    addSoldier_->setText(QString("Create group from %1 reserve Soldiers").arg(std::min(3, pool)));
+    addSoldier_->setToolTip(pending ? "Apply squad edits before creating a group"
+                                    : "Uses the selected empty cell and the first free saved group "
+                                      "slot. Unity is retained.");
     const bool canAdd = acceptsReserve && !pending && reserveMember_->currentIndex() >= 0 &&
                         reserveCell_->currentIndex() >= 0;
     fromReserve_->setEnabled(canAdd);
     reserveMember_->setEnabled(canAdd);
-    reserveCell_->setEnabled(canAdd);
+    reserveCell_->setEnabled(freeCell);
     toReserve_->setToolTip(
         pending ? "Apply squad edits before moving members"
-                : "Move the selected ordinary nonleader to reserve; carried items must still fit");
+        : soldier
+            ? QString("Returns %1 Soldiers based on current HP, clears the group HP/state, "
+                      "and retains Unity. Carried items must still fit.")
+                  .arg(returning)
+            : QString(
+                  "Move the selected ordinary nonleader to reserve; carried items must still fit"));
     fromReserve_->setToolTip(
         pending
             ? "Apply squad edits before moving members"

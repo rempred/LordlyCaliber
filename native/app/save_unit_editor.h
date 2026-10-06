@@ -28,7 +28,8 @@ class SaveUnitEditor final : public QWidget {
     QComboBox *tactic_;
     QComboBox *targetUnit_, *targetMember_;
     QComboBox *reserveMember_, *reserveCell_;
-    QPushButton *toReserve_, *fromReserve_;
+    QPushButton *toReserve_, *fromReserve_, *addSoldier_;
+    QLabel *soldierPool_;
     QPushButton *swap_;
     QPushButton *apply_, *discard_;
     QLabel *draftNote_;

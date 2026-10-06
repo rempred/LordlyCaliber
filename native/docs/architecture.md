@@ -4922,3 +4922,44 @@ check-scene-import-package.ps1 passed browser conversion, compilation/export and
 native-portable-e439ee443334426b8cb77fdf5e8c0d6b and portable-scene-import-
 b72432fc9fd3417d8139cdb123d5ca2c. These local checks are not clean-machine or
 natural-game validation and this package is not a published release.
+
+
+## Soldier reserve lifecycle
+
+Normal battery squads can now disband a Soldier group and create a group from
+reserve. Disband returns the original HP-derived count, clears indexed HP and
+companion state, and preserves Unity. Creation uses the first zero-HP slot,
+consumes up to three reserve Soldiers, gives three the saved maximum HP (one/two
+use floor(maximum/3) each), clears companion state and preserves Unity. Movement
+is recalculated and formation/carrying limits still apply. Maintained host C in
+game/army/soldier_reserve.c reconstructs the two native helpers and creation HP
+block; it is not accepted matching C. Saves continue through the user's ROM codec.
+Unknown fields remain intact and each operation is one Undo change.
+
+The editor refuses overflow, no free slot, a first free slot still assigned to a
+squad, duplicate references, zero resulting HP, invalid/full formations, carried
+items that would no longer fit, and runtime/suspend edits. Ordinary transfers still
+reset Unity. Direct Soldier transfers/swaps, leader changes, ordinary roster
+creation/deletion and active runtime copies remain separate unfinished work.
+The UI has a reserve count, explicit create/disband actions and draft protection.
+
+All relevant bytes matched the existing read-only Army snapshot using qualified
+overlay delta801135A0: B86F8..B876C (116-byte count helper), B86C4..B86F8 (52-byte
+allocation helper), B7EA4..B7FD8 (308-byte removal block), B8160..B8258 (248-byte
+creation block), and BAAD4..BAB6C (152-byte reserve-list helper). No live input or
+new capture was used. The original instruction fixture runs the helpers and field
+blocks, including reserve-list refresh, against synthetic Army allocation.
+
+`save_document_tests soldierReserveLifecycle reserveMembership squadTransfers
+squadSupplies` passed the new lifecycle, transfer and supply cases (4120 ms run).
+The old reserve case initially still expected Soldier removal to throw; after
+updating that expectation, `reserveMembership` passed (787 ms). New reference
+coverage is59 HP counts,4 allocation scans,54 creation cases,126 removals and6
+packed saves decoded by original instructions. Whole-memory, three battery
+layouts, Undo, reopened files, capacity and malformed-input checks pass.
+`ui_tests saveSoldierReserveControls saveSquadEditing saveSquadDraftProtection`
+passed (3293 ms); the two UI cases affected by clarified group labels/help passed
+again (1823 ms). The final capture was inspected. Natural Army-menu execution,
+full-game behavior and active-state editing are not claimed by these checks.
+
+The complete native build passed (soldier-reserve-final-build.log).

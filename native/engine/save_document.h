@@ -51,6 +51,9 @@ class SaveDocument {
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
     QVector<SaveUnit> units() const;
     QVector<int> reserveMembers() const;
+    int reserveSoldiers() const;
+    int soldiersInGroup(int member) const;
+    SaveChange planSoldierGroup(int toUnit, int cell, const ClassData &) const;
     bool canEditUnits() const;
     static QVector<int> carryableItems(const Project &);
     int maximumUnitSupply(int index, int slot) const;
@@ -96,6 +99,7 @@ class SaveDocument {
     QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;
     int unitMovementType(const SaveUnit &, const ClassData &) const;
-    SaveChange planMembershipChange(const QVector<SaveUnit> &, const ClassData &) const;
+    SaveChange planMembershipChange(const QVector<SaveUnit> &, const ClassData &,
+                                    bool resetUnity = true) const;
 };
 } // namespace lordly

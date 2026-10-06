@@ -1,6 +1,8 @@
 #include "engine/project.h"
 #include "engine/save_document.h"
 #include "game/classes/save_format.h"
+#include "game/army/soldier_reserve.h"
+#include <array>
 #include <QFile>
 #include <QJsonDocument>
 #include <QProcess>
@@ -11,6 +13,215 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void soldierReserveLifecycle() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess process;
+                process.start("node",
+                              {QFINDTESTDATA("soldier-reserve-mips.cjs"), work.path(), mode});
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing Soldier fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 0x2a, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal Soldier fixture");
+                }
+                return out;
+            };
+            QJsonArray counts, creation, free, removal, saves;
+            for (int maximum : {0, 1, 2, 3, 4, 299, 300, 301, 65535}) {
+                const int third = maximum / 3;
+                for (int hp : QSet<int>{0, 1, third, third + 1, third * 2, third * 2 + 1, maximum,
+                                        std::min(65535, maximum + 1), 65535})
+                    counts << QJsonObject{
+                        {"maximum", maximum},
+                        {"hp", hp},
+                        {"count", int(lordly_soldier_count(quint16(hp), quint16(maximum)))}};
+                for (int pool : {0, 1, 2, 3, 9, 255})
+                    creation << QJsonObject{
+                        {"maximum", maximum},
+                        {"pool", pool},
+                        {"remaining", pool - std::min(3, pool)},
+                        {"hp", int(lordly_soldier_created_hp(quint16(maximum),
+                                                             quint8(std::min(3, pool))))}};
+                for (int id : {100, 219})
+                    for (int hp : {0, 1, 100, 101, 200, 201, 65535})
+                        removal << QJsonObject{
+                            {"id", id},
+                            {"maximum", maximum},
+                            {"hp", hp},
+                            {"pool", 9},
+                            {"remaining",
+                             9 + int(lordly_soldier_count(quint16(hp), quint16(maximum)))}};
+            }
+            for (int first : {0, 1, 119, 120}) {
+                std::array<uint16_t, 120> hp;
+                hp.fill(1);
+                if (first < 120)
+                    hp[first] = 0;
+                QJsonArray values;
+                for (auto value : hp)
+                    values << int(value);
+                const int id = lordly_soldier_free_id(hp.data());
+                QCOMPARE(id, 100 + first);
+                free << QJsonObject{{"hp", values}, {"id", id}};
+            }
+            auto capture = [&](const SaveDocument &doc) {
+                const auto bytes = doc.serialize();
+                // Compare original decoding of native and expanded payloads. Swapped
+                // containers are covered by the complete-memory reopen checks.
+                const auto at = lc_save_record_offset(doc.selectedSlot(), doc.expanded());
+                saves << QJsonObject{
+                    {"payload", QString::fromLatin1(bytes.mid(int(at) + 0x2a, 6180).toHex())},
+                    {"soldiers", QString::fromLatin1(doc.memory().mid(0x190f80, 364).toHex())},
+                    {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 750).toHex())}};
+            };
+            const auto battery = batteryFor("unit-payload.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto doc = SaveDocument::open(rom, input);
+                const auto before = doc.memory();
+                QCOMPARE(doc.reserveSoldiers(), 9);
+                QCOMPARE(doc.soldiersInGroup(100), 1);
+                const auto disband = doc.planToReserve(2, 1, classes);
+                doc.apply(disband, true);
+                auto expected = before;
+                expected[0x1971f0 + 2 * 25 + 3] = 0;
+                expected[0x1971f0 + 2 * 25 + 8] = 0;
+                put16(expected, 0x190f84, 0);
+                expected[0x191074] = 0;
+                expected[0x190f81] = 10;
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                QCOMPARE(doc.units()[1].unity, 23);
+                if (input != swapped)
+                    capture(doc);
+                const auto recreate = doc.planSoldierGroup(2, 7, classes);
+                doc.apply(recreate, true);
+                expected = before;
+                put16(expected, 0x190f84, 300);
+                expected[0x191074] = 0;
+                expected[0x190f81] = 7;
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(doc.units()[1].unity, 23);
+                QCOMPARE(doc.soldiersInGroup(100), 3);
+                if (input != swapped)
+                    capture(doc);
+                doc.apply(recreate, false);
+                doc.apply(disband, false);
+                QCOMPARE(doc.serialize(), input);
+                const auto create = doc.planSoldierGroup(0, 1, classes);
+                doc.apply(create, true);
+                expected = before;
+                expected[0x1971f0 + 5] = 101;
+                expected[0x1971f0 + 10] = 1;
+                expected[0x190f81] = 6;
+                put16(expected, 0x190f86, 300);
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                doc.apply(doc.planToReserve(0, 3, classes), true);
+                QCOMPARE(doc.serialize(), input);
+                doc.selectSlot(1);
+                const auto other = doc.planSoldierGroup(0, 1, classes);
+                doc.apply(other, true);
+                QCOMPARE(doc.memory(), expected);
+                doc.apply(other, false);
+                QCOMPARE(doc.serialize(), input);
+                doc.selectSlot(15);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planSoldierGroup(0, 1, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(2, 1, classes));
+            }
+            for (int pool : {1, 2}) {
+                auto doc =
+                    SaveDocument::open(rom, batteryFor(QString("soldier-pool-%1.bin").arg(pool)));
+                const auto before = doc.memory();
+                const auto created = doc.planSoldierGroup(0, 1, classes);
+                doc.apply(created, true);
+                auto expected = before;
+                expected[0x1971f0 + 5] = 101;
+                expected[0x1971f0 + 10] = 1;
+                expected[0x190f81] = 0;
+                put16(expected, 0x190f86, quint16(pool * 100));
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(doc.soldiersInGroup(101), pool);
+                capture(doc);
+                doc.apply(created, false);
+                QCOMPARE(doc.memory(), before);
+            }
+            for (const auto &name : {"soldier-pool-0.bin", "soldier-zero-maximum.bin",
+                                     "soldier-no-free.bin", "soldier-free-assigned.bin"}) {
+                const auto doc = SaveDocument::open(rom, batteryFor(name));
+                const auto before = doc.serialize();
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planSoldierGroup(0, 1, classes));
+                QCOMPARE(doc.serialize(), before);
+            }
+            for (const auto &name : {"soldier-pool-255.bin", "soldier-duplicate.bin"}) {
+                const auto doc = SaveDocument::open(rom, batteryFor(name));
+                const auto before = doc.serialize();
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(2, 1, classes));
+                QCOMPARE(doc.serialize(), before);
+            }
+            auto doc = SaveDocument::open(rom, battery);
+            const auto before = doc.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planSoldierGroup(0, 0, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planSoldierGroup(30, 1, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(2, 0, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(4, 1, classes));
+            auto capacity = classes;
+            auto fighter = capacity.entries()[2];
+            fighter.record[ClassData::itemCapacityOffset] = 0;
+            capacity.set(2, fighter);
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(2, 1, capacity));
+            QCOMPARE(doc.serialize(), before);
+            auto size = classes;
+            auto soldier = size.entries()[1];
+            soldier.record[ClassData::unitSizeOffset] = 5;
+            size.set(1, soldier);
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planSoldierGroup(0, 1, size));
+            auto full = SaveDocument::open(rom, batteryFor("unit-full-payload.bin"));
+            QVERIFY_THROWS_EXCEPTION(Error, full.planSoldierGroup(5, 6, classes));
+            auto raw = SaveDocument::open(rom, doc.memory());
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planSoldierGroup(0, 1, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planToReserve(2, 1, classes));
+            QFile reference(work.filePath("soldier-verify.json"));
+            QVERIFY(reference.open(QIODevice::WriteOnly));
+            reference.write(QJsonDocument(QJsonObject{{"counts", counts},
+                                                      {"free", free},
+                                                      {"creation", creation},
+                                                      {"removal", removal},
+                                                      {"saves", saves}})
+                                .toJson());
+            reference.close();
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadSupplies() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -484,7 +695,7 @@ class SaveDocumentTests : public QObject {
                 QCOMPARE(doc.serialize(), reserveBytes);
                 doc.apply(remove, false);
                 QCOMPARE(doc.serialize(), input);
-                for (const auto pair : {qMakePair(0, 0), qMakePair(0, 4), qMakePair(2, 1),
+                for (const auto pair : {qMakePair(0, 0), qMakePair(0, 4),
                                         qMakePair(4, 1), qMakePair(30, 1)})
                     QVERIFY_THROWS_EXCEPTION(Error,
                                              doc.planToReserve(pair.first, pair.second, classes));

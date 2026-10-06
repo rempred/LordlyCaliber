@@ -465,6 +465,20 @@ bool SaveEditor::addFromReserve(int member, int toUnit, int cell) {
         return false;
     }
 }
+bool SaveEditor::addSoldierGroup(int toUnit, int cell) {
+    if (!document_ || !allowImmediateEdit())
+        return false;
+    try {
+        auto change = document_->planSoldierGroup(toUnit, cell, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "create Soldier group"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 bool SaveEditor::allowImmediateEdit() {
     if (!pendingUnitEdits_)
         return true;

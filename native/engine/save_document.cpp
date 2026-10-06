@@ -1,11 +1,13 @@
 #include "engine/save_document.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
+#include "game/army/soldier_reserve.h"
 #include "game/classes/save_format.h"
 #include <QSet>
 #include <QtEndian>
 #include <QtZlib/zlib.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 namespace lordly {
 namespace {
@@ -615,6 +617,61 @@ QVector<int> SaveDocument::reserveMembers() const {
             result << id;
     return result;
 }
+int SaveDocument::reserveSoldiers() const {
+    return u8(ram_, 0x190f81);
+}
+int SaveDocument::soldiersInGroup(int member) const {
+    if (member < 100 || member >= 220)
+        throw Error("Choose a known Soldier group");
+    return lordly_soldier_count(u16(ram_, 0x190f84 + (member - 100) * 2), u16(ram_, 0x190f82));
+}
+SaveChange SaveDocument::planSoldierGroup(int toUnit, int cell, const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Soldier reserve changes require a regular battery-save slot");
+    if (cell < 0 || cell > 8 || !reserveSoldiers())
+        throw Error("Choose an empty cell with Soldiers available in reserve");
+    const auto list = units();
+    const auto found = std::find_if(list.begin(), list.end(),
+                                    [&](const auto &unit) { return unit.index == toUnit; });
+    if (found == list.end())
+        throw Error("Choose an existing saved squad");
+    auto to = *found;
+    int empty = -1;
+    for (int i = 0; i < 5; ++i) {
+        if (to.members[i] && to.cells[i] == cell)
+            throw Error("The destination formation cell is occupied");
+        if (i > 0 && !to.members[i] && empty < 0)
+            empty = i;
+    }
+    if (empty < 0)
+        throw Error("The destination squad has no free member slot");
+    std::array<uint16_t, 120> hp;
+    for (int i = 0; i < 120; ++i)
+        hp[i] = u16(ram_, 0x190f84 + i * 2);
+    const int id = lordly_soldier_free_id(hp.data());
+    if (id >= 220)
+        throw Error("Every saved Soldier group slot is in use");
+    for (const auto &unit : list)
+        if (unit.members.contains(id))
+            throw Error("The first free Soldier HP slot is still assigned to a squad; resolve that "
+                        "conflict first");
+    const int count = std::min(3, reserveSoldiers());
+    const auto newHp = lordly_soldier_created_hp(u16(ram_, 0x190f82), uint8_t(count));
+    if (!newHp)
+        throw Error("The saved Soldier maximum HP cannot create a living group");
+    to.members[empty] = id;
+    to.cells[empty] = cell;
+    auto candidate = *this;
+    candidate.apply(candidate.planMembershipChange({to}, classes, false), true);
+    QByteArray health(2, 0);
+    put16(health, 0, newHp);
+    candidate.apply(candidate.planBytes(0x190f84 + (id - 100) * 2, health), true);
+    candidate.apply(candidate.planBytes(0x191074 + id - 100, QByteArray(1, 0)), true);
+    candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(reserveSoldiers() - count))),
+                    true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 QPair<int, int> SaveDocument::memberClasses(int id) const {
     if (id <= 0 || id >= 220)
         throw Error("Formation editing for unknown member IDs is not supported");
@@ -769,7 +826,7 @@ SaveChange SaveDocument::planToReserve(int fromUnit, int fromMember,
     if (!canEditUnits())
         throw Error("Reserve moves require a regular battery-save slot");
     if (fromMember < 1 || fromMember > 4)
-        throw Error("Choose an ordinary nonleader member to move to reserve");
+        throw Error("Choose a nonleader member to return to reserve");
     const auto list = units();
     const auto found = std::find_if(list.begin(), list.end(),
                                     [&](const auto &unit) { return unit.index == fromUnit; });
@@ -777,17 +834,28 @@ SaveChange SaveDocument::planToReserve(int fromUnit, int fromMember,
         throw Error("Choose an existing saved squad");
     auto from = *found;
     const int id = from.members[fromMember];
-    if (id < 1 || id >= 100)
-        throw Error("Only ordinary characters can move to reserve here");
+    if (id < 1 || id >= 220)
+        throw Error("Choose an ordinary character or known Soldier group");
     memberClasses(id); // A dangling squad reference must not become a missing reserve character.
     int references = 0;
     for (const auto &unit : list)
         references += int(std::count(unit.members.begin(), unit.members.end(), id));
-    if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
+    if (references != 1 || (id < 100 && (u8(ram_, roster + id * stride + 51) & 2)))
         throw Error("Selected character has conflicting squad or leader membership");
     from.members[fromMember] = 0;
     from.cells[fromMember] = 0;
-    return planMembershipChange({from}, classes);
+    if (id < 100)
+        return planMembershipChange({from}, classes);
+    const int count = soldiersInGroup(id), pool = reserveSoldiers();
+    if (pool + count > 255)
+        throw Error("Returning this group would overflow the saved Soldier reserve");
+    auto candidate = *this;
+    candidate.apply(candidate.planMembershipChange({from}, classes, false), true);
+    candidate.apply(candidate.planBytes(0x190f84 + (id - 100) * 2, QByteArray(2, 0)), true);
+    candidate.apply(candidate.planBytes(0x191074 + id - 100, QByteArray(1, 0)), true);
+    candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(pool + count))), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
 }
 SaveChange SaveDocument::planFromReserve(int member, int toUnit, int cell,
                                          const ClassData &classes) const {
@@ -824,7 +892,7 @@ int SaveDocument::unitMovementType(const SaveUnit &unit, const ClassData &classe
     return classes.unitMovementType(members, movementOrder_);
 }
 SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
-                                              const ClassData &classes) const {
+                                              const ClassData &classes, bool resetUnity) const {
     auto candidate = *this;
     for (const auto &unit : changed) {
         validateFormation(unit, classes);
@@ -846,7 +914,8 @@ SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
         }
         // Ordinary removal B7FC8 and normal placement B8294..B82A8 clear Unity.
         // The membership finalizer then recalculates active+29 -> saved+24.
-        put8(record, 12, 0);
+        if (resetUnity)
+            put8(record, 12, 0);
         put8(record, 24, quint8(unitMovementType(unit, classes)));
         candidate.apply(candidate.planBytes(at, record), true);
     }
