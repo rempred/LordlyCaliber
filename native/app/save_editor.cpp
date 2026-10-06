@@ -366,7 +366,10 @@ bool SaveEditor::edit(SaveTable table, int row, const QString &key, const QVaria
         return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
-        auto change = document_->planEdit(table, row, key, value);
+        auto change =
+            table == SaveTable::Characters && (key == "class" || key == "secondaryClass")
+                ? document_->planCharacterClassEdit(row, key, value, project_->classData())
+                : document_->planEdit(table, row, key, value);
         if (!change.spans.isEmpty())
             undo_->push(new SaveCommand(this, std::move(change), key));
         error_->clear();

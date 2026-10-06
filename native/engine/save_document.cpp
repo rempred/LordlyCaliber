@@ -483,6 +483,36 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
     }
     return planBytes(at, replacement);
 }
+SaveChange SaveDocument::planCharacterClassEdit(int row, const QString &key, const QVariant &value,
+                                                const ClassData &classes) const {
+    if (key != "class" && key != "secondaryClass")
+        throw Error("Choose a primary or secondary character class");
+    const auto scalar = planEdit(SaveTable::Characters, row, key, value);
+    if (!canEditUnits() || scalar.spans.isEmpty())
+        return scalar;
+    auto candidate = *this;
+    candidate.apply(scalar, true);
+    QVector<SaveUnit> affected;
+    int references = 0;
+    for (const auto &unit : candidate.units()) {
+        if (!unit.members.contains(row))
+            continue;
+        references += int(std::count(unit.members.begin(), unit.members.end(), row));
+        if (unit.members[0] == row) {
+            const auto pair = candidate.memberClasses(row);
+            if (!classes.commandType(pair.first, pair.second))
+                throw Error(
+                    "This class cannot lead the character's squad; change the squad leader first");
+        }
+        affected << unit;
+    }
+    if (references > 1)
+        throw Error("This character has conflicting squad membership");
+    if (!affected.isEmpty())
+        candidate.apply(candidate.planMembershipChange(affected, classes, false), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const {
     SaveChange result;
     result.slot = slot_;
@@ -1251,6 +1281,9 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     if (prior < 1 || prior >= 100 || next < 1 || next >= 100 || prior == next)
         throw Error("Both leaders must be ordinary characters present in the squad");
     const auto oldClasses = memberClasses(prior), newClasses = memberClasses(next);
+    if (!classes.commandType(newClasses.first, newClasses.second) ||
+        (u8(ram_, roster + next * stride + 51) & 4) || !u16(ram_, roster + next * stride + 24))
+        throw Error("Choose a living, capable member whose class can lead a squad");
     if (lordly_army_fixed_leader(quint8(prior), quint8(oldClasses.first)))
         throw Error("The game keeps this character's class as a fixed squad leader");
     for (int id : {prior, next}) {

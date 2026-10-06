@@ -191,3 +191,9 @@ commander flags and support adding followers within Soldier capacity. Creation,
 reused gaps, disband/recreate, Undo and export/reopen pass original-code and
 desktop checks. Product order deliberately avoids the original vacant-slot
 writer's duplicate-entry defect. Save consistency and roster lifecycle remain.
+
+Regular battery primary/secondary character-class edits now coordinate formation,
+carrying capacity, command roles, squad/legion movement and one-step Undo.
+Replacement leader choices refuse non-command classes and incapacitated members.
+Native finalizer/eligibility and table-edit/export checks pass. Cross-slot/current-
+project export consistency remains under audit.

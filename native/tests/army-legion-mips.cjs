@@ -22,6 +22,9 @@ if(mode==='generate'){
   m.w8(squads+2*25+3,0);m.w8(squads+2*25+8,0);for(let i=0;i<4;++i){m.w16(0x80190f84+i*2,83);m.w8(0x80191074+i,2);}
   m.w8(legions+2+missing,255);m.w8(legions+10,7);m.w8(squads+15*25+24,3);m.w8(squads+16*25+24,7);};
  for(let pos=1;pos<5;++pos)variant(`legion-join-${pos}.bin`,()=>joinFixture(pos));
+ const classFixture=()=>{joinFixture(1);m.w8(squads+2*25+3,18);m.w8(squads+2*25+8,8);};
+ variant('legion-class.bin',classFixture);
+ variant('legion-class-carry.bin',()=>{classFixture();for(let i=13;i<=16;++i)m.w8(squads+2*25+i,9);});
  const createFixture=()=>{for(const id of[16,17]){m.w8(roster+id*56+17,33);m.w8(roster+id*56+18,33);}m.w8(squads+15*25+3,104);m.w8(squads+15*25+8,8);m.w16(0x80190f84+8,83);m.w8(0x80191078,2);};
  variant('legion-create-holes.bin',createFixture);
  variant('legion-create-empty.bin',()=>{createFixture();for(const i of[0,2,4])m.w8(legions+i*11+1,0);m.load(order,Buffer.alloc(6,7));});

@@ -14,6 +14,147 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void characterClassCoordination() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess p;
+                p.start("node", {QFINDTESTDATA("army-legion-mips.cjs"), work.path(), mode});
+                if (!p.waitForFinished(30000) || p.exitCode())
+                    throw Error(QString::fromUtf8(p.readAllStandardError()));
+                qInfo().noquote() << p.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing legion fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 42, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal legion fixture");
+                }
+                return out;
+            };
+            QJsonArray cases, saves;
+            const auto battery = batteryFor("legion-class.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            for (const auto &input : {battery, swapped, expanded})
+                for (int slot : {0, 1})
+                    for (bool primary : {false, true}) {
+                        auto doc = SaveDocument::open(rom, input);
+                        doc.selectSlot(slot);
+                        const auto before = doc.memory();
+                        QVERIFY(doc.planCharacterClassEdit(18, "class", 5, project.classData())
+                                    .spans.isEmpty());
+                        SaveChange first;
+                        if (primary) {
+                            first =
+                                doc.planCharacterClassEdit(18, "class", 44, project.classData());
+                            doc.apply(first, true);
+                        }
+                        const auto middle = doc.serialize();
+                        const auto second = doc.planCharacterClassEdit(18, "secondaryClass", 44,
+                                                                       project.classData());
+                        doc.apply(second, true);
+                        auto expected = before;
+                        if (primary)
+                            expected[0x193bc0 + 18 * 56 + 17] = 44;
+                        expected[0x193bc0 + 18 * 56 + 18] = 44;
+                        expected[0x1971f0 + 2 * 25 + 24] = 7;
+                        expected[0x1969c1] = 7;
+                        QCOMPARE(doc.memory(), expected);
+                        auto reopened = SaveDocument::open(rom, doc.serialize());
+                        reopened.selectSlot(slot);
+                        QCOMPARE(reopened.memory(), expected);
+                        if (input == battery && slot == 0) {
+                            cases << QJsonObject{
+                                {"index", 0},
+                                {"changed", QJsonArray{2}},
+                                {"units", QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                {"legions", QString::fromLatin1(before.mid(0x1969b8, 110).toHex())},
+                                {"order", QString::fromLatin1(before.mid(0x193ab0, 6).toHex())},
+                                {"unitOrder",
+                                 QString::fromLatin1(before.mid(0x1977d8, 30).toHex())},
+                                {"afterUnits",
+                                 QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                {"afterLegions",
+                                 QString::fromLatin1(expected.mid(0x1969b8, 110).toHex())},
+                                {"afterOrder",
+                                 QString::fromLatin1(expected.mid(0x193ab0, 6).toHex())},
+                                {"characters",
+                                 QString::fromLatin1(expected.mid(0x193bc0, 5600).toHex())},
+                                {"soldiers",
+                                 QString::fromLatin1(expected.mid(0x190f80, 364).toHex())},
+                                {"inventory",
+                                 QString::fromLatin1(expected.mid(0x193ac0, 160).toHex())}};
+                            saves << QJsonObject{
+                                {"payload",
+                                 QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                                {"units", QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                {"legions",
+                                 QString::fromLatin1(expected.mid(0x1969b8, 110).toHex())},
+                                {"order", QString::fromLatin1(expected.mid(0x193ab0, 6).toHex())}};
+                        }
+                        const auto saved = doc.serialize();
+                        doc.apply(second, false);
+                        QCOMPARE(doc.serialize(), middle);
+                        doc.apply(second, true);
+                        QCOMPARE(doc.serialize(), saved);
+                        doc.apply(second, false);
+                        if (primary)
+                            doc.apply(first, false);
+                        QCOMPARE(doc.serialize(), input);
+                        const auto reserve = doc.planCharacterClassEdit(19, "secondaryClass", 55,
+                                                                        project.classData());
+                        doc.apply(reserve, true);
+                        auto reserveExpected = before;
+                        reserveExpected[0x193bc0 + 19 * 56 + 18] = 55;
+                        QCOMPARE(doc.memory(), reserveExpected);
+                        doc.apply(reserve, false);
+                        QCOMPARE(doc.serialize(), input);
+                        QVERIFY_THROWS_EXCEPTION(
+                            Error, doc.planCharacterClassEdit(18, "secondaryClass", 55,
+                                                              project.classData()));
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 doc.planCharacterClassEdit(1, "secondaryClass", 5,
+                                                                            project.classData()));
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 doc.planCharacterClassEdit(16, "secondaryClass", 2,
+                                                                            project.classData()));
+                        QVERIFY_THROWS_EXCEPTION(
+                            Error, doc.planCharacterClassEdit(18, "level", 5, project.classData()));
+                        QCOMPARE(doc.serialize(), input);
+                    }
+            auto carry = SaveDocument::open(rom, batteryFor("legion-class-carry.bin"));
+            const auto unchanged = carry.serialize();
+            QVERIFY_THROWS_EXCEPTION(
+                Error, carry.planCharacterClassEdit(18, "secondaryClass", 10, project.classData()));
+            QCOMPARE(carry.serialize(), unchanged);
+            atomicWrite(work.filePath("legion-coordination-verify.json"),
+                        QJsonDocument(QJsonObject{{"cases", cases}, {"saves", saves}}).toJson());
+            run("verify-coordination");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void legionCreation() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -1520,7 +1661,8 @@ class SaveDocumentTests : public QObject {
             for (const auto &name :
                  {"fixed-leader-81.bin", "fixed-leader-82.bin", "fixed-leader-83.bin",
                   "fixed-leader-163.bin", "commander-bad.bin", "commander-pair.bin",
-                  "leader-conflict.bin", "leader-duplicate.bin", "leader-missing.bin"}) {
+                  "leader-conflict.bin", "leader-duplicate.bin", "leader-missing.bin",
+                  "leader-no-command.bin", "leader-dead.bin", "leader-incapacitated.bin"}) {
                 const auto doc = SaveDocument::open(rom, batteryFor(name), 166);
                 const auto before = doc.serialize();
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitLeader(0, 1, classes));

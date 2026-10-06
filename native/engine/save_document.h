@@ -53,6 +53,8 @@ class SaveDocument {
     QVector<SaveField> fields(SaveTable) const;
     QVariant value(SaveTable, int row, const QString &key) const;
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
+    SaveChange planCharacterClassEdit(int row, const QString &key, const QVariant &,
+                                      const ClassData &) const;
     QVector<SaveUnit> units() const;
     QVector<SaveLegion> legions() const;
     SaveChange planDisbandLegion(int index) const;

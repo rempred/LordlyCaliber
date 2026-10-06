@@ -1632,6 +1632,65 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveCharacterClassCoordination() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-legion-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("legion-class.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1200);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto grid = editor.findChild<QTableView *>("saveCharacters");
+            auto fields = editor.document()->fields(SaveTable::Characters);
+            const auto field = std::find_if(fields.begin(), fields.end(), [](const auto &value) {
+                return value.key == "secondaryClass";
+            });
+            QVERIFY(grid && field != fields.end());
+            const int column = int(field - fields.begin()) + 1;
+            const int row = editor.document()->rows(SaveTable::Characters).indexOf(18);
+            QVERIFY(row >= 0);
+            QVERIFY(grid->model()->setData(grid->model()->index(row, column), 44, Qt::EditRole));
+            QCOMPARE(u8(editor.document()->memory(), 0x1971f0 + 2 * 25 + 24), quint8(7));
+            QCOMPARE(u8(editor.document()->memory(), 0x1969c1), quint8(7));
+            QCOMPARE(editor.undoStack()->count(), 1);
+            const auto result = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), result);
+            QVERIFY(!editor.edit(SaveTable::Characters, 1, "secondaryClass", 5));
+            QCOMPARE(editor.document()->serialize(), result);
+            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("command"));
+            const auto filename = work.filePath("class-coordinated.SaveRAM");
+            editor.exportFile(filename);
+            QFile file(filename);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveLegionCreationControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

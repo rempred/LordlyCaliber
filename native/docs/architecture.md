@@ -5382,3 +5382,41 @@ Test ROMs: native-portable-bd9e5fc08ec94424a00b3365cc4ae11a and
 portable-scene-import-9ab40efedc624d31a9b571b823b063ea. Package and logs remain
 local development artifacts; no release, clean-machine or natural game test
 is claimed.
+
+
+## Coordinated saved character classes and replacement eligibility
+
+Regular battery character-class edits now use planCharacterClassEdit. Both
+independent class fields validate affected formation size, carried-item capacity,
+squad command ability and legion command requirements before committing. Squad
+and legion movement refresh inside the same Undo action; Unity, positions,
+character stats and unrelated records remain intact. Unassigned reserve edits
+only change the class field. No-op edits do not normalize existing data. Raw
+planEdit remains a low-level scalar operation; runtime/suspend edits retain their
+previous scalar behavior until active-copy coordination exists.
+
+Replacement leaders must also have a nonzero paired command type, positive HP
+and status bit4 clear. The previous fixture's generic class2 has no command
+ability; eligible baseline leaders now use class5. Separate class2, zero-HP and
+incapacitated fixtures exercise refusal. Original C01DC mode5 returns9 for no
+command type and11 for the two incapacitation cases (C09C4/C09C8), rather than
+the initially assumed10. The corrected exact-code expectation passes.
+
+`save_document_tests characterClassCoordination squadLeaderChanges
+legionSquadCoordination` passed the new class and existing legion cases (7408ms
+run); the new exact eligibility-code assertion initially failed. After tracing
+the native branch, `squadLeaderChanges` passed in1858ms, including four original
+eligibility decisions and all prior fixed-leader/type/setter/codec checks.
+Class coverage includes both slots/three layouts, secondary-only and combined
+primary/secondary edits (18 scalar edits), two original finalizer/store sequences
+and two save decodes, whole-memory preservation, reserve-only changes, size/
+capacity/command refusal, Undo and reopen.
+
+`ui_tests saveCharacterClassCoordination saveLeaderControls saveWorkspaceEditing`
+passed in4008ms. An actual Characters table edit updates both movement fields in
+one Undo, refuses invalid commander changes, and exports/reopens correctly.
+Existing leader and general Save workflows pass. No new visual controls were
+added. Export consistency across slots and later project-Class changes remains
+next; these checks do not claim a natural game class-change menu run.
+
+The complete native build passed (save-class-coordination-final-build.log).
