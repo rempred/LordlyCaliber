@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 #include "engine/project.h"
 #include "game/army/leader.h"
+#include "game/army/character.h"
 #include "game/army/soldier_reserve.h"
 #include "game/classes/save_format.h"
 #include <QSet>
@@ -1047,6 +1048,73 @@ SaveChange SaveDocument::planUnitSupplies(int index, const QVector<int> &supplie
     for (int i = 0; i < 10; ++i)
         put8(record, 13 + i, quint8(supplies[i]));
     return planBytes(at, record);
+}
+int SaveDocument::freeCharacterSlot() const {
+    if (!canEditUnits())
+        return -1;
+    QSet<int> assigned;
+    for (int row = 0; row < 30; ++row) {
+        const int at = 0x1971f0 + row * 25;
+        if (u8(ram_, at + 1) & 1)
+            for (int i = 0; i < 5; ++i)
+                assigned.insert(u8(ram_, at + 2 + i));
+    }
+    for (int id = 1; id < 100; ++id)
+        if (!u8(ram_, roster + id * stride + 17) && !assigned.contains(id))
+            return id;
+    return -1;
+}
+SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
+                                             const ClassData &classes, quint32 seed) const {
+    if (!canEditUnits())
+        throw Error("Character creation requires a regular battery-save slot");
+    const int id = freeCharacterSlot();
+    if (id < 0)
+        throw Error("There is no unassigned empty character slot in this save");
+    if (classId < 1 || classId >= classes.entries().size() || classId >= classCount_)
+        throw Error("Choose a class present in the current ROM project");
+    const int secondary = u8(classes.entries()[classId].record, 69);
+    QByteArray record(stride, 0), table;
+    record[17] = char(classId);
+    record[18] = char(secondary ? secondary : classId);
+    record[52] = char(id);
+    for (const auto &entry : classes.entries())
+        table += entry.record;
+    const auto random = [](void *context) -> uint32_t {
+        auto &state = *static_cast<quint32 *>(context);
+        state = state * 1664525U + 1013904223U;
+        return state >> 1;
+    };
+    if (!lordly_character_level_one(reinterpret_cast<uint8_t *>(record.data()),
+                                    reinterpret_cast<const uint8_t *>(table.constData()),
+                                    unsigned(classes.entries().size()), random, &seed))
+        throw Error("The class has an invalid starting or secondary class reference");
+    if (u8(record, 20) > 7 || u8(record, 26) > 4 || u8(record, 27) > 100 || u8(record, 40) > 100 ||
+        !u16(record, 22))
+        throw Error(
+            "The class has unsupported starting body, element, alignment, luck or HP values");
+    for (int at : {22, 28, 30, 32, 34, 36, 38})
+        if (u16(record, at) > 999)
+            throw Error("The class has a starting stat above 999");
+    auto candidate = *this;
+    candidate.apply(candidate.planBytes(roster + id * stride, record), true);
+    candidate.apply(candidate.planEdit(SaveTable::Characters, id, "name", name), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
+SaveChange SaveDocument::planRemoveCharacter(int id) const {
+    if (!canEditUnits())
+        throw Error("Character removal requires a regular battery-save slot");
+    if (!reserveMembers().contains(id))
+        throw Error("Move the character out of their squad before removing them from the roster");
+    for (int row = 0; row < 30; ++row) {
+        const int at = 0x1971f0 + row * 25;
+        if (u8(ram_, at + 1) & 1)
+            for (int i = 0; i < 5; ++i)
+                if (u8(ram_, at + 2 + i) == id)
+                    throw Error("A saved squad still references this character");
+    }
+    return planBytes(roster + id * stride, QByteArray(stride, 0));
 }
 QVector<int> SaveDocument::reserveMembers() const {
     if (!canEditUnits())

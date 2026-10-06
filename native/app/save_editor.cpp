@@ -2,6 +2,8 @@
 #include "app/save_unit_editor.h"
 #include <QAbstractTableModel>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -10,6 +12,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRandomGenerator>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
@@ -246,6 +249,74 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
         grid->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
         grid->horizontalHeader()->setStretchLastSection(true);
         inner->addWidget(grid);
+        if (table == SaveTable::Characters) {
+            auto buttons = new QHBoxLayout;
+            auto add = new QPushButton("Add character…");
+            auto remove = new QPushButton("Remove selected reserve character");
+            add->setObjectName("saveAddCharacter");
+            remove->setObjectName("saveRemoveCharacter");
+            buttons->addWidget(add);
+            buttons->addWidget(remove);
+            buttons->addStretch();
+            inner->addLayout(buttons);
+            const auto selectedId = [grid] {
+                return grid->currentIndex().isValid()
+                           ? grid->model()->index(grid->currentIndex().row(), 0).data().toInt()
+                           : -1;
+            };
+            const auto update = [this, add, remove, selectedId] {
+                add->setEnabled(document_ && document_->freeCharacterSlot() >= 0);
+                remove->setEnabled(document_ && document_->reserveMembers().contains(selectedId()));
+            };
+            connect(this, &SaveEditor::refreshed, this, update);
+            connect(grid->selectionModel(), &QItemSelectionModel::currentChanged, this, update);
+            connect(remove, &QPushButton::clicked, this,
+                    [this, selectedId] { removeCharacter(selectedId()); });
+            connect(add, &QPushButton::clicked, this, [this, grid, search] {
+                if (!document_ || !allowImmediateEdit())
+                    return;
+                const int id = document_->freeCharacterSlot();
+                QDialog dialog(this);
+                dialog.setObjectName("saveNewCharacterDialog");
+                dialog.setWindowTitle("Add reserve character");
+                auto layout = new QVBoxLayout(&dialog);
+                auto note = new QLabel("Creates a level-one reserve character using the current "
+                                       "class’s starting stats. "
+                                       "Random body and Element choices follow the class rules.");
+                note->setWordWrap(true);
+                layout->addWidget(note);
+                auto name = new QLineEdit("Recruit");
+                name->setObjectName("saveNewCharacterName");
+                name->setMaxLength(12);
+                name->setPlaceholderText("Character name");
+                layout->addWidget(name);
+                auto classes = new QComboBox;
+                classes->setObjectName("saveNewCharacterClass");
+                for (const auto &record : project_->records(Table::Classes))
+                    if (record.id)
+                        classes->addItem(QString("%1 — %2").arg(record.id).arg(record.name),
+                                         record.id);
+                classes->setCurrentIndex(classes->findData(5));
+                layout->addWidget(classes);
+                auto actions =
+                    new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+                actions->button(QDialogButtonBox::Ok)->setText("Create character");
+                layout->addWidget(actions);
+                connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+                connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+                if (dialog.exec() == QDialog::Accepted &&
+                    createCharacter(classes->currentData().toInt(), name->text())) {
+                    search->clear();
+                    for (int row = 0; row < grid->model()->rowCount(); ++row)
+                        if (grid->model()->index(row, 0).data().toInt() == id) {
+                            const auto index=grid->model()->index(row,1);
+                            grid->setCurrentIndex(index);
+                            grid->scrollTo(index,QAbstractItemView::PositionAtCenter);
+                        }
+                }
+            });
+            update();
+        }
         connect(search, &QLineEdit::textChanged, filter,
                 &QSortFilterProxyModel::setFilterFixedString);
         tables_->addTab(page, title);
@@ -479,6 +550,32 @@ bool SaveEditor::disbandUnit(int index) {
         auto change = document_->planDisbandUnit(index);
         if (!change.spans.isEmpty())
             undo_->push(new SaveCommand(this, std::move(change), "disband squad"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
+bool SaveEditor::createCharacter(int classId, const QString &name) {
+    if (!document_ || !allowImmediateEdit()) return false;
+    try {
+        document_->setClassCount(int(project_->records(Table::Classes).size()));
+        auto change=document_->planCreateCharacter(classId,name,project_->classData(),QRandomGenerator::global()->generate());
+        undo_->push(new SaveCommand(this, std::move(change), "create reserve character"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
+bool SaveEditor::removeCharacter(int id) {
+    if (!document_ || !allowImmediateEdit())
+        return false;
+    try {
+        auto change = document_->planRemoveCharacter(id);
+        undo_->push(new SaveCommand(this, std::move(change), "remove reserve character"));
         error_->clear();
         return true;
     } catch (const Error &e) {

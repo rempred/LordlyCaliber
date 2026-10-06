@@ -1632,6 +1632,97 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveRosterControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-legion-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("legion-export.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1200, 850);
+            editor.show();
+            editor.loadBytes(input);
+            const int added = project.appendClass(5, "New recruit class");
+            QCOMPARE(added, 165);
+            auto add = editor.findChild<QPushButton *>("saveAddCharacter");
+            auto remove = editor.findChild<QPushButton *>("saveRemoveCharacter");
+            auto grid = editor.findChild<QTableView *>("saveCharacters");
+            QVERIFY(add && remove && grid);
+            QVERIFY(add->isEnabled());
+            QVERIFY(!remove->isEnabled());
+            bool offered = false;
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("saveNewCharacterDialog");
+                if (!dialog)
+                    return;
+                auto choices = dialog->findChild<QComboBox *>("saveNewCharacterClass");
+                auto name = dialog->findChild<QLineEdit *>("saveNewCharacterName");
+                offered = choices && name && choices->findData(added) >= 0;
+                if (!offered) {
+                    dialog->reject();
+                    return;
+                }
+                choices->setCurrentIndex(choices->findData(added));
+                name->setText("Recruit");
+                dialog->accept();
+            });
+            add->click();
+            QVERIFY(offered);
+            QCOMPARE(editor.undoStack()->count(), 1);
+            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "class").toInt(), added);
+            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "name").toString(),
+                     QString("Recruit"));
+            QCOMPARE(grid->model()->index(grid->currentIndex().row(), 0).data().toInt(), 21);
+            QVERIFY(remove->isEnabled());
+            const auto created = editor.document()->serialize();
+            QVERIFY(editor.grab().save("save-roster-controls.png"));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), created);
+            QVERIFY(!editor.removeCharacter(1));
+            QCOMPARE(editor.document()->serialize(), created);
+            auto tabs=editor.findChild<QTabWidget *>();
+            tabs->setCurrentWidget(editor.findChild<QWidget *>("saveSquads"));
+            editor.findChild<QSpinBox *>("saveUnitUnity")->setValue(99);
+            QVERIFY(editor.hasPendingUnitEdits());
+            QVERIFY(!editor.createCharacter(5, "Draft"));
+            QVERIFY(!editor.removeCharacter(21));
+            editor.findChild<QPushButton *>("saveUnitDiscard")->click();
+            tabs->setCurrentIndex(0);
+            for (int row = 0; row < grid->model()->rowCount(); ++row)
+                if (grid->model()->index(row, 0).data().toInt() == 21)
+                    grid->setCurrentIndex(grid->model()->index(row, 1));
+            remove->click();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), created);
+            const auto output = work.filePath("recruited.sra");
+            editor.exportFile(output);
+            QFile result(output);
+            QVERIFY(result.open(QIODevice::ReadOnly));
+            auto reopened = SaveDocument::open(rom, result.readAll(), 166);
+            QCOMPARE(reopened.serialize(), created);
+            QVERIFY(reopened.reserveMembers().contains(21));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveExportConsistency() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

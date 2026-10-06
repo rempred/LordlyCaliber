@@ -5449,3 +5449,26 @@ passed in4676ms, including source preservation, failed atomic writes, both slots
 repeated export and one-step Undo/Redo. Twelve existing Save lifecycle/draft UI
 cases passed in13312ms. Full native build passed (save-export-consistency-final-build.log).
 No natural game-menu execution or active/suspend membership support is claimed.
+
+
+## Saved roster creation and removal
+
+Characters now has Add character and Remove selected reserve character. Creation
+uses the first unassigned empty ID1..99, initializes level-one stats/body/Element/
+alignment/luck through maintained C adapted from resident ROM4501C..453E0, and
+uses the current project's class pair and growth-origin rules. Unknown existing
+records are untouched; the explicitly replaced free record is initialized. Names
+use the battery codec's12-character representation. Equipment overrides start at
+zero (class defaults). Removal requires an unassigned nonleader and checks all
+saved squad references. Both operations use one Undo and regular battery slots;
+active/suspend lifecycle is not inferred.
+
+`save_document_tests characterInitialization characterRosterLifecycle` passed in
+2346ms:1366 original level-one initializer comparisons, both slots/three layouts,
+whole-memory preservation, full roster, invalid inputs, Undo and reopening.
+The new desktop test initially injected an internal draft flag incorrectly;
+it now creates a real Unity draft through the UI. `ui_tests saveRosterControls`
+passed in1339ms: actual dialog/new-class creation, selection, removal/refusal,
+draft protection, Undo and exported-save reopening. Existing saveExportConsistency
+also passed. Final app and UI builds passed (roster-product-build.log). Capture
+inspected. This establishes offline editing, not natural recruitment-menu execution.

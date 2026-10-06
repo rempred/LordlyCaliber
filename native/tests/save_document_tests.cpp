@@ -3,6 +3,7 @@
 #include "game/classes/save_format.h"
 #include "game/army/soldier_reserve.h"
 #include "game/army/leader.h"
+#include "game/army/character.h"
 #include <array>
 #include <QFile>
 #include <QJsonDocument>
@@ -14,6 +15,185 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void characterInitialization() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QByteArray table;
+            for (const auto &r : project.records(Table::Classes))
+                table += r.bytes;
+            struct Random {
+                unsigned used = 0;
+                uint32_t value = 0;
+            };
+            const auto random = [](void *context) -> uint32_t {
+                auto &r = *static_cast<Random *>(context);
+                ++r.used;
+                return r.value;
+            };
+            QJsonArray cases;
+            const auto compare = [&](const QByteArray &classes, int primary, int secondary,
+                                     uint32_t draw) {
+                QByteArray before(56, char(0x6d));
+                before[17] = char(primary);
+                before[18] = char(secondary);
+                auto after = before;
+                Random state{0, draw};
+                if (!lordly_character_level_one(
+                        reinterpret_cast<uint8_t *>(after.data()),
+                        reinterpret_cast<const uint8_t *>(classes.constData()),
+                        unsigned(classes.size() / 72), random, &state))
+                    throw Error("Unexpected initializer rejection");
+                cases << QJsonObject{{"classes", QString::fromLatin1(classes.toHex())},
+                                     {"before", QString::fromLatin1(before.toHex())},
+                                     {"after", QString::fromLatin1(after.toHex())},
+                                     {"draws", QJsonArray{int(draw), int(draw)}},
+                                     {"used", int(state.used)}};
+            };
+            for (int id = 1; id < 165; ++id)
+                for (uint32_t draw : {0U, 1U, 2U, 3U}) {
+                    const int paired = u8(table, id * 72 + 69);
+                    compare(table, id, paired ? paired : id, draw);
+                    compare(table, id, 2, draw);
+                }
+            for (int stage : {0, 1, 2})
+                for (int body : {0, 1, 2, 3, 4, 5})
+                    for (int element : {0, 4, 255}) {
+                        auto custom = table;
+                        custom[5 * 72 + 66] = char(stage == 1 ? 2 : 255);
+                        custom[5 * 72 + 68] = char(stage == 2 ? 2 : 255);
+                        custom[5 * 72 + 65] = 10;
+                        custom[5 * 72 + 67] = 33;
+                        const int base = stage == 1 ? 10 : stage == 2 ? 33 : 5;
+                        custom[base * 72 + 5] = char(body);
+                        custom[5 * 72 + 70] = char(element);
+                        compare(custom, 5, 5, 3);
+                    }
+            auto invalid = table;
+            invalid[5 * 72 + 66] = 2;
+            invalid[5 * 72 + 65] = char(255);
+            QByteArray record(56, 0);
+            record[17] = 5;
+            record[18] = 5;
+            Random state;
+            QVERIFY(!lordly_character_level_one(
+                reinterpret_cast<uint8_t *>(record.data()),
+                reinterpret_cast<const uint8_t *>(invalid.constData()), 165, random, &state));
+            QTemporaryDir work;
+            const auto file = work.filePath("character-reference.json");
+            atomicWrite(
+                file, QJsonDocument(QJsonObject{{"cases", cases}}).toJson(QJsonDocument::Compact));
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("army-character-mips.cjs"), file});
+            QVERIFY(reference.waitForFinished(30000));
+            QVERIFY2(!reference.exitCode(), reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void characterRosterLifecycle() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node",
+                            {QFINDTESTDATA("army-legion-mips.cjs"), work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile file(work.filePath("legion-export.bin"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto payload = file.readAll();
+            QByteArray battery(0x10000, char(0x6d));
+            for (int slot : {0, 1, 15}) {
+                const int at = int(lc_save_record_offset(slot, 0));
+                battery[at + 12] = 0;
+                battery.replace(at + 42, 6180, payload);
+                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(battery.data() + at),
+                                            lc_save_record_size(slot, 0), slot, 0));
+            }
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            for (const auto &input : {battery, swapped, expanded})
+                for (int slot : {0, 1}) {
+                    auto doc = SaveDocument::open(rom, input);
+                    doc.selectSlot(slot);
+                    const auto before = doc.memory();
+                    QCOMPARE(doc.freeCharacterSlot(), 21);
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planRemoveCharacter(1));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planRemoveCharacter(18));
+                    QVERIFY_THROWS_EXCEPTION(
+                        Error, doc.planCreateCharacter(0, "Recruit", project.classData(), 7));
+                    QVERIFY_THROWS_EXCEPTION(
+                        Error, doc.planCreateCharacter(5, "Too long name", project.classData(), 7));
+                    const auto create =
+                        doc.planCreateCharacter(5, "Recruit", project.classData(), 7);
+                    doc.apply(create, true);
+                    QCOMPARE(doc.freeCharacterSlot(), 22);
+                    QVERIFY(doc.reserveMembers().contains(21));
+                    QCOMPARE(doc.value(SaveTable::Characters, 21, "name").toString(),
+                             QString("Recruit"));
+                    QCOMPARE(doc.value(SaveTable::Characters, 21, "level").toInt(), 1);
+                    QCOMPARE(doc.value(SaveTable::Characters, 21, "hpMax"),
+                             doc.value(SaveTable::Characters, 21, "hpCur"));
+                    QCOMPARE(u8(doc.memory(), 0x193bc0 + 21 * 56 + 52), quint8(21));
+                    auto expected = before;
+                    expected.replace(0x193bc0 + 21 * 56, 56,
+                                     doc.memory().mid(0x193bc0 + 21 * 56, 56));
+                    QCOMPARE(doc.memory(), expected);
+                    const auto created = doc.serialize();
+                    QVERIFY(doc.planArmyRefresh(project).spans.isEmpty());
+                    auto reopened = SaveDocument::open(rom, created);
+                    reopened.selectSlot(slot);
+                    QCOMPARE(reopened.memory(), expected);
+                    const auto remove = doc.planRemoveCharacter(21);
+                    doc.apply(remove, true);
+                    QCOMPARE(doc.serialize(), input);
+                    doc.apply(remove, false);
+                    QCOMPARE(doc.serialize(), created);
+                    doc.apply(create, false);
+                    QCOMPARE(doc.serialize(), input);
+                    const auto removeOriginal = doc.planRemoveCharacter(19);
+                    doc.apply(removeOriginal, true);
+                    QCOMPARE(doc.freeCharacterSlot(), 19);
+                    auto removedExpected = before;
+                    removedExpected.replace(0x193bc0 + 19 * 56, 56, QByteArray(56, 0));
+                    QCOMPARE(doc.memory(), removedExpected);
+                    doc.apply(removeOriginal, false);
+                    QCOMPARE(doc.serialize(), input);
+                }
+            auto full = SaveDocument::open(rom, battery);
+            for (int id = 21; id < 100; ++id)
+                full.apply(full.planCreateCharacter(5, QString("Recruit%1").arg(id),
+                                                    project.classData(), quint32(id)),
+                           true);
+            QCOMPARE(full.freeCharacterSlot(), -1);
+            const auto saved = full.serialize();
+            QVERIFY_THROWS_EXCEPTION(
+                Error, full.planCreateCharacter(5, "Overflow", project.classData(), 0));
+            QCOMPARE(full.serialize(), saved);
+            full.selectSlot(15);
+            QCOMPARE(full.freeCharacterSlot(), -1);
+            QVERIFY_THROWS_EXCEPTION(
+                Error, full.planCreateCharacter(5, "Suspend", project.classData(), 0));
+            QVERIFY_THROWS_EXCEPTION(Error, full.planRemoveCharacter(19));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void armyExportConsistency() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
