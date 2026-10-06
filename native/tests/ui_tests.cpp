@@ -71,6 +71,78 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneCompletionControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            const auto id = scenes.createScene("Completion controls", 0x1fa8bf4 - 0x594284, true);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850);
+            editor.show();
+            auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_VERIFY_WITH_TIMEOUT(list->count() > 1000, 10000);
+            for (int i = 0; i < list->count(); ++i)
+                if (list->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) {
+                    list->setCurrentRow(i);
+                    break;
+                }
+            auto actions = editor.findChild<SceneActionEditor *>();
+            editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
+            auto kind = actions->findChild<QComboBox *>("sceneActionKind");
+            auto position = actions->findChild<QComboBox *>("sceneActionPosition");
+            auto add = actions->findChild<QPushButton *>("sceneActionInsert");
+            auto field = [&](int i) {
+                return actions->findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            for (auto type : {7U, 0x1bU, 0x2cU}) {
+                position->setCurrentIndex(position->count() - 1);
+                kind->setCurrentIndex(kind->findData(type));
+                QVERIFY(add->isEnabled());
+                add->click();
+                const int at = actions->findChild<QListWidget *>("sceneActionList")
+                                   ->currentItem()
+                                   ->data(Qt::UserRole)
+                                   .toInt();
+                const auto before = project.scenePrograms()->program(id).source;
+                auto wait = actions->findChild<QCheckBox *>("sceneActionWait");
+                QVERIFY(wait && wait->isEnabled());
+                QVERIFY(!wait->isChecked());
+                wait->click();
+                const auto after = project.scenePrograms()->program(id).source;
+                QVERIFY(after != before);
+                undo.undo();
+                QCOMPARE(project.scenePrograms()->program(id).source, before);
+                undo.redo();
+                QCOMPARE(project.scenePrograms()->program(id).source, after);
+                actions->selectScene(id, at);
+                QVERIFY(actions->findChild<QCheckBox *>("sceneActionWait")->isChecked());
+                if (type == 0x2c) {
+                    field(0)->setText("15");
+                    field(2)->setText("1.25");
+                    field(4)->setText("12");
+                    const auto p = project.scenePrograms()->program(id);
+                    QCOMPARE(p.commands[at].operands[0], quint32(15000));
+                    QCOMPARE(p.commands[at + 5].operands[1], quint32(12));
+                }
+            }
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save("native-action-completion.png"));
+            QTemporaryDir work;
+            project.saveFolder(work.path());
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(restored.scenePrograms()->program(id).source,
+                     project.scenePrograms()->program(id).source);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneChoiceAuthoring() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

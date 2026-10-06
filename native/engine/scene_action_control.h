@@ -8,6 +8,7 @@ struct CounterState {
 };
 bool completeDialogue(const DirectorProgram &, int command);
 bool completeImageTransitionWait(const DirectorProgram &, int command);
+int actionCompletion(const DirectorProgram &, int command);
 QVector<CounterState> counterStates(const DirectorProgram &);
 QVector<int> remainingGates(const DirectorProgram &, int before, qint64 previous);
 void shiftGates(DirectorProgram &, const QVector<int> &, qint64 delta);

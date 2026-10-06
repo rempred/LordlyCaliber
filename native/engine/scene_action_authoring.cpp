@@ -29,6 +29,29 @@ bool completeImageTransitionWait(const DirectorProgram &p, int index) {
            c[index + 1].opcode == 0x80000002 && c[index + 2].opcode == 0x80000000 &&
            c[index + 3].opcode == 0x54 && c[index + 3].operands == QVector<quint32>{0, 0};
 }
+int actionCompletion(const DirectorProgram &p, int index) {
+    const auto &c = p.commands;
+    if (index < 0 || index + 4 >= c.size())
+        return 0;
+    if ((c[index].opcode == 7 || c[index].opcode == 0x1b) && c[index + 1].opcode == 0 &&
+        c[index + 2].opcode == 0x80000002 && c[index + 3].opcode == 0x80000000) {
+        const auto &query = c[index + 4];
+        if (c[index].opcode == 7 && query.opcode == 0x11 &&
+            query.operands == QVector<quint32>{0, 0, c[index].operands[0]})
+            return 5;
+        if (c[index].opcode == 0x1b && query.opcode == 0x7f &&
+            query.operands == QVector<quint32>{0, 0})
+            return 5;
+    }
+    if (c[index].opcode == 0x2c && index + 6 < c.size() && c[index].operands[4] >= 1 &&
+        c[index].operands[4] <= 65535 && c[index + 1].opcode == 1 && c[index + 2].opcode == 0 &&
+        c[index + 3].opcode == 0x80000002 && c[index + 4].opcode == 0x80000000 &&
+        c[index + 5].opcode == 0xe &&
+        c[index + 5].operands == QVector<quint32>{2, c[index].operands[4]} &&
+        c[index + 6].opcode == 2)
+        return 7;
+    return 0;
+}
 QVector<CounterState> counterStates(const DirectorProgram &program) {
     QVector<CounterState> result(program.commands.size());
     const auto choices = SceneActions::choices(program);
@@ -53,9 +76,10 @@ QVector<CounterState> counterStates(const DirectorProgram &program) {
                 continue;
             }
             const auto &c = program.commands[i];
-            const int completion = completeDialogue(program, i)              ? 7
-                                   : completeImageTransitionWait(program, i) ? 4
-                                                                             : 0;
+            const int completion = completeDialogue(program, i) ? 7
+                                   : completeImageTransitionWait(program, i)
+                                       ? 4
+                                       : actionCompletion(program, i);
             if (completion) {
                 const auto after =
                     CounterState{state.known && state.arm < 0, state.arm, state.target};
@@ -187,6 +211,7 @@ QMap<quint32, QString> SceneActions::kinds() {
             {7, "Move Actor"},
             {0x35, "Background camera"},
             {0x36, "Actor camera"},
+            {0x2c, "Camera pan and zoom"},
             {0x1b, "Screen fade"},
             {0x1d, "Scale Actor"},
             {0x48, "Actor opacity"},
@@ -380,6 +405,9 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                 break;
             }
         switch (kind) {
+        case 0x2c:
+            operands = {0, 0, 1000, 1000, 30};
+            break;
         case 0x3a:
             operands = {1, 0, 0, 0, 70, 70, 130, 8};
             break;
@@ -522,6 +550,45 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
     }
     for (int i = 0; i < added.size(); ++i)
         result.commands.insert(before + i, added[i]);
+    return DirectorProgram::decode(result.encode());
+}
+DirectorProgram SceneActions::setCompletion(const DirectorProgram &p, int index, bool wait) {
+    const auto actions = inspect(p);
+    const auto action = std::find_if(actions.begin(), actions.end(),
+                                     [index](const auto &v) { return v.command == index; });
+    if (action == actions.end() ||
+        (p.commands[index].opcode != 7 && p.commands[index].opcode != 0x1b &&
+         p.commands[index].opcode != 0x2c))
+        throw Error("Select a movement, fade or camera pan action.");
+    if (action->waitsForCompletion == wait)
+        return p;
+    const auto state = action_detail::counterStates(p)[index];
+    if (!state.known || state.arm >= 0)
+        throw Error("A completion wait requires a known position outside an active counter span.");
+    auto result = p;
+    if (!wait) {
+        result.commands.remove(index + 1, action->commandCount - 1);
+    } else {
+        const auto points = positions(p);
+        const auto point = std::find_if(points.begin(), points.end(),
+                                        [index](const auto &v) { return v.command == index + 1; });
+        if (point == points.end() || !point->canWait)
+            throw Error("The following native control section is not a supported wait boundary.");
+        QVector<DirectorCommand> added;
+        const auto &c = p.commands[index];
+        if (c.opcode == 0x2c) {
+            const auto duration = c.operands[4];
+            if (duration < 1 || duration > 65535)
+                throw Error("Camera pan duration must be between 1 and 65535 updates.");
+            added << command(1) << command(0) << command(0x80000002) << command(0x80000000)
+                  << command(0xe, {2, duration}) << command(2);
+        } else {
+            added << command(0) << command(0x80000002) << command(0x80000000);
+            added << (c.opcode == 7 ? command(0x11, {0, 0, c.operands[0]}) : command(0x7f, {0, 0}));
+        }
+        for (int i = 0; i < added.size(); ++i)
+            result.commands.insert(index + 1 + i, added[i]);
+    }
     return DirectorProgram::decode(result.encode());
 }
 DirectorProgram SceneActions::move(const DirectorProgram &p, int index, int before) {

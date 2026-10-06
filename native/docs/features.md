@@ -30,6 +30,17 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Actions now expose world Camera pan/zoom and a completion checkbox for movement,
+fade and camera pan. Movement uses the native arrival query, fade its completion
+query, and camera pan a linked duration gate. Each action and wait remain one unit
+for edits, moves, removal and Undo; unknown control boundaries remain guarded.
+`scene_action_tests actionCompletion choiceActions insertedWaitTimingAndExport`
+passed (4507ms), including real movement/fade/projection completion before the
+next action and source-built export/reopening. `ui_tests sceneCompletionControls
+sceneChoiceAuthoring` passed (2125ms); duration edits retain their gate, project
+reopening works, and the integrated Actions capture was inspected.
+
+
 New Dialogue actions now create independent text entries and complete window
 lifecycles in one Undo operation. A speaker/text dialog wraps 30-character lines
 and groups three lines per page, up to eight pages, preserving the browser text

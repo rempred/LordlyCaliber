@@ -345,6 +345,14 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field(c.opcode == 0x1d ? "Scale (%)" : "Opacity", 1, 1,
                   c.opcode == 0x1d ? -2147483648LL : 0, c.opcode == 0x1d ? 2147483647LL : 255);
             break;
+        case 0x2c:
+            action.name = "Camera pan and zoom";
+            field("Translation X", 0, 1000);
+            field("Translation Y", 1, 1000);
+            field("Scale X", 2, 1000);
+            field("Scale Y", 3, 1000);
+            field("Duration (updates)", 4, 1, 1, 65535);
+            break;
         case 0x35:
         case 0x36:
             action.name = c.opcode == 0x36 ? "Actor camera" : "Background camera";
@@ -358,6 +366,15 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             break;
         default:
             continue;
+        }
+        if (const int completion = action_detail::actionCompletion(program, i)) {
+            action.commandCount = completion;
+            action.timing = SceneActionTiming::Completion;
+            action.waitsForCompletion = true;
+            if (c.opcode == 7)
+                action.fields[0].mirrors = {{4, 2}};
+            if (c.opcode == 0x2c)
+                action.fields[4].mirrors = {{5, 1}};
         }
         result << action;
         i += choice != choices.end() ? 13 : action.commandCount - 1;

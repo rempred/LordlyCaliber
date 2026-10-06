@@ -2,6 +2,8 @@
 #include "engine/project.h"
 #include "engine/scene_actions.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_projection.h"
+#include "engine/scene_fade.h"
 #include "engine/scene_dialogue.h"
 #include "engine/dialogue_session.h"
 #include "engine/scene_sprites.h"
@@ -1165,6 +1167,119 @@ class SceneActionTests : public QObject {
             QCOMPARE(checksum, rom.bytes());
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             qInfo().noquote() << "Rebuilt and reopened" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void actionCompletion() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            const auto id = scenes.createScene("Completed actions", 0x1fa8bf4 - 0x594284, true);
+            auto p = scenes.program(id);
+            auto append = [&](quint32 kind) {
+                const int at = SceneActions::positions(p).last().command;
+                p = SceneActions::insert(p, at, kind);
+                return at;
+            };
+            append(0x14);
+            const int move = append(7);
+            p = SceneActions::edit(p, move, 3, "12");
+            p = SceneActions::edit(p, move, 5,
+                                   "2"); // Speed, rather than this value, controls arrival.
+            p = SceneActions::edit(p, move, 6, "1000");
+            const auto noWait = p;
+            p = SceneActions::setCompletion(p, move, true);
+            QCOMPARE(SceneActions::setCompletion(p, move, false).source, noWait.source);
+            auto movedSlot = SceneActions::edit(p, move, 0, "1");
+            QCOMPARE(movedSlot.commands[move + 4].operands[2], quint32(1));
+            const int fade = append(0x1b);
+            p = SceneActions::edit(p, fade, 0, "4");
+            p = SceneActions::edit(p, fade, 4, "0");
+            p = SceneActions::setCompletion(p, fade, true);
+            const int pan = append(0x2c);
+            p = SceneActions::edit(p, pan, 0, "10");
+            p = SceneActions::edit(p, pan, 2, "1.5");
+            p = SceneActions::setCompletion(p, pan, true);
+            p = SceneActions::edit(p, pan, 4, "5");
+            const int marker = append(0x48);
+            auto reordered = SceneActions::move(p, pan, fade);
+            QCOMPARE(SceneActions::move(reordered, fade, marker).source, p.source);
+            auto removed = SceneActions::remove(p, pan);
+            QCOMPARE(removed.commands.size(), p.commands.size() - 7);
+            scenes.replace(id, p.source);
+            project.setScenePrograms(scenes.json());
+            auto exercise = [&](const Project &current) {
+                SceneActors actors(current.rom(), 2, 0, [](int, float, float) { return 0.f; });
+                actors.supplySceneFlags(0);
+                SceneFade screen;
+                SceneProjection projection;
+                DirectorSession director(current.scenePrograms()->runtimeDirectors(),
+                                         current.scenePrograms()->resource(id).selectors.first(),
+                                         2);
+                QStringList observed;
+                auto service = [&](quint32 op, const QVector<quint32> &args, int &value) {
+                    if (op == 0x1b) {
+                        if (actors.motion(0).remaining ||
+                            std::abs(actors.actor(0)->pose().actor().position.x - 12.f) > .001f)
+                            throw Error("Fade started before movement reached its destination.");
+                        observed << "arrived";
+                    }
+                    if (op == 0x2c) {
+                        if (screen.remaining() || screen.rgba()[3] != 255)
+                            throw Error("Camera pan started before the fade finished.");
+                        observed << "faded";
+                    }
+                    if (op == 0x48) {
+                        if (projection.remaining() ||
+                            std::abs(projection.translateX() - 10.f) > .001f ||
+                            std::abs(projection.scaleX() - 1.5f) > .001f)
+                            throw Error(
+                                "Next action started before the camera reached its target.");
+                        observed << "panned";
+                    }
+                    return actors.service(op, args, value) || screen.service(op, args, value) ||
+                           projection.service(2, op, args) || op == 0x80000006;
+                };
+                bool released = false;
+                for (int tick = 0; tick < 300 && !released; ++tick) {
+                    actors.advanceMovement();
+                    screen.advance();
+                    projection.advance();
+                    director.advanceCounter();
+                    const auto result = director.dispatch(service);
+                    QVERIFY2(result == LORDLY_DIRECTOR_YIELD || result == LORDLY_DIRECTOR_RELEASE,
+                             qPrintable(director.reason()));
+                    released = result == LORDLY_DIRECTOR_RELEASE;
+                }
+                QVERIFY(released);
+                QCOMPARE(observed, QStringList({"arrived", "faded", "panned"}));
+            };
+            exercise(project);
+            QTemporaryDir work;
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-action-completion-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            exercise(reopened);
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote()
+                << "Movement arrival, fade and projection completion exported/reopened:"
+                << destination;
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

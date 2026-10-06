@@ -20,6 +20,7 @@ struct SceneAction {
     QVector<SceneActionField> fields;
     int actorOperand = -1;
     SceneActionTiming timing = SceneActionTiming::None;
+    bool waitsForCompletion = false;
 };
 struct SceneActionPosition {
     int command = 0;
@@ -56,6 +57,7 @@ class SceneActions {
                                   int ticks = 30);
     static DirectorProgram move(const DirectorProgram &, int actionCommand, int before);
     static DirectorProgram remove(const DirectorProgram &, int actionCommand);
+    static DirectorProgram setCompletion(const DirectorProgram &, int actionCommand, bool wait);
     static DirectorProgram edit(const DirectorProgram &, int actionCommand, int field,
                                 const QString &value);
     // Resource group/entry from an unambiguous preceding constructor in the

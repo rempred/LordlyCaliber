@@ -2,6 +2,7 @@
 #include "app/scene_command_editor.h"
 #include "engine/actor_art.h"
 #include "engine/scene_ribbons.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -426,9 +427,51 @@ void SceneActionEditor::showAction() {
         if (classField)
             connect(input, &QLineEdit::textChanged, this, [this] { refreshClassChoices(); });
     }
+    const auto opcode = program.commands[action.command].opcode;
+    if (opcode == 7 || opcode == 0x1b || opcode == 0x2c) {
+        auto wait = new QCheckBox("Wait until this action finishes");
+        wait->setObjectName("sceneActionWait");
+        wait->setChecked(action.waitsForCompletion);
+        QString reason;
+        try {
+            SceneActions::setCompletion(program, action.command, !action.waitsForCompletion);
+        } catch (const std::exception &e) {
+            reason = QString::fromUtf8(e.what());
+        }
+        wait->setProperty("allowed", reason.isEmpty());
+        wait->setEnabled(reason.isEmpty());
+        wait->setToolTip(reason.isEmpty() ? "When unchecked, the next action starts immediately. "
+                                            "The scene exit stops unfinished actions."
+                                          : reason);
+        fields_->addRow(wait);
+        connect(wait, &QCheckBox::clicked, this, [this, command = action.command](bool enabled) {
+            if (property("invalidEdits").toBool())
+                return;
+            try {
+                auto next = *project_->scenePrograms();
+                next.replace(
+                    key_, SceneActions::setCompletion(next.program(key_), command, enabled).source);
+                editing_ = true;
+                pushSceneProgramChange(
+                    project_, undo_,
+                    enabled ? "Wait for scene action" : "Run scene actions together", next);
+                editing_ = false;
+                refresh(command);
+                if (changed_)
+                    changed_();
+            } catch (const std::exception &e) {
+                editing_ = false;
+                refresh(command);
+                notice_->setText(QString::fromUtf8(e.what()));
+            }
+        });
+    }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Wait for image transition"
+        action.name == "Camera pan and zoom"
+            ? "Pans and scales the world scene's projection. Scale 1 is normal. Layered scenes use "
+              "their camera and transform commands instead."
+        : action.name == "Wait for image transition"
             ? "Continues only when the image transition and its echo tail have both finished. "
               "Uses the native completion query and leaves the timed-wait counter unchanged."
         : action.name == "Construct scene image"
@@ -619,6 +662,8 @@ void SceneActionEditor::updateStructureControls() {
     kind_->setEnabled(valid);
     position_->setEnabled(valid);
     text_->setEnabled(valid);
+    if (auto wait = findChild<QCheckBox *>("sceneActionWait"))
+        wait->setEnabled(valid && wait->property("allowed").toBool());
     const bool wait =
         kind_->currentData().toUInt() == 0xe || kind_->currentData().toUInt() == 0xb5 ||
         kind_->currentData().toUInt() == 0xbf || kind_->currentData().toUInt() == 0x54 ||
