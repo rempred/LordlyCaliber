@@ -97,6 +97,11 @@ class SceneActors {
     void advanceDivider();
     void prepareModeZeroMatrices(const SceneCamera &, const SceneTransforms &);
     void prepareModeTwoMatrices(const SceneCamera &, const LordlyActorLighting &);
+    QPointF projectPosition(int slot, SceneVector position, const SceneCameras &,
+                            const SceneTransforms &,
+                            const std::optional<LordlyActorLighting> &) const;
+    SceneVector positionAt(int slot, QPointF screen, const SceneCameras &, const SceneTransforms &,
+                           const std::optional<LordlyActorLighting> &) const;
     std::array<QByteArray, 28> actorRecords() const;
     quint8 defaultChannel() const {
         return defaultChannel_;

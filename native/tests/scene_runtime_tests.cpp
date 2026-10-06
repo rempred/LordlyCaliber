@@ -30,6 +30,48 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorPlacementCoordinates() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto resources = ScenePrograms::load(rom);
+        const std::optional<LordlyActorLighting> lighting =
+            LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
+        for (int mode : {0, 2}) {
+            auto cameras = SceneCameras::freshModeTwo(rom);
+            if (mode == 0) {
+                for (const auto &entry : resources.original().entries()) {
+                    if (entry.program.resourceClass() != 5 || !resources.canCreateBlank(entry.key))
+                        continue;
+                    for (const auto &command : entry.program.commands)
+                        if (command.opcode == 0x35 || command.opcode == 0x36)
+                            cameras.service(0, command.opcode, command.operands);
+                    break;
+                }
+            }
+            SceneTransforms transforms;
+            transforms.prepareMatrices(rom, cameras.actor(), 20);
+            SceneActors actors(rom, mode, 0, [](int, float, float) { return 0.f; });
+            int ignored = 0;
+            QVERIFY(actors.service(0x14, {0, 1, 0, 0, 40000, 0, 10000, 0, 0}, ignored));
+            const auto original = actors.actor(0)->record();
+            for (const auto position : {SceneVector{45, 0, 15}, SceneVector{30, 0, 7}}) {
+                const auto screen =
+                    actors.projectPosition(0, position, cameras, transforms, lighting);
+                const auto mapped = actors.positionAt(0, screen, cameras, transforms, lighting);
+                const auto verified =
+                    actors.projectPosition(0, mapped, cameras, transforms, lighting);
+                QVERIFY(QLineF(screen, verified).length() <= .1);
+                QVERIFY(std::abs(mapped.x - position.x) < .5 &&
+                        std::abs(mapped.z - position.z) < .5);
+                QCOMPARE(mapped.y, position.y);
+            }
+            QCOMPARE(actors.actor(0)->record(), original);
+            QVERIFY_THROWS_EXCEPTION(
+                Error, actors.positionAt(1, {160, 120}, cameras, transforms, lighting));
+        }
+    }
     void visibleSpriteSelection() {
         ActorRasterLayer actor;
         actor.slot = 3;

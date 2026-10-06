@@ -106,6 +106,19 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
         if (c.opcode == 0xbf)
             changeDialogue(false, actions_[row].name == "Choice");
     });
+    positionPick_ = new QPushButton("Choose position in preview");
+    positionPick_->setObjectName("sceneActionChoosePosition");
+    positionPick_->hide();
+    layout->addWidget(positionPick_);
+    connect(positionPick_, &QPushButton::clicked, this, [this] {
+        const int row = list_->currentRow();
+        if (!key_ || row < 0 || row >= actions_.size() || property("invalidEdits").toBool())
+            return;
+        const int at = actions_[row].command;
+        const auto c = project_->scenePrograms()->program(key_).commands[at];
+        if ((c.opcode == 3 || c.opcode == 0x14 || c.opcode == 7) && c.operands[0] < 28)
+            emit choosePosition(at, int(c.operands[0]));
+    });
     discard_ = new QPushButton("Discard incomplete input");
     discard_->setObjectName("sceneActionDiscard");
     discard_->setEnabled(false);
@@ -264,6 +277,7 @@ void SceneActionEditor::refresh(int command) {
     showAction();
 }
 void SceneActionEditor::showAction() {
+    positionPick_->hide();
     while (fields_->rowCount())
         fields_->removeRow(0);
     const int row = list_->currentRow();
@@ -289,6 +303,12 @@ void SceneActionEditor::showAction() {
     text_->setText(action.name == "Choice" ? "Edit choice options" : "Edit dialogue text");
     remove_->setText(action.name == "Choice" ? "Remove choice and its branches" : "Remove action");
     const auto program = project_->scenePrograms()->program(key_);
+    const auto &positionCommand = program.commands[action.command];
+    positionPick_->setVisible((positionCommand.opcode == 3 || positionCommand.opcode == 0x14 ||
+                               positionCommand.opcode == 7) &&
+                              positionCommand.operands[0] < 28);
+    positionPick_->setText(positionCommand.opcode == 7 ? "Choose destination in preview"
+                                                       : "Choose position in preview");
     for (int i = 0; i < action.fields.size(); ++i) {
         const auto &f = action.fields[i];
         const auto word = program.commands[action.command + f.commandOffset].operands[f.operand];
@@ -662,6 +682,7 @@ void SceneActionEditor::updateStructureControls() {
     kind_->setEnabled(valid);
     position_->setEnabled(valid);
     text_->setEnabled(valid);
+    positionPick_->setEnabled(valid);
     if (auto wait = findChild<QCheckBox *>("sceneActionWait"))
         wait->setEnabled(valid && wait->property("allowed").toBool());
     const bool wait =
@@ -744,6 +765,42 @@ void SceneActionEditor::changeStructure(Change operation) {
         next.replace(key_, replacement.source);
         editing_ = true;
         pushSceneProgramChange(project_, undo_, label, next);
+        editing_ = false;
+        refresh(command);
+        emit commandSelected(command);
+        if (changed_)
+            changed_();
+    } catch (const std::exception &e) {
+        editing_ = false;
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
+void SceneActionEditor::applyPosition(int command, SceneVector position) {
+    if (!key_ || property("invalidEdits").toBool())
+        return;
+    try {
+        auto program = project_->scenePrograms()->program(key_);
+        const auto actions = SceneActions::inspect(program);
+        const auto found = std::find_if(actions.begin(), actions.end(),
+                                        [command](const auto &v) { return v.command == command; });
+        if (found == actions.end())
+            throw Error("The selected action is no longer available.");
+        const auto opcode = program.commands[command].opcode;
+        if (opcode != 7 && opcode != 3 && opcode != 0x14)
+            throw Error("Select a placement or movement action.");
+        const int x = opcode == 7 ? 3 : 4, z = opcode == 7 ? 4 : 6;
+        for (int i = 0; i < found->fields.size(); ++i) {
+            const auto &field = found->fields[i];
+            if (field.commandOffset == 0 && (field.operand == x || field.operand == z))
+                program = SceneActions::edit(
+                    program, command, i,
+                    QString::number(field.operand == x ? position.x : position.z, 'f', 3));
+        }
+        auto next = *project_->scenePrograms();
+        next.replace(key_, program.source);
+        editing_ = true;
+        pushSceneProgramChange(project_, undo_,
+                               opcode == 7 ? "Choose movement destination" : "Place Actor", next);
         editing_ = false;
         refresh(command);
         emit commandSelected(command);

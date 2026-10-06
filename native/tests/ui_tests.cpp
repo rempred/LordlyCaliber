@@ -473,7 +473,8 @@ class UiTests : public QObject {
             const auto beforeClick = project.scenePrograms()->json();
             QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
             QTest::mouseMove(view->viewport(), viewportPoint + QPoint(40, 0));
-            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint + QPoint(40, 0));
+            QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                viewportPoint + QPoint(40, 0));
             QCOMPARE(actors->currentIndex(), -1); // Dragging preserves selection.
             QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, viewportPoint);
             QCOMPARE(actors->currentData().toInt(), 5);
@@ -490,6 +491,52 @@ class UiTests : public QObject {
             QCOMPARE(pages->currentWidget(), actions);
             QCOMPARE(field(0)->text(), QString("5"));
             QCOMPARE(field(1)->text(), QString("84"));
+            const auto beforePosition = project.scenePrograms()->program(id).source;
+            const int beforeUndo = undo.index();
+            auto choose = actions->findChild<QPushButton *>("sceneActionChoosePosition");
+            QVERIFY(choose->isVisible() && choose->isEnabled());
+            choose->click();
+            QCOMPARE(pages->currentWidget(), preview);
+            QVERIFY(preview->findChild<QPushButton *>("sceneCancelPosition")->isVisible());
+            preview->findChild<QPushButton *>("sceneCancelPosition")->click();
+            QCOMPARE(undo.index(), beforeUndo);
+            QCOMPARE(project.scenePrograms()->program(id).source, beforePosition);
+            pages->setCurrentWidget(actions);
+            choose->click();
+            QCoreApplication::processEvents();
+            QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              view->mapFromScene(QPointF(170, 150)));
+            QCOMPARE(pages->currentWidget(), actions);
+            QCOMPARE(undo.index(), beforeUndo + 1);
+            const auto placed = project.scenePrograms()->program(id);
+            QVERIFY(placed.source != beforePosition);
+            QCOMPARE(placed.commands[1].operands[5], created.commands[1].operands[5]);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, beforePosition);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, placed.source);
+            pages->setCurrentWidget(preview);
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QVERIFY(preview->renderedFrame() != frame);
+            pages->setCurrentWidget(actions);
+            position->setCurrentIndex(position->count() - 1);
+            kind->setCurrentIndex(kind->findData(7));
+            add->click();
+            const int moveCommand = actions->findChild<QListWidget *>("sceneActionList")
+                                        ->currentItem()
+                                        ->data(Qt::UserRole)
+                                        .toInt();
+            choose->click();
+            QCoreApplication::processEvents();
+            QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              view->mapFromScene(QPointF(150, 140)));
+            QCOMPARE(pages->currentWidget(), actions);
+            const auto destination = project.scenePrograms()->program(id);
+            QCOMPARE(destination.commands[1].operands, placed.commands[1].operands);
+            QCOMPARE(destination.commands[moveCommand].opcode, quint32(7));
+            QVERIFY(destination.commands[moveCommand].operands[3] != 0 ||
+                    destination.commands[moveCommand].operands[4] != 0);
             QTemporaryDir work;
             project.saveFolder(work.filePath("project"));
             auto reopened = Project::fromRom(project.rom());

@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/project.h"
 #include "engine/scene_actions.h"
+#include "engine/scene_camera.h"
 #include <QWidget>
 #include <functional>
 class QUndoStack;
@@ -19,10 +20,12 @@ class SceneActionEditor : public QWidget {
     void selectCommand(int command);
     bool selectActor(int slot);
     bool selectSprite(int slot);
+    void applyPosition(int command, SceneVector);
   signals:
     void commandSelected(int command);
     void editDialogue(int selector, int entry);
     void validityChanged();
+    void choosePosition(int command, int slot);
 
   private:
     void refresh(int command);
@@ -35,7 +38,7 @@ class SceneActionEditor : public QWidget {
     void changeStructure(Change);
     void changeDialogue(bool create, bool choice);
     QComboBox *kind_, *position_;
-    QPushButton *insert_, *remove_, *move_, *text_;
+    QPushButton *insert_, *remove_, *move_, *text_, *positionPick_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;

@@ -60,9 +60,14 @@ by the game; those scenes explain why direct selection is unavailable.
 The Cutscenes Actions tab edits movement, placement, cameras, fades, scale, opacity
 and recognized waits with named fields. Coordinates use game units and durations use
 update counts. The list follows script order; conditions can change when actions run.
-Actions and Commands share Undo. Complete or discard unfinished input before saving,
-exporting or choosing another scene. New action insertion and timeline scheduling
-are still being migrated.
+Actions and Commands share Undo. Add actions at the listed positions, move them to
+another position, or remove them as complete units. Move, Fade and Camera pan offer
+Wait until this action finishes. New Dialogue has speaker/text fields and its own
+text entry; Choice provides two options and branch-specific insertion positions.
+For placement and movement actions, Choose in preview lets you click or drag to set
+the Actor's position or destination while preserving its height. Cancel leaves the
+project unchanged. Complete or discard unfinished input before saving, exporting
+or choosing another scene.
 
 For scripting:
 

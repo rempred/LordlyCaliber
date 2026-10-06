@@ -37,12 +37,14 @@ class ScenePreview : public QWidget {
     void setBodyAnimations(BodyAnimationData::Pointer);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
     void setObjectNavigationEnabled(bool enabled);
+    void beginPositionPick(int command, int slot);
     int actorAt(QPoint) const;
     int spriteAt(QPoint) const;
     SceneSelectionTarget objectAt(QPoint) const;
   signals:
     void findActorAction(int selector, int slot);
     void findSpriteAction(int selector, int slot);
+    void positionPicked(int command, SceneVector position);
 
   public:
     const QImage &renderedFrame() const {
@@ -120,6 +122,10 @@ class ScenePreview : public QWidget {
     QPushButton *findObject_;
     SceneSelectionTarget selectedObject_;
     void findSelectedAction();
+    void cancelPositionPick();
+    int placementCommand_ = -1, placementSlot_ = -1;
+    QLabel *placementHelp_;
+    QPushButton *cancelPlacement_;
     bool objectNavigationEnabled_ = false;
     std::optional<QPoint> selectionPress_;
     QTimer *timer_, *seekTimer_;

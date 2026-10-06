@@ -3,6 +3,72 @@
 #include <bit>
 #include <cmath>
 namespace lordly {
+QPointF SceneActors::projectPosition(int slot, SceneVector position, const SceneCameras &cameras,
+                                     const SceneTransforms &transforms,
+                                     const std::optional<LordlyActorLighting> &lighting) const {
+    if (!actor(slot))
+        throw Error("Play the scene until this Actor is present before positioning it.");
+    auto selected = *actor(slot);
+    if (classification(selected.record()) == 2)
+        throw Error(
+            "This body follows its linked primary Actor. Position the primary Actor instead.");
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
+        throw Error("Actor placement requires finite coordinates.");
+    selected.pose().actor().position = {float(position.x), float(position.y), float(position.z)};
+    const auto record = selected.record();
+    QByteArray matrix;
+    if (mode_ == 0) {
+        matrix = ActorMatrices::prepare(rom_, record, transforms.channel(u8(record, 0x13e)),
+                                        cameras.registered())
+                     .matrix;
+    } else {
+        if (!lighting)
+            throw Error("The scene's world drawing context is unavailable.");
+        const auto identity = u32(record, 0xe4);
+        if (identity >= depths_.size())
+            throw Error("Actor depth identity is outside the scene table.");
+        const auto depth = depths_[identity].isEmpty() ? 0 : qint16(u16(depths_[identity], 0));
+        // Terrain affects shadow geometry, not the main Actor origin used for placement.
+        matrix =
+            ActorWorldMatrices::prepare(rom_, record, cameras.actor(), depth, 0, *lighting).matrix;
+    }
+    const auto point = cameras.actor().projectPackedOrigin(matrix);
+    if (!point.visible)
+        throw Error("The Actor position is outside the camera's visible depth.");
+    return point.screen;
+}
+SceneVector SceneActors::positionAt(int slot, QPointF screen, const SceneCameras &cameras,
+                                    const SceneTransforms &transforms,
+                                    const std::optional<LordlyActorLighting> &lighting) const {
+    if (!actor(slot))
+        throw Error("Play the scene until this Actor is present before positioning it.");
+    const auto current = actor(slot)->pose().actor().position;
+    SceneVector position{current.x, current.y, current.z};
+    // Invert the existing native forward path on the Actor's height plane.
+    // This includes mode-zero channel transforms and native matrix quantization.
+    for (int iteration = 0; iteration < 12; ++iteration) {
+        const auto point = projectPosition(slot, position, cameras, transforms, lighting);
+        const auto error = screen - point;
+        if (std::hypot(error.x(), error.y()) <= .1)
+            return position;
+        const auto x =
+            projectPosition(slot, position + SceneVector{1, 0, 0}, cameras, transforms, lighting) -
+            point;
+        const auto z =
+            projectPosition(slot, position + SceneVector{0, 0, 1}, cameras, transforms, lighting) -
+            point;
+        const double determinant = x.x() * z.y() - x.y() * z.x();
+        if (!std::isfinite(determinant) || std::abs(determinant) < 1e-8)
+            throw Error("This camera cannot resolve the Actor's X/Z plane. Use the numeric "
+                        "position fields.");
+        position.x += (error.x() * z.y() - error.y() * z.x()) / determinant;
+        position.z += (x.x() * error.y() - x.y() * error.x()) / determinant;
+        if (std::abs(position.x) > 2147483 || std::abs(position.z) > 2147483)
+            throw Error("The chosen position exceeds the scene coordinate range.");
+    }
+    throw Error("The chosen point could not be resolved on the Actor's height plane. Use a closer "
+                "point or the numeric fields.");
+}
 void SceneActors::prepareModeZeroMatrices(const SceneCamera &camera,
                                           const SceneTransforms &channels) {
     if (mode_ != 0)

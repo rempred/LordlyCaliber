@@ -30,6 +30,18 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Placement and movement actions now offer Choose in preview. Click or drag while
+positioning to set that action's X/Z coordinates in one Undo, preserving height.
+The picker inverts the native forward matrix path for the current Actor, camera
+and layer transforms; linked secondary bodies direct users to their primary.
+Cancel, seeking, restart, scene changes and incomplete-input guards preserve edits.
+`scene_runtime_tests actorPlacementCoordinates` passed (146ms) for world/layered
+mapping and source preservation. `ui_tests classActorCreationControls
+sceneRoomComposition` passed (2554ms): actual point clicks, cancellation, placement
+Undo, independent movement destination fields, visible replay and project reopening.
+Existing ROM coordinate export is reused; no new ROM code is introduced.
+
+
 Actions now expose world Camera pan/zoom and a completion checkbox for movement,
 fade and camera pan. Movement uses the native arrival query, fade its completion
 query, and camera pan a linked duration gate. Each action and wait remain one unit

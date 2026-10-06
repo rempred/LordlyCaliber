@@ -369,6 +369,18 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 });
         connect(actionEditor_, &SceneActionEditor::commandSelected, this,
                 [this](int command) { commands_->setCurrentCell(command, 0); });
+        connect(actionEditor_, &SceneActionEditor::choosePosition, this,
+                [this, pages](int command, int slot) {
+                    if (invalidSceneInput()) return;
+                    pages->setCurrentWidget(scenePreview_);
+                    scenePreview_->beginPositionPick(command, slot);
+                });
+        connect(scenePreview_, &ScenePreview::positionPicked, this,
+                [this, pages](int command, SceneVector position) {
+                    if (invalidSceneInput()) return;
+                    actionEditor_->applyPosition(command, position);
+                    pages->setCurrentWidget(actionEditor_);
+                });
         connect(actionEditor_, &SceneActionEditor::validityChanged, this,
                 &CutsceneEditor::refreshSceneInputState);
         connect(commands_, &QTableWidget::currentCellChanged, this,

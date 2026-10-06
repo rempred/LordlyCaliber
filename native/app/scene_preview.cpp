@@ -318,6 +318,17 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     findObject_->hide();
     actors->addWidget(findObject_);
     layout->addLayout(actors);
+    auto placement = new QHBoxLayout;
+    placementHelp_ = new QLabel;
+    placementHelp_->setObjectName("scenePlacementHelp");
+    placementHelp_->setWordWrap(true);
+    placement->addWidget(placementHelp_, 1);
+    cancelPlacement_ = new QPushButton("Cancel positioning");
+    cancelPlacement_->setObjectName("sceneCancelPosition");
+    cancelPlacement_->hide();
+    placement->addWidget(cancelPlacement_);
+    layout->addLayout(placement);
+    connect(cancelPlacement_, &QPushButton::clicked, this, &ScenePreview::cancelPositionPick);
     connect(liveObjects_, &QComboBox::currentIndexChanged, this, [this] {
         if (liveObjects_->currentIndex() >= 0)
             selectedObject_ = {SceneObjectKind(liveObjects_->currentData(Qt::UserRole + 1).toInt()),
@@ -354,6 +365,7 @@ void ScenePreview::stop() {
 }
 void ScenePreview::hideEvent(QHideEvent *event) {
     stop();
+    cancelPositionPick();
     imageInput({});
     QWidget::hideEvent(event);
 }
@@ -488,6 +500,36 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (placementCommand_ >= 0) {
+        if ((object == view_ || object == view_->viewport()) && event->type() == QEvent::KeyPress &&
+            static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+            cancelPositionPick();
+            return true;
+        }
+        if (object == view_->viewport() && (event->type() == QEvent::MouseButtonPress ||
+                                            event->type() == QEvent::MouseButtonRelease)) {
+            const auto mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() != Qt::LeftButton)
+                return true;
+            if (event->type() == QEvent::MouseButtonPress)
+                return true;
+            try {
+                const auto point = view_->mapToScene(mouse->position().toPoint());
+                if (!QRectF(0, 0, 320, 240).contains(point))
+                    throw Error("Choose a point within the scene image.");
+                const auto &playback = current_->playback;
+                const auto position =
+                    playback.actors().positionAt(placementSlot_, point, playback.cameras(),
+                                                 playback.transforms(), playback.lighting());
+                const int command = placementCommand_;
+                cancelPositionPick();
+                emit positionPicked(command, position);
+            } catch (const std::exception &e) {
+                placementHelp_->setText(QString::fromUtf8(e.what()));
+            }
+            return true;
+        }
+    }
     if (object == view_->viewport()) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto mouse = static_cast<QMouseEvent *>(event);
@@ -582,6 +624,7 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
 }
 void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode,
                                std::optional<Dialogues> dialogues) {
+    cancelPositionPick();
     stop();
     dialogues_ = std::move(dialogues);
     inputHistory_.clear();
@@ -686,6 +729,7 @@ void ScenePreview::loadArmyCast() {
                         : QString("Current army from slot %1").arg(slot+1));
 }
 void ScenePreview::restart() {
+    cancelPositionPick();
     stop();
     current_.reset();
     checkpoints_.clear();
@@ -1122,6 +1166,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     }
 }
 void ScenePreview::step() {
+    if (placementCommand_ >= 0) cancelPositionPick();
     if (!current_ || current_->stopped || tick_ >= 10000) {
         stop();
         return;
@@ -1194,6 +1239,7 @@ void ScenePreview::step() {
     present();
 }
 void ScenePreview::seek(int tick) {
+    cancelPositionPick();
     stop();
     if (!current_ || tick < 0 || tick > 10000)
         return;
@@ -1230,9 +1276,47 @@ void ScenePreview::continueSeek() {
     present();
 }
 void ScenePreview::setObjectNavigationEnabled(bool enabled) {
+    if (!enabled) cancelPositionPick();
     objectNavigationEnabled_ = enabled;
     findObject_->setVisible(enabled);
     presentSelectedObject();
+}
+void ScenePreview::cancelPositionPick() {
+    placementCommand_ = placementSlot_ = -1;
+    placementHelp_->clear(); cancelPlacement_->hide();
+    view_->setDragMode(QGraphicsView::ScrollHandDrag);
+    view_->viewport()->unsetCursor();
+}
+void ScenePreview::beginPositionPick(int command, int slot) {
+    cancelPositionPick();
+    stop();
+    try {
+        if (!current_ || !objectNavigationEnabled_)
+            throw Error("Load an editable scene before choosing an Actor position.");
+        if (!current_->playback.actors().actor(slot) && !current_->stopped)
+            step();
+        const auto &playback = current_->playback;
+        if (playback.director().selector() != selector_)
+            throw Error("Playback is in a different scene. Return to the selected scene before "
+                        "positioning its Actors.");
+        if (!playback.actors().actor(slot))
+            throw Error("Play the scene until this Actor is present, then choose its position.");
+        const auto origin = playback.actors().actor(slot)->pose().actor().position;
+        playback.actors().projectPosition(slot, {origin.x, origin.y, origin.z}, playback.cameras(),
+                                          playback.transforms(), playback.lighting());
+        placementCommand_ = command;
+        placementSlot_ = slot;
+        selectedObject_ = {SceneObjectKind::Actor, slot};
+        presentObjects();
+        placementHelp_->setText(
+            "Click or drag to the Actor's new origin. Its height stays unchanged. Escape cancels.");
+        cancelPlacement_->show();
+        view_->setDragMode(QGraphicsView::NoDrag);
+        view_->viewport()->setCursor(Qt::CrossCursor);
+        view_->setFocus();
+    } catch (const std::exception &e) {
+        placementHelp_->setText(QString::fromUtf8(e.what()));
+    }
 }
 SceneSelectionTarget ScenePreview::objectAt(QPoint point) const {
     return current_ && !current_->playback.display().black() ? current_->selection.objectAt(point)
