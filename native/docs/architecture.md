@@ -4491,3 +4491,41 @@ also passed browser scene conversion, bundled compilation/export/reopen and2648
 expected scene bytes. Neither check claims a clean Windows installation or a release.
 Evidence remains in parent Test ROMs/native-portable-8ce057af4f004b86b870a0ccd79d513b
 and portable-scene-import-bc9a98241986451d8e791481747b5091.
+
+
+## Saved squad carried items
+
+Regular battery slots expose all ten carried-item positions beside formation and
+reserve controls. Named choices apply immediately as one save undo action; the
+capacity readout uses the current project's paired class getter, including the
+Soldier1/1 rule. Pending formation/Unity/tactic drafts disable supply changes so a
+refresh cannot discard them. Multiline game names are flattened for dropdowns.
+Changes edit carried slots directly and do not consume/return global inventory.
+
+SaveDocument preserves slot order and gaps. Original Army load copies ten saved
+bytes at squad+13..22 to active halfwords+34..52; its save routine compacts nonzero
+entries. The original inventory selector accepts nonzero IDs whose current item
+record byte5 is zero: retail1..20 and24..31. Product choices additionally respect
+the loaded save codec's field widths (retail five bits), rather than assuming the
+runtime byte width. Existing unusual IDs remain readable/preservable; new invalid
+choices, over-capacity results, suspend records and active runtime states refuse.
+
+Save export revalidates newly edited carried slots against the current project,
+including edits in the other normal slot. Later metadata/capacity edits cannot
+silently export invalid newly edited supplies; untouched unusual source slots
+remain unchanged. Showing the squad panel refreshes choices and capacities while
+preserving a pending formation draft. The generic packed-save writer keeps other
+bits and the original checksum/container rules.
+
+`save_document_tests` passed in7075ms with the new squadSupplies check and existing
+formation/reserve/transfer/save-format checks. The new case checks three battery
+layouts, both regular slots, whole-memory preservation including inventories,
+exact undo/reopen, current metadata/width/capacity refusal and export revalidation.
+Original-MIPS list selection matches retail and changed metadata; the original
+codec and Army load/store blocks confirm six edited snapshots. The UI checks
+`saveSquadEditing saveWorkspaceEditing` passed in3009ms, including actual named
+choice changes, immediate undo/redo, export refusal/restoration, draft protection,
+reopening and read-only runtime controls. The supplies capture was inspected.
+These are offline checks; no natural Army load, item-use behavior or emulator
+operation is claimed. Parent save-squad-layout-20261005.md records exact code/RAM
+identity and the corrected five-bit storage limit.

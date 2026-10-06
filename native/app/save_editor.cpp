@@ -338,6 +338,7 @@ void SaveEditor::exportFile(const QString &path) {
                                                    Qt::CaseInsensitive) == 0)
         throw Error("Choose a different output file to preserve the loaded save");
     document_->validateClassEdits(int(project_->records(Table::Classes).size()));
+    document_->validateUnitSupplyEdits(*project_);
     const auto bytes = document_->serialize();
     const auto reopened =
         SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
@@ -364,6 +365,20 @@ bool SaveEditor::edit(SaveTable table, int row, const QString &key, const QVaria
 }
 void SaveEditor::apply(const SaveChange &change, bool forward) {
     document_->apply(change, forward);
+}
+bool SaveEditor::editUnitSupplies(int index, const QVector<int> &supplies) {
+    if (!document_)
+        return false;
+    try {
+        auto change = document_->planUnitSupplies(index, supplies, *project_);
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "carried squad item"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
 }
 bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int tactic) {
     if (!document_)

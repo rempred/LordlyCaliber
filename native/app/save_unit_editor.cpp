@@ -3,6 +3,7 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
@@ -94,6 +95,38 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     fromReserve_ = new QPushButton("Add reserve character to this squad");
     fromReserve_->setObjectName("saveAddFromReserve");
     body->addWidget(fromReserve_);
+    auto suppliesGroup = new QGroupBox("Carried items");
+    auto suppliesLayout = new QGridLayout(suppliesGroup);
+    suppliesLayout->setColumnStretch(1, 1);
+    suppliesLayout->setColumnStretch(3, 1);
+    capacity_ = new QLabel;
+    capacity_->setObjectName("saveUnitCapacity");
+    capacity_->setWordWrap(true);
+    suppliesLayout->addWidget(capacity_, 0, 0, 1, 4);
+    for (int i = 0; i < 10; ++i) {
+        auto choice = new QComboBox;
+        choice->setObjectName(QString("saveUnitSupply%1").arg(i));
+        choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        choice->setMinimumContentsLength(18);
+        supplies_ << choice;
+        suppliesLayout->addWidget(new QLabel(QString::number(i + 1)), i / 2 + 1, (i % 2) * 2);
+        suppliesLayout->addWidget(choice, i / 2 + 1, (i % 2) * 2 + 1);
+        connect(choice, &QComboBox::currentIndexChanged, this, [this] {
+            if (loading_ || !units_->currentItem())
+                return;
+            QVector<int> values;
+            for (const auto *box : supplies_)
+                values << box->currentData().toInt();
+            if (!editor_->editUnitSupplies(units_->currentItem()->data(Qt::UserRole).toInt(),
+                                           values))
+                refreshSupplies(false);
+        });
+    }
+    auto supplyHelp = new QLabel("Changes apply immediately with Undo. These slots are edited "
+                                 "directly; quantities in stored inventory stay unchanged.");
+    supplyHelp->setWordWrap(true);
+    suppliesLayout->addWidget(supplyHelp, 6, 0, 1, 4);
+    body->addWidget(suppliesGroup);
     auto detailArea = new QScrollArea;
     detailArea->setObjectName("saveUnitDetailScroll");
     detailArea->setWidgetResizable(true);
@@ -137,6 +170,10 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     });
     connect(editor_, &SaveEditor::refreshed, this, [this] { refresh(); });
     refresh();
+}
+void SaveUnitEditor::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    refreshSwapTargets(); // Project metadata/capacity may have changed in another workspace.
 }
 QString SaveUnitEditor::memberName(int id) const {
     if (!id)
@@ -203,12 +240,13 @@ void SaveUnitEditor::showUnit() {
         }
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
-    note_->setText(
-        editable ? "Edit formations, Unity and tactics. Move ordinary nonleaders between squads or "
-                   "reserve. Membership changes reset affected squads' Unity and recalculate "
-                   "movement type."
-                 : "Squads are read-only in suspend saves and runtime states. Formation "
-                   "edits require a regular battery-save slot.");
+    note_->setText(editable
+                       ? "Edit formations, Unity, tactics and carried items. Move ordinary "
+                         "nonleaders between squads or "
+                         "reserve. Membership changes reset affected squads' Unity and recalculate "
+                         "movement type."
+                       : "Squads are read-only in suspend saves and runtime states. Formation "
+                         "edits require a regular battery-save slot.");
     apply_->setEnabled(editable && !ids_.isEmpty());
     unity_->setEnabled(apply_->isEnabled());
     tactic_->setEnabled(apply_->isEnabled());
@@ -307,6 +345,7 @@ void SaveUnitEditor::refreshSwapTargets() {
         ready = doc.canEditUnits() && member > 0 && member < ids_.size() && ids_[member] > 0 &&
                 ids_[member] < 100;
     }
+    refreshSupplies(pending);
     const bool enabled = ready && !pending && targetMember_->currentIndex() >= 0;
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"
                                                             : "Swap selected members");
@@ -333,5 +372,49 @@ void SaveUnitEditor::refreshSwapTargets() {
     swap_->setToolTip(pending
                           ? "Apply squad edits before moving members"
                           : "Move or swap ordinary nonleader members and reset both squads' Unity");
+}
+void SaveUnitEditor::refreshSupplies(bool pending) {
+    QVector<int> values(10, 0);
+    bool editable = false;
+    int capacity = 0;
+    int selected = -1;
+    QString reason;
+    if (editor_->document() && units_->currentItem()) {
+        const int index = units_->currentItem()->data(Qt::UserRole).toInt();
+        selected = index;
+        for (const auto &unit : editor_->document()->units())
+            if (unit.index == index) {
+                values = unit.supplies;
+                editable = editor_->document()->canEditUnits();
+                try {
+                    capacity = editor_->document()->unitCarryingCapacity(
+                        index, editor_->project()->classData());
+                } catch (const Error &e) {
+                    editable = false;
+                    reason = QString::fromUtf8(e.what());
+                }
+            }
+    }
+    const auto allowed = SaveDocument::carryableItems(*editor_->project());
+    for (int i = 0; i < supplies_.size(); ++i) {
+        auto box = supplies_[i];
+        const QSignalBlocker guard(box);
+        box->clear();
+        box->addItem("Empty", 0);
+        for (int id : allowed)
+            if (selected >= 0 && id <= editor_->document()->maximumUnitSupply(selected, i))
+                box->addItem(editor_->project()->record(Table::Consumables, id).name.simplified(),
+                             id);
+        if (box->findData(values[i]) < 0)
+            box->addItem(QString("Keep existing item %1").arg(values[i]), values[i]);
+        box->setCurrentIndex(box->findData(values[i]));
+        box->setEnabled(editable && !pending);
+        box->setToolTip(pending ? "Apply squad changes before editing carried items" : reason);
+    }
+    const int used =
+        int(std::count_if(values.begin(), values.end(), [](int id) { return id != 0; }));
+    capacity_->setText(reason.isEmpty()
+                           ? QString("%1 carried · capacity %2 of 10 slots").arg(used).arg(capacity)
+                           : reason);
 }
 } // namespace lordly

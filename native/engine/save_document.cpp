@@ -1,5 +1,6 @@
 #include "engine/save_document.h"
 #include "engine/class_data.h"
+#include "engine/project.h"
 #include "game/classes/save_format.h"
 #include <QSet>
 #include <QtEndian>
@@ -223,6 +224,41 @@ void SaveDocument::validateClassEdits(int count) const {
                 check(original.decode(slot), decode(slot));
     } else
         check(originalData_, data_);
+}
+void SaveDocument::validateUnitSupplyEdits(const Project &project) const {
+    if (!battery())
+        return;
+    auto original = *this, current = *this;
+    original.data_ = originalData_;
+    const auto allowed = carryableItems(project);
+    const auto classes = project.classData();
+    for (int slot : {0, 1}) {
+        if (!validSlot(slot))
+            continue;
+        const auto before = original.decode(slot);
+        current.selectSlot(slot);
+        for (const auto &unit : current.units()) {
+            const int at = 0x1971f0 + unit.index * 25 + 13;
+            if (before.mid(at, 10) == current.ram_.mid(at, 10))
+                continue; // Opening/exporting does not normalize an unusual original save.
+            int count = 0;
+            for (int i = 0; i < 10; ++i) {
+                const int id = unit.supplies[i];
+                count += id != 0;
+                if (id != u8(before, at + i) && id != 0 && !allowed.contains(id))
+                    throw Error(QString("Edited carried item %1 in slot %2, squad %3 is no longer "
+                                        "supported by this ROM project")
+                                    .arg(id)
+                                    .arg(slot + 1)
+                                    .arg(unit.index + 1));
+            }
+            if (count > current.unitCarryingCapacity(unit.index, classes))
+                throw Error(QString("Edited carried items in slot %1, squad %2 exceed the current "
+                                    "class carrying capacity")
+                                .arg(slot + 1)
+                                .arg(unit.index + 1));
+        }
+    }
 }
 QByteArray SaveDocument::decode(int slot) const {
     QByteArray ram(0x400000, 0);
@@ -495,12 +531,73 @@ QVector<SaveUnit> SaveDocument::units() const {
             unit.members << u8(ram_, at + 2 + member);
             unit.cells << u8(ram_, at + 7 + member);
         }
+        for (int item = 0; item < 10; ++item)
+            unit.supplies << u8(ram_, at + 13 + item);
         result << unit;
     }
     return result;
 }
 bool SaveDocument::canEditUnits() const {
     return battery() && (slot_ == 0 || slot_ == 1);
+}
+QVector<int> SaveDocument::carryableItems(const Project &project) {
+    QVector<int> result;
+    // Original Army selector BC3B8..BC464 checks resident item getter45420:
+    // only nonzero inventory IDs with record byte5 == 0 appear in this list.
+    const auto &items = project.records(Table::Consumables);
+    for (int id = 1; id < items.size(); ++id)
+        if (u8(items[id].bytes, 5) == 0)
+            result << id;
+    return result;
+}
+int SaveDocument::maximumUnitSupply(int index, int itemSlot) const {
+    if (index < 0 || index >= 30 || itemSlot < 0 || itemSlot >= 10)
+        throw Error("Choose a valid saved squad item slot");
+    if (!battery())
+        return 255;
+    const int at = 0x1971f0 + index * 25 + 13 + itemSlot;
+    for (const auto &field : codec_)
+        if (field.address == at && field.bytes == 1 && !field.sign)
+            return (1 << field.bits) - 1;
+    return 0;
+}
+int SaveDocument::unitCarryingCapacity(int index, const ClassData &classes) const {
+    for (const auto &unit : units())
+        if (unit.index == index) {
+            int capacity = 0;
+            for (int id : unit.members)
+                if (id) {
+                    const auto pair = memberClasses(id);
+                    capacity += classes.carryingCapacity(pair.first, pair.second);
+                }
+            return std::min(10, capacity);
+        }
+    throw Error("Choose an existing saved squad");
+}
+SaveChange SaveDocument::planUnitSupplies(int index, const QVector<int> &supplies,
+                                          const Project &project) const {
+    if (!canEditUnits())
+        throw Error("Carried-item editing requires a regular battery-save slot");
+    const auto list = units();
+    const auto it = std::find_if(list.begin(), list.end(),
+                                 [&](const auto &unit) { return unit.index == index; });
+    if (it == list.end() || supplies.size() != 10)
+        throw Error("Choose an existing saved squad and ten carried-item slots");
+    const auto allowed = carryableItems(project);
+    int count = 0;
+    for (int i = 0; i < 10; ++i) {
+        const int id = supplies[i];
+        if (id != it->supplies[i] && id != 0 && !allowed.contains(id))
+            throw Error("Choose an item supported by the Army carrying list");
+        count += id != 0;
+    }
+    const int at = 0x1971f0 + index * 25;
+    auto record = ram_.mid(at, 25);
+    if (supplies != it->supplies && count > unitCarryingCapacity(index, project.classData()))
+        throw Error("These carried items exceed the squad's carrying capacity");
+    for (int i = 0; i < 10; ++i)
+        put8(record, 13 + i, quint8(supplies[i]));
+    return planBytes(at, record);
 }
 QVector<int> SaveDocument::reserveMembers() const {
     if (!canEditUnits())

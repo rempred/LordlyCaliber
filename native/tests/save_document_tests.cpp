@@ -11,6 +11,171 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void squadSupplies() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess process;
+                process.start("node", {QFINDTESTDATA("save-unit-mips.cjs"), work.path(), mode});
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &file) {
+                QFile source(work.filePath(file));
+                if (!source.open(QIODevice::ReadOnly))
+                    throw Error("Missing squad fixture");
+                const auto payload = source.readAll();
+                QByteArray input(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    input[at + 12] = 0;
+                    input.replace(at + 0x2a, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal squad fixture");
+                }
+                return input;
+            };
+            const auto battery = batteryFor("unit-payload.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            QJsonArray choices, cases;
+            auto recordChoices = [&] {
+                QByteArray records;
+                for (const auto &record : project.records(Table::Consumables))
+                    records += record.bytes;
+                QJsonArray allowed;
+                for (int id : SaveDocument::carryableItems(project))
+                    allowed << id;
+                choices << QJsonObject{{"records", QString::fromLatin1(records.toHex())},
+                                       {"allowed", allowed}};
+            };
+            recordChoices();
+            QCOMPARE(SaveDocument::carryableItems(project).size(), 28);
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto doc = SaveDocument::open(rom, input);
+                for (int slot : {0, 1}) {
+                    doc.selectSlot(slot);
+                    const auto before = doc.memory();
+                    QCOMPARE(doc.unitCarryingCapacity(0, project.classData()), 6);
+                    QCOMPARE(doc.maximumUnitSupply(0, 0), 31);
+                    QCOMPARE(doc.maximumUnitSupply(0, 9), 31);
+                    QCOMPARE(doc.unitCarryingCapacity(2, project.classData()), 3);
+                    const QVector<int> values{1, 2, 0, 24, 31, 0, 7, 0, 20, 0};
+                    const auto change = doc.planUnitSupplies(0, values, project);
+                    doc.apply(change, true);
+                    auto expected = before;
+                    for (int i = 0; i < 10; ++i)
+                        expected[0x1971f0 + 13 + i] = char(values[i]);
+                    QCOMPARE(doc.memory(),
+                             expected); // Includes every inventory/roster/unknown byte.
+                    QCOMPARE(doc.units()[0].supplies, values);
+                    auto reopened = SaveDocument::open(rom, doc.serialize());
+                    reopened.selectSlot(slot);
+                    QCOMPARE(reopened.memory(), expected);
+                    QJsonArray items;
+                    for (int id : values)
+                        items << id;
+                    // Always normalize through a retail container for the independent decoder.
+                    auto reference = SaveDocument::open(rom, battery);
+                    reference.apply(reference.planUnitSupplies(0, values, project), true);
+                    cases << QJsonObject{
+                        {"payload",
+                         QString::fromLatin1(reference.serialize().mid(0x3a, 6180).toHex())},
+                        {"items", items}};
+                    doc.validateUnitSupplyEdits(project);
+                    auto reducedProject = project;
+                    auto small = reducedProject.record(Table::Classes, 2).bytes;
+                    small[ClassData::itemCapacityOffset] = 1;
+                    reducedProject.replaceBytes(Table::Classes, 2, small);
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.validateUnitSupplyEdits(reducedProject));
+                    QCOMPARE(doc.planUnitSupplies(0, values, project).spans.size(), 0);
+                    for (int invalid : {-1, 21, 22, 23, 32, 44, 45, 255, 256}) {
+                        auto bad = values;
+                        bad[0] = invalid;
+                        QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(0, bad, project));
+                    }
+                    auto full = values;
+                    full[2] = 1;
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(0, full, project));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(1, values, project));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(30, values, project));
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             doc.planUnitSupplies(0, QVector<int>(9), project));
+                    QCOMPARE(doc.memory(), expected);
+                    doc.apply(change, false);
+                    QCOMPARE(doc.serialize(), input);
+                    // Removing supplies allows an otherwise unsafe membership edit.
+                    auto capacity =
+                        SaveDocument::open(rom, batteryFor("unit-capacity-payload.bin"));
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             capacity.planToReserve(0, 1, project.classData()));
+                    capacity.apply(capacity.planUnitSupplies(0, QVector<int>(10, 0), project),
+                                   true);
+                    capacity.apply(capacity.planToReserve(0, 1, project.classData()), true);
+                    QVERIFY(capacity.reserveMembers().contains(2));
+                }
+                doc.selectSlot(15);
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         doc.planUnitSupplies(0, QVector<int>(10, 0), project));
+            }
+            auto unknown = SaveDocument::open(rom, batteryFor("unit-unknown-supply-payload.bin"));
+            auto unchanged = unknown.units()[0].supplies;
+            QCOMPARE(unchanged[0], 21);
+            QCOMPARE(unknown.planUnitSupplies(0, unchanged, project).spans.size(), 0);
+            unchanged[2] = 1;
+            unknown.apply(unknown.planUnitSupplies(0, unchanged, project), true);
+            QCOMPARE(unknown.units()[0].supplies[0], 21);
+            auto doc = SaveDocument::open(rom, battery);
+            auto current = doc.units()[0].supplies;
+            current[1] = 21;
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(0, current, project));
+            auto metadata = project.record(Table::Consumables, 21).bytes;
+            metadata[5] = 0;
+            project.replaceBytes(Table::Consumables, 21, metadata);
+            recordChoices();
+            QVERIFY(SaveDocument::carryableItems(project).contains(21));
+            doc.apply(doc.planUnitSupplies(0, current, project), true);
+            QCOMPARE(doc.units()[0].supplies[1], 21);
+            doc.validateUnitSupplyEdits(project);
+            metadata[5] = 1;
+            project.replaceBytes(Table::Consumables, 21, metadata);
+            doc.selectSlot(1); // Export must also validate edits in another slot.
+            QVERIFY_THROWS_EXCEPTION(Error, doc.validateUnitSupplyEdits(project));
+            metadata[5] = 0;
+            project.replaceBytes(Table::Consumables, 21, metadata);
+            doc.validateUnitSupplyEdits(project);
+            doc.selectSlot(0);
+            metadata = project.record(Table::Consumables, 32).bytes;
+            metadata[5] = 0;
+            project.replaceBytes(Table::Consumables, 32, metadata);
+            QVERIFY(SaveDocument::carryableItems(project).contains(32));
+            current[1] = 32;
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSupplies(0, current, project));
+            auto ram = SaveDocument::open(rom, doc.memory());
+            QVERIFY_THROWS_EXCEPTION(Error, ram.planUnitSupplies(0, QVector<int>(10), project));
+            QFile fixture(work.filePath("supply-verify.json"));
+            QVERIFY(fixture.open(QIODevice::WriteOnly));
+            fixture.write(
+                QJsonDocument(QJsonObject{{"choices", choices}, {"cases", cases}}).toJson());
+            fixture.close();
+            run("verify-supplies");
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadFormation() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -352,7 +517,8 @@ class SaveDocumentTests : public QObject {
             const auto beforeFull = full.serialize();
             QVERIFY_THROWS_EXCEPTION(Error, full.planFromReserve(10, 5, 6, classes));
             QCOMPARE(full.serialize(), beforeFull);
-            auto missing = SaveDocument::open(rom, batteryFor("unit-missing-character-payload.bin"));
+            auto missing =
+                SaveDocument::open(rom, batteryFor("unit-missing-character-payload.bin"));
             const auto beforeMissing = missing.serialize();
             QVERIFY_THROWS_EXCEPTION(Error, missing.planToReserve(5, 3, classes));
             QCOMPARE(missing.serialize(), beforeMissing);

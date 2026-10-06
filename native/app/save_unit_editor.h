@@ -12,6 +12,9 @@ class SaveUnitEditor final : public QWidget {
   public:
     explicit SaveUnitEditor(SaveEditor *editor);
 
+  protected:
+    void showEvent(QShowEvent *) override;
+
   private:
     void refresh();
     void showUnit();
@@ -28,7 +31,9 @@ class SaveUnitEditor final : public QWidget {
     QPushButton *toReserve_, *fromReserve_;
     QPushButton *swap_;
     QPushButton *apply_;
-    QLabel *note_;
+    QLabel *note_, *capacity_;
+    QVector<QComboBox *> supplies_;
+    void refreshSupplies(bool pending);
     QVector<int> cells_, ids_;
     bool loading_ = false;
 };

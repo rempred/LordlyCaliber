@@ -4,6 +4,7 @@
 #include <QVector>
 namespace lordly {
 class ClassData;
+class Project;
 enum class SaveTable { Characters, Equipment, Consumables, Game };
 struct SaveField {
     QString key, label;
@@ -26,7 +27,7 @@ struct SaveChange {
 };
 struct SaveUnit {
     int index = 0, label = 0, unity = 0, tactic = 0;
-    QVector<int> members, cells;
+    QVector<int> members, cells, supplies;
 };
 class SaveDocument {
   public:
@@ -51,6 +52,10 @@ class SaveDocument {
     QVector<SaveUnit> units() const;
     QVector<int> reserveMembers() const;
     bool canEditUnits() const;
+    static QVector<int> carryableItems(const Project &);
+    int maximumUnitSupply(int index, int slot) const;
+    int unitCarryingCapacity(int index, const ClassData &) const;
+    SaveChange planUnitSupplies(int index, const QVector<int> &, const Project &) const;
     SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                             const ClassData &) const;
     SaveChange planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
@@ -63,6 +68,7 @@ class SaveDocument {
     QByteArray serialize() const;
     void setClassCount(int);
     void validateClassEdits(int classCount) const;
+    void validateUnitSupplyEdits(const Project &) const;
     const QByteArray &memory() const {
         return ram_;
     }

@@ -8,6 +8,43 @@ m.load(0x80070c00, rom.subarray(0x1000, 0x2f000));
 m.load(0x8016af80, rom.subarray(0x40e80, 0x66e10));
 m.set('sp', 0x803f0000);
 const descriptor = 0x80187444, payload = 0x80350000;
+if (process.argv[3] === 'verify-supplies') {
+    const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'supply-verify.json')));
+    const delta = 0x801135a0, live = at => (at + delta) >>> 0;
+    const root = 0x80260000, saved = 0x80310000, active = 0x80311000;
+    m.w32(0x80196af8, root);
+    m.load(live(0xbc3b8), rom.subarray(0xbc3b8, 0xbc464));
+    for (const check of fixture.choices) {
+        m.load(0x8018e6cc, Buffer.from(check.records, 'hex'));
+        for (const first of [1, 40]) {
+            m.load(0x80193ac0, Buffer.alloc(160));
+            const ids = Array.from({length: Math.min(40, 45-first)}, (_,i) => first+i);
+            ids.forEach((id,i) => {m.w16(0x80193ac0+i*4,id);m.w16(0x80193ac2+i*4,1);});
+            m.call(live(0xbc3b8));
+            const selected = Array.from({length:m.get('v0')},(_,i) => ids[m.r16(root+7150+i*2)]);
+            assert.deepEqual(selected, check.allowed.filter(id => ids.includes(id)), 'original Army item choices');
+        }
+    }
+    m.load(live(0xc192c), rom.subarray(0xc192c, 0xc1964));
+    m.load(live(0xc1f58), rom.subarray(0xc1f58, 0xc1f94));
+    for (const check of fixture.cases) {
+        m.load(payload, Buffer.from(check.payload, 'hex'));
+        m.set('a0', payload);m.set('a1',descriptor);m.call(0x800742f4,0x80000100,5000000);
+        const record = Buffer.from(m.ram.slice(0x1971f0,0x1971f0+25));
+        assert.deepEqual([...record.subarray(13,23)], check.items, 'original save decoder');
+        m.load(saved,record);m.load(active,Buffer.alloc(54,0xa7));
+        m.set('s4',saved);m.set('s2',active);m.call(live(0xc192c),live(0xc1964));
+        assert.deepEqual(Array.from({length:10},(_,i)=>m.r16(active+34+i*2)),check.items,'original Army item load');
+        assert.equal(m.r8(active+32),check.items.filter(Boolean).length,'load-stage occupied count');
+        m.set('s0',saved);m.set('s1',active);m.call(live(0xc1f58),live(0xc1f94));
+        const compact=check.items.filter(Boolean);while(compact.length<10)compact.push(0);
+        assert.deepEqual([...m.ram.slice(m.phys(saved)+13,m.phys(saved)+23)],compact,'original Army item save');
+        assert.deepEqual(Buffer.from(m.ram.slice(m.phys(saved),m.phys(saved)+13)),record.subarray(0,13));
+        assert.deepEqual(Buffer.from(m.ram.slice(m.phys(saved)+23,m.phys(saved)+25)),record.subarray(23,25));
+    }
+    console.log('Original Army selection, packed-save decode and carried-item conversion passed:',fixture.cases.length,'edited saves');
+    process.exit(0);
+}
 if (process.argv[3] !== 'verify') {
     // Explicit saved Soldier base, matching the captured Army's class pair1/1.
     m.w8(0x80193bd1, 1); m.w8(0x80193bd2, 1);
@@ -63,6 +100,8 @@ if (process.argv[3] !== 'verify') {
     variant('unit-full-payload.bin');
     m.w8(0x80193bc0 + 2 * 56 + 17, 0);
     variant('unit-missing-character-payload.bin');
+    m.w8(0x801971f0+13, 21);
+    variant('unit-unknown-supply-payload.bin');
 
 } else {
     const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'unit-verify.json')));
