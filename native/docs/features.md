@@ -43,6 +43,15 @@ choices, dependent-pose playback, source/unselected-frame preservation, Undo,
 copy-duration distinction, common origin and compiled export/reopen. Screenshot
 `build/Release/sequence-comparison.png` inspected. The cutscene gaps remain.
 
+Use as template now names an existing scene replacement without allocating a new
+selector. Its actors/actions and existing game triggers remain attached to the
+same resource. Names persist in the Project, import from browser friendlyName,
+appear in preview/catalog and support Undo/Redo. Project names are not inserted
+into game script bytes. Existing scene export checks retain all selector aliases
+and pass (2.4s); creation/rename desktop checks pass (0.9s); browser authored/wiped
+import including replacement names passes (8.4s). Logs:
+`build/Release/scene-template-{engine,ui,import}.txt`.
+
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear
 saved story flags, silent audio and desktop rasterization. Full-game emulation,

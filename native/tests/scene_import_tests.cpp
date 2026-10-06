@@ -202,8 +202,14 @@ class SceneImportTests : public QObject {
                     << 1498 - accepted << "refusals";
             const auto rom = Rom::open(path);
             auto project = Project::fromRom(rom);
-            const auto browser = input["project"].toObject();
+            auto browser = input["project"].toObject();
+            auto nativeScenes = browser["scenes"].toArray();
+            QVERIFY(!nativeScenes.isEmpty());
+            auto named = nativeScenes[0].toObject(), document = named["document"].toObject(), identity = document["identity"].toObject();
+            identity["friendlyName"] = "Imported replacement scene";
+            document["identity"] = identity; named["document"] = document; nativeScenes[0] = named; browser["scenes"] = nativeScenes;
             project.importLegacy(browser);
+            QVERIFY(project.scenePrograms()->replacementNames().values().contains("Imported replacement scene"));
             QVERIFY(project.pendingLegacySections().isEmpty());
             const auto id = SceneId::authored("0123456789abcdef0123456789abcdef");
             QCOMPARE(project.scenePrograms()->program(id).source,

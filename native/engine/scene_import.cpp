@@ -117,6 +117,7 @@ ImportedScenes importBrowserScenes(const Rom &rom, ScenePrograms programs, Scene
     SceneDocumentCompiler compiler;
     auto manifest = programs.json(), edited = manifest["programs"].toObject();
     QMap<quint32, QByteArray> compiled;
+    QMap<quint32, QString> replacementNames;
     QMap<QString, QJsonObject> authored;
     for (const auto entry : manifest["authored"].toArray())
         authored[entry.toObject()["id"].toString()] = entry.toObject();
@@ -164,6 +165,8 @@ ImportedScenes importBrowserScenes(const Rom &rom, ScenePrograms programs, Scene
             document["native"].toObject()["sourceAssetId"] != ref["assetId"])
             throw Error("Imported scene identities disagree");
         const auto key = currentKey(programs, ref);
+        if (identity["friendlyName"].isString() && !identity["friendlyName"].toString().trimmed().isEmpty())
+            replacementNames[key] = identity["friendlyName"].toString();
         auto original = programs.original().entries()[key].program;
         if (row["wiped"].toBool())
             original = wipeSceneProgram(original);
@@ -193,6 +196,7 @@ ImportedScenes importBrowserScenes(const Rom &rom, ScenePrograms programs, Scene
     manifest["authored"] = authoredRows;
     manifest["programs"] = edited;
     programs.apply(manifest);
+    for (auto it = replacementNames.cbegin(); it != replacementNames.cend(); ++it) programs.renameScene(it.key(), it.value());
     if (payload.contains("eventBindings")) {
         QJsonObject bindings;
         QSet<QString> identities;

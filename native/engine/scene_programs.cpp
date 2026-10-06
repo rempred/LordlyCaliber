@@ -89,6 +89,10 @@ DirectorProgram ScenePrograms::program(SceneId id) const {
 }
 Directors ScenePrograms::runtimeDirectors() const {
     auto result = original_;
+    for (auto it = replacementNames_.cbegin(); it != replacementNames_.cend(); ++it) {
+        if (result.resources_.contains(it.key())) result.resources_[it.key()].name = it.value();
+        if (result.continuations_.contains(it.key())) result.continuations_[it.key()].name = it.value();
+    }
     for (auto it = changes_.cbegin(); it != changes_.cend(); ++it) {
         const auto edited = DirectorProgram::decode(it.value());
         if (result.resources_.contains(it.key()))
@@ -166,8 +170,10 @@ void ScenePrograms::restore(SceneId id) {
     const auto baseline = resource(id).program;
     if (!id.authoredId.isEmpty())
         authored_[id.authoredId].current = baseline;
-    else
+    else {
         changes_.remove(id.nativeKey);
+        replacementNames_.remove(id.nativeKey);
+    }
 }
 QVector<SceneId> ScenePrograms::scenes() const {
     QVector<SceneId> result;
@@ -219,11 +225,16 @@ SceneId ScenePrograms::createScene(const QString &name, SceneId source, bool bla
 void ScenePrograms::renameScene(SceneId id, const QString &name) {
     id = canonical(id);
     resource(id);
-    if (id.authoredId.isEmpty())
-        throw Error("Only authored scenes have editable project names");
-    if (name.trimmed().isEmpty() || name.size() > 120)
-        throw Error("Enter a scene name of 1 to 120 characters");
-    authored_[id.authoredId].name = name.trimmed();
+    if (name.trimmed().isEmpty() || (!id.authoredId.isEmpty() && name.size() > 120))
+        throw Error("Enter a scene name (up to 120 characters for a new authored resource)");
+    if (!id.authoredId.isEmpty()) authored_[id.authoredId].name = name.trimmed();
+    else if (name.trimmed() == resource(id).name) replacementNames_.remove(id.nativeKey);
+    else replacementNames_[id.nativeKey] = name.trimmed();
+}
+QString ScenePrograms::displayName(SceneId id) const {
+    id = canonical(id);
+    const auto &source = resource(id);
+    return !id.authoredId.isEmpty() ? authored_[id.authoredId].name : replacementNames_.value(id.nativeKey, source.name);
 }
 void ScenePrograms::validateRemovedSelectors(const QSet<int> &removed) const {
     if (removed.isEmpty())
@@ -396,13 +407,18 @@ QJsonObject ScenePrograms::json() const {
             {"selector", scene.selector},
             {"baseline", QString::fromLatin1(scene.baseline.program.source.toHex())},
             {"program", QString::fromLatin1(scene.current.source.toHex())}};
-    return {{"version", 1}, {"programs", entries}, {"authored", authored}};
+    QJsonObject result{{"version", 1}, {"programs", entries}, {"authored", authored}};
+    QJsonObject names;
+    for (auto it = replacementNames_.cbegin(); it != replacementNames_.cend(); ++it) names[QString::number(it.key())] = it.value();
+    if (!names.isEmpty()) result["replacementNames"] = names;
+    return result;
 }
 void ScenePrograms::apply(const QJsonObject &value) {
     if (value["version"] != 1 || !value["programs"].isObject())
         throw Error("Invalid saved scene programs");
     auto next = *this;
     next.changes_.clear();
+    next.replacementNames_.clear();
     next.authored_ = originalAuthored_;
     if (value.contains("authored")) {
         if (!value["authored"].isArray())
@@ -464,6 +480,17 @@ void ScenePrograms::apply(const QJsonObject &value) {
         if (!next.authored_.contains(scene.id))
             removed.insert(scene.selector);
     next.validateRemovedSelectors(removed);
+    if (value.contains("replacementNames")) {
+        if (!value["replacementNames"].isObject()) throw Error("Invalid replacement scene names");
+        const auto names = value["replacementNames"].toObject();
+        for (auto it = names.cbegin(); it != names.cend(); ++it) {
+            bool valid = false;
+            const auto key = it.key().toUInt(&valid);
+            if (!valid || QString::number(key) != it.key() || !it.value().isString() || !next.canonical(key).authoredId.isEmpty())
+                throw Error("Invalid replacement scene identity");
+            next.renameScene(key, it.value().toString());
+        }
+    }
     *this = std::move(next);
 }
 } // namespace lordly

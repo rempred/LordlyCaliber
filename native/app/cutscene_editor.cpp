@@ -107,14 +107,19 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         actions->addWidget(renameScene_);
         actions->addWidget(removeScene_);
         static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(actions);
+        templateScene_ = new QPushButton("Use as template");
+        templateScene_->setObjectName("sceneUseTemplate");
+        templateScene_->setToolTip("Name a replacement of this scene. It keeps the current actions and every existing game trigger; no new selector is allocated. The name is saved in the Project.");
+        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(templateScene_);
         wipeScene_ = new QPushButton("Clear scene content");
         wipeScene_->setObjectName("sceneWipe");
         static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(wipeScene_);
-        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
+        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_, templateScene_})
             button->setEnabled(false);
         connect(newScene_, &QPushButton::clicked, this, [this] { createScene(true); });
         connect(duplicateScene_, &QPushButton::clicked, this, [this] { createScene(false); });
         connect(renameScene_, &QPushButton::clicked, this, &CutsceneEditor::renameScene);
+        connect(templateScene_, &QPushButton::clicked, this, &CutsceneEditor::renameScene);
         connect(removeScene_, &QPushButton::clicked, this, &CutsceneEditor::removeScene);
         connect(wipeScene_, &QPushButton::clicked, this, &CutsceneEditor::wipeScene);
     }
@@ -501,7 +506,7 @@ void CutsceneEditor::refreshSceneInputState() {
         backgroundChoice_->setEnabled(false);
         backgroundApply_->setEnabled(false);
         backgroundRestore_->setEnabled(false);
-        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
+        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_, templateScene_})
             button->setEnabled(false);
     }
 }
@@ -517,6 +522,8 @@ void CutsceneEditor::reloadScenes(SceneId preferred) {
     for (const auto &scene : programs().authoredScenes())
         identities << QJsonObject{
             {"id", scene.id}, {"name", scene.name}, {"selector", scene.selector}};
+    for (auto it = programs().replacementNames().cbegin(); it != programs().replacementNames().cend(); ++it)
+        identities << QJsonObject{{"nativeKey", double(it.key())}, {"name", it.value()}};
     const auto signature =
         QString::fromUtf8(QJsonDocument(identities).toJson(QJsonDocument::Compact));
     const QSignalBlocker block(scenes_);
@@ -528,9 +535,7 @@ void CutsceneEditor::reloadScenes(SceneId preferred) {
             QStringList selectors;
             for (const auto row : resource.selectors)
                 selectors << QString::number(row);
-            const auto name = id.authoredId.isEmpty()
-                                  ? resource.name
-                                  : programs().authoredScenes()[id.authoredId].name;
+            const auto name = programs().displayName(id);
             auto item =
                 new QListWidgetItem(name + "\n" +
                                         (id.authoredId.isEmpty() ? hex(resource.envelope + 4)
@@ -620,12 +625,12 @@ void CutsceneEditor::createScene(bool blank) {
 }
 void CutsceneEditor::renameScene() {
     const auto id = selectedScene();
-    if (!project_ || id.authoredId.isEmpty())
+    if (!project_ || !id)
         return;
     bool accepted = false;
     const auto name =
-        QInputDialog::getText(this, "Rename scene", "Name", QLineEdit::Normal,
-                              programs().authoredScenes()[id.authoredId].name, &accepted);
+        QInputDialog::getText(this, id.authoredId.isEmpty() ? "Name scene replacement" : "Rename scene", "Project name", QLineEdit::Normal,
+                              programs().displayName(id), &accepted);
     if (!accepted)
         return;
     try {
@@ -671,7 +676,8 @@ void CutsceneEditor::selectScene() {
         const bool authored = !key.authoredId.isEmpty();
         newScene_->setEnabled(true);
         duplicateScene_->setEnabled(true);
-        renameScene_->setEnabled(authored);
+        renameScene_->setEnabled(authored || programs().replacementNames().contains(key.nativeKey));
+        templateScene_->setEnabled(!authored);
         removeScene_->setEnabled(authored);
         try {
             const auto wiped = wipeSceneProgram(scene.program);

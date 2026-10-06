@@ -53,7 +53,7 @@ class CutsceneEditor : public QWidget {
     std::optional<ScenePrograms> readOnlyPrograms_;
     QString sceneCatalogSignature_;
     QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
-                *removeScene_ = nullptr, *wipeScene_ = nullptr;
+                *removeScene_ = nullptr, *wipeScene_ = nullptr, *templateScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
     SceneActionEditor *actionEditor_ = nullptr;
     TransformPreview *transformPreview_ = nullptr;

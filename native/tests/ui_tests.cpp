@@ -6824,6 +6824,24 @@ class UiTests : public QObject {
         auto remove = editor.findChild<QPushButton *>("sceneRemove");
         QVERIFY(create && duplicate && rename && remove);
         QVERIFY(create->isEnabled());
+        const auto key = scenes->currentItem()->data(Qt::UserRole).toUInt();
+        const auto baseline = project.scenePrograms()->json();
+        const auto selectors = project.scenePrograms()->availableSelectors();
+        QTimer::singleShot(0, [] {
+            if (auto dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                dialog->setTextValue("My replacement scene"); dialog->accept();
+            }
+        });
+        editor.findChild<QPushButton *>("sceneUseTemplate")->click();
+        QCOMPARE(scenes->count(), 1498);
+        QVERIFY(scenes->currentItem()->text().contains("My replacement scene"));
+        QCOMPARE(project.scenePrograms()->displayName(key), "My replacement scene");
+        QCOMPARE(project.scenePrograms()->availableSelectors(), selectors);
+        QVERIFY(project.scenePrograms()->authoredScenes().isEmpty());
+        undo.undo(); QCOMPARE(project.scenePrograms()->json(), baseline);
+        QVERIFY(!scenes->currentItem()->text().contains("My replacement scene"));
+        undo.redo(); QVERIFY(scenes->currentItem()->text().contains("My replacement scene"));
+        undo.undo();
         bool sawDialog = false;
         QTimer::singleShot(0, &editor, [&] {
             if (auto dialog = editor.findChild<QDialog *>("sceneCreateDialog")) {

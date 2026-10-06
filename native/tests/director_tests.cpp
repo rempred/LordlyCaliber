@@ -452,6 +452,12 @@ class DirectorTests : public QObject {
             }
             auto original = edited.program(key);
             QVERIFY(camera >= 0);
+            const auto selectorsBefore = edited.availableSelectors();
+            edited.renameScene(key, "Replacement journey");
+            QCOMPARE(edited.availableSelectors(), selectorsBefore);
+            QCOMPARE(edited.program(key).source, original.source);
+            QCOMPARE(edited.displayName(key), "Replacement journey");
+            QCOMPARE(edited.runtimeDirectors().entries()[key].name, "Replacement journey");
             auto expected = original.source;
             const auto value = original.commands[camera].operands[0] + 1000U;
             put32(expected, original.commands[camera].word * 4 + 4, value);
@@ -477,6 +483,7 @@ class DirectorTests : public QObject {
             auto reopenedProject = Project::fromRom(rom);
             reopenedProject.applyManifest(Project::readProject(work.filePath("project")));
             QCOMPARE(reopenedProject.scenePrograms()->json(), snapshot);
+            QCOMPARE(reopenedProject.scenePrograms()->displayName(key), "Replacement journey");
             phase = "public rebuild";
             const auto built = rebuild(project, tools, work.filePath("compile"));
             auto builtRom = Rom::fromBytes(built.image);

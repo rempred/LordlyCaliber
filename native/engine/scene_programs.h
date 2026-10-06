@@ -52,6 +52,8 @@ class ScenePrograms {
     bool canCreateBlank(SceneId source) const;
     SceneId createScene(const QString &name, SceneId source, bool blank);
     void renameScene(SceneId, const QString &name);
+    QString displayName(SceneId) const;
+    const QMap<quint32, QString> &replacementNames() const { return replacementNames_; }
     void removeScene(SceneId);
     SceneId canonical(SceneId) const;
     const QMap<QString, AuthoredScene> &authoredScenes() const {
@@ -64,10 +66,13 @@ class ScenePrograms {
         return changes_;
     }
     int changedPrograms() const {
-        return int(changes_.size()) + authoredChanges();
+        QSet<quint32> keys;
+        for (auto key : changes_.keys()) keys.insert(key);
+        for (auto key : replacementNames_.keys()) keys.insert(key);
+        return int(keys.size()) + authoredChanges();
     }
     bool modified() const {
-        return !changes_.isEmpty() || authoredChanges() != 0;
+        return !changes_.isEmpty() || !replacementNames_.isEmpty() || authoredChanges() != 0;
     }
 
   private:
@@ -77,5 +82,6 @@ class ScenePrograms {
     QMap<QString, AuthoredScene> authored_, originalAuthored_;
     Directors original_;
     QMap<quint32, QByteArray> changes_;
+    QMap<quint32, QString> replacementNames_;
 };
 } // namespace lordly
