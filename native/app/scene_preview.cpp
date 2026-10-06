@@ -1138,14 +1138,29 @@ void ScenePreview::setActorNavigationEnabled(bool enabled) {
     presentSelectedActor();
 }
 void ScenePreview::presentActors() {
-    const QSignalBlocker guard(liveActors_);
-    liveActors_->clear();
+    QVector<int> actorSlots;
     if (current_)
         for (int slot = 0; slot < 28; ++slot)
             if (current_->playback.actors().actor(slot))
-                liveActors_->addItem(QString("Actor %1").arg(slot), slot);
-    if (selectedActorSlot_ < 0 && liveActors_->count()) selectedActorSlot_ = liveActors_->itemData(0).toInt();
-    liveActors_->setCurrentIndex(liveActors_->findData(selectedActorSlot_));
+                actorSlots << slot;
+    bool changed = liveActors_->count() != actorSlots.size();
+    if (!changed)
+        for (int row = 0; row < actorSlots.size(); ++row)
+            if (liveActors_->itemData(row).toInt() != actorSlots[row]) {
+                changed = true;
+                break;
+            }
+    const QSignalBlocker guard(liveActors_);
+    if (changed) {
+        liveActors_->clear();
+        for (int slot : actorSlots)
+            liveActors_->addItem(QString("Actor %1").arg(slot), slot);
+    }
+    if (selectedActorSlot_ < 0 && liveActors_->count())
+        selectedActorSlot_ = liveActors_->itemData(0).toInt();
+    const int selected = liveActors_->findData(selectedActorSlot_);
+    if (liveActors_->currentIndex() != selected)
+        liveActors_->setCurrentIndex(selected);
     liveActors_->setEnabled(liveActors_->count() > 0);
     presentSelectedActor();
 }

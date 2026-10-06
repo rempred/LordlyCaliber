@@ -28,6 +28,15 @@ compiler warnings. No natural event launch or new generic roster context is clai
 
 ## Live Actor inspection and action navigation
 
+Follow-up: the live Actor dropdown now retains its entries while membership stays
+the same. Previously each rendered frame rebuilt the list and reset an open
+popup's highlighted choice. A desktop interaction check reproduced Actor2's
+highlight reverting to Actor1 on step3->4. With the fix, the popup stays open and
+keeps Actor2 highlighted without committing a selection; seek and existing
+Actor/cast behaviors remain intact. `ui_tests savedStoryCastPreview storyCastPreview`
+passed2344ms, and the full native build passed without compiler warnings. This
+removes unnecessary per-frame list reconstruction as well.
+
 Scene playback lists its currently instantiated Actor slots and displays the chosen
 Actor's actual class pair/art bank and XYZ record values. Selection survives seeking
 through a step where that slot is absent; absent Actors have no active navigation.

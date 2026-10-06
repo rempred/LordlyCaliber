@@ -2170,6 +2170,17 @@ class UiTests : public QObject {
 
         QCoreApplication::processEvents();
         QVERIFY(window.grab().save("scene-saved-cast.png"));
+        actors->showPopup();
+        QTRY_VERIFY(actors->view()->isVisible());
+        actors->view()->setCurrentIndex(actors->model()->index(actors->findData(2), 0));
+        QCOMPARE(actors->view()->currentIndex().data(Qt::UserRole).toInt(), 2);
+        position->setValue(4); QTRY_COMPARE(preview->property("sceneTick").toInt(), 4);
+        QVERIFY(actors->view()->isVisible());
+        QCOMPARE(actors->view()->currentIndex().data(Qt::UserRole).toInt(), 2);
+        actors->hidePopup();
+        QCOMPARE(actors->currentData().toInt(), 1); // Browsing did not commit a selection.
+        position->setValue(3); QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+
         secondary->setCurrentIndex(secondary->findData(0x54));
         QCOMPARE(preview->property("sceneTick").toInt(), 0);
         QCOMPARE(primary->currentData().toInt(), 0x54);
