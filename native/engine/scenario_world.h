@@ -33,7 +33,8 @@ class ScenarioWorld {
     WorldPlan plan() const;
     bool modified() const;
     int changedEntries() const;
-    static int siteCount(const QByteArray &data);
+    int siteCount(int key) const;
+    static int declaredSiteCount(const QByteArray &data);
     static int treasureCount(const QByteArray &data);
     static QByteArray treasureRecord(const QByteArray &data, int row);
 
@@ -44,5 +45,6 @@ class ScenarioWorld {
     QByteArray towns_, originalTowns_;
     QSet<int> reservedTreasureIds_;
     QMap<int, int> originalTreasureGroups_;
+    QMap<int, int> siteCounts_;
 };
 } // namespace lordly

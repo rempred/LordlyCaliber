@@ -1,4 +1,5 @@
 #include "engine/scenario_world.h"
+#include "engine/scenario_map.h"
 #include <QJsonArray>
 
 namespace lordly {
@@ -23,8 +24,12 @@ QByteArray hex(const QJsonValue &value) {
     return bytes;
 }
 } // namespace
-int ScenarioWorld::siteCount(const QByteArray &data) {
+int ScenarioWorld::declaredSiteCount(const QByteArray &data) {
     return framedCount(data, 4);
+}
+int ScenarioWorld::siteCount(int key) const {
+    scenario(key);
+    return siteCounts_.value(key);
 }
 int ScenarioWorld::treasureCount(const QByteArray &data) {
     return framedCount(data, 6);
@@ -36,6 +41,7 @@ QByteArray ScenarioWorld::treasureRecord(const QByteArray &data, int row) {
 ScenarioWorld ScenarioWorld::load(const Rom &rom) {
     const auto resources = WorldResources::load(rom);
     ScenarioWorld result;
+    const auto counts = ScenarioMap::initialSiteCounts(rom);
     result.towns_ = result.originalTowns_ = resources.towns(rom);
     if (result.towns_.size() != townCount * 28)
         throw Error("Unrecognized global site table size");
@@ -49,7 +55,12 @@ ScenarioWorld ScenarioWorld::load(const Rom &rom) {
     }
     for (int key = 1; key < WorldResources::keyCount; ++key) {
         WorldScenario row{resources.treasure(rom, key), resources.sites(rom, key)};
-        for (int i = 0; i < siteCount(row.sites); ++i) {
+        const int count = row.sites.isEmpty() ? 0 : counts.value(key);
+        declaredSiteCount(row.sites);
+        if (!row.sites.isEmpty() && row.sites.size() < 1 + count * 4)
+            throw Error("Scenario site resource is shorter than the game's active count");
+        result.siteCounts_[key] = count;
+        for (int i = 0; i < count; ++i) {
             const int id = u16(row.sites, 1 + i * 4);
             if (id < 1 || id > townCount)
                 throw Error("Scenario site references a missing global record");
@@ -113,8 +124,8 @@ void ScenarioWorld::setTown(int id, const QByteArray &record) {
 }
 void ScenarioWorld::validateScenario(int key, const WorldScenario &value) const {
     const auto &base = original(key);
-    const int sites = siteCount(value.sites), originalSites = siteCount(base.sites);
-    if (value.sites.size() != base.sites.size() || sites != originalSites)
+    const int sites = siteCount(key);
+    if (value.sites.size() != base.sites.size() || value.sites.left(1) != base.sites.left(1))
         throw Error(
             "Site membership/count is shared with mission geometry and cannot be resized here");
     if (value.sites.mid(1 + sites * 4) != base.sites.mid(1 + sites * 4))
@@ -145,7 +156,7 @@ void ScenarioWorld::validateScenario(int key, const WorldScenario &value) const 
 }
 void ScenarioWorld::setSiteAllegiance(int key, int row, int allegiance) {
     auto next = scenario(key);
-    rowRange(row, siteCount(next.sites));
+    rowRange(row, siteCount(key));
     if (allegiance < 0 || allegiance > 2)
         throw Error("Choose neutral, allied or enemy allegiance");
     put16(next.sites, 3 + row * 4, allegiance == 1 ? 0x2012 : allegiance == 2 ? 4 : 0);

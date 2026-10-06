@@ -121,7 +121,7 @@ void ScenarioWorld::importBrowser(const Rom &rom, const QJsonObject &input) {
             const auto resource = siteCatalog[QString::number(archive)].toObject();
             if (resource.isEmpty() || resources.siteSelector(k) != resource["member"].toInt() ||
                 sha256(original(k).sites) != resource["sha256"].toString().toLatin1() || row < 0 ||
-                row >= siteCount(original(k).sites) ||
+                row >= declaredSiteCount(original(k).sites) ||
                 u16(original(k).sites, 1 + row * 4) != selector["siteId"].toInt())
                 throw Error("Imported allegiance does not match the source site's identity");
             const auto identity = qMakePair(archive, row);

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/image.h"
+#include <QMap>
 #include <QPointF>
 #include <QRectF>
 #include <QVector>
@@ -17,6 +18,7 @@ struct ScenarioMap {
     std::optional<QRectF> imageBounds; // Calibrated approximate world rectangle, source-bound.
     std::optional<QRectF> imageGridBounds() const;
     static ScenarioMap load(const Rom &rom, int key);
+    static QMap<int, int> initialSiteCounts(const Rom &rom);
     QPointF world(int x, int z) const;
     QPoint bytes(QPointF position, bool selectorEncoding) const;
     std::optional<QPointF> placement(int x, int z) const;

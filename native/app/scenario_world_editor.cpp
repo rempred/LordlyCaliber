@@ -245,7 +245,7 @@ void ScenarioWorldEditor::refresh(int key) {
     treasures_->clear();
     if (key_ > 0) {
         const auto &s = project_->world()->scenario(key_);
-        for (int i = 0; i < ScenarioWorld::siteCount(s.sites); ++i) {
+        for (int i = 0; i < project_->world()->siteCount(key_); ++i) {
             const int id = u16(s.sites, 1 + i * 4);
             auto item = new QListWidgetItem(
                 QString("%1 · %2").arg(id).arg(project_->world()->townName(id)), sites_);

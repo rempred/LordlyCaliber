@@ -3654,6 +3654,94 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void scenarioSiteCountEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            QUndoStack undo;
+            ScenarioEditor editor(&project, &undo, [] {});
+            editor.resize(1450, 950);
+            editor.show();
+            auto missions = editor.findChild<QListWidget *>("scenarioList");
+            for (int i = 0; i < missions->count(); ++i)
+                if (missions->item(i)->data(Qt::UserRole).toInt() == 64)
+                    missions->setCurrentRow(i);
+            auto pages = editor.findChild<QTabWidget *>("scenarioPages");
+            pages->setCurrentIndex(2);
+            auto sites = editor.findChild<QListWidget *>("worldSites");
+            auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
+            auto apply = editor.findChild<QPushButton *>("worldSiteApply");
+            QCOMPARE(sites->count(), 6);
+            const auto original = project.world()->scenario(64).sites;
+            QCOMPARE(original,
+                     QByteArray::fromHex("010118200201190000011a2012011b0004011c0004011d0004"));
+            auto expected = original;
+            for (int row = 1; row < 6; ++row) {
+                sites->setCurrentRow(row);
+                const int target = row == 2 ? 2 : 1;
+                allegiance->setCurrentIndex(allegiance->findData(target));
+                apply->click();
+                put16(expected, 3 + row * 4, target == 1 ? 0x2012 : 4);
+                QCOMPARE(project.world()->scenario(64).sites, expected);
+            }
+            QCOMPARE(undo.count(), 5);
+            while (undo.canUndo())
+                undo.undo();
+            QCOMPARE(project.world()->scenario(64).sites, original);
+            while (undo.canRedo())
+                undo.redo();
+            QCOMPARE(project.world()->scenario(64).sites, expected);
+            pages->setCurrentIndex(3);
+            auto objects = editor.findChild<QListWidget *>("mapObjects");
+            for (int row = 0; row < 6; ++row) {
+                const auto name = project.world()->townName(u16(expected, 1 + row * 4));
+                const auto matches = objects->findItems(name, Qt::MatchExactly);
+                QCOMPARE(matches.size(), 1);
+                objects->setCurrentItem(matches.first());
+                editor.findChild<QPushButton *>("mapEditFields")->click();
+                QCOMPARE(sites->currentRow(), row);
+                pages->setCurrentIndex(3);
+            }
+            QVERIFY(editor.grab().save("scenario-64-sites.png"));
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.world()->scenario(64).sites, expected);
+            const auto result = rebuild(restored, tools, work.path());
+            const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QVERIFY(QDir().mkpath(root));
+            QTemporaryDir output(QDir(root).filePath("native-site-count-XXXXXX"));
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, result, candidate);
+            const auto reopenedRom = Rom::open(candidate);
+            const auto reopened = ScenarioWorld::load(reopenedRom);
+            QCOMPARE(reopened.siteCount(64), 6);
+            QCOMPARE(reopened.scenario(64).sites, expected);
+            const auto resources = WorldResources::load(reopenedRom);
+            const auto allocation = resources.placement();
+            QVERIFY(allocation);
+            QVERIFY(quint64(allocation->offset) + allocation->allocation <=
+                    quint64(reopenedRom.bytes().size()));
+            QCOMPARE(resources.sites(reopenedRom, 64), expected);
+            for (int key = 1; key < 64; ++key)
+                QCOMPARE(reopened.scenario(key), project.world()->scenario(key));
+            auto checksum = result.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, result.image);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Site count export:" << candidate;
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void scenarioWorldEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

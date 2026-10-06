@@ -10,7 +10,7 @@ add_library(lordly_engine STATIC engine/rom.cpp engine/archive.cpp engine/shops.
 target_include_directories(lordly_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(lordly_engine PRIVATE Qt6::ZlibPrivate)
 target_sources(lordly_engine PRIVATE engine/archive_writer.cpp)
-target_sources(lordly_engine PRIVATE engine/image.cpp engine/scenario_map.cpp)
+target_sources(lordly_engine PRIVATE engine/image.cpp engine/scenario_map.cpp game/scenarios/site-count.c)
 qt_add_resources(lordly_engine map_image_alignments PREFIX "/" BASE . FILES game/scenarios/map-images.json)
 target_sources(lordly_engine PRIVATE engine/item_icons.cpp)
 target_sources(lordly_engine PRIVATE engine/icon_artwork.cpp)

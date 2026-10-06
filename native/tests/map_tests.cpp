@@ -1,5 +1,7 @@
 #include "engine/archive.h"
 #include "engine/scenario_map.h"
+#include "engine/scenario_world.h"
+#include "game/scenarios/site-count.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -11,6 +13,65 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void initialSiteCounts() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QJsonArray rows;
+            for (int key = 0; key < 256; ++key)
+                for (quint32 count : {0u, 1u, 6u, 13u, 255u, 0xffffffffu})
+                    rows << QJsonObject{
+                        {"key", key},
+                        {"points", double(count)},
+                        {"expected", double(lordly_initial_site_count(quint8(key), count))}};
+            const auto counts = ScenarioMap::initialSiteCounts(rom);
+            const auto world = ScenarioWorld::load(rom);
+            int mismatchedHeaders = 0;
+            for (int key = 1; key <= 64; ++key) {
+                const int points = ScenarioMap::load(rom, key).points.size();
+                rows << QJsonObject{
+                    {"key", key}, {"points", points}, {"expected", counts.value(key)}};
+                const auto sites = world.scenario(key).sites;
+                QCOMPARE(world.siteCount(key), sites.isEmpty() ? 0 : counts.value(key));
+                if (!sites.isEmpty() && counts.value(key) != u8(sites, 0)) {
+                    QCOMPARE(key, 64);
+                    QCOMPARE(counts.value(key), 6);
+                    QCOMPARE(u8(sites, 0), quint8(1));
+                    QCOMPARE(sites.size(), 25);
+                    ++mismatchedHeaders;
+                }
+            }
+            QCOMPARE(mismatchedHeaders, 1);
+            QTemporaryDir work;
+            const auto fixture = work.filePath("counts.json");
+            QFile file(fixture);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(QJsonDocument(QJsonObject{{"rom", path}, {"rows", rows}}).toJson());
+            file.close();
+            QProcess reference;
+            reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("site-count-mips.cjs"),
+                                     fixture});
+            QVERIFY(reference.waitForFinished(30000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
+            auto bad = rom.bytes();
+            bad[0x127864] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioWorld::load(Rom::fromBytes(bad)));
+            bad = rom.bytes();
+            put8(bad, 0x654a0 + 64 * 9 + 7, 255);
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioMap::initialSiteCounts(Rom::fromBytes(bad)));
+            const auto resources = WorldResources::load(rom);
+            const auto shortSites = resources.rebuild(rom, resources.towns(rom), {},
+                                                      {{64, world.scenario(64).sites.first(5)}});
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioWorld::load(Rom::fromBytes(shortSites)));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void calibratedTerrain() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

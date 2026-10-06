@@ -1,5 +1,6 @@
 #include "engine/scenario_map.h"
 #include "engine/archive.h"
+#include "game/scenarios/site-count.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -84,6 +85,27 @@ float real(const QByteArray &bytes, int at) {
     return value;
 }
 } // namespace
+QMap<int, int> ScenarioMap::initialSiteCounts(const Rom &rom) {
+    rom.requireSupported();
+    const auto &data = rom.bytes();
+    if (rom.revision() != 0 ||
+        sha256(data.mid(0x127864, 0x6c)) !=
+            "82553c2b7b842f702fd98b6be7601b3cb25aff8a287d8d05dcb2c88485864973")
+        throw Error("Unrecognized scenario site-count code; active site rows cannot be determined");
+    const auto placements = collection(data, 0x2626786);
+    QMap<int, int> result;
+    for (int key = 1; key <= 64; ++key) {
+        const int index = u8(data, 0x654a0 + key * 9 + 7);
+        if (index >= placements.size())
+            throw Error("Site placement selector exceeds its collection");
+        const auto &points = placements[index];
+        if (points.size() < 28 || u32(points, 24) > 255 ||
+            points.size() != 28 + u32(points, 24) * 8)
+            throw Error("Site placement table has an unexpected size");
+        result[key] = int(lordly_initial_site_count(quint8(key), u32(points, 24)));
+    }
+    return result;
+}
 ScenarioMap ScenarioMap::load(const Rom &rom, int key) {
     rom.requireSupported();
     if (rom.revision() != 0 || key < 1 || key > 64)

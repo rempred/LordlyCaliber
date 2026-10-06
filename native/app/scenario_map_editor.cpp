@@ -388,7 +388,7 @@ void ScenarioMapEditor::refresh(int key) {
         if (project_->world()) {
             const auto &world = *project_->world();
             const auto &scene = world.scenario(key);
-            for (int i = 0; i < ScenarioWorld::siteCount(scene.sites); ++i) {
+            for (int i = 0; i < world.siteCount(key); ++i) {
                 const int id = u16(scene.sites, 1 + i * 4);
                 add(MapObject::Site, i, world.townName(id), map.placement(i + 1, 0),
                     QColor("#c9b4eb"));

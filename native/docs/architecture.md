@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Initial scenario site counts
+
+Site lists now use the original initializer's placement count and its six scenario
+exceptions. The maintained C adapter is `game/scenarios/site-count.c`; the engine
+checks the current ROM count block before applying it and reads the compact point
+collection once, without decoding map imagery. Empty site selectors remain empty.
+
+Scenario64 is the only nonempty retail resource whose header differs: it declares
+one descriptor but the initializer consumes six. All six now appear in Sites and
+Map, and allegiance edits retain the header, resource size and membership IDs.
+Bytes beyond the actual active count remain preserved. Browser imports retain
+their historical declared-header row mapping.
+
+`map_tests initialSiteCounts` passed in800ms: all256 keys with six representative
+u32 point counts, plus64 current-ROM cases, matched the original MIPS initializer
+prefix (1,600 comparisons). Unknown count code, invalid placement selectors and
+short SCINCSV resources were rejected. `ui_tests scenarioSiteCountEditing
+scenarioWorldEditing scenarioMapEditing` passed in19,987ms: five newly exposed
+rows, undo/redo, all six map-to-site selections, project save, compiled export,
+allocation bounds, checksum and reopening; other scenarios and source ROM remained
+unchanged. `engine_tests browserWorldImport worldAuthoringExport` also passed
+in19,799ms, including shared-resource browser compatibility and compiled save/reopen.
+The full build passed with no compiler warnings. The scenario64 capture was inspected. This establishes initial count
+and editing behavior, not natural launch of that internal scenario or later
+runtime-dependent site placement.
+
+
 ## Calibrated Scenario terrain references
 
 The map canvas now draws49 current-ROM terrain images behind the existing world
