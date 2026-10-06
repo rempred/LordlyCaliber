@@ -10,8 +10,10 @@ class ScenePlaybackInputs {
     QJsonValue known(const QString &) const;
     QString description() const;
     bool captured() const { return known("capturedSnapshot").isObject(); }
+    int resumeLimit() const { return known("capturedResume").toObject()["updates"].toInt(-1); }
     int mode(int fallback) const;
     void configure(ScenePlaybackStart &, SceneCameras &) const;
+    void validatePoseRegistry(const Rom &, BodyAnimationData::Pointer = {}) const;
     void supply(ScenePlayback &) const;
     std::optional<quint16> controller(int update) const;
     QString boundary() const;

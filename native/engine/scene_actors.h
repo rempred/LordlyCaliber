@@ -49,6 +49,7 @@ class SceneActors {
     const LordlyActorMotion &motion(int slot) const;
     void supplyActor(int slot, const QByteArray &record);
     void supplyMotion(int slot, const LordlyActorMotion &motion);
+    void allowCapturedBodyPreview(bool enabled) { capturedBodyPreview_ = enabled; }
     const ActorHeightJob &heightJob(int slot) const;
     void supplyHeightJob(int slot, ActorHeightJob job);
     void supplyBindingInputs(ActorBindingInputs inputs);
@@ -153,6 +154,7 @@ class SceneActors {
     std::optional<quint32> sceneFlags_;
     int nextPoseSlot_ = 0;
     std::optional<ActorBindingInputs> binding_;
+    bool capturedBodyPreview_ = false;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;
     QHash<quint32, QByteArray> bodyObjects_;

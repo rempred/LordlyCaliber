@@ -90,7 +90,17 @@ Callback histories, explicit fresh-launch service memory and captured resume
 profiles currently stop with a named adapter boundary; these are still being
 integrated. The existing timed edit/export and complete 01FA8BF4 replay pass with
 input import added (23.4s combined); `build/Release/scene-input-integration.txt`.
-Final portable integration remains.
+Captured movement-query resumes now restore an actual command boundary and run
+only their declared update window. Mode-two inputs check native owner/Actor/job
+agreement and supply cameras/projection; current-ROM pose registries are checked
+before use. Missing terrain/proximity inputs remain boundaries. Captured bodies
+can render with explicitly labeled class-default equipment when army rows are
+absent; linked sound still requires its owner when consumed. Synthetic one-update
+resume passes (0.77s); existing Graduation capture passes its69-update limit,
+observed Actor1 position and exact seek replay (0.81s). Its screenshot was inspected.
+Logs: `scene-input-resume.txt`, `scene-graduation-input.txt` in build/Release.
+Remaining: declared resource/dialogue service history and fresh-launch inputs,
+then final portable integration.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear

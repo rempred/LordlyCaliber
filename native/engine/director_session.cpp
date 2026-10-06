@@ -7,6 +7,25 @@ void DirectorSession::advanceCounter() {
     if (state_.counter - 1U <= 0x0ffffffdU)
         ++state_.counter;
 }
+DirectorCommand DirectorSession::restoreMovementQuery(int word) {
+    if (state_.active || previous_ || current_.continuation)
+        throw Error("Captured entry requires a fresh isolated Director");
+    for (int at = 0; at < current_.words.size();) {
+        const auto opcode = current_.words[at];
+        const auto definition = Directors::grammar().value(opcode);
+        if (at == word) {
+            if (opcode != 0x11 || definition.words != 4 || at + 4 > current_.words.size() ||
+                (definition.requiredMode >= 0 && definition.requiredMode != state_.mode))
+                throw Error("Captured entry must identify an enabled movement query");
+            state_.resume_cursor = state_.cursor = word;
+            state_.counter = 0;
+            return {word, opcode, current_.words.mid(at + 1, 3)};
+        }
+        if (definition.words < 1 || opcode == 0x80000001U) break;
+        at += definition.words;
+    }
+    throw Error("Captured parser cursor is not a command boundary");
+}
 void DirectorSession::setMode(int mode) {
     if (mode < 0 || mode > 2)
         throw Error("Director mode is outside 0..2");

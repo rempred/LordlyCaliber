@@ -897,6 +897,7 @@ void ScenePreview::restart() {
         return;
     }
     try {
+        if (inputs) inputs->validatePoseRegistry(rom_, bodyAnimations_);
         const auto &selectedProgram =
             resources_->entries()[resources_->selectors()[selector_]].program;
         const auto plan = inputs ? SceneLaunchPlan{"imported", "Imported playback inputs", {{selector_}}} :
@@ -913,6 +914,9 @@ void ScenePreview::restart() {
                                ? "\nPreceding scenes supply shared Actors, dialogue and scenery. "
                                  "Event timing and setup acknowledgement are approximated."
                                : QString{}));
+        if (inputs && inputs->captured())
+            context_->setText("Captured preview uses the supplied Actor state and qualified update window. "
+                              "Artwork comes from the current ROM/project; lighting and rasterization use the desktop renderer.");
         for (quint32 opcode : {0x8fU, 0xbdU, 0xbeU}) {
             const bool used =
                 std::any_of(plan.steps.cbegin(), plan.steps.cend(), [&](const auto &step) {
@@ -1490,6 +1494,11 @@ void ScenePreview::step() {
         current_ = std::move(next);
         commandTimes_ = std::move(observedTimes);
         ++tick_;
+        if (const auto inputs = activeInputs(); inputs && inputs->resumeLimit() >= 0 &&
+            tick_ >= inputs->resumeLimit() && !current_->stopped) {
+            current_->stopped = true;
+            current_->reason = QString("Captured resume completed its declared %1 updates.").arg(inputs->resumeLimit());
+        }
         if (tick_ % 120 == 0)
             checkpoints_.insert(tick_, *current_);
     } catch (const std::exception &e) {

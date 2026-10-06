@@ -46,6 +46,7 @@ class DirectorSession {
         state_.counter = value;
     }
     void advanceCounter();
+    DirectorCommand restoreMovementQuery(int word);
     void setMode(int mode);
     void setBarrierState(quint8 value) {
         state_.barrier_state = value;

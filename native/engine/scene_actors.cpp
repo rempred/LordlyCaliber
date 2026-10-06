@@ -112,7 +112,10 @@ quint16 SceneActors::bodyEquipment(int slot) const {
     const auto &instance = actor(slot);
     if (!instance || !instance->pose().art().isBody())
         throw Error("Equipment appearance requires an occupied body Actor");
-    const auto &row = bodyRow(u8(instance->record(), 0x147));
+    const int identity = u8(instance->record(), 0x147);
+    if (capturedBodyPreview_ && (identity >= 28 || bodyRows_[identity].isEmpty()))
+        return instance->pose().art().defaultAppearance(rom_).equipment;
+    const auto &row = bodyRow(identity);
     uint16_t carried[4], equipment;
     for (int i = 0; i < 4; ++i)
         carried[i] = u16(row, 0x36 + i * 2);
@@ -127,6 +130,10 @@ int SceneActors::classification(const QByteArray &record) const {
     const int identity = u8(record, 0x147);
     if (identity == 255)
         return 0;
+    if (capturedBodyPreview_ && u8(record, 0x13d) && (identity >= 28 || bodyRows_[identity].isEmpty())) {
+        const auto owner = u32(record, 0xec);
+        return owner == 10 || owner == 25 || owner == 123 ? (u8(record, 0x149) == 1 ? 2 : 1) : 0;
+    }
     const auto &row = bodyRow(identity);
     return lordly_body_classification(reinterpret_cast<const uint8_t *>(row.constData()),
                                       u8(record, 0x149));
@@ -135,7 +142,14 @@ void SceneActors::configureLinkedPose(ActorInstance &actor) const {
     if (!actor.pose().actor().decoder_mode)
         return;
     const auto record = actor.record();
-    const auto &row = bodyRow(u8(record, 0x147));
+    const int identity = u8(record, 0x147);
+    if (capturedBodyPreview_ && (identity >= 28 || bodyRows_[identity].isEmpty())) {
+        // Drawing/ordinary pose controls do not need an external army object.
+        // A linked sound control still stops if it actually consumes that owner.
+        actor.pose().setLinkedObjectKnownAbsent(false);
+        return;
+    }
+    const auto &row = bodyRow(identity);
     const int member = u8(record, 0x149);
     if (member >= 3)
         throw Error("Body pose linked-object selector exceeds its three entries");

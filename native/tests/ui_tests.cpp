@@ -498,7 +498,14 @@ class UiTests : public QObject {
             auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
             auto programs = *project.scenePrograms();
             const auto id = programs.createScene("Imported actor playback", 0x1fa8bf4 - 0x594284, true);
-            programs.replace(id, SceneActions::insert(programs.program(id), 1, 0xe, 10).source);
+            auto importedProgram = SceneActions::insert(programs.program(id), 1, 0xe, 10);
+            const int queryIndex = SceneActions::positions(importedProgram).last().command;
+            importedProgram.commands.insert(queryIndex, {0, 0x11, {0, 0, 0}});
+            importedProgram.commands.insert(queryIndex + 1, {0, 0x80000002, {}});
+            importedProgram.commands.insert(queryIndex + 2, {0, 0x80000000, {}});
+            importedProgram = DirectorProgram::decode(importedProgram.encode());
+            const int queryWord = importedProgram.commands[queryIndex].word;
+            programs.replace(id, importedProgram.source);
             project.setScenePrograms(programs.json());
             const auto unchanged = project.manifest();
             QUndoStack undo;
@@ -550,10 +557,74 @@ class UiTests : public QObject {
             QVERIFY(preview->property("sceneStopped").toBool());
             QVERIFY(state->text().contains("X 10.000 · Y 7.000 · Z 20.000"));
             QVERIFY(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("no elapsed updates"));
+            // The qualified one-update profile supplies a real held query and disjoint owners.
+            auto captured = input["capturedSnapshot"].toObject()["value"].toObject();
+            captured["sceneMode"] = 0; captured["observedParserCursor"] = queryWord;
+            input["capturedSnapshot"] = known(captured);
+            QByteArray primary(0x1cb2, 0); put32(primary, 0x18, 0x80320000); put32(primary, 0xf8, 0x80320400);
+            QJsonArray menuOwners; for (int i = 0; i < 14; ++i) menuOwners << QJsonValue(QJsonValue::Null);
+            QJsonObject resume{{"entry", "normal-director-held-movement-query"}, {"origin", "prospective-captured-state"},
+                {"updates", 1}, {"registeredCounter", 0}, {"tailTimer", -1},
+                {"primaryOwnerAddress", qint64(0x80300000)}, {"primaryOwnerHex", QString::fromLatin1(primary.toHex())},
+                {"secondaryOwnerAddress", qint64(0x80310000)}, {"secondaryOwnerHex", QString::fromLatin1(QByteArray(0x844,0).toHex())},
+                {"menuRootAddress", qint64(0x80330000)}, {"menuRootHex", QString::fromLatin1(QByteArray(0xd8,0).toHex())}, {"menuOwners", menuOwners}};
+            input["capturedResume"] = known(resume);
+            preview->importPlaybackInputs(QJsonDocument(input).toJson());
+            QVERIFY(!preview->property("sceneStopped").toBool());
+            preview->seekToUpdate(10); QTRY_VERIFY(preview->property("sceneStopped").toBool());
+            QCOMPARE(preview->property("sceneTick").toInt(), 1);
+            QVERIFY2(state->text().contains("X 12.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            QVERIFY(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("declared 1 updates"));
+            const auto resumedFrame = preview->renderedFrame();
+            auto endingMovement = movement; put16(endingMovement, 12, 1);
+            auto endingEntries = entries; auto endingActor = endingEntries[0].toObject();
+            endingActor["movementHex"] = QString::fromLatin1(endingMovement.toHex()); endingEntries[0] = endingActor;
+            captured["slots"] = endingEntries; auto badResume = input; badResume["capturedSnapshot"] = known(captured);
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QJsonDocument(badResume).toJson()));
+            QCOMPARE(preview->renderedFrame(), resumedFrame);
             preview->findChild<QPushButton *>("sceneClearPlaybackInputs")->click();
             QVERIFY(!preview->property("sceneStopped").toBool());
             QCOMPARE(preview->findChild<QComboBox *>("sceneLiveActors")->count(), 0);
             QCOMPARE(project.manifest(), unchanged); QCOMPARE(undo.count(), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void importedGraduationCapture() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto programs = ScenePrograms::load(rom);
+            QFile file(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath("../../tests/fixtures/cutscene-graduation-resume.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+            ScenePreview preview(rom); preview.resize(1000, 900); preview.show();
+            preview.selectScene(programs, programs.original().selectors()[2], 2);
+            preview.importPlaybackInputs(QJsonDocument(fixture["input"].toObject()).toJson(QJsonDocument::Compact));
+            auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+            preview.seekToUpdate(100);
+            QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 30000);
+            QCOMPARE(preview.property("sceneTick").toInt(), 69);
+            QVERIFY2(status->text().contains("declared 69 updates"), qPrintable(status->text()));
+            auto objects = preview.findChild<QComboBox *>("sceneLiveActors");
+            QCOMPARE(objects->count(), 8); objects->setCurrentIndex(objects->findData(1));
+            const auto expected = fixture["expected"].toArray().last().toObject();
+            QCOMPARE(expected["update"].toInt(), 69);
+            QByteArray record;
+            for (const auto &entry : expected["actors"].toArray()) if (entry.toObject()["slot"].toInt() == 1)
+                record = QByteArray::fromHex(entry.toObject()["recordHex"].toString().toLatin1());
+            QCOMPARE(record.size(), 336);
+            const auto position = QString("X %1 · Y %2 · Z %3")
+                .arg(std::bit_cast<float>(u32(record, 0x11c)),0,'f',3)
+                .arg(std::bit_cast<float>(u32(record, 0x120)),0,'f',3)
+                .arg(std::bit_cast<float>(u32(record, 0x124)),0,'f',3);
+            QVERIFY2(preview.findChild<QLabel *>("sceneActorState")->text().contains(position),
+                     qPrintable(preview.findChild<QLabel *>("sceneActorState")->text()));
+            const auto frame = preview.renderedFrame();
+            preview.seekToUpdate(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+            preview.seekToUpdate(69); QTRY_COMPARE(preview.property("sceneTick").toInt(), 69);
+            QCOMPARE(preview.renderedFrame(), frame);
+            QVERIFY(preview.grab().save("native-imported-graduation.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void sceneTimedPlacementAndHold() {
