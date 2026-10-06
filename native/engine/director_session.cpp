@@ -25,7 +25,9 @@ DirectorSession::DirectorSession(Directors resources, int selector, int mode,
     current_ = load(selector, false);
     state_.mode = mode;
 }
-DirectorSession::Stream DirectorSession::load(int selector, bool continuation) const {
+DirectorSession::Stream
+DirectorSession::load(int selector, bool continuation,
+                      const std::optional<DirectorLaunchTranslations> &overrideTranslations) const {
     const auto &indices =
         continuation ? resources_.continuationSelectors() : resources_.selectors();
     const auto &entries = continuation ? resources_.continuations() : resources_.entries();
@@ -39,9 +41,10 @@ DirectorSession::Stream DirectorSession::load(int selector, bool continuation) c
     for (int at = 0; at < bytes.size(); at += 4)
         result.words << u32(bytes, at);
     int missing = -1;
-    const auto status = lordly_director_translate(result.words.data(), int(result.words.size()),
-                                                  translations_.values.data(),
-                                                  translations_.known.data(), &missing);
+    const auto &translations = overrideTranslations ? *overrideTranslations : translations_;
+    const auto status =
+        lordly_director_translate(result.words.data(), int(result.words.size()),
+                                  translations.values.data(), translations.known.data(), &missing);
     if (status == 1)
         throw Error(QString("Scene requires launch translation value %1").arg(missing));
     if (status)
@@ -102,7 +105,9 @@ int DirectorSession::dispatch(const Service &service, int instructionBudget) {
                     throw Error("Scene replacement requires the current gameplay Director request");
                 auto next = load(opcode == 0xbb ? *requestedSelector_
                                                 : qint32(current_.words[state_.cursor + 1]),
-                                 false);
+                                 false, opcode == 0xbb ? requestedTranslations_ : std::nullopt);
+                if (opcode == 0xbb && requestedTranslations_)
+                    translations_ = *requestedTranslations_;
                 current_ = std::move(next);
                 previous_.reset();
                 state_.resume_cursor = state_.cursor = state_.active = 0;

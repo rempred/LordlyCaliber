@@ -14,6 +14,7 @@ class DirectPosePlayer {
     DirectPosePlayer(const Rom &, quint16 handle, quint16 selector);
     int advance(int budget = 256, const std::function<quint32()> &random = {});
     void initialize(quint32 selector);
+    void reset(quint32 selector);
     void setOffsets(qint16 x, qint16 y, qint16 z) {
         put16(record_, 12, quint16(x));
         put16(record_, 14, quint16(y));

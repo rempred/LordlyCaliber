@@ -152,4 +152,11 @@ void ActorInstance::setSecondaryHeight(float value, bool addBase) {
     put32(record_, 0x128, std::bit_cast<quint32>(value));
     put8(record_, 0x145, addBase ? 4 : 2);
 }
+void ActorInstance::resetHeight(qint32 value) {
+    // ROM29C5A0 uses signed whole world units, not thousandths.
+    if (value != -1)
+        pose_.actor().position.y = float(value);
+    put32(record_, 0x128, 0);
+    put8(record_, 0x145, (u8(record_, 0x145) & 0xfe) | 4);
+}
 } // namespace lordly

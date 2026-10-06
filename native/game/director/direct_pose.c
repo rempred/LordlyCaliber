@@ -22,6 +22,12 @@ int lordly_direct_initialize(uint8_t *p, uint32_t selector, LordlyDirectRandom r
         selector = selection(random, context);
     }
     if (p[0x48] & 1) selector += 50;
+    return lordly_direct_reset(p, selector);
+}
+/* ROM1F0E04: explicit reset bypasses random selection, +50 and the255 sentinel. */
+int lordly_direct_reset(uint8_t *p, uint32_t selector) {
+    if (!p)
+        return LORDLY_POSE_INVALID;
     put(p, 4, selector); put(p, 6, 65535); put(p, 8, 0);
     put(p, 12, 0); put(p, 14, 0); put(p, 16, 0);
     p[0x46] = p[0x47] = 0;

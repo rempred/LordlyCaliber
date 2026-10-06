@@ -31,6 +31,165 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void explicitActorHeight() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        SceneActors actors(rom, 2, 0, [](int, float, float) { return 12.f; });
+        int value = 0;
+        QVERIFY(actors.service(0x14, {0, 30, 1, 2, 0, 12000, 0, 0, 0}, value));
+        QVERIFY(actors.service(0x14, {2, 30, 1, 2, 0, 7000, 0, 0, 0}, value));
+        QVERIFY(actors.service(0x69, {0, 5000, 0}, value));
+        QVERIFY(actors.service(0x9d, {0, quint32(-1)}, value));
+        QCOMPARE(actors.actor(0)->pose().actor().position.y, 12.f);
+        QCOMPARE(u32(actors.actor(0)->record(), 0x128), 0U);
+        QCOMPARE(u8(actors.actor(0)->record(), 0x145), 6);
+        QCOMPARE(actors.actor(2)->pose().actor().position.y, 7.f);
+        QVERIFY(actors.service(0x9d, {quint32(-1), quint32(-40)}, value));
+        for (int slot : {0, 2}) {
+            QCOMPARE(actors.actor(slot)->pose().actor().position.y, -40.f);
+            QCOMPARE(u32(actors.actor(slot)->record(), 0x128), 0U);
+            QVERIFY(!(u8(actors.actor(slot)->record(), 0x145) & 1));
+            QVERIFY(u8(actors.actor(slot)->record(), 0x145) & 4);
+        }
+        QVERIFY(!actors.actor(1));
+        const auto before = actors.actorRecords();
+        QVERIFY_THROWS_EXCEPTION(Error, actors.service(0x9d, {28, 0}, value));
+        QCOMPARE(actors.actorRecords(), before);
+    }
+    void inheritedSceneContexts() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto events = SceneEvents::load(rom);
+        const auto choices = SceneLaunchPlan::choices(scenes.runtimeDirectors(), events, 12);
+        QVERIFY(!choices.isEmpty());
+        QCOMPARE(choices.first().steps.first().selector, 11);
+        QCOMPARE(choices.first().steps.last().selector, 12);
+        const auto parent = scenes.createScene("Parent context", 0x1a14970, false);
+        const auto child = scenes.createScene("Child context", 0x1a14970, false);
+        auto encode = [](const QVector<quint32> &words) {
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            return bytes;
+        };
+        scenes.replace(
+            parent,
+            encode({0x80000006, 34,         0x14,       0,          30,   1,          2,
+                    0,          0,          0,          0,          0,    0,          0x80000000,
+                    0,          0x80000000, 0,          0x80000000, 0xbf, 0,          5,
+                    0,          0,          160,        180,        192,  0,          0,
+                    0,          0,          0,          1,          0,    0x80000000, 0x7d,
+                    0x80000002, 0x80000000, 0x80000001, 0xff000001}));
+        scenes.replace(child, encode({0x10, 0, 2, 0, 0x48, 0, 77, 0, 0x80000000, 0, 0x80000000,
+                                      0x7d, 0x80000002, 0x80000000, 0x80000001, 0xff000001}));
+        const auto directories = scenes.runtimeDirectors();
+        const int parentSelector = scenes.resource(parent).selectors.first();
+        const int childSelector = scenes.resource(child).selectors.first();
+        ScenePlaybackStart start;
+        start.mode = 2;
+        start.sceneFlags = 0;
+        ScenePlayback playback(rom, directories, childSelector, start,
+                               SceneCameras::freshModeTwo(rom),
+                               [](int, float, float) { return 0.f; });
+        playback.supplyLaunchPlan(directories,
+                                  {"test", "Inherited", {{parentSelector, 0}, {childSelector, 1}}});
+        playback.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
+        playback.dialogue()->context =
+            SceneDialogueContext::preview({QByteArray("Joe\0", 4), QByteArray("Army\0", 5),
+                                           QByteArray("Party\0", 6), QByteArray("Actor\0", 6)});
+        auto advance = [](ScenePlayback &scene) {
+            return scene.advance(
+                [](LordlySceneService) { return true; },
+                [](quint32 op, const QVector<quint32> &, int &) { return op == 0x80000006; });
+        };
+        for (int i = 0; i < 3; ++i) {
+            QCOMPARE(advance(playback), ScenePlayback::Advanced);
+            QVERIFY(!playback.selectedSceneEntered());
+        }
+        QVERIFY(playback.actors().actor(0));
+        QCOMPARE(u8(playback.actors().actor(0)->record(), 0x13c), 0);
+        QCOMPARE(advance(playback), ScenePlayback::Advanced);
+        QVERIFY(!playback.selectedSceneEntered());
+        auto &resources = playback.dialogue()->resources;
+        bool found = false;
+        for (int slot = 0; slot < 6; ++slot)
+            if (resources.active(slot)) {
+                auto record = resources.record(slot);
+                put8(record, 0x8a, u8(record, 0x8a) | 1);
+                resources.supplyRecord(slot, record);
+                found = true;
+            }
+        QVERIFY(found);
+        QCOMPARE(advance(playback), ScenePlayback::Advanced);
+        QVERIFY(playback.selectedSceneEntered());
+        QCOMPARE(u8(playback.actors().actor(0)->record(), 0x13c), 77);
+        const auto checkpoint = playback;
+        QCOMPARE(advance(playback), ScenePlayback::Advanced);
+        QCOMPARE(advance(playback), ScenePlayback::Released);
+        auto replay = checkpoint;
+        QCOMPARE(advance(replay), ScenePlayback::Advanced);
+        QCOMPARE(advance(replay), ScenePlayback::Released);
+        QCOMPARE(replay.actors().actorRecords(), playback.actors().actorRecords());
+        QCOMPARE(replay.director().state().cursor, playback.director().state().cursor);
+        // A pending event request replaces its predecessor via BB, exactly once.
+        auto handoffProgram = scenes.program(parent);
+        for (auto &c : handoffProgram.commands)
+            if (c.opcode == 0x7d)
+                c.opcode = 0xbb;
+        scenes.replace(parent, handoffProgram.encode());
+        auto translated = scenes.program(child);
+        for (auto &c : translated.commands)
+            if (c.opcode == 0x48)
+                c.operands[1] = 0x08880001U;
+        scenes.replace(child, translated.encode());
+        DirectorLaunchTranslations parentValues, childValues;
+        parentValues.set(1, 33);
+        childValues.set(1, 77);
+        auto handoffStart = start;
+        handoffStart.translations = childValues;
+        const auto handoffResources = scenes.runtimeDirectors();
+        ScenePlayback handoff(rom, handoffResources, childSelector, handoffStart,
+                              SceneCameras::freshModeTwo(rom),
+                              [](int, float, float) { return 0.f; });
+        handoff.supplyLaunchPlan(handoffResources, {"handoff",
+                                                    "Handoff",
+                                                    {{parentSelector, 0, parentValues},
+                                                     {childSelector, 1000, childValues}}});
+        handoff.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
+        handoff.dialogue()->context =
+            SceneDialogueContext::preview({QByteArray("Joe\0", 4), QByteArray("Army\0", 5),
+                                           QByteArray("Party\0", 6), QByteArray("Actor\0", 6)});
+        for (int i = 0; i < 4; ++i)
+            QCOMPARE(advance(handoff), ScenePlayback::Advanced);
+        auto &handoffWindows = handoff.dialogue()->resources;
+        for (int slot = 0; slot < 6; ++slot)
+            if (handoffWindows.active(slot)) {
+                auto record = handoffWindows.record(slot);
+                put8(record, 0x8a, u8(record, 0x8a) | 1);
+                handoffWindows.supplyRecord(slot, record);
+            }
+        QCOMPARE(advance(handoff), ScenePlayback::Advanced);
+        QVERIFY(handoff.selectedSceneEntered());
+        QCOMPARE(handoff.director().selector(), childSelector);
+        QCOMPARE(u8(handoff.actors().actor(0)->record(), 0x13c), 0); // Child starts next pass.
+        QCOMPARE(advance(handoff), ScenePlayback::Advanced);
+        QCOMPARE(u8(handoff.actors().actor(0)->record(), 0x13c), 77); // Child event's value, not33.
+        QCOMPARE(advance(handoff), ScenePlayback::Advanced);
+        QCOMPARE(advance(handoff), ScenePlayback::Released);
+        auto rebound = events;
+        rebound.bind("event-director:4:b003E", parentSelector, scenes);
+        const auto edited = SceneLaunchPlan::choices(directories, rebound, 12);
+        QVERIFY(!edited.isEmpty());
+        QVERIFY(std::any_of(edited.cbegin(), edited.cend(), [&](const auto &plan) {
+            return plan.steps.first().selector == parentSelector;
+        }));
+        QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+    }
     void partyLaunchBindings() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

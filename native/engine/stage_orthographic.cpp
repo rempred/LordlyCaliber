@@ -80,6 +80,11 @@ void StageOrthographic::advance() {
     }
     props_ = std::move(next);
 }
+void StageOrthographic::resetPose(int index, quint32 selector) {
+    if (index < 0 || index >= props_.size())
+        throw Error("Scene prop reset selects an absent flat prop");
+    props_[index].pose.reset(selector);
+}
 int StageOrthographic::drawPass(const QByteArray &record, float backgroundZ, float foregroundZ) {
     if (record.size() != 100 || !std::isfinite(backgroundZ) || !std::isfinite(foregroundZ))
         throw Error("Invalid Stage prop draw context");

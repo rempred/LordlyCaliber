@@ -1,5 +1,130 @@
 #include "engine/scene_playback.h"
 namespace lordly {
+void ScenePlayback::supplyLaunchPlan(const Directors &resources, const SceneLaunchPlan &plan) {
+    if (completed_ || schedule_.active || plan.steps.isEmpty() || plan.steps.size() > 8)
+        throw Error("Launch context must be supplied before scene playback starts");
+    if (plan.steps.size() == 1 && plan.tailCall < 0)
+        return;
+    QVector<DirectorContext> contexts;
+    QSet<int> parentWindows;
+    for (const auto &step : plan.steps) {
+        const auto &program = resources.entries()[resources.selectors().at(step.selector)].program;
+        DirectorContext context{
+            DirectorSession(resources, step.selector, schedule_.mode, step.translations),
+            step.tick};
+        context.chaosBand = step.chaosBand;
+        context.launchTranslations = step.translations;
+        if (!program.commands.isEmpty()) {
+            const auto &first = program.commands.first();
+            if (first.opcode == 0x10 && first.operands.size() == 3 &&
+                parentWindows.contains(quint8(first.operands[2])))
+                context.entryGate = first;
+        }
+        for (const auto &command : program.commands)
+            if (command.opcode == 0xbf && !command.operands.isEmpty())
+                parentWindows.insert(quint8(command.operands[0]));
+        contexts << std::move(context);
+    }
+    contexts_ = std::move(contexts);
+    for (int i = 0; i + 1 < contexts_.size(); ++i)
+        contexts_[i].session.setRequestedSelector(plan.steps[i + 1].selector,
+                                                  plan.steps[i + 1].translations);
+    tailCall_ = plan.tailCall;
+    selectedEntered_ = false;
+}
+bool ScenePlayback::updateDirectors() {
+    auto dispatch = [&] {
+        director_.setBarrierState(imageView_ ? u8(*imageView_, 0x840) : 0);
+        director_.setController(pressed_);
+        const int result =
+            director_.dispatch([this](quint32 op, const QVector<quint32> &args,
+                                      int &value) { return command(op, args, value); },
+                               instructionBudget_);
+        if (imageView_)
+            put8(*imageView_, 0x840, director_.state().barrier_state);
+        return result;
+    };
+    if (contexts_.isEmpty()) {
+        directorResult_ = dispatch();
+        if (directorResult_ == LORDLY_DIRECTOR_RELEASE)
+            releaseRequested_ = true;
+        if (directorResult_ == LORDLY_DIRECTOR_YIELD || directorResult_ == LORDLY_DIRECTOR_END ||
+            directorResult_ == LORDLY_DIRECTOR_RELEASE)
+            return true;
+        reason_ = director_.reason();
+        return false;
+    }
+    for (int i = 0; i < contexts_.size(); ++i) {
+        auto &context = contexts_[i];
+        if (context.done || context.tick > qint64(completed_) ||
+            context.lastPass == qint64(completed_))
+            continue;
+        if (!context.entered && context.entryGate) {
+            const auto &gate = *context.entryGate;
+            const int window = quint8(gate.operands[2]);
+            if (!dialogue_ || !createdWindows_.contains(window))
+                continue;
+            const uint32_t words[]{0x10, gate.operands[0], gate.operands[1], gate.operands[2],
+                                   0x80000000};
+            int nesting = 0, result = 0;
+            if (lordly_director_compare(words, 5, 0,
+                                        dialogue_->windows.query(window, dialogue_->resources), 1,
+                                        0, &nesting, &result) ||
+                !nesting)
+                continue;
+        }
+        context.entered = true;
+        const bool selected = i + 1 == contexts_.size();
+        if (selected && tailCall_ < 0)
+            selectedEntered_ = true;
+        std::swap(director_, context.session);
+        activeContext_ = i;
+        directorResult_ = dispatch();
+        const auto detail = director_.reason();
+        if (selected && tailCall_ >= 0 && director_.selector() == tailCall_)
+            selectedEntered_ = true;
+        std::swap(director_, context.session);
+        activeContext_ = -1;
+        const bool complete =
+            directorResult_ == LORDLY_DIRECTOR_END || directorResult_ == LORDLY_DIRECTOR_RELEASE;
+        if (directorResult_ != LORDLY_DIRECTOR_YIELD && !complete) {
+            reason_ = QString("Scene %1: %2").arg(context.session.selector()).arg(detail);
+            return false;
+        }
+        context.lastPass = qint64(completed_);
+        context.done = complete || releaseRequested_;
+        if (!selected && context.session.selector() == contexts_[i + 1].session.selector()) {
+            // BB replaced this predecessor with the pending event request.
+            // Continue that real session once; do not run a duplicate child.
+            auto &child = contexts_[i + 1];
+            if (!child.entered) {
+                child.session = context.session;
+                child.session.setRequestedSelector(
+                    i + 2 < contexts_.size()
+                        ? std::optional<int>(contexts_[i + 2].session.selector())
+                        : std::nullopt,
+                    i + 2 < contexts_.size() ? std::optional<DirectorLaunchTranslations>(
+                                                   contexts_[i + 2].launchTranslations)
+                                             : std::nullopt);
+                child.entered = true;
+                child.tick = qint64(completed_);
+                child.lastPass = qint64(completed_);
+                if (i + 2 == contexts_.size())
+                    selectedEntered_ = true;
+            }
+            context.done = true;
+        }
+        if (!selected) {
+            releaseRequested_ = false;
+            reason_.clear();
+        } else if (context.done) {
+            if (!selectedEntered_)
+                throw Error("The caller ended before reaching the selected scene");
+            releaseRequested_ = true;
+        }
+    }
+    return true;
+}
 ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ScenePlaybackStart start, SceneCameras cameras,
                              ActorInstance::Height height)
@@ -29,6 +154,8 @@ void ScenePlayback::setMode(int mode) {
     if (mode < 0 || mode > 2)
         throw Error("Scene mode is outside 0..2");
     director_.setMode(mode);
+    for (auto &context : contexts_)
+        context.session.setMode(mode);
     actors_.setMode(mode);
     schedule_.mode = quint8(mode);
 }
@@ -105,6 +232,10 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0xbe && activeContext_ >= 0 && contexts_[activeContext_].chaosBand) {
+        value = *contexts_[activeContext_].chaosBand;
+        return true;
+    }
     if (opcode == 0x84) {
         if (!display_.blackout())
             throw Error("Display blackout is waiting for submitted graphics tasks to finish");
@@ -270,6 +401,7 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
                 portrait = [this](int slot) { return actors_.dialoguePortrait(slot); };
             next.windows.create(args, next.resources, next.project, portrait);
             state = std::move(next);
+            createdWindows_.insert(quint8(args[0]));
             return true;
         }
         case 0x1a:
@@ -420,7 +552,12 @@ bool ScenePlayback::update(LordlySceneService service) {
         // Qt shared ownership replaces the target's twenty-record eviction pool.
         return true;
     case LORDLY_SCENE_COUNTER:
-        director_.advanceCounter();
+        if (contexts_.isEmpty())
+            director_.advanceCounter();
+        else
+            for (auto &context : contexts_)
+                if (context.entered && !context.done)
+                    context.session.advanceCounter();
         return true;
     case LORDLY_SCENE_HEIGHT:
         actors_.advanceHeights();
@@ -467,21 +604,7 @@ bool ScenePlayback::update(LordlySceneService service) {
         poseSweepStarted_ = false;
         return true;
     case LORDLY_SCENE_DIRECTOR:
-        director_.setBarrierState(imageView_ ? u8(*imageView_, 0x840) : 0);
-        director_.setController(pressed_);
-        directorResult_ =
-            director_.dispatch([this](quint32 op, const QVector<quint32> &args,
-                                      int &value) { return command(op, args, value); },
-                               instructionBudget_);
-        if (imageView_)
-            put8(*imageView_, 0x840, director_.state().barrier_state);
-        if (directorResult_ == LORDLY_DIRECTOR_RELEASE)
-            releaseRequested_ = true;
-        if (directorResult_ == LORDLY_DIRECTOR_YIELD || directorResult_ == LORDLY_DIRECTOR_END ||
-            directorResult_ == LORDLY_DIRECTOR_RELEASE)
-            return true;
-        reason_ = director_.reason();
-        return false;
+        return updateDirectors();
     default:
         return supplemental_ && *supplemental_ && (*supplemental_)(service);
     }

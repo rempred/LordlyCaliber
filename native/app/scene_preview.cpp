@@ -45,6 +45,17 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     launchRow->addWidget(launchImage_, 1);
     launchImageUi_->hide();
     layout->addWidget(launchImageUi_);
+    launchContextUi_ = new QWidget;
+    auto contextRow = new QHBoxLayout(launchContextUi_);
+    contextRow->setContentsMargins(0, 0, 0, 0);
+    contextRow->addWidget(new QLabel("Launch context"));
+    launchContext_ = new QComboBox;
+    launchContext_->setObjectName("sceneLaunchContext");
+    launchContext_->setToolTip("Choose the event whose preceding scene supplies Actors, dialogue "
+                               "and scenery. This does not change the ROM.");
+    contextRow->addWidget(launchContext_, 1);
+    layout->addWidget(launchContextUi_);
+    launchContextUi_->hide();
     storyCastUi_ = new QWidget;
     auto castRow = new QGridLayout(storyCastUi_);
     castRow->setContentsMargins(0, 0, 0, 0);
@@ -289,6 +300,11 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     timer_->setTimerType(Qt::PreciseTimer);
     connect(timer_, &QTimer::timeout, this, &ScenePreview::step);
     connect(play_, &QPushButton::toggled, this, [this](bool checked) {
+        if (preparing_ && checked) {
+            seekTimer_->start();
+            play_->setText("Pause setup");
+            return;
+        }
         if (checked && current_ && !current_->stopped) {
             timer_->start(qMax(1, qRound(1000. / rate_->value())));
             play_->setText("Pause");
@@ -343,6 +359,11 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     });
     connect(position_, &QSpinBox::valueChanged, this, &ScenePreview::seek);
     connect(launchImage_, &QComboBox::currentIndexChanged, this, [this] {
+        inputHistory_.clear();
+        pressedHistory_.clear();
+        restart();
+    });
+    connect(launchContext_, &QComboBox::currentIndexChanged, this, [this] {
         inputHistory_.clear();
         pressedHistory_.clear();
         restart();
@@ -623,7 +644,8 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
     return QWidget::eventFilter(object, event);
 }
 void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode,
-                               std::optional<Dialogues> dialogues) {
+                               std::optional<Dialogues> dialogues,
+                               std::optional<SceneEvents> events) {
     cancelPositionPick();
     stop();
     dialogues_ = std::move(dialogues);
@@ -632,6 +654,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     liveInput_ = {};
     pendingPressed_ = 0;
     launchImageUi_->hide();
+    launchContextUi_->hide();
     storyCastEnabled_ = false;
     classDefaultsEnabled_ = false;
     party_.reset();
@@ -647,6 +670,22 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         selector_ = resource.selectors.first();
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
+        const auto previousContext = launchContext_->currentData().toString();
+        launchPlans_ = SceneLaunchPlan::choices(
+            *resources_, events ? *events : SceneEvents::load(rom_), selector_);
+        {
+            const QSignalBlocker block(launchContext_);
+            launchContext_->clear();
+            for (const auto &plan : launchPlans_)
+                launchContext_->addItem(plan.name, plan.id);
+            const int previous = launchContext_->findData(previousContext);
+            if (previous >= 0)
+                launchContext_->setCurrentIndex(previous);
+            launchContextUi_->setVisible(
+                launchPlans_.size() > 1 ||
+                (!launchPlans_.isEmpty() &&
+                 (launchPlans_.first().steps.size() > 1 || launchPlans_.first().tailCall >= 0)));
+        }
         storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
         if (mode == 2) party_ = SceneParty::infer(programs.program(id), classCount_);
         const auto actions = SceneActions::inspect(programs.program(id));
@@ -685,7 +724,6 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             "Preview launch: flat terrain. Missing scene context pauses playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
             "Scattered props use a fixed preview seed. Audio requests are displayed without sound.");
-        if (party_) context_->setText(context_->text() + "\n" + party_->description());
         if (storyCastEnabled_)
             context_->setText(context_->text() + "\nThis scene uses the selected preview class pairs. Its "
                                                  "authored positions stay unchanged; equipment uses class defaults.");
@@ -701,6 +739,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
                 context_->text() +
                 "\nTitle reveal uses its separate update timing and resolution. Rectangle edge "
                 "coverage is approximate; title menus and the People board remain unfinished.");
+        contextSummary_ = context_->text();
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -736,6 +775,7 @@ void ScenePreview::restart() {
     current_.reset();
     checkpoints_.clear();
     tick_ = 0;
+    preparing_ = false;
     liveInput_ = {};
     pendingPressed_ = 0;
     frame_ = {};
@@ -744,6 +784,47 @@ void ScenePreview::restart() {
         return;
     }
     try {
+        const auto &selectedProgram =
+            resources_->entries()[resources_->selectors()[selector_]].program;
+        const auto plan =
+            launchPlans_.value(launchContext_->currentIndex(),
+                               SceneLaunchPlan{"direct", "Direct scene launch", {{selector_}}});
+        const int startupSelector = plan.steps.first().selector;
+        const auto &startupProgram =
+            resources_->entries()[resources_->selectors()[startupSelector]].program;
+        if (mode_ == 2)
+            party_ = SceneParty::infer(startupProgram, classCount_);
+        const bool inherited = plan.steps.size() > 1 || plan.tailCall >= 0;
+        context_->setText(contextSummary_ + (party_ ? "\n" + party_->description() : QString{}) +
+                          (inherited
+                               ? "\nPreceding scenes supply shared Actors, dialogue and scenery. "
+                                 "Event timing and setup acknowledgement are approximated."
+                               : QString{}));
+        for (quint32 opcode : {0x8fU, 0xbdU, 0xbeU}) {
+            const bool used =
+                std::any_of(plan.steps.cbegin(), plan.steps.cend(), [&](const auto &step) {
+                    const auto &commands =
+                        resources_->entries()[resources_->selectors()[step.selector]]
+                            .program.commands;
+                    return std::any_of(
+                        commands.cbegin(), commands.cend(),
+                        [=](const auto &command) { return command.opcode == opcode; });
+                });
+            if (used)
+                context_->setText(
+                    context_->text() +
+                    (opcode == 0x8f ? "\nSaved story flags are clear in this preview; a saved game "
+                                      "may choose different dialogue."
+                     : opcode == 0xbd ? "\nAlternate presentation is inactive in this preview."
+                     : plan.tailCall >= 0
+                         ? "\nThe ending branch is selected to reach this scene."
+                         : "\nChaos Frame uses the middle ending band for this preview."));
+        }
+        if (launchPlans_.isEmpty() && !SceneLaunchPlan::fresh(selectedProgram) &&
+            (selectedProgram.resourceClass() == 1 || selectedProgram.resourceClass() == 8 ||
+             selectedProgram.resourceClass() == 4 || selectedProgram.resourceClass() == 5))
+            throw Error("No event predecessor supplies this scene's starting state. Assign it to "
+                        "an event launch with the required context.");
         if (storyCastEnabled_ && armyCastActive_ && saveProvider_ && saveProvider_())
             loadArmyCast();
         auto camera = [](float fov, float x, float y, float z) {
@@ -754,6 +835,9 @@ void ScenePreview::restart() {
             return SceneCamera(data, 1.f);
         };
         auto world = camera(45, 272, 80, 127);
+        // The mode-zero shared-Actor producer uses game-to-world scale0.1
+        // (native global801D06FC); the final screen camera remains independent.
+        world = SceneCamera(world.bank(), .1f);
         auto cameras = mode_ ? SceneCameras::freshModeTwo(rom_)
                              : SceneCameras(camera(90, 0, 0, 120), world, world);
         ScenePlaybackStart start;
@@ -761,6 +845,7 @@ void ScenePreview::restart() {
         start.mode = mode_;
         start.sceneFlags = 0;
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
+        start.translations = plan.steps.last().translations;
         if (storyCastEnabled_) {
             auto cast = SceneStoryCast::sample();
             for (int i = 0; i < 5; ++i)
@@ -770,7 +855,8 @@ void ScenePreview::restart() {
         }
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
-        if (storyCastEnabled_ || classDefaultsEnabled_ || party_)
+        playback.supplyLaunchPlan(*resources_, plan);
+        if (storyCastEnabled_ || classDefaultsEnabled_ || party_ || inherited)
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
         if (party_) party_->supply(playback.actors(),
                                    *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)));
@@ -788,8 +874,7 @@ void ScenePreview::restart() {
         // Preserve typed requests for an eventual backend; never invent voice lifetimes.
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767}));
         playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
-        const auto launch =
-            SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
+        const auto launch = SceneImages::launch(startupProgram);
         if (launch.resource_class == 4) {
             const int overrideRow = launchImage_->currentData().toInt();
             const int row = overrideRow >= 0 ? overrideRow : launch.image_row;
@@ -810,6 +895,14 @@ void ScenePreview::restart() {
         checkpoints_.insert(0, *current_);
         present();
         view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
+        if (inherited) {
+            preparing_ = true;
+            const QSignalBlocker block(play_);
+            play_->setChecked(true);
+            play_->setText("Pause setup");
+            seekTimer_->start();
+            present();
+        }
     } catch (const std::exception &e) {
         current_.reset();
         present();
@@ -842,7 +935,26 @@ void ScenePreview::retainBackgrounds(Snapshot &next) {
     }
     next.playback.replaceIrisBackgrounds(next.backgroundHandles, next.backgrounds->channelCount());
 }
-bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
+bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args,
+                                    int *value) {
+    if ((opcode == 0x60 || opcode == 0x61) && args.size() == 2) {
+        if (opcode == 0x60 && next.flatProps)
+            next.flatProps->resetPose(qint32(args[0]), args[1]);
+        else if (opcode == 0x61 && next.worldProps)
+            next.worldProps->resetPose(qint32(args[0]), args[1]);
+        else
+            throw Error("Scene prop reset requires the current Stage objects");
+        return true;
+    }
+    if (value && opcode == 0x8f && args.size() == 3) {
+        *value = 0; // ROM-only preview has no saved persistent story-flag bank.
+        return true;
+    }
+    // Declared isolated preview inputs. The gameplay owner is absent here.
+    if (value && args.size() == 2 && (opcode == 0xbd || opcode == 0xbe)) {
+        *value = opcode == 0xbe ? 1 : 0;
+        return true;
+    }
     if (opcode == 0x96 && args.size() == 1 && mode_ == 2 && party_) {
         party_->supply(next.playback.actors(),
                        *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)), true);
@@ -1184,6 +1296,8 @@ void ScenePreview::step() {
     }
     auto next = *current_;
     try {
+        if (preparing_ && tick_ % 45 == 0)
+            pendingPressed_ |= 0x8000;
         if (!inputHistory_.contains(tick_))
             inputHistory_.insert(tick_, liveInput_);
         if (!pressedHistory_.contains(tick_))
@@ -1216,8 +1330,8 @@ void ScenePreview::step() {
                     return dialoguePoint(next, slot);
                 };
                 const auto result = next.playback.advance(
-                    empty, [&](quint32 op, const QVector<quint32> &args, int &) {
-                        return referenceCommand(next, op, args);
+                    empty, [&](quint32 op, const QVector<quint32> &args, int &value) {
+                        return referenceCommand(next, op, args, &value);
                     });
                 next.playback.dialogue()->project = {};
                 return result;
@@ -1250,6 +1364,8 @@ void ScenePreview::step() {
     present();
 }
 void ScenePreview::seek(int tick) {
+    if (preparing_)
+        return;
     cancelPositionPick();
     stop();
     if (!current_ || tick < 0 || tick > 10000)
@@ -1272,6 +1388,38 @@ void ScenePreview::seek(int tick) {
     continueSeek();
 }
 void ScenePreview::continueSeek() {
+    if (preparing_) {
+        if (!current_) {
+            preparing_ = false;
+            stop();
+            return;
+        }
+        QElapsedTimer budget;
+        budget.start();
+        for (int i = 0; i < 4 && !current_->stopped && !current_->playback.selectedSceneEntered();
+             ++i) {
+            step();
+            if (budget.elapsed() >= 8)
+                break;
+        }
+        if (current_->playback.selectedSceneEntered()) {
+            preparing_ = false;
+            stop();
+            tick_ = 0;
+            inputHistory_.clear();
+            pressedHistory_.clear();
+            checkpoints_.clear();
+            checkpoints_.insert(0, *current_);
+        } else if (current_->stopped || tick_ >= 10000) {
+            preparing_ = false;
+            current_->stopped = true;
+            if (current_->reason.isEmpty())
+                current_->reason = "The event predecessor did not reach this scene's entry.";
+            stop();
+        }
+        present();
+        return;
+    }
     if (seekTarget_ < 0 || !current_)
         return;
     const int target = seekTarget_;
@@ -1300,6 +1448,11 @@ void ScenePreview::cancelPositionPick() {
 }
 void ScenePreview::beginPositionPick(int command, int slot) {
     cancelPositionPick();
+    if (preparing_) {
+        placementHelp_->setText(
+            "Wait for the inherited scene to finish preparing before choosing a position.");
+        return;
+    }
     stop();
     try {
         if (!current_ || !objectNavigationEnabled_)
@@ -1392,7 +1545,7 @@ void ScenePreview::presentSelectedObject() {
                          (actor ? current_->playback.actors().actor(slot).has_value()
                                 : current_->playback.sprites().sprite(slot) != nullptr);
     findObject_->setText(actor ? "Find Actor action" : "Find sprite action");
-    findObject_->setEnabled(present && objectNavigationEnabled_);
+    findObject_->setEnabled(present && objectNavigationEnabled_ && !preparing_);
     presentSelectionOutline();
     if (!present) {
         objectState_->setText(!selectedObject_ ? "No active Actors or sprites"
@@ -1444,7 +1597,8 @@ void ScenePreview::present() {
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
-    step_->setEnabled(play_->isEnabled());
+    step_->setEnabled(play_->isEnabled() && !preparing_);
+    position_->setEnabled(!preparing_);
     skip_->setVisible(current_ && current_->playback.skipArmed());
     skip_->setEnabled(play_->isEnabled());
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
@@ -1456,6 +1610,7 @@ void ScenePreview::present() {
     selectionOutline_ = nullptr;
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
+    setProperty("scenePreparing", preparing_);
     setProperty("sceneStopped", !current_ || current_->stopped);
     setProperty("sceneAudioRequests", current_ && current_->playback.audio()
                                           ? qulonglong(current_->playback.audio()->requestCount())
@@ -1485,6 +1640,8 @@ void ScenePreview::present() {
                                   : "\nBackground channels: " + current_->backgroundName));
     if (current_->playback.display().black())
         status_->setText(status_->text() + "\nDisplay blacked out by scene command.");
+    if (preparing_)
+        status_->setText("Preparing inherited scene…\n" + status_->text());
     if (!current_->playback.ribbons().empty())
         status_->setText(
             status_->text() +

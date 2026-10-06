@@ -30,7 +30,8 @@ class ScenePreview : public QWidget {
   public:
     explicit ScenePreview(const Rom &, QWidget *parent = nullptr);
     ~ScenePreview() override;
-    void selectScene(const ScenePrograms &, SceneId, int mode, std::optional<Dialogues> = {});
+    void selectScene(const ScenePrograms &, SceneId, int mode, std::optional<Dialogues> = {},
+                     std::optional<SceneEvents> = {});
     void setDialogues(std::optional<Dialogues>);
     void setPortraitProvider(DialogueDrawing::PortraitProvider);
     void refreshPortraits();
@@ -85,7 +86,7 @@ class ScenePreview : public QWidget {
     void presentSelectionOutline();
     void stop();
     void render(Snapshot &, bool commitDraw);
-    bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
+    bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &, int *value = nullptr);
     void retainBackgrounds(Snapshot &);
     void convertBackgrounds(Snapshot &);
     int activeChannels(const Snapshot &) const;
@@ -149,6 +150,11 @@ class ScenePreview : public QWidget {
     bool storyCastEnabled_ = false;
     bool classDefaultsEnabled_ = false;
     std::optional<SceneParty> party_;
+    QVector<SceneLaunchPlan> launchPlans_;
+    QWidget *launchContextUi_;
+    QComboBox *launchContext_;
+    bool preparing_ = false;
+    QString contextSummary_;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
     QComboBox *reward_;

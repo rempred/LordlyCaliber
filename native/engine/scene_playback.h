@@ -13,6 +13,7 @@
 #include "engine/scene_image_motion.h"
 #include "engine/scene_image_presentation.h"
 #include "engine/scene_iris.h"
+#include "engine/scene_launch_plan.h"
 #include "engine/scene_panels.h"
 #include "engine/scene_projection.h"
 #include "engine/scene_ribbons.h"
@@ -59,6 +60,12 @@ class ScenePlayback {
     }
     SceneDrawQueue drawQueue(const QVector<QByteArray> &objects, LordlySceneDrawLayout) const;
     void setMode(int mode);
+    // Preview event scheduling shares scene services while each Director keeps
+    // its own counter, continuation and cursor. Event timing is approximate.
+    void supplyLaunchPlan(const Directors &, const SceneLaunchPlan &);
+    bool selectedSceneEntered() const {
+        return selectedEntered_;
+    }
     const LordlySceneSchedule &schedule() const {
         return schedule_;
     }
@@ -84,10 +91,10 @@ class ScenePlayback {
         return pending_;
     }
     DirectorSession &director() {
-        return director_;
+        return contexts_.isEmpty() || activeContext_ >= 0 ? director_ : contexts_.last().session;
     }
     const DirectorSession &director() const {
-        return director_;
+        return contexts_.isEmpty() || activeContext_ >= 0 ? director_ : contexts_.last().session;
     }
     SceneActors &actors() {
         return actors_;
@@ -223,6 +230,20 @@ class ScenePlayback {
     bool command(quint32, const QVector<quint32> &, int &);
     void syncIris();
     void applyIris();
+    bool updateDirectors();
+    struct DirectorContext {
+        DirectorSession session;
+        int tick = 0;
+        bool entered = false, done = false;
+        qint64 lastPass = -1;
+        std::optional<DirectorCommand> entryGate;
+        std::optional<int> chaosBand;
+        DirectorLaunchTranslations launchTranslations;
+    };
+    QVector<DirectorContext> contexts_;
+    QSet<int> createdWindows_;
+    int activeContext_ = -1, tailCall_ = -1;
+    bool selectedEntered_ = true;
     DirectorSession director_;
     Rom rom_;
     SceneActors actors_;

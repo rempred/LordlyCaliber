@@ -71,6 +71,104 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void inheritedSceneReplay_data() {
+        QTest::addColumn<quint32>("key");
+        QTest::addColumn<int>("mode");
+        QTest::newRow("world") << 0x19abed8U << 2;
+        QTest::newRow("room") << 0x19b46a6U << 0;
+        QTest::newRow("ending-high") << 0x19f4e1aU << 2;
+        QTest::newRow("ending-middle") << 0x19f4ebaU << 2;
+    }
+    void inheritedSceneReplay() {
+        QFETCH(quint32, key);
+        QFETCH(int, mode);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto scenes = ScenePrograms::load(rom);
+        ScenePreview preview(rom);
+        preview.resize(1250, 950);
+        preview.show();
+        preview.selectScene(scenes, key, mode);
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 30000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QCOMPARE(preview.property("sceneTick").toInt(), 0);
+        QVERIFY(preview.findChild<QComboBox *>("sceneLaunchContext")->isVisible());
+        QVERIFY(preview.findChild<QComboBox *>("sceneLiveActors")->count() > 0);
+        const auto initial = preview.renderedFrame();
+        QVERIFY(!initial.isNull());
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        QMap<int, QImage> frames;
+        for (int i = 0; i < 5000 && !preview.property("sceneStopped").toBool(); ++i) {
+            if (i % 45 == 0 && confirm->isVisible())
+                confirm->click();
+            else
+                step->click();
+            if (i == 49 || i % 500 == 499)
+                frames.insert(preview.property("sceneTick").toInt(), preview.renderedFrame());
+            if (i == 49) {
+                const auto frame = preview.renderedFrame();
+                int visible = 0;
+                for (int y = 0; y < frame.height(); ++y)
+                    for (int x = 0; x < frame.width(); ++x) {
+                        const auto color = frame.pixelColor(x, y);
+                        visible += color.alpha() && (color.red() || color.green() || color.blue());
+                    }
+                QVERIFY2(visible > 100, "Inherited scene must show its scenery or dialogue before fading out");
+                QVERIFY(frame.save(QString("native-inherited-%1-early.png").arg(QString::number(key,16))));
+            }
+        }
+        QVERIFY2(status->text().contains("Scene released.") ||
+                     status->text().contains("Scene returned to the game"),
+                 qPrintable(status->text()));
+        qInfo() << QString::number(key, 16) << "finished" << preview.property("sceneTick");
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        position->setValue(0);
+        QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 0, 20000);
+        QCOMPARE(preview.renderedFrame(), initial);
+        for (auto it = frames.cbegin(); it != frames.cend(); ++it) {
+            position->setValue(it.key());
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), it.key(), 20000);
+            QCOMPARE(preview.renderedFrame(), it.value());
+        }
+        preview.grab().save(QString("native-inherited-%1.png").arg(QString::number(key, 16)));
+    }
+    void inheritedSceneEventEdits() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadSceneEvents();
+        auto programs = *project.scenePrograms();
+        const auto id = programs.createScene("Replacement launch", 0x1a14970, true);
+        project.setScenePrograms(programs.json());
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+        editor.resize(1200, 800);
+        editor.show();
+        auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+        for (int i = 0; i < scenes->count(); ++i)
+            if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId)
+                scenes->setCurrentRow(i);
+        auto contexts = editor.findChild<QComboBox *>("sceneLaunchContext");
+        QCOMPARE(contexts->currentData().toString(), QString("direct"));
+        auto sites = editor.findChild<QTableWidget *>("sceneEventSites");
+        for (int i = 0; i < sites->rowCount(); ++i)
+            if (sites->item(i, 0)->text() == "event-director:4:b0058")
+                sites->setCurrentCell(i, 0);
+        auto target = editor.findChild<QComboBox *>("sceneEventTarget");
+        target->setCurrentIndex(target->findData(programs.resource(id).selectors.first()));
+        editor.findChild<QPushButton *>("sceneEventAssign")->click();
+        QVERIFY(contexts->currentData().toString().startsWith("event-director:4:b0058:"));
+        undo.undo();
+        QCOMPARE(contexts->currentData().toString(), QString("direct"));
+        undo.redo();
+        QVERIFY(contexts->currentData().toString().startsWith("event-director:4:b0058:"));
+    }
     void partySceneReplay_data() {
         QTest::addColumn<quint32>("offset");
         QTest::addColumn<quint32>("key");
@@ -5109,10 +5207,14 @@ class UiTests : public QObject {
         preview.resize(1100, 700);
         preview.show();
         auto run = [&](QVector<quint32> words) {
+            // Explicit registered camera matches the Actor world scale0.1.
+            // Keep the fixture's Actor crossing the table's occluding edge.
+            words = QVector<quint32>{0x35, 0, 0, 0, 27200, 8000, 12700, 45000} + words;
             words << 0 << 0x80000000U << 0 << 0x80000000U << 0x80000001U
                   << (0xff000000U | quint32(source.program.resourceClass()));
             QByteArray bytes(words.size() * 4, 0);
-            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
             scenes.replace(id, bytes);
             preview.selectScene(scenes, id, 0);
             preview.findChild<QPushButton *>("sceneStep")->click();

@@ -29,6 +29,12 @@ void DirectPosePlayer::initialize(quint32 selector) {
         throw Error("Direct pose cannot initialize while suspended or requiring randomness");
     record_ = std::move(next);
 }
+void DirectPosePlayer::reset(quint32 selector) {
+    if (invocation_.active)
+        throw Error("Finish the current prop pose update before resetting it");
+    lordly_direct_reset(reinterpret_cast<uint8_t *>(record_.data()), selector);
+    sounds_.clear();
+}
 int DirectPosePlayer::lookup(void *context, const uint8_t *bytes, LordlyPoseRecord *out) {
     auto &self = *static_cast<Invocation *>(context)->player;
     try {

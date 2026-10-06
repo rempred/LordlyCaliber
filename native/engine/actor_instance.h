@@ -23,6 +23,7 @@ class ActorInstance {
     void setUniformScale(float value);
     void addHeight(float step);
     void setSecondaryHeight(float value, bool addBase);
+    void resetHeight(qint32 value);
     ActorPosePlayer &pose() {
         return pose_;
     }

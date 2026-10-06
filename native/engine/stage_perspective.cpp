@@ -88,6 +88,11 @@ StagePerspective StagePerspective::fromRecords(const Rom &rom, const QVector<QBy
     }
     return result;
 }
+void StagePerspective::resetPose(int index, quint32 selector) {
+    if (index < 0 || index >= props_.size())
+        throw Error("Scene prop reset selects an absent world prop");
+    props_[index].pose.reset(selector);
+}
 void StagePerspective::advance() {
     auto next = props_;
     for (auto &prop : next) {

@@ -7,7 +7,7 @@ global.window=global;global.OB64={};vm.runInThisContext(fs.readFileSync(path.joi
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new Mips();m.ram=new Uint8Array(0x400000);
 const delta=0x801add88-0x1f1218,sp=0x803ffe00,record=0x80300010,program=0x80310010,payload=0x80340000,out=0x80350010;
-for(const [a,b] of [[0x1f0e64,0x1f0f5c],[0x1f1218,0x1f197c],[0x1ffe80,0x20019c],[0x201908,0x201b18],[0x2050ac,0x205220],[0x212370,0x213280]])m.load(a+delta,rom.subarray(a,b));
+for(const [a,b] of [[0x1f0e04,0x1f0f5c],[0x1f1218,0x1f197c],[0x1ffe80,0x20019c],[0x201908,0x201b18],[0x2050ac,0x205220],[0x212370,0x213280]])m.load(a+delta,rom.subarray(a,b));
 m.trap(0x801c2ce4,c=>c.set('v0',program));
 const fill=c=>{for(let i=0;i<c.get('a2');i++)c.w8(c.get('a0')+i,c.get('a1'));c.set('v0',c.get('a0'));};
 m.trap(0x8009c970,fill);m.trap(0x80093380,c=>{for(let i=0;i<c.get('a1');i++)c.w8(c.get('a0')+i,0);});
@@ -44,6 +44,10 @@ const initializations=[];
 for(const flags of [0,1,2,3])for(const selector of [0,1,50,255,256,511,65535,0xffffffff]){
  const initial=Buffer.alloc(80,0xa7);initial[0x48]=flags;m.load(record,initial);rng=0;
  call(0x801ad9d4,[record,selector]);initializations.push({initial:initial.toString('hex'),selector,record:bytes(record,80).toString('hex'),random:rng});
+}
+for(const selector of [0,12,255,0x1000c]){
+ const initial=Buffer.alloc(80,0xa7);initial[0x48]=3;m.load(record,initial);rng=0;
+ call(0x801ad974,[record,selector]);initializations.push({reset:true,initial:initial.toString('hex'),selector,record:bytes(record,80).toString('hex'),random:rng});
 }
 function run(handle,state,data,ticks=64,flags=0,offsets=[]){
  m.load(program,data);const initial=Buffer.alloc(80,0);initial.writeUInt32BE(handle,0);initial[0x48]=flags;

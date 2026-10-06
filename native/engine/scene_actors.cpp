@@ -284,6 +284,18 @@ void SceneActors::bindRow(int destination, int ordinal) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x9d) {
+        if (args.size() != 2)
+            throw Error("Actor height reset requires two operands");
+        const bool all = args[0] == 0xffffffffU;
+        const int first = all ? 0 : qint32(args[0]);
+        checkSlot(first);
+        const int end = all ? 28 : first + 1;
+        for (int slot = first; slot < end; ++slot)
+            if (actors_[slot])
+                actors_[slot]->resetHeight(qint32(args[1]));
+        return true;
+    }
     if (opcode == 0x69) {
         if (args.size() != 3) throw Error("Actor secondary-height command is truncated");
         const int slot = qint32(args[0]);

@@ -6,7 +6,7 @@ descriptions, save a project, and choose Build and export ROM. The source ROM
 is read-only. The included N64 toolchain compiles game sources and edited data
 during export; no Decomp checkout is required.
 
-This is an unfinished migration, not the 0.5 release. Classes and Items provide
+This is a local development build, not the published 0.5 release. Classes and Items provide
 record editing, descriptions, undo, project persistence and source-built export.
 US Rev 0 Classes also provides promotion requirements, family selection and
 creation, compatibility masks, and new classes through ID 255. Select a class and
@@ -14,9 +14,11 @@ choose Add class from selected to copy its records, appearance, requirements and
 description. Rebuilds grow the owned tables and description resources, rebuild
 their game readers, and install compatible save conversion within the 4 MB RAM
 layout. Scenarios, Cutscenes, Art, Sprites, Tools and Save workspaces are also
-available. Cutscene playback and some save operations remain incomplete; see
-`docs/features.md` for current coverage. Full-game boot and hardware memory/device behavior remain unverified
-by the isolated instruction and simulated save tests. Imported unsupported sections remain
+available. Revision 0 is the implemented rebuild baseline. Revision 1 currently
+offers basic records and text; its remaining browser workflows, including Shops,
+Scenarios, encounter overrides and the Chaos Frame counter, still need porting.
+Full-game boot and hardware memory/device behavior remain unverified
+by the isolated instruction and save-file checks. Imported unsupported sections remain
 in the project and block export so they cannot be silently dropped.
 
 Projects are folders containing `project.json`. Sharing archives use
@@ -76,6 +78,17 @@ routes use current project edits, including added classes. Preserved battle stag
 and caller-selected terrain use sample environment zero and flat ground. Party
 entrance, binding and return operations execute in the native engine. Returning
 to gameplay ends the preview without starting full-game emulation.
+
+Scenes that inherit their cast, dialogue and scenery now prepare their preceding
+scenes before starting the selected timeline. Launch context selects among known
+event routes or ending callers. Changing an event assignment and Undo/Redo update
+these choices. Setup can be paused; choosing another scene cancels it. Event timing
+and setup dialogue acknowledgement are approximated. Saved story flags default to
+clear and ending previews choose the branch leading to the selected scene. Stage
+prop animation resets, explicit Actor height and the room camera scale are native.
+Audio requests remain silent, terrain is flat, and unsupported gameplay services
+show a boundary instead of modifying the source. Full-game menus are outside the
+cutscene preview.
 
 For scripting:
 

@@ -62,6 +62,28 @@ const SceneEventSite &SceneEvents::site(const QString &id) {
         throw Error("Event launch site is not in the catalog");
     return found.value();
 }
+const QVector<SceneEventContext> &SceneEvents::contexts() {
+    static const QVector<SceneEventContext> result = [] {
+        QVector<SceneEventContext> result;
+        for (const auto &v : catalog()["contexts"].toArray()) {
+            const auto row = v.toObject();
+            SceneEventContext context;
+            context.id = row["id"].toString();
+            context.site = row["site"].toString();
+            context.parent = row["parent"].toString();
+            context.invocation = row["invocation"].toInt(-1);
+            context.parentInvocation = row["parentInvocation"].toInt(-1);
+            context.ticks = qMax(1, row["ticks"].toInt(1));
+            const auto translations = row["translations"].toArray();
+            for (int i = 0; i < translations.size() && i < 256; ++i)
+                if (translations[i].isDouble())
+                    context.translations.set(i, quint16(translations[i].toInt()));
+            result << context;
+        }
+        return result;
+    }();
+    return result;
+}
 quint32 SceneEvents::retailKey(int row) {
     return quint32(rowInfo(row)["key"].toInteger());
 }

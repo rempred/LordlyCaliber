@@ -215,6 +215,10 @@ SceneBackgrounds SceneImages::backgrounds(const Rom &rom, const DirectorResource
     } else if (freshEnvironment) {
         result.mode = 2;
         result.modeEvidence = "Qualified fresh environment launch selects mode two.";
+    } else if (cls == 1 || cls == 2 || cls == 7 || cls == 8) {
+        result.mode = 2;
+        result.modeEvidence =
+            "This resource class uses the world scene engine; its event supplies inherited state.";
     } else if (sha256(scene.program.encode()).toUpper() ==
                    context["sourceSha256"].toString().toLatin1().toUpper() &&
                !context["mode"].isNull()) {

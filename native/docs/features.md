@@ -6,6 +6,30 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
+## Current checkpoint — 2026-10-06
+
+Inherited scene launch is now implemented: current event bindings choose the
+predecessor chain, shared Actors/dialogue/scenery survive entry, and ending callers
+select the branch leading to the chosen resource. World, room and both ending
+paths complete and reproduce their frames when seeking backward. Event assignment
+and Undo/Redo refresh the launch context. Room scale, explicit Actor height and
+Stage prop program resets are connected to native execution. Earlier milestone
+notes below retain their historical limits; these launch gaps are now resolved.
+
+Revision 1 compatibility is a remaining product gap, not optional validation. The
+browser exposes workflows that native currently disables: Shops, Scenarios,
+encounter overrides and Chaos Frame, among others. Native revision 1 presently
+exposes basic records/text. Only a revision 0 source ROM has been located in the
+authorized workspace; a revision 1 source path has been requested so its code/data
+placements and export/reopening can be implemented and verified safely. Do not
+claim the all-features rewrite is complete while this gap remains.
+
+Preview approximations remain explicit: sample party/terrain where gameplay
+context is unavailable, inherited event timing and setup acknowledgement, clear
+saved story flags, silent audio and desktop rasterization. Full-game emulation,
+Hugo's interactive menus, live save injection and exact hardware pixels are not
+acceptance requirements for the editor rewrite.
+
 | Area | Required capabilities | Native status |
 |---|---|---|
 | Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | Readable project change review now supports background generation, search, copy and text export relative to the loaded source ROM, with persistence and source-preservation checks. Remaining workspace audit in progress |

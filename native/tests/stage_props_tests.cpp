@@ -354,9 +354,12 @@ class StagePropsTests : public QObject {
             const auto row = value.toObject();
             auto actual = unhex(row["initial"]);
             CustomContext context;
-            QCOMPARE(lordly_direct_initialize(reinterpret_cast<uint8_t *>(actual.data()),
-                                              quint32(row["selector"].toDouble()), random,
-                                              &context),
+            QCOMPARE(row["reset"].toBool()
+                         ? lordly_direct_reset(reinterpret_cast<uint8_t *>(actual.data()),
+                                               quint32(row["selector"].toDouble()))
+                         : lordly_direct_initialize(reinterpret_cast<uint8_t *>(actual.data()),
+                                                    quint32(row["selector"].toDouble()), random,
+                                                    &context),
                      LORDLY_POSE_OK);
             QCOMPARE(actual, unhex(row["record"]));
             QCOMPARE(context.random, row["random"].toInt());

@@ -40,7 +40,13 @@ ActorMatrices ActorMatrices::prepare(const Rom &rom, const QByteArray &actor,
     if (!lordly_actor_matrices(&result, reinterpret_cast<const uint8_t *>(actor.constData()),
                                reinterpret_cast<const uint8_t *>(channel.constData()), bank,
                                camera.modelScale(), &constants))
-        throw Error("Actor matrix has invalid projection or fixed-point coordinates");
+        throw Error(QString("Actor %1 has invalid projection or fixed-point coordinates (X %2, Y "
+                            "%3, Z %4, facing %5)")
+                        .arg(u32(actor, 0xe4))
+                        .arg(std::bit_cast<float>(u32(actor, 0x11c)))
+                        .arg(std::bit_cast<float>(u32(actor, 0x120)))
+                        .arg(std::bit_cast<float>(u32(actor, 0x124)))
+                        .arg(u8(actor, 0x13f)));
     return {{reinterpret_cast<const char *>(result.matrix), 64},
             {reinterpret_cast<const char *>(result.shadow), 64},
             {result.position[0], result.position[1]},

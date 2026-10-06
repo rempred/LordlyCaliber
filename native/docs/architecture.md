@@ -1,5 +1,58 @@
 # Native Lordly Caliber
 
+## Inherited scene launch and Stage resets
+
+SceneLaunchPlan resolves event predecessors from current project bindings and
+retains each invocation's known substitutions and relative delay. The generated
+catalog adds 2,076 invocation records, not game program bytes. ScenePlayback runs
+their Directors against shared Actors, dialogue and scenery, with independent
+counters/continuations and a first-dialogue entry gate. A BB replacement transfers
+the actual session once, applies the child's translation table, and starts on the
+next update instead of retaining the estimated event delay. Ending callers retain
+their real tail call and selected Chaos Frame branch.
+
+The desktop prepares this state in cancellable timer slices and starts the selected
+timeline at zero. Snapshots retain every active Director. Event assignment and
+Undo/Redo refresh launch choices without discarding unfinished source fields.
+Event timing/automatic setup acknowledgement, clear persistent story flags, absent
+alternate presentation and ending band are declared preview inputs. This is not an
+event/game interpreter or a reconstruction of the player's entire saved state.
+
+The shared room Actor camera now uses the native 0.1 world scale; its independent
+screen camera remains unchanged. z64 ROM 0x29C5A0 height reset preserves -1, otherwise
+uses signed whole world units, clears secondary height and updates only its native
+height flag bits. Stage commands 60/61 address the existing flat/perspective props.
+Their shared z64 ROM 0x1F0E04 pose reset bypasses the initializer's random/+50/255 policies;
+it reuses the existing pose updater and renderers. The older command reference
+describes combat owners: these same 100/248-byte owners also supply Stage props.
+
+Focused checks: inheritedSceneContexts passes parent-window gating, shared cast,
+snapshot replay, event rebinding and BB translation/handoff. explicitActorHeight
+passes single/all/null selection, preserved and explicit height, flags and invalid
+selection atomicity (90ms). Existing launchTranslationsAreAtomic and
+continuationSessionOwnership pass (94ms). poseInitializationAgainstMips passes
+32 existing and four added original reset comparisons (439ms).
+
+Desktop inherited world resource 019ABED8 completes 1,730 visible updates; room resource 019B46A6
+completes 1,903. Ending resources 019F4E1A/019F4EBA complete 1,437/1,573 after setup, both with
+exact backward-seek images (150,452 ms combined including setup and replay).
+sceneRoomComposition, inheritedSceneEventEdits and sceneDraftSurvivesEventUndo
+pass. The room test uses an explicit camera to retain its partial foreground
+overlap after correcting world scale; visibility and pixel picking assertions
+remain. These checks change no ROM export representation.
+An early ending frame also shows sepia scenery, stage props, Actors and narration;
+the stronger visible-frame assertion and existing desktop workspace check pass
+(70,240 ms, including a complete ending replay). The late black captures agree
+with the script's explicit fade. Images were inspected.
+
+Portable development ZIP: `native/dist/LordlyCaliber-0.5-dev-20261006-131748.zip`.
+Both GUI and CLI were rebuilt. Existing isolated-package checks pass with developer
+Qt/toolchain paths removed: GUI startup, bundled user-time compilation, independent
+class-record readback, export/reopen and master preservation (1.7s); browser scene
+conversion/export/reopen matches all 2,648 expected bytes (6.3s). Logs are
+`native/build/native-portable-check.log` and `native-portable-scene-check.log`.
+No game boot or clean-machine hardware run is claimed. Nothing was published.
+
 ## Saved reserve membership
 
 Regular battery slots now move ordinary nonleaders to reserve and add ordinary

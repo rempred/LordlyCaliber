@@ -17,6 +17,7 @@ class StageOrthographic {
     static StageOrthographic fromRecords(const Rom &, const QVector<QByteArray> &);
     // Called once by the world drawing prepass; repainting must not advance it.
     void advance();
+    void resetPose(int index, quint32 selector);
     const QVector<StageFlatProp> &props() const {
         return props_;
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/director_session.h"
 #include "engine/scene_programs.h"
 #include <QJsonObject>
 namespace lordly {
@@ -7,11 +8,17 @@ struct SceneEventSite {
     int row = 0, offset = 0, selector = 0, entryCursor = 0;
     bool shortForm = false, shared = false;
 };
+struct SceneEventContext {
+    QString id, site, parent;
+    int invocation = -1, parentInvocation = -1, ticks = 1;
+    DirectorLaunchTranslations translations;
+};
 class SceneEvents {
   public:
     static constexpr quint32 directory = 0x9398e8, base = 0x594280;
     static const QMap<QString, SceneEventSite> &sites();
     static const SceneEventSite &site(const QString &);
+    static const QVector<SceneEventContext> &contexts();
     static quint32 retailKey(int row);
     static QByteArray retailRow(const Rom &, int row);
     static QByteArray readRow(const Rom &, int row);

@@ -301,8 +301,18 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 dialogue->selectEntry(quint16(command.operands[1]), quint16(command.operands[2]));
                 pages->setCurrentWidget(dialogue);
             });
-    if (project_)
+    if (project_) {
         pages->addTab(new SceneEventEditor(project_, undo_, changed), "Event launches");
+        connect(undo_, &QUndoStack::indexChanged, this,
+                [this, previous = project_->sceneEvents()->json()]() mutable {
+                    const auto next = project_->sceneEvents()->json();
+                    if (next == previous)
+                        return;
+                    previous = next;
+                    if (!invalidSceneInput())
+                        selectScene();
+                });
+    }
     if (project_) {
         actionEditor_ = new SceneActionEditor(project_, undo_, changed);
         pages->addTab(actionEditor_, "Actions");
@@ -683,7 +693,8 @@ void CutsceneEditor::selectScene() {
             QString("Preview unavailable: %1").arg(QString::fromUtf8(e.what()));
     }
     scenePreview_->selectScene(programs(), key, backgrounds_.mode,
-                               project_ ? project_->dialogues() : std::optional<Dialogues>{});
+                               project_ ? project_->dialogues() : std::optional<Dialogues>{},
+                               project_ ? project_->sceneEvents() : std::optional<SceneEvents>{});
     commands_->setRowCount(scene.program.commands.size());
     for (int i = 0; i < scene.program.commands.size(); ++i) {
         const auto &cmd = scene.program.commands[i];

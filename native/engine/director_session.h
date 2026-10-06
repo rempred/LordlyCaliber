@@ -36,8 +36,10 @@ class DirectorSession {
     void setController(quint16 mask) {
         state_.controller = mask;
     }
-    void setRequestedSelector(int selector) {
+    void setRequestedSelector(std::optional<int> selector,
+                              std::optional<DirectorLaunchTranslations> translations = {}) {
         requestedSelector_ = selector;
+        requestedTranslations_ = translations;
     }
     void setCounter(quint32 value) {
         state_.counter = value;
@@ -55,7 +57,8 @@ class DirectorSession {
         int selector = 0, resume = 0;
         bool continuation = false;
     };
-    Stream load(int selector, bool continuation) const;
+    Stream load(int selector, bool continuation,
+                const std::optional<DirectorLaunchTranslations> &translations = {}) const;
     static int lookup(void *, LordlyDirectorWord, LordlyDirectorDefinition *);
     static int invoke(void *, LordlyDirectorWord, const LordlyDirectorWord *, int, int *);
     Directors resources_;
@@ -63,6 +66,7 @@ class DirectorSession {
     Stream current_;
     std::optional<Stream> previous_;
     std::optional<int> requestedSelector_;
+    std::optional<DirectorLaunchTranslations> requestedTranslations_;
     LordlyDirectorDispatch state_{};
     const Service *service_ = nullptr;
     QString reason_;
