@@ -54,12 +54,33 @@ class SaveDocumentTests : public QObject {
                                          unsigned(expanded.size())));
             for (const auto &input : {battery, swapped, expanded}) {
                 auto doc = SaveDocument::open(rom, input);
-                QCOMPARE(doc.units().size(), 4);
+                QCOMPARE(doc.units().size(), 5);
                 QCOMPARE(doc.units()[0].index, 0);
                 QCOMPARE(doc.units()[1].index, 2);
                 QCOMPARE(doc.units()[1].members[1], 100);
                 QCOMPARE(doc.units()[0].cells, QVector<int>({0, 4, 8, 0, 0}));
                 const auto before = doc.memory();
+                const auto swap = doc.planUnitSwap(0, 1, 5, 1, classes);
+                doc.apply(swap, true);
+                auto swappedMemory = before;
+                swappedMemory[0x1971f3] = 8;
+                swappedMemory[0x1971f0 + 5 * 25 + 3] = 2;
+                swappedMemory[0x1971fc] = 0;
+                swappedMemory[0x1971f0 + 5 * 25 + 12] = 0;
+                QCOMPARE(doc.memory(), swappedMemory);
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), swappedMemory);
+                doc.apply(swap, false);
+                QCOMPARE(doc.serialize(), input);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 0, 5, 1, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 0, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 5, 4, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 2, 1, classes));
+                auto noCapacity = classes;
+                auto fighter = noCapacity.entries()[2];
+                fighter.record[ClassData::itemCapacityOffset] = 0;
+                noCapacity.set(2, fighter);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 5, 1, noCapacity));
+                QCOMPARE(doc.memory(), before);
                 const auto edit = doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes);
                 doc.apply(edit, true);
                 auto expected = before;
@@ -86,6 +107,7 @@ class SaveDocumentTests : public QObject {
                 QCOMPARE(doc.memory(), before);
                 doc.selectSlot(15);
                 QVERIFY(!doc.canEditUnits());
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 5, 1, classes));
                 QVERIFY_THROWS_EXCEPTION(Error,
                                          doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes));
                 doc.apply(edit, false);
@@ -93,7 +115,8 @@ class SaveDocumentTests : public QObject {
             }
             auto raw = SaveDocument::open(rom, read("unit-ram.bin"));
             QVERIFY(!raw.canEditUnits());
-            QCOMPARE(raw.units().size(), 4);
+            QCOMPARE(raw.units().size(), 5);
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitSwap(0, 1, 5, 1, classes));
             QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes));
             auto doc = SaveDocument::open(rom, battery);
             for (int index : {2, 3}) {
@@ -132,9 +155,11 @@ class SaveDocumentTests : public QObject {
             QJsonArray sizes;
             for (int primary = 0; primary < classes.entries().size(); ++primary)
                 for (int secondary = 0; secondary < classes.entries().size(); ++secondary)
-                    sizes << QJsonObject{{"primary", primary},
-                                         {"secondary", secondary},
-                                         {"expected", classes.unitSize(primary, secondary)}};
+                    sizes << QJsonObject{
+                        {"primary", primary},
+                        {"secondary", secondary},
+                        {"expected", classes.unitSize(primary, secondary)},
+                        {"capacity", classes.carryingCapacity(primary, secondary)}};
             doc.apply(doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes), true);
             for (int index : {2, 3})
                 doc.apply(doc.planUnitEdit(index, {0, 8, 0, 0, 0}, 23, 2, classes), true);
@@ -160,12 +185,13 @@ class SaveDocumentTests : public QObject {
                 {"record", QString::fromLatin1(doc.memory().mid(0x1971f0, 25).toHex())},
                 {"leaderCell", 1},
                 {"grid", QJsonArray{255, 1, 2, 255, 255, 255, 255, 255, 3}}};
+            doc.apply(doc.planUnitSwap(0, 1, 5, 1, classes), true);
             atomicWrite(
                 work.filePath("unit-verify.json"),
                 QJsonDocument(
                     QJsonObject{
                         {"payload", QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
-                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 125).toHex())},
+                        {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 150).toHex())},
                         {"cases", cases},
                         {"soldierSize", std::max(1, classes.unitSize(1, 1))},
                         {"sizes", sizes}})

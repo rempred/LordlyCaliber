@@ -9,21 +9,22 @@ m.load(0x8016af80, rom.subarray(0x40e80, 0x66e10));
 m.set('sp', 0x803f0000);
 const descriptor = 0x80187444, payload = 0x80350000;
 if (process.argv[3] !== 'verify') {
-    for (let id = 1; id <= 3; ++id) {
+    for (let id = 1; id <= 9; ++id) {
         const at = 0x80193bc0 + id * 56, name = Buffer.alloc(13);
         Buffer.from('Member' + id).forEach((c, i) => name[i] = c + 16);
         name[7] = 255;
         m.load(at, name);
-        m.w8(at + 17, 1); m.w8(at + 18, 1); m.w8(at + 19, 10);
+        m.w8(at + 17, 2); m.w8(at + 18, 2); m.w8(at + 19, 10);
         m.w16(at + 22, 100); m.w16(at + 24, 90);
-        m.w8(at + 51, id === 1 ? 2 : 0); m.w8(at + 52, id);
+        m.w8(at + 51, [1,4,5,6,7].includes(id) ? 2 : 0); m.w8(at + 52, id);
     }
     for (const [index, flags, ids, cells] of [
         [0, 1, [1, 2, 3, 0, 0], [0, 4, 8, 0, 0]],
         [1, 0x81, [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
-        [2, 1, [2, 100, 0, 0, 0], [1, 7, 0, 0, 0]],
-        [3, 1, [2, 219, 0, 0, 0], [1, 7, 0, 0, 0]],
-        [4, 1, [2, 220, 0, 0, 0], [1, 7, 0, 0, 0]]
+        [2, 1, [4, 100, 0, 0, 0], [1, 7, 0, 0, 0]],
+        [3, 1, [5, 219, 0, 0, 0], [1, 7, 0, 0, 0]],
+        [4, 1, [6, 220, 0, 0, 0], [1, 7, 0, 0, 0]],
+        [5, 1, [7, 8, 9, 0, 0], [0, 4, 8, 0, 0]]
     ]) {
         const at = 0x801971f0 + index * 25;
         m.w8(at, index + 1); m.w8(at + 1, flags);
@@ -31,6 +32,11 @@ if (process.argv[3] !== 'verify') {
         cells.forEach((cell, i) => m.w8(at + 7 + i, cell));
         m.w8(at + 12, 23); m.w8(at + 13, 9); m.w8(at + 23, 2); m.w8(at + 24, 2);
     }
+    for (let i = 1; i < 100; ++i) m.w8(0x80197710 + i, i <= 9 ? i : 127);
+    for (let i = 0; i < 30; ++i) m.w8(0x801977d8 + i, [0,2,3,4,5][i] ?? 31);
+    m.w8(0x80190f80, 45); m.w8(0x80190f81, 9); m.w16(0x80190f82, 300);
+    m.w16(0x80190f84, 83); m.w16(0x80190f84 + 119 * 2, 44);
+    m.w8(0x80191074, 2); m.w8(0x80191074 + 119, 5);
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x80074494, 0x80000100, 5000000);
     fs.writeFileSync(path.join(dir, 'unit-payload.bin'), Buffer.from(m.ram.slice(m.phys(payload), m.phys(payload) + 6180)));
     fs.writeFileSync(path.join(dir, 'unit-ram.bin'), Buffer.from(m.ram));
@@ -40,14 +46,25 @@ if (process.argv[3] !== 'verify') {
         m.set('a0', row.primary); m.set('a1', row.secondary);
         m.call(0x8016de1c);
         assert.equal(m.get('v0'), row.expected, `size for ${row.primary}/${row.secondary}`);
+        m.set('a0', row.primary); m.set('a1', row.secondary);
+        m.call(0x8016d200);
+        assert.equal(m.get('v0'), row.capacity, `carrying capacity for ${row.primary}/${row.secondary}`);
     }
     m.load(payload, Buffer.from(fixture.payload, 'hex'));
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x800742f4, 0x80000100, 5000000);
-    assert.deepEqual(Buffer.from(m.ram.slice(0x1971f0, 0x1971f0 + 125)), Buffer.from(fixture.units, 'hex'));
+    assert.deepEqual(Buffer.from(m.ram.slice(0x1971f0, 0x1971f0 + 150)), Buffer.from(fixture.units, 'hex'));
     // Whole-function identity was qualified against the Army snapshot. Execute
     // only field conversion blocks here; OS, menu allocation and natural load
     // are outside this reference check.
     const delta = 0x801135a0, live = at => (at + delta) >>> 0;
+    m.load(live(0xb7fc8), rom.subarray(0xb7fc8, 0xb7fd0));
+    for (const unit of [0, 5]) for (const unity of [0, 1, 23, 99, 100, 127]) {
+        const base = 0x80260000 + unit * 54, at = base + 4507;
+        m.w8(at - 1, 0xa7); m.w8(at, unity); m.w8(at + 1, 0xa7);
+        m.set('v1', base); m.set('v0', 1); // The original ordinary nonleader removal flag.
+        m.call(live(0xb7fc8), live(0xb82ac));
+        assert.equal(m.r8(at), 0); assert.equal(m.r8(at - 1), 0xa7); assert.equal(m.r8(at + 1), 0xa7);
+    }
     m.load(live(0xc2fec), rom.subarray(0xc2fec, 0xc3044));
     for (const id of [100, 101, 219]) {
         m.set('s6', id); m.set('sp', 0x803f0000);
@@ -76,5 +93,5 @@ if (process.argv[3] !== 'verify') {
         const expected = row.grid.flatMap((id, cell) => id === 255 ? [] : [[id, cell]]);
         assert.deepEqual(pairs.sort((a,b) => a[0]-b[0]), expected.sort((a,b) => a[0]-b[0]));
     }
-    console.log(`PASS ${fixture.sizes.length} original class-size pairs, original save decoder and ${fixture.cases.length} Army formation materialize/store comparisons; ordinary/special IDs and leader pairing. No natural game launch or menu-allocation claim.`);
+    console.log(`PASS ${fixture.sizes.length} original class-size/capacity pairs, 12 ordinary-removal Unity resets, original save decoder and ${fixture.cases.length} Army formation materialize/store comparisons; ordinary/special IDs and leader pairing. No natural game launch or menu-allocation claim.`);
 }

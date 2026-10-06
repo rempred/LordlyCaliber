@@ -73,6 +73,7 @@ class ClassData {
     int append(int templateId, const QByteArray &encodedName);
     void set(int id, const ClassAsset &asset);
     int unitSize(int primary, int secondary) const;
+    int carryingCapacity(int primary, int secondary) const;
     ClassDataImage build(quint32 ramBase, quint32 ramEnd = 0x80400000U) const;
 
   private:

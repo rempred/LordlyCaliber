@@ -52,6 +52,8 @@ class SaveDocument {
     bool canEditUnits() const;
     SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                             const ClassData &) const;
+    SaveChange planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
+                            const ClassData &) const;
     void apply(const SaveChange &, bool forward);
     QByteArray serialize() const;
     void setClassCount(int);
@@ -78,5 +80,8 @@ class SaveDocument {
     bool swapped_ = false, expanded_ = false;
     int daysInMonth(unsigned year, unsigned month) const;
     SaveChange planBytes(int address, const QByteArray &replacement) const;
+    SaveChange difference(const QByteArray &next, int first, int size) const;
+    QPair<int, int> memberClasses(int id) const;
+    void validateFormation(const SaveUnit &, const ClassData &) const;
 };
 } // namespace lordly

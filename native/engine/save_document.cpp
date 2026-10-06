@@ -460,6 +460,11 @@ SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const 
             throw Error("Cannot sign edited save");
     } else
         next.replace(at, width, replacement);
+    return difference(next, first, size);
+}
+SaveChange SaveDocument::difference(const QByteArray &next, int first, int size) const {
+    SaveChange result;
+    result.slot = slot_;
     for (int pos = first; pos < first + size;) {
         if (next[pos] == data_[pos]) {
             ++pos;
@@ -495,6 +500,51 @@ QVector<SaveUnit> SaveDocument::units() const {
 bool SaveDocument::canEditUnits() const {
     return battery() && (slot_ == 0 || slot_ == 1);
 }
+QPair<int, int> SaveDocument::memberClasses(int id) const {
+    if (id <= 0 || id >= 220)
+        throw Error("Formation editing for unknown member IDs is not supported");
+    // Original Army placement C2FEC..C3044 supplies pair1/1 for Soldier groups.
+    // The saved HP/companion arrays contain120 entries, member IDs100..219.
+    if (id >= 100)
+        return {1, 1};
+    const int at = roster + id * stride, primary = u8(ram_, at + 17);
+    if (!primary)
+        throw Error("Squad member refers to an unavailable character");
+    return {primary, u8(ram_, at + 18)};
+}
+void SaveDocument::validateFormation(const SaveUnit &unit, const ClassData &classes) const {
+    if (unit.members.size() != 5 || unit.cells.size() != 5 || unit.members[0] < 1 ||
+        unit.members[0] >= 100)
+        throw Error("A saved squad needs an ordinary character as its leader");
+    QSet<int> occupied, members;
+    QVector<QPair<int, int>> sizes;
+    int capacity = 0;
+    for (int i = 0; i < 5; ++i) {
+        const int id = unit.members[i], cell = unit.cells[i];
+        if (!id)
+            continue;
+        if (members.contains(id))
+            throw Error("A member cannot occupy two formation cells");
+        members.insert(id);
+        const auto pair = memberClasses(id);
+        if (cell < 0 || cell > 8 || occupied.contains(cell))
+            throw Error("Each member needs a different formation cell");
+        occupied.insert(cell);
+        const int size = classes.unitSize(pair.first, pair.second);
+        if (size > 2)
+            throw Error("Squad member uses an unknown class size");
+        capacity += size == 2 ? 2 : 1;
+        sizes << qMakePair(cell, size);
+    }
+    if (capacity > 5)
+        throw Error("Squad exceeds its five formation places");
+    for (const auto &a : sizes)
+        if (a.second == 2)
+            for (const auto &b : sizes)
+                if (a.first != b.first && std::abs(a.first / 3 - b.first / 3) <= 1 &&
+                    std::abs(a.first % 3 - b.first % 3) <= 1)
+                    throw Error("A large member needs adjacent formation cells clear");
+}
 SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                                       const ClassData &classes) const {
     if (!canEditUnits())
@@ -510,42 +560,12 @@ SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int 
         (tactic != unit.tactic && (tactic < 0 || tactic > 3)))
         throw Error("Unity must be 0–100 and the tactic must be one of the four game choices");
     if (cells != unit.cells) {
-        QSet<int> occupied;
-        QVector<QPair<int, int>> sizes;
-        int capacity = 0;
-        for (int i = 0; i < 5; ++i) {
-            const int id = unit.members[i], cell = cells[i];
-            if (!id) {
-                if (cell != unit.cells[i])
-                    throw Error("Preserve the unused member's formation byte");
-                continue;
-            }
-            if (id >= 220)
-                throw Error("Formation editing for unknown member IDs is not supported");
-            if (cell < 0 || cell > 8 || occupied.contains(cell))
-                throw Error("Each member needs a different formation cell");
-            occupied.insert(cell);
-            // Original Army placement owner C2FEC..C3044 supplies class pair1/1
-            // for Soldier groups. The saved HP/companion arrays contain120
-            // entries, addressed by member IDs100..219; preserve those entries.
-            const int type = id >= 100 ? 1 : u8(ram_, roster + id * stride + 17);
-            if (type < 1 || type >= classes.entries().size())
-                throw Error("Squad member refers to an unavailable character or class");
-            const int secondary = id >= 100 ? 1 : u8(ram_, roster + id * stride + 18);
-            const int size = classes.unitSize(type, secondary);
-            if (size > 2)
-                throw Error("Squad member uses an unknown class size");
-            capacity += size == 2 ? 2 : 1;
-            sizes << qMakePair(cell, size);
-        }
-        if (capacity > 5)
-            throw Error("Squad exceeds its five formation places");
-        for (const auto &a : sizes)
-            if (a.second == 2)
-                for (const auto &b : sizes)
-                    if (a.first != b.first && std::abs(a.first / 3 - b.first / 3) <= 1 &&
-                        std::abs(a.first % 3 - b.first % 3) <= 1)
-                        throw Error("A large member needs adjacent formation cells clear");
+        for (int i = 0; i < 5; ++i)
+            if (!unit.members[i] && cells[i] != unit.cells[i])
+                throw Error("Preserve the unused member's formation byte");
+        auto changed = unit;
+        changed.cells = cells;
+        validateFormation(changed, classes);
     }
     const int at = 0x1971f0 + index * 25;
     auto record = ram_.mid(at, 25);
@@ -554,6 +574,57 @@ SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int 
     put8(record, 12, quint8(unity));
     put8(record, 23, quint8(tactic));
     return planBytes(at, record);
+}
+SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
+                                      const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Member swaps require a regular battery-save slot");
+    if (fromUnit == toUnit || fromMember < 1 || fromMember > 4 || toMember < 1 || toMember > 4)
+        throw Error("Choose nonleader members from two different squads");
+    const auto list = units();
+    const auto find = [&](int index) {
+        const auto it =
+            std::find_if(list.begin(), list.end(), [&](const auto &u) { return u.index == index; });
+        if (it == list.end())
+            throw Error("Choose an existing saved squad");
+        return *it;
+    };
+    auto from = find(fromUnit), to = find(toUnit);
+    const int firstId = from.members[fromMember], secondId = to.members[toMember];
+    for (int id : {firstId, secondId}) {
+        if (id < 1 || id >= 100)
+            throw Error("Choose two existing ordinary characters");
+        int references = 0;
+        for (const auto &unit : list)
+            references += int(std::count(unit.members.begin(), unit.members.end(), id));
+        if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
+            throw Error("Selected character has conflicting squad or leader membership");
+    }
+    std::swap(from.members[fromMember], to.members[toMember]);
+    auto candidate = *this;
+    for (const auto &unit : {from, to}) {
+        validateFormation(unit, classes);
+        int capacity = 0, carried = 0;
+        for (int id : unit.members)
+            if (id) {
+                const auto pair = memberClasses(id);
+                capacity += classes.carryingCapacity(pair.first, pair.second);
+            }
+        const int at = 0x1971f0 + unit.index * 25;
+        auto record = ram_.mid(at, 25);
+        for (int i = 13; i < 23; ++i)
+            carried += u8(record, i) != 0;
+        if (carried > capacity)
+            throw Error("The swapped squad would not have room for its carried items");
+        for (int i = 0; i < 5; ++i)
+            put8(record, 2 + i, quint8(unit.members[i]));
+        // Both squads lose an ordinary nonleader: original removal B7FC8..B7FD0
+        // clears their Unity. No leader/status, supply, order or activation change.
+        put8(record, 12, 0);
+        candidate.apply(candidate.planBytes(at, record), true);
+    }
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
 }
 void SaveDocument::apply(const SaveChange &change, bool forward) {
     for (const auto &span : change.spans) {

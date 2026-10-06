@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Atomic saved-member swaps
+
+The Squads page can swap ordinary nonleader characters between two existing
+regular battery-save squads. Both retain their leaders, cells, flags, carried
+items, roster records and order/activation lists. Both Unity values reset to zero,
+matching removal of an ordinary nonleader. Formation and carrying capacity are
+validated for each resulting squad before any edit reaches the document. A
+character must have exactly one active squad reference and must not carry the
+leader status bit. Empty/reserve moves, Soldier transfers, leader changes and
+unit creation/removal remain separate operations.
+
+`ClassData::carryingCapacity` follows resident ROM43100..43154, including the
+primary/secondary selection. Existing carried entries must fit the new capacity;
+the editor refuses swaps that would require returning items to inventory.
+`SaveDocument::difference` produces one final set of byte spans after both packed
+records and the checksum are composed. This avoids overlapping intermediate
+checksum edits in undo. Formation/Unity/tactic edits waiting for Apply disable the
+swap controls so staging cannot be silently discarded.
+
+`save_document_tests squadFormation editsPreserveNativeSaves` passed in5784ms:
+all27,225 original size/capacity pairs,12 controlled ordinary-removal Unity stores,
+217 original formation conversions, edited packed data decoded by original code,
+all three SRAM variants, both changed squads, full-memory preservation and exact
+undo. Nonzero Soldier, order and activation data remain intact; leader,
+empty/Soldier selection, insufficient capacity and runtime-format refusals pass. The existing scalar-save/calendar/RZIP checks also pass.
+`ui_tests saveSquadEditing saveWorkspaceEditing` passed in2745ms, including pending
+edit protection, atomic swap, undo/redo, export/reopen and the existing workspace
+regressions. The complete native build passed and the member-swap capture was
+inspected. This does not claim full Army
+menu execution or natural game loading.
+
+
 ## Saved squad formations
 
 The Save workspace now has a Squads page for the30 persistent player-unit rows.

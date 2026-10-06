@@ -28,6 +28,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     auto body = new QVBoxLayout(detail);
     members_ = new QListWidget;
     members_->setObjectName("saveUnitMembers");
+    members_->setMaximumHeight(150);
     body->addWidget(members_);
     auto help =
         new QLabel("Select a member, then choose a formation cell. Occupied cells swap members.");
@@ -66,6 +67,17 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     apply_ = new QPushButton("Apply squad changes");
     apply_->setObjectName("saveUnitApply");
     body->addWidget(apply_);
+    auto transfers = new QFormLayout;
+    targetUnit_ = new QComboBox;
+    targetUnit_->setObjectName("saveSwapUnit");
+    targetMember_ = new QComboBox;
+    targetMember_->setObjectName("saveSwapMember");
+    transfers->addRow("Swap with squad", targetUnit_);
+    transfers->addRow("Swap with member", targetMember_);
+    body->addLayout(transfers);
+    swap_ = new QPushButton("Swap selected members");
+    swap_->setObjectName("saveSwapApply");
+    body->addWidget(swap_);
     split->addWidget(detail);
     split->setStretchFactor(1, 2);
     connect(units_, &QListWidget::currentRowChanged, this, [this] { showUnit(); });
@@ -74,6 +86,16 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
         if (units_->currentItem())
             editor_->editUnit(units_->currentItem()->data(Qt::UserRole).toInt(), cells_,
                               unity_->value(), tactic_->currentData().toInt());
+    });
+    connect(targetUnit_, &QComboBox::currentIndexChanged, this, [this] { refreshSwapTargets(); });
+    connect(targetMember_, &QComboBox::currentIndexChanged, this, [this] { refreshSwapTargets(); });
+    connect(unity_, &QSpinBox::valueChanged, this, [this] { refreshSwapTargets(); });
+    connect(tactic_, &QComboBox::currentIndexChanged, this, [this] { refreshSwapTargets(); });
+    connect(swap_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->swapUnitMembers(units_->currentItem()->data(Qt::UserRole).toInt(),
+                                     members_->currentRow(), targetUnit_->currentData().toInt(),
+                                     targetMember_->currentData().toInt());
     });
     connect(editor_, &SaveEditor::refreshed, this, [this] { refresh(); });
     refresh();
@@ -143,8 +165,8 @@ void SaveUnitEditor::showUnit() {
         }
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
-    note_->setText(editable ? "Edit the saved squad's formation, Unity and tactic. Member "
-                              "identities and the leader are retained."
+    note_->setText(editable ? "Edit formations, Unity and tactics. Swapping nonleader members "
+                              "resets both squads' Unity."
                             : "Squads are read-only in suspend saves and runtime states. Formation "
                               "edits require a regular battery-save slot.");
     apply_->setEnabled(editable && !ids_.isEmpty());
@@ -168,5 +190,54 @@ void SaveUnitEditor::drawFormation() {
         grid_[cell]->setStyleSheet(selected ? "background:#315a82;color:white" : "");
         grid_[cell]->setEnabled(apply_->isEnabled());
     }
+    refreshSwapTargets();
+}
+void SaveUnitEditor::refreshSwapTargets() {
+    if (loading_)
+        return;
+    const QSignalBlocker unitGuard(targetUnit_), memberGuard(targetMember_);
+    const int oldUnit = targetUnit_->currentData().toInt(),
+              oldMember = targetMember_->currentData().toInt();
+    targetUnit_->clear();
+    targetMember_->clear();
+    bool ready = false, pending = false;
+    if (editor_->document() && units_->currentItem()) {
+        const auto &doc = *editor_->document();
+        const int selected = units_->currentItem()->data(Qt::UserRole).toInt();
+        const auto all = doc.units();
+        for (const auto &unit : all) {
+            if (unit.index == selected) {
+                pending = cells_ != unit.cells || unity_->value() != unit.unity ||
+                          tactic_->currentData().toInt() != unit.tactic;
+                continue;
+            }
+            bool eligible = false;
+            for (int i = 1; i < 5; ++i)
+                eligible |= unit.members[i] > 0 && unit.members[i] < 100;
+            if (eligible)
+                targetUnit_->addItem(
+                    QString("Squad %1 · %2").arg(unit.index + 1).arg(memberName(unit.members[0])),
+                    unit.index);
+        }
+        if (targetUnit_->findData(oldUnit) >= 0)
+            targetUnit_->setCurrentIndex(targetUnit_->findData(oldUnit));
+        if (targetUnit_->currentIndex() >= 0)
+            for (const auto &unit : all)
+                if (unit.index == targetUnit_->currentData().toInt())
+                    for (int i = 1; i < 5; ++i)
+                        if (unit.members[i] > 0 && unit.members[i] < 100)
+                            targetMember_->addItem(memberName(unit.members[i]), i);
+        if (targetMember_->findData(oldMember) >= 0)
+            targetMember_->setCurrentIndex(targetMember_->findData(oldMember));
+        const int member = members_->currentRow();
+        ready = doc.canEditUnits() && member > 0 && member < ids_.size() && ids_[member] > 0 &&
+                ids_[member] < 100;
+    }
+    const bool enabled = ready && !pending && targetMember_->currentIndex() >= 0;
+    swap_->setEnabled(enabled);
+    targetUnit_->setEnabled(ready && !pending);
+    targetMember_->setEnabled(ready && !pending);
+    swap_->setToolTip(pending ? "Apply squad edits before swapping members"
+                              : "Swap ordinary nonleader members and reset both squads' Unity");
 }
 } // namespace lordly

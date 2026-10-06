@@ -248,7 +248,7 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
     tables_->addTab(new SaveUnitEditor(this), "Squads");
     auto note = new QLabel(
         "Save files have their own undo history and are exported separately from ROM projects. "
-        "Character IDs, unit membership, body codes, fatigue and unknown fields are preserved.");
+        "Character IDs, body codes, fatigue and unknown fields are preserved.");
     note->setWordWrap(true);
     layout->addWidget(note);
     connect(open, &QPushButton::clicked, this, [this] {
@@ -372,6 +372,21 @@ bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int t
         auto change = document_->planUnitEdit(index, cells, unity, tactic, project_->classData());
         if (!change.spans.isEmpty())
             undo_->push(new SaveCommand(this, std::move(change), "squad"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
+bool SaveEditor::swapUnitMembers(int fromUnit, int fromMember, int toUnit, int toMember) {
+    if (!document_)
+        return false;
+    try {
+        auto change =
+            document_->planUnitSwap(fromUnit, fromMember, toUnit, toMember, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "squad member swap"));
         error_->clear();
         return true;
     } catch (const Error &e) {

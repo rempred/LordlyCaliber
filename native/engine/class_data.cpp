@@ -257,6 +257,13 @@ int ClassData::unitSize(int primary, int secondary) const {
     const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
     return u8(entries_[selected].record, unitSizeOffset);
 }
+int ClassData::carryingCapacity(int primary, int secondary) const {
+    if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
+        throw Error("Character carrying capacity refers to an unavailable class");
+    // Resident ROM43100..43154 uses the same pair selection as the size getter.
+    const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
+    return u8(entries_[selected].record, itemCapacityOffset);
+}
 ClassData ClassData::loadRetail(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision() != 0)

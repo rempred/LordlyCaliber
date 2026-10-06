@@ -1134,7 +1134,7 @@ class UiTests : public QObject {
             auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
             auto tactic = editor.findChild<QComboBox *>("saveUnitTactic");
             auto apply = editor.findChild<QPushButton *>("saveUnitApply");
-            QCOMPARE(units->count(), 4);
+            QCOMPARE(units->count(), 5);
             QCOMPARE(members->item(0)->text(), QString("Member1 · Leader"));
             QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
             members->setCurrentRow(0);
@@ -1161,6 +1161,35 @@ class UiTests : public QObject {
             QVERIFY(saved.open(QIODevice::ReadOnly));
             const auto reopened = SaveDocument::open(rom, saved.readAll());
             QCOMPARE(reopened.memory(), editor.document()->memory());
+            auto swap = editor.findChild<QPushButton *>("saveSwapApply");
+            QVERIFY(!swap->isEnabled()); // Leader stays in place.
+            members->setCurrentRow(1);
+            auto targetUnit = editor.findChild<QComboBox *>("saveSwapUnit");
+            auto targetMember = editor.findChild<QComboBox *>("saveSwapMember");
+            targetUnit->setCurrentIndex(targetUnit->findData(5));
+            targetMember->setCurrentIndex(targetMember->findData(1));
+            QVERIFY(swap->isEnabled());
+            unity->setValue(98);
+            QVERIFY(!swap->isEnabled()); // Do not discard a pending squad edit.
+            unity->setValue(99);
+            QVERIFY(swap->isEnabled());
+            swap->click();
+            QCOMPARE(editor.document()->units()[0].members[1], 8);
+            QCOMPARE(editor.document()->units().last().members[1], 2);
+            QCOMPARE(editor.document()->units()[0].unity, 0);
+            QCOMPARE(editor.document()->units().last().unity, 0);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), expected);
+            editor.undoStack()->redo();
+            const auto swappedOutput = work.filePath("swapped.SaveRAM");
+            editor.exportFile(swappedOutput);
+            QFile swappedFile(swappedOutput);
+            QVERIFY(swappedFile.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, swappedFile.readAll()).memory(),
+                     editor.document()->memory());
+            QVERIFY(editor.grab().save("save-member-swap.png"));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), expected);
             units->setCurrentRow(1);
             QCOMPARE(members->item(1)->text(), QString("Soldiers 1"));
             members->setCurrentRow(1);
