@@ -256,7 +256,7 @@ void SceneActors::bindMember(int destination, int member) {
     // func_002AD434 narrows the destination before indexing the scene.
     destination &= 255;
     checkSlot(destination);
-    if (member < 0 || member >= 5 || !binding_)
+    if (member < 0 || member >= 5 || !binding_ || !binding_->unitMembersKnown)
         throw Error("Unit-member binding requires the current unit and complete caller rows");
     int ordinal = -1;
     for (int i = 0; i < 20; ++i) {

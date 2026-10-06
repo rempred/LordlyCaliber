@@ -3,11 +3,16 @@
 #include "engine/save_document.h"
 #include "engine/scene_images.h"
 #include "engine/scene_actions.h"
+#include "engine/scene_document_compiler.h"
 #include "engine/scene_story_cast.h"
 #include "engine/text.h"
 #include <QComboBox>
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QFileDialog>
+#include <QFile>
+#include <QJsonArray>
+#include <QMessageBox>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
@@ -34,6 +39,26 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     context_->setObjectName("scenePreviewContext");
     context_->setWordWrap(true);
     layout->addWidget(context_);
+    auto inputRow = new QHBoxLayout;
+    auto importInputs = new QPushButton("Import playback inputs…");
+    importInputs->setObjectName("sceneImportPlaybackInputs");
+    clearInputs_ = new QPushButton("Clear playback inputs");
+    clearInputs_->setObjectName("sceneClearPlaybackInputs");
+    inputRow->addWidget(importInputs); inputRow->addWidget(clearInputs_); inputRow->addStretch();
+    layout->addLayout(inputRow);
+    inputsStatus_ = new QLabel;
+    inputsStatus_->setObjectName("scenePlaybackInputsStatus"); inputsStatus_->setWordWrap(true);
+    layout->addWidget(inputsStatus_);
+    connect(importInputs, &QPushButton::clicked, this, [this] {
+        const auto path = QFileDialog::getOpenFileName(this, "Import playback inputs", {}, "Playback inputs (*.json)");
+        if (path.isEmpty()) return;
+        try {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) throw Error(file.errorString());
+            importPlaybackInputs(file.read(128 * 1024 + 1));
+        } catch (const std::exception &e) { QMessageBox::warning(this, "Playback inputs", QString::fromUtf8(e.what())); }
+    });
+    connect(clearInputs_, &QPushButton::clicked, this, &ScenePreview::clearPlaybackInputs);
     launchImageUi_ = new QWidget;
     auto launchRow = new QHBoxLayout(launchImageUi_);
     launchRow->setContentsMargins(0, 0, 0, 0);
@@ -718,6 +743,15 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
                                std::optional<Dialogues> dialogues,
                                std::optional<SceneEvents> events) {
     sceneId_ = programs.canonical(id);
+    playbackAssetId_ = id.authoredId.isEmpty() ? "rom-director:" + QString::number(id.nativeKey + 0x594284, 16).rightJustified(8, '0').toUpper() : "authored:" + id.authoredId;
+    const auto selectors = programs.resource(id).selectors;
+    const auto &catalog = SceneDocumentCompiler::catalog();
+    if (id.authoredId.isEmpty()) for (auto it = catalog.begin(); it != catalog.end(); ++it) {
+        const auto row = it.value().toObject();
+        if (!selectors.isEmpty() && row["selectors"].toArray().contains(selectors.first())) {
+            playbackAssetId_ = row["assetId"].toString(); break;
+        }
+    }
     cancelPositionPick();
     stop();
     dialogues_ = std::move(dialogues);
@@ -740,7 +774,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         resources_ = programs.runtimeDirectors();
         if (selector_ != resource.selectors.first()) selectedObject_ = {};
         selector_ = resource.selectors.first();
-        mode_ = mode;
+        mode_ = defaultMode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
         const auto previousContext = launchContext_->currentData().toString();
         launchPlans_ = SceneLaunchPlan::choices(
@@ -854,6 +888,10 @@ void ScenePreview::restart() {
     liveInput_ = {};
     pendingPressed_ = 0;
     frame_ = {};
+    const auto inputs = activeInputs();
+    mode_ = inputs ? inputs->mode(defaultMode_) : defaultMode_;
+    inputsStatus_->setText(inputs ? inputs->description() : QString{});
+    clearInputs_->setEnabled(inputs != nullptr);
     if (!resources_) {
         present();
         return;
@@ -861,7 +899,7 @@ void ScenePreview::restart() {
     try {
         const auto &selectedProgram =
             resources_->entries()[resources_->selectors()[selector_]].program;
-        const auto plan =
+        const auto plan = inputs ? SceneLaunchPlan{"imported", "Imported playback inputs", {{selector_}}} :
             launchPlans_.value(launchContext_->currentIndex(),
                                SceneLaunchPlan{"direct", "Direct scene launch", {{selector_}}});
         const int startupSelector = plan.steps.first().selector;
@@ -921,19 +959,20 @@ void ScenePreview::restart() {
         start.sceneFlags = 0;
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
         start.translations = plan.steps.last().translations;
-        if (storyCastEnabled_) {
+        if (storyCastEnabled_ && !inputs) {
             auto cast = SceneStoryCast::sample();
             for (int i = 0; i < 5; ++i)
                 cast[i] = {quint8(storyCast_[i]->currentData().toInt()),
                            quint8(storySecondary_[i]->currentData().toInt())};
             start.translations = SceneStoryCast::translations(cast);
         }
+        if (inputs) inputs->configure(start, cameras);
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
         playback.supplyLaunchPlan(*resources_, plan);
-        if (storyCastEnabled_ || classDefaultsEnabled_ || party_ || inherited)
+        if (!inputs && (storyCastEnabled_ || classDefaultsEnabled_ || party_ || inherited))
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
-        if (party_) party_->supply(playback.actors(),
+        if (party_ && !inputs) party_->supply(playback.actors(),
                                    *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)));
         std::array<QByteArray, 4> names;
         for (int i = 0; i < 4; ++i) {
@@ -949,6 +988,7 @@ void ScenePreview::restart() {
         // Preserve typed requests for an eventual backend; never invent voice lifetimes.
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767}));
         playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
+        if (inputs) inputs->supply(playback);
         const auto launch = SceneImages::launch(startupProgram);
         if (launch.resource_class == 4) {
             const int overrideRow = launchImage_->currentData().toInt();
@@ -959,7 +999,10 @@ void ScenePreview::restart() {
             playback.loadImagePresentation(row);
         }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
-        if (party_ && party_->preserved)
+        if (inputs && !inputs->boundary().isEmpty()) {
+            current_->stopped = true; current_->reason = inputs->boundary();
+        }
+        if (party_ && party_->preserved && !inputs)
             referenceCommand(*current_, 0x80000006U, {0});
         current_->dialogue.emplace(rom_, dialogues_);
         if (!dialogueDrawing_) {
@@ -1030,7 +1073,7 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         *value = opcode == 0xbe ? 1 : 0;
         return true;
     }
-    if (opcode == 0x96 && args.size() == 1 && mode_ == 2 && party_) {
+    if (opcode == 0x96 && args.size() == 1 && mode_ == 2 && party_ && !activeInputs()) {
         party_->supply(next.playback.actors(),
                        *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)), true);
         return true;
@@ -1377,7 +1420,7 @@ void ScenePreview::step() {
         if (!inputHistory_.contains(tick_))
             inputHistory_.insert(tick_, liveInput_);
         if (!pressedHistory_.contains(tick_))
-            pressedHistory_.insert(tick_, pendingPressed_);
+            pressedHistory_.insert(tick_, pendingPressed_ | (activeInputs() ? activeInputs()->controller(tick_).value_or(0) : 0));
         next.playback.setImageInput(inputHistory_.value(tick_), pressedHistory_.value(tick_));
         pendingPressed_ = 0;
         next.playback.advanceFade();
@@ -1795,5 +1838,43 @@ void ScenePreview::reportExit() {
                      current_ ? current_->unfinishedActors : QSet<int>{},
                      current_ && current_->unfinishedFade, current_ ? current_->unfinishedPan : 0,
                      current_ && current_->pausedMovement);
+}
+const ScenePlaybackInputs *ScenePreview::activeInputs() const {
+    const auto found = playbackInputs_.constFind(playbackAssetId_);
+    return found == playbackInputs_.cend() ? nullptr : &found.value();
+}
+void ScenePreview::importPlaybackInputs(const QByteArray &bytes) {
+    if (!resources_ || playbackAssetId_.isEmpty()) throw Error("Select a scene before importing playback inputs");
+    const auto candidate = ScenePlaybackInputs::parse(bytes, playbackAssetId_);
+    const auto launch = candidate.known("externalProducers").toObject()["directorLaunch"].toObject();
+    if (!launch.isEmpty() && resources_->selectors().value(launch["selector"].toInt(-1)) != resources_->selectors()[selector_])
+        throw Error("Playback launch selector does not identify the selected scene");
+    const auto previousInputs = playbackInputs_;
+    const auto previous = current_;
+    const auto checkpoints = checkpoints_;
+    const auto times = commandTimes_;
+    const auto inputHistory = inputHistory_;
+    const auto pressedHistory = pressedHistory_;
+    const int tick = tick_, mode = mode_;
+    const bool preparing = preparing_;
+    playbackInputs_.insert(playbackAssetId_, candidate);
+    inputHistory_.clear(); pressedHistory_.clear();
+    restart();
+    if (!current_) {
+        const auto reason = status_->text();
+        playbackInputs_ = previousInputs; current_ = previous; checkpoints_ = checkpoints;
+        commandTimes_ = times; inputHistory_ = inputHistory; pressedHistory_ = pressedHistory;
+        tick_ = tick; mode_ = mode; preparing_ = preparing;
+        inputsStatus_->setText(activeInputs() ? activeInputs()->description() : QString{});
+        clearInputs_->setEnabled(activeInputs() != nullptr);
+        present();
+        if (preparing) seekTimer_->start();
+        throw Error(reason);
+    }
+}
+void ScenePreview::clearPlaybackInputs() {
+    playbackInputs_.remove(playbackAssetId_);
+    inputHistory_.clear(); pressedHistory_.clear();
+    restart();
 }
 } // namespace lordly

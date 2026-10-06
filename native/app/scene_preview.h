@@ -3,6 +3,7 @@
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
+#include "engine/scene_playback_inputs.h"
 #include "engine/scene_party.h"
 #include "engine/scene_programs.h"
 #include "engine/scene_selection.h"
@@ -43,6 +44,9 @@ class ScenePreview : public QWidget {
     void seekToCommand(int word);
     void seekToUpdate(int tick);
     void reportExit();
+    void importPlaybackInputs(const QByteArray &);
+    void clearPlaybackInputs();
+    QString playbackAssetId() const { return playbackAssetId_; }
     const QMap<int, int> &commandTimes() const { return commandTimes_; }
     int activeWord() const { return current_ ? current_->activeWord : -1; }
     int actorAt(QPoint) const;
@@ -128,6 +132,12 @@ class ScenePreview : public QWidget {
     int commandSeekWord_ = -1;
     int deferredSeekTick_ = -1;
     QString commandSeekNotice_;
+    QString playbackAssetId_;
+    QMap<QString, ScenePlaybackInputs> playbackInputs_;
+    const ScenePlaybackInputs *activeInputs() const;
+    QLabel *inputsStatus_;
+    QPushButton *clearInputs_;
+    int defaultMode_ = -1;
     QMap<int, LordlyImageInput> inputHistory_;
     QMap<int, quint16> pressedHistory_;
     LordlyImageInput liveInput_{};

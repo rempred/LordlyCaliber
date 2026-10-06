@@ -491,6 +491,71 @@ class UiTests : public QObject {
         QCOMPARE(list->item(fade)->text(), text);
         QCOMPARE(project.scenePrograms()->json(), before); QCOMPARE(undo.count(), 0);
     }
+    void importedPlaybackInputs() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            const auto id = programs.createScene("Imported actor playback", 0x1fa8bf4 - 0x594284, true);
+            programs.replace(id, SceneActions::insert(programs.program(id), 1, 0xe, 10).source);
+            project.setScenePrograms(programs.json());
+            const auto unchanged = project.manifest();
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 900); editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) scenes->setCurrentRow(i);
+            auto preview = editor.findChild<ScenePreview *>();
+            editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(preview);
+            auto instance = ActorInstance::create(project.rom(), {0, 1, 0, 0, 0, {10, 7, 20}, 0, 0}, 2);
+            auto record = instance.record();
+            QByteArray movement(16, 0); put32(movement, 0, std::bit_cast<quint32>(2.f)); put16(movement, 12, 5);
+            QJsonArray entries;
+            entries << QJsonObject{{"identity", "imported-actor"}, {"recordHex", QString::fromLatin1(record.toHex())},
+                                   {"movementHex", QString::fromLatin1(movement.toHex())}};
+            for (int i = 1; i < 28; ++i) entries << QJsonValue(QJsonValue::Null);
+            auto known = [](QJsonValue value) { return QJsonObject{{"status", "known"}, {"value", value}}; };
+            QJsonObject input{{"schema", "ob64-cutscene-launch-inputs.v1"}, {"assetId", preview->playbackAssetId()},
+                {"invocationId", "native-desktop-import"}, {"sourceIdentity", "Explicit position/movement fixture"},
+                {"evidenceGrade", "Candidate"}, {"schedulerBranch", known("normal")},
+                {"existingActors", known(QJsonObject{{"slots", entries}, {"otherJobsEmpty", true}})}};
+            preview->importPlaybackInputs(QJsonDocument(input).toJson());
+            auto state = preview->findChild<QLabel *>("sceneActorState");
+            QVERIFY2(state->text().contains("X 10.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            preview->seekToUpdate(1); QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
+            QVERIFY2(state->text().contains("X 12.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            const auto frame = preview->renderedFrame();
+            auto bad = input; bad["assetId"] = "wrong-resource";
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QJsonDocument(bad).toJson()));
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs("{broken"));
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QByteArray(131073, ' ')));
+            auto unresolved = input;
+            auto invalidRecord = record; put32(invalidRecord, 0xe8, 9999);
+            auto invalidEntries = entries; auto invalidActor = entries[0].toObject();
+            invalidActor["recordHex"] = QString::fromLatin1(invalidRecord.toHex()); invalidEntries[0] = invalidActor;
+            unresolved["existingActors"] = known(QJsonObject{{"slots", invalidEntries}, {"otherJobsEmpty", true}});
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QJsonDocument(unresolved).toJson()));
+            QCOMPARE(preview->property("sceneTick").toInt(), 1); QCOMPARE(preview->renderedFrame(), frame);
+            preview->seekToUpdate(0); QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+            preview->seekToUpdate(1); QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
+            QCOMPARE(preview->renderedFrame(), frame);
+            input.remove("existingActors");
+            input["capturedSnapshot"] = known(QJsonObject{{"slots", entries}, {"sceneMode", 2},
+                {"observedParserCursor", 123}, {"resumeState", "unknown"}, {"otherJobOwners", "unknown"}});
+            preview->importPlaybackInputs(QJsonDocument(input).toJson());
+            QCOMPARE(preview->property("sceneTick").toInt(), 0);
+            QVERIFY(preview->property("sceneStopped").toBool());
+            QVERIFY(state->text().contains("X 10.000 · Y 7.000 · Z 20.000"));
+            QVERIFY(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("no elapsed updates"));
+            preview->findChild<QPushButton *>("sceneClearPlaybackInputs")->click();
+            QVERIFY(!preview->property("sceneStopped").toBool());
+            QCOMPARE(preview->findChild<QComboBox *>("sceneLiveActors")->count(), 0);
+            QCOMPARE(project.manifest(), unchanged); QCOMPARE(undo.count(), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void sceneTimedPlacementAndHold() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

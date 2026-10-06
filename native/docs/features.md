@@ -78,7 +78,19 @@ update6 exit, Undo, warning/hold, project persistence, compiled export/reopen,
 identical reopened playback, checksum and master preservation. The added sentinel
 field-edit check also passes (2.4s with the same export flow). Logs:
 `build/Release/scene-timed-authoring.txt`, `scene-timed-sentinel.txt`.
-Playback-input import and final portable integration remain.
+Playback-input import now accepts browser-schema Actor/input rows, unit members,
+scheduler branch, static captures and captured cameras. Inputs remain transient,
+are keyed by source asset identity across scene edits, and Clear restores ROM
+startup. Invalid JSON, wrong identity, oversize files and unavailable artwork
+retain the previous preview. Native movement/seek and unchanged Project/Undo
+pass in `importedPlaybackInputs` (0.74s initially). Schema validation is extracted
+at build time from the browser validator; Qt evaluates only that pure validator,
+not the browser playback runtime. No browser, Node, or source checkout is required.
+Callback histories, explicit fresh-launch service memory and captured resume
+profiles currently stop with a named adapter boundary; these are still being
+integrated. The existing timed edit/export and complete 01FA8BF4 replay pass with
+input import added (23.4s combined); `build/Release/scene-input-integration.txt`.
+Final portable integration remains.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear

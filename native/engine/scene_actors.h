@@ -14,6 +14,7 @@ class SceneTransforms;
 struct ActorBindingInputs {
     std::array<QByteArray, 20> rows;
     std::array<quint8, 5> unitMembers{};
+    bool unitMembersKnown = true;
 };
 struct BodyRegistration {
     int slot, source, owner, flagA, flagB, equipment;
