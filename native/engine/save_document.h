@@ -90,6 +90,7 @@ class SaveDocument {
     void setClassCount(int);
     void validateClassEdits(int classCount) const;
     void validateUnitSupplyEdits(const Project &) const;
+    SaveChange planArmyRefresh(const Project &) const;
     const QByteArray &memory() const {
         return ram_;
     }

@@ -350,14 +350,20 @@ void SaveEditor::exportFile(const QString &path) {
         QFileInfo(path).absoluteFilePath().compare(QFileInfo(sourcePath_).absoluteFilePath(),
                                                    Qt::CaseInsensitive) == 0)
         throw Error("Choose a different output file to preserve the loaded save");
-    document_->validateClassEdits(int(project_->records(Table::Classes).size()));
-    document_->validateUnitSupplyEdits(*project_);
-    const auto bytes = document_->serialize();
+    auto prepared = *document_;
+    const auto refresh = prepared.planArmyRefresh(*project_);
+    if (!refresh.spans.isEmpty())
+        prepared.apply(refresh, true);
+    prepared.validateClassEdits(int(project_->records(Table::Classes).size()));
+    prepared.validateUnitSupplyEdits(*project_);
+    const auto bytes = prepared.serialize();
     const auto reopened =
         SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
     if (reopened.serialize() != bytes)
         throw Error("Edited save failed reopening");
     atomicWrite(path, bytes);
+    if (!refresh.spans.isEmpty())
+        undo_->push(new SaveCommand(this, refresh, "refresh squad data for current classes"));
     undo_->setClean();
     error_->setText("Exported " + QFileInfo(path).fileName());
 }

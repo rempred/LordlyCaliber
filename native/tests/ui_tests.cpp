@@ -1632,6 +1632,83 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveExportConsistency() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-legion-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("legion-export.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            const auto packed = payload.readAll();
+            QByteArray input(0x10000, 0);
+            for (int slot : {0, 1}) {
+                const int at = int(lc_save_record_offset(slot, 0));
+                input.replace(at + 42, 6180, packed);
+                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + at),
+                                            lc_save_record_size(slot, 0), slot, 0));
+            }
+            const auto source = work.filePath("source.sra"), output = work.filePath("export.sra");
+            atomicWrite(source, input);
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.loadBytes(input, source);
+            auto classes = project.record(Table::Classes, 5).bytes;
+            classes[44] = 7;
+            project.replaceBytes(Table::Classes, 5, classes);
+            QVERIFY_THROWS_EXCEPTION(Error, editor.exportFile(source));
+            QVERIFY_THROWS_EXCEPTION(Error, editor.exportFile(work.path()));
+            QCOMPARE(editor.document()->serialize(), input);
+            QCOMPARE(editor.undoStack()->count(), 0);
+            editor.exportFile(output);
+            QCOMPARE(editor.undoStack()->count(), 1);
+            QVERIFY(editor.undoStack()->isClean());
+            const auto saved = editor.document()->serialize();
+            QVERIFY(saved != input);
+            QFile file(output);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), saved);
+            file.close();
+            auto reopened = SaveDocument::open(rom, saved);
+            for (int slot : {0, 1}) {
+                reopened.selectSlot(slot);
+                QCOMPARE(u8(reopened.memory(), 0x1971f0 + 2 * 25 + 24), quint8(7));
+                QCOMPARE(u8(reopened.memory(), 0x1969c1), quint8(7));
+            }
+            editor.exportFile(output);
+            QCOMPARE(editor.undoStack()->count(), 1);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), saved);
+            for (const auto &change :
+                 {QVector<int>{5, 4, 2}, QVector<int>{5, 71, 0}, QVector<int>{33, 6, 1}}) {
+                project = Project::fromRom(rom);
+                editor.loadBytes(input, source);
+                auto bytes = project.record(Table::Classes, change[0]).bytes;
+                bytes[change[1]] = char(change[2]);
+                project.replaceBytes(Table::Classes, change[0], bytes);
+                const auto rejected = work.filePath(QString("rejected-%1.sra").arg(change[1]));
+                QVERIFY_THROWS_EXCEPTION(Error, editor.exportFile(rejected));
+                QVERIFY(!QFileInfo::exists(rejected));
+                QCOMPARE(editor.document()->serialize(), input);
+                QCOMPARE(editor.undoStack()->count(), 0);
+            }
+            QFile original(source);
+            QVERIFY(original.open(QIODevice::ReadOnly));
+            QCOMPARE(original.readAll(), input);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveCharacterClassCoordination() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

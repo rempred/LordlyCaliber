@@ -25,6 +25,9 @@ if(mode==='generate'){
  const classFixture=()=>{joinFixture(1);m.w8(squads+2*25+3,18);m.w8(squads+2*25+8,8);};
  variant('legion-class.bin',classFixture);
  variant('legion-class-carry.bin',()=>{classFixture();for(let i=13;i<=16;++i)m.w8(squads+2*25+i,9);});
+ const exportFixture=()=>{classFixture();for(const i of[2,4])m.w8(legions+i*11+1,0);m.load(order,Buffer.from([0,7,7,7,7,7]));};
+ variant('legion-export.bin',exportFixture);
+ variant('legion-export-odd.bin',()=>{exportFixture();m.w8(roster+18*56+17,255);m.w8(roster+18*56+18,255);m.w8(squads+2*25+24,6);m.w8(legions+9,4);});
  const createFixture=()=>{for(const id of[16,17]){m.w8(roster+id*56+17,33);m.w8(roster+id*56+18,33);}m.w8(squads+15*25+3,104);m.w8(squads+15*25+8,8);m.w16(0x80190f84+8,83);m.w8(0x80191078,2);};
  variant('legion-create-holes.bin',createFixture);
  variant('legion-create-empty.bin',()=>{createFixture();for(const i of[0,2,4])m.w8(legions+i*11+1,0);m.load(order,Buffer.alloc(6,7));});
@@ -60,6 +63,7 @@ if(mode==='generate'){
  console.log('Generated saved legions through original save encoder.');process.exit(0);
 }
 assert.ok(['verify','verify-detach','verify-join','verify-coordination','verify-create'].includes(mode));const detach=mode==='verify-detach',join=mode==='verify-join',coordinate=mode==='verify-coordination',create=mode==='verify-create',data=JSON.parse(fs.readFileSync(path.join(dir,create?'legion-create-verify.json':coordinate?'legion-coordination-verify.json':join?'legion-join-verify.json':detach?'legion-detach-verify.json':'legion-verify.json'))),live=a=>(a+0x801135a0)>>>0;m.load(live(0xb0000),rom.subarray(0xb0000,0xe6000));
+if(data.classes)m.load(0x80187c14,Buffer.from(data.classes,'hex'));
 for(const row of data.cases){const units=Buffer.from(row.units,'hex'),groups=Buffer.from(row.legions,'hex'),chars=Buffer.from(row.characters,'hex');
  m.load(root,Buffer.alloc(0x3000));m.w32(0x80196af8,root);m.set('sp',0x803f0000);m.load(squads,units);m.load(legions,groups);m.load(roster,chars);m.load(0x80190f80,Buffer.from(row.soldiers,'hex'));m.load(0x80193ac0,Buffer.from(row.inventory,'hex'));
  const ranks=Buffer.from(row.unitOrder,'hex');m.load(0x801977d8,Buffer.alloc(30,255));let count=0;

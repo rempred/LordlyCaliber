@@ -278,6 +278,75 @@ void SaveDocument::validateUnitSupplyEdits(const Project &project) const {
         }
     }
 }
+SaveChange SaveDocument::planArmyRefresh(const Project &project) const {
+    if (!battery())
+        return difference(data_, 0, int(data_.size()));
+    const auto classes = project.classData(), priorClasses = ClassData::load(project.rom());
+    auto candidate = *this, original = *this;
+    original.data_ = originalData_;
+    const auto available = [](const ClassData &rules, QPair<int, int> pair) {
+        return pair.first >= 0 && pair.second >= 0 && pair.first < rules.entries().size() &&
+               pair.second < rules.entries().size();
+    };
+    const auto rulesChanged = [&](QPair<int, int> pair, bool commandOnly = false) {
+        const bool before = available(priorClasses, pair), after = available(classes, pair);
+        if (!before || !after)
+            return before != after; // Preserve an unchanged reference absent from both catalogs.
+        return priorClasses.commandType(pair.first, pair.second) !=
+                   classes.commandType(pair.first, pair.second) ||
+               (!commandOnly && (priorClasses.unitSize(pair.first, pair.second) !=
+                                     classes.unitSize(pair.first, pair.second) ||
+                                 priorClasses.carryingCapacity(pair.first, pair.second) !=
+                                     classes.carryingCapacity(pair.first, pair.second) ||
+                                 priorClasses.movementType(pair.first, pair.second) !=
+                                     classes.movementType(pair.first, pair.second)));
+    };
+    for (int slot : {0, 1}) {
+        if (!candidate.validSlot(slot))
+            continue;
+        candidate.selectSlot(slot);
+        const auto before = original.decode(slot);
+        QVector<SaveUnit> affected;
+        try {
+            for (const auto &unit : candidate.units()) {
+                const int at = 0x1971f0 + unit.index * 25;
+                const bool added = (u8(before, at + 1) & 0x81) != 1;
+                bool changed = added || before.mid(at + 2, 10) != candidate.ram_.mid(at + 2, 10);
+                bool leaderChanged = added || u8(before, at + 2) != unit.members[0];
+                for (int member : unit.members) {
+                    if (!member || member >= 220)
+                        continue;
+                    const int character = member < 100 ? member : 0,
+                              base = roster + character * stride;
+                    const bool pairChanged =
+                        before.mid(base + 17, 2) != candidate.ram_.mid(base + 17, 2);
+                    const QPair<int, int> pair{u8(candidate.ram_, base + 17),
+                                               u8(candidate.ram_, base + 18)};
+                    changed |= pairChanged || (pair.first && rulesChanged(pair)) ||
+                               (member >= 100 && rulesChanged({1, 1}));
+                    if (member == unit.members[0])
+                        leaderChanged |= pairChanged || (pair.first && rulesChanged(pair, true));
+                }
+                if (!changed)
+                    continue;
+                if (leaderChanged) {
+                    const auto pair = candidate.memberClasses(unit.members[0]);
+                    if (!classes.commandType(pair.first, pair.second))
+                        throw Error(
+                            QString("Squad %1 now has a leader whose class cannot command it")
+                                .arg(unit.label));
+                }
+                affected << unit;
+            }
+            if (!affected.isEmpty())
+                candidate.apply(candidate.planMembershipChange(affected, classes, false), true);
+        } catch (const Error &error) {
+            throw Error(
+                QString("Save slot %1: %2").arg(slot + 1).arg(QString::fromUtf8(error.what())));
+        }
+    }
+    return difference(candidate.data_, 0, int(data_.size()));
+}
 QByteArray SaveDocument::decode(int slot) const {
     QByteArray ram(0x400000, 0);
     const int base = recordOffset(slot, expanded_) + 0x2a;

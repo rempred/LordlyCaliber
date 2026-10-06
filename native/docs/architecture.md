@@ -5420,3 +5420,32 @@ added. Export consistency across slots and later project-Class changes remains
 next; these checks do not claim a natural game class-change menu run.
 
 The complete native build passed (save-class-coordination-final-build.log).
+
+
+## Save export consistency across slots and current Classes
+
+Save export now prepares both regular battery slots against current project Classes.
+Only squads whose membership, class pairs, or effective size, movement, command or
+carrying rules changed are refreshed. Names and growth-only changes leave saves
+untouched, including unusual existing references and stale original caches. The
+suspend slot and runtime copies retain their previous behavior. A changed leader
+must have command ability; existing incapacitation does not invalidate a save.
+Formation, carrying and affected legion constraints are checked before writing.
+
+Export uses a temporary document, validates and reopens its output, then writes
+atomically. Only a successful write adds derived updates to the Save workspace as
+one Undo command. Failed writes leave document bytes and history unchanged;
+repeated export adds no redundant command. Multi-slot Undo retains the selected slot.
+
+`save_document_tests armyExportConsistency characterClassCoordination` passed in
+4739ms. New checks cover raw class edits and project movement changes in both
+regular slots and native, word-swapped and expanded layouts; full-memory and
+Undo/reopen comparisons; hidden-slot, size/carry/command conflicts; unrelated class
+changes and unknown original preservation. Two original finalizer/store comparisons
+and four original save decodes independently check the new export cases. The
+reference accepts current class records at the original resident class-table address.
+`ui_tests saveExportConsistency saveCharacterClassCoordination saveWorkspaceEditing`
+passed in4676ms, including source preservation, failed atomic writes, both slots,
+repeated export and one-step Undo/Redo. Twelve existing Save lifecycle/draft UI
+cases passed in13312ms. Full native build passed (save-export-consistency-final-build.log).
+No natural game-menu execution or active/suspend membership support is claimed.
