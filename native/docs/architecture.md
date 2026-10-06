@@ -5472,3 +5472,29 @@ passed in1339ms: actual dialog/new-class creation, selection, removal/refusal,
 draft protection, Undo and exported-save reopening. Existing saveExportConsistency
 also passed. Final app and UI builds passed (roster-product-build.log). Capture
 inspected. This establishes offline editing, not natural recruitment-menu execution.
+
+
+## Current-army story cast
+
+SceneStoryCast::army adapts eventrow67 resource3B0BBC construction1BE4..2302 and
+helpers24BA..25A0 into maintained C. It authenticates those current-ROM regions
+against the preserved event resource. Nineteen story identities are considered
+in native priority order, with paired-class aliases. The first matching roster
+record determines availability: HP must be nonzero, status4 clear, and secondary
+class must pass the script's exclusions. A dead first duplicate excludes that
+identity even if a later duplicate is alive. Remaining slots alternate4/4 and2/2.
+Selection leaves the roster and stored launch banks unchanged.
+
+ScenePreview uses the open army by default when one is available, and exposes
+Use current army alongside saved-launch and manual/sample choices. Cast changes
+restart preview without rewriting authored operands. Equipment remains class-default.
+The selector intentionally starts after event date/trigger gating.
+
+`scene_runtime_tests currentArmyStoryCast storyCastLaunch savedStoryCast` passed
+940ms: six targeted army cases match the original event VM46854..47A94 and its
+resident getters, including absent/priority/alias/HP/status/secondary/duplicate
+cases. `ui_tests savedStoryCastPreview storyCompleteReplay` passed11616ms: current
+Save edits change01FA8BF4 actors, preserve coordinates and source/save bytes, and
+replay consistently. The existing complete-scene case releases at step1349 with
+three audio requests and two replay samples. Application and test builds pass.
+Initial compilation only lacked a test helper's header; corrected before execution.

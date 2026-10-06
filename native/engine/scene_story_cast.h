@@ -13,6 +13,7 @@ class SceneStoryCast {
     static QVector<int> choices();
     static std::array<StoryCastMember, 5> sample();
     static std::array<StoryCastMember, 5> saved(const SaveDocument &, int classCount);
+    static std::array<StoryCastMember, 5> army(const Rom &, const SaveDocument &, int classCount);
     static DirectorLaunchTranslations translations(const std::array<StoryCastMember, 5> &);
 };
 } // namespace lordly

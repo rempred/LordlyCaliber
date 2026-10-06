@@ -63,7 +63,7 @@ target_sources(lordly_engine PRIVATE game/director/display_state.c engine/scene_
 target_sources(lordly_engine PRIVATE game/director/screen_crop.c engine/scene_crop.cpp game/director/title_reveal.c engine/scene_title_reveal.cpp)
 target_sources(lordly_engine PRIVATE game/director/panel_animation.c engine/scene_panels.cpp)
 target_sources(lordly_engine PRIVATE game/director/actor_roster.c engine/scene_actor_roster.cpp)
-target_sources(lordly_engine PRIVATE engine/scene_story_cast.cpp)
+target_sources(lordly_engine PRIVATE engine/scene_story_cast.cpp game/director/story_cast.c)
 qt_add_resources(lordly_engine scene_images PREFIX "/" BASE . FILES game/director/images.json)
 target_sources(lordly_engine PRIVATE engine/director.cpp engine/scene_programs.cpp engine/scene_events.cpp engine/scene_program_resources.cpp engine/legacy_scene_arena.cpp)
 target_sources(lordly_engine PRIVATE engine/director_session.cpp)

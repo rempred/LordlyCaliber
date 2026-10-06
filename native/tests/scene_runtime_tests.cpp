@@ -10,6 +10,8 @@
 #include "engine/scene_playback.h"
 #include "engine/scene_panels.h"
 #include "engine/scene_story_cast.h"
+#include "engine/scene_events.h"
+#include "engine/project.h"
 #include "engine/save_document.h"
 #include "game/classes/save_format.h"
 #include "engine/scene_programs.h"
@@ -247,6 +249,81 @@ class SceneRuntimeTests : public QObject {
             const auto before = audio.requests();
             QVERIFY_THROWS_EXCEPTION(Error, audio.service(0x6e, {8, 0, 1}));
             QCOMPARE(audio.requests(), before);
+        }
+    }
+    void currentArmyStoryCast() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            using Row = std::array<int, 4>;
+            const QVector<QVector<Row>> armies{
+                {},
+                {{0x56, 0x56, 100, 0}},
+                {{0x61, 0x61, 100, 0},
+                 {0x58, 0x58, 100, 0},
+                 {0x56, 0x57, 100, 0},
+                 {0x54, 0x55, 100, 0},
+                 {0x5b, 0x5b, 100, 0},
+                 {0x5c, 0x5c, 100, 0}},
+                {{0x56, 0x2d, 100, 0},
+                 {0x54, 0x54, 0, 0},
+                 {0x61, 0x61, 100, 4},
+                 {0x58, 0x58, 100, 0},
+                 {0x5b, 0x24, 100, 0},
+                 {0x5c, 0x2b, 100, 0}},
+                {{0x56, 0x56, 0, 0}, {0x57, 0x57, 100, 0}},
+                {{0x55, 0x55, 100, 0}, {0x60, 0x60, 100, 0}, {0x57, 0x57, 100, 0}}};
+            const QVector<QVector<int>> expected{
+                {4, 4, 2, 2, 4, 4, 2, 2, 4, 4},
+                {0x56, 0x56, 4, 4, 2, 2, 4, 4, 2, 2},
+                {0x56, 0x57, 0x54, 0x55, 0x61, 0x61, 0x58, 0x58, 0x5b, 0x5b},
+                {0x58, 0x58, 4, 4, 2, 2, 4, 4, 2, 2},
+                {4, 4, 2, 2, 4, 4, 2, 2, 4, 4},
+                {0x57, 0x57, 0x55, 0x55, 0x60, 0x60, 4, 4, 2, 2}};
+            QJsonArray cases;
+            for (int n = 0; n < armies.size(); ++n) {
+                QByteArray memory(0x400000, 0);
+                put8(memory, 0x193bc0 + 56 + 17, 5);
+                put8(memory, 0x193bc0 + 56 + 18, 5);
+                put8(memory, 0x193bc0 + 56 + 19, 1);
+                for (int i = 0; i < armies[n].size(); ++i) {
+                    const int at = 0x193bc0 + (i + 2) * 56;
+                    const auto row = armies[n][i];
+                    put8(memory, at + 17, quint8(row[0]));
+                    put8(memory, at + 18, quint8(row[1]));
+                    put16(memory, at + 24, quint16(row[2]));
+                    put8(memory, at + 51, quint8(row[3]));
+                }
+                const auto save = SaveDocument::open(rom, memory);
+                const auto cast = SceneStoryCast::army(rom, save, 165);
+                QJsonArray values;
+                for (int i = 0; i < 5; ++i) {
+                    QCOMPARE(int(cast[i].primary), expected[n][i * 2]);
+                    QCOMPARE(int(cast[i].secondary), expected[n][i * 2 + 1]);
+                    values << int(cast[i].primary) << int(cast[i].secondary);
+                }
+                QCOMPARE(save.serialize(), memory);
+                cases << QJsonObject{
+                    {"roster", QString::fromLatin1(memory.mid(0x193bc0, 5600).toHex())},
+                    {"cast", values}};
+            }
+            QTemporaryDir work;
+            const auto pathToCases = work.filePath("army-casts.json");
+            atomicWrite(
+                pathToCases,
+                QJsonDocument(QJsonObject{{"program", QString::fromLatin1(
+                                                          SceneEvents::readRow(rom, 67).toHex())},
+                                          {"cases", cases}})
+                    .toJson());
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("story-cast-army-mips.cjs"), pathToCases});
+            QVERIFY(reference.waitForFinished(30000));
+            QVERIFY2(!reference.exitCode(), reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
+        } catch (const Error &e) {
+            QFAIL(e.what());
         }
     }
     void storyCastLaunch() {

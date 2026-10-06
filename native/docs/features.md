@@ -197,3 +197,10 @@ carrying capacity, command roles, squad/legion movement and one-step Undo.
 Replacement leader choices refuse non-command classes and incapacitated members.
 Native finalizer/eligibility and table-edit/export checks pass. Cross-slot/current-
 project export consistency remains under audit.
+
+
+Dynamic story scenes now select their five class pairs from the current Save
+workspace army using native event priority, aliases, HP/status restrictions and
+fallbacks. Stored launch casts and manual choices remain available. The01FA8BF4
+coordinate/seek workflow and existing complete-scene playback check pass. This
+selects preview participants; it does not simulate the event's date/trigger gates.

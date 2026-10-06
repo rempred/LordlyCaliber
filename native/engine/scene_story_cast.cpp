@@ -1,5 +1,7 @@
 #include "engine/scene_story_cast.h"
 #include "engine/save_document.h"
+#include "engine/scene_events.h"
+#include "game/director/story_cast.h"
 namespace lordly {
 bool SceneStoryCast::supports(const DirectorProgram &program) {
     QSet<int> indexes, sources, owners;
@@ -44,6 +46,27 @@ std::array<StoryCastMember, 5> SceneStoryCast::saved(const SaveDocument &save, i
             !cast[i].secondary || cast[i].secondary >= classCount)
             throw Error("The selected save has no compatible five-person story launch cast; "
                         "choose preview classes manually");
+    }
+    return cast;
+}
+std::array<StoryCastMember, 5> SceneStoryCast::army(const Rom &rom, const SaveDocument &save,
+                                                    int classCount) {
+    const auto original = SceneEvents::retailRow(rom, 67), current = SceneEvents::readRow(rom, 67);
+    for (const auto range : {qMakePair(0x1be4, 0x2304), qMakePair(0x24ba, 0x25a2)})
+        if (current.mid(range.first, range.second - range.first) !=
+            original.mid(range.first, range.second - range.first))
+            throw Error(
+                "This ROM changes the story-cast selection program; use an explicit preview cast");
+    const auto &memory = save.memory();
+    if (memory.size() < 0x1951a0)
+        throw Error("The selected save has no complete character roster");
+    uint8_t pairs[10];
+    lordly_story_cast(reinterpret_cast<const uint8_t *>(memory.constData() + 0x193bc0), pairs);
+    std::array<StoryCastMember, 5> cast;
+    for (int i = 0; i < 5; ++i) {
+        cast[i] = {pairs[i * 2], pairs[i * 2 + 1]};
+        if (cast[i].primary >= classCount || !cast[i].secondary || cast[i].secondary >= classCount)
+            throw Error("A selected story character has a class absent from this ROM project");
     }
     return cast;
 }

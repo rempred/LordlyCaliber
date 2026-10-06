@@ -59,6 +59,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     auto changedCast = [this] {
         if (!storyCastEnabled_)
             return;
+        armyCastActive_ = false;
         castSource_->setText("Manual preview cast");
         inputHistory_.clear();
         pressedHistory_.clear();
@@ -93,18 +94,24 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
         connect(secondary, &QComboBox::currentIndexChanged, this, changedCast);
     }
     auto castTools = new QHBoxLayout;
-    savedCast_ = new QPushButton("Use open save");
+    armyCast_ = new QPushButton("Use current army");
+    armyCast_->setObjectName("sceneUseArmyCast");
+    armyCast_->setEnabled(false);
+    armyCast_->setToolTip("Select this story's cast from the current Save workspace roster, including native eligibility and fallbacks.");
+    savedCast_ = new QPushButton("Use saved launch cast");
     savedCast_->setObjectName("sceneUseSavedCast");
     savedCast_->setEnabled(false);
     savedCast_->setToolTip("Use the five class pairs stored in the Save workspace's selected slot. "
                            "This does not rerun the story event's army selection.");
     auto resetCast = new QPushButton("Use sample cast");
     resetCast->setObjectName("sceneResetCast");
+    castTools->addWidget(armyCast_);
     castTools->addWidget(savedCast_);
     castTools->addWidget(resetCast);
     castTools->addWidget(castSource_, 1);
     castRow->addLayout(castTools, 2, 0, 1, 6);
     auto applyCast = [this](const std::array<StoryCastMember, 5> &cast, const QString &source) {
+        armyCastActive_ = false;
         for (int i = 0; i < 5; ++i) {
             const QSignalBlocker primary(storyCast_[i]), secondary(storySecondary_[i]);
             storyCast_[i]->setCurrentIndex(storyCast_[i]->findData(cast[i].primary));
@@ -118,6 +125,17 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     };
     connect(resetCast, &QPushButton::clicked, this,
             [applyCast] { applyCast(SceneStoryCast::sample(), "Sample cast"); });
+    connect(armyCast_, &QPushButton::clicked, this, [this] {
+        try {
+            loadArmyCast();
+            armyCastActive_ = true;
+            inputHistory_.clear();
+            pressedHistory_.clear();
+            if (storyCastEnabled_) restart();
+        } catch (const Error &e) {
+            castSource_->setText(QString("Cast unchanged: %1").arg(QString::fromUtf8(e.what())));
+        }
+    });
     connect(savedCast_, &QPushButton::clicked, this, [this, applyCast] {
         try {
             const auto save = saveProvider_ ? saveProvider_() : nullptr;
@@ -619,13 +637,13 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             }
         }
         context_->setText(
-            "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
+            "Preview launch: flat terrain. Missing scene context pauses playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
             "Scattered props use a fixed preview seed. Launch bindings and audio remain "
             "unfinished.");
         if (storyCastEnabled_)
             context_->setText(context_->text() + "\nThis scene uses the selected preview class pairs. Its "
-                                                 "authored positions stay unchanged.");
+                                                 "authored positions stay unchanged; equipment uses class defaults.");
         if (classDefaultsEnabled_)
             context_->setText(context_->text() +
                 "\nClass Actors preview with class-default equipment. Army bindings still require launch data.");
@@ -651,6 +669,21 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
 void ScenePreview::setSaveProvider(std::function<const SaveDocument *()> provider) {
     saveProvider_ = std::move(provider);
     savedCast_->setEnabled(bool(saveProvider_));
+    armyCast_->setEnabled(bool(saveProvider_));
+}
+void ScenePreview::loadArmyCast() {
+    const auto save=saveProvider_ ? saveProvider_() : nullptr;
+    if (!save) throw Error("Open a save in the Save workspace and select a slot first");
+    const auto cast=SceneStoryCast::army(rom_,*save,classCount_);
+    for (int i=0;i<5;++i) {
+        const QSignalBlocker first(storyCast_[i]),second(storySecondary_[i]);
+        storyCast_[i]->setCurrentIndex(storyCast_[i]->findData(cast[i].primary));
+        storySecondary_[i]->setCurrentIndex(storySecondary_[i]->findData(cast[i].secondary));
+    }
+    const int slot=save->selectedSlot();
+    castSource_->setText(slot<0 ? "Current army from the open runtime state"
+                        : slot==15 ? "Current army from the suspend slot"
+                        : QString("Current army from slot %1").arg(slot+1));
 }
 void ScenePreview::restart() {
     stop();
@@ -665,6 +698,8 @@ void ScenePreview::restart() {
         return;
     }
     try {
+        if (storyCastEnabled_ && armyCastActive_ && saveProvider_ && saveProvider_())
+            loadArmyCast();
         auto camera = [](float fov, float x, float y, float z) {
             QByteArray data(56, 0);
             const float values[]{fov, 4.f / 3, 1, 20000, 1, x, y, z, 0, 0, 0, 0, 1, 0};

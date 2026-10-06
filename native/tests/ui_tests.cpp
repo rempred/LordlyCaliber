@@ -3869,12 +3869,14 @@ class UiTests : public QObject {
         QTRY_VERIFY(actors->view()->isVisible());
         actors->view()->setCurrentIndex(actors->model()->index(actors->findData(2), 0));
         QCOMPARE(actors->view()->currentIndex().data(Qt::UserRole).toInt(), 2);
-        position->setValue(4); QTRY_COMPARE(preview->property("sceneTick").toInt(), 4);
+        position->setValue(4);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 4);
         QVERIFY(actors->view()->isVisible());
         QCOMPARE(actors->view()->currentIndex().data(Qt::UserRole).toInt(), 2);
         actors->hidePopup();
         QCOMPARE(actors->currentData().toInt(), 1); // Browsing did not commit a selection.
-        position->setValue(3); QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+        position->setValue(3);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
 
         secondary->setCurrentIndex(secondary->findData(0x54));
         QCOMPARE(preview->property("sceneTick").toInt(), 0);
@@ -3902,7 +3904,48 @@ class UiTests : public QObject {
         QCOMPARE(primary->currentData().toInt(), 0x58);
         QCOMPARE(secondary->currentData().toInt(), 0x58);
         QCOMPARE(source->text(), QString("Sample cast"));
-        auto proxy = qobject_cast<QAbstractProxyModel *>(window.findChild<QTableView *>("classesTable")->model());
+        auto army = preview->findChild<QPushButton *>("sceneUseArmyCast");
+        QVERIFY(army && army->isEnabled());
+        QVERIFY(save->edit(SaveTable::Characters, 1, "class", 0x56));
+        QVERIFY(save->edit(SaveTable::Characters, 1, "secondaryClass", 0x57));
+        QVERIFY(save->edit(SaveTable::Characters, 1, "hpMax", 100));
+        QVERIFY(save->edit(SaveTable::Characters, 1, "hpCur", 100));
+        const auto armySave = save->document()->serialize();
+        army->click();
+        QCOMPARE(primary->currentData().toInt(), 0x56);
+        QCOMPARE(secondary->currentData().toInt(), 0x57);
+        QVERIFY(source->text().contains("Current army from slot 1"));
+        QCOMPARE(preview->findChild<QComboBox *>("sceneCast1")->currentData().toInt(), 4);
+        position->setValue(3);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+        actors->setCurrentIndex(actors->findData(0));
+        QVERIFY(actorState->text().contains("Class pair 86 / 87"));
+        const auto armyPlacement =
+            std::find_if(program.commands.cbegin(), program.commands.cend(),
+                         [](const auto &c) { return c.opcode == 0x14 && c.operands[0] == 0; });
+        QVERIFY(armyPlacement != program.commands.cend());
+        for (int axis = 0; axis < 3; ++axis)
+            QVERIFY(actorState->text().contains(
+                QString::number(qint32(armyPlacement->operands[4 + axis]) / 1000., 'f', 3)));
+        const auto armyFrame = preview->renderedFrame();
+        QVERIFY(!armyFrame.isNull());
+        position->setValue(0);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+        position->setValue(3);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+        QCOMPARE(preview->renderedFrame(), armyFrame);
+        QCOMPARE(save->document()->serialize(), armySave);
+        QVERIFY(save->edit(SaveTable::Characters, 1, "hpCur", 0));
+        army->click();
+        QCOMPARE(primary->currentData().toInt(), 4);
+        save->undoStack()->undo();
+        army->click();
+        QCOMPARE(primary->currentData().toInt(), 0x56);
+        QCOMPARE(scenes.json(), before);
+        save->loadBytes(battery);
+        reset->click();
+        auto proxy = qobject_cast<QAbstractProxyModel *>(
+            window.findChild<QTableView *>("classesTable")->model());
         QVERIFY(proxy);
         auto classes = qobject_cast<RecordModel *>(proxy->sourceModel());
         QVERIFY(classes);

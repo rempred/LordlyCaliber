@@ -134,7 +134,9 @@ class ScenePreview : public QWidget {
     QWidget *storyCastUi_;
     std::array<QComboBox *, 5> storyCast_{}, storySecondary_{};
     std::function<const SaveDocument *()> saveProvider_;
-    QPushButton *savedCast_;
+    QPushButton *savedCast_, *armyCast_;
+    bool armyCastActive_ = true;
+    void loadArmyCast();
     QLabel *castSource_;
     int classCount_ = 0;
     bool storyCastEnabled_ = false;
