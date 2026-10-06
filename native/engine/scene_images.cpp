@@ -1,4 +1,5 @@
 #include "engine/scene_images.h"
+#include "engine/scene_background_edit.h"
 #include "engine/archive.h"
 #include <QFile>
 #include <QJsonArray>
@@ -206,10 +207,14 @@ SceneBackgrounds SceneImages::backgrounds(const Rom &rom, const DirectorResource
                                           int modeOverride) {
     SceneBackgrounds result;
     const int cls = scene.program.resourceClass();
+    const bool freshEnvironment = (cls == 1 || cls == 8) && BackgroundEdit::inspect(rom, scene.program).editable();
     const auto context = metadata()["scenes"].toObject()[QString::number(scene.key)].toObject();
     if (cls == 4 || cls == 5) {
         result.mode = 0;
         result.modeEvidence = "Resource class 4/5 selects scene-group launch preload.";
+    } else if (freshEnvironment) {
+        result.mode = 2;
+        result.modeEvidence = "Qualified fresh environment launch selects mode two.";
     } else if (sha256(scene.program.encode()).toUpper() ==
                    context["sourceSha256"].toString().toLatin1().toUpper() &&
                !context["mode"].isNull()) {
@@ -235,8 +240,9 @@ SceneBackgrounds SceneImages::backgrounds(const Rom &rom, const DirectorResource
                 request.status = "Scene resource group; members are shown separately.";
             } else if (result.mode == 2) {
                 request.images = environment(rom, request.selector);
-                request.status =
-                    "Environment base. Foreground selection is independent launch state.";
+                request.status = freshEnvironment
+                    ? "Fresh-launch environment. Foreground uses the same selector."
+                    : "Environment base. Foreground selection is independent launch state.";
             } else
                 request.status = "Select a preview mode to resolve this background request.";
         } catch (const std::exception &e) {

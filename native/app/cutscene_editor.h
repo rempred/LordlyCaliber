@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/scene_images.h"
+#include "engine/scene_background_edit.h"
 #include "engine/scene_programs.h"
 #include <QWidget>
 #include <functional>
@@ -37,6 +38,10 @@ class CutsceneEditor : public QWidget {
     void selectRequest();
     void selectImage(const QString &id);
     void showImage();
+    QWidget *createBackgroundControls();
+    void refreshBackgroundEdit();
+    void previewBackgroundChoice();
+    void applyBackgroundChoice(bool restore);
     Rom rom_;
     Project *project_ = nullptr;
     QUndoStack *undo_ = nullptr;
@@ -61,5 +66,10 @@ class CutsceneEditor : public QWidget {
     QGraphicsScene *canvas_;
     QTabWidget *catalogTabs_;
     QVector<QGraphicsPixmapItem *> layerItems_;
+    BackgroundEdit backgroundEdit_;
+    QMap<int, QVector<BackgroundChoice>> backgroundOptions_;
+    QComboBox *backgroundChoice_ = nullptr;
+    QPushButton *backgroundApply_ = nullptr, *backgroundRestore_ = nullptr;
+    QLabel *backgroundHelp_ = nullptr;
 };
 } // namespace lordly

@@ -40,5 +40,9 @@ for(const scene of sandbox.window.OB64.cutsceneData.scenes){
  const words=Array.from({length:decoded.length/4},(_,i)=>decoded.readUInt32BE(i*4));run(words,key);
 }
 const rows=sandbox.window.OB64.cutsceneData.oversizedImagePresentationRules.rows.map(r=>({row:r.rowSelector,image:r.assetId}));
-fs.writeFileSync(process.argv[3],JSON.stringify({cases,rows}));
+let backgroundSelections=0;
+if(process.argv[4])for(const row of JSON.parse(fs.readFileSync(process.argv[4],'utf8'))){
+ run(row.words);assert.equal(read(output,8).readInt16BE(2),row.selector);++backgroundSelections;
+}
+fs.writeFileSync(process.argv[3],JSON.stringify({cases,rows,backgroundSelections}));
 console.log(`${cases.length} original launch scans including all117 image-launch streams;69 retained independently researched launch-row expectations. Resource transfer/decompression/allocation controlled.`);

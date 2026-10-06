@@ -69,6 +69,58 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void cutsceneBackgroundSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850); editor.show();
+            auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_VERIFY_WITH_TIMEOUT(list->count() > 1000, 10000);
+            int row = -1;
+            for (int i = 0; i < list->count(); ++i) if (list->item(i)->data(Qt::UserRole).toUInt() == 0x1a14970) row = i;
+            QVERIFY(row >= 0); list->setCurrentRow(row);
+            auto choice = editor.findChild<QComboBox *>("cutsceneBackgroundChoice");
+            auto apply = editor.findChild<QPushButton *>("cutsceneBackgroundApply");
+            auto restore = editor.findChild<QPushButton *>("cutsceneBackgroundRestore");
+            QCOMPARE(choice->count(), 63); QCOMPARE(choice->currentData().toInt(), 34);
+            const auto original = project.scenePrograms()->program(0x1a14970).source;
+            choice->setCurrentIndex(choice->findData(57));
+            QVERIFY(apply->isEnabled()); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, original);
+            auto images = editor.findChild<QComboBox *>("cutsceneImages");
+            QVERIFY(images->findData("archive:49") >= 0);
+            apply->click();
+            auto expected = original; put32(expected, 4, 57);
+            QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            QCOMPARE(choice->currentData().toInt(), 57); QVERIFY(!apply->isEnabled()); QVERIFY(restore->isEnabled());
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, original);
+            QCOMPARE(choice->currentData().toInt(), 34);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            restore->click(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, original);
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            QTemporaryDir work; project.saveFolder(work.path());
+            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(reopened.scenePrograms()->program(0x1a14970).source, expected);
+            editor.findChild<QTableWidget *>("cutsceneCommands")->setCurrentCell(0, 0);
+            auto operand = editor.findChild<QLineEdit *>("sceneOperand0");
+            QVERIFY(operand); operand->setText("-");
+            QVERIFY(!choice->isEnabled() && !apply->isEnabled() && !restore->isEnabled());
+            QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            editor.findChild<QPushButton *>("sceneCommandDiscard")->click();
+            QVERIFY(choice->isEnabled() && restore->isEnabled());
+            auto catalog = editor.findChild<QTabWidget *>("cutsceneCatalogTabs");
+            catalog->setCurrentIndex(1);
+            QVERIFY(!choice->isEnabled() && !apply->isEnabled() && !restore->isEnabled());
+            catalog->setCurrentIndex(0);
+            QCOMPARE(choice->currentData().toInt(), 57);
+            QCOMPARE(project.scenePrograms()->program(0x1a14970).source, expected);
+            QTRY_VERIFY_WITH_TIMEOUT(!editor.property("displayedImage").toString().isEmpty(), 30000);
+            QVERIFY(editor.grab().save("native-background-selection.png"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void projectChangeReview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

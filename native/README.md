@@ -51,6 +51,12 @@ shared rates. Removing every override restores the global-only dispatcher.
 Custom neutral squads support independent members, equipment, formation, card text,
 persuasion, retreat and weighted rewards, including added classes.
 
+In Cutscenes, Background preview offers the scene's available background groups or
+environments. Choose one to preview its image and foreground pieces, then Apply
+background. Restore original and Undo preserve your other scene edits. Actor positions
+do not move with the setting. Inherited or gameplay-chosen scenery remains controlled
+by the game; those scenes explain why direct selection is unavailable.
+
 For scripting:
 
 ```powershell

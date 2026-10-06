@@ -145,6 +145,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     pages->setObjectName("cutsceneDetailPages");
     auto preview = new QWidget;
     auto previewLayout = new QVBoxLayout(preview);
+    previewLayout->addWidget(createBackgroundControls());
     auto imageTools = new QHBoxLayout;
     auto fit = new QPushButton("Fit image"), actual = new QPushButton("Actual pixels");
     frames_ = new QComboBox;
@@ -210,6 +211,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             commands_->setEnabled(valid);
             scenes_->setEnabled(valid);
             mode_->setEnabled(valid);
+            if (!valid) {
+                backgroundChoice_->setEnabled(false);
+                backgroundApply_->setEnabled(false);
+                backgroundRestore_->setEnabled(false);
+            }
             if (valid)
                 reloadScenes();
             else
@@ -343,6 +349,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         mode_->setEnabled(tab == 0);
         requests_->setEnabled(tab == 0);
         images_->setEnabled(tab == 0);
+        if (tab) {
+            backgroundChoice_->setEnabled(false);
+            backgroundApply_->setEnabled(false);
+            backgroundRestore_->setEnabled(false);
+        }
         if (!tab)
             selectScene();
         else if (assets_->currentItem())
@@ -600,6 +611,7 @@ void CutsceneEditor::selectScene() {
     for (const auto &r : backgrounds_.requests)
         requests_->addItem(QString("Word %1 · selector %2").arg(r.word).arg(r.selector));
     selectRequest();
+    refreshBackgroundEdit();
 }
 void CutsceneEditor::selectRequest() {
     const QSignalBlocker block(images_);

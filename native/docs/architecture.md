@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Cutscene background authoring
+
+Background preview now offers current-ROM scene groups or environments, preview
+before Apply, Restore original and shared project undo. The model retains the
+scene's command framing and changes only its selector word. Actor positions,
+cameras and other commands stay as authored. The image list includes foreground
+pieces for fresh environment launches. Unapplied command input and the standalone
+image catalog disable these editing controls.
+
+`BackgroundEdit` permits one initial positive background request for supported
+class4/5 room setups and class1/8 fresh environment setups. Missing, derived,
+inherited, repeated or noninitial requests retain their source and explain why
+selection is unavailable. Launch code and route-table identities come from the
+qualified browser source reference; the generator records hashes, not original
+code payloads. Options use current-ROM selector extents and known image layouts.
+An edited stream must still produce the chosen selector in the raw-word C launch
+scan. Qualified fresh world scenes retain their mode after stream edits or ROM
+relocation instead of depending on a now-stale source hash.
+
+`background_edit_tests choicesAndExport` passed in6960ms:172 offered selections
+across actual class1/4/5/8 streams, selector-only byte changes, unchanged Actor and
+camera bytes, foreground identities, malformed/inherited/code-owner refusal,
+original MIPS pre-scan, project reopen and four rebuilt ROM streams. Resource
+references, allocation bounds, checksum and master preservation pass. Candidate:
+parent Test ROMs/native-background-choice-jZAxuA. The MIPS comparison controls
+allocation/resource delivery; it does not claim natural game launch or final
+rendering accuracy. `ui_tests cutsceneBackgroundSelection` passed in1087ms,
+including pending preview, Apply, restore, undo/redo, project reopen and guards for
+incomplete command input and image-catalog browsing. The capture was inspected.
+The existing `image_tests imageLaunchAgainstMips` regression passed in1322ms, and
+the complete native build passed without compiler warnings.
+
 ## Project change review
 
 `Project::changeReport` compares the current project with its loaded source ROM,
