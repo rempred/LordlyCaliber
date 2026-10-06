@@ -120,6 +120,9 @@ void SceneRibbons::validateRotationSource(qint32 group, qint32 entry) const {
     }
     (void)pathSource(rom_, group, entry);
 }
+int SceneRibbons::sourcePointCount(qint32 group, qint32 entry) const {
+    return int(pathSource(rom_, group, entry).points.size() / 12);
+}
 SceneRibbon SceneRibbons::load(const QVector<quint32> &args,
                                const QMap<int, QPointF> &markers) const {
     if (args.size() != 9 || args[0] >= 20)

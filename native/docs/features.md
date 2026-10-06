@@ -112,3 +112,7 @@ instruction comparisons and desktop checkpoint seeking pass; missing paths pause
 Sprite path-heading creation and reuse now have Actions fields, current-ROM
 reference validation, active-path slot checks, preview/undo and compiled export
 reopening. Context-dependent path availability is checked during playback.
+
+Path ribbons now have creation, endpoint and release Actions with native precedence,
+independent slots, current-ROM point limits, dependent-endpoint validation, visible
+palette/reveal edits, undo and compiled export/reopening.

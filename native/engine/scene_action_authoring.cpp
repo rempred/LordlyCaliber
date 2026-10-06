@@ -135,6 +135,18 @@ std::optional<quint32> spriteReference(const DirectorCommand &c) {
 DirectorCommand command(quint32 op, QVector<quint32> operands = {}) {
     return {0, op, std::move(operands)};
 }
+std::optional<quint32> ribbonReference(const DirectorCommand &c) {
+    quint32 value;
+    if (c.opcode >= 0x49 && c.opcode <= 0x4c)
+        value = c.operands[c.opcode == 0x4c ? 2 : 0];
+    else if (c.opcode == 0x63 && c.operands[7] == quint32(-1) && c.operands[8] != quint32(-1))
+        value = c.operands[8];
+    else
+        return {};
+    if ((value & 0xffffff00U) == 0x08880000U || value < 20)
+        return value;
+    return {};
+}
 } // namespace
 QMap<quint32, QString> SceneActions::kinds() {
     return {{3, "Set Actor pose and position"},
@@ -153,6 +165,9 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x15, "Turn Actor"},
             {0x1c, "Room Actor channel"},
             {0x46, "Create scene sprite"},
+            {0x49, "Create path ribbon"},
+            {0x4a, "Set path ribbon endpoint"},
+            {0x4b, "Release path ribbon"},
             {0x63, "Create rotated scene sprite"},
             {RotateSprite, "Rotate scene sprite"},
             {CreatePathSprite, "Create sprite with path heading"},
@@ -263,7 +278,41 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
             }
         }
         QVector<quint32> operands;
+        quint32 ribbonSlot = 0;
+        for (int i = before - 1; i >= 0; --i)
+            if (const auto reference = ribbonReference(p.commands[i])) {
+                ribbonSlot = *reference;
+                break;
+            }
         switch (kind) {
+        case 0x49: {
+            QSet<quint32> used;
+            for (const auto &c : p.commands) {
+                if (c.opcode == 0x63 && c.operands[8] != quint32(-1) &&
+                    (c.operands[7] & 0xffffff00U) == 0x08880000U)
+                    throw Error("A path source is selected at launch; an unused slot cannot be "
+                                "chosen automatically.");
+                if (const auto reference = ribbonReference(c)) {
+                    if (*reference >= 20)
+                        throw Error("A path slot is selected at launch; an unused slot cannot be "
+                                    "chosen automatically.");
+                    used << *reference;
+                }
+            }
+            ribbonSlot = 0;
+            while (ribbonSlot < 20 && used.contains(ribbonSlot))
+                ++ribbonSlot;
+            if (ribbonSlot == 20)
+                throw Error("All 20 path slots are referenced; edit an existing path action.");
+            operands = {ribbonSlot, 3, 0, 100, quint32(-1), 3, 0, 0, 1};
+            break;
+        }
+        case 0x4a:
+            operands = {ribbonSlot, 100, quint32(-1)};
+            break;
+        case 0x4b:
+            operands = {ribbonSlot, 1};
+            break;
         case 0x46:
         case 0x63:
         case CreatePathSprite: {

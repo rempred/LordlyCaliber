@@ -1,6 +1,7 @@
 #include "engine/scene_actions.h"
 #include "engine/scene_action_control.h"
 #include <QRegularExpression>
+#include <algorithm>
 #include <limits>
 namespace lordly {
 bool SceneActionField::canonical(quint32 word) const {
@@ -137,6 +138,29 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x49:
+            action.name = "Create path ribbon";
+            field("Path slot", 0, 1, 0, 19);
+            field("Resource group", 1, 1, 0);
+            field("Path entry", 2, 1, 0);
+            field("Reveal through (%) (-1 uses full path)", 3, 1, -1, 100);
+            field("Endpoint point (-1 uses percentage)", 4, 1, -1, 15);
+            field("Width", 5, 1, 1, 5);
+            field("Palette", 6, 1, 0, 3);
+            field("Show immediately (0 or 1)", 7, 1, 0, 1);
+            field("Drawing channel", 8, 1, 0, 255);
+            break;
+        case 0x4a:
+            action.name = "Set path ribbon endpoint";
+            field("Path slot", 0, 1, 0, 19);
+            field("Percentage (-1 keeps current)", 1, 1, -1, 100);
+            field("Endpoint point (-1 writes percentage)", 2, 1, -1, 15);
+            break;
+        case 0x4b:
+            action.name = "Release path ribbon";
+            field("Path slot (-1 selects all)", 0, 1, -1, 19);
+            field("Release mode (0 immediate, 1 fade)", 1, 1, 0, 1);
+            break;
         case 0x46:
             action.name = "Create scene sprite";
             field("Sprite slot", 0, 1, 0, 29);
@@ -290,6 +314,42 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         i += action.commandCount - 1;
     }
     return result;
+}
+std::optional<QPair<int, int>> SceneActions::ribbonSource(const DirectorProgram &program,
+                                                          int before, quint32 slot) {
+    const auto constructor = ribbonConstructor(program, before, slot);
+    if (!constructor)
+        return {};
+    const auto &args = program.commands[*constructor].operands;
+    for (int operand : {1, 2})
+        if ((args[operand] & 0xffffff00U) == 0x08880000U || qint32(args[operand]) < 0)
+            return {};
+    return QPair<int, int>{int(args[1]), int(args[2])};
+}
+std::optional<int> SceneActions::ribbonConstructor(const DirectorProgram &program, int before,
+                                                   quint32 slot) {
+    if (slot >= 20)
+        return {};
+    const auto actions = inspect(program);
+    for (int cursor = before; cursor > 0;) {
+        const auto previous = std::find_if(actions.begin(), actions.end(), [cursor](const auto &a) {
+            return a.command + a.commandCount == cursor;
+        });
+        if (previous == actions.end())
+            return {};
+        const auto &c = program.commands[previous->command];
+        if (c.opcode == 0x49) {
+            if ((c.operands[0] & 0xffffff00U) == 0x08880000U)
+                return {}; // This constructor could replace the requested slot.
+            if (c.operands[0] == slot)
+                return previous->command;
+        } else if (c.opcode == 0x4b && c.operands[1] != 1 &&
+                   (c.operands[0] == slot || c.operands[0] == quint32(-1) ||
+                    (c.operands[0] & 0xffffff00U) == 0x08880000U))
+            return {};
+        cursor = previous->command;
+    }
+    return {};
 }
 DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCommand, int field,
                                    const QString &value) {

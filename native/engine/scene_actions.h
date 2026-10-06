@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/director.h"
+#include <optional>
 namespace lordly {
 struct SceneActionField {
     QString name;
@@ -38,5 +39,10 @@ class SceneActions {
     static DirectorProgram remove(const DirectorProgram &, int actionCommand);
     static DirectorProgram edit(const DirectorProgram &, int actionCommand, int field,
                                 const QString &value);
+    // Resource group/entry from an unambiguous preceding constructor in the
+    // same linear action section. Unknown control flow returns no inference.
+    static std::optional<QPair<int, int>> ribbonSource(const DirectorProgram &, int before,
+                                                       quint32 slot);
+    static std::optional<int> ribbonConstructor(const DirectorProgram &, int before, quint32 slot);
 };
 } // namespace lordly

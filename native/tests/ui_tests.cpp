@@ -3682,6 +3682,124 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void ribbonActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Ribbon action controls", source, false);
+            const QVector<quint32> words{0x80000007U, 47,          0x3a,        1,          0, 0,
+                                         0,           70,          70,          130,        8, 0x7d,
+                                         0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U};
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            const int point = 2;
+            auto base = SceneActions::insert(DirectorProgram::decode(bytes), point, 0xe, 40);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 850);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            auto position = editor.findChild<QComboBox *>("sceneActionPosition");
+            auto field = [&](int i) {
+                return editor.findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            auto discard = editor.findChild<QPushButton *>("sceneActionDiscard");
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto background = frame();
+            kind->setCurrentIndex(kind->findData(0x49));
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[point].opcode, quint32(0x49));
+            field(7)->setText("1");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto first = frame();
+            QVERIFY(first != background);
+            undo.clear(); // Establish a baseline before testing one field's undo.
+            field(6)->setText("2");
+            const auto colored = frame();
+            QVERIFY(colored != first);
+            undo.undo();
+            QCOMPARE(frame(), first);
+            undo.redo();
+            QCOMPARE(frame(), colored);
+            editor.selectScene(id, point);
+            const auto accepted = project.scenePrograms()->program(id).source;
+            field(4)->setText("2");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            discard->click();
+            field(1)->setText("59");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            discard->click();
+            field(1)->setText("0");
+            field(2)->setText("6"); // Five source points in the original ROM.
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            kind->setCurrentIndex(kind->findData(0x4a));
+            position->setCurrentIndex(position->findData(point + 1));
+            insert->click();
+            field(2)->setText("4");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto endpoint = project.scenePrograms()->program(id).source;
+            field(2)->setText("5");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, endpoint);
+            discard->click();
+            editor.selectScene(id, point);
+            field(2)->setText("0"); // This shorter path would invalidate the following point4.
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, endpoint);
+            discard->click();
+            editor.selectScene(id, point + 1);
+            field(2)->setText("1");
+            editor.selectScene(id, point);
+            field(2)->setText("0");
+            field(1)->setText("3");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            editor.selectScene(id, point + 1);
+            kind->setCurrentIndex(kind->findData(0x4b));
+            position->setCurrentIndex(position->findData(point + 2));
+            insert->click();
+            QCOMPARE(field(0)->text(), QString("0"));
+            QCOMPARE(field(1)->text(), QString("1"));
+            const auto faded = frame();
+            QVERIFY(faded != background);
+            field(1)->setText("0");
+            QCOMPARE(frame(), background);
+            undo.undo();
+            QCOMPARE(frame(), faded);
+            undo.redo();
+            QCOMPARE(frame(), background);
+            editor.selectScene(id, point + 2);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-ribbon-actions.png"));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void pathSpriteActionControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

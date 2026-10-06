@@ -22,6 +22,138 @@ class SceneActionTests : public QObject {
         }
         return DirectorProgram::decode(bytes);
     }
+    void ribbonActions() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Ribbon Actions", source, false);
+            const auto base = program({0x80000007U, 47, 0x3a, 1, 0, 0, 0, 70, 70, 130, 8, 0x7d,
+                                       0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            const int point = SceneActions::positions(base).first().command;
+            QCOMPARE(point, 2);
+            auto p = SceneActions::insert(base, point, 0x49);
+            QCOMPARE(p.commands[point].operands,
+                     QVector<quint32>({0, 3, 0, 100, quint32(-1), 3, 0, 0, 1}));
+            QCOMPARE(SceneActions::remove(p, point).source, base.source);
+            const auto two = SceneActions::insert(p, point + 1, 0x49);
+            QCOMPARE(two.commands[point + 1].operands[0], quint32(1));
+            auto symbolic = p;
+            symbolic.commands[point].operands[0] = 0x08880001;
+            symbolic = DirectorProgram::decode(symbolic.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(symbolic, point, 0x49));
+            QCOMPARE(
+                SceneActions::insert(symbolic, point + 1, 0x4a).commands[point + 1].operands[0],
+                quint32(0x08880001));
+            auto referenced = SceneActions::insert(base, point, SceneActions::OrientSprite);
+            referenced = SceneActions::edit(referenced, point, 1, "-1");
+            referenced = SceneActions::edit(referenced, point, 2, "0");
+            QCOMPARE(SceneActions::insert(referenced, point, 0x49).commands[point].operands[0],
+                     quint32(1));
+            auto crowded = base;
+            for (int i = 0; i < 20; ++i)
+                crowded = SceneActions::insert(crowded, point, 0x49);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(crowded, point, 0x49));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(p, point, 5, "0"));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(p, point, 6, "4"));
+            p = SceneActions::edit(p, point, 3, "50");
+            p = SceneActions::edit(p, point, 6, "2");
+            p = SceneActions::insert(p, point + 1, 0x4a);
+            p = SceneActions::edit(p, point + 1, 2, "1");
+            QVERIFY(SceneActions::ribbonSource(p, point + 1, 0));
+            QCOMPARE(*SceneActions::ribbonSource(p, point + 1, 0), qMakePair(3, 0));
+            auto waited = SceneActions::insert(p, point + 1, 0xe, 30);
+            int endpoint = -1;
+            for (int i = 0; i < waited.commands.size(); ++i)
+                if (waited.commands[i].opcode == 0x4a)
+                    endpoint = i;
+            QVERIFY(endpoint > point);
+            QVERIFY(SceneActions::ribbonSource(waited, endpoint, 0));
+            auto unknown = waited;
+            unknown.commands.insert(endpoint, {0, 0x80000002U, {}});
+            unknown = DirectorProgram::decode(unknown.encode());
+            QVERIFY(!SceneActions::ribbonSource(unknown, endpoint + 1, 0));
+            p = SceneActions::insert(p, point + 2, 0x4a);
+            p = SceneActions::edit(p, point + 2, 1, "25");
+            p = SceneActions::insert(p, point + 3, 0x4b);
+            const auto reordered = SceneActions::move(p, point + 3, point + 2);
+            QCOMPARE(SceneActions::move(reordered, point + 2, point + 4).source, p.source);
+            auto exercise = [&](const Rom &rom, const DirectorProgram &program) {
+                SceneRibbons ribbons(rom);
+                int value = 0;
+                for (const auto &c : program.commands) {
+                    if (c.opcode < 0x49 || c.opcode > 0x4b)
+                        continue;
+                    const auto before = ribbons.ribbons()[0];
+                    QVERIFY(ribbons.service(c.opcode, c.operands, value));
+                    QVERIFY(ribbons.ribbons()[0]);
+                    const auto &record = ribbons.ribbons()[0]->record;
+                    if (c.opcode == 0x49) {
+                        QCOMPARE(u32(record, 0x50), quint32(50));
+                        QCOMPARE(u8(record, 0x83), quint8(2));
+                    }
+                    if (c.opcode == 0x4a) {
+                        QCOMPARE(u32(record, 0x54), quint32(1));
+                        QCOMPARE(u32(record, 0x68), u32(before->record, 0x68));
+                        if (c.operands[2] == quint32(-1))
+                            QCOMPARE(u32(record, 0x50), quint32(25));
+                    }
+                    if (c.opcode == 0x4b)
+                        QCOMPARE(u8(record, 0x86), quint8(1));
+                }
+                for (int i = 0; i < 28; ++i)
+                    ribbons.advance();
+                QVERIFY(!ribbons.empty());
+                ribbons.advance();
+                QVERIFY(ribbons.empty());
+                QVERIFY(ribbons.service(0x49, program.commands[point].operands, value));
+                QVERIFY(ribbons.service(0x4b, {quint32(-1), 0}, value));
+                QVERIFY(ribbons.empty());
+            };
+            exercise(project.rom(), p);
+            p = SceneActions::insert(p, point + 1, 0xe, 30);
+            scenes.replace(id, p.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, p.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-ribbon-actions-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            exercise(reopened.rom(), reopened.scenePrograms()->program(id));
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Ribbon Actions export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void pathSpriteActions() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -44,8 +176,10 @@ class SceneActionTests : public QObject {
                          70,          70,          130,         8,           0x49,       0, 3,
                          0,           90,          quint32(-1), 3,           0,          0, 1,
                          0x7d,        0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
-            const int point = SceneActions::positions(base).first().command;
-            QCOMPARE(point, 3);
+            const int point = 3; // Insert sprites after the independently editable ribbon.
+            const auto positions = SceneActions::positions(base);
+            QVERIFY(std::any_of(positions.begin(), positions.end(),
+                                [point](const auto &p) { return p.command == point; }));
             auto created = SceneActions::insert(base, point, SceneActions::CreatePathSprite);
             QCOMPARE(created.commands[point].opcode, quint32(0x63));
             QCOMPARE(created.commands[point].operands,

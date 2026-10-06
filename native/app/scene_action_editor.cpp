@@ -314,6 +314,10 @@ void SceneActionEditor::showAction() {
             input->setToolTip("A nonnegative group selects a resource path in the current ROM. "
                               "Group -1 selects a currently active path slot, from 0 through 19. "
                               "The sprite copies that path's starting heading.");
+        if (action.name == "Set path ribbon endpoint" && i > 0 && f.canonical(word))
+            input->setToolTip("A point other than -1 writes only the stored milestone. Otherwise "
+                              "the percentage is updated. This never clears an earlier milestone, "
+                              "rewinds revealed geometry or restarts the activity flag.");
         const bool classField =
             (action.name == "Set Actor class and pose" || action.name == "Create class Actor") &&
             (i == 1 || i == 2);
@@ -345,9 +349,19 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Create sprite with path heading" ||
+        action.name == "Set path ribbon endpoint"
+            ? "Changes the reveal limit. A stored point takes precedence over later percentage "
+              "changes; this action does not rewind or restart the ribbon."
+        : action.name == "Create path ribbon"
+            ? "Creates or replaces one path in the scene's image presentation. A point overrides "
+              "the percentage; point -1 and percentage -1 reveal the full path."
+        : action.name == "Release path ribbon"
+            ? "Fade releases the path after its native fade updates. Immediate release removes it "
+              "at this command. Slot -1 applies to all paths."
+        : action.name == "Create sprite with path heading" ||
                 action.name == "Set sprite heading from path"
-            ? "Copies the path's starting heading. Group -1 needs an active path when this action runs. "
+            ? "Copies the path's starting heading. Group -1 needs an active path when this action "
+              "runs. "
               "Creation uses facing 0, channel 1 and scale 100%; reuse retains the sprite's other "
               "state."
         : action.name == "Create rotated scene sprite"
@@ -443,6 +457,52 @@ void SceneActionEditor::publishFields() {
                 (args[7] & 0xffffff00U) != 0x08880000U && (args[8] & 0xffffff00U) != 0x08880000U)
                 SceneRibbons(project_->rom())
                     .validateRotationSource(qint32(args[7]), qint32(args[8]));
+        }
+        if (opcode == 0x49 || opcode == 0x4a) {
+            const auto &args = program.commands[action.command].operands;
+            const auto &prior = original.commands[action.command].operands;
+            const auto symbolic = [](quint32 value) {
+                return (value & 0xffffff00U) == 0x08880000U;
+            };
+            if (opcode == 0x49 &&
+                (args[1] != prior[1] || args[2] != prior[2] || args[4] != prior[4]) &&
+                !symbolic(args[1]) && !symbolic(args[2])) {
+                const auto count = SceneRibbons(project_->rom())
+                                       .sourcePointCount(qint32(args[1]), qint32(args[2]));
+                if (!symbolic(args[4]) && qint32(args[4]) >= count)
+                    throw Error(
+                        QString("This path has %1 points; choose -1 or a point from 0 through %2.")
+                            .arg(count)
+                            .arg(count - 1));
+                for (int i = action.command + 1; i < program.commands.size(); ++i) {
+                    const auto &endpoint = program.commands[i];
+                    if (endpoint.opcode == 0x4a && !symbolic(endpoint.operands[2]) &&
+                        qint32(endpoint.operands[2]) >= count &&
+                        SceneActions::ribbonConstructor(program, i, endpoint.operands[0]) ==
+                            action.command)
+                        throw Error(
+                            QString("The endpoint at word %1 uses point %2, beyond this path's "
+                                    "last point %3. Change that endpoint first.")
+                                .arg(endpoint.word)
+                                .arg(endpoint.operands[2])
+                                .arg(count - 1));
+                }
+            } else if (opcode == 0x4a && (args[0] != prior[0] || args[2] != prior[2]) &&
+                       !symbolic(args[2]) && qint32(args[2]) >= 0) {
+                const auto source = SceneActions::ribbonSource(program, action.command, args[0]);
+                const int count = source ? SceneRibbons(project_->rom())
+                                               .sourcePointCount(source->first, source->second)
+                                         : 2;
+                if (qint32(args[2]) >= count)
+                    throw Error(
+                        source
+                            ? QString("This path has %1 points; the last point is %2.")
+                                  .arg(count)
+                                  .arg(count - 1)
+                            : "The path is chosen outside this action section. Only points 0 and 1 "
+                              "are guaranteed here; its full source remains available in "
+                              "Commands.");
+            }
         }
         auto next = *project_->scenePrograms();
         next.replace(key_, program.source);

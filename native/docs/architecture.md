@@ -4762,3 +4762,37 @@ scene-program bytes, browser-project conversion, bundled compilation/export and
 reopening. Evidence: parent Test ROMs/portable-scene-import-
 8feef5ed57374be7a0dcfe95ce2340c3. These are isolated-environment checks on this
 machine. Clean-machine and natural game-load validation remain unperformed.
+
+
+## Path-ribbon Actions
+
+The Actions inspector now creates, retargets and releases path ribbons using
+Director49/4A/4B. Creation exposes the independent full-word path slot, current-ROM
+resource pair, percentage/milestone, width, palette, immediate reveal and channel.
+Allocation considers all20 path slots plus active-path sprite references, preserving
+symbolic references and refusing to guess a free slot when launch inputs choose one.
+A release supports one slot or all paths, immediately or with the native fade.
+
+Endpoint controls retain native precedence: a stored milestone overrides percentage
+writes, and changing the limit neither rewinds geometry nor reactivates its completion
+flag. The UI states that behavior. Creation validates point counts from the chosen
+ROM resource. Endpoint edits infer a preceding constructor only across complete,
+linear Actions; unknown control flow stops inference. Without a known path, only
+points0/1 are guaranteed. Changing a constructor to a shorter path also checks its
+known dependent endpoint Actions and refuses an out-of-range milestone before
+publishing. Unknown source encodings remain intact in Commands.
+
+`scene_action_tests ribbonActions authoringBoundaries` passed2093ms: native fields,
+independent slot references/exhaustion, symbolic inputs, inferred source boundaries,
+endpoint precedence/cursor preservation, movement/removal, fade/immediate release,
+project folders and source compilation/export/reopening. References, allocation
+bounds, CRC and master preservation pass. Candidate: parent Test ROMs/
+native-ribbon-actions-XyPFuc. The existing pathSpriteActions fixture now explicitly
+inserts after its independently editable ribbon; its export/reopen regression
+passed1459ms (native-path-sprite-actions-mIyqsi). `ui_tests ribbonActionControls
+pathSpriteActionControls pathRibbonPreviewSeek` passed1810ms: visible full reveal
+and palette changes, exact Undo/Redo, path-specific and dependent-endpoint bounds,
+release behavior and existing path workflows. Capture inspected. The unchanged
+runtime's `image_tests pathRibbonsAgainstMips` passed1180ms. Fullbuild26391 passed
+without compiler warnings. Natural game load and arbitrary branch-derived path
+ownership are not established by these authoring/preview checks.
