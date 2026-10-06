@@ -117,6 +117,32 @@ void SceneActionEditor::selectScene(SceneId key, int command) {
     key_ = key;
     refresh(command);
 }
+bool SceneActionEditor::selectActor(int slot) {
+    if (editing_ || property("invalidEdits").toBool() || !key_ || slot < 0 || slot > 27)
+        return false;
+    const auto program = project_->scenePrograms()->program(key_);
+    int selected = -1;
+    for (int row = 0; row < actions_.size(); ++row) {
+        const auto &action = actions_[row];
+        if (action.actorOperand < 0)
+            continue;
+        const auto &command = program.commands[action.command];
+        if (qint32(command.operands[action.actorOperand]) != slot)
+            continue;
+        if (selected < 0)
+            selected = row;
+        if (command.opcode == 0x14) {
+            selected = row;
+            break;
+        }
+    }
+    if (selected < 0)
+        return false;
+    list_->setCurrentRow(selected);
+    showAction();
+    emit commandSelected(actions_[selected].command);
+    return true;
+}
 void SceneActionEditor::selectCommand(int command) {
     if (editing_ || property("invalidEdits").toBool())
         return;

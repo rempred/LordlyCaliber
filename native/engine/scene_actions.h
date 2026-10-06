@@ -16,6 +16,7 @@ struct SceneAction {
     int command = 0, commandCount = 1;
     QString name;
     QVector<SceneActionField> fields;
+    int actorOperand = -1;
 };
 struct SceneActionPosition {
     int command = 0;

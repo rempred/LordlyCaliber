@@ -34,6 +34,11 @@ class ScenePreview : public QWidget {
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
+    void setActorNavigationEnabled(bool enabled);
+  signals:
+    void findActorAction(int selector, int slot);
+
+  public:
     const QImage &renderedFrame() const {
         return frame_;
     }
@@ -65,6 +70,8 @@ class ScenePreview : public QWidget {
     void continueSeek();
     void step();
     void present();
+    void presentActors();
+    void presentSelectedActor();
     void stop();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
@@ -100,6 +107,11 @@ class ScenePreview : public QWidget {
     QSpinBox *position_, *rate_;
     QPushButton *play_, *step_, *skip_;
     QLabel *status_, *context_;
+    QComboBox *liveActors_;
+    QLabel *actorState_;
+    QPushButton *findActor_;
+    int selectedActorSlot_ = -1;
+    bool actorNavigationEnabled_ = false;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;

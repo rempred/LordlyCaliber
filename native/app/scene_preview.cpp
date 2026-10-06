@@ -275,6 +275,36 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
         step();
     });
     connect(reset, &QPushButton::clicked, this, &ScenePreview::restart);
+    auto actors = new QHBoxLayout;
+    actors->addWidget(new QLabel("Live Actor"));
+    liveActors_ = new QComboBox;
+    liveActors_->setObjectName("sceneLiveActors");
+    liveActors_->setMinimumContentsLength(10);
+    actors->addWidget(liveActors_);
+    actorState_ = new QLabel("No active Actors");
+    actorState_->setObjectName("sceneActorState");
+    actorState_->setWordWrap(true);
+    actors->addWidget(actorState_, 1);
+    findActor_ = new QPushButton("Find Actor action");
+    findActor_->setObjectName("sceneFindActorAction");
+    findActor_->setToolTip("Find the selected slot's placement or first supported action in the "
+                           "current script. Conditions may give a slot more than one action.");
+    findActor_->setEnabled(false);
+    findActor_->hide();
+    actors->addWidget(findActor_);
+    layout->addLayout(actors);
+    connect(liveActors_, &QComboBox::currentIndexChanged, this, [this] {
+        if (liveActors_->currentIndex() >= 0)
+            selectedActorSlot_ = liveActors_->currentData().toInt();
+        presentSelectedActor();
+    });
+    connect(findActor_, &QPushButton::clicked, this, [this] {
+        if (!current_ || liveActors_->currentIndex() < 0)
+            return;
+        stop();
+        emit findActorAction(current_->playback.director().selector(),
+                             liveActors_->currentData().toInt());
+    });
     connect(position_, &QSpinBox::valueChanged, this, &ScenePreview::seek);
     connect(launchImage_, &QComboBox::currentIndexChanged, this, [this] {
         inputHistory_.clear();
@@ -513,6 +543,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
             throw Error("Select a layered or world preview mode for this scene");
         resources_ = programs.runtimeDirectors();
+        if (selector_ != resource.selectors.first()) selectedActorSlot_ = -1;
         selector_ = resource.selectors.first();
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
@@ -1101,9 +1132,51 @@ void ScenePreview::continueSeek() {
         stop();
     present();
 }
+void ScenePreview::setActorNavigationEnabled(bool enabled) {
+    actorNavigationEnabled_ = enabled;
+    findActor_->setVisible(enabled);
+    presentSelectedActor();
+}
+void ScenePreview::presentActors() {
+    const QSignalBlocker guard(liveActors_);
+    liveActors_->clear();
+    if (current_)
+        for (int slot = 0; slot < 28; ++slot)
+            if (current_->playback.actors().actor(slot))
+                liveActors_->addItem(QString("Actor %1").arg(slot), slot);
+    if (selectedActorSlot_ < 0 && liveActors_->count()) selectedActorSlot_ = liveActors_->itemData(0).toInt();
+    liveActors_->setCurrentIndex(liveActors_->findData(selectedActorSlot_));
+    liveActors_->setEnabled(liveActors_->count() > 0);
+    presentSelectedActor();
+}
+void ScenePreview::presentSelectedActor() {
+    const int slot = liveActors_->currentIndex() < 0 ? -1 : liveActors_->currentData().toInt();
+    const bool present =
+        current_ && slot >= 0 && current_->playback.actors().actor(slot).has_value();
+    findActor_->setEnabled(present && actorNavigationEnabled_);
+    if (!present) {
+        actorState_->setText(
+            selectedActorSlot_ < 0
+                ? "No active Actors"
+                : QString("Actor %1 is not active at this step").arg(selectedActorSlot_));
+        return;
+    }
+    const auto &actor = *current_->playback.actors().actor(slot);
+    const auto record = actor.record();
+    const auto source = qint32(u32(record, 0xe8)), owner = qint32(u32(record, 0xec));
+    const auto kind = actor.pose().art().isBody()
+                          ? QString("Class pair %1 / %2").arg(source).arg(owner)
+                          : QString("Art bank %1").arg(source);
+    actorState_->setText(QString("%1 · X %2 · Y %3 · Z %4")
+                             .arg(kind)
+                             .arg(std::bit_cast<float>(u32(record, 0x11c)), 0, 'f', 3)
+                             .arg(std::bit_cast<float>(u32(record, 0x120)), 0, 'f', 3)
+                             .arg(std::bit_cast<float>(u32(record, 0x124)), 0, 'f', 3));
+}
 void ScenePreview::present() {
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
+    presentActors();
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
     step_->setEnabled(play_->isEnabled());
     skip_->setVisible(current_ && current_->playback.skipArmed());

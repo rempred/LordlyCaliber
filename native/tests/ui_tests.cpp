@@ -2059,12 +2059,61 @@ class UiTests : public QObject {
         position->setValue(3);
         QTRY_VERIFY2(preview->property("sceneTick").toInt() == 3, qPrintable(status->text()));
         QVERIFY2(!preview->property("sceneStopped").toBool(), qPrintable(status->text()));
+        auto actors = preview->findChild<QComboBox *>("sceneLiveActors");
+        auto actorState = preview->findChild<QLabel *>("sceneActorState");
+        auto findActor = preview->findChild<QPushButton *>("sceneFindActorAction");
+        QVERIFY(actors && actorState && findActor);
+        QVERIFY(actors->count() >= 5);
+        actors->setCurrentIndex(actors->findData(1));
+        QVERIFY(actorState->text().contains("Class pair 86 / 87"));
+        const auto placement =
+            std::find_if(program.commands.cbegin(), program.commands.cend(),
+                         [](const auto &c) { return c.opcode == 0x14 && c.operands[0] == 1; });
+        QVERIFY(placement != program.commands.cend());
+        for (int axis = 0; axis < 3; ++axis)
+            QVERIFY(actorState->text().contains(
+                QString::number(qint32(placement->operands[4 + axis]) / 1000., 'f', 3)));
+        const auto state = actorState->text();
         const auto fromSave = preview->renderedFrame();
         position->setValue(1);
         QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
         position->setValue(3);
         QTRY_VERIFY2(preview->property("sceneTick").toInt() == 3, qPrintable(status->text()));
         QCOMPARE(preview->renderedFrame(), fromSave);
+        QCOMPARE(actors->currentData().toInt(), 1);
+        QCOMPARE(actorState->text(), state);
+        position->setValue(0);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+        QVERIFY(!findActor->isEnabled());
+        position->setValue(3);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+        QCOMPARE(actors->currentData().toInt(), 1);
+        QCOMPARE(actorState->text(), state);
+        auto pages = cutscenes->findChild<QTabWidget *>("cutsceneDetailPages");
+        auto actions = cutscenes->findChild<SceneActionEditor *>();
+        QVERIFY(actions && findActor->isEnabled());
+        findActor->click();
+        QCOMPARE(pages->currentWidget(), actions);
+        auto actionList = actions->findChild<QListWidget *>("sceneActionList");
+        QVERIFY(actionList->currentItem()->text().contains("Create Actor"));
+        QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField0")->text(), QString("1"));
+        const auto selectedAction = actionList->currentRow();
+        auto field = actions->findChild<QLineEdit *>("sceneActionField4");
+        field->setText("-");
+        QMetaObject::invokeMethod(field, "editingFinished");
+        QVERIFY(actions->property("invalidEdits").toBool());
+        pages->setCurrentWidget(preview);
+        actors->setCurrentIndex(actors->findData(0));
+        findActor->click();
+        QCOMPARE(pages->currentWidget(), preview);
+        QCOMPARE(actionList->currentRow(), selectedAction);
+        QCOMPARE(field->text(), QString("-"));
+        actions->findChild<QPushButton *>("sceneActionDiscard")->click();
+        preview->selectScene(scenes, key, 2);
+        position->setValue(3);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 3);
+        actors->setCurrentIndex(actors->findData(1));
+
         QCoreApplication::processEvents();
         QVERIFY(window.grab().save("scene-saved-cast.png"));
         secondary->setCurrentIndex(secondary->findData(0x54));

@@ -1,5 +1,30 @@
 # Native Lordly Caliber
 
+## Live Actor inspection and action navigation
+
+Scene playback lists its currently instantiated Actor slots and displays the chosen
+Actor's actual class pair/art bank and XYZ record values. Selection survives seeking
+through a step where that slot is absent; absent Actors have no active navigation.
+This reads the current playback snapshot and does not assign new game coordinates.
+
+Find Actor action resolves the active script selector to its project scene, then
+selects that slot's Create Actor action or first supported direct reference. It
+opens the shared Actions inspector without changing the program. Conditional scripts
+can contain several actions for a slot; this is navigation by slot, not a claim to
+identify the exact executed branch. A launch-created Actor without a direct editable
+reference reports that limit. Read-only previews hide the navigation button, and
+incomplete source/action inputs block navigation without discarding text.
+
+`ui_tests savedStoryCastPreview structuredSceneActions sceneActionInsertion` passed
+in5467ms. The real01FA8BF4 preview exposed Actor1's independent pair86/87 and its
+native stream XYZ, kept selection and exact readback through step3->1->3 and0->3,
+opened Actor1's placement fields, and retained incomplete input when navigation
+was attempted. Save/project bytes stayed unchanged. Existing action editing,
+insertion, timing and shared-undo UI regressions passed. The existing engine
+`scene_action_tests exactFields` passed in5ms. The integrated capture was inspected,
+and the full native build passed without compiler warnings.
+No rendered-pixel hit test or additional game-runtime qualification is claimed.
+
 ## Portable check without interactive command-line dialogs
 
 The isolated package check sets Qt's documented

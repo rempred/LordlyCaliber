@@ -306,6 +306,40 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     if (project_) {
         actionEditor_ = new SceneActionEditor(project_, undo_, changed);
         pages->addTab(actionEditor_, "Actions");
+        scenePreview_->setActorNavigationEnabled(true);
+        connect(scenePreview_, &ScenePreview::findActorAction, this,
+                [this, pages](int selector, int slot) {
+                    if (invalidSceneInput())
+                        return;
+                    SceneId target;
+                    for (const auto &id : programs().scenes())
+                        if (programs().resource(id).selectors.contains(selector)) {
+                            target = id;
+                            break;
+                        }
+                    if (!target) {
+                        sceneStatus_->setText(
+                            "The playback script has no editable scene in this project.");
+                        return;
+                    }
+                    if (selectedScene() != target) {
+                        for (int row = 0; row < scenes_->count(); ++row) {
+                            const auto item = scenes_->item(row);
+                            if (item->data(Qt::UserRole).toUInt() == target.nativeKey &&
+                                item->data(Qt::UserRole + 1).toString() == target.authoredId) {
+                                scenes_->setCurrentRow(row);
+                                break;
+                            }
+                        }
+                    }
+                    if (actionEditor_->selectActor(slot))
+                        pages->setCurrentWidget(actionEditor_);
+                    else
+                        sceneStatus_->setText(
+                            QString("Actor %1 has no directly editable action in this script; "
+                                    "it may come from launch context.")
+                                .arg(slot));
+                });
         connect(actionEditor_, &SceneActionEditor::editDialogue, this,
                 [dialogue, pages](int selector, int entry) {
                     dialogue->selectEntry(selector, entry);

@@ -30,6 +30,10 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Live Actor inspection shows current class pairs/art banks and XYZ, retains selected
+slots across seeking, and navigates to the active script's Actor placement/action
+with incomplete-input protection. This is slot-based navigation, not branch provenance.
+
 Dynamic event66/67 scenes expose five paired primary/secondary preview selectors.
 They can use the open Save workspace's selected-slot launch cast, with source labels,
 validation and sample restore. Project class additions/names and undo reach the

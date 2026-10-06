@@ -96,6 +96,23 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 3:
+        case 7:
+        case 0x13:
+        case 0x14:
+        case 0x15:
+        case 0x1c:
+        case 0x1d:
+        case 0x48:
+            action.actorOperand = 0;
+            break;
+        case 0xbf:
+            action.actorOperand = 3;
+            break;
+        default:
+            break;
+        }
+        switch (c.opcode) {
         case 0x13:
             action.name = "Release Actor";
             field("Actor slot (-1 selects all)", 0, 1, -1, 27);
