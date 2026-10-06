@@ -502,6 +502,22 @@ QVector<SaveUnit> SaveDocument::units() const {
 bool SaveDocument::canEditUnits() const {
     return battery() && (slot_ == 0 || slot_ == 1);
 }
+QVector<int> SaveDocument::reserveMembers() const {
+    if (!canEditUnits())
+        return {}; // Active runtime squads may have cleared their saved assignment rows.
+    QSet<int> assigned;
+    for (const auto &unit : units())
+        for (int id : unit.members)
+            assigned.insert(id);
+    QVector<int> result;
+    // Army C1770..C17F0 discovers characters by nonzero primary class. Squad
+    // loading marks assignments separately; reserve membership has no saved bit.
+    for (int id = 1; id < 100; ++id)
+        if (u8(ram_, roster + id * stride + 17) && !assigned.contains(id) &&
+            !(u8(ram_, roster + id * stride + 51) & 2))
+            result << id;
+    return result;
+}
 QPair<int, int> SaveDocument::memberClasses(int id) const {
     if (id <= 0 || id >= 220)
         throw Error("Formation editing for unknown member IDs is not supported");
@@ -650,6 +666,56 @@ SaveChange SaveDocument::planUnitTransfer(int fromUnit, int fromMember, int toUn
     to.members[empty] = id;
     to.cells[empty] = cell;
     return planMembershipChange({from, to}, classes);
+}
+SaveChange SaveDocument::planToReserve(int fromUnit, int fromMember,
+                                       const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Reserve moves require a regular battery-save slot");
+    if (fromMember < 1 || fromMember > 4)
+        throw Error("Choose an ordinary nonleader member to move to reserve");
+    const auto list = units();
+    const auto found = std::find_if(list.begin(), list.end(),
+                                    [&](const auto &unit) { return unit.index == fromUnit; });
+    if (found == list.end())
+        throw Error("Choose an existing saved squad");
+    auto from = *found;
+    const int id = from.members[fromMember];
+    if (id < 1 || id >= 100)
+        throw Error("Only ordinary characters can move to reserve here");
+    memberClasses(id); // A dangling squad reference must not become a missing reserve character.
+    int references = 0;
+    for (const auto &unit : list)
+        references += int(std::count(unit.members.begin(), unit.members.end(), id));
+    if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
+        throw Error("Selected character has conflicting squad or leader membership");
+    from.members[fromMember] = 0;
+    from.cells[fromMember] = 0;
+    return planMembershipChange({from}, classes);
+}
+SaveChange SaveDocument::planFromReserve(int member, int toUnit, int cell,
+                                         const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Reserve moves require a regular battery-save slot");
+    if (!reserveMembers().contains(member) || cell < 0 || cell > 8)
+        throw Error("Choose an ordinary reserve character and an empty formation cell");
+    const auto list = units();
+    const auto found = std::find_if(list.begin(), list.end(),
+                                    [&](const auto &unit) { return unit.index == toUnit; });
+    if (found == list.end())
+        throw Error("Choose an existing saved squad");
+    auto to = *found;
+    int empty = -1;
+    for (int i = 0; i < 5; ++i) {
+        if (to.members[i] && to.cells[i] == cell)
+            throw Error("The destination formation cell is occupied");
+        if (i > 0 && !to.members[i] && empty < 0)
+            empty = i;
+    }
+    if (empty < 0)
+        throw Error("The destination squad has no free member slot");
+    to.members[empty] = member;
+    to.cells[empty] = cell;
+    return planMembershipChange({to}, classes);
 }
 int SaveDocument::unitMovementType(const SaveUnit &unit, const ClassData &classes) const {
     // Army ROMBD154..BD268 obtains five class-derived types; Soldiers use

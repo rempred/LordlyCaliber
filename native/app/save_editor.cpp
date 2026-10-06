@@ -409,6 +409,34 @@ bool SaveEditor::transferUnitMember(int fromUnit, int fromMember, int toUnit, in
         return false;
     }
 }
+bool SaveEditor::moveToReserve(int fromUnit, int fromMember) {
+    if (!document_)
+        return false;
+    try {
+        auto change = document_->planToReserve(fromUnit, fromMember, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "move member to reserve"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
+bool SaveEditor::addFromReserve(int member, int toUnit, int cell) {
+    if (!document_)
+        return false;
+    try {
+        auto change = document_->planFromReserve(member, toUnit, cell, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "add member from reserve"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 void SaveEditor::refresh() {
     const QSignalBlocker guard(slots_);
     slots_->clear();

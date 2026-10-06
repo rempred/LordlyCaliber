@@ -221,6 +221,150 @@ class SaveDocumentTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void reserveMembership() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](bool verify) {
+                QProcess process;
+                QStringList args{QFINDTESTDATA("save-unit-mips.cjs"), work.path()};
+                if (verify)
+                    args << "verify";
+                process.start("node", args);
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run(false);
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing squad fixture");
+                const auto payload = file.readAll();
+                QByteArray result(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    result[at + 12] = 0;
+                    result.replace(at + 0x2a, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(result.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Could not seal reserve fixture");
+                }
+                return result;
+            };
+            const auto battery = batteryFor("unit-payload.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            QJsonArray reserveChecks;
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto doc = SaveDocument::open(rom, input);
+                const auto before = doc.memory();
+                QVERIFY(doc.reserveMembers().isEmpty());
+                const auto remove = doc.planToReserve(0, 1, classes);
+                doc.apply(remove, true);
+                auto expected = before;
+                for (int offset : {3, 8, 12})
+                    expected[0x1971f0 + offset] = 0;
+                QCOMPARE(doc.memory(), expected);
+                QCOMPARE(doc.reserveMembers(), QVector<int>{2});
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                if (input == battery)
+                    reserveChecks << QJsonObject{
+                        {"payload", QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                        {"members", QJsonArray{2}}};
+                const auto reserveBytes = doc.serialize();
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(2, 5, 4, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(2, 1, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(2, 5, 9, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(1, 5, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(100, 5, 2, classes));
+                QCOMPARE(doc.serialize(), reserveBytes);
+                const auto add = doc.planFromReserve(2, 5, 2, classes);
+                doc.apply(add, true);
+                const int dest = 0x1971f0 + 5 * 25;
+                expected[dest + 5] = 2;
+                expected[dest + 10] = 2;
+                expected[dest + 12] = 0;
+                QCOMPARE(doc.memory(), expected);
+                QVERIFY(doc.reserveMembers().isEmpty());
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                if (input == battery) {
+                    reserveChecks << QJsonObject{
+                        {"payload", QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                        {"members", QJsonArray{}}};
+                    atomicWrite(
+                        work.filePath("unit-verify.json"),
+                        QJsonDocument(
+                            QJsonObject{{"payload", QString::fromLatin1(
+                                                        doc.serialize().mid(0x3a, 6180).toHex())},
+                                        {"units", QString::fromLatin1(
+                                                      doc.memory().mid(0x1971f0, 150).toHex())},
+                                        {"sizes", QJsonArray{}},
+                                        {"cases", QJsonArray{}},
+                                        {"soldierSize", std::max(1, classes.unitSize(1, 1))},
+                                        {"reserveChecks", reserveChecks}})
+                            .toJson());
+                    run(true);
+                }
+                doc.apply(add, false);
+                QCOMPARE(doc.serialize(), reserveBytes);
+                doc.apply(remove, false);
+                QCOMPARE(doc.serialize(), input);
+                for (const auto pair : {qMakePair(0, 0), qMakePair(0, 4), qMakePair(2, 1),
+                                        qMakePair(4, 1), qMakePair(30, 1)})
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             doc.planToReserve(pair.first, pair.second, classes));
+                auto changedClasses = classes;
+                auto fighter = classes.entries()[2];
+                fighter.record[ClassData::movementTypeOffset] = 6;
+                changedClasses.set(2, fighter);
+                const auto changed = doc.planToReserve(0, 1, changedClasses);
+                doc.apply(changed, true);
+                QCOMPARE(u8(doc.memory(), 0x1971f0 + 24), quint8(6));
+                doc.apply(changed, false);
+                QCOMPARE(doc.serialize(), input);
+                doc.selectSlot(1);
+                const auto second = doc.planToReserve(0, 1, classes);
+                doc.apply(second, true);
+                QCOMPARE(doc.reserveMembers(), QVector<int>{2});
+                doc.apply(second, false);
+                doc.selectSlot(15);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(0, 1, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planFromReserve(2, 5, 2, classes));
+                QVERIFY(doc.reserveMembers().isEmpty());
+            }
+            auto capacity = SaveDocument::open(rom, batteryFor("unit-capacity-payload.bin"));
+            const auto beforeCapacity = capacity.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, capacity.planToReserve(0, 1, classes));
+            QCOMPARE(capacity.serialize(), beforeCapacity);
+            auto full = SaveDocument::open(rom, batteryFor("unit-full-payload.bin"));
+            full.apply(full.planToReserve(2, 2, classes), true);
+            QVERIFY(full.reserveMembers().contains(10));
+            const auto beforeFull = full.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, full.planFromReserve(10, 5, 6, classes));
+            QCOMPARE(full.serialize(), beforeFull);
+            auto missing = SaveDocument::open(rom, batteryFor("unit-missing-character-payload.bin"));
+            const auto beforeMissing = missing.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, missing.planToReserve(5, 3, classes));
+            QCOMPARE(missing.serialize(), beforeMissing);
+            auto raw = SaveDocument::open(rom, SaveDocument::open(rom, battery).memory());
+            QVERIFY(raw.reserveMembers().isEmpty());
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planToReserve(0, 1, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planFromReserve(2, 5, 2, classes));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadTransfers() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

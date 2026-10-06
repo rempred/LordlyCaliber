@@ -24,6 +24,8 @@ class SaveUnitEditor final : public QWidget {
     QSpinBox *unity_;
     QComboBox *tactic_;
     QComboBox *targetUnit_, *targetMember_;
+    QComboBox *reserveMember_, *reserveCell_;
+    QPushButton *toReserve_, *fromReserve_;
     QPushButton *swap_;
     QPushButton *apply_;
     QLabel *note_;

@@ -61,6 +61,8 @@ if (process.argv[3] !== 'verify') {
     }
     m.w8(0x801971f3,0); m.w8(0x801971f4,0); m.w8(0x801971f8,0); m.w8(0x801971f9,0);
     variant('unit-full-payload.bin');
+    m.w8(0x80193bc0 + 2 * 56 + 17, 0);
+    variant('unit-missing-character-payload.bin');
 
 } else {
     const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'unit-verify.json')));
@@ -152,5 +154,26 @@ if (process.argv[3] !== 'verify') {
             for(let i=0;i<row.carried;++i)assert.equal(m.r16(dest+34+i*2),9);
         }
     }
-    console.log(`PASS ${fixture.sizes.length} original class pairs, ${(fixture.movementCases||[]).length} movement tuples, 12 removal/24 placement Unity cases, save decoder, ${fixture.cases.length} formation conversions and ${(fixture.unitMovements||[]).length} unit finalizers. No natural game launch or complete menu claim.`);
+    for (const row of fixture.reserveChecks || []) {
+        m.load(payload, Buffer.from(row.payload, 'hex'));
+        m.set('a0', payload); m.set('a1', descriptor); m.call(0x800742f4, 0x80000100, 5000000);
+        m.w32(0x80196af8, root);
+        // Original initialization clears assignment flags and discovers ordinary
+        // characters by their primary class, then initializes the free count.
+        m.load(live(0xc1738), rom.subarray(0xc1738, 0xc1814));
+        m.call(live(0xc1738), live(0xc1814));
+        for (let index = 0; index < 30; ++index) {
+            const source = 0x801971f0 + index * 25;
+            if ((m.r8(source + 1) & 0x81) !== 1) continue;
+            m.load(active, Buffer.alloc(54, 0xff));
+            m.w8(active + 1, (m.r8(source + 1) & 4) ? 16 : 0);
+            m.set('s4', source); m.set('s2', active); m.set('s8', 8);
+            m.call(live(0xc188c), live(0xc192c));
+        }
+        const actual = [];
+        for (let id = 1; id < 100; ++id)
+            if (m.r8(0x80193bc0 + id * 56 + 17) && !(m.r8(root + 6258 + id * 2) & 8)) actual.push(id);
+        assert.deepEqual(actual, row.members, 'original Army reserve membership');
+    }
+    console.log(`PASS ${fixture.sizes.length} original class pairs, ${(fixture.movementCases||[]).length} movement tuples, 12 removal/24 placement Unity cases, save decoder, ${fixture.cases.length} formation conversions, ${(fixture.unitMovements||[]).length} unit finalizers and ${(fixture.reserveChecks||[]).length} reserve snapshots. No natural game launch or complete menu claim.`);
 }

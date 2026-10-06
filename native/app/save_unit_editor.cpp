@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -79,7 +80,25 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     swap_ = new QPushButton("Swap selected members");
     swap_->setObjectName("saveSwapApply");
     body->addWidget(swap_);
-    split->addWidget(detail);
+    toReserve_ = new QPushButton("Move selected member to reserve");
+    toReserve_->setObjectName("saveMoveToReserve");
+    body->addWidget(toReserve_);
+    auto reserve = new QFormLayout;
+    reserveMember_ = new QComboBox;
+    reserveMember_->setObjectName("saveReserveMember");
+    reserveCell_ = new QComboBox;
+    reserveCell_->setObjectName("saveReserveCell");
+    reserve->addRow("Reserve character", reserveMember_);
+    reserve->addRow("Empty cell in this squad", reserveCell_);
+    body->addLayout(reserve);
+    fromReserve_ = new QPushButton("Add reserve character to this squad");
+    fromReserve_->setObjectName("saveAddFromReserve");
+    body->addWidget(fromReserve_);
+    auto detailArea = new QScrollArea;
+    detailArea->setObjectName("saveUnitDetailScroll");
+    detailArea->setWidgetResizable(true);
+    detailArea->setWidget(detail);
+    split->addWidget(detailArea);
     split->setStretchFactor(1, 2);
     connect(units_, &QListWidget::currentRowChanged, this, [this] { showUnit(); });
     connect(members_, &QListWidget::currentRowChanged, this, [this] { drawFormation(); });
@@ -104,6 +123,17 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
             editor_->swapUnitMembers(units_->currentItem()->data(Qt::UserRole).toInt(),
                                      members_->currentRow(), targetUnit_->currentData().toInt(),
                                      target);
+    });
+    connect(toReserve_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->moveToReserve(units_->currentItem()->data(Qt::UserRole).toInt(),
+                                   members_->currentRow());
+    });
+    connect(fromReserve_, &QPushButton::clicked, this, [this] {
+        if (units_->currentItem())
+            editor_->addFromReserve(reserveMember_->currentData().toInt(),
+                                    units_->currentItem()->data(Qt::UserRole).toInt(),
+                                    reserveCell_->currentData().toInt());
     });
     connect(editor_, &SaveEditor::refreshed, this, [this] { refresh(); });
     refresh();
@@ -174,11 +204,11 @@ void SaveUnitEditor::showUnit() {
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
     note_->setText(
-        editable
-            ? "Edit formations, Unity and tactics. Moving or swapping ordinary nonleader members "
-              "resets both squads' Unity and recalculates movement type."
-            : "Squads are read-only in suspend saves and runtime states. Formation "
-              "edits require a regular battery-save slot.");
+        editable ? "Edit formations, Unity and tactics. Move ordinary nonleaders between squads or "
+                   "reserve. Membership changes reset affected squads' Unity and recalculate "
+                   "movement type."
+                 : "Squads are read-only in suspend saves and runtime states. Formation "
+                   "edits require a regular battery-save slot.");
     apply_->setEnabled(editable && !ids_.isEmpty());
     unity_->setEnabled(apply_->isEnabled());
     tactic_->setEnabled(apply_->isEnabled());
@@ -206,19 +236,40 @@ void SaveUnitEditor::refreshSwapTargets() {
     if (loading_)
         return;
     const QSignalBlocker unitGuard(targetUnit_), memberGuard(targetMember_);
+    const QSignalBlocker reserveGuard(reserveMember_), cellGuard(reserveCell_);
     const int oldUnit = targetUnit_->currentData().toInt(),
               oldMember = targetMember_->currentData().toInt();
     targetUnit_->clear();
     targetMember_->clear();
+    const int oldReserve = reserveMember_->currentData().toInt(),
+              oldCell = reserveCell_->currentData().toInt();
+    reserveMember_->clear();
+    reserveCell_->clear();
     bool ready = false, pending = false;
+    bool acceptsReserve = false;
     if (editor_->document() && units_->currentItem()) {
         const auto &doc = *editor_->document();
         const int selected = units_->currentItem()->data(Qt::UserRole).toInt();
         const auto all = doc.units();
+        for (int id : doc.reserveMembers())
+            reserveMember_->addItem(memberName(id), id);
         for (const auto &unit : all) {
             if (unit.index == selected) {
                 pending = cells_ != unit.cells || unity_->value() != unit.unity ||
                           tactic_->currentData().toInt() != unit.tactic;
+                QSet<int> occupied;
+                bool empty = false;
+                for (int i = 0; i < 5; ++i) {
+                    if (unit.members[i])
+                        occupied << unit.cells[i];
+                    else if (i > 0)
+                        empty = true;
+                }
+                if (empty)
+                    for (int cell = 0; cell < 9; ++cell)
+                        if (!occupied.contains(cell))
+                            reserveCell_->addItem(QString("Cell %1").arg(cell + 1), cell);
+                acceptsReserve = doc.canEditUnits() && empty;
                 continue;
             }
             bool eligible = false;
@@ -262,6 +313,23 @@ void SaveUnitEditor::refreshSwapTargets() {
     swap_->setEnabled(enabled);
     targetUnit_->setEnabled(ready && !pending);
     targetMember_->setEnabled(ready && !pending);
+    if (reserveMember_->findData(oldReserve) >= 0)
+        reserveMember_->setCurrentIndex(reserveMember_->findData(oldReserve));
+    if (reserveCell_->findData(oldCell) >= 0)
+        reserveCell_->setCurrentIndex(reserveCell_->findData(oldCell));
+    toReserve_->setEnabled(ready && !pending);
+    const bool canAdd = acceptsReserve && !pending && reserveMember_->currentIndex() >= 0 &&
+                        reserveCell_->currentIndex() >= 0;
+    fromReserve_->setEnabled(canAdd);
+    reserveMember_->setEnabled(canAdd);
+    reserveCell_->setEnabled(canAdd);
+    toReserve_->setToolTip(
+        pending ? "Apply squad edits before moving members"
+                : "Move the selected ordinary nonleader to reserve; carried items must still fit");
+    fromReserve_->setToolTip(
+        pending
+            ? "Apply squad edits before moving members"
+            : "Add the selected reserve character to an empty cell; formation limits still apply");
     swap_->setToolTip(pending
                           ? "Apply squad edits before moving members"
                           : "Move or swap ordinary nonleader members and reset both squads' Unity");

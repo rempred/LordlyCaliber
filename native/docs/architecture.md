@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Saved reserve membership
+
+Regular battery slots now move ordinary nonleaders to reserve and add ordinary
+reserve characters to empty cells in existing squads. Reserve means an existing
+character absent from the Army-selected saved squad rows. The original loader's
+initialization and membership conversion establish that distinction; no extra
+reserve flag is written to the character. Stale leader flags and conflicting or
+missing character references refuse. Runtime/suspend copies have no inferred
+reserve list, since their active squads may own the assignments.
+
+Both operations use the same atomic membership path as transfers: validate size
+and formation, retain carried items only when capacity permits, clear affected
+Unity and recalculate movement from current Classes. Roster bytes, leaders,
+inventory, order arrays and Soldier data remain intact. Save undo owns one change
+per transfer. Pending formation edits block transfers. Squad details scroll at
+smaller window sizes. Soldier transfers, leader changes and create/delete remain
+separate work.
+
+`save_document_tests reserveMembership squadTransfers` passed in 1919ms; strengthened
+reserve guards passed in 735ms. Two edited snapshots pass the original Army
+initialization/membership code after original save decoding. Three battery layouts,
+both regular slots, whole decoded-memory preservation, exact undo/redo, export and
+reopening pass. Capacity, full squads, missing characters, invalid sources/targets
+and runtime/suspend refusal pass. `ui_tests saveSquadEditing saveWorkspaceEditing`
+passed in 2750ms; the reserve controls capture was inspected. These are instruction
+and save-file checks, not a natural Army-menu session.
+
 ## Selecting visible Actors in the scene
 
 Clicking an Actor selects its live slot and pauses playback; double-clicking opens

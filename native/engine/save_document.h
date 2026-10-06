@@ -49,6 +49,7 @@ class SaveDocument {
     QVariant value(SaveTable, int row, const QString &key) const;
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
     QVector<SaveUnit> units() const;
+    QVector<int> reserveMembers() const;
     bool canEditUnits() const;
     SaveChange planUnitEdit(int index, const QVector<int> &cells, int unity, int tactic,
                             const ClassData &) const;
@@ -56,6 +57,8 @@ class SaveDocument {
                             const ClassData &) const;
     SaveChange planUnitTransfer(int fromUnit, int fromMember, int toUnit, int cell,
                                 const ClassData &) const;
+    SaveChange planToReserve(int fromUnit, int fromMember, const ClassData &) const;
+    SaveChange planFromReserve(int member, int toUnit, int cell, const ClassData &) const;
     void apply(const SaveChange &, bool forward);
     QByteArray serialize() const;
     void setClassCount(int);
