@@ -16,13 +16,21 @@ and Undo/Redo refresh the launch context. Room scale, explicit Actor height and
 Stage prop program resets are connected to native execution. Earlier milestone
 notes below retain their historical limits; these launch gaps are now resolved.
 
-Revision 1 compatibility is a remaining product gap, not optional validation. The
-browser exposes workflows that native currently disables: Shops, Scenarios,
-encounter overrides and Chaos Frame, among others. Native revision 1 presently
-exposes basic records/text. Only a revision 0 source ROM has been located in the
-authorized workspace; a revision 1 source path has been requested so its code/data
-placements and export/reopening can be implemented and verified safely. Do not
-claim the all-features rewrite is complete while this gap remains.
+Joe deferred revision 1 on 2026-10-06 and accepted the existing editor map
+alignment for now. Neither is a blocker for completing the current revision 0
+rewrite. The subsequent code audit found additional revision 0 gaps: complete
+animation sequence import/replacement and comparison/batch movement; cutscene
+playhead-linked authoring, named template replacements and playback-input import.
+The earlier revision-1-only blocker report was incorrect. Implement these useful
+workflows rather than broadening map calibration or validation infrastructure.
+
+Complete Sprite studio sequence import/replacement now prepares every frame with
+shared sizing/placement and color reduction, retaining durations and destination
+control instructions. It creates a private copy when needed and commits one Undo
+step. Cancellation or rejected instruction counts leave the project untouched.
+Focused desktop/project/source-export/reopen check passes (2.3s), including exact
+two-frame colors and placement; pose alias/control-loop check passes (7ms).
+Evidence: `build/Release/sequence-batch-{ui,controls}.txt`. Other gaps above remain.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear

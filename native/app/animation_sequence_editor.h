@@ -17,6 +17,7 @@ class AnimationSequenceEditor : public QWidget {
                             QWidget *parent = nullptr);
     void importImage(const QString &);
     void copyToLibrary();
+    void importSequence(const SpriteAsset &);
 
   private:
     void refresh();

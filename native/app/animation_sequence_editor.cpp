@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QLabel>
 #include <QPushButton>
@@ -109,6 +110,21 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
                     "the game sequence.");
     buttons->addWidget(copy);
     connect(copy, &QPushButton::clicked, this, [this] { guarded([this] { copyToLibrary(); }); });
+    auto importSequence = new QPushButton("Import / replace library sequence…");
+    importSequence->setObjectName("sequenceImportAll");
+    buttons->addWidget(importSequence);
+    connect(importSequence, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            const auto assets = project_->sprites().assets();
+            if (assets.isEmpty()) throw Error("Add a sequence in Sprite studio first");
+            QStringList names;
+            for (int i = 0; i < assets.size(); ++i)
+                names << QString("%1 · %2 (%3 frames)").arg(i + 1).arg(assets[i].name).arg(assets[i].frames.size());
+            bool ok = false;
+            const auto choice = QInputDialog::getItem(this, "Import complete sequence", "Sprite library", names, 0, false, &ok);
+            if (ok) this->importSequence(assets[names.indexOf(choice)]);
+        });
+    });
     buttons->addStretch();
     layout->addLayout(buttons);
     auto split = new QSplitter;
@@ -445,6 +461,35 @@ void AnimationSequenceEditor::editLayers() {
 }
 void AnimationSequenceEditor::importImage(const QString &path) {
     prepareImage(loadArtworkImage(path));
+}
+void AnimationSequenceEditor::importSequence(const SpriteAsset &asset) {
+    const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
+    const auto before = project_->animationSequences()->json();
+    const auto prepared = prepareSpriteSequence(this, asset);
+    if (!prepared) return;
+    if (project_->animationSequences()->json() != before)
+        throw Error("Private sequences changed while sequence preparation was open");
+    project_->loadCombatArtwork();
+    auto next = *project_->animationSequences();
+    if (!next.find(id, flags))
+        next.create(id, flags, *project_->animationRoutes(), project_->combatArtwork()->previewEdits());
+    auto snapshot = *next.find(id, flags);
+    QVector<QPair<int, int>> frames;
+    for (int i = 0; i < prepared->sprites.size(); ++i) {
+        const auto sprite = SpriteObject::decode(prepared->sprites[i]);
+        const int art = snapshot.appendSprite(prepared->sprites[i], 0, snapshot.controls()[3].left(512));
+        QByteArray row(18, 0);
+        put16(row, 0, 1); put16(row, 2, quint16(art));
+        put16(row, 4, quint16(prepared->origin.x())); put16(row, 6, quint16(prepared->origin.y()));
+        put16(row, 8, quint16(sprite.width())); put16(row, 10, quint16(sprite.height()));
+        put16(row, 14, 1024); put16(row, 16, 1024);
+        frames << qMakePair(snapshot.appendFrame(row), asset.frames[i].ticks);
+    }
+    auto bank = snapshot.poses();
+    bank.replaceFrames(state, frames);
+    snapshot.setPoses(bank);
+    next.setDescriptor(id, flags, snapshot);
+    apply(std::move(next), "Replace complete animation frame sequence");
 }
 void AnimationSequenceEditor::copyToLibrary() {
     const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();

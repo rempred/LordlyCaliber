@@ -209,4 +209,33 @@ void PoseBank::moveFrame(int state, int index, int destination) {
     remapJumps(records, mapping, count);
     setProgram(state, encodeProgram(records));
 }
+void PoseBank::replaceFrames(int state, const QVector<QPair<int, int>> &frames) {
+    if (frames.isEmpty())
+        throw Error("A replacement sequence needs at least one frame");
+    const auto before = effective(state).records;
+    int last = -1;
+    for (int i = 0; i < before.size(); ++i)
+        if (frame(before[i])) last = i;
+    if (last < 0)
+        throw Error("Choose a pose containing frame instructions");
+    QVector<PoseRecord> records;
+    QVector<int> mapping(before.size());
+    int next = 0;
+    for (int i = 0; i < before.size(); ++i) {
+        mapping[i] = int(records.size());
+        if (!frame(before[i])) records << before[i];
+        else if (next < frames.size()) {
+            const auto [token, ticks] = frames[next++];
+            records << frameRecord(token, ticks);
+        }
+        // Additional frames belong before the controls following the last frame.
+        if (i == last)
+            while (next < frames.size()) {
+                const auto [token, ticks] = frames[next++];
+                records << frameRecord(token, ticks);
+            }
+    }
+    remapJumps(records, mapping, int(before.size()));
+    setProgram(state, encodeProgram(records));
+}
 } // namespace lordly

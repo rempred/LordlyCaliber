@@ -1,10 +1,18 @@
 #pragma once
 #include <QByteArray>
 #include <QImage>
+#include <QPoint>
+#include <QVector>
 #include <functional>
 #include <optional>
 class QWidget;
 namespace lordly {
+struct SpriteAsset;
+struct PreparedSpriteSequence {
+    QVector<QByteArray> sprites;
+    QPoint origin;
+};
+std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *, const SpriteAsset &);
 struct ArtImageMapping {
     QByteArray data;
     QImage image;

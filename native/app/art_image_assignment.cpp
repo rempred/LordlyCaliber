@@ -1,6 +1,7 @@
 #include "app/art_image_assignment.h"
 #include "engine/rom.h"
 #include "engine/sprite_library.h"
+#include "engine/sprite_object.h"
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -156,5 +157,115 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
     if (dialog.exec() != QDialog::Accepted)
         return {};
     return prepared;
+}
+std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *parent, const SpriteAsset &asset) {
+    asset.validate();
+    if (asset.frames.size() > 255)
+        throw Error("A game pose supports at most 255 instructions, including its controls");
+    QDialog dialog(parent);
+    dialog.setObjectName("sequenceBatchPreparation");
+    dialog.setWindowTitle("Prepare complete frame sequence");
+    auto layout = new QVBoxLayout(&dialog);
+    auto description = new QLabel(
+        "Replace every frame and duration together. The destination's motion, sound and loop "
+        "controls are retained. Inspect each converted frame before applying. Cancel leaves "
+        "the target unchanged.");
+    description->setWordWrap(true);
+    layout->addWidget(description);
+    auto images = new QHBoxLayout;
+    auto input = new QLabel, output = new QLabel;
+    for (auto label : {input, output}) {
+        label->setMinimumSize(240, 240);
+        label->setAlignment(Qt::AlignCenter);
+        images->addWidget(label);
+    }
+    layout->addLayout(images);
+    auto form = new QFormLayout;
+    layout->addLayout(form);
+    QSpinBox frame, width, height, originX, originY, offsetX, offsetY;
+    frame.setObjectName("sequenceBatchFrame");
+    frame.setRange(1, int(asset.frames.size()));
+    frame.setSuffix(QString(" / %1").arg(asset.frames.size()));
+    form->addRow("Inspect frame", &frame);
+    for (auto spin : {&width, &height}) spin->setRange(1, 4096);
+    width.setObjectName("sequenceBatchWidth");
+    height.setObjectName("sequenceBatchHeight");
+    width.setValue(asset.size.width()); height.setValue(asset.size.height());
+    form->addRow("Output width", &width); form->addRow("Output height", &height);
+    QComboBox fit;
+    fit.setObjectName("sequenceBatchFit");
+    fit.addItems({"Original size", "Fit inside", "Fill and crop", "Stretch"});
+    form->addRow("Placement", &fit);
+    for (auto spin : {&originX, &originY, &offsetX, &offsetY}) spin->setRange(-32768, 32767);
+    originX.setObjectName("sequenceBatchOriginX"); originY.setObjectName("sequenceBatchOriginY");
+    originX.setValue(-asset.anchor.x()); originY.setValue(-asset.anchor.y());
+    offsetX.setObjectName("sequenceBatchOffsetX"); offsetY.setObjectName("sequenceBatchOffsetY");
+    form->addRow("Image offset X", &offsetX); form->addRow("Image offset Y", &offsetY);
+    form->addRow("Canvas origin X (sprite coordinates)", &originX);
+    form->addRow("Canvas origin Y (sprite coordinates)", &originY);
+    QCheckBox dither("Ordered color dithering");
+    form->addRow(&dither);
+    auto status = new QLabel;
+    status->setObjectName("sequenceBatchStatus");
+    status->setWordWrap(true);
+    layout->addWidget(status);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons.setObjectName("sequenceBatchButtons");
+    buttons.button(QDialogButtonBox::Ok)->setText("Replace complete sequence");
+    layout->addWidget(&buttons);
+    const auto convert = [&](int index) {
+        const QSize canvas(width.value(), height.value());
+        if (quint64(canvas.width()) * canvas.height() * asset.frames.size() > SpriteLibrary::pixelLimit)
+            throw Error("Prepared sequence exceeds the sprite library pixel budget");
+        double sx = double(canvas.width()) / asset.size.width(),
+               sy = double(canvas.height()) / asset.size.height();
+        if (fit.currentIndex() != 3)
+            sx = sy = fit.currentIndex() == 0 ? 1. : fit.currentIndex() == 1 ? std::min(sx, sy) : std::max(sx, sy);
+        const QSizeF size(asset.size.width() * sx, asset.size.height() * sy);
+        const QRectF rect((canvas.width() - size.width()) / 2 + offsetX.value(),
+                          (canvas.height() - size.height()) / 2 + offsetY.value(), size.width(), size.height());
+        const auto rgba = spritePlaceNearest(asset.composite(index), canvas, rect).convertToFormat(QImage::Format_RGBA8888);
+        const auto sprite = SpriteObject::fromImage(
+            {rgba.width(), rgba.height(), QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())},
+            dither.isChecked());
+        const auto pixels = sprite.frame(0).image;
+        return ArtImageMapping{sprite.source(), QImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
+                                                       pixels.width, pixels.height, pixels.width * 4, QImage::Format_RGBA8888).copy()};
+    };
+    auto update = [&] {
+        try {
+            const int index = frame.value() - 1;
+            const auto prepared = convert(index);
+            input->setPixmap(QPixmap::fromImage(asset.composite(index).scaled(240, 240, Qt::KeepAspectRatio, Qt::FastTransformation)));
+            output->setPixmap(QPixmap::fromImage(prepared.image.scaled(240, 240, Qt::KeepAspectRatio, Qt::FastTransformation)));
+            status->setText(QString("%1 · %2 ticks · Source %3 × %4 → Output %5 × %6\n"
+                                    "Canvas origin (%7, %8). Every frame uses the same placement.")
+                                .arg(asset.frames[index].name).arg(asset.frames[index].ticks)
+                                .arg(asset.size.width()).arg(asset.size.height()).arg(width.value()).arg(height.value())
+                                .arg(originX.value()).arg(originY.value()));
+            buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
+        } catch (const std::exception &e) {
+            status->setText(QString::fromUtf8(e.what()));
+            buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
+        }
+    };
+    for (auto spin : {&frame, &width, &height, &originX, &originY, &offsetX, &offsetY})
+        QObject::connect(spin, &QSpinBox::valueChanged, &dialog, update);
+    QObject::connect(&fit, &QComboBox::currentIndexChanged, &dialog, update);
+    QObject::connect(&dither, &QCheckBox::toggled, &dialog, update);
+    PreparedSpriteSequence result;
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        try {
+            PreparedSpriteSequence candidate;
+            candidate.origin = {originX.value(), originY.value()};
+            for (int i = 0; i < asset.frames.size(); ++i) candidate.sprites << convert(i).data;
+            result = std::move(candidate);
+            dialog.accept();
+        } catch (const std::exception &e) { status->setText(QString::fromUtf8(e.what())); }
+    });
+    QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    update();
+    if (dialog.exec() != QDialog::Accepted) return {};
+    return result;
 }
 } // namespace lordly

@@ -1,6 +1,7 @@
 #include "app/animation_sequence_editor.h"
 #include "engine/actor_art.h"
 #include "engine/sprite_object.h"
+#include "rebuild/compiler.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -27,6 +28,85 @@ class SequenceEditorTests : public QObject {
   private slots:
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
+    }
+    void completeSequenceReplacement() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            auto asset = SpriteAsset::blank("Two distinct frames", {3, 2});
+            asset.anchor = {1, 2};
+            asset.frames[0].ticks = 3;
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            auto second = asset.frames[0];
+            second.id = SpriteLibrary::newId(); second.ticks = 7;
+            second.layers[0].id = SpriteLibrary::newId(); second.layers[0].image.fill(Qt::blue);
+            asset.frames << second;
+            const auto before = project.animationSequences()->json();
+            const auto respond = [](bool accept) {
+                QTimer::singleShot(0, [accept] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    QVERIFY(dialog);
+                    QCOMPARE(dialog->objectName(), "sequenceBatchPreparation");
+                    dialog->findChild<QSpinBox *>("sequenceBatchFrame")->setValue(2);
+                    QVERIFY(dialog->findChild<QLabel *>("sequenceBatchStatus")->text().contains("7 ticks"));
+                    dialog->findChild<QDialogButtonBox *>("sequenceBatchButtons")
+                        ->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)->click();
+                });
+            };
+            respond(false); editor.importSequence(asset);
+            QCOMPARE(project.animationSequences()->json(), before); QCOMPARE(undo.count(), 0);
+            respond(true); editor.importSequence(asset);
+            QCOMPARE(undo.count(), 1);
+            const auto after = project.animationSequences()->json();
+            const auto descriptor = *project.animationSequences()->find(2, 0);
+            const auto original = AnimationDescriptor::load(project.rom(), descriptor.key());
+            QCOMPARE(descriptor.poses().effective(0).source, original.poses().effective(0).source);
+            const auto verify = [&](const Rom &rom, const ActorArt &art) {
+                int ordinal = 0;
+                for (const auto &record : art.poses()[40].records) {
+                    if (record.opcode != 1 && record.opcode != 21) continue;
+                    QVERIFY(ordinal < 2);
+                    QCOMPARE(u8(record.operands, record.operands.size() - 1), ordinal ? 7 : 3);
+                    const int token = u8(record.operands, 0) + (record.opcode == 21 ? 256 * u8(record.operands, 1) : 0);
+                    const auto layers = art.bodyFrame(rom, token, art.defaultAppearance(rom));
+                    QCOMPARE(layers.size(), 1);
+                    QCOMPARE(layers[0].metadata.origin, QPoint(-1, -2));
+                    QByteArray expected;
+                    for (int pixel = 0; pixel < 6; ++pixel) expected += QByteArray::fromHex(ordinal ? "0000ffff" : "ff0000ff");
+                    QCOMPARE(layers[0].pixels.image.rgba, expected);
+                    ++ordinal;
+                }
+                QCOMPARE(ordinal, 2);
+            };
+            verify(project.rom(), ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData()));
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), before);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), after);
+            // Too many replacement records must not leave appended resources or another Undo entry.
+            auto tooLong = asset;
+            while (tooLong.frames.size() < 255) {
+                auto frame = tooLong.frames.first(); frame.id = SpriteLibrary::newId();
+                frame.layers[0].id = SpriteLibrary::newId(); tooLong.frames << frame;
+            }
+            respond(true);
+            QVERIFY_THROWS_EXCEPTION(Error, editor.importSequence(tooLong));
+            QCOMPARE(project.animationSequences()->json(), after); QCOMPARE(undo.count(), 1);
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationSequences()->json(), after);
+            const auto built = rebuild(restored, tools, work.path());
+            QTemporaryDir candidates(QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-sequence-batch-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, output);
+            const auto exported = Rom::open(output);
+            verify(exported, ActorArt::loadBody(exported, 2, 2, 0, 0));
+            qInfo().noquote() << "Complete sequence candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
     }
     void copyFramesToLibrary() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

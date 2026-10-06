@@ -85,6 +85,17 @@ class PoseBankTests : public QObject {
     void frameEditingAndAliases() {
         const auto original = QByteArray::fromHex("040c010000010a040114020401");
         const auto bytes = bank({{}, original, QByteArray::fromHex("0100")});
+        auto replaced = PoseBank::parse(bytes);
+        replaced.replaceFrames(1, {{300, 2}, {400, 2}, {500, 2}});
+        QCOMPARE(frames(replaced, 1, 6), (QVector<int>{300, 400, 500, 300, 400, 500}));
+        QCOMPARE(frames(replaced, 0, 6), (QVector<int>{10, 10, 20, 10, 10, 20}));
+        QCOMPARE(replaced.effective(1).records.first().operands, QByteArray::fromHex("010000"));
+        replaced.replaceFrames(1, {{600, 2}});
+        QCOMPARE(frames(replaced, 1, 4), QVector<int>(4, 600));
+        const auto replacedSafe = replaced.encoded();
+        QVERIFY_THROWS_EXCEPTION(Error, replaced.replaceFrames(1, {{1, 0}}));
+        QVERIFY_THROWS_EXCEPTION(Error, replaced.replaceFrames(1, QVector<QPair<int, int>>(255, {1, 2})));
+        QCOMPARE(replaced.encoded(), replacedSafe);
         auto edited = PoseBank::parse(bytes);
         QCOMPARE(edited.encoded(), bytes);
         QCOMPARE(edited.effective(0).source, original);

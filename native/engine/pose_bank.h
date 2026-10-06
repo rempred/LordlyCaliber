@@ -28,6 +28,7 @@ class PoseBank {
     void insertFrame(int state, int before, int token, int ticks);
     void removeFrame(int state, int record);
     void moveFrame(int state, int record, int destination);
+    void replaceFrames(int state, const QVector<QPair<int, int>> &frames);
 
   private:
     void validateProgress(int state) const;
