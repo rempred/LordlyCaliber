@@ -328,8 +328,8 @@ void EncounterEditor::refresh() {
         auto tile = terrainTable_->item(t, 2);
         tile->setText(encounters.lookup(t) ? QString("Pool %1").arg(encounters.lookup(t)) : "Drop a pool here");
         tile->setData(Qt::UserRole, encounters.lookup(t));
-        tile->setBackground(encounters.lookup(t) ? QColor("#285d74") : QColor(Qt::transparent));
-        tile->setForeground(encounters.lookup(t) ? QBrush(Qt::white) : palette().brush(QPalette::Text));
+        tile->setBackground(encounters.lookup(t) ? palette().brush(QPalette::Highlight) : QBrush(Qt::transparent));
+        tile->setForeground(palette().brush(encounters.lookup(t) ? QPalette::HighlightedText : QPalette::Text));
     }
     notice_->clear();
     const auto &global = encounters.globalRate();
@@ -373,8 +373,8 @@ void EncounterEditor::refreshPoolRows() {
     for (int slot = 0; slot < count; ++slot) {
         auto tile = new QListWidgetItem(QString("Pool %1").arg(slot + 1), poolTiles_);
         tile->setData(Qt::UserRole, slot + 1); tile->setToolTip(encounters.poolSlotLabel(slot));
-        tile->setSizeHint(QSize(140, 36)); tile->setBackground(QColor("#285d74"));
-        tile->setForeground(Qt::white);
+        tile->setSizeHint(QSize(140, 36)); tile->setBackground(palette().brush(QPalette::Highlight));
+        tile->setForeground(palette().brush(QPalette::HighlightedText));
     }
     poolTiles_->setCurrentRow(qBound(0, selected, count - 1));
     findChild<QPushButton *>("encounterAddPool")->setEnabled(count < 32);

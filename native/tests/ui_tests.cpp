@@ -12,6 +12,7 @@
 #include "app/encounter_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
+#include "app/theme.h"
 #include "app/portrait_editor.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
@@ -2433,7 +2434,7 @@ class UiTests : public QObject {
         // The offscreen Qt platform does not enumerate Windows system fonts.
         QFontDatabase::addApplicationFont(
             QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts/segoeui.ttf"));
-        QApplication::setFont(QFont("Segoe UI", 10));
+        applyEditorTheme(*qApp);
     }
     void experienceToolsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

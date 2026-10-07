@@ -72,7 +72,7 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
          (table_ == Table::Classes && project_->classNameModified(i.row())) ||
          (table_ == Table::Items && project_->hasItemData() &&
           project_->itemNameModified(i.row()))))
-        return QBrush(QColor("#e9bf67"));
+        return QBrush(QColor("#982018"));
     if (role != Qt::DisplayRole && role != Qt::EditRole && role != Qt::ToolTipRole)
         return {};
     if (i.column() == 0)

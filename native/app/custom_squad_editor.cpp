@@ -687,7 +687,7 @@ bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
             dragImage_->move(mapFromGlobal(position) - QPoint(30, 30));
             for (auto target : cells_)
                 target->setStyleSheet(target->rect().contains(target->mapFromGlobal(position))
-                                         ? "border: 2px solid #73c9ec;" : QString());
+                                         ? "border: 2px solid #982018;" : QString());
         }
         return true;
     }

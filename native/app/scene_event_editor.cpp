@@ -126,7 +126,7 @@ void SceneEventEditor::refresh() {
             sites_->setItem(row, col, new QTableWidgetItem(values[col]));
         sites_->item(row, 0)->setToolTip(site.role + " " + site.mission);
         sites_->item(row, 2)->setForeground(target == site.selector ? palette().text()
-                                                                    : QBrush(QColor("#67a9f1")));
+                                                                    : QBrush(QColor("#982018")));
         ++row;
     }
     sites_->setCurrentCell(selected < 0 ? 0 : selected, 0);

@@ -379,7 +379,7 @@ void SaveUnitEditor::drawFormation() {
                 selected |= members_->currentRow() == member;
             }
         grid_[cell]->setText(QString("%1\n%2").arg(cell + 1).arg(names.join(" + ")));
-        grid_[cell]->setStyleSheet(selected ? "background:#315a82;color:white" : "");
+        grid_[cell]->setStyleSheet(selected ? "background:#7a5120;color:#fff2d1" : "");
         grid_[cell]->setEnabled(apply_->isEnabled());
     }
     refreshSwapTargets();
