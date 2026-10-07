@@ -118,9 +118,19 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     rateTable->verticalHeader()->hide();
     rateTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     for (int terrain = 0; terrain < Encounters::terrainCount; ++terrain) {
-        rateTable->setItem(terrain, 0,
-                           new QTableWidgetItem(
-                               QString("%1 (0x%2)").arg(terrain).arg(terrain, 2, 16, QChar('0'))));
+        // Ordered native names at z64 0x1650A0, joined to map terrain IDs.
+        static const QMap<int, QString> names{
+            {1, "Highway"}, {2, "Bridge"}, {3, "Plain"}, {4, "Barrens"}, {5, "Forest"},
+            {6, "Marsh"}, {7, "Highlands"}, {8, "River"}, {9, "Snowy Highway"},
+            {10, "Snowy Bridge"}, {11, "Snowy Plain"}, {12, "Snowy Barrens"},
+            {13, "Snowy Forest"}, {14, "Snowy Highlands"}, {15, "Stronghold"},
+            {16, "Castle Wall"}, {17, "Castle Gate"}, {18, "Castle Gate"}, {19, "Castle"},
+            {20, "Within Castle Wall"}, {21, "Within Castle Wall"}, {22, "Within Castle Wall"},
+            {23, "Bridge"}, {24, "Malefic Woods"}, {25, "Generator"}, {26, "Building"},
+            {27, "Before the Castle Gate"}};
+        rateTable->setItem(terrain, 0, new QTableWidgetItem(
+            QString("%1 (0x%2) · %3").arg(terrain).arg(terrain, 2, 16, QChar('0'))
+                .arg(names.value(terrain, "Unclassified terrain"))));
         auto rate = new QSpinBox;
         rate->setObjectName(QString("encounterRate_%1").arg(terrain));
         rate->setRange(0, 100);
@@ -145,7 +155,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     auto globalExplanation = new QLabel(
         "The first encounter check draws a value below the number of possible outcomes. "
         "It passes when the value is below the successful-outcome count. The game selects "
-        "the normal or alternate count using state flag 17. Terrain rates and unit eligibility "
+        "the In Mission or In Area investigation count. Terrain rates and unit eligibility "
         "still apply afterward.");
     globalExplanation->setWordWrap(true);
     globalLayout->addWidget(globalExplanation);
@@ -165,8 +175,8 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     }
     divisor_->setMinimum(1);
     form->addRow("Possible outcomes", divisor_);
-    form->addRow("Normal successful outcomes", normalPass_);
-    form->addRow("Alternate successful outcomes", alternatePass_);
+    form->addRow("In Mission — successful outcomes", normalPass_);
+    form->addRow("In Area investigation — successful outcomes", alternatePass_);
     globalLayout->addLayout(form);
     linkedRates_ = new QCheckBox("Use the normal count for both rolls");
     linkedRates_->setObjectName("encounterLinkRates");

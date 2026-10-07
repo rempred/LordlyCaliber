@@ -23,13 +23,14 @@ function cpu(){
   return m;
 }
 let producers=0,splitters=0,readers=0,categories=0,guards=0;
-for(const id of [...Array(36).keys(),36,255,0xffffffff]){
-  const m=cpu(), expected=fixture.shops.records[id<36?id:0];
+const shopCount = fixture.shops.records.length;
+for(const id of [...Array(shopCount).keys(),shopCount,255,0xffffffff]){
+  const m=cpu(), expected=fixture.shops.records[id<shopCount?id:0];
   const saved=['s0','s1','s2','s3','s4','s5','s6','s7'];
   saved.forEach((r,i)=>m.set(r,0x12340000+i));
   let transfers=0;
   m.trap(0x8009da50,c=>{
-    assert.equal(c.get('a0'),data+(id<36?id:0)*176);
+    assert.equal(c.get('a0'),data+(id<shopCount?id:0)*176);
     assert.equal(c.get('a1'),temp);assert.equal(c.get('a2'),176);
     c.load(temp,rom.subarray(c.get('a0'),c.get('a0')+176));
     transfers++;clobber(c);

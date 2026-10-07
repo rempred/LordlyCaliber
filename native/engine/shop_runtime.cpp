@@ -78,17 +78,21 @@ std::optional<ShopPlacement> ShopPlacement::read(const Rom &rom) {
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (!header.startsWith("LC05SHOP"))
         return std::nullopt;
-    if (header.size() != descriptorSize || (u32(header, 8) != 1 && u32(header, 8) != 2) ||
-        u32(header, 16) != dataSize || u32(header, 20) != rowCount || u32(header, 24) != rowSize ||
+    if (header.size() != descriptorSize || (u32(header, 8) < 1 || u32(header, 8) > 3) ||
+        u32(header, 20) < rowCount || u32(header, 20) > 256 ||
+        (u32(header, 8) < 3 && u32(header, 20) != rowCount) ||
+        u32(header, 16) != rowSize * u32(header, 20) || u32(header, 24) != rowSize ||
         header.mid(36, 24) != QByteArray(24, 0) || u32(header, 60) != crc32(header.first(60)))
         throw Error("Damaged shop placement descriptor");
-    ShopPlacement result{u32(header, 12), int(u32(header, 8))};
+    ShopPlacement result{u32(header, 12), int(u32(header, 8)), int(u32(header, 20))};
     if (result.offset < 0x2800000 || result.offset % 16 ||
-        quint64(result.offset) + dataSize > 0x4000000 ||
-        quint64(result.offset) + dataSize > quint64(rom.bytes().size()) ||
-        crc32(rom.bytes().mid(result.offset, dataSize)) != u32(header, 28) ||
+        quint64(result.offset) + result.byteSize() > 0x4000000 ||
+        quint64(result.offset) + result.byteSize() > quint64(rom.bytes().size()) ||
+        crc32(rom.bytes().mid(result.offset, result.byteSize())) != u32(header, 28) ||
         crc32(rom.bytes().mid(producerOffset, producerSize)) != u32(header, 32))
         throw Error("Shop data or producer differs from its declared placement");
+    if (u32(rom.bytes(), producerOffset) != (0x2c680000U | quint32(result.count)))
+        throw Error("Shop producer uses a different shop count");
     if (u32(rom.bytes(), producerOffset + 36) != (0x3c040000U | ((result.offset + 0x8000) >> 16)) ||
         u32(rom.bytes(), producerOffset + 40) != (0x24840000U | (result.offset & 65535)))
         throw Error("Shop producer references a different inventory allocation");

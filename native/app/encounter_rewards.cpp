@@ -1,5 +1,6 @@
 #include "app/encounter_editor.h"
 #include <QComboBox>
+#include <QSet>
 #include <QCompleter>
 #include <QHeaderView>
 #include <QLabel>
@@ -128,19 +129,36 @@ void EncounterEditor::refreshRewardClasses() {
         return;
     const auto selected = rewardClasses_->currentItem()
                               ? rewardClasses_->currentItem()->data(Qt::UserRole).toInt()
-                              : 1;
+                              : -1;
     const auto copy = rewardCopyFrom_->currentData().toInt();
     QSignalBlocker block(rewardClasses_), copyBlock(rewardCopyFrom_);
     rewardClasses_->clear();
     rewardCopyFrom_->clear();
-    for (int id = 1; id < project_->records(Table::Classes).size(); ++id) {
+    QSet<int> used;
+    for (int pool = 1; pool <= Encounters::poolCount; ++pool)
+        for (int slot = 0; slot < Encounters::slotCount; ++slot)
+            for (int side = 0; side < 2; ++side)
+                used.insert(project_->encounters()->classAt(pool, slot, side));
+    for (const auto &squad : project_->encounters()->customSquads().profiles())
+        for (const auto &member : squad.members)
+            used.insert(member.classId);
+    QVector<int> ordered;
+    for (bool active : {true, false})
+        for (int id = 1; id < project_->records(Table::Classes).size(); ++id)
+            if (used.contains(id) == active)
+                ordered << id;
+    int selectedRow = 0;
+    for (const int id : ordered) {
+        if (id == selected)
+            selectedRow = rewardClasses_->count();
         const auto label = QString("%1 · %2").arg(id).arg(
             QString(project_->record(Table::Classes, id).name).replace('\n', ' '));
         auto item = new QListWidgetItem(label, rewardClasses_);
         item->setData(Qt::UserRole, id);
+        item->setToolTip(used.contains(id) ? "Used in an encounter pool or custom squad" : "Not currently used in encounters");
         rewardCopyFrom_->addItem(label, id);
     }
-    rewardClasses_->setCurrentRow(qBound(0, selected - 1, rewardClasses_->count() - 1));
+    rewardClasses_->setCurrentRow(selectedRow);
     rewardCopyFrom_->setCurrentIndex(qMax(0, rewardCopyFrom_->findData(copy)));
     filterRewards();
     showReward();

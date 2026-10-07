@@ -11,6 +11,8 @@ struct ShopPlacement {
     static constexpr quint32 slabDelta = 0x8007d7a0;
     quint32 offset = 0;
     int version = 2;
+    int count = rowCount;
+    quint32 byteSize() const { return rowSize * count; }
     static std::optional<ShopPlacement> read(const Rom &rom);
     QByteArray canonicalReferences(const QByteArray &owner, qsizetype start) const;
 };

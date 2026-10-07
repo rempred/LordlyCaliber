@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
             {"consumables", project.records(lordly::Table::Consumables).size()},
             {"consumableEffectModels",
              project.consumableEffects() ? project.consumableEffects()->models().size() : 0},
-            {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
+            {"shops", project.shops() ? project.shops()->size() - 1 : 0},
             {"encounterPools", project.encounters() ? lordly::Encounters::poolCount : 0},
             {"changedEntries", project.changedRecords()},
             {"pendingImportedSections",

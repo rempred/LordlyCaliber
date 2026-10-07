@@ -7,9 +7,9 @@
 
 namespace lordly {
 void Shops::validate(int id, const ShopStock &stock) {
-    if (id < 0 || id >= count ||
+    if (id < 0 || id >= 256 ||
         (id == 0 && (!stock.equipment.isEmpty() || !stock.consumables.isEmpty())))
-        throw Error("Shop 0 must remain empty; editable shop IDs are 1 through 35");
+        throw Error("Shop 0 must remain empty; editable shop IDs are 1 through 255");
     auto check = [](const QVector<quint16> &ids, int capacity, int maximum, const QString &kind) {
         if (ids.size() > capacity)
             throw Error(QString("A shop supports at most %1 %2").arg(capacity).arg(kind));
@@ -52,7 +52,8 @@ Shops Shops::load(const Rom &rom) {
         result.stock_.push_back(stock);
     }
     if (placement) {
-        for (int id = 0; id < count; ++id) {
+        result.stock_.resize(placement->count);
+        for (int id = 0; id < placement->count; ++id) {
             const auto row = rom.bytes().mid(placement->offset + id * ShopPlacement::rowSize,
                                              ShopPlacement::rowSize);
             ShopStock stock;
@@ -79,7 +80,7 @@ Shops Shops::load(const Rom &rom) {
         }
     }
     result.original_ = result.stock_;
-    result.locations_.resize(count);
+    result.locations_.resize(result.size());
     const auto towns = world ? world->towns(rom) : LhaMember::find(rom, "ktenmain.bin").decode(rom);
     if (towns.size() % 28)
         throw Error("Truncated town archive");
@@ -87,7 +88,7 @@ Shops Shops::load(const Rom &rom) {
         const auto shop = u8(towns, at + 27);
         if (!shop || u8(towns, at + 24) == 255)
             continue;
-        if (shop >= count)
+        if (shop >= result.size())
             throw Error("Town references an unknown shop");
         auto raw = towns.mid(at + 1, 20);
         if (raw.contains(char(0)))
@@ -109,7 +110,16 @@ const QStringList &Shops::locations(int id) const {
 }
 const ShopStock &Shops::originalStock(int id) const {
     stock(id);
-    return original_[id];
+    static const ShopStock empty;
+    return id < original_.size() ? original_[id] : empty;
+}
+int Shops::addShop() {
+    if (size() == 256)
+        throw Error("All byte-sized shop IDs are in use");
+    const int id = size();
+    stock_.append(ShopStock{});
+    locations_.append(QStringList{});
+    return id;
 }
 void Shops::setStock(int id, const ShopStock &stock) {
     validate(id, stock);
@@ -122,7 +132,7 @@ bool Shops::modified() const {
 int Shops::changedShops() const {
     int changed = 0;
     for (int id = 0; id < stock_.size(); ++id)
-        if (stock_[id] != original_[id])
+        if (id >= original_.size() || stock_[id] != original_[id])
             ++changed;
     return changed;
 }
@@ -136,14 +146,17 @@ QJsonObject Shops::json() const {
             consumables << int(item);
         records << QJsonObject{{"id", id}, {"equipment", equipment}, {"consumables", consumables}};
     }
-    return {{"version", 1}, {"records", records}};
+    return {{"version", stock_.size() == count ? 1 : 2}, {"records", records}};
 }
 void Shops::apply(const QJsonObject &object) {
-    if (object["version"] != 1 || !object["records"].isArray() ||
-        object["records"].toArray().size() != count)
-        throw Error("Shop project requires version 1 and all 36 records");
+    const int length = object["records"].toArray().size();
+    if (!object["records"].isArray() || length < count || length > 256 ||
+        !((object["version"] == 1 && length == count) || object["version"] == 2))
+        throw Error("Shop project requires 36–256 ordered records");
     auto candidate = *this;
     const auto records = object["records"].toArray();
+    candidate.stock_.resize(length);
+    candidate.locations_.resize(length);
     auto ids = [](const QJsonValue &value) {
         if (!value.isArray())
             throw Error("Shop membership must be an array");
@@ -157,7 +170,7 @@ void Shops::apply(const QJsonObject &object) {
         }
         return result;
     };
-    for (int id = 0; id < count; ++id) {
+    for (int id = 0; id < length; ++id) {
         const auto row = records[id].toObject();
         if (row["id"] != id || row.size() != 3)
             throw Error("Malformed or unordered shop record");

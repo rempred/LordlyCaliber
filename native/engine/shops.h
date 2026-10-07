@@ -13,6 +13,8 @@ class Shops {
   public:
     static constexpr int count = 36, equipmentCapacity = 50, consumableCapacity = 30;
     static Shops load(const Rom &rom);
+    int size() const { return int(stock_.size()); }
+    int addShop();
     const ShopStock &stock(int id) const;
     const ShopStock &originalStock(int id) const;
     const QStringList &locations(int id) const;

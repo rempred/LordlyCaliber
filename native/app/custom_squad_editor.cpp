@@ -1,5 +1,7 @@
 #include "app/custom_squad_editor.h"
 #include <QCheckBox>
+#include <QApplication>
+#include <QMouseEvent>
 #include <QComboBox>
 #include <QCompleter>
 #include <QFormLayout>
@@ -100,8 +102,11 @@ CustomSquadEditor::CustomSquadEditor(
     label_ = new QLineEdit;
     label_->setObjectName("customLabel");
     label_->setMaxLength(24);
-    enabled_ = new QCheckBox("Enabled");
+    enabled_ = new QCheckBox("Use this squad for encounters");
     enabled_->setObjectName("customEnabled");
+    enabled_->setToolTip("When checked, this squad replaces the normal creature choices for its "
+                        "scenario and terrain slot. When unchecked, the normal pool applies "
+                        "and this squad remains saved for later use.");
     identity->addWidget(new QLabel("Encounter card"), 1, 0);
     identity->addWidget(label_, 1, 1, 1, 2);
     identity->addWidget(enabled_, 1, 3);
@@ -117,19 +122,16 @@ CustomSquadEditor::CustomSquadEditor(
     countRow->addWidget(count_);
     countRow->addStretch();
     memberLayout->addLayout(countRow);
-    members_ = new QTableWidget(5, 5);
+    members_ = new QTableWidget(5, 4);
     members_->setObjectName("customMembers");
     members_->setHorizontalHeaderLabels(
-        {"Class", "Level offset", "Position", "Equipment choice 1", "Equipment choice 2"});
+        {"Class", "Level offset", "Equipment choice 1", "Equipment choice 2"});
     members_->setVerticalHeaderLabels({"Leader", "2", "3", "4", "5"});
     members_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     members_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     members_->setSelectionBehavior(QAbstractItemView::SelectRows);
     members_->setMaximumHeight(220);
     memberLayout->addWidget(members_);
-    const QStringList locations{"Rear right",   "Rear center",   "Rear left",
-                                "Middle right", "Middle center", "Middle left",
-                                "Front right",  "Front center",  "Front left"};
     for (int i = 0; i < 5; ++i) {
         members_->setRowHeight(i, 36);
         auto cl = choice(QString("customClass_%1").arg(i));
@@ -138,11 +140,7 @@ CustomSquadEditor::CustomSquadEditor(
         auto level = spin(QString("customLevel_%1").arg(i), -128, 127);
         levels_ << level;
         members_->setCellWidget(i, 1, level);
-        auto position = choice(QString("customPosition_%1").arg(i), false);
-        for (int n = 8; n >= 0; --n)
-            position->addItem(locations[n], n);
-        positions_ << position;
-        members_->setCellWidget(i, 2, position);
+        positions_ << 8 - i * 2;
         for (int e = 0; e < 2; ++e) {
             auto item = choice(QString("customEquipment_%1_%2").arg(i).arg(e));
             item->addItem("None", 0);
@@ -152,7 +150,7 @@ CustomSquadEditor::CustomSquadEditor(
                         QString(project_->record(Table::Items, id).name).replace('\n', ' ')),
                     id);
             equipment_ << item;
-            members_->setCellWidget(i, e + 3, item);
+            members_->setCellWidget(i, e + 2, item);
             connect(item, &QComboBox::currentIndexChanged, this, [this, i] {
                 if (!loading_)
                     members_->setCurrentCell(i, 0);
@@ -164,11 +162,6 @@ CustomSquadEditor::CustomSquadEditor(
                 members_->setCurrentCell(i, 0);
             preview();
         });
-        connect(position, &QComboBox::currentIndexChanged, this, [this, i] {
-            if (!loading_)
-                members_->setCurrentCell(i, 0);
-            preview();
-        });
         connect(level, &QSpinBox::valueChanged, this, [this, i] {
             if (!loading_)
                 members_->setCurrentCell(i, 0);
@@ -176,29 +169,34 @@ CustomSquadEditor::CustomSquadEditor(
         });
     }
     auto hint = new QLabel(
-        "Select a member, then click a formation cell to move it. Large members use two of five "
+        "Drag a portrait to move a member or swap two members. You can also select a member and "
+        "click an empty cell. Large members use two of five "
         "slots "
         "and need adjacent cells clear. Equipment choices follow the game's compatibility rules; "
         "the second choice takes precedence when both fit the same slot.");
     hint->setWordWrap(true);
     memberLayout->addWidget(hint);
     auto grid = new QGridLayout;
+    grid->setAlignment(Qt::AlignLeft);
+    grid->addWidget(new QLabel("Rear"), 0, 0, 1, 3, Qt::AlignCenter);
     cells_.resize(9);
     for (int row = 0; row < 3; ++row)
         for (int column = 0; column < 3; ++column) {
-            const int cell = 8 - row * 3 - column;
+            const int cell = row * 3 + 2 - column;
             auto button = new QPushButton;
             button->setObjectName(QString("customCell_%1").arg(cell));
-            button->setMinimumHeight(58);
+            button->setFixedSize(76, 76);
+            button->setIconSize(QSize(60, 60));
+            button->installEventFilter(this);
             button->setCheckable(true);
             cells_[cell] = button;
-            grid->addWidget(button, row, column);
+            grid->addWidget(button, row + 1, column);
             connect(button, &QPushButton::clicked, this, [this, cell] {
                 const int member = qBound(0, members_->currentRow(), count_->value() - 1);
-                positions_[member]->setCurrentIndex(positions_[member]->findData(cell));
-                preview();
+                moveMember(member, cell);
             });
         }
+    grid->addWidget(new QLabel("Front · enemy squad"), 4, 0, 1, 3, Qt::AlignCenter);
     memberLayout->addLayout(grid);
     formation_ = new QLabel;
     formation_->setObjectName("customFormationNotice");
@@ -214,7 +212,7 @@ CustomSquadEditor::CustomSquadEditor(
     auto behaviorLayout = new QVBoxLayout(behavior);
     auto form = new QFormLayout;
     persuasion_ = choice("customPersuasion", false);
-    persuasion_->addItem("Authored chance — last eligible target", 1);
+    persuasion_->addItem("Use configured chance — last eligible target", 1);
     persuasion_->addItem("Original game calculation", 0);
     chance_ = spin("customChance", 0, 100);
     chance_->setSuffix("%");
@@ -244,8 +242,8 @@ CustomSquadEditor::CustomSquadEditor(
         connect(bonus, &QSpinBox::valueChanged, this, [this] { preview(); });
     }
     behaviorLayout->addWidget(bonusTable);
-    auto talkHint = new QLabel("Only one matching class bonus applies, capped at 100%. Authored "
-                               "Talk fails while another eligible "
+    auto talkHint = new QLabel("Configured chance uses the Base chance plus one matching leader-class bonus, "
+                               "capped at 100%. Talk fails while another eligible "
                                "target remains. Failed Talk does not force retreat. Fight and Talk "
                                "remain available until the encounter resolves.");
     talkHint->setWordWrap(true);
@@ -400,7 +398,7 @@ void CustomSquadEditor::display(const CustomSquad &s) {
             i < s.members.size() ? s.members[i] : CustomMember{5, 0, 8 - i * 2, {0, 0}};
         classes_[i]->setCurrentIndex(classes_[i]->findData(member.classId));
         levels_[i]->setValue(member.levelOffset);
-        positions_[i]->setCurrentIndex(positions_[i]->findData(member.cell));
+        positions_[i] = member.cell;
         for (int e = 0; e < 2; ++e)
             equipment_[i * 2 + e]->setCurrentIndex(
                 equipment_[i * 2 + e]->findData(member.equipment[e]));
@@ -430,7 +428,7 @@ CustomSquad CustomSquadEditor::collect() const {
     for (int i = 0; i < count_->value(); ++i)
         s.members << CustomMember{selected(classes_[i]),
                                   levels_[i]->value(),
-                                  selected(positions_[i]),
+                                  positions_[i],
                                   {selected(equipment_[i * 2]), selected(equipment_[i * 2 + 1])}};
     s.fixedPersuasion = selected(persuasion_) == 1;
     s.chance = chance_->value();
@@ -514,6 +512,63 @@ void CustomSquadEditor::remove(bool restore) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
+void CustomSquadEditor::moveMember(int member, int cell) {
+    if (member < 0 || member >= count_->value() || cell < 0 || cell >= 9)
+        return;
+    auto before = positions_;
+    for (int i = 0; i < count_->value(); ++i)
+        if (i != member && positions_[i] == cell)
+            positions_[i] = before[member];
+    positions_[member] = cell;
+    try {
+        CustomSquads check;
+        check.set(collect(), int(project_->records(Table::Classes).size()));
+        check.validateFormations(project_->classData());
+        members_->setCurrentCell(member, 0);
+        preview();
+    } catch (const Error &e) {
+        positions_ = before;
+        preview();
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
+bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
+    auto button = qobject_cast<QPushButton *>(object);
+    if (!button || !cells_.contains(button))
+        return QWidget::eventFilter(object, event);
+    if (event->type() == QEvent::MouseButtonPress) {
+        auto mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() != Qt::LeftButton)
+            return false;
+        draggedMember_ = -1;
+        const int cell = cells_.indexOf(button);
+        for (int i = 0; i < count_->value(); ++i)
+            if (positions_[i] == cell) {
+                draggedMember_ = i;
+                members_->setCurrentCell(i, 0);
+                break;
+            }
+        dragStart_ = mouse->globalPosition().toPoint();
+        return true;
+    }
+    if (event->type() == QEvent::MouseButtonRelease) {
+        auto mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() != Qt::LeftButton)
+            return false;
+        const auto position = mouse->globalPosition().toPoint();
+        for (int cell = 0; cell < cells_.size(); ++cell)
+            if (cells_[cell]->rect().contains(cells_[cell]->mapFromGlobal(position))) {
+                if (draggedMember_ >= 0 && (position - dragStart_).manhattanLength() >= QApplication::startDragDistance())
+                    moveMember(draggedMember_, cell);
+                else if (draggedMember_ < 0)
+                    moveMember(qBound(0, members_->currentRow(), count_->value() - 1), cell);
+                break;
+            }
+        draggedMember_ = -1;
+        return true;
+    }
+    return QWidget::eventFilter(object, event);
+}
 void CustomSquadEditor::preview() {
     if (loading_)
         return;
@@ -533,21 +588,25 @@ void CustomSquadEditor::preview() {
         odds_[i]->setText(
             total ? QString::number(100.0 * weights_[i]->value() / total, 'f', 1) + "%" : "—");
     for (auto cell : cells_) {
+        cell->setIcon({});
         cell->setText("Empty");
         cell->setChecked(false);
         cell->setToolTip({});
     }
     try {
         const auto s = collect();
+        project_->loadAvatarArtwork();
+        const auto classData = project_->classData();
         int cost = 0;
         for (int i = 0; i < s.members.size(); ++i) {
             const auto &m = s.members[i];
             auto cell = cells_[m.cell];
             const auto name =
                 QString(project_->record(Table::Classes, m.classId).name).replace('\n', ' ');
-            cell->setText((cell->text() == "Empty" ? QString() : cell->text() + "\n") +
-                          QString("%1 · %2").arg(i + 1).arg(QString(name).replace('&', "&&")));
-            cell->setToolTip(name);
+            cell->setText({});
+            const auto avatar = project_->avatarArtwork()->image(classData, m.classId, 0);
+            cell->setIcon(QPixmap::fromImage(avatar));
+            cell->setToolTip(QString("%1 · %2%3").arg(i + 1).arg(name).arg(i ? "" : " (Leader)"));
             cell->setChecked(members_->currentRow() == i);
             cost += u8(project_->record(Table::Classes, m.classId).bytes, 4) == 2 ? 2 : 1;
         }
@@ -558,13 +617,13 @@ void CustomSquadEditor::preview() {
             for (int cell = 0; cell < 9; ++cell)
                 if (cells_[cell]->text() == "Empty" && std::abs(cell / 3 - m.cell / 3) <= 1 &&
                     std::abs(cell % 3 - m.cell % 3) <= 1)
-                    cells_[cell]->setText(QString("Clear around member %1").arg(i + 1));
+                    cells_[cell]->setText(QString("Keep\nclear"));
         }
         CustomSquads check;
         check.set(s, int(project_->records(Table::Classes).size()));
         check.validateFormations(project_->classData());
         formation_->setText(
-            QString("%1 of 5 formation slots used. Front row is at the top.").arg(cost));
+            QString("%1 of 5 formation slots used. Front row is at the bottom.").arg(cost));
         if (editing_ < 0 ||
             project_->encounters()->customSquads().profiles().value(editing_).json() != s.json())
             notice_->setText("Unapplied changes — Apply squad updates the project.");

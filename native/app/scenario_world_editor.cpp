@@ -1,4 +1,5 @@
 #include "app/scenario_world_editor.h"
+#include "app/shop_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -50,6 +51,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
                                          std::function<void()> changed, QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     project_->loadWorld();
+    project_->loadShops();
     auto layout = new QVBoxLayout(this);
     auto pages = new QTabWidget;
     pages->setObjectName("worldPages");
@@ -86,16 +88,37 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     type_->addItem("Castle", 0x89);
     form->addRow("Type", type_);
     auto facilityRow = new QHBoxLayout;
-    for (const auto &label : {"Shop", "Temple", "Treasure", "Mine"}) {
+    for (const auto &label : {"Shop", "Witch’s den", "Treasure", "Mine"}) {
         auto check = new QCheckBox(label);
         check->setObjectName(QString("worldFacility%1").arg(facilities_.size()));
         facilities_ << check;
+        if (facilities_.size() == 2)
+            check->setToolTip("Check to add a witch’s den, or clear to remove it. "
+                              "Apply site changes saves this facility for every scenario using the stronghold.");
         facilityRow->addWidget(check);
     }
     form->addRow("Facilities", facilityRow);
-    shop_ = spin("worldShop", 35);
+    shop_ = spin("worldShop", project_->shops()->size() - 1);
     shop_->setSpecialValueText("None");
     form->addRow("Shop ID", shop_);
+    auto shops = new QHBoxLayout;
+    auto createShop = new QPushButton("Create new shop here");
+    createShop->setObjectName("worldShopAdd");
+    auto removeShop = new QPushButton("Remove shop from site");
+    removeShop->setObjectName("worldShopRemove");
+    shops->addWidget(createShop);
+    shops->addWidget(removeShop);
+    form->addRow(shops);
+    connect(createShop, &QPushButton::clicked, this, [this] {
+        if (!sites_->currentItem()) return;
+        try { addShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt()); }
+        catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    });
+    connect(removeShop, &QPushButton::clicked, this, [this] {
+        if (!sites_->currentItem()) return;
+        try { assignShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt(), 0); }
+        catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    });
     allegiance_ = new QComboBox;
     allegiance_->setObjectName("worldAllegiance");
     allegiance_->addItem("Keep loaded value", -1);
@@ -287,7 +310,7 @@ void ScenarioWorldEditor::showSite() {
     objective_->setChecked(u8(record, 24) == 255);
     morale_->setEnabled(!objective_->isChecked());
     select(type_, u8(record, 26));
-    shop_->setMaximum(std::max(35, int(u8(record, 27))));
+    shop_->setMaximum(std::max(project_->shops()->size() - 1, int(u8(record, 27))));
     shop_->setValue(u8(record, 27));
     for (int i = 0; i < 4; ++i)
         facilities_[i]->setChecked(u8(record, 25) & (1 << i));

@@ -19,11 +19,11 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
             QByteArray(ShopPlacement::descriptorSize, char(-1)))
             throw Error("Shop descriptor allocation is occupied by another patch");
     }
-    const auto offset = prior ? prior->offset : quint32((rom.bytes().size() + 15) & ~qsizetype(15));
-    if (offset < 0x2800000 || quint64(offset) + ShopPlacement::dataSize > 0x4000000)
+    const auto offset = prior && shops.size() <= prior->count ? prior->offset : quint32((rom.bytes().size() + 15) & ~qsizetype(15));
+    if (offset < 0x2800000 || quint64(offset) + (ShopPlacement::rowSize * shops.size()) > 0x4000000)
         throw Error("Shop data exceeds the cartridge address range");
-    QByteArray rows(ShopPlacement::dataSize, 0);
-    for (int id = 0; id < Shops::count; ++id) {
+    QByteArray rows((ShopPlacement::rowSize * shops.size()), 0);
+    for (int id = 0; id < shops.size(); ++id) {
         auto at = id * ShopPlacement::rowSize;
         // Preserve the original consumer order: consumables, then equipment.
         for (auto item : shops.stock(id).consumables) {
@@ -38,7 +38,7 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
     const auto data = compiler.compileData(rows, directory, "shop_rows");
     if (data != rows)
         throw Error("Compiled shop rows disagree with the authored inventory");
-    auto producer = compiler.assembleOwner(source("producer.s"), directory, "shop_producer",
+    auto producer = compiler.assembleOwner(".equ LC_SHOP_COUNT, " + QByteArray::number(shops.size()) + "\n" + source("producer.s"), directory, "shop_producer",
                                            ShopPlacement::producerOffset + ShopPlacement::slabDelta,
                                            {{"lc_shop_rows", offset}, {"lc_dma_read", 0x8009da50}});
     const auto consumers =
@@ -67,10 +67,10 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
     }
     QByteArray descriptor(ShopPlacement::descriptorSize, 0);
     descriptor.replace(0, 8, "LC05SHOP");
-    put32(descriptor, 8, 2);
+    put32(descriptor, 8, shops.size() == Shops::count ? 2 : 3);
     put32(descriptor, 12, offset);
-    put32(descriptor, 16, ShopPlacement::dataSize);
-    put32(descriptor, 20, ShopPlacement::rowCount);
+    put32(descriptor, 16, (ShopPlacement::rowSize * shops.size()));
+    put32(descriptor, 20, shops.size());
     put32(descriptor, 24, ShopPlacement::rowSize);
     put32(descriptor, 28, crc32(data));
     put32(descriptor, 32, crc32(producer));

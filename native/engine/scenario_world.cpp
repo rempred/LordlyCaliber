@@ -115,8 +115,7 @@ void ScenarioWorld::validateTown(int id, const QByteArray &record) const {
     const int type = u8(record, 26);
     if (record[26] != base[26] && type != 9 && type != 0x29 && type != 0x49 && type != 0x89)
         throw Error("Choose town, fort, boss fort or castle");
-    if (record[27] != base[27] && u8(record, 27) > 35)
-        throw Error("Site shop must be none or shop 1..35");
+
 }
 void ScenarioWorld::setTown(int id, const QByteArray &record) {
     validateTown(id, record);

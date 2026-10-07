@@ -38,8 +38,14 @@ the loaded source ROM, so project saves retain the changelog. It includes projec
 assets and summarizes binary scene/artwork changes. Apply pending form edits first;
 the independent Save workspace is outside this project report.
 
-Shops supports all 35 shops with up to 50 equipment items and 30 consumables,
-including empty stock, search, reordering and undo. Consumables provides prices,
+Shops starts with the 35 original shops and supports adding shops through ID 255,
+with up to 50 equipment items and 30 consumables per shop. Add opens a searchable,
+multi-select modal with icons decoded from the ROM and current project artwork.
+Create stock with Add shop, then assign it to a stronghold. Scenarios / Sites also
+provides Create new shop here and Remove shop from site; removing a facility keeps
+its stock available for other strongholds. The Witch’s den checkbox adds/removes
+that facility when Apply site changes is used. Facility metadata affects every
+scenario using that stronghold. Stock editing, assignment and creation support Undo. Consumables provides prices,
 metadata and ten supported effect models in the Effects inspector. Items 11–16
 share one stat-increase range. Healing amounts can update the description's HP
 number; turn that option off when a custom description has no numeric amount.
@@ -58,7 +64,15 @@ Scenario rates provide independent overrides for Area Investigation and missions
 or inherit the corresponding global setting. Shared creature pools do not force
 shared rates. Removing every override restores the global-only dispatcher.
 Custom neutral squads support independent members, equipment, formation, card text,
-persuasion, retreat and weighted rewards, including added classes.
+persuasion, retreat and weighted rewards, including added classes. Their square
+formation cells use ROM portraits; drag to move or swap members, with the enemy
+front row at the bottom. Apply squad saves the draft as one Undo step. Use this
+squad for encounters controls whether it replaces the normal pool for its scenario
+and terrain. Configured persuasion uses the entered chance and matching leader
+bonus; it can only succeed for the last eligible target. Original game calculation
+retains the native persuasion rules. Class rewards lists classes used in pools or
+custom squads first. Global rates names the mission and area-investigation rolls;
+terrain rates identifies the verified terrain names alongside numeric IDs.
 
 In Cutscenes, Background preview offers the scene's available background groups or
 environments. Choose one to preview its image and foreground pieces, then Apply

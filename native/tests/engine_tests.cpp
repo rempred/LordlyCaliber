@@ -2471,15 +2471,28 @@ class EngineTests : public QObject {
             QTemporaryDir build;
             const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
             for (int stage = 0; stage < 3; ++stage) {
-                if (stage == 1)
+                if (stage == 1) {
                     project.appendClass(5, "Shop companion");
+                    auto next = *project.shops();
+                    QCOMPARE(next.addShop(), 36);
+                    next.setStock(36, {{277, 1}, {44}});
+                    project.setShops(next.json());
+                    project.loadWorld();
+                    auto world = *project.world();
+                    auto town = world.town(1);
+                    put8(town, 27, 36);
+                    put8(town, 25, u8(town, 25) | 1);
+                    world.setTown(1, town);
+                    project.setWorld(world.json());
+                }
                 if (stage == 2)
                     project.setClassNameBytes(165, encodeClassName("Shop companion renamed"));
                 const auto expected = project.shops()->json();
                 const auto result = rebuild(project, tools, build.path());
                 const auto placed = ShopPlacement::read(Rom::fromBytes(result.image));
                 QVERIFY(placed);
-                QCOMPARE(placed->version, 2);
+                QCOMPARE(placed->version, stage ? 3 : 2);
+                QCOMPARE(placed->count, stage ? 37 : 36);
                 QCOMPARE(placed->offset % 16, 0U);
                 auto checksum = result.image;
                 Rom::updateChecksum(checksum);

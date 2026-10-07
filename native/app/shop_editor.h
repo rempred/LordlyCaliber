@@ -9,6 +9,9 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 namespace lordly {
+// One Undo step owns both stock creation and the stronghold's facility assignment.
+int addShop(Project *project, QUndoStack *undo, int townId = -1);
+void assignShop(Project *project, QUndoStack *undo, int townId, int shopId);
 class ShopEditor : public QWidget {
   public:
     ShopEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
@@ -17,12 +20,13 @@ class ShopEditor : public QWidget {
   private:
     struct Inventory {
         QListWidget *list = nullptr;
-        QComboBox *choice = nullptr;
         QLabel *count = nullptr;
         QPushButton *add = nullptr, *remove = nullptr, *up = nullptr, *down = nullptr;
     };
     QWidget *makeInventory(bool equipment);
     QString itemName(bool equipment, int id) const;
+    QStringList locations(int id) const;
+    QVector<quint16> chooseItems(bool equipment);
     int selected() const;
     void refresh();
     void filter();
@@ -35,7 +39,7 @@ class ShopEditor : public QWidget {
     QLineEdit *search_;
     QWidget *details_;
     QLabel *heading_, *notice_;
-    QComboBox *copyFrom_;
+    QComboBox *copyFrom_, *town_;
     Inventory equipment_, consumables_;
 };
 } // namespace lordly

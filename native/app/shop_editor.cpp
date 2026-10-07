@@ -1,5 +1,7 @@
 #include "app/shop_editor.h"
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QCompleter>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -27,16 +29,72 @@ class ShopCommand final : public QUndoCommand {
     Project *project_;
     QJsonObject before_, after_;
 };
+namespace {
+class ShopFacilityCommand final : public QUndoCommand {
+  public:
+    ShopFacilityCommand(Project *project, Project after, const QString &label)
+        : QUndoCommand(label), project_(project), before_(*project), after_(std::move(after)) {}
+    void undo() override { *project_ = before_; }
+    void redo() override { *project_ = after_; }
+  private:
+    Project *project_;
+    Project before_, after_;
+};
+void setShop(Project &project, int townId, int shopId) {
+    project.loadWorld();
+    project.loadShops();
+    if (shopId < 0 || shopId >= project.shops()->size())
+        throw Error("Choose an existing shop");
+    auto world = *project.world();
+    auto town = world.town(townId);
+    if (shopId && u8(town, 24) == 255)
+        throw Error("Mission objectives cannot open shops. Clear Mission objective in Sites first.");
+    put8(town, 27, quint8(shopId));
+    put8(town, 25, quint8((u8(town, 25) & ~1) | (shopId ? 1 : 0)));
+    world.setTown(townId, town);
+    project.setWorld(world.json());
+}
+}
+int addShop(Project *project, QUndoStack *undo, int townId) {
+    auto next = *project;
+    next.loadShops();
+    auto shops = *next.shops();
+    const int id = shops.addShop();
+    next.setShops(shops.json());
+    if (townId > 0)
+        setShop(next, townId, id);
+    undo->push(new ShopFacilityCommand(project, std::move(next), "Add shop"));
+    return id;
+}
+void assignShop(Project *project, QUndoStack *undo, int townId, int shopId) {
+    auto next = *project;
+    setShop(next, townId, shopId);
+    if (next.manifest() != project->manifest())
+        undo->push(new ShopFacilityCommand(project, std::move(next),
+                                          shopId ? "Assign stronghold shop" : "Remove stronghold shop"));
+}
 ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                        QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("shopEditor");
+    project_->loadWorld();
+    project_->loadIconArtwork();
     auto layout = new QVBoxLayout(this);
     search_ = new QLineEdit;
     search_->setPlaceholderText("Find a shop by town, item name, or shop number…");
     search_->setClearButtonEnabled(true);
     search_->setObjectName("shopSearch");
     layout->addWidget(search_);
+    auto add = new QPushButton("Add shop");
+    add->setObjectName("shopAdd");
+    layout->addWidget(add, 0, Qt::AlignLeft);
+    connect(add, &QPushButton::clicked, this, [this] {
+        try {
+            const int id = addShop(project_, undo_);
+            search_->clear();
+            shops_->setCurrentRow(id - 1);
+        } catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    });
     auto split = new QSplitter;
     layout->addWidget(split);
     shops_ = new QListWidget;
@@ -52,6 +110,30 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     font.setBold(true);
     heading_->setFont(font);
     detail->addWidget(heading_);
+    auto assignment = new QHBoxLayout;
+    town_ = new QComboBox;
+    town_->setObjectName("shopStronghold");
+    town_->setEditable(true);
+    town_->setInsertPolicy(QComboBox::NoInsert);
+    town_->completer()->setFilterMode(Qt::MatchContains);
+    for (int id = 1; id <= ScenarioWorld::townCount; ++id)
+        town_->addItem(QString("%1 · %2").arg(id).arg(project_->world()->townName(id)), id);
+    assignment->addWidget(town_, 1);
+    auto attach = new QPushButton("Assign to stronghold");
+    attach->setObjectName("shopAssign");
+    auto detach = new QPushButton("Remove stronghold's shop");
+    detach->setObjectName("shopDetach");
+    assignment->addWidget(attach);
+    assignment->addWidget(detach);
+    detail->addLayout(assignment);
+    for (const auto button : {attach, detach})
+        connect(button, &QPushButton::clicked, this, [this, button, attach] {
+            try {
+                if (town_->currentIndex() < 0 || town_->currentText() != town_->itemText(town_->currentIndex()))
+                    throw Error("Choose a stronghold from the list");
+                assignShop(project_, undo_, town_->currentData().toInt(), button == attach ? selected() : 0);
+            } catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+        });
     auto inventories = new QHBoxLayout;
     inventories->addWidget(makeInventory(true));
     inventories->addWidget(makeInventory(false));
@@ -73,12 +155,6 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     split->addWidget(details_);
     split->setStretchFactor(1, 1);
     split->setSizes({300, 950});
-    for (int id = 1; id < Shops::count; ++id) {
-        auto row = new QListWidgetItem(shops_);
-        row->setData(Qt::UserRole, id);
-        copyFrom_->addItem(
-            QString("Shop %1 — %2").arg(id).arg(project_->shops()->locations(id).join(", ")), id);
-    }
     connect(shops_, &QListWidget::currentRowChanged, this, [this] { refresh(); });
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
     connect(copy, &QPushButton::clicked, this, [this] {
@@ -106,15 +182,6 @@ QWidget *ShopEditor::makeInventory(bool equipment) {
     inventory.list = new QListWidget;
     inventory.list->setObjectName(key + "List");
     layout->addWidget(inventory.list, 1);
-    inventory.choice = new QComboBox;
-    inventory.choice->setObjectName(key + "Choice");
-    inventory.choice->setEditable(true);
-    inventory.choice->setInsertPolicy(QComboBox::NoInsert);
-    inventory.choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    inventory.choice->setMinimumContentsLength(16);
-    inventory.choice->completer()->setFilterMode(Qt::MatchContains);
-    inventory.choice->completer()->setCaseSensitivity(Qt::CaseInsensitive);
-    layout->addWidget(inventory.choice);
     auto buttons = new QHBoxLayout;
     const QStringList labels = {"Add", "Remove", "Up", "Down"};
     QPushButton **buttonSlots[] = {&inventory.add, &inventory.remove, &inventory.up,
@@ -155,13 +222,25 @@ void ShopEditor::filter() {
     }
 }
 void ShopEditor::refresh() {
+    const int keep = selected(), copy = copyFrom_->currentData().toInt();
+    QSignalBlocker block(shops_), copyBlock(copyFrom_);
+    shops_->clear();
+    copyFrom_->clear();
+    for (int id = 1; id < project_->shops()->size(); ++id) {
+        auto row = new QListWidgetItem(shops_);
+        row->setData(Qt::UserRole, id);
+        copyFrom_->addItem(QString("Shop %1 — %2").arg(id).arg(locations(id).join(", ")), id);
+    }
+    shops_->setCurrentRow(qBound(0, keep - 1, shops_->count() - 1));
+    copyFrom_->setCurrentIndex(qMax(0, copyFrom_->findData(copy)));
+    findChild<QPushButton *>("shopAdd")->setEnabled(project_->shops()->size() < 256);
     for (int n = 0; n < shops_->count(); ++n) {
         const auto id = n + 1;
         const auto &stock = project_->shops()->stock(id);
         const auto label = QString("Shop %1%2\n%3")
                                .arg(id)
                                .arg(stock == project_->shops()->originalStock(id) ? "" : " •")
-                               .arg(project_->shops()->locations(id).join(", "));
+                               .arg(locations(id).join(", "));
         auto searchable = label;
         for (auto item : stock.equipment)
             searchable += " " + itemName(true, item);
@@ -176,33 +255,25 @@ void ShopEditor::refresh() {
     if (id < 1)
         return;
     heading_->setText(
-        QString("Shop %1 · %2").arg(id).arg(project_->shops()->locations(id).join(", ")));
+        QString("Shop %1 · %2").arg(id).arg(locations(id).join(", ")));
     for (bool equipment : {true, false}) {
         auto &i = equipment ? equipment_ : consumables_;
         const auto &stock = project_->shops()->stock(id);
         const auto &ids = equipment ? stock.equipment : stock.consumables;
-        const auto capacity = equipment ? 50 : 30, maximum = equipment ? 277 : 44;
+        const auto capacity = equipment ? 50 : 30;
         const auto previous =
             i.list->currentItem() ? i.list->currentItem()->data(Qt::UserRole).toInt() : -1;
-        const auto choice = i.choice->currentData().toInt();
         i.list->clear();
-        i.choice->clear();
         for (auto item : ids) {
             auto row = new QListWidgetItem(
                 QString("%1  ·  %2").arg(itemName(equipment, item)).arg(item), i.list);
             row->setData(Qt::UserRole, item);
+            row->setIcon(QPixmap::fromImage(project_->iconArtwork()->image(item | (equipment ? 0 : 0x200))));
             if (item == previous)
                 i.list->setCurrentItem(row);
         }
-        for (int item = 1; item <= maximum; ++item)
-            if (!ids.contains(quint16(item)))
-                i.choice->addItem(QString("%1  ·  %2").arg(itemName(equipment, item)).arg(item),
-                                  item);
-        if (i.choice->findData(choice) >= 0)
-            i.choice->setCurrentIndex(i.choice->findData(choice));
         i.count->setText(QString("%1 of %2 entries").arg(ids.size()).arg(capacity));
-        i.add->setEnabled(ids.size() < capacity && i.choice->count());
-        i.choice->setEnabled(i.add->isEnabled());
+        i.add->setEnabled(ids.size() < capacity);
         if (i.list->currentRow() < 0 && i.list->count())
             i.list->setCurrentRow(0);
         const auto row = i.list->currentRow();
@@ -225,6 +296,65 @@ void ShopEditor::edit(const QString &label, const ShopStock &stock) {
         notice_->setText(QString::fromUtf8(error.what()));
     }
 }
+QStringList ShopEditor::locations(int id) const {
+    QStringList names;
+    for (int townId = 1; townId <= ScenarioWorld::townCount; ++townId) {
+        const auto town = project_->world()->town(townId);
+        if (u8(town, 27) == id && (u8(town, 25) & 1) && u8(town, 24) != 255)
+            names << project_->world()->townName(townId);
+    }
+    return names.isEmpty() ? QStringList{"Unassigned"} : names;
+}
+QVector<quint16> ShopEditor::chooseItems(bool equipment) {
+    QDialog dialog(this);
+    dialog.setObjectName("shopItemPicker");
+    dialog.setWindowTitle(equipment ? "Add equipment to shop" : "Add consumables to shop");
+    dialog.resize(560, 620);
+    auto layout = new QVBoxLayout(&dialog);
+    auto search = new QLineEdit;
+    search->setObjectName("shopItemSearch");
+    search->setPlaceholderText("Find an item by name or ID…");
+    layout->addWidget(search);
+    auto list = new QListWidget;
+    list->setObjectName("shopItemChoices");
+    list->setIconSize(QSize(48, 48));
+    list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    layout->addWidget(list, 1);
+    const auto &stock = project_->shops()->stock(selected());
+    const auto &existing = equipment ? stock.equipment : stock.consumables;
+    const int remaining = (equipment ? 50 : 30) - existing.size();
+    for (const auto &record : project_->records(equipment ? Table::Items : Table::Consumables)) {
+        if (!record.id || existing.contains(record.id)) continue;
+        auto row = new QListWidgetItem(QString("%1 · %2").arg(record.id).arg(itemName(equipment, record.id)), list);
+        row->setData(Qt::UserRole, record.id);
+        row->setIcon(QPixmap::fromImage(project_->iconArtwork()->image(record.id | (equipment ? 0 : 0x200)))
+                         .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation));
+    }
+    auto help = new QLabel(QString("Select up to %1 items. Icons are decoded from the current ROM and project edits.").arg(remaining));
+    help->setWordWrap(true);
+    layout->addWidget(help);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setText("Add selected");
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(list, &QListWidget::itemSelectionChanged, &dialog, [=] {
+        const int count = list->selectedItems().size();
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(count > 0 && count <= remaining);
+    });
+    connect(search, &QLineEdit::textChanged, &dialog, [=](const QString &text) {
+        for (int i = 0; i < list->count(); ++i) {
+            auto row = list->item(i);
+            row->setHidden(!row->text().contains(text, Qt::CaseInsensitive));
+            if (row->isHidden()) row->setSelected(false);
+        }
+    });
+    QVector<quint16> result;
+    if (dialog.exec() == QDialog::Accepted)
+        for (auto row : list->selectedItems()) result << quint16(row->data(Qt::UserRole).toInt());
+    return result;
+}
 void ShopEditor::change(bool equipment, int operation) {
     const auto id = selected();
     if (id < 1)
@@ -234,12 +364,10 @@ void ShopEditor::change(bool equipment, int operation) {
     auto &ids = equipment ? stock.equipment : stock.consumables;
     const auto row = i.list->currentRow();
     if (operation == 0) {
-        const auto choice = i.choice->findText(i.choice->currentText());
-        if (choice < 0) {
-            notice_->setText("Choose an item from the list before adding it.");
+        const auto selectedItems = chooseItems(equipment);
+        if (selectedItems.isEmpty())
             return;
-        }
-        ids << quint16(i.choice->itemData(choice).toInt());
+        ids += selectedItems;
     } else if (row < 0 || row >= ids.size())
         return;
     else if (operation == 1)

@@ -27,6 +27,8 @@ class CustomSquadEditor : public QWidget {
     void apply();
     void remove(bool restore);
     void preview();
+    void moveMember(int member, int cell);
+    bool eventFilter(QObject *object, QEvent *event) override;
     CustomSquad collect() const;
     Project *project_;
     std::function<void(const Encounters &, const QString &)> commit_;
@@ -37,12 +39,15 @@ class CustomSquadEditor : public QWidget {
     QCheckBox *enabled_;
     QSpinBox *count_, *chance_, *retreat_;
     QTableWidget *members_;
-    QVector<QComboBox *> classes_, positions_, equipment_, bonusClasses_, rewards_;
+    QVector<QComboBox *> classes_, equipment_, bonusClasses_, rewards_;
     QVector<QSpinBox *> levels_, bonuses_, weights_;
     QVector<QLabel *> odds_;
     QVector<QPushButton *> cells_;
     QLabel *notice_, *formation_;
     QPushButton *copy_, *remove_, *restore_;
+    QVector<int> positions_;
+    int draggedMember_ = -1;
+    QPoint dragStart_;
     int editing_ = -1;
     bool loading_ = true;
 };

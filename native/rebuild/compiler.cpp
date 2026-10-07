@@ -794,6 +794,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(plan.enemies.size() / 35);
     }
     if (p.world() && p.world()->modified()) {
+        p.loadShops();
+        for (int id = 1; id <= ScenarioWorld::townCount; ++id)
+            if (u8(p.world()->town(id), 27) >= p.shops()->size())
+                throw Error(QString("Stronghold %1 references a missing shop").arg(id));
         auto plan = p.world()->plan();
         const auto worldRom = Rom::fromBytes(result.image);
         const auto resources = WorldResources::load(worldRom);

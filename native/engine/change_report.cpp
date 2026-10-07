@@ -237,7 +237,7 @@ ChangeReport Project::changeReport() const {
                 names << itemName(id, consumable);
             return names.isEmpty() ? QString("Empty") : names.join(", ");
         };
-        for (int id = 1; id < Shops::count; ++id) {
+        for (int id = 1; id < shops_->size(); ++id) {
             const auto &a = shops_->originalStock(id), &b = shops_->stock(id);
             QStringList lines;
             if (a.equipment != b.equipment)

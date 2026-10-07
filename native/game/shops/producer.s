@@ -5,7 +5,7 @@
  */
 .set noreorder
 .set noat
-    sltiu $t0, $v1, 36
+    sltiu $t0, $v1, LC_SHOP_COUNT
     bne $t0, $zero, valid
     nop
     addu $v1, $zero, $zero
