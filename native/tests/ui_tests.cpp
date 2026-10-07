@@ -13,6 +13,7 @@
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
 #include "app/theme.h"
+#include "app/formation_board.h"
 #include "app/portrait_editor.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
@@ -3809,6 +3810,24 @@ class UiTests : public QObject {
             QCOMPARE(units->count(), 5);
             QCOMPARE(members->item(0)->text(), QString("Member1 · Leader"));
             QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
+            auto armyBoard = editor.findChild<FormationBoard *>("saveUnitCellBoard");
+            QVERIFY(armyBoard);
+            auto dragSaveMember = [&](int from, int to) {
+                auto source = armyBoard->cell(from);
+                const auto start = source->mapFrom(armyBoard, armyBoard->cellCenter(from));
+                const auto end = source->mapFrom(armyBoard, armyBoard->cellCenter(to));
+                QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, start);
+                QMouseEvent movement(QEvent::MouseMove, end, source->mapToGlobal(end),
+                                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(source, &movement);
+                QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, end);
+            };
+            dragSaveMember(0, 4);
+            QVERIFY(armyBoard->cell(4)->text().contains("Member1"));
+            dragSaveMember(4, 0);
+            QVERIFY(armyBoard->cell(0)->text().contains("Member1"));
+            QCOMPARE(editor.document()->serialize(), input);
+            QVERIFY(armyBoard->grab().save(QCoreApplication::applicationDirPath()+"/army-board-save.png"));
             members->setCurrentRow(0);
             editor.findChild<QPushButton *>("saveUnitCell4")
                 ->click(); // Swap the leader and member2.
@@ -8367,6 +8386,26 @@ class UiTests : public QObject {
         for (int c = 1; c < 3; ++c)
             for (int p = 0; p < 3; ++p)
                 select(QString("scenarioPosition_%1_%2").arg(c).arg(p), 0);
+        auto armyBoard = editor.findChild<FormationBoard *>("scenarioCell_Board");
+        QVERIFY(armyBoard);
+        auto leaderCell = combo("scenarioPosition_0_0");
+        const int originalCell = leaderCell->currentData().toInt()-1;
+        const int destinationCell = (originalCell+1)%9;
+        auto dragScenarioMember = [&](int from, int to) {
+            auto source = armyBoard->cell(from);
+            const auto start = source->mapFrom(armyBoard, armyBoard->cellCenter(from));
+            const auto end = source->mapFrom(armyBoard, armyBoard->cellCenter(to));
+            QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, start);
+            QMouseEvent movement(QEvent::MouseMove, end, source->mapToGlobal(end),
+                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(source, &movement);
+            QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, end);
+        };
+        dragScenarioMember(originalCell, destinationCell);
+        QCOMPARE(leaderCell->currentData().toInt(), destinationCell+1);
+        dragScenarioMember(destinationCell, originalCell);
+        QCOMPARE(leaderCell->currentData().toInt(), originalCell+1);
+        QCOMPARE(project.scenarios()->json(), before);
         select("scenarioGear_0_0", 277);
         for (const auto field : {"scenarioHealing", "scenarioFruit", "scenarioRevival"})
             select(field, 0);
@@ -8389,7 +8428,7 @@ class UiTests : public QObject {
         spin("scenarioLevel_0")->setValue(127);
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), after);
-        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("1Ã¢â‚¬â€œ99"));
+        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("level 1–99"));
         spin("scenarioLevel_0")->setValue(0);
         button("scenarioAddSquad")->click();
         QCOMPARE(project.scenarios()->scenario(10).squads.size(),
@@ -8461,7 +8500,17 @@ class UiTests : public QObject {
         editor.findChild<QTableWidget *>("customMembers")->setCurrentCell(2, 0);
         button("customCell_0")->click();
         auto cell = button("customCell_0");
-        QCOMPARE(cell->width(), cell->height());
+        auto board = editor.findChild<FormationBoard *>("customCell_Board");
+        QVERIFY(board);
+        // Known tile centers on the ROM board, including its opposite corners.
+        QCOMPARE(board->cellAt(QPoint(228, 132)), 0);
+        QCOMPARE(board->cellAt(QPoint(156, 284)), 8);
+        QCOMPARE(board->cellAt(board->cellPolygon(0).boundingRect().topLeft().toPoint()), -1);
+        QCOMPARE(board->cellAt(QPoint(410, 10)), -1);
+        for (int i = 0; i < 9; ++i) {
+            QCOMPARE(board->cellAt(board->cellCenter(i)), i);
+            QCOMPARE(board->childAt(board->cellCenter(i)), board->cell(i));
+        }
         QVERIFY(!cell->icon().isNull());
         QVERIFY(button("customCell_8")->mapToGlobal(QPoint(0, 0)).y() > cell->mapToGlobal(QPoint(0, 0)).y());
         QCOMPARE(editor.findChild<QTableWidget *>("customMembers")->columnCount(), 4);
@@ -8488,18 +8537,20 @@ class UiTests : public QObject {
         QCOMPARE(saved.rewards.outcomes[0], 44);
         const auto before = project.manifest();
         auto drag = [&](int from, int to) {
-            auto source = button(qPrintable(QString("customCell_%1").arg(from)));
-            auto target = button(qPrintable(QString("customCell_%1").arg(to)));
-            QTest::mousePress(source, Qt::LeftButton);
-            const QPoint position = source->mapFromGlobal(target->mapToGlobal(target->rect().center()));
-            QMouseEvent movement(QEvent::MouseMove, position, source->mapToGlobal(position),
+            const auto start = board->cellCenter(from);
+            const auto end = to < 0 ? QPoint(410, 10) : board->cellCenter(to);
+            const auto beforeDrag = board->grab().toImage();
+            QTest::mousePress(board, Qt::LeftButton, Qt::NoModifier, start);
+            QMouseEvent movement(QEvent::MouseMove, end, board->mapToGlobal(end),
                                  Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(source, &movement);
-            auto ghost = editor.findChild<QLabel *>("customDragPortrait");
-            QVERIFY(ghost && ghost->isVisible() && !ghost->pixmap().isNull());
-            QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier,
-                               source->mapFromGlobal(target->mapToGlobal(target->rect().center())));
+            QApplication::sendEvent(board, &movement);
+            QVERIFY(board->grab().toImage() != beforeDrag);
+            if (from == 0 && to == 8)
+                QVERIFY(board->grab().save(QCoreApplication::applicationDirPath()+"/army-board-drag.png"));
+            QTest::mouseRelease(board, Qt::LeftButton, Qt::NoModifier, end);
         };
+        drag(0, -1); // Releasing outside the angled board must leave the member in place.
+        QVERIFY(button("customCell_0")->toolTip().startsWith("3 ·"));
         drag(0, 8); // Swap two ordinary members.
         QVERIFY(button("customCell_8")->toolTip().startsWith("3 ·"));
         drag(8, 0);
@@ -8518,9 +8569,9 @@ class UiTests : public QObject {
         select("customClass_0", 165);
         editor.resize(1100, 640);
         QApplication::processEvents();
-        const auto top = button("customCell_2"), middle = button("customCell_5"), bottom = button("customCell_8");
-        QVERIFY(top->mapToGlobal(QPoint()).y() + top->height() <= middle->mapToGlobal(QPoint()).y());
-        QVERIFY(middle->mapToGlobal(QPoint()).y() + middle->height() <= bottom->mapToGlobal(QPoint()).y());
+        // At a small window size the board scrolls intact; its angled targets retain identity.
+        for (int i = 0; i < 9; ++i) QCOMPARE(board->cellAt(board->cellCenter(i)), i);
+        QVERIFY(board->grab().save(QCoreApplication::applicationDirPath()+"/army-board-custom.png"));
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
                                    "/custom-squad-members.png"));
         editor.findChild<QTabWidget *>("customDetailsTabs")->setCurrentIndex(1);

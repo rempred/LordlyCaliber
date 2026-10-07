@@ -226,6 +226,24 @@ int ArmyArtwork::classLane(const ClassAsset &asset) {
            : (u8(asset.appearance, 4) & 128)                ? 1
                                                             : 0;
 }
+QImage ArmyArtwork::boardImage(const Rom &rom) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Army board artwork currently requires US revision zero");
+    // Army loader at z64 8387C/83884. Retail key 01DF9F8C; renderer
+    // 83C5C loads the palette at +0 and the 96x64 CI8 plane at +300.
+    const auto key = resourceKey(u32(rom.bytes(), 0x8387c), u32(rom.bytes(), 0x83884));
+    const qsizetype at = resourceBase + key;
+    const auto stored = u32(rom.bytes(), at);
+    if (stored > 65536 || u32(rom.bytes(), at + 4) != 0x1b00)
+        throw Error("Army board artwork has unsupported dimensions");
+    const auto pack = Resource::load(rom, at, qsizetype(stored) + 4).decoded;
+    QImage result(96, 64, QImage::Format_ARGB32);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 96; ++x)
+            result.setPixelColor(x, y, color(u16(pack, u8(pack, 0x300 + y * 96 + x) * 2)));
+    return result;
+}
 int ArmyArtwork::classModel(const ClassAsset &asset) {
     return u8(asset.appearance, 4) & 63;
 }

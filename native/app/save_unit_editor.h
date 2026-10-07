@@ -7,6 +7,7 @@ class QListWidget;
 class QPushButton;
 class QSpinBox;
 namespace lordly {
+class FormationBoard;
 class SaveEditor;
 class SaveUnitEditor final : public QWidget {
   public:
@@ -22,6 +23,7 @@ class SaveUnitEditor final : public QWidget {
     void refreshSwapTargets();
     void refreshCreation(bool pending);
     QString memberName(int id) const;
+    FormationBoard *board_;
     SaveEditor *editor_;
     QListWidget *units_, *members_;
     QVector<QPushButton *> grid_;

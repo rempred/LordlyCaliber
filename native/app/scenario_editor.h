@@ -12,6 +12,7 @@ class QLabel;
 class QTableWidget;
 class QPushButton;
 namespace lordly {
+class FormationBoard;
 class ScenarioRouteEditor;
 class ScenarioWorldEditor;
 class ScenarioMapEditor;
@@ -30,6 +31,7 @@ class ScenarioEditor : public QWidget {
     void commit(const Scenarios &next, const QString &label);
     void change(const QString &label, const std::function<void(Scenarios &)> &edit);
     int key() const;
+    FormationBoard *board_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;

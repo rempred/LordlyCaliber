@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/scenario_editor.h"
+#include "app/formation_board.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include "app/scenario_world_editor.h"
@@ -186,21 +187,36 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
         connect(level, &QSpinBox::valueChanged, this, [this] { preview(); });
     }
     auto formationRow = new QHBoxLayout;
-    auto grid = new QGridLayout;
+    board_ = new FormationBoard(project_, "scenarioCell_", false, nullptr, 1);
     for (int i = 0; i < 9; ++i) {
         const int cell = 9 - i;
-        auto button = new QPushButton(QString::number(cell));
-        button->setObjectName(QString("scenarioCell_%1").arg(cell));
-        button->setMinimumSize(75, 48);
+        auto button = board_->cell(cell - 1);
         cells_ << button;
-        grid->addWidget(button, i / 3, i % 3);
         connect(button, &QPushButton::clicked, this, [this, cell] {
             const int cohort = std::max(0, cohorts_->currentRow());
             const int position = cohort ? std::clamp(cohorts_->currentColumn() - 4, 0, 2) : 0;
             selectValue(positions_[cohort * 3 + position], cell);
         });
     }
-    formationRow->addLayout(grid);
+    connect(board_, &FormationBoard::cellDragStarted, this, [this](int cell) {
+        for (int c = 0; c < 3; ++c)
+            for (int p = 0; p < (c ? 3 : 1); ++p)
+                if (positions_[c*3+p]->currentData().toInt() == cell+1) {
+                    cohorts_->setCurrentCell(c, p+4); return;
+                }
+    });
+    connect(board_, &FormationBoard::cellMoved, this, [this](int from, int to) {
+        for (int c = 0; c < 3; ++c)
+            for (int p = 0; p < (c ? 3 : 1); ++p) {
+                auto box = positions_[c*3+p];
+                const int value = box->currentData().toInt();
+                const QSignalBlocker block(box);
+                if (value == from+1) selectValue(box, to+1);
+                else if (value == to+1) selectValue(box, from+1);
+            }
+        preview();
+    });
+    formationRow->addWidget(board_);
     formation_ = new QLabel;
     formation_->setWordWrap(true);
     formationRow->addWidget(formation_, 1);
@@ -456,26 +472,31 @@ void ScenarioEditor::preview() {
         return;
     QStringList info;
     int count = 0;
+    board_->clearUnits();
     for (int i = 0; i < 9; ++i) {
         QStringList names;
+        int classId = -1;
         for (int c = 0; c < 3; ++c)
             for (int p = 0; p < (c ? 3 : 1); ++p)
                 if (positions_[c * 3 + p]->currentData().toInt() == 9 - i) {
                     names << QString(QChar('A' + c));
+                    classId = classes_[c]->currentData().toInt();
                     ++count;
                 }
         cells_[i]->setText(QString("%1\n%2").arg(9 - i).arg(names.join(" + ")));
-        cells_[i]->setStyleSheet(names.size() > 1 ? "background:#a53b35;color:white" : "");
+        if (!names.isEmpty())
+            board_->setUnit(8-i, classId, cells_[i]->text(), false, names.size()>1);
     }
     for (int c = 0; c < 3; ++c)
         info << QString("%1: level %2")
                     .arg(QChar('A' + c))
                     .arg(project_->scenarios()->scenario(key()).layout.baseLevel() +
                          levels_[c]->value());
-    formation_->setText(QString("Front row above · rear row below\n%1 members\n%2\nSelect a cohort "
-                                "position, then click a cell.")
+    formation_->setText(QString("Front row nearest you · rear row farther away\n%1 members\n%2\nSelect a cohort "
+                                "position, then click a cell; drag a unit to move or swap it.")
                             .arg(count)
                             .arg(info.join(" · ")));
+    board_->finishUpdate();
 }
 void ScenarioEditor::applySquad() {
     if (key() < 0 || editingRow_ < 0)

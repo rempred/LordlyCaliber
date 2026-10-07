@@ -12,6 +12,7 @@ class QLabel;
 class QPushButton;
 class QTableWidget;
 namespace lordly {
+class FormationBoard;
 class CustomSquadEditor : public QWidget {
   public:
     CustomSquadEditor(Project *project, QUndoStack *undo,
@@ -30,8 +31,8 @@ class CustomSquadEditor : public QWidget {
     void refreshEquipment(int member);
     void changeMemberCount();
     void moveMember(int member, int cell);
-    bool eventFilter(QObject *object, QEvent *event) override;
     CustomSquad collect() const;
+    FormationBoard *board_;
     Project *project_;
     std::function<void(const Encounters &, const QString &)> commit_;
     QListWidget *list_;
@@ -48,10 +49,7 @@ class CustomSquadEditor : public QWidget {
     QLabel *notice_, *formation_;
     QPushButton *copy_, *remove_, *restore_;
     QVector<int> positions_;
-    int draggedMember_ = -1;
     int shownCount_ = 2;
-    QLabel *dragImage_ = nullptr;
-    QPoint dragStart_;
     int editing_ = -1;
     bool loading_ = true;
 };

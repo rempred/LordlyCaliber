@@ -1,4 +1,5 @@
 #include "app/custom_squad_editor.h"
+#include "app/formation_board.h"
 #include "app/encounter_labels.h"
 #include "app/view_position.h"
 #include <QApplication>
@@ -174,36 +175,30 @@ CustomSquadEditor::CustomSquadEditor(
         });
     }
     auto hint = new QLabel(
-        "Drag a portrait to move a member or swap two members. You can also select a member and "
+        "Drag a unit to move a member or swap two members. You can also select a member and "
         "click an empty cell. Large members use two of five "
         "slots "
         "and need adjacent cells clear. Equipment choices follow the game's compatibility rules; "
         "the second choice takes precedence when both fit the same slot.");
     hint->setWordWrap(true);
     memberLayout->addWidget(hint);
-    auto grid = new QGridLayout;
-    grid->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    grid->setSizeConstraint(QLayout::SetFixedSize);
-    grid->addWidget(new QLabel("Rear"), 0, 0, 1, 3, Qt::AlignCenter);
+    board_ = new FormationBoard(project_, "customCell_");
     cells_.resize(9);
-    for (int row = 0; row < 3; ++row)
-        for (int column = 0; column < 3; ++column) {
-            const int cell = row * 3 + 2 - column;
-            auto button = new QPushButton;
-            button->setObjectName(QString("customCell_%1").arg(cell));
-            button->setFixedSize(76, 76);
-            button->setIconSize(QSize(60, 60));
-            button->installEventFilter(this);
-            button->setCheckable(true);
-            cells_[cell] = button;
-            grid->addWidget(button, row + 1, column);
-            connect(button, &QPushButton::clicked, this, [this, cell] {
-                const int member = qBound(0, members_->currentRow(), count_->value() - 1);
-                moveMember(member, cell);
-            });
-        }
-    grid->addWidget(new QLabel("Front · enemy squad"), 4, 0, 1, 3, Qt::AlignCenter);
-    memberLayout->addLayout(grid);
+    for (int cell = 0; cell < 9; ++cell) {
+        cells_[cell] = board_->cell(cell);
+        connect(cells_[cell], &QPushButton::clicked, this, [this, cell] {
+            moveMember(qBound(0, members_->currentRow(), count_->value() - 1), cell);
+        });
+    }
+    connect(board_, &FormationBoard::cellPressed, this, [this](int cell) {
+        for (int i = 0; i < count_->value(); ++i)
+            if (positions_[i] == cell) { members_->setCurrentCell(i, 0); break; }
+    });
+    connect(board_, &FormationBoard::cellMoved, this, [this](int from, int to) {
+        for (int i = 0; i < count_->value(); ++i)
+            if (positions_[i] == from) { moveMember(i, to); break; }
+    });
+    memberLayout->addWidget(board_, 0, Qt::AlignLeft);
     formation_ = new QLabel;
     formation_->setObjectName("customFormationNotice");
     formation_->setWordWrap(true);
@@ -651,67 +646,6 @@ void CustomSquadEditor::changeMemberCount() {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
-bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
-    auto button = qobject_cast<QPushButton *>(object);
-    if (!button || !cells_.contains(button))
-        return QWidget::eventFilter(object, event);
-    if (event->type() == QEvent::MouseButtonPress) {
-        auto mouse = static_cast<QMouseEvent *>(event);
-        if (mouse->button() != Qt::LeftButton)
-            return false;
-        draggedMember_ = -1;
-        const int cell = cells_.indexOf(button);
-        for (int i = 0; i < count_->value(); ++i)
-            if (positions_[i] == cell) {
-                draggedMember_ = i;
-                members_->setCurrentCell(i, 0);
-                break;
-            }
-        dragStart_ = mouse->globalPosition().toPoint();
-        return true;
-    }
-    if (event->type() == QEvent::MouseMove && draggedMember_ >= 0) {
-        auto mouse = static_cast<QMouseEvent *>(event);
-        const auto position = mouse->globalPosition().toPoint();
-        if (!(mouse->buttons() & Qt::LeftButton)) return false;
-        if (!dragImage_ && (position - dragStart_).manhattanLength() >= QApplication::startDragDistance()) {
-            dragImage_ = new QLabel(this);
-            dragImage_->setObjectName("customDragPortrait");
-            dragImage_->setAttribute(Qt::WA_TransparentForMouseEvents);
-            dragImage_->setPixmap(button->icon().pixmap(button->iconSize()));
-            dragImage_->resize(button->iconSize());
-            dragImage_->show();
-            dragImage_->raise();
-        }
-        if (dragImage_) {
-            dragImage_->move(mapFromGlobal(position) - QPoint(30, 30));
-            for (auto target : cells_)
-                target->setStyleSheet(target->rect().contains(target->mapFromGlobal(position))
-                                         ? "border: 2px solid #982018;" : QString());
-        }
-        return true;
-    }
-    if (event->type() == QEvent::MouseButtonRelease) {
-        auto mouse = static_cast<QMouseEvent *>(event);
-        if (mouse->button() != Qt::LeftButton)
-            return false;
-        const auto position = mouse->globalPosition().toPoint();
-        delete dragImage_; dragImage_ = nullptr;
-        for (auto target : cells_) target->setStyleSheet({});
-        for (int cell = 0; cell < cells_.size(); ++cell)
-            if (cells_[cell]->rect().contains(cells_[cell]->mapFromGlobal(position))) {
-                if (draggedMember_ >= 0 &&
-                    (position - dragStart_).manhattanLength() >= QApplication::startDragDistance())
-                    moveMember(draggedMember_, cell);
-                else if (draggedMember_ < 0)
-                    moveMember(qBound(0, members_->currentRow(), count_->value() - 1), cell);
-                break;
-            }
-        draggedMember_ = -1;
-        return true;
-    }
-    return QWidget::eventFilter(object, event);
-}
 void CustomSquadEditor::preview() {
     if (loading_)
         return;
@@ -730,27 +664,17 @@ void CustomSquadEditor::preview() {
     for (int i = 0; i < 3; ++i)
         odds_[i]->setText(
             total ? QString::number(100.0 * weights_[i]->value() / total, 'f', 1) + "%" : "—");
-    for (auto cell : cells_) {
-        cell->setIcon({});
-        cell->setText("Empty");
-        cell->setChecked(false);
-        cell->setToolTip({});
-    }
+    board_->clearUnits();
     try {
         const auto s = collect();
-        project_->loadAvatarArtwork();
-        const auto classData = project_->classData();
         int cost = 0;
         for (int i = 0; i < s.members.size(); ++i) {
             const auto &m = s.members[i];
-            auto cell = cells_[m.cell];
             const auto name =
                 QString(project_->record(Table::Classes, m.classId).name).replace('\n', ' ');
-            cell->setText({});
-            const auto avatar = project_->avatarArtwork()->image(classData, m.classId, 0);
-            cell->setIcon(QPixmap::fromImage(avatar));
-            cell->setToolTip(QString("%1 · %2%3").arg(i + 1).arg(name).arg(i ? "" : " (Leader)"));
-            cell->setChecked(members_->currentRow() == i);
+            board_->setUnit(m.cell, m.classId,
+                            QString("%1 · %2%3").arg(i + 1).arg(name).arg(i ? "" : " (Leader)"),
+                            members_->currentRow() == i);
             cost += u8(project_->record(Table::Classes, m.classId).bytes, 4) == 2 ? 2 : 1;
         }
         for (int i = 0; i < s.members.size(); ++i) {
@@ -758,20 +682,21 @@ void CustomSquadEditor::preview() {
             if (u8(project_->record(Table::Classes, m.classId).bytes, 4) != 2)
                 continue;
             for (int cell = 0; cell < 9; ++cell)
-                if (cells_[cell]->text() == "Empty" && std::abs(cell / 3 - m.cell / 3) <= 1 &&
+                if (cells_[cell]->icon().isNull() && std::abs(cell / 3 - m.cell / 3) <= 1 &&
                     std::abs(cell % 3 - m.cell % 3) <= 1)
-                    cells_[cell]->setText(QString("Keep\nclear"));
+                    board_->setCellHint(cell, "Keep clear for the adjacent large member");
         }
         CustomSquads check;
         check.set(s, int(project_->records(Table::Classes).size()));
         check.validateFormations(project_->classData());
         formation_->setText(
-            QString("%1 of 5 formation slots used. Front row is at the bottom.").arg(cost));
+            QString("%1 of 5 formation slots used. Front row is nearest you on the board.").arg(cost));
         if (editing_ < 0 ||
             project_->encounters()->customSquads().profiles().value(editing_).json() != s.json())
             notice_->setText("Unapplied changes — Apply squad updates the project.");
     } catch (const std::exception &e) {
         formation_->setText(QString::fromUtf8(e.what()));
     }
+    board_->finishUpdate();
 }
 } // namespace lordly

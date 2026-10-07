@@ -19,6 +19,7 @@ class ArmyArtwork {
     static constexpr quint32 resourceBase = 0x594280;
     static const std::array<ArmyAtlasSpec, 6> &specs();
     static ArmyArtwork load(const Rom &);
+    static QImage boardImage(const Rom &);
     static QByteArray canonicalOwner(QByteArray, qsizetype romStart);
     static void validateRelocations(const Rom &);
     static int classLane(const ClassAsset &);

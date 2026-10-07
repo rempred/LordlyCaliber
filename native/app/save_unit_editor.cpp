@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/save_unit_editor.h"
+#include "app/formation_board.h"
 #include "app/save_editor.h"
 #include <QComboBox>
 #include <QFormLayout>
@@ -114,30 +115,29 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
                                       members_->currentRow());
     });
     auto help =
-        new QLabel("Select a member, then choose a formation cell. Occupied cells swap members.");
+        new QLabel("Drag a unit, or select a member and choose a formation cell. Occupied cells swap members.");
     help->setWordWrap(true);
     body->addWidget(help);
-    auto grid = new QGridLayout;
-    for (int display = 0; display < 9; ++display) {
-        const int cell = 8 - display;
-        auto button = new QPushButton;
-        button->setObjectName(QString("saveUnitCell%1").arg(cell));
-        button->setMinimumSize(100, 68);
-        grid->addWidget(button, display / 3, display % 3);
-        grid_.prepend(button);
+    board_ = new FormationBoard(editor_->project(), "saveUnitCell", true);
+    for (int cell = 0; cell < 9; ++cell) {
+        auto button = board_->cell(cell);
+        grid_.append(button);
         connect(button, &QPushButton::clicked, this, [this, cell] {
             const int member = members_->currentRow();
-            if (loading_ || member < 0 || member >= ids_.size() || !ids_[member])
-                return;
+            if (loading_ || member < 0 || member >= ids_.size() || !ids_[member]) return;
             const int from = cells_[member];
             for (int i = 0; i < ids_.size(); ++i)
-                if (i != member && ids_[i] && cells_[i] == cell)
-                    cells_[i] = from;
+                if (i != member && ids_[i] && cells_[i] == cell) cells_[i] = from;
             cells_[member] = cell;
             drawFormation();
         });
     }
-    body->addLayout(grid);
+    connect(board_, &FormationBoard::cellDragStarted, this, [this](int cell) {
+        for (int i = 0; i < ids_.size(); ++i)
+            if (ids_[i] && cells_[i] == cell) {members_->setCurrentRow(i);break;}
+    });
+    connect(board_, &FormationBoard::cellMoved, this, [this](int, int to) {grid_[to]->click();});
+    body->addWidget(board_, 0, Qt::AlignLeft);
     auto form = new QFormLayout;
     unity_ = new QSpinBox;
     unity_->setObjectName("saveUnitUnity");
@@ -284,7 +284,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
 }
 void SaveUnitEditor::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
-    refreshSwapTargets(); // Project metadata/capacity may have changed in another workspace.
+    drawFormation(); // Refresh current project artwork and capacity after another workspace.
 }
 QString SaveUnitEditor::memberName(int id) const {
     if (!id)
@@ -370,18 +370,23 @@ void SaveUnitEditor::showUnit() {
 void SaveUnitEditor::drawFormation() {
     if (loading_)
         return;
+    board_->clearUnits();
     for (int cell = 0; cell < 9; ++cell) {
         QStringList names;
+        int classId = 0;
         bool selected = false;
         for (int member = 0; member < ids_.size(); ++member)
             if (ids_[member] && cells_[member] == cell) {
                 names << memberName(ids_[member]) + (member == 0 ? " · Leader" : "");
                 selected |= members_->currentRow() == member;
+                if (ids_[member] < 100)
+                    classId = editor_->document()->value(SaveTable::Characters, ids_[member], "class").toInt();
             }
         grid_[cell]->setText(QString("%1\n%2").arg(cell + 1).arg(names.join(" + ")));
-        grid_[cell]->setStyleSheet(selected ? "background:#7a5120;color:#fff2d1" : "");
+        if (!names.isEmpty()) board_->setUnit(cell, classId, grid_[cell]->text(), selected, names.size()>1);
         grid_[cell]->setEnabled(apply_->isEnabled());
     }
+    board_->finishUpdate();
     refreshSwapTargets();
 }
 void SaveUnitEditor::refreshSwapTargets() {
