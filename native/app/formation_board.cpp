@@ -41,16 +41,13 @@ FormationBoard::FormationBoard(Project *project, const QString &prefix, bool pla
 }
 QPointF FormationBoard::origin() const { return {16, 80}; }
 QPointF FormationBoard::foot(int cell) const {
-    const int display = playerFormation_ ? 8 - cell : cell;
-    // Native Army sprite spacing: a column is (-19,+6), a row (+10,+15).
-    // Keep enemies' front (6..8) near the viewer; player saves face the other way.
-    return origin() + QPointF(52 - 19 * (display % 3) + 10 * (display / 3),
-                              10 + 6 * (display % 3) + 15 * (display / 3)) * zoom;
+    // Keep the accepted front-row foot offset on every tile. A separate native
+    // sprite-grid projection left middle/rear units above this board's tile tops.
+    return QPointF(cellCenter(cell)) + QPointF(-zoom, zoom);
 }
 QPolygonF FormationBoard::cellPolygon(int id) const {
     const auto center = QPointF(cellCenter(id));
-    // Tile tops are shallower than the native sprite spacing: exclude the
-    // beveled risers and transparent corners from both highlights and drops.
+    // Exclude the beveled risers and transparent corners from highlights and drops.
     return {center + QPointF(-13, -2) * zoom, center + QPointF(4, -8) * zoom,
             center + QPointF(13, 2) * zoom, center + QPointF(-4, 8) * zoom};
 }
