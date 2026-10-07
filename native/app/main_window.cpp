@@ -326,7 +326,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     auto selected = std::make_shared<int>(-1);
     QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr, *newItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
-        addClass = new QPushButton("Add class from selected…");
+        addClass = new QPushButton("Copy Class");
         addClass->setObjectName("addClass");
         newClass = new QPushButton("New class…");
         newClass->setObjectName("newClass");

@@ -1,4 +1,5 @@
 #include "engine/encounters.h"
+#include "engine/custom_runtime.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -21,8 +22,39 @@ void Encounters::verifyReader(const Rom &rom) {
     EncounterRate::load(rom);
 }
 QStringList Encounters::terrainNames() {
-    return {"Plains / Roads", "Plains",       "Barrens",       "Forests",       "Marshes",
-            "Highlands",      "Snowy Plains", "Snowy Barrens", "Snowy Forests", "Snowy Highlands"};
+    QStringList names;
+    for (int slot = 0; slot < slotCount; ++slot) names << QString("Pool %1").arg(slot + 1);
+    return names;
+}
+QString Encounters::mapTerrainName(int terrain) {
+    static const QStringList names{
+        "Unclassified", "Highway", "Bridge", "Plain", "Barrens", "Forest", "Marsh",
+        "Highlands", "River", "Snowy Highway", "Snowy Bridge", "Snowy Plain", "Snowy Barrens",
+        "Snowy Forest", "Snowy Highlands", "Stronghold", "Castle Wall", "Castle Gate",
+        "Castle Gate", "Castle", "Within Castle Wall", "Within Castle Wall", "Within Castle Wall",
+        "Bridge", "Malefic Woods", "Generator", "Building", "Before Castle Gate"};
+    return names.value(terrain, "Unclassified");
+}
+QString Encounters::poolSlotLabel(int slot) const {
+    QStringList terrain;
+    for (int t = 0; t < terrainCount; ++t)
+        if (lookup(t) == slot + 1) terrain << mapTerrainName(t) + QString(" [%1]").arg(t);
+    return QString("Pool %1 — %2").arg(slot + 1).arg(terrain.isEmpty() ? "Unassigned" : terrain.join(", "));
+}
+int Encounters::addPool() {
+    const int count = slotsPerPool();
+    if (count >= terrainCount) throw Error("All 32 encounter pools already exist");
+    QByteArray next;
+    for (int pool = 0; pool < poolCount; ++pool)
+        next += pools_.mid(pool * count * 2, count * 2) + QByteArray(2, 0);
+    pools_ = next;
+    return count;
+}
+QByteArray Encounters::retailPoolBytes() const {
+    QByteArray result;
+    for (int pool = 0; pool < poolCount; ++pool)
+        result += pools_.mid(pool * slotsPerPool() * 2, slotCount * 2);
+    return result;
 }
 Encounters Encounters::load(const Rom &rom, int classCount) {
     Encounters result;
@@ -31,6 +63,8 @@ Encounters Encounters::load(const Rom &rom, int classCount) {
     result.scenarioRates_ = ScenarioRates::load(rom);
     result.customSquads_ = CustomSquads::load(rom, classCount);
     result.pools_ = rom.bytes().mid(poolOffset, poolCount * slotCount * 2);
+    if (const auto placement = CustomPlacement::read(rom); placement && placement->slotCount > 10)
+        result.pools_ = rom.bytes().mid(placement->pairsOffset(), poolCount * placement->slotCount * 2);
     result.rates_ = rom.bytes().mid(rateOffset, terrainCount);
     result.slots_ = rom.bytes().mid(slotOffset, terrainCount);
     // Validate every reference without changing any source data.
@@ -52,10 +86,10 @@ Encounters Encounters::load(const Rom &rom, int classCount) {
     }
     return result;
 }
-int Encounters::pairOffset(int pool, int slot) {
-    if (pool < 1 || pool > poolCount || slot < 0 || slot >= slotCount)
+int Encounters::pairOffset(int pool, int slot) const {
+    if (pool < 1 || pool > poolCount || slot < 0 || slot >= slotsPerPool())
         throw Error("Encounter pool or terrain slot is outside the table");
-    return (pool - 1) * slotCount * 2 + slot * 2;
+    return (pool - 1) * slotsPerPool() * 2 + slot * 2;
 }
 void Encounters::terrainIndex(int terrain) {
     if (terrain < 0 || terrain >= terrainCount)
@@ -85,7 +119,7 @@ QString Encounters::label(int pool) const {
         if (!names.contains(name))
             names << name;
     }
-    return QString("Pool %1%2")
+    return QString("Scenario group %1%2")
         .arg(pool)
         .arg(names.isEmpty() ? QString() : " · " + names.join(" / "));
 }
@@ -99,8 +133,8 @@ void Encounters::setPair(int pool, int slot, int first, int second, int classCou
 }
 void Encounters::setTerrain(int terrain, int value, int slot) {
     terrainIndex(terrain);
-    if (value < 0 || value > 100 || slot < 0 || slot > slotCount)
-        throw Error("Terrain chance must be 0–100 and its pool slot must be disabled or 1–10");
+    if (value < 0 || value > 100 || slot < 0 || slot > slotsPerPool())
+        throw Error("Terrain chance must be 0–100 and its pool slot must be disabled or an existing pool");
     if (slot == 0 && value != 0)
         throw Error("A disabled terrain slot must have zero chance; the original selector does "
                     "not guard a zero slot after a successful rate roll");
@@ -116,7 +150,8 @@ int Encounters::changedRows() const {
     int count = (globalRate_.modified() ? 1 : 0) + rewards_.changedRows() +
                 scenarioRates_.changedRows() + customSquads_.changedRows();
     for (int p = 0; p < poolCount; ++p)
-        if (pools_.mid(p * 20, 20) != originalPools_.mid(p * 20, 20))
+        if (pools_.mid(p * slotsPerPool() * 2, slotsPerPool() * 2) !=
+            originalPools_.mid(p * (originalPools_.size() / poolCount), originalPools_.size() / poolCount))
             ++count;
     for (int t = 0; t < terrainCount; ++t)
         if (rates_[t] != originalRates_[t] || slots_[t] != originalSlots_[t])
@@ -127,15 +162,16 @@ QJsonObject Encounters::json() const {
     QJsonArray pools, rates, slotValues;
     for (int p = 0; p < poolCount; ++p) {
         QJsonArray row;
-        for (int b = 0; b < 20; ++b)
-            row << u8(pools_, p * 20 + b);
+        for (int b = 0; b < slotsPerPool() * 2; ++b)
+            row << u8(pools_, p * slotsPerPool() * 2 + b);
         pools << row;
     }
     for (int t = 0; t < terrainCount; ++t) {
         rates << rate(t);
         slotValues << lookup(t);
     }
-    return {{"version", 1},
+    return {{"version", slotsPerPool() == 10 ? 1 : 2},
+            {"slotCount", slotsPerPool()},
             {"pools", pools},
             {"terrainRates", rates},
             {"terrainSlots", slotValues},
@@ -145,13 +181,17 @@ QJsonObject Encounters::json() const {
             {"customSquads", customSquads_.json()}};
 }
 void Encounters::apply(const QJsonObject &object, int classCount) {
-    if (object["version"] != 1 || !object["pools"].isArray() ||
+    if ((object["version"] != 1 && object["version"] != 2) || !object["pools"].isArray() ||
         object["pools"].toArray().size() != poolCount || !object["terrainRates"].isArray() ||
         object["terrainRates"].toArray().size() != terrainCount ||
         !object["terrainSlots"].isArray() ||
         object["terrainSlots"].toArray().size() != terrainCount)
         throw Error("Encounter project requires 45 pools and 32 terrain entries");
     auto next = *this;
+    const int count = object["slotCount"].toInt(10);
+    if (count < 10 || count > 32 || (object["version"] == 1 && count != 10))
+        throw Error("Encounter pools require 10–32 slots");
+    next.pools_ = QByteArray(poolCount * count * 2, 0);
     if (object.contains("customSquads")) {
         if (!object["customSquads"].isObject())
             throw Error("Invalid saved custom squads");
@@ -175,15 +215,17 @@ void Encounters::apply(const QJsonObject &object, int classCount) {
     const auto pools = object["pools"].toArray(), rates = object["terrainRates"].toArray(),
                slotValues = object["terrainSlots"].toArray();
     for (int p = 0; p < poolCount; ++p) {
-        if (!pools[p].isArray() || pools[p].toArray().size() != 20)
-            throw Error("Each encounter pool requires ten class pairs");
+        if (!pools[p].isArray() || pools[p].toArray().size() != count * 2)
+            throw Error("Each scenario group requires a pair for every pool");
         const auto row = pools[p].toArray();
-        for (int s = 0; s < slotCount; ++s)
+        for (int s = 0; s < count; ++s)
             next.setPair(p + 1, s, number(row[s * 2], 255), number(row[s * 2 + 1], 255),
                          classCount);
     }
     for (int t = 0; t < terrainCount; ++t)
-        next.setTerrain(t, number(rates[t], 100), number(slotValues[t], slotCount));
+        next.setTerrain(t, number(rates[t], 100), number(slotValues[t], count));
+    for (const auto &profile : next.customSquads_.profiles())
+        if (profile.terrainSlot >= count) throw Error("Custom squad refers to a missing encounter pool");
     *this = std::move(next);
 }
 void Encounters::importLegacy(const QJsonObject &object, int classCount) {

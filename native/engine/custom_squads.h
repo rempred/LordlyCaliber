@@ -36,7 +36,7 @@ class CustomSquads {
     void apply(const QJsonObject &value, int classCount);
     void importLegacy(const QJsonObject &value, int classCount);
     void validateFormations(const ClassData &classes) const;
-    QByteArray bytes(quint32 offset) const;
+    QByteArray bytes(quint32 offset, int poolSlots = 10) const;
     int changedRows() const;
     bool modified() const {
         return json() != original_;

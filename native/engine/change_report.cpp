@@ -274,9 +274,9 @@ ChangeReport Project::changeReport() const {
         const auto original = Encounters::load(rom_, int(records(Table::Classes).size()));
         for (int p = 1; p <= Encounters::poolCount; ++p) {
             QStringList lines;
-            for (int slot = 0; slot < Encounters::slotCount; ++slot)
+            for (int slot = 0; slot < encounters_->slotsPerPool(); ++slot)
                 for (int side = 0; side < 2; ++side) {
-                    const int a = original.classAt(p, slot, side),
+                    const int a = (slot < original.slotsPerPool() ? original.classAt(p, slot, side) : 0),
                               b = encounters_->classAt(p, slot, side);
                     if (a != b)
                         lines << transition(
@@ -293,7 +293,7 @@ ChangeReport Project::changeReport() const {
                 lines << transition("Pool slot", number(original.lookup(t)),
                                     number(encounters_->lookup(t)));
             add("Neutral encounters",
-                Encounters::terrainNames().value(t, QString("Terrain %1").arg(t)), lines);
+                Encounters::mapTerrainName(t), lines);
         }
         const auto a = original.json(), b = encounters_->json();
         for (const auto &key : {"globalRate", "rewards", "scenarioRates", "customSquads"}) {

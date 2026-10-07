@@ -14,6 +14,9 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QScrollArea>
+#include <QStandardItemModel>
+#include <QSet>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTabWidget>
@@ -94,12 +97,11 @@ CustomSquadEditor::CustomSquadEditor(
     for (int key = 0; key < 256; ++key)
         scenario_->addItem(
             QString("%1 · %2").arg(key).arg(project_->encounters()->scenarioLabel(key)), key);
-    const auto terrains = Encounters::terrainNames();
-    for (int i = 0; i < terrains.size(); ++i)
-        terrain_->addItem(terrains[i], i);
+    for (int i = 0; i < project_->encounters()->slotsPerPool(); ++i)
+        terrain_->addItem(project_->encounters()->poolSlotLabel(i), i);
     identity->addWidget(new QLabel("Scenario"), 0, 0);
     identity->addWidget(scenario_, 0, 1);
-    identity->addWidget(new QLabel("Terrain slot"), 0, 2);
+    identity->addWidget(new QLabel("Encounter pool"), 0, 2);
     identity->addWidget(terrain_, 0, 3);
     label_ = new QLineEdit;
     label_->setObjectName("customLabel");
@@ -162,6 +164,7 @@ CustomSquadEditor::CustomSquadEditor(
         connect(cl, &QComboBox::currentIndexChanged, this, [this, i] {
             if (!loading_)
                 members_->setCurrentCell(i, 0);
+            if (!loading_) refreshEquipment(i);
             preview();
         });
         connect(level, &QSpinBox::valueChanged, this, [this, i] {
@@ -179,7 +182,8 @@ CustomSquadEditor::CustomSquadEditor(
     hint->setWordWrap(true);
     memberLayout->addWidget(hint);
     auto grid = new QGridLayout;
-    grid->setAlignment(Qt::AlignLeft);
+    grid->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    grid->setSizeConstraint(QLayout::SetFixedSize);
     grid->addWidget(new QLabel("Rear"), 0, 0, 1, 3, Qt::AlignCenter);
     cells_.resize(9);
     for (int row = 0; row < 3; ++row)
@@ -215,7 +219,12 @@ CustomSquadEditor::CustomSquadEditor(
     levels->setWordWrap(true);
     memberLayout->addWidget(levels);
     memberLayout->addStretch();
-    tabs->addTab(memberPage, "Members and formation");
+    auto memberScroll = new QScrollArea;
+    memberScroll->setWidgetResizable(true);
+    memberScroll->setFrameShape(QFrame::NoFrame);
+    memberLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    memberScroll->setWidget(memberPage);
+    tabs->addTab(memberScroll, "Members and formation");
     auto behavior = new QWidget;
     auto behaviorLayout = new QVBoxLayout(behavior);
     auto form = new QFormLayout;
@@ -295,7 +304,12 @@ CustomSquadEditor::CustomSquadEditor(
     rewardHint->setWordWrap(true);
     behaviorLayout->addWidget(rewardHint);
     behaviorLayout->addStretch();
-    tabs->addTab(behavior, "Battle and rewards");
+    auto behaviorScroll = new QScrollArea;
+    behaviorScroll->setWidgetResizable(true);
+    behaviorScroll->setFrameShape(QFrame::NoFrame);
+    behaviorLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    behaviorScroll->setWidget(behavior);
+    tabs->addTab(behaviorScroll, "Battle and rewards");
     auto buttons = new QHBoxLayout;
     auto applyButton = new QPushButton("Apply squad");
     applyButton->setObjectName("customApply");
@@ -321,7 +335,7 @@ CustomSquadEditor::CustomSquadEditor(
     connect(restore_, &QPushButton::clicked, this, [this] { remove(true); });
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
     connect(list_, &QListWidget::currentRowChanged, this, [this] { showSelected(); });
-    connect(count_, &QSpinBox::valueChanged, this, [this] { preview(); });
+    connect(count_, &QSpinBox::valueChanged, this, [this] { changeMemberCount(); });
     connect(label_, &QLineEdit::textChanged, this, [this] { preview(); });
     connect(scenario_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
     connect(terrain_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
@@ -336,6 +350,12 @@ CustomSquadEditor::CustomSquadEditor(
 }
 void CustomSquadEditor::refresh() {
     const ViewPosition keepView(this);
+    const QSignalBlocker terrainBlock(terrain_);
+    const int terrain = terrain_->currentData().toInt();
+    terrain_->clear();
+    for (int i = 0; i < project_->encounters()->slotsPerPool(); ++i)
+        terrain_->addItem(project_->encounters()->poolSlotLabel(i), i);
+    terrain_->setCurrentIndex(qMax(0, terrain_->findData(terrain)));
     loading_ = true;
     QSignalBlocker block(list_);
     list_->clear();
@@ -349,7 +369,7 @@ void CustomSquadEditor::refresh() {
                                     .arg(s.scenarioKey)
                                     .arg(encounterSquadName(*project_, it.key()))
                                     .arg(project_->encounters()->scenarioLabel(s.scenarioKey))
-                                    .arg(Encounters::terrainNames()[s.terrainSlot]),
+                                    .arg(project_->encounters()->poolSlotLabel(s.terrainSlot)),
                                 list_);
         item->setData(Qt::UserRole, it.key());
         item->setToolTip(item->text());
@@ -424,15 +444,22 @@ void CustomSquadEditor::display(const CustomSquad &s) {
     label_->setText(s.label);
     enabled_->setChecked(s.enabled);
     count_->setValue(int(s.members.size()));
+    shownCount_ = count_->value();
     for (int i = 0; i < 5; ++i) {
         const auto member =
             i < s.members.size() ? s.members[i] : CustomMember{5, 0, 8 - i * 2, {0, 0}};
         classes_[i]->setCurrentIndex(classes_[i]->findData(member.classId));
         levels_[i]->setValue(member.levelOffset);
         positions_[i] = member.cell;
-        for (int e = 0; e < 2; ++e)
-            equipment_[i * 2 + e]->setCurrentIndex(
-                equipment_[i * 2 + e]->findData(member.equipment[e]));
+        refreshEquipment(i);
+        for (int e = 0; e < 2; ++e) {
+            auto box = equipment_[i * 2 + e];
+            if (box->findData(member.equipment[e]) < 0) {
+                box->addItem(QString("%1 · existing incompatible choice").arg(member.equipment[e]), member.equipment[e]);
+                qobject_cast<QStandardItemModel *>(box->model())->item(box->count() - 1)->setEnabled(false);
+            }
+            box->setCurrentIndex(box->findData(member.equipment[e]));
+        }
     }
     persuasion_->setCurrentIndex(persuasion_->findData(s.fixedPersuasion ? 1 : 0));
     chance_->setValue(s.chance);
@@ -479,17 +506,17 @@ void CustomSquadEditor::newDraft(bool copy) {
         const auto &profiles = project_->encounters()->customSquads().profiles();
         const int start = CustomSquads::key(s.scenarioKey, s.terrainSlot);
         int free = -1;
-        for (int i = 0; i < 2560; ++i) {
-            const int key = (start + i) % 2560;
-            if (!profiles.contains(key)) {
+        for (int i = 0; i < 8192; ++i) {
+            const int key = (start + i) % 8192;
+            if (key % 32 < project_->encounters()->slotsPerPool() && !profiles.contains(key)) {
                 free = key;
                 break;
             }
         }
         if (free < 0)
             throw Error("Every scenario and terrain slot already has a squad");
-        s.scenarioKey = free / 10;
-        s.terrainSlot = free % 10;
+        s.scenarioKey = free / 32;
+        s.terrainSlot = free % 32;
         editing_ = -1;
         QSignalBlocker block(list_);
         list_->setCurrentRow(-1);
@@ -512,7 +539,7 @@ void CustomSquadEditor::apply() {
         if (key != editing_ && next.customSquads().profiles().contains(key))
             throw Error("That scenario and terrain slot already has a squad");
         if (editing_ >= 0 && key != editing_)
-            next.removeCustomSquad(editing_ / 10, editing_ % 10);
+            next.removeCustomSquad(editing_ / 32, editing_ % 32);
         next.setCustomSquad(row, int(project_->records(Table::Classes).size()));
         next.customSquads().validateFormations(project_->classData());
         editing_ = key;
@@ -529,7 +556,7 @@ void CustomSquadEditor::remove(bool restore) {
     try {
         auto next = *project_->encounters();
         const int key = editing_;
-        next.removeCustomSquad(key / 10, key % 10);
+        next.removeCustomSquad(key / 32, key % 32);
         if (restore) {
             const auto original =
                 CustomSquads::load(project_->rom(), int(project_->records(Table::Classes).size()));
@@ -563,6 +590,67 @@ void CustomSquadEditor::moveMember(int member, int cell) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
+void CustomSquadEditor::refreshEquipment(int member) {
+    const int cl = classes_[member]->currentData().toInt();
+    if (cl < 2 || cl >= project_->records(Table::Classes).size()) return;
+    const int copy = u8(project_->record(Table::Classes, cl).bytes, 69);
+    const int effective = copy ? copy : cl;
+    QSet<int> types;
+    if (effective < project_->records(Table::Classes).size()) {
+        const auto row = project_->record(Table::Classes, effective).bytes;
+        for (int slot = 0; slot < 4; ++slot) {
+            const int id = u16(row, 46 + slot * 2);
+            if (id > 0 && id < project_->records(Table::Items).size())
+                types.insert(u8(project_->record(Table::Items, id).bytes, 4));
+        }
+    }
+    for (int side = 0; side < 2; ++side) {
+        auto box = equipment_[member * 2 + side];
+        const int previous = box->currentData().toInt();
+        const QSignalBlocker block(box);
+        box->clear();
+        box->addItem("None — keep class default", 0);
+        for (const auto &item : project_->records(Table::Items))
+            if (item.id && types.contains(u8(item.bytes, 4)))
+                box->addItem(QString("%1 · %2").arg(item.id).arg(item.name), item.id);
+        if (previous && box->findData(previous) < 0) {
+            box->addItem(QString("%1 · existing incompatible choice (not applied by game)").arg(previous), previous);
+            qobject_cast<QStandardItemModel *>(box->model())->item(box->count() - 1)->setEnabled(false);
+        }
+        box->setCurrentIndex(qMax(0, box->findData(previous)));
+    }
+}
+void CustomSquadEditor::changeMemberCount() {
+    if (loading_) return;
+    const auto before = positions_;
+    const int requested = count_->value();
+    try {
+        for (int member = shownCount_; member < requested; ++member) {
+            bool placed = false;
+            for (int cell = 8; cell >= 0; --cell) {
+                positions_[member] = cell;
+                auto squad = collect();
+                squad.members.resize(member + 1);
+                try {
+                    CustomSquads check;
+                    check.set(squad, int(project_->records(Table::Classes).size()));
+                    check.validateFormations(project_->classData());
+                    placed = true;
+                    break;
+                } catch (const Error &) {}
+            }
+            if (!placed) throw Error("No valid free formation cell. Move members or use fewer large classes first.");
+        }
+        shownCount_ = requested;
+        preview();
+    } catch (const Error &e) {
+        positions_ = before;
+        const QSignalBlocker block(count_);
+        count_->setValue(shownCount_);
+        preview();
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
 bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
     auto button = qobject_cast<QPushButton *>(object);
     if (!button || !cells_.contains(button))
@@ -582,11 +670,34 @@ bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
         dragStart_ = mouse->globalPosition().toPoint();
         return true;
     }
+    if (event->type() == QEvent::MouseMove && draggedMember_ >= 0) {
+        auto mouse = static_cast<QMouseEvent *>(event);
+        const auto position = mouse->globalPosition().toPoint();
+        if (!(mouse->buttons() & Qt::LeftButton)) return false;
+        if (!dragImage_ && (position - dragStart_).manhattanLength() >= QApplication::startDragDistance()) {
+            dragImage_ = new QLabel(this);
+            dragImage_->setObjectName("customDragPortrait");
+            dragImage_->setAttribute(Qt::WA_TransparentForMouseEvents);
+            dragImage_->setPixmap(button->icon().pixmap(button->iconSize()));
+            dragImage_->resize(button->iconSize());
+            dragImage_->show();
+            dragImage_->raise();
+        }
+        if (dragImage_) {
+            dragImage_->move(mapFromGlobal(position) - QPoint(30, 30));
+            for (auto target : cells_)
+                target->setStyleSheet(target->rect().contains(target->mapFromGlobal(position))
+                                         ? "border: 2px solid #73c9ec;" : QString());
+        }
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonRelease) {
         auto mouse = static_cast<QMouseEvent *>(event);
         if (mouse->button() != Qt::LeftButton)
             return false;
         const auto position = mouse->globalPosition().toPoint();
+        delete dragImage_; dragImage_ = nullptr;
+        for (auto target : cells_) target->setStyleSheet({});
         for (int cell = 0; cell < cells_.size(); ++cell)
             if (cells_[cell]->rect().contains(cells_[cell]->mapFromGlobal(position))) {
                 if (draggedMember_ >= 0 &&

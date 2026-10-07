@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/shop_editor.h"
+#include "app/item_picker.h"
 #include <QButtonGroup>
 #include <QComboBox>
 #include <QCompleter>
@@ -366,99 +367,9 @@ QStringList ShopEditor::locations(int id) const {
     return names.isEmpty() ? QStringList{"Unassigned"} : names;
 }
 QVector<quint16> ShopEditor::chooseItems(bool equipment) {
-    QDialog dialog(this);
-    dialog.setObjectName("shopItemPicker");
-    dialog.setWindowTitle(equipment ? "Add equipment to shop" : "Add consumables to shop");
-    dialog.resize(780, 720);
-    auto layout = new QVBoxLayout(&dialog);
-    auto search = new QLineEdit;
-    search->setObjectName("shopItemSearch");
-    search->setPlaceholderText("Find an item by name or ID…");
-    layout->addWidget(search);
-    auto types = new QButtonGroup(&dialog);
-    types->setExclusive(true);
-    auto filters = new QGridLayout;
-    const auto records = project_->records(equipment ? Table::Items : Table::Consumables);
-    QMap<int, int> representatives;
-    for (const auto &record : records)
-        if (record.id &&
-            !representatives.contains(equipment ? u8(record.bytes, 4) : u16(record.bytes, 4)))
-            representatives[equipment ? u8(record.bytes, 4) : u16(record.bytes, 4)] = record.id;
-    const auto names = project_->catalog()["EQUIP_TYPES"].toObject();
-    int buttonIndex = 0;
-    auto typeButton = [&](int type, const QString &label, int example) {
-        auto button = new QPushButton(label);
-        button->setCheckable(true);
-        button->setObjectName(QString("shopItemType_%1").arg(type));
-        if (example > 0)
-            button->setIcon(QPixmap::fromImage(
-                project_->iconArtwork()->image(example | (equipment ? 0 : 0x200))));
-        button->setIconSize(QSize(24, 24));
-        types->addButton(button, type);
-        filters->addWidget(button, buttonIndex / 4, buttonIndex % 4);
-        ++buttonIndex;
-        return button;
-    };
-    typeButton(-2, "All types", 0)->setChecked(true);
-    const QMap<int, QString> consumableTypes{{0, "Recovery"}, {256, "Character boosts"}, {512, "Escape"}, {513, "Special use"}, {768, "Carried effects"}, {1025, "Story items"}};
-    for (auto it = representatives.cbegin(); it != representatives.cend(); ++it)
-        typeButton(it.key(),
-                   equipment
-                       ? names[QString::number(it.key())].toString(QString("Type %1").arg(it.key()))
-                       : consumableTypes.value(it.key(), QString("Category %1").arg(it.key())),
-                   it.value());
-    layout->addLayout(filters);
-    auto list = new QListWidget;
-    list->setObjectName("shopItemChoices");
-    list->setIconSize(QSize(48, 48));
-    list->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    layout->addWidget(list, 1);
     const auto &stock = project_->shops()->stock(selected());
     const auto &existing = equipment ? stock.equipment : stock.consumables;
-    const int remaining = (equipment ? 50 : 30) - existing.size();
-    for (const auto &record : project_->records(equipment ? Table::Items : Table::Consumables)) {
-        if (!record.id || existing.contains(record.id))
-            continue;
-        auto row = new QListWidgetItem(
-            QString("%1 · %2").arg(record.id).arg(itemName(equipment, record.id)), list);
-        row->setData(Qt::UserRole, record.id);
-        row->setData(Qt::UserRole + 1, equipment ? u8(record.bytes, 4) : u16(record.bytes, 4));
-        row->setIcon(
-            QPixmap::fromImage(project_->iconArtwork()->image(record.id | (equipment ? 0 : 0x200)))
-                .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation));
-    }
-    auto help = new QLabel(
-        QString("Select up to %1 items. Icons are decoded from the current ROM and project edits.")
-            .arg(remaining));
-    help->setWordWrap(true);
-    layout->addWidget(help);
-    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    buttons->button(QDialogButtonBox::Ok)->setText("Add selected");
-    buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(list, &QListWidget::itemSelectionChanged, &dialog, [=] {
-        const int count = list->selectedItems().size();
-        buttons->button(QDialogButtonBox::Ok)->setEnabled(count > 0 && count <= remaining);
-    });
-    const auto filterItems = [=] {
-        const int type = types->checkedId();
-        for (int i = 0; i < list->count(); ++i) {
-            auto row = list->item(i);
-            row->setHidden((type != -2 && row->data(Qt::UserRole + 1).toInt() != type) ||
-                           !row->text().contains(search->text(), Qt::CaseInsensitive));
-            if (row->isHidden())
-                row->setSelected(false);
-        }
-    };
-    connect(search, &QLineEdit::textChanged, &dialog, filterItems);
-    connect(types, &QButtonGroup::idClicked, &dialog, filterItems);
-    QVector<quint16> result;
-    if (dialog.exec() == QDialog::Accepted)
-        for (auto row : list->selectedItems())
-            result << quint16(row->data(Qt::UserRole).toInt());
-    return result;
+    return chooseRomItems(project_, this, equipment, existing, (equipment ? 50 : 30) - existing.size());
 }
 void ShopEditor::change(bool equipment, int operation) {
     const auto id = selected();

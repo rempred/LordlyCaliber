@@ -80,7 +80,8 @@ const QVector<Field> &fields(Table table) {
                 if (byte >= field.offset && byte < field.offset + field.width)
                     covered = true;
             if (!covered)
-                add("raw" + QString::number(byte), QString("Raw byte %1").arg(byte), "Advanced",
+                add("raw" + QString::number(byte), (byte < 4 ? QString("Name pointer byte %1 (managed by rebuild)").arg(byte)
+                              : QString("Byte %1 — unknown / padding").arg(byte)), "Advanced",
                     byte);
         }
         return f;
@@ -117,8 +118,12 @@ const QVector<Field> &fields(Table table) {
                 if (physical >= field.offset && physical < field.offset + field.width)
                     covered = true;
             if (!covered)
-                f.push_back({QString("b%1Raw").arg(logical), QString("Raw byte B%1").arg(logical),
-                             "Advanced", physical});
+                f.push_back({QString("b%1Raw").arg(logical), (logical == 12 ? QString("B12 — combat LCK modifier")
+                              : logical == 23 ? QString("B23 — bit 0: anti-dragon attack; other bits unknown")
+                              : logical == 24 ? QString("B24 — bit 0: anti-dragon defense; other bits unknown")
+                              : logical >= 28 ? QString("B%1 — name pointer (managed by rebuild)").arg(logical)
+                              : QString("B%1 — unknown / reserved").arg(logical)),
+                             "Advanced", physical, 1, logical == 12});
         }
         return f;
     }();

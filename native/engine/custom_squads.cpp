@@ -11,9 +11,9 @@ static int integer(const QJsonValue &v, int minimum, int maximum) {
     return int(n);
 }
 int CustomSquads::key(int scenario, int slot) {
-    if (scenario < 0 || scenario > 255 || slot < 0 || slot > 9)
-        throw Error("Custom squad requires a scenario key 0–255 and terrain slot 0–9");
-    return scenario * 10 + slot;
+    if (scenario < 0 || scenario > 255 || slot < 0 || slot > 31)
+        throw Error("Custom squad requires a scenario key 0–255 and terrain slot 0–31");
+    return scenario * 32 + slot;
 }
 QJsonObject CustomSquad::json() const {
     QJsonArray people, bonus;
@@ -42,7 +42,7 @@ CustomSquad CustomSquad::parse(const QJsonObject &o, int classCount) {
         throw Error("Invalid custom squad record");
     CustomSquad s;
     s.scenarioKey = integer(o["scenarioKey"], 0, 255);
-    s.terrainSlot = integer(o["terrainSlot"], 0, 9);
+    s.terrainSlot = integer(o["terrainSlot"], 0, 31);
     s.enabled = o["enabled"].toBool();
     s.label = o["label"].toString().trimmed();
     if (s.label.isEmpty() || s.label.size() > 24)
@@ -137,7 +137,7 @@ QJsonObject CustomSquads::json() const {
 }
 void CustomSquads::apply(const QJsonObject &o, int classCount) {
     if (o.size() != 2 || o["version"] != 1 || !o["profiles"].isArray() ||
-        o["profiles"].toArray().size() > 2560)
+        o["profiles"].toArray().size() > 8192)
         throw Error("Invalid saved custom squads");
     auto next = *this;
     next.profiles_.clear();
@@ -184,18 +184,20 @@ void CustomSquads::validateFormations(const ClassData &classes) const {
             throw Error("Custom squad exceeds the five-slot formation capacity");
     }
 }
-QByteArray CustomSquads::bytes(quint32 offset) const {
-    if (profiles_.isEmpty())
+QByteArray CustomSquads::bytes(quint32 offset, int poolSlots) const {
+    if (poolSlots < 10 || poolSlots > 32) throw Error("Encounter library requires 10–32 pools");
+    if (profiles_.isEmpty() && poolSlots == 10)
         return {};
     const auto size =
-        CustomPlacement::indexBytes + profiles_.size() * CustomPlacement::profileBytes;
+        256 * poolSlots * 4 + profiles_.size() * CustomPlacement::profileBytes;
     if (offset < 0x2800000 || offset % 16 || quint64(offset) + size > 0x4000000)
         throw Error("Custom squad library exceeds cartridge bounds");
     QByteArray data(size, 0);
     int number = 0;
     for (auto it = profiles_.begin(); it != profiles_.end(); ++it) {
-        const int at = CustomPlacement::indexBytes + number++ * CustomPlacement::profileBytes;
-        put32(data, it.key() * 4, offset + at);
+        const int at = 256 * poolSlots * 4 + number++ * CustomPlacement::profileBytes;
+        if (it.value().terrainSlot >= poolSlots) throw Error("Custom squad pool is outside the exported table");
+        put32(data, (it.value().scenarioKey * poolSlots + it.value().terrainSlot) * 4, offset + at);
         data.replace(at, CustomPlacement::profileBytes, it.value().bytes());
     }
     return data;
@@ -205,7 +207,7 @@ CustomSquads CustomSquads::load(const Rom &rom, int classCount) {
     if (const auto placement = CustomPlacement::read(rom)) {
         verifyCustomCallers(rom, placement);
         for (quint32 i = 0; i < placement->profileCount; ++i) {
-            const auto b = rom.bytes().mid(placement->dataOffset + CustomPlacement::indexBytes +
+            const auto b = rom.bytes().mid(placement->dataOffset + placement->indexSize() +
                                                i * CustomPlacement::profileBytes,
                                            CustomPlacement::profileBytes);
             CustomSquad row;

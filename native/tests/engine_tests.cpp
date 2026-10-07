@@ -1106,7 +1106,7 @@ class EngineTests : public QObject {
                 auto members = bad["members"].toArray();
                 auto member = members[0].toObject();
                 member[field] = field == QString("equipment")
-                                    ? QJsonValue(QJsonArray{0, 278})
+                                    ? QJsonValue(QJsonArray{0, 511})
                                     : QJsonValue(field == QString("classId")       ? 256
                                                  : field == QString("levelOffset") ? 128
                                                                                    : 9);
@@ -1171,7 +1171,7 @@ class EngineTests : public QObject {
                                                   QJsonObject{{"raw", 0}, {"weight", 1}}}}}}};
             CustomSquads imported;
             imported.importLegacy({{"33:9", legacyRow}}, 165);
-            const auto &legacy = imported.profiles()[339];
+            const auto &legacy = imported.profiles()[CustomSquads::key(33, 9)];
             QCOMPARE(legacy.members[0].levelOffset, -1);
             QCOMPARE(legacy.members[1].equipment[1], 277);
             QCOMPARE(legacy.chance, 37);
@@ -1293,7 +1293,7 @@ class EngineTests : public QObject {
                 const auto squads = CustomSquads::load(rebuilt, 165);
                 squads.validateFormations(ClassData::load(rebuilt));
                 QCOMPARE(squads.profiles().size(), 1);
-                QCOMPARE(squads.profiles()[339].members[1].levelOffset, -1);
+                QCOMPARE(squads.profiles()[CustomSquads::key(33, 9)].members[1].levelOffset, -1);
                 QCOMPARE(squads.bytes(placed.dataOffset), data);
                 QVERIFY(!squads.modified());
                 auto corrupt = image;
@@ -1986,6 +1986,75 @@ class EngineTests : public QObject {
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
+    }
+    void expandedEncounterPools() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto source = Rom::open(path);
+            for (int count : {11, 32}) {
+                auto project = Project::fromRom(source); project.loadEncounters();
+                auto model = *project.encounters();
+                const auto originalPairs = model.poolBytes();
+                while (model.slotsPerPool() < count) model.addPool();
+                QCOMPARE(model.retailPoolBytes(), originalPairs);
+                for (int pool = 1; pool <= 45; ++pool)
+                    for (int slot = 0; slot < count; ++slot)
+                        model.setPair(pool, slot, (pool + slot) % 165, (pool + slot + 1) % 165, 165);
+                model.setTerrain(24, 65, count);
+                if (count == 32) {
+                    CustomSquad squad; squad.scenarioKey = 54; squad.terrainSlot = 31;
+                    model.setCustomSquad(squad, 165);
+                    QVERIFY_THROWS_EXCEPTION(Error, model.addPool());
+                }
+                project.setEncounters(model.json());
+                QTemporaryDir work, folder;
+                project.saveFolder(folder.path());
+                project.saveArchive(folder.filePath("pools.lcproject"));
+                for (const auto &location : {folder.path(), folder.filePath("pools.lcproject")}) {
+                    auto restored = Project::fromRom(source);
+                    restored.applyManifest(Project::readProject(location));
+                    QCOMPARE(restored.encounters()->json(), model.json());
+                }
+                const auto built = rebuild(project, tools, work.path());
+                auto reopened = Project::fromRom(Rom::fromBytes(built.image)); reopened.loadEncounters();
+                QCOMPARE(reopened.encounters()->json(), model.json());
+                auto checksum = built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum, built.image);
+                const auto placement = CustomPlacement::read(reopened.rom()); QVERIFY(placement);
+                QCOMPARE(placement->slotCount, count);
+                QVERIFY(placement->codeAddress + placement->residentBytes <= ClassPlacement::residentEnd);
+                QCOMPARE(reopened.rom().bytes().mid(Encounters::poolOffset, 900), model.retailPoolBytes());
+                auto edited = *reopened.encounters(); edited.setPair(45, count - 1, 5, 6, 165);
+                reopened.setEncounters(edited.json());
+                const auto repeated = rebuild(reopened, tools, work.path());
+                auto again = Project::fromRom(Rom::fromBytes(repeated.image)); again.loadEncounters();
+                QCOMPARE(again.encounters()->json(), edited.json());
+                QTemporaryDir output(QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-expanded-pools-XXXXXX"));
+                QVERIFY(output.isValid()); output.setAutoRemove(false);
+                const auto target = output.filePath(QFileInfo(path).fileName());
+                exportRom(project, built, target);
+                QCOMPARE(Rom::open(target).bytes(), built.image);
+                qInfo().noquote() << "Expanded pools candidate:" << target;
+                if (count == 32) {
+                    Compiler compiler(tools); compiler.authenticate();
+                    const auto runtime = buildCustomRuntime(compiler, work.path(), placement->codeAddress,
+                                                             placement->residentBytes, placement->dataOffset, count, placement->profileCount);
+                    QCOMPARE(runtime.bytes, built.image.mid(runtime.code.address - ClassPlacement::residentDelta, runtime.bytes.size()));
+                    QJsonObject bindings, entries;
+                    auto symbols = customEncounterServices();
+                    symbols["lc_custom_state"] = runtime.stateAddress;
+                    symbols["lc_custom_index"] = placement->dataOffset;
+                    for (auto i = symbols.begin(); i != symbols.end(); ++i) bindings[i.key()] = double(i.value());
+                    for (auto i = runtime.code.entries.begin(); i != runtime.code.entries.end(); ++i) entries[i.key()] = double(i.value());
+                    atomicWrite(QCoreApplication::applicationDirPath() + "/expanded-pools-runtime.json",
+                        QJsonDocument(QJsonObject{{"code", QString::fromLatin1(runtime.code.bytes.toHex())},
+                          {"address", double(runtime.code.address)}, {"entries", entries}, {"symbols", bindings},
+                          {"dataOffset", double(placement->dataOffset)}, {"pairsOffset", double(placement->pairsOffset())},
+                          {"data", QString::fromLatin1(built.image.mid(placement->dataOffset, placement->dataSize).toHex())}}).toJson());
+                }
+            }
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void encounterTablesExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

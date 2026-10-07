@@ -10,6 +10,7 @@ class QComboBox;
 class QSpinBox;
 class QDoubleSpinBox;
 class QCheckBox;
+class QTableWidget;
 namespace lordly {
 class EncounterEditor : public QWidget {
   public:
@@ -22,6 +23,7 @@ class EncounterEditor : public QWidget {
     void changePair(int slot);
     void changeTerrain(int terrain);
     void showGlobalRatio();
+    void refreshPoolRows();
     void applyGlobalRate(bool restore);
     QWidget *createRewardsPage();
     void refreshRewardClasses();
@@ -44,7 +46,11 @@ class EncounterEditor : public QWidget {
     QLineEdit *search_;
     QLabel *heading_, *notice_;
     QComboBox *copyFrom_;
-    QVector<QComboBox *> pairs_, lookups_;
+    QVector<QComboBox *> pairs_;
+    QTableWidget *pairTable_, *terrainTable_, *estimates_ = nullptr;
+    QListWidget *poolTiles_;
+    QSpinBox *deployed_;
+    QDoubleSpinBox *checks_;
     QVector<QSpinBox *> rates_;
     QDoubleSpinBox *divisor_, *normalPass_, *alternatePass_;
     QCheckBox *linkedRates_;

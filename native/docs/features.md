@@ -8,6 +8,26 @@ preview behavior work; a visible tab alone does not count.
 
 ## Current checkpoint — 2026-10-07
 
+Encounter authoring update: Copy Class replaces the longer copy label. Advanced
+fields distinguish name pointers, unknown class bytes, combat LCK and partially
+known anti-dragon item flags. Global context labels are corrected; mean waits show
+0–10 eligible moving squads per terrain with an explicit cadence assumption.
+Rewards use the shop's ROM-icon modal. Fixed terrain rows accept draggable Pool
+1…32 tiles; the palette shares assignments, row dragging moves/swaps them, and
+pool/custom-squad labels follow the current mapping. Add pool expands all scenario
+groups and compiles/reopens through the maintained selector. New pools are empty.
+Custom squad additions no longer reuse occupied cells, gear choices are filtered,
+portraits follow dragging, and small windows scroll instead of overlapping cells.
+
+Focused workflows pass for these controls, Undo, import and formation/layout.
+Eleven pools without custom squads and 32 pools with a last-pool squad pass project
+folder/archive, compilation, allocation/checksum validation, export, reopening
+and repeat export. Exported selector checks pass both pair sides and squad capacity
+refusal. Existing custom-core checks pass. Portable 20261007-164441 passes isolated
+startup/export/reopen and bundled recompilation of the 32-pool candidate. No new
+full-game validation or measured encounter polling cadence is claimed.
+
+
 
 Authoring refinements: Promotion supports explicit bidirectional family links;
 linked groups share manual-change destinations while masks, behavior, discovery,

@@ -27,6 +27,8 @@ class CustomSquadEditor : public QWidget {
     void apply();
     void remove(bool restore);
     void preview();
+    void refreshEquipment(int member);
+    void changeMemberCount();
     void moveMember(int member, int cell);
     bool eventFilter(QObject *object, QEvent *event) override;
     CustomSquad collect() const;
@@ -47,6 +49,8 @@ class CustomSquadEditor : public QWidget {
     QPushButton *copy_, *remove_, *restore_;
     QVector<int> positions_;
     int draggedMember_ = -1;
+    int shownCount_ = 2;
+    QLabel *dragImage_ = nullptr;
     QPoint dragStart_;
     int editing_ = -1;
     bool loading_ = true;

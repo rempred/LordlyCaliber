@@ -22,9 +22,9 @@ QStringList customRuntimeEntries() {
             "lc_talk_budget_site",  "lc_round_site",     "lc_menu_iterator_site"};
 }
 static void validate(const CustomPlacement &p) {
-    if (!p.profileCount || p.profileCount > 2560 ||
+    if ((!p.profileCount && p.slotCount == 10) || p.slotCount < 10 || p.slotCount > 32 || p.profileCount > 256U * p.slotCount ||
         p.dataSize !=
-            CustomPlacement::indexBytes + p.profileCount * CustomPlacement::profileBytes ||
+            p.indexSize() + p.profileCount * CustomPlacement::profileBytes + p.pairsSize() ||
         p.dataOffset < 0x2800000 || p.dataOffset % 16 ||
         quint64(p.dataOffset) + p.dataSize > 0x4000000 || p.codeBytes % 16 || !p.codeBytes ||
         p.residentBytes != p.codeBytes + CustomPlacement::stateBytes ||
@@ -49,7 +49,8 @@ QByteArray CustomPlacement::descriptor(const QByteArray &data, const QByteArray 
         throw Error("Custom encounter payload disagrees with its allocation");
     QByteArray h(descriptorSize, 0);
     h.replace(0, 8, "LC05NEUT");
-    put32(h, 8, 1);
+    put32(h, 8, slotCount > 10 ? 2 : 1);
+    if (slotCount > 10) put32(h, 44, slotCount);
     put32(h, 12, dataOffset);
     put32(h, 16, dataSize);
     put32(h, 20, profileCount);
@@ -70,11 +71,13 @@ std::optional<CustomPlacement> CustomPlacement::read(const Rom &rom) {
     if (!h.startsWith("LC05NEUT"))
         return std::nullopt;
     rom.requireSupported();
-    if (rom.revision() != 0 || h.size() != descriptorSize || u32(h, 8) != 1 || u32(h, 44) ||
+    if (rom.revision() != 0 || h.size() != descriptorSize || (u32(h, 8) != 1 && u32(h, 8) != 2) ||
+        (u32(h, 8) == 1 ? u32(h, 44) != 0 : u32(h, 44) < 11 || u32(h, 44) > 32) ||
         h.mid(52, 12) != QByteArray(12, 0) || h.mid(112, 12) != QByteArray(12, 0) ||
         u32(h, 124) != crc32(h.first(124)))
         throw Error("Damaged custom encounter descriptor");
     CustomPlacement p;
+    p.slotCount = u32(h, 8) == 2 ? int(u32(h, 44)) : 10;
     p.dataOffset = u32(h, 12);
     p.dataSize = u32(h, 16);
     p.profileCount = u32(h, 20);
@@ -97,11 +100,11 @@ std::optional<CustomPlacement> CustomPlacement::read(const Rom &rom) {
         throw Error("Custom encounter data differs from its declared allocation");
     int profiles = 0;
     for (int key = 0; key < 256; ++key)
-        for (int slot = 0; slot < 10; ++slot) {
-            const auto pointer = u32(data, (key * 10 + slot) * 4);
+        for (int slot = 0; slot < p.slotCount; ++slot) {
+            const auto pointer = u32(data, (key * p.slotCount + slot) * 4);
             if (!pointer)
                 continue;
-            const auto expected = p.dataOffset + indexBytes + profiles * profileBytes;
+            const auto expected = p.dataOffset + p.indexSize() + profiles * profileBytes;
             if (pointer != expected || ++profiles > int(p.profileCount) ||
                 u8(data, pointer - p.dataOffset + 5) != key ||
                 u8(data, pointer - p.dataOffset + 6) != slot)

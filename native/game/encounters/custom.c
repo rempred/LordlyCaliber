@@ -1,6 +1,10 @@
 #include "custom.h"
+#ifndef LC_POOL_SLOTS
+#define LC_POOL_SLOTS 10
+#define LC_POOL_PAIRS 0U
+#endif
 
-/* A direct ROM index has 256 keys by ten terrain slots, one source offset each.
+/* A direct ROM index has 256 keys by the exported pool count, one source offset each.
  * Zero keeps the retail pair. The loaded profile is shared by the encounter's
  * materializer, card, battle controls and final reward; no library is resident. */
 u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
@@ -13,10 +17,20 @@ u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
     state->talk_record = 0;
     if (pool < 1 || pool > 45) return retail_class;
     start = 0x801ED794U + (pool - 1) * 20;
-    if (pair_address < start || pair_address >= start + 20) return retail_class;
+    if (pair_address < start || pair_address >= start + LC_POOL_SLOTS * 2) return retail_class;
     slot = (pair_address - start) >> 1;
+#if LC_POOL_SLOTS > 10
+    /* Read the selected byte from an aligned cartridge word. The final table
+     * word is padded by export. Pair parity preserves the original RNG choice. */
+    {
+        u32 address = LC_POOL_PAIRS + (pool - 1) * LC_POOL_SLOTS * 2 + pair_address - start;
+        u32 word;
+        lc_dma_read(address & ~3U, &word, 4);
+        retail_class = (word >> ((3 - (address & 3)) * 8)) & 255;
+    }
+#endif
     key = lc_staged_scenario;
-    lc_dma_read((u32)lc_custom_index + (key * 10 + slot) * 4, &source, 4);
+    lc_dma_read((u32)lc_custom_index + (key * LC_POOL_SLOTS + slot) * 4, &source, 4);
     if (source == 0) return retail_class;
     lc_dma_read(source, &state->profile, sizeof(LcCustomProfile));
     if (state->profile.enabled != 1 || state->profile.member_count < 2 ||

@@ -10,6 +10,7 @@
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
+#include "app/terrain_assignments.h"
 #include "app/main_window.h"
 #include "app/portrait_editor.h"
 #include "app/promotion_editor.h"
@@ -32,6 +33,7 @@
 #include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
 #include <QAction>
+#include <cmath>
 #include <QAbstractProxyModel>
 #include <QApplication>
 #include <QCheckBox>
@@ -8431,6 +8433,19 @@ class UiTests : public QObject {
             box->setCurrentIndex(at);
         };
         button("customNew")->click();
+        // Adding after moving a member into a formerly default cell must use free cells.
+        editor.findChild<QTableWidget *>("customMembers")->setCurrentCell(0, 0);
+        button("customCell_4")->click();
+        spin("customMemberCount")->setValue(5);
+        button("customApply")->click();
+        const auto five = project.encounters()->customSquads().profiles().first();
+        QCOMPARE(five.members.size(), 5);
+        QSet<int> occupied;
+        for (const auto &member : five.members) occupied.insert(member.cell);
+        QCOMPARE(occupied.size(), 5);
+        QCOMPARE(five.members[0].cell, 4);
+        undo.undo();
+        button("customNew")->click();
         select("customScenario", 33);
         select("customTerrain", 9);
         editor.findChild<QLineEdit *>("customLabel")->setText("Raiding party");
@@ -8438,7 +8453,9 @@ class UiTests : public QObject {
         select("customClass_0", 165);
         select("customClass_1", 71);
         spin("customLevel_1")->setValue(-10);
-        select("customEquipment_0_0", 277);
+        QVERIFY(combo("customEquipment_0_0")->findData(2) >= 0); // Sword fits copied Knight.
+        QVERIFY(combo("customEquipment_0_0")->findData(0x71) < 0); // Mace does not.
+        select("customEquipment_0_0", 2);
         select("customEquipment_0_1", 1);
         editor.findChild<QTableWidget *>("customMembers")->setCurrentCell(2, 0);
         button("customCell_0")->click();
@@ -8458,10 +8475,10 @@ class UiTests : public QObject {
         spin("customWeight_2")->setValue(2);
         button("customApply")->click();
         QCOMPARE(project.encounters()->customSquads().profiles().size(), 1);
-        const auto saved = project.encounters()->customSquads().profiles()[339];
+        const auto saved = project.encounters()->customSquads().profiles()[CustomSquads::key(33, 9)];
         QCOMPARE(saved.members.size(), 3);
         QCOMPARE(saved.members[0].classId, 165);
-        QCOMPARE(saved.members[0].equipment[0], 277);
+        QCOMPARE(saved.members[0].equipment[0], 2);
         QCOMPARE(saved.members[1].levelOffset, -10);
         QCOMPARE(saved.members[2].cell, 0);
         QCOMPARE(saved.chance, 70);
@@ -8473,6 +8490,12 @@ class UiTests : public QObject {
             auto source = button(qPrintable(QString("customCell_%1").arg(from)));
             auto target = button(qPrintable(QString("customCell_%1").arg(to)));
             QTest::mousePress(source, Qt::LeftButton);
+            const QPoint position = source->mapFromGlobal(target->mapToGlobal(target->rect().center()));
+            QMouseEvent movement(QEvent::MouseMove, position, source->mapToGlobal(position),
+                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(source, &movement);
+            auto ghost = editor.findChild<QLabel *>("customDragPortrait");
+            QVERIFY(ghost && ghost->isVisible() && !ghost->pixmap().isNull());
             QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier,
                                source->mapFromGlobal(target->mapToGlobal(target->rect().center())));
         };
@@ -8492,7 +8515,11 @@ class UiTests : public QObject {
         QCOMPARE(project.manifest(), before);
         select("customClass_0", 5);
         select("customClass_0", 165);
+        editor.resize(1100, 640);
         QApplication::processEvents();
+        const auto top = button("customCell_2"), middle = button("customCell_5"), bottom = button("customCell_8");
+        QVERIFY(top->mapToGlobal(QPoint()).y() + top->height() <= middle->mapToGlobal(QPoint()).y());
+        QVERIFY(middle->mapToGlobal(QPoint()).y() + middle->height() <= bottom->mapToGlobal(QPoint()).y());
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
                                    "/custom-squad-members.png"));
         editor.findChild<QTabWidget *>("customDetailsTabs")->setCurrentIndex(1);
@@ -8615,14 +8642,26 @@ class UiTests : public QObject {
         const auto classReward = project.encounters()->rewards().row(165);
         classes->setCurrentRow(1);
         auto squadItem = editor.findChild<QComboBox *>("rewardItem_0");
-        squadItem->setCurrentIndex(squadItem->findData(0x8115));
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            auto choices = dialog->findChild<QListWidget *>("shopItemChoices");
+            QVERIFY(choices);
+            for (int i = 0; i < choices->count(); ++i)
+                if (choices->item(i)->data(Qt::UserRole).toInt() == 277) {
+                    QVERIFY(!choices->item(i)->icon().isNull());
+                    choices->setCurrentRow(i); choices->item(i)->setSelected(true);
+                }
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        squadItem->showPopup();
         editor.findChild<QSpinBox *>("rewardWeight_0")->setValue(100);
         editor.findChild<QPushButton *>("rewardApply")->click();
-        QCOMPARE(project.encounters()->customSquads().profiles().value(11).rewards.outcomes[0], 0x8115);
-        QCOMPARE(project.encounters()->customSquads().profiles().value(10).rewards, CreatureReward{});
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 1)).rewards.outcomes[0], 0x8115);
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 0)).rewards, CreatureReward{});
         QCOMPARE(project.encounters()->rewards().row(165), classReward);
         undo.undo();
-        QCOMPARE(project.encounters()->customSquads().profiles().value(11).rewards, CreatureReward{});
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 1)).rewards, CreatureReward{});
         editor.findChild<QLineEdit *>("rewardSearch")->setText("New reward class");
         for (int row = 0; row < classes->count(); ++row)
             if (classes->item(row)->data(Qt::UserRole).toInt() == 165) classes->setCurrentRow(row);
@@ -8688,6 +8727,16 @@ class UiTests : public QObject {
         QCOMPARE(divisor->value(), 72000.0);
         QCOMPARE(normal->value(), 51.0);
         QCOMPARE(alternate->value(), 11.0);
+        auto waits = editor.findChild<QTableWidget *>("encounterWaitEstimates");
+        auto squads = editor.findChild<QSpinBox *>("encounterDeployed");
+        const double single = waits->item(3, 1)->data(Qt::UserRole).toDouble();
+        QVERIFY(single > waits->item(3, 2)->data(Qt::UserRole).toDouble());
+        const double p = EncounterRate::passingFraction(100, 15);
+        squads->setValue(10);
+        const double ten = waits->item(3, 1)->data(Qt::UserRole).toDouble();
+        QVERIFY(qAbs(ten - single * p / (1 - std::pow(1 - p, 10))) < 0.001);
+        squads->setValue(0); QCOMPARE(waits->item(3, 1)->text(), QString("Never"));
+        squads->setValue(10);
         const auto original = project.encounters()->json();
         divisor->setValue(1000000);
         normal->setValue(0);
@@ -8754,19 +8803,42 @@ class UiTests : public QObject {
         QCOMPARE(project.encounters()->json(), original);
         undo.undo();
         QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
-        auto slot = editor.findChild<QComboBox *>("encounterSlot_31");
+        auto table = static_cast<TerrainAssignments *>(editor.findChild<QTableWidget *>("terrainAssignments"));
         auto rate = editor.findChild<QSpinBox *>("encounterRate_31");
         QVERIFY(!rate->isEnabled());
-        slot->setCurrentIndex(10);
-        QVERIFY(rate->isEnabled());
-        rate->setValue(100);
+        table->assign(-1, 31, 10);
+        QVERIFY(rate->isEnabled()); rate->setValue(100);
         QCOMPARE(project.encounters()->rate(31), 100);
-        slot->setCurrentIndex(0);
+        table->assign(31, 2, 10);
+        QCOMPARE(project.encounters()->lookup(2), 10);
+        QCOMPARE(project.encounters()->lookup(31), 0);
         QCOMPARE(project.encounters()->rate(31), 0);
-        QVERIFY(!rate->isEnabled());
-        undo.undo();
-        QCOMPARE(rate->value(), 100);
-        QCOMPARE(slot->currentData().toInt(), 10);
+        undo.undo(); QCOMPARE(rate->value(), 100);
+        table->setCurrentCell(24, 2);
+        editor.findChild<QPushButton *>("encounterAddPool")->click();
+        QCOMPARE(project.encounters()->slotsPerPool(), 11);
+        QCOMPARE(project.encounters()->lookup(24), 11);
+        auto pairs = editor.findChild<QTableWidget *>("encounterPairs");
+        QVERIFY(pairs->item(10, 0)->text().contains("Malefic Woods"));
+        table->assign(24, 3, 11); // Swap, preserving both pools.
+        QCOMPARE(project.encounters()->lookup(3), 11);
+        QCOMPARE(project.encounters()->lookup(24), 2);
+        undo.undo(); undo.undo();
+        QCOMPARE(project.encounters()->slotsPerPool(), 10);
+        undo.redo(); QCOMPARE(pairs->rowCount(), 11);
+        editor.findChild<QTabWidget *>()->setCurrentIndex(1);
+        QApplication::processEvents();
+        table->scrollToItem(table->item(2, 2));
+        const QPoint target = table->visualItemRect(table->item(2, 2)).center();
+        QMimeData mime; mime.setData(poolMime, "11:24");
+        QDragEnterEvent enter(QPointF(target), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(table->viewport(), &enter); QVERIFY(enter.isAccepted());
+        QDragMoveEvent move(QPointF(target), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(table->viewport(), &move);
+        QDropEvent drop(target, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(table->viewport(), &drop);
+        QCOMPARE(project.encounters()->lookup(2), 11);
+        QVERIFY(pairs->item(10, 0)->text().contains("Bridge"));
         editor.findChild<QLineEdit *>("encounterSearch")->setText("Encounter tester");
         QVERIFY(!list->item(44)->isHidden());
         QApplication::processEvents();

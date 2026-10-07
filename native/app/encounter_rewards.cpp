@@ -1,4 +1,5 @@
 #include "app/encounter_editor.h"
+#include "app/item_picker.h"
 #include "app/encounter_labels.h"
 #include "app/view_position.h"
 #include <QComboBox>
@@ -68,13 +69,8 @@ QWidget *EncounterEditor::createRewardsPage() {
     detail->addWidget(table);
     for (int slot = 0; slot < 3; ++slot) {
         table->setRowHeight(slot, 36);
-        auto item = new QComboBox;
+        auto item = new RewardItemPicker(project_);
         item->setObjectName(QString("rewardItem_%1").arg(slot));
-        item->setEditable(true);
-        item->setInsertPolicy(QComboBox::NoInsert);
-        item->completer()->setCompletionMode(QCompleter::PopupCompletion);
-        item->completer()->setFilterMode(Qt::MatchContains);
-        item->completer()->setCaseSensitivity(Qt::CaseInsensitive);
         item->addItem("None", 0);
         for (const auto kind : {Table::Items, Table::Consumables})
             for (int id = 1; id < project_->records(kind).size(); ++id)
@@ -172,7 +168,7 @@ void EncounterEditor::refreshRewardClasses() {
     rewardCopyFrom_->clear();
     QSet<int> used;
     for (int pool = 1; pool <= Encounters::poolCount; ++pool)
-        for (int slot = 0; slot < Encounters::slotCount; ++slot)
+        for (int slot = 0; slot < project_->encounters()->slotsPerPool(); ++slot)
             for (int side = 0; side < 2; ++side)
                 used.insert(project_->encounters()->classAt(pool, slot, side));
     for (const auto &squad : project_->encounters()->customSquads().profiles())
@@ -192,7 +188,7 @@ void EncounterEditor::refreshRewardClasses() {
         const auto label = encounterSquadName(*project_, it.key()) +
                            QString(" · Scenario %1 / %2%3")
                                .arg(it->scenarioKey)
-                               .arg(Encounters::terrainNames().value(it->terrainSlot),
+                               .arg(project_->encounters()->poolSlotLabel(it->terrainSlot),
                                     it->enabled ? "" : " (disabled)");
         auto item = new QListWidgetItem(label, rewardClasses_);
         item->setData(Qt::UserRole, id);

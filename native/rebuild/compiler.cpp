@@ -527,7 +527,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const auto priorCustom = CustomPlacement::read(p.rom());
     if (priorCustom)
         p.loadEncounters();
-    const bool customSquads = p.encounters() && p.encounters()->customSquads().hasProfiles();
+    const bool customSquads = p.encounters() && (p.encounters()->customSquads().hasProfiles() || p.encounters()->slotsPerPool() > 10);
     if (customSquads)
         p.encounters()->customSquads().validateFormations(p.classData());
     if (priorCustom)
@@ -630,7 +630,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 throw Error("Compiled encounter table differs from project");
             result.image.replace(offset, bytes.size(), built);
         };
-        write(p.encounters()->poolBytes(), Encounters::poolOffset, "encounter_pools");
+        write(p.encounters()->retailPoolBytes(), Encounters::poolOffset, "encounter_pools");
         write(p.encounters()->rateBytes(), Encounters::rateOffset, "encounter_terrain_rates");
         write(p.encounters()->slotBytes(), Encounters::slotOffset, "encounter_terrain_slots");
         if (p.encounters()->scenarioRates().modified() ||
@@ -654,7 +654,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             result.report << "Rebuilt the encounter dispatcher with independent 32-bit pass counts "
                              "in its original instruction space";
         }
-        result.report << "Compiled all 45 encounter pools and 32 terrain rates/slots into their "
+        result.report << "Compiled the original 45 scenario groups and 32 terrain rates/assignments into their "
                          "original allocations";
     }
     if (customSquads && !CreatureRewards::placement(Rom::fromBytes(result.image))) {
@@ -739,7 +739,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             const auto classEnd = quint64(offset) + dataSize;
             const auto prospectiveEnd = qMax(quint64(result.image.size()), classEnd);
             auto index = quint32((prospectiveEnd + 15) & ~quint64(15));
-            const auto bytes = p.encounters()->customSquads().bytes(0x2800000).size();
+            const int poolSlots = p.encounters()->slotsPerPool();
+            const auto bytes = p.encounters()->customSquads().bytes(0x2800000, poolSlots).size() +
+                               (poolSlots > 10 ? (45 * poolSlots * 2 + 3) & ~3 : 0);
             if (priorCustom) {
                 const auto before = priorCustom->dataOffset;
                 const bool separate = quint64(before) + bytes <= offset || before >= classEnd;
@@ -751,7 +753,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     index = before;
             }
             residentBuilder = [&, index](quint32 address, quint32 capacity) {
-                custom = buildCustomRuntime(compiler, directory, address, capacity, index);
+                custom = buildCustomRuntime(compiler, directory, address, capacity, index,
+                                            p.encounters()->slotsPerPool(),
+                                            int(p.encounters()->customSquads().profiles().size()));
                 return custom->bytes;
             };
         }
@@ -770,7 +774,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         if (custom) {
             result.image = installCustomEncounters(Rom::fromBytes(result.image),
                                                    p.encounters()->customSquads(), *custom,
-                                                   compiler, directory, priorCustom);
+                                                   compiler, directory, priorCustom, p.encounters()->poolBytes(),
+                                                   p.encounters()->slotsPerPool());
             result.report << QString(
                                  "Compiled %1 custom squads and their battle behavior; %2 bytes "
                                  "reserved in reclaimed resident storage within 4 MB RAM")

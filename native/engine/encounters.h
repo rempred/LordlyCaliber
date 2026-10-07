@@ -16,6 +16,11 @@ class Encounters {
     static Encounters load(const Rom &rom, int classCount);
     static void verifyReader(const Rom &rom);
     static QStringList terrainNames();
+    int slotsPerPool() const { return int(pools_.size()) / (poolCount * 2); }
+    int addPool();
+    QByteArray retailPoolBytes() const;
+    QString poolSlotLabel(int slot) const;
+    static QString mapTerrainName(int terrain);
     int classAt(int pool, int slot, int side) const;
     int rate(int terrain) const;
     int lookup(int terrain) const;
@@ -81,7 +86,7 @@ class Encounters {
     void importLegacy(const QJsonObject &object, int classCount);
 
   private:
-    static int pairOffset(int pool, int slot);
+    int pairOffset(int pool, int slot) const;
     static void terrainIndex(int terrain);
     QByteArray pools_, rates_, slots_, originalPools_, originalRates_, originalSlots_;
     QVector<QVector<int>> keys_;

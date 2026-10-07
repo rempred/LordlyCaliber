@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Expandable encounter pools
+
+Terrain IDs remain a global 32-row map. Each scenario group supplies two class
+choices per numbered pool; groups may now grow together from 10 to 32 pools.
+Project encounters version 2 declares slotCount; version 1/browser imports retain
+ten slots. Custom profiles serialize explicit scenario/slot IDs, so their internal
+32-wide map keys do not change old project identity. The original 900-byte table
+keeps its first ten pairs per group for compatibility.
+
+Exports with additional pools reuse the maintained custom encounter selector and
+class allocator. LC05NEUT descriptor version 2 stores pool count at word44. Its
+library is a 256-by-count ROM pointer index, 128-byte custom profiles, then the
+45-by-count pair table (padded to a word). Version 1 remains readable. The compiled
+selector preserves original RNG parity and reads an aligned cartridge word for
+its pair, then applies any scenario/pool custom profile. No table is permanently
+resident; code/state remain within the allocator's 4 MB RAM reservation. Bounds,
+CRC, references, profile identity, repeat export and reopening remain checked.
+
+The UI uses fixed terrain rows and draggable pool assignments. Moving swaps an
+occupied assignment or clears the vacated row and its rate; dragging from the
+palette shares a pool. Labels derive from these assignments. Added pairs start
+empty. Global-rate normal/alternate storage keeps its original schema meaning:
+normal is Area Investigation (51 retail passes), alternate is In Mission (11).
+The mean-wait display uses globalProbability * (1 - (1-terrainProbability)^squads)
+and an explicit adjustable checks/second assumption; it is not measured cadence.
+
+Custom member additions choose valid free cells atomically. Gear is filtered by
+the effective class's default item types (class-copy byte69, equipment words46–52).
+Existing incompatible values remain disabled and preserved until explicitly
+replaced. Formation pages scroll at small sizes; portrait drags have a cursor image
+and destination highlight. Shop and reward dialogs share the current-ROM icon
+picker and type filters.
+
 
 ## Linked manual-promotion families
 

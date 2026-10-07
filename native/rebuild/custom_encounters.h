@@ -12,7 +12,8 @@ struct CustomRuntimeBuild {
 };
 QMap<QString, quint32> customEncounterServices();
 CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &directory,
-                                      quint32 address, quint32 capacity, quint32 indexRomOffset);
+                                      quint32 address, quint32 capacity, quint32 indexRomOffset,
+                                      int poolSlots = 10, int profileCount = 0);
 QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const QString &directory,
                                 const QMap<QString, quint32> &entries,
                                 const std::optional<CustomPlacement> &previous = std::nullopt);
@@ -21,5 +22,6 @@ QByteArray removeCustomInstallation(const Rom &rom, const CustomPlacement &previ
 QByteArray installCustomEncounters(const Rom &rom, const CustomSquads &squads,
                                    const CustomRuntimeBuild &runtime, const Compiler &compiler,
                                    const QString &directory,
-                                   const std::optional<CustomPlacement> &previous = std::nullopt);
+                                   const std::optional<CustomPlacement> &previous = std::nullopt,
+                                   const QByteArray &poolPairs = {}, int poolSlots = 10);
 } // namespace lordly

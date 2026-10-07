@@ -25,9 +25,15 @@ QByteArray removeCustomInstallation(const Rom &rom, const CustomPlacement &previ
 QByteArray installCustomEncounters(const Rom &rom, const CustomSquads &squads,
                                    const CustomRuntimeBuild &runtime, const Compiler &compiler,
                                    const QString &directory,
-                                   const std::optional<CustomPlacement> &previous) {
+                                   const std::optional<CustomPlacement> &previous,
+                                   const QByteArray &poolPairs, int poolSlots) {
     const auto at = runtime.indexRomOffset;
-    const auto expected = squads.bytes(at);
+    auto expected = squads.bytes(at, poolSlots);
+    if (poolSlots > 10) {
+        if (poolPairs.size() != 45 * poolSlots * 2) throw Error("Expanded encounter pairs are incomplete");
+        expected += poolPairs;
+        while (expected.size() % 4) expected.append(char(0));
+    }
     if (expected.isEmpty())
         throw Error("Cannot install an empty custom squad library");
     const auto classes = ClassPlacement::read(rom);
@@ -53,6 +59,7 @@ QByteArray installCustomEncounters(const Rom &rom, const CustomSquads &squads,
     if (data != expected)
         throw Error("Compiled custom squads disagree with their source");
     CustomPlacement placed;
+    placed.slotCount = poolSlots;
     placed.dataOffset = at;
     placed.dataSize = quint32(data.size());
     placed.profileCount = quint32(squads.profiles().size());
@@ -160,11 +167,13 @@ QMap<QString, quint32> customEncounterServices() {
             {"lc_menu_context", 0x801ce8c0}};
 }
 CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &directory,
-                                      quint32 address, quint32 capacity, quint32 indexRomOffset) {
-    if (address < ClassPlacement::residentBegin || address % 16 || capacity % 16 ||
+                                      quint32 address, quint32 capacity, quint32 indexRomOffset, int poolSlots, int profileCount) {
+    if (poolSlots < 10 || poolSlots > 32 || profileCount < 0 || profileCount > 256 * poolSlots ||
+        address < ClassPlacement::residentBegin || address % 16 || capacity % 16 ||
         capacity < CustomRuntimeBuild::stateSize ||
         quint64(address) + capacity > ClassPlacement::residentEnd || indexRomOffset % 16 ||
-        indexRomOffset < 0x2800000 || quint64(indexRomOffset) + 256 * 10 * 4 > 0x4000000)
+        indexRomOffset < 0x2800000 || quint64(indexRomOffset) + 256 * poolSlots * 4 + profileCount * 128 +
+            (poolSlots > 10 ? ((45 * poolSlots * 2 + 3) & ~3) : 0) > 0x4000000)
         throw Error("Custom encounter runtime requires bounded resident and ROM allocations");
     auto read = [](const QString &name) {
         QFile file(":/game/encounters/" + name);
@@ -172,7 +181,9 @@ CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &d
             throw Error("Missing maintained custom encounter source: " + name);
         return file.readAll();
     };
-    auto source = read("custom.c");
+    auto source = QString("#define LC_POOL_SLOTS %1\n#define LC_POOL_PAIRS %2U\n")
+                      .arg(poolSlots).arg(poolSlots > 10 ? indexRomOffset + 256 * poolSlots * 4 + profileCount * 128 : 0)
+                      .toLatin1() + read("custom.c");
     // One translation unit gives C and register adapters ordinary linked symbols.
     // Keep the editable assembly readable as a separate resource, not encoded bytes.
     auto adapter = read("custom-sites.s");
