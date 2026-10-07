@@ -180,10 +180,12 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             };
             auto lowWord = [&](quint32 address) { return (low & 0xffff0000U) | (address & 65535); };
             const auto before = previousBases.value(group) + addend;
-            const auto after = nextBases.value(group) + addend;
             const auto retail = quint32(original[group].toDouble()) + addend;
-            if (!nextBases.contains(group) || high >> 26 != 15 || high != highWord(before) ||
-                low != lowWord(before))
+            const bool fixed = ref["fixedAddress"].toBool();
+            const auto after = fixed ? retail : nextBases.value(group) + addend;
+            const bool previousMatches = high == highWord(before) && low == lowWord(before);
+            const bool fixedMatches = fixed && high == highWord(retail) && low == lowWord(retail);
+            if (!nextBases.contains(group) || high >> 26 != 15 || (!previousMatches && !fixedMatches))
                 throw Error("Class reference disagrees with its declared prior placement");
             put32(canonical, highSite, highWord(retail));
             put32(canonical, lowSite, lowWord(retail));

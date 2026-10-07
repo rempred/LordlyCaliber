@@ -40,8 +40,8 @@ for (const f of fixtures) {
   m.trap(0x80070c60,c=>{heaps.push([c.get('a0'),c.get('a1')]);clobber(c);});
   m.trap(0x80070d20,c=>{pools.push([c.get('a0'),c.get('a1')]);clobber(c);});
   m.trap(0x80070f14,c=>{secondary++;clobber(c);});
-  const call = entry => {
-    m.set('a0',0x80243db0);m.set('a1',0x1bc250);m.set('sp',0x803ffe00);
+  const call = (entry, start = 0x80243db0) => {
+    m.set('a0',start);m.set('a1',0x80400000-start);m.set('sp',0x803ffe00);
     ['s0','s1','s2','s3','s4','s5','s6','s7','fp'].forEach((r,i)=>m.set(r,0xaaaa0000+i));
     m.call(entry);
     assert.equal(m.get('sp'),0x803ffe00);
@@ -58,6 +58,13 @@ for (const f of fixtures) {
   assert.deepEqual(heaps,Array(2).fill([field(48),0x80400000-field(48)]));
   assert.deepEqual(dma.slice(1),[[field(12),0x80243db0,field(16)]]);
   assert.deepEqual(read(0x80243db0,field(16)),rom.subarray(field(12),field(12)+field(16)));
+  // The title/new-game reset uses a lower start, unlike the ordinary reset.
+  // Both live heap spans must exclude the persistent data, with no lost lower RAM.
+  pools.length=0; call(field(64),0x801ba710);
+  assert.deepEqual(heaps.at(-1),[field(48),0x80400000-field(48)]);
+  assert.deepEqual(pools.at(-1),[0x801ba710,0x80243db0-0x801ba710]);
+  for(const [a,n] of [...pools,heaps.at(-1)])
+    assert(a+n<=0x80243db0 || a>=field(48), 'heap exposes persistent class data');
   call(f.entries.lc_custom_message);assert.equal(m.get('v0'),state+16+68);
   m.w32(state+4,0);call(f.entries.lc_custom_message);assert.equal(m.get('v0'),0);
 }

@@ -16,7 +16,8 @@
           "high": 0,
           "low": 4,
           "group": "directory",
-          "addend": 0
+          "addend": 0,
+          "fixedAddress": true
         }
       ],
       "calls": []

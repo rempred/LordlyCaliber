@@ -278,9 +278,16 @@ static QByteArray transformReferences(const ClassPlacement &placement, const QBy
                 quint32(original[group].toDouble()) + quint32(ref["addend"].toInt());
             const quint32 carry = low >> 26 == 13 ? 0 : 0x8000;
             const auto address = canonical ? relocated : retail;
-            const auto target = canonical ? retail : relocated;
+            const bool fixed = ref["fixedAddress"].toBool();
+            const auto target = canonical || fixed ? retail : relocated;
+            const auto matches = [&](quint32 expected) {
+                return (high & 65535) == (expected + carry) >> 16 &&
+                       (low & 65535) == (expected & 65535);
+            };
+            // Older exports moved the boot BSS clear with the allocator directory.
+            // Accept that exact historical placement for repair, always emit retail.
             if (!current.contains(group) || high >> 26 != 15 ||
-                (high & 65535) != (address + carry) >> 16 || (low & 65535) != (address & 65535))
+                (!matches(address) && !(fixed && canonical && matches(retail))))
                 throw Error("Class reference does not match its relocation descriptor");
             put32(result, hi, (high & 0xffff0000U) | ((target + carry) >> 16));
             put32(result, lo, (low & 0xffff0000U) | (target & 65535));

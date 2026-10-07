@@ -3344,6 +3344,17 @@ class EngineTests : public QObject {
         QCOMPARE(placement->dataRomOffset, runtime.dataRomOffset);
         QCOMPARE((u32(linked, 0x25a8) & 0x3ffffffU) << 2, runtime.placement.bootEntry & 0xfffffffU);
         QCOMPARE(u32(linked, 0x1148), quint32(0x2c42000a));
+        // Boot BSS shares the retail directory base but must never relocate.
+        QCOMPARE(linked.mid(0x1000, 96), rom.bytes().mid(0x1000, 96));
+        auto oldBoot = linked;
+        put32(oldBoot, 0x1000, 0x3c088018);
+        put32(oldBoot, 0x1004, 0x25087e00);
+        QCOMPARE(linkClassRuntime(Rom::fromBytes(oldBoot), runtime), linked);
+        const auto canonicalBoot =
+            placement->canonicalReferences(oldBoot.mid(0x1000, 96), 0x1000);
+        QCOMPARE(canonicalBoot, rom.bytes().mid(0x1000, 96));
+        QCOMPARE(placement->placedReferences(canonicalBoot, 0x1000), canonicalBoot);
+        QCOMPARE(placement->canonicalReferences(canonicalBoot, 0x1000), canonicalBoot);
         QVERIFY(runtime.saves.has_value());
         const auto cacheEnd =
             quint32(((u32(linked, 0x2438) & 65535) << 16) + qint16(u32(linked, 0x243c) & 65535));

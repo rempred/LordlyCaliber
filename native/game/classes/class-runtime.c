@@ -20,12 +20,16 @@ static void add_reclaimed_storage(void)
 
 void lc_heap_reset(u32 start, u32 size)
 {
-    if (start == 0x80243DB0U && size == 0x1BC250U) {
-        start += LC_RESERVED_BYTES;
-        size -= LC_RESERVED_BYTES;
-    }
-    lc_original_heap_init(start, size);
+    /* Every retail main-heap reset ends at 0x80400000. The title/new-game
+     * transition starts at 0x801BA710, below the persistent class allocation.
+     * Keep the upper arena primary; the lower span remains a secondary pool
+     * until the original overlay reset discards/rebuilds those secondary pools.
+     */
+    lc_original_heap_init(0x80243DB0U + LC_RESERVED_BYTES,
+                          start + size - (0x80243DB0U + LC_RESERVED_BYTES));
     add_reclaimed_storage();
+    if (start < 0x80243DB0U)
+        lc_original_pool_add(start, 0x80243DB0U - start);
 }
 
 void lc_secondary_reset(void)

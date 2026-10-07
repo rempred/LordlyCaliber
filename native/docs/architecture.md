@@ -1,5 +1,20 @@
 # Native Lordly Caliber
 
+## Persistent class data across startup and title transitions
+
+The entry-point BSS clear remains at RAM 0x800AEDB0..0x800E9C20. Its start
+coincides with the original allocator directory, but it is not a directory
+reference. The relocation catalog marks this operand fixed; the linker and
+canonicalizer recognize and repair the exact misplaced operand from older exports.
+
+The normal main heap starts at 0x80243DB0; the title/new-game reset starts at
+0x801BA710. Both end at 0x80400000. The maintained initializer always reserves
+class data at 0x80243DB0, keeps the upper span as the primary heap, and registers
+any lower span as a secondary pool. The original secondary reset discards that
+pool before overlay-specific gaps are registered again. This preserves capacity
+without allowing image decompression to overwrite classes or portrait routes.
+
+
 ## Expandable encounter pools
 
 Terrain IDs remain a global 32-row map. Each scenario group supplies two class

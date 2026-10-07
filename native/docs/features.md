@@ -8,6 +8,17 @@ preview behavior work; a visible tab alone does not count.
 
 ## Current checkpoint — 2026-10-07
 
+Boot/runtime correction: exported class relocation now preserves the original
+BSS clear and protects persistent data during the lower title/new-game heap reset.
+Old native exports are repairable by re-exporting. The reported black screen was
+reproduced; a one-word write watch then identified image decompression overwriting
+class data after the earlier partial repair. Focused entry-point execution and
+normal/title heap checks now pass, as do original-export repair and source rebuild.
+Project64 cold boot now passes the new-game ceremony into the throne room, with
+correct portraits and the entire persistent data allocation unchanged. Later gameplay
+and custom encounters are not covered by this focused boot/cutscene check.
+
+
 Encounter authoring update: Copy Class replaces the longer copy label. Advanced
 fields distinguish name pointers, unknown class bytes, combat LCK and partially
 known anti-dragon item flags. Global context labels are corrected; mean waits show

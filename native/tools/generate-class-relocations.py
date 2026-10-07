@@ -72,9 +72,15 @@ for group, filename, base, end in groups:
                 assert not high < target <= low or high <= pos <= low, ref
             if high <= pos < low and (branch or opcode in [2, 3]):
                 assert opcode in [2, 3] and pos == low-4, ref
-        owner(row)['references'].append(dict(high=high-row['romStart'],
-                                             low=low-row['romStart'],
-                                             group=group, addend=address-base))
+        reference = dict(high=high-row['romStart'], low=low-row['romStart'],
+                         group=group, addend=address-base)
+        # The entry point clears all boot BSS. Its start happens to equal the
+        # retail allocator directory address; it is not a pointer to that table.
+        # Keep its identity to recognize and repair earlier native exports.
+        if high == 0x1000 and low == 0x1004:
+            assert group == 'directory' and address == 0x800AEDB0
+            reference['fixedAddress'] = True
+        owner(row)['references'].append(reference)
 
 services = {0x80070C60: 'lc_heap_reset', 0x80070F14: 'lc_secondary_reset'}
 for row in rows:
