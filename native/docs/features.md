@@ -8,6 +8,34 @@ preview behavior work; a visible tab alone does not count.
 
 ## Current checkpoint — 2026-10-07
 
+
+Authoring refinements: Promotion supports explicit bidirectional family links;
+linked groups share manual-change destinations while masks, behavior, discovery,
+stats and equipment still apply. Automatic death/attack transformations remain
+separate and are explained in the panel. Items has New item (blank accessory)
+as well as copy. Shop stock filters use the first ROM icon in each type; the
+stronghold picker lists every stronghold by scenario and follows the selected
+shop. Refreshing lists retains view positions; unfocused numeric/choice controls
+ignore wheel edits. Custom rewards are edited independently under leader-based
+squad names, with numbering for repeated leaders. Custom formation supports five
+individual members; the ordinary scenario template's two follower cohorts do not
+apply to that constructor. Talk affinity has an explicit heading.
+
+The Map tab places new treasure with one click and one Undo step. Routes has a
+squad/start selector and clickable behavior summary above the detailed node,
+condition and group editors. Town objective/type fields explain their scope;
+Treasure/Mine capability flags are marked advanced because their full gameplay
+effects are unverified. They do not author hidden map treasure records.
+
+Focused UI checks pass for creation/Undo, filters/assignment/scrolling, independent
+squad rewards, routing and treasure placement/export/reopen. Existing item and
+family export checks pass with blank items and linked families; the 256-class
+family-data check passes. The existing five-distinct-class custom-constructor
+and insufficient-capacity checks were reused. No full-game boot is claimed.
+Portable: native/dist/LordlyCaliber-0.5-dev-20261007-102207.zip. Its isolated startup,
+user-time compilation, export/reopen and source-preservation check passes.
+
+
 The Items workspace now creates equipment IDs through 510, with independent
 names, descriptions, icons and weapon appearance entries. Project folders,
 archives, Undo, repeated export/reopen and original save-codec checks pass.

@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/tools_editor.h"
 #include <QCheckBox>
 #include <QFormLayout>
@@ -216,6 +217,7 @@ void ToolsEditor::setPercent(int value) {
     undo_->push(new ExperienceCommand(project_, value));
 }
 void ToolsEditor::refresh() {
+    const ViewPosition keepView(this);
     const auto &settings = *project_->tools();
     const auto &high = settings.highAttack();
     const QSignalBlocker highBlock(highAttack_);

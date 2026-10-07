@@ -2487,7 +2487,7 @@ class EngineTests : public QObject {
             for (int stage = 0; stage < 2; ++stage) {
                 if (stage) {
                     QCOMPARE(project.appendItem(278, "Second blade"), 279);
-                    QCOMPARE(project.appendItem(278, "Third blade"), 280);
+                    QCOMPARE(project.createItem("Blank accessory"), 280);
                     QCOMPARE(project.appendClass(5, "Item wielder"), 165);
                     auto row = project.record(Table::Classes, 165).bytes;
                     put16(row, 46, 280);
@@ -4270,6 +4270,17 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         QCOMPARE(u8(full.bytes, 3328 + 255), quint8(0xd0));
         restored.applyExpandedData(full.bytes, 256);
         QCOMPARE(restored.json(), model.json());
+        const auto beforeLinks = model.json();
+        model.setFamilyLinks(family, {1, 2});
+        const auto linked = model.buildExpandedData();
+        QCOMPARE(u32(linked.bytes, linked.familyOffset + 165 * 4), quint32(0x10001));
+        QCOMPARE(u32(linked.bytes, linked.familyOffset + 2 * 4), quint32(0x20001));
+        QCOMPARE(linked.bytes.mid(linked.maskOffset, 256), model.masks);
+        restored.applyExpandedData(linked.bytes, 256);
+        QCOMPARE(restored.json(), model.json());
+        QVERIFY_THROWS_EXCEPTION(Error, model.setFamilyLinks(family, {0}));
+        model.setFamilyLinks(family, {});
+        QCOMPARE(model.json(), beforeLinks);
         const auto atLimit = model.json();
         QVERIFY_THROWS_EXCEPTION(Error, model.appendClass(165));
         QCOMPARE(model.json(), atLimit);
@@ -4327,6 +4338,9 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(family, 16);
             model.assign(2, family);
             model.assign(5, family);
+            model.setFamilyLinks(family, {1});
+            QCOMPARE(u32(model.decodedFamilies(), 648 + 5 * 4), quint32(0x10001));
+            QCOMPARE(u32(model.decodedFamilies(), 648 + 6 * 4), quint32(0x10001));
             model.setGate(5, 0, 90);
             model.setMask(5, 0xa5);
             model.setEquipmentSetListed(5, !(u8(model.flags, 5) & 0x80));

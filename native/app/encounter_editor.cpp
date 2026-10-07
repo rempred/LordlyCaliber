@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/encounter_editor.h"
 #include "app/custom_squad_editor.h"
 #include <QCheckBox>
@@ -212,7 +213,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     connect(applyGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(false); });
     connect(restoreGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(true); });
     tabs->addTab(globalPage, "Global rates");
-    tabs->addTab(createRewardsPage(), "Class rewards");
+    tabs->addTab(createRewardsPage(), "Class and squad rewards");
     tabs->addTab(createScenarioPage(), "Scenario rates");
     tabs->addTab(new CustomSquadEditor(
                      project_, undo_,
@@ -260,6 +261,7 @@ int EncounterEditor::selected() const {
     return pools_->currentItem() ? pools_->currentItem()->data(Qt::UserRole).toInt() : -1;
 }
 void EncounterEditor::refresh() {
+    const ViewPosition keepView(this);
     const auto &encounters = *project_->encounters();
     const int pool = selected();
     if (pool >= 1) {

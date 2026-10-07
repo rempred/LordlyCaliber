@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/sprite_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_color_dialog.h"
@@ -566,6 +567,7 @@ void SpriteEditor::selectAsset(const QString &id) {
     refresh();
 }
 void SpriteEditor::refresh() {
+    const ViewPosition keepView(this);
     const QSignalBlocker blocker(play_);
     play_->setChecked(false);
     play_->setText("Play");

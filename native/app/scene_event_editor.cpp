@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/scene_event_editor.h"
 #include <QComboBox>
 #include <QCompleter>
@@ -97,6 +98,7 @@ SceneEventEditor::SceneEventEditor(Project *project, QUndoStack *undo,
     }
 }
 void SceneEventEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!project_->sceneEvents())
         return;
     const QSignalBlocker blocker(sites_), targetBlocker(target_);

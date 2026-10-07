@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/save_unit_editor.h"
 #include "app/save_editor.h"
 #include <QComboBox>
@@ -299,6 +300,7 @@ QString SaveUnitEditor::memberName(int id) const {
     }
 }
 void SaveUnitEditor::refresh() {
+    const ViewPosition keepView(this);
     loading_ = true;
     const int prior =
         units_->currentItem() ? units_->currentItem()->data(Qt::UserRole).toInt() : -1;

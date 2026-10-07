@@ -58,11 +58,13 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QUndoGroup>
 #include <QWheelEvent>
@@ -7914,6 +7916,18 @@ class UiTests : public QObject {
             QCOMPARE(canvas->grab().toImage(), terrainImage);
             QCOMPARE(project.scenarios()->json(), dataBeforeToggle);
             QCOMPARE(undo.count(), undoBeforeToggle);
+            const auto beforeTreasure = project.world()->json();
+            const int treasuresBefore = ScenarioWorld::treasureCount(project.world()->scenario(1).treasures);
+            editor.findChild<QPushButton *>("mapTreasureAdd")->click();
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, QPoint(canvas->width() / 2, canvas->height() / 2));
+            QCOMPARE(ScenarioWorld::treasureCount(project.world()->scenario(1).treasures), treasuresBefore + 1);
+            const auto placed = ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, treasuresBefore);
+            QCOMPARE(u8(placed, 1), quint8(128));
+            QCOMPARE(u8(placed, 2), quint8(128));
+            const auto afterTreasure = project.world()->json();
+            undo.undo(); QCOMPARE(project.world()->json(), beforeTreasure);
+            undo.redo(); QCOMPARE(project.world()->json(), afterTreasure);
+            // Keep the newly placed treasure for this workflow's project/export/reopen checks.
             QVERIFY(objects->count() > project.scenarios()->scenario(1).squads.size());
             const auto original = project.scenarios()->json(),
                        originalWorld = project.world()->json();
@@ -8019,6 +8033,7 @@ class UiTests : public QObject {
                      moved.mid(3, 2));
             QCOMPARE(reopened.scenarios()->scenario(1).layout.nodes[waypoint].mid(4, 2),
                      QByteArray::fromHex("3742"));
+            QCOMPARE(reopened.world()->scenario(1).treasures, project.world()->scenario(1).treasures);
             QCOMPARE(ScenarioWorld::treasureRecord(reopened.world()->scenario(1).treasures, 0),
                      treasure);
             auto checksum = result.image;
@@ -8292,6 +8307,15 @@ class UiTests : public QObject {
         QCOMPARE(project.scenarios()->scenario(10).layout.deployments[0].right(2),
                  QByteArray::fromHex("0705"));
         tabs->setCurrentIndex(0);
+        const auto beforeRoute = project.scenarios()->json();
+        select("behaviorSquad", 0);
+        const int nodeId = u8(project.scenarios()->scenario(10).layout.nodes.last(), 0);
+        select("behaviorStart", nodeId);
+        button("behaviorAssign")->click();
+        QCOMPARE(u8(project.scenarios()->scenario(10).layout.deployments[0], 6), quint8(nodeId));
+        QVERIFY(editor.findChild<QTextBrowser *>("behaviorSummary")->toPlainText().contains("X 80, Z 160"));
+        undo.undo(); QCOMPARE(project.scenarios()->json(), beforeRoute);
+        undo.redo();
         QTest::qWait(50);
         QVERIFY(
             editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-routes.png"));
@@ -8565,13 +8589,17 @@ class UiTests : public QObject {
         CustomSquad custom;
         custom.members[0].classId = 165;
         encounters.setCustomSquad(custom, 166);
+        custom.terrainSlot = 1;
+        encounters.setCustomSquad(custom, 166);
         project.setEncounters(encounters.json());
         QUndoStack undo;
         EncounterEditor editor(&project, &undo, [] {});
         editor.resize(1250, 760);
         editor.show();
         auto classes = editor.findChild<QListWidget *>("rewardClasses");
-        QCOMPARE(classes->count(), 165);
+        QCOMPARE(classes->count(), 167);
+        QVERIFY(classes->item(0)->text().contains("New reward class Squad 1"));
+        QVERIFY(classes->item(1)->text().contains("New reward class Squad 2"));
         QSet<int> used{165};
         for (int pool = 1; pool <= Encounters::poolCount; ++pool)
             for (int slot = 0; slot < Encounters::slotCount; ++slot)
@@ -8579,11 +8607,25 @@ class UiTests : public QObject {
                     used.insert(project.encounters()->classAt(pool, slot, side));
         bool unusedSeen = false;
         for (int row = 0; row < classes->count(); ++row) {
+            if (classes->item(row)->data(Qt::UserRole).toInt() < 0) continue;
             const bool active = used.contains(classes->item(row)->data(Qt::UserRole).toInt());
             QVERIFY(!active || !unusedSeen);
             unusedSeen |= !active;
         }
+        const auto classReward = project.encounters()->rewards().row(165);
+        classes->setCurrentRow(1);
+        auto squadItem = editor.findChild<QComboBox *>("rewardItem_0");
+        squadItem->setCurrentIndex(squadItem->findData(0x8115));
+        editor.findChild<QSpinBox *>("rewardWeight_0")->setValue(100);
+        editor.findChild<QPushButton *>("rewardApply")->click();
+        QCOMPARE(project.encounters()->customSquads().profiles().value(11).rewards.outcomes[0], 0x8115);
+        QCOMPARE(project.encounters()->customSquads().profiles().value(10).rewards, CreatureReward{});
+        QCOMPARE(project.encounters()->rewards().row(165), classReward);
+        undo.undo();
+        QCOMPARE(project.encounters()->customSquads().profiles().value(11).rewards, CreatureReward{});
         editor.findChild<QLineEdit *>("rewardSearch")->setText("New reward class");
+        for (int row = 0; row < classes->count(); ++row)
+            if (classes->item(row)->data(Qt::UserRole).toInt() == 165) classes->setCurrentRow(row);
         QCOMPARE(classes->currentItem()->data(Qt::UserRole).toInt(), 165);
         auto item = editor.findChild<QComboBox *>("rewardItem_0");
         auto first = editor.findChild<QSpinBox *>("rewardWeight_0");
@@ -8798,7 +8840,19 @@ class UiTests : public QObject {
         editor.show();
         auto shops = editor.findChild<QListWidget *>("shopList");
         QCOMPARE(shops->count(), 35);
+        QTest::qWait(20);
+        shops->scrollToBottom();
+        const int bottom = shops->verticalScrollBar()->value();
+        shops->setCurrentRow(shops->count() - 2);
+        QCOMPARE(shops->verticalScrollBar()->value(), bottom);
+        auto townChoice = editor.findChild<QComboBox *>("shopStronghold");
+        QSet<int> towns;
+        for (int i = 0; i < townChoice->count(); ++i) towns.insert(townChoice->itemData(i).toInt());
+        for (int id = 1; id <= ScenarioWorld::townCount; ++id) QVERIFY(towns.contains(id));
         shops->setCurrentRow(1);
+        const int assignedTown = townChoice->currentData().toInt();
+        QVERIFY(assignedTown > 0);
+        QCOMPARE(u8(project.world()->town(assignedTown), 27), quint8(2));
         auto pick = [&](bool equipment, int id, bool accept = true) {
             QTimer::singleShot(0, &editor, [&, equipment, id, accept] {
                 auto dialog = editor.findChild<QDialog *>("shopItemPicker");
@@ -8808,11 +8862,24 @@ class UiTests : public QObject {
                 for (int row = 0; row < list->count(); ++row)
                     if (list->item(row)->data(Qt::UserRole).toInt() == id) target = list->item(row);
                 QVERIFY(target);
+                if (equipment) {
+                    const int type = u8(project.record(Table::Items, id).bytes, 4);
+                    auto filter = dialog->findChild<QPushButton *>(QString("shopItemType_%1").arg(type));
+                    QVERIFY(filter && !filter->icon().isNull());
+                    filter->click();
+                    QVERIFY(!target->isHidden());
+                    for (int at = 0; at < list->count(); ++at)
+                        QCOMPARE(!list->item(at)->isHidden(), list->item(at)->data(Qt::UserRole + 1).toInt() == type);
+                }
                 const auto image = project.iconArtwork()->image(id | (equipment ? 0 : 0x200))
                                        .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation);
                 QCOMPARE(target->icon().pixmap(48, 48).toImage().convertToFormat(QImage::Format_RGBA8888),
                          image.convertToFormat(QImage::Format_RGBA8888));
                 target->setSelected(true);
+                if (equipment && !accept && !qEnvironmentVariable("LORDLY_SHOP_PICKER_SCREENSHOT").isEmpty()) {
+                    QTest::qWait(20);
+                    QVERIFY(dialog->grab().save(qEnvironmentVariable("LORDLY_SHOP_PICKER_SCREENSHOT")));
+                }
                 dialog->findChild<QDialogButtonBox *>()->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)->click();
             });
             editor.findChild<QPushButton *>(equipment ? "shopEquipmentAdd" : "shopConsumablesAdd")->click();
@@ -8977,6 +9044,20 @@ class UiTests : public QObject {
         undo.undo();
         QCOMPARE(model.rowCount(), 278);
         QVERIFY_THROWS_EXCEPTION(Error, saveEditor.exportFile(output.filePath("missing-item.sra")));
+        const auto beforeBlank = project.manifest();
+        QCOMPARE(model.createItem("Empty accessory"), 278);
+        auto expected = QByteArray(32, 0);
+        put8(expected, 4, 25);
+        QCOMPARE(project.record(Table::Items, 278).bytes, expected);
+        const auto blankIcon = project.iconArtwork()->image(278);
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) QCOMPARE(blankIcon.pixelColor(x, y).alpha(), 0);
+        QCOMPARE(project.textBanks()["items"].entries[278].bytes, QByteArray());
+        const auto blank = project.manifest();
+        undo.undo();
+        QCOMPARE(project.manifest(), beforeBlank);
+        undo.redo();
+        QCOMPARE(project.manifest(), blank);
     }
     void addClassUndoRedo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -9090,6 +9171,13 @@ class UiTests : public QObject {
         QCOMPARE(items->model()->rowCount(), itemCount);
         auto fresh = window.findChild<QPushButton *>("newClass");
         QVERIFY(fresh);
+        // Scrolling over an unfocused field must not silently edit the ROM.
+        auto untouchedSpin = window.findChild<QSpinBox *>();
+        untouchedSpin->clearFocus();
+        const int beforeWheel = untouchedSpin->value();
+        QWheelEvent passiveWheel(QPointF(2, 2), QPointF(2, 2), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(untouchedSpin, &passiveWheel);
+        QCOMPARE(untouchedSpin->value(), beforeWheel);
         classes->setCurrentIndex({}); // Creating a class needs no template selection.
         QVERIFY(fresh->isEnabled());
         QTimer::singleShot(0, &window, [&] {
@@ -9165,6 +9253,16 @@ class UiTests : public QObject {
         QCOMPARE(project.promotion()->families, project.promotion()->originalFamilies);
         undo.redo();
         QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 16);
+        auto links = editor.findChild<QListWidget *>("familyLinks");
+        for (int row = 0; row < links->count(); ++row)
+            if (links->item(row)->data(Qt::UserRole).toInt() == 1) links->item(row)->setCheckState(Qt::Checked);
+        const auto unlinked = project.promotion()->json();
+        editor.findChild<QPushButton *>("applyFamilyLinks")->click();
+        QCOMPARE(project.promotion()->linkedFamilies(16), QSet<int>{1});
+        QCOMPARE(project.promotion()->linkedFamilies(1), QSet<int>{16});
+        QCOMPARE(u32(project.promotion()->decodedFamilies(), 648 + 5 * 4), quint32(0x50001));
+        undo.undo(); QCOMPARE(project.promotion()->json(), unlinked);
+        undo.redo();
         editor.selectClass(100);
         QVERIFY(!gate->isEnabled());
         QVERIFY(!equipment->isEnabled());
@@ -9185,7 +9283,7 @@ class UiTests : public QObject {
         undo.redo();
         QVERIFY(gate->isEnabled());
         QCOMPARE(project.promotion()->classCount(), 166);
-        const auto previousFamily = project.promotion()->families["assignments"].toArray()[165];
+        const QJsonValue previousFamily = project.promotion()->families["assignments"].toArray()[165];
         editor.findChild<QLineEdit *>("newFamilyName")->setText("Added class family");
         rules->setCurrentIndex(rules->findData(int(Promotion::FamilyRules::WithLich)));
         editor.findChild<QPushButton *>("createFamily")->click();

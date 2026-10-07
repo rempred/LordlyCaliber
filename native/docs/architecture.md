@@ -1,5 +1,19 @@
 # Native Lordly Caliber
 
+
+## Linked manual-promotion families
+
+The existing family catalog accepts an optional list of undirected family-ID
+pairs. Validation excludes None, missing IDs and self-links; serialization sorts
+and deduplicates the pairs. Connected families retain their authored identities
+and rules in the project but use a common low-half family identity in the compiled
+runtime words. Each class retains the source family's high-half behavior and its
+own compatibility mask. This reuses the maintained menu and discovery paths and
+requires no additional hook or resident lookup. Both original and expanded family
+resources preserve the authored links through export/reopen. Death eligibility
+and attack conversions are separate systems, unaffected by these links.
+
+
 ## Expandable equipment
 
 ItemData preserves the 12-byte prefix and complete 32-byte equipment records,

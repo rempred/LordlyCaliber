@@ -8,6 +8,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QCheckBox;
+class QListWidget;
 namespace lordly {
 class PromotionEditor : public QWidget {
   public:
@@ -29,5 +30,6 @@ class PromotionEditor : public QWidget {
     QComboBox *families_, *rules_;
     QLineEdit *name_;
     QLabel *notice_;
+    QListWidget *links_;
 };
 } // namespace lordly

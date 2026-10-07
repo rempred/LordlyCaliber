@@ -1,24 +1,45 @@
 #include "app/encounter_editor.h"
+#include "app/encounter_labels.h"
+#include "app/view_position.h"
 #include <QComboBox>
-#include <QSet>
 #include <QCompleter>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QVBoxLayout>
 namespace lordly {
+namespace {
+CreatureReward rewardAt(const Encounters &e, int id) {
+    return id >= 0 ? e.rewards().row(id) : e.customSquads().profiles().value(-id - 1).rewards;
+}
+void setRewardAt(Encounters &e, int id, const CreatureReward &reward, int classCount) {
+    if (id >= 0)
+        e.setReward(id, reward);
+    else {
+        const int key = -id - 1;
+        if (!e.customSquads().profiles().contains(key))
+            throw Error("This custom squad no longer exists");
+        auto squad = e.customSquads().profiles().value(key);
+        squad.rewards = reward;
+        e.setCustomSquad(squad, classCount);
+    }
+}
+} // namespace
+
 QWidget *EncounterEditor::createRewardsPage() {
     auto page = new QWidget;
     page->setObjectName("creatureRewardsPage");
     auto layout = new QVBoxLayout(page);
     auto explanation = new QLabel(
-        "Rewards for defeated neutral units are selected by class. "
+        "Choose a class for ordinary neutral encounters, or a named squad for its own victory "
+        "rewards. "
         "Each class has three outcomes with relative weights. A zero weight excludes an "
         "outcome; None with a positive weight gives a chance of no reward. Mission squad "
         "rewards and scripted gifts are separate.");
@@ -26,7 +47,7 @@ QWidget *EncounterEditor::createRewardsPage() {
     layout->addWidget(explanation);
     rewardSearch_ = new QLineEdit;
     rewardSearch_->setObjectName("rewardSearch");
-    rewardSearch_->setPlaceholderText("Find a class by name or ID…");
+    rewardSearch_->setPlaceholderText("Find a class, squad, scenario or ID…");
     rewardSearch_->setClearButtonEnabled(true);
     layout->addWidget(rewardSearch_);
     auto split = new QSplitter;
@@ -109,7 +130,8 @@ QWidget *EncounterEditor::createRewardsPage() {
         if (!rewardClasses_->currentItem())
             return;
         auto next = *project_->encounters();
-        next.setReward(rewardClasses_->currentItem()->data(Qt::UserRole).toInt(), CreatureReward{});
+        setRewardAt(next, rewardClasses_->currentItem()->data(Qt::UserRole).toInt(),
+                    CreatureReward{}, project_->records(Table::Classes).size());
         commit(next, "Remove class rewards");
         showReward();
     });
@@ -117,14 +139,16 @@ QWidget *EncounterEditor::createRewardsPage() {
         if (!rewardClasses_->currentItem())
             return;
         auto next = *project_->encounters();
-        next.setReward(rewardClasses_->currentItem()->data(Qt::UserRole).toInt(),
-                       next.rewards().row(rewardCopyFrom_->currentData().toInt()));
+        setRewardAt(next, rewardClasses_->currentItem()->data(Qt::UserRole).toInt(),
+                    rewardAt(next, rewardCopyFrom_->currentData().toInt()),
+                    project_->records(Table::Classes).size());
         commit(next, "Copy class rewards");
         showReward();
     });
     return page;
 }
 void EncounterEditor::refreshRewardClasses() {
+    const ViewPosition keepView(this);
     if (!rewardClasses_)
         return;
     for (auto box : rewardItems_) {
@@ -160,6 +184,21 @@ void EncounterEditor::refreshRewardClasses() {
             if (used.contains(id) == active)
                 ordered << id;
     int selectedRow = 0;
+    const auto &profiles = project_->encounters()->customSquads().profiles();
+    for (auto it = profiles.cbegin(); it != profiles.cend(); ++it) {
+        const int id = -it.key() - 1;
+        if (id == selected)
+            selectedRow = rewardClasses_->count();
+        const auto label = encounterSquadName(*project_, it.key()) +
+                           QString(" · Scenario %1 / %2%3")
+                               .arg(it->scenarioKey)
+                               .arg(Encounters::terrainNames().value(it->terrainSlot),
+                                    it->enabled ? "" : " (disabled)");
+        auto item = new QListWidgetItem(label, rewardClasses_);
+        item->setData(Qt::UserRole, id);
+        item->setToolTip("Custom squad victory rewards. Encounter message: " + it->label);
+        rewardCopyFrom_->addItem(label, id);
+    }
     for (const int id : ordered) {
         if (id == selected)
             selectedRow = rewardClasses_->count();
@@ -167,7 +206,8 @@ void EncounterEditor::refreshRewardClasses() {
             QString(project_->record(Table::Classes, id).name).replace('\n', ' '));
         auto item = new QListWidgetItem(label, rewardClasses_);
         item->setData(Qt::UserRole, id);
-        item->setToolTip(used.contains(id) ? "Used in an encounter pool or custom squad" : "Not currently used in encounters");
+        item->setToolTip(used.contains(id) ? "Used in an encounter pool or custom squad"
+                                           : "Not currently used in encounters");
         rewardCopyFrom_->addItem(label, id);
     }
     rewardClasses_->setCurrentRow(selectedRow);
@@ -197,8 +237,8 @@ void EncounterEditor::showReward() {
         rewardNotice_->setText("No matching class.");
         return;
     }
-    const auto &row = project_->encounters()->rewards().row(
-        rewardClasses_->currentItem()->data(Qt::UserRole).toInt());
+    const auto row = rewardAt(*project_->encounters(),
+                              rewardClasses_->currentItem()->data(Qt::UserRole).toInt());
     for (int i = 0; i < 3; ++i) {
         QSignalBlocker block(rewardWeights_[i]);
         rewardItems_[i]->setCurrentIndex(rewardItems_[i]->findData(row.outcomes[i]));
@@ -224,9 +264,16 @@ void EncounterEditor::applyReward(bool restore) {
     try {
         const int id = rewardClasses_->currentItem()->data(Qt::UserRole).toInt();
         CreatureReward value;
-        if (restore)
-            value = CreatureRewards::load(project_->rom()).row(id);
-        else
+        if (restore) {
+            if (id >= 0)
+                value = CreatureRewards::load(project_->rom()).row(id);
+            else
+                value =
+                    CustomSquads::load(project_->rom(), project_->records(Table::Classes).size())
+                        .profiles()
+                        .value(-id - 1)
+                        .rewards;
+        } else
             for (int i = 0; i < 3; ++i) {
                 if (rewardItems_[i]->currentIndex() < 0 ||
                     rewardItems_[i]->currentText() !=
@@ -236,7 +283,7 @@ void EncounterEditor::applyReward(bool restore) {
                 value.weights[i] = rewardWeights_[i]->value();
             }
         auto next = *project_->encounters();
-        next.setReward(id, value);
+        setRewardAt(next, id, value, project_->records(Table::Classes).size());
         commit(next, restore ? "Restore class rewards" : "Edit class rewards");
         showReward();
     } catch (const std::exception &e) {

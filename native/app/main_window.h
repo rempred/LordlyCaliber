@@ -16,6 +16,7 @@ class MainWindow : public QMainWindow {
 
   protected:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *, QEvent *) override;
 
   private:
     void installProject(Project project);

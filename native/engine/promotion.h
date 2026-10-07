@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/resource.h"
 #include <QJsonObject>
+#include <QSet>
 
 namespace lordly {
 quint32 crc32(const QByteArray &bytes);
@@ -25,9 +26,15 @@ class Promotion {
     void setEquipmentSetListed(int classId, bool listed);
     void assign(int classId, int familyId);
     int addFamily(const QString &name, int templateId);
-    enum class FamilyRules { WithinFamily = 5, WithLich = 2, WithLichAndVampire = 1,
-                             NoManualChanges = 3 };
+    enum class FamilyRules {
+        WithinFamily = 5,
+        WithLich = 2,
+        WithLichAndVampire = 1,
+        NoManualChanges = 3
+    };
     int createFamily(const QString &name, FamilyRules rules = FamilyRules::WithinFamily);
+    QSet<int> linkedFamilies(int familyId) const;
+    void setFamilyLinks(int familyId, const QSet<int> &links);
     int classCount() const;
     void growToClassCount(int count);
     int appendClass(int templateId);

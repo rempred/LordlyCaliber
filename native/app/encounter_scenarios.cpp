@@ -1,4 +1,5 @@
 #include "app/encounter_editor.h"
+#include "app/view_position.h"
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QHeaderView>
@@ -106,6 +107,7 @@ QWidget *EncounterEditor::createScenarioPage() {
     return page;
 }
 void EncounterEditor::refreshScenarios() {
+    const ViewPosition keepView(this);
     if (!scenarios_)
         return;
     const int selected =

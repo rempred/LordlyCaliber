@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/art_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
@@ -292,6 +293,7 @@ void ArtEditor::selectIcon(quint16 item) {
     refresh();
 }
 void ArtEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!project_->iconArtwork())
         return;
     refreshing_ = true;

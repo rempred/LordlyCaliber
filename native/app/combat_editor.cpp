@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/combat_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
@@ -388,6 +389,7 @@ void CombatEditor::selectBinding(const QString &id, int child) {
     refresh();
 }
 void CombatEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!project_->combatArtwork())
         return;
     refreshing_ = true;

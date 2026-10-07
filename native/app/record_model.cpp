@@ -205,10 +205,25 @@ int RecordModel::appendItem(int source, const QString &name) {
         return -1;
     }
 }
+int RecordModel::createItem(const QString &name) {
+    try {
+        if (table_ != Table::Items)
+            throw Error("New items require the Items workspace");
+        auto after = *project_;
+        const int id = after.createItem(name);
+        undo_->push(new AddClass(this, *project_, std::move(after), "Create item"));
+        return id;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return -1;
+    }
+}
 void RecordModel::applyProject(const Project &project) {
+    emit aboutToReplace();
     beginResetModel();
     *project_ = project;
     endResetModel();
+    emit replaced();
     emit edited();
 }
 QWidget *ClassNameDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &,

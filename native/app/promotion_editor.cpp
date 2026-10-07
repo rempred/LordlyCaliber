@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/promotion_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -5,6 +6,7 @@
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
 #include <QSpinBox>
@@ -83,6 +85,40 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         edit("Assign class family",
              [this](Promotion &p) { p.assign(id_, families_->currentData().toInt()); });
     });
+    layout->addSpacing(12);
+    layout->addWidget(new QLabel("Linked families — shared manual class-change destinations"));
+    links_ = new QListWidget;
+    links_->setObjectName("familyLinks");
+    links_->setMaximumHeight(170);
+    layout->addWidget(links_);
+    auto applyLinks = new QPushButton("Apply family links");
+    applyLinks->setObjectName("applyFamilyLinks");
+    layout->addWidget(applyLinks);
+    connect(applyLinks, &QPushButton::clicked, this, [this] {
+        QSet<int> links;
+        for (int row = 0; row < links_->count(); ++row)
+            if (links_->item(row)->checkState() == Qt::Checked)
+                links.insert(links_->item(row)->data(Qt::UserRole).toInt());
+        edit("Link class-change families", [this, links](Promotion &p) {
+            p.setFamilyLinks(families_->currentData().toInt(), links);
+        });
+    });
+    auto linkHelp =
+        new QLabel("Links work in both directions, including through other linked families. They "
+                   "add destinations to the manual class-change menu; compatibility masks, each "
+                   "family's manual-change policy, discovery, stats and equipment still apply. "
+                   "Family None cannot be linked.");
+    linkHelp->setWordWrap(true);
+    layout->addWidget(linkHelp);
+    auto automatic = new QLabel(
+        "Automatic changes are separate from families. Angel Knight / Zombie creation uses a "
+        "dedicated scenario-end function and per-class death-eligibility flags. Fallen non-leader "
+        "women may become Angel Knights (INT 60, MEN 61, DEX 57, Alignment 50–100, spare gear and "
+        "a Luck roll); eligible fallen characters may become Zombies unless protected by Mastaba's "
+        "Barrier. Zombie → Skeleton and Skeleton → Ghost use attack-conversion rules. Linking a "
+        "family does not enable these automatic routes.");
+    automatic->setWordWrap(true);
+    layout->addWidget(automatic);
     layout->addSpacing(18);
     auto heading = new QLabel("Create a family");
     layout->addWidget(heading);
@@ -96,7 +132,8 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     rules_->setObjectName("newFamilyRules");
     rules_->addItem("Within family", int(Promotion::FamilyRules::WithinFamily));
     rules_->addItem("Within family + Lich", int(Promotion::FamilyRules::WithLich));
-    rules_->addItem("Within family + Lich / Vampire", int(Promotion::FamilyRules::WithLichAndVampire));
+    rules_->addItem("Within family + Lich / Vampire",
+                    int(Promotion::FamilyRules::WithLichAndVampire));
     rules_->addItem("No manual class changes", int(Promotion::FamilyRules::NoManualChanges));
     rules_->setToolTip("Within family uses normal stat, equipment and compatibility checks. "
                        "It also permits category 0x08 changes between classes using this rule. "
@@ -109,7 +146,8 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     layout->addWidget(add);
     connect(add, &QPushButton::clicked, this, [this] {
         edit("Create class family", [this](Promotion &p) {
-            p.assign(id_, p.createFamily(name_->text(), Promotion::FamilyRules(rules_->currentData().toInt())));
+            p.assign(id_, p.createFamily(name_->text(),
+                                         Promotion::FamilyRules(rules_->currentData().toInt())));
         });
     });
     auto detail =
@@ -127,6 +165,7 @@ void PromotionEditor::selectClass(int id) {
     refresh();
 }
 void PromotionEditor::refresh() {
+    const ViewPosition keepView(this);
     refreshing_ = true;
     const bool available = project_->promotion().has_value();
     const bool editable = available && id_ >= 1 && id_ < project_->promotion()->classCount();
@@ -143,6 +182,7 @@ void PromotionEditor::refresh() {
                                  : "Manual class-change requirements. Equipment, story and "
                                    "character conditions also apply.");
     families_->clear();
+    links_->clear();
     if (available) {
         const auto &p = *project_->promotion();
         for (auto f : p.families["families"].toArray()) {
@@ -158,6 +198,33 @@ void PromotionEditor::refresh() {
                 gates_[n]->setValue(u8(p.gates, id_ * 8 + n));
             mask_->setValue(u8(p.masks, id_));
             equipmentSets_->setChecked((u8(p.flags, id_) & 0x80) != 0);
+        }
+    }
+    const int family = families_->currentData().toInt();
+    links_->setEnabled(editable && family != 0);
+    findChild<QPushButton *>("applyFamilyLinks")->setEnabled(editable && family != 0);
+    if (available && editable) {
+        const auto &p = *project_->promotion();
+        const auto selectedLinks = p.linkedFamilies(family);
+        const auto assignments = p.families["assignments"].toArray();
+        for (const auto &value : p.families["families"].toArray()) {
+            const auto f = value.toObject();
+            const int id = f["id"].toInt();
+            if (!id || id == family)
+                continue;
+            QStringList examples;
+            for (int cl = 1; cl < assignments.size() && examples.size() < 3; ++cl)
+                if (assignments[cl] == id)
+                    examples
+                        << QString(project_->record(Table::Classes, cl).name).replace('\n', ' ');
+            auto row =
+                new QListWidgetItem(QString("%1 · %2%3")
+                                        .arg(id)
+                                        .arg(f["name"].toString(),
+                                             examples.isEmpty() ? "" : " — " + examples.join(", ")),
+                                    links_);
+            row->setData(Qt::UserRole, id);
+            row->setCheckState(selectedLinks.contains(id) ? Qt::Checked : Qt::Unchecked);
         }
     }
     refreshing_ = false;

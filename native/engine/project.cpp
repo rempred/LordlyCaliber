@@ -466,6 +466,25 @@ int Project::appendItem(int source, const QString &name) {
     *this = std::move(next);
     return id;
 }
+int Project::createItem(const QString &name) {
+    auto next = *this;
+    next.loadTexts();
+    next.loadIconArtwork();
+    next.loadAnimationRoutes();
+    ItemAsset asset{QByteArray(32, 0), encodeItemName(name)};
+    // An uneventful accessory: no inherited stats, effects, description or artwork.
+    put8(asset.record, 4, 25);
+    const int id = next.appendItemAsset(asset, {});
+    if (next.icons_->equipmentCount() + 1 != id)
+        throw Error("Item and icon counts disagree");
+    next.icons_->appendEquipment(1);
+    QImage blank(16, 16, QImage::Format_RGBA8888);
+    blank.fill(Qt::transparent);
+    next.icons_->setWords(quint16(id), next.icons_->mapImage(quint16(id), blank));
+    next.animationRoutes_->newEquipment(id);
+    *this = std::move(next);
+    return id;
+}
 QByteArray encodeClassName(const QString &name) {
     if (name.trimmed().isEmpty())
         throw Error("Enter a class name");

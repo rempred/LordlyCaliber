@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
@@ -314,6 +315,7 @@ int ScenarioEditor::key() const {
     return scenarios_->currentItem() ? scenarios_->currentItem()->data(Qt::UserRole).toInt() : -1;
 }
 void ScenarioEditor::refresh() {
+    const ViewPosition keepView(this);
     loading_ = true;
     QSignalBlocker block(scenarios_);
     const int previous = key();

@@ -319,6 +319,17 @@ QByteArray AnimationRoutes::effectivePrefix() const {
     }
     return bytes;
 }
+void AnimationRoutes::newEquipment(int target) {
+    if (target < 1 || target > 510)
+        throw Error("Invalid new equipment appearance ID");
+    auto variants = section(2);
+    if (target >= variants.size())
+        variants.resize(target + 1, char(0));
+    if (variants.size() % 2)
+        variants += char(0);
+    variants[target] = 0;
+    equipmentVariants_ = variants;
+}
 void AnimationRoutes::cloneEquipment(int source, int target) {
     auto variants = section(2);
     if (source < 1 || source >= variants.size() || target < 1 || target > 510)

@@ -7,6 +7,7 @@ class QListWidget;
 class QSpinBox;
 class QLabel;
 class QPushButton;
+class QTextBrowser;
 namespace lordly {
 class ScenarioRouteEditor : public QWidget {
   public:
@@ -18,6 +19,7 @@ class ScenarioRouteEditor : public QWidget {
 
   private:
     void showNode();
+    void showSquadRoute();
     void showCondition();
     void showGroup();
     void nodeControls();
@@ -28,6 +30,8 @@ class ScenarioRouteEditor : public QWidget {
     Project *project_;
     std::function<void(const Scenarios &, const QString &)> commit_;
     QListWidget *nodes_, *conditions_;
+    QComboBox *routeSquad_, *routeStart_;
+    QTextBrowser *routeSummary_;
     QComboBox *nodeKind_, *move_, *wait_, *placement_, *conditionA_, *gate_, *conditionB_, *next_,
         *fork_, *conditionKind_, *groupSquad_, *pattern_;
     QSpinBox *x_, *z_, *group_;

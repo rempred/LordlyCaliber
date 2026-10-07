@@ -1,25 +1,27 @@
 #include "app/main_window.h"
-#include "app/change_report_dialog.h"
-#include "app/art_editor.h"
-#include "app/portrait_editor.h"
-#include "app/army_editor.h"
-#include "app/combat_editor.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/animation_sequence_editor.h"
+#include "app/army_editor.h"
+#include "app/art_editor.h"
+#include "app/change_report_dialog.h"
+#include "app/combat_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
+#include "app/portrait_editor.h"
 #include "app/promotion_editor.h"
 #include "app/save_editor.h"
-#include "app/sprite_editor.h"
 #include "app/scenario_editor.h"
 #include "app/shop_editor.h"
+#include "app/sprite_editor.h"
 #include "app/text_workspace.h"
 #include "app/tools_editor.h"
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
+#include <QAbstractSpinBox>
 #include <QAction>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -38,6 +40,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QSplitter>
@@ -50,13 +53,30 @@
 #include <QToolBar>
 #include <QUndoGroup>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QtConcurrent>
 #include <optional>
 
 namespace lordly {
+bool MainWindow::eventFilter(QObject *object, QEvent *event) {
+    auto widget = qobject_cast<QWidget *>(object);
+    if (widget && isAncestorOf(widget)) {
+        auto combo = qobject_cast<QComboBox *>(widget);
+        auto spin = qobject_cast<QAbstractSpinBox *>(widget);
+        if ((combo || spin) && event->type() == QEvent::Polish)
+            widget->setFocusPolicy(Qt::StrongFocus);
+        if ((combo || spin) && event->type() == QEvent::Wheel && !widget->hasFocus() &&
+            !(combo && combo->view()->isVisible())) {
+            event->ignore();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(object, event);
+}
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), undo_(new QUndoStack(this)), workspaces_(new QTabWidget(this)),
       summary_(new QLabel(this)) {
+    qApp->installEventFilter(this);
     setWindowTitle("Lordly Caliber · Native Editor");
     resize(1440, 900);
     setMinimumSize(900, 600);
@@ -223,16 +243,25 @@ void MainWindow::installProject(Project project) {
                         "Tools");
     workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Sprites");
-    if(project_->rom().revision()==0) {
-        auto artwork=new QTabWidget;
-        artwork->addTab(new ArtEditor(project_.get(),undo_,[this]{updateStatus();}),"Item icons");
-        artwork->addTab(new PortraitEditor(project_.get(),undo_,[this]{updateStatus();}),"Portraits");
-        artwork->addTab(new ArmyEditor(project_.get(),undo_,[this]{updateStatus();}),"Army sprites");
-        artwork->addTab(new CombatEditor(project_.get(),undo_,[this]{updateStatus();}),"Combat artwork");
-        artwork->addTab(new AnimationEditor(project_.get(),undo_,[this]{updateStatus();}),"Class animations");
-        artwork->addTab(new AnimationOverrideEditor(project_.get(),undo_,[this]{updateStatus();}),"Attack overrides");
-        artwork->addTab(new AnimationSequenceEditor(project_.get(),undo_,[this]{updateStatus();}),"Private sequences");
-        workspaces_->addTab(artwork,"Art");
+    if (project_->rom().revision() == 0) {
+        auto artwork = new QTabWidget;
+        artwork->addTab(new ArtEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Item icons");
+        artwork->addTab(new PortraitEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Portraits");
+        artwork->addTab(new ArmyEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Army sprites");
+        artwork->addTab(new CombatEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Combat artwork");
+        artwork->addTab(new AnimationEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Class animations");
+        artwork->addTab(
+            new AnimationOverrideEditor(project_.get(), undo_, [this] { updateStatus(); }),
+            "Attack overrides");
+        artwork->addTab(
+            new AnimationSequenceEditor(project_.get(), undo_, [this] { updateStatus(); }),
+            "Private sequences");
+        workspaces_->addTab(artwork, "Art");
     }
     if (project_->rom().revision() == 0) {
         auto save = new SaveEditor(project_.get());
@@ -295,7 +324,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
-    QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr;
+    QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr, *newItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         addClass = new QPushButton("Add class from selected…");
         addClass->setObjectName("addClass");
@@ -349,6 +378,23 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                             "ROM artwork as a starting point.");
         auto actions = new QHBoxLayout;
         actions->addWidget(addItem);
+        newItem = new QPushButton("New item…");
+        newItem->setObjectName("newItem");
+        newItem->setToolTip("Create a blank accessory with zero stats and no artwork or effects. "
+                            "Set its equipment type and other fields after creation.");
+        actions->addWidget(newItem);
+        connect(newItem, &QPushButton::clicked, page, [this, model, proxy, grid, search] {
+            bool accepted = false;
+            const auto name = QInputDialog::getText(this, "New item", "Item name",
+                                                    QLineEdit::Normal, "New item", &accepted);
+            if (!accepted)
+                return;
+            const int id = model->createItem(name);
+            if (id >= 0) {
+                search->clear();
+                grid->setCurrentIndex(proxy->mapFromSource(model->index(id, 1)));
+            }
+        });
         actions->addStretch();
         layout->insertLayout(1, actions);
         connect(addItem, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
@@ -403,7 +449,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem] {
+                    addItem, newItem] {
+        if (newItem)
+            newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
         if (addItem)
@@ -431,6 +479,20 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 refresh();
             });
     connect(search, &QLineEdit::textChanged, proxy, &QSortFilterProxyModel::setFilterFixedString);
+    auto position = std::make_shared<QPoint>();
+    auto selectedBeforeReset = std::make_shared<int>(-1);
+    connect(model, &RecordModel::aboutToReplace, page, [=] {
+        *selectedBeforeReset = *selected;
+        *position = {grid->horizontalScrollBar()->value(), grid->verticalScrollBar()->value()};
+    });
+    connect(model, &RecordModel::replaced, page, [=] {
+        if (*selectedBeforeReset >= 0 && model->rowCount())
+            grid->setCurrentIndex(proxy->mapFromSource(
+                model->index(std::min(*selectedBeforeReset, model->rowCount() - 1), 1)));
+        grid->doItemsLayout();
+        grid->horizontalScrollBar()->setValue(position->x());
+        grid->verticalScrollBar()->setValue(position->y());
+    });
     connect(model, &RecordModel::edited, page, [this, refresh] {
         refresh();
         updateStatus();

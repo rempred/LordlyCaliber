@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/animation_editor.h"
 #include <QComboBox>
 #include <QCheckBox>
@@ -337,6 +338,7 @@ void AnimationEditor::selectClass(int id) {
     refresh();
 }
 void AnimationEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!classes_)
         return;
     project_->loadAnimationRoutes();

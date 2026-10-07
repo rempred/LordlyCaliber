@@ -1,4 +1,5 @@
 #include "app/scenario_map_editor.h"
+#include "app/view_position.h"
 #include <QCheckBox>
 #include <QFormLayout>
 #include <QImage>
@@ -39,6 +40,8 @@ class MapCanvas : public QWidget {
     QVector<QPair<int, int>> edges;
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
+    std::function<void(QPointF)> place;
+    bool placing = false;
     int current = -1;
     bool grid = true, labels = true, showTerrain = true;
     QImage terrain;
@@ -144,6 +147,10 @@ class MapCanvas : public QWidget {
         }
         if (e->button() != Qt::LeftButton)
             return;
+        if (placing && place) {
+            place(fromPixel(e->position()));
+            return;
+        }
         int hit = -1;
         qreal distance = 12;
         // Keep a list-selected marker reachable when several share a position.
@@ -204,9 +211,9 @@ class MapCanvas : public QWidget {
 };
 class MapWorldCommand final : public QUndoCommand {
   public:
-    MapWorldCommand(Project *p, QJsonObject before, QJsonObject after)
-        : QUndoCommand("Move treasure on map"), project_(p), before_(std::move(before)),
-          after_(std::move(after)) {}
+    MapWorldCommand(Project *p, QJsonObject before, QJsonObject after,
+                    const QString &label = "Move treasure on map")
+        : QUndoCommand(label), project_(p), before_(std::move(before)), after_(std::move(after)) {}
     void undo() override {
         project_->setWorld(before_);
     }
@@ -229,6 +236,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     auto fit = new QPushButton("Fit map");
     fit->setObjectName("mapFit");
     toolbar->addWidget(fit);
+    auto addTreasure = new QPushButton("Add treasure on map");
+    addTreasure->setObjectName("mapTreasureAdd");
+    addTreasure->setCheckable(true);
+    toolbar->addWidget(addTreasure);
     auto grid = new QCheckBox("Grid"), labels = new QCheckBox("Labels");
     grid->setChecked(true);
     labels->setChecked(true);
@@ -295,6 +306,43 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                             m.bounds.top() + m.bounds.height() * position.y() / 256.);
         move(row, m.bytes(world, canvas_->markers[row].kind != MapObject::Treasure));
     };
+    connect(addTreasure, &QPushButton::toggled, this, [this](bool on) {
+        canvas_->placing = on;
+        canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+        notice_->setText(on ? "Click the map to place a new treasure. Click Add treasure again to "
+                              "cancel. Then use Edit selected fields to choose its item."
+                            : "");
+    });
+    canvas_->place = [this, addTreasure](QPointF position) {
+        if (key_ < 1 || !maps_.contains(key_))
+            return;
+        if (position.x() < 0 || position.x() > 255 || position.y() < 0 || position.y() > 255) {
+            notice_->setText("Place the treasure inside the map bounds.");
+            return;
+        }
+        try {
+            auto next = *project_->world();
+            const int row = next.addTreasure(key_);
+            auto record = ScenarioWorld::treasureRecord(next.scenario(key_).treasures, row);
+            put8(record, 1, quint8(std::round(position.x())));
+            put8(record, 2, quint8(std::round(position.y())));
+            next.setTreasure(key_, row, record);
+            addTreasure->setChecked(false);
+            undo_->push(new MapWorldCommand(project_, project_->world()->json(), next.json(),
+                                            "Place new treasure on map"));
+            refresh(key_);
+            for (int i = 0; i < canvas_->markers.size(); ++i)
+                if (canvas_->markers[i].kind == MapObject::Treasure &&
+                    canvas_->markers[i].row == row) {
+                    objects_->setCurrentRow(i);
+                    break;
+                }
+            notice_->setText("Treasure placed. Use Edit selected fields to choose its item, or "
+                             "drag to move it.");
+        } catch (const Error &e) {
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
+    };
     connect(fit, &QPushButton::clicked, this, [this] { canvas_->resetView(); });
     connect(terrain_, &QCheckBox::toggled, this, [this](bool value) {
         canvas_->showTerrain = value;
@@ -320,11 +368,14 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     });
 }
 void ScenarioMapEditor::refresh(int key) {
+    const ViewPosition keepView(this, key_ == key);
     if (key < 1)
         return;
     const int previous = key_ == key ? objects_->currentRow() : -1;
-    if (key_ != key)
+    if (key_ != key) {
         canvas_->resetView();
+        findChild<QPushButton *>("mapTreasureAdd")->setChecked(false);
+    }
     key_ = key;
     canvas_->cancelDrag();
     loading_ = true;

@@ -1,6 +1,6 @@
 #include "engine/promotion.h"
-#include "engine/class_data.h"
 #include "engine/art_resource_links.h"
+#include "engine/class_data.h"
 #include "engine/expanded_promotion_resource.h"
 #include <QFile>
 #include <QJsonArray>
@@ -40,7 +40,8 @@ QJsonObject Promotion::validateFamilies(const QJsonObject &value) {
     const auto version = value["schemaVersion"];
     const auto count = value["assignments"].toArray().size();
     if (!((version == 1 && count == 81) || (version == 2 && count >= 165 && count <= 256)) ||
-        !value["families"].isArray() || !value["assignments"].isArray() || value.size() != 3)
+        !value["families"].isArray() || !value["assignments"].isArray() ||
+        value.size() != (value.contains("links") ? 4 : 3))
         throw Error("Invalid class family catalog");
     QSet<int> ids;
     QSet<QString> names;
@@ -82,6 +83,31 @@ QJsonObject Promotion::validateFamilies(const QJsonObject &value) {
     for (auto f : sorted)
         canonical << f;
     result["families"] = canonical;
+    if (value.contains("links")) {
+        if (!value["links"].isArray())
+            throw Error("Family links must be pairs of family IDs");
+        QSet<quint32> edges;
+        for (const auto &edge : value["links"].toArray()) {
+            const auto pair = edge.toArray();
+            if (!edge.isArray() || pair.size() != 2)
+                throw Error("Invalid family link");
+            int a = integer(pair[0], 1, 65534), b = integer(pair[1], 1, 65534);
+            if (a == b || !ids.contains(a) || !ids.contains(b))
+                throw Error("Link two different existing families");
+            if (a > b)
+                std::swap(a, b);
+            edges.insert((quint32(a) << 16) | quint32(b));
+        }
+        auto ordered = edges.values();
+        std::sort(ordered.begin(), ordered.end());
+        QJsonArray links;
+        for (auto edge : ordered)
+            links << QJsonArray{int(edge >> 16), int(edge & 65535)};
+        if (links.isEmpty())
+            result.remove("links");
+        else
+            result["links"] = links;
+    }
     return result;
 }
 Promotion Promotion::load(const Rom &rom) {
@@ -143,7 +169,7 @@ Promotion Promotion::load(const Rom &rom) {
         auto code = rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt());
         if (classPlacement)
             code = classPlacement->canonicalReferences(code, owner["start"].toInt());
-        auto hash = QString::fromLatin1(sha256(canonicalArtOwner(code,owner["start"].toInt())));
+        auto hash = QString::fromLatin1(sha256(canonicalArtOwner(code, owner["start"].toInt())));
         bool family =
             hash == owner["familySha256"].toString() ||
             (owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString());
@@ -262,6 +288,54 @@ int Promotion::createFamily(const QString &name, FamilyRules rules) {
     families = validateFamilies(candidate);
     return next;
 }
+QSet<int> Promotion::linkedFamilies(int familyId) const {
+    QSet<int> result;
+    for (const auto &edge : families["links"].toArray()) {
+        const auto pair = edge.toArray();
+        if (pair[0].toInt() == familyId)
+            result.insert(pair[1].toInt());
+        if (pair[1].toInt() == familyId)
+            result.insert(pair[0].toInt());
+    }
+    return result;
+}
+void Promotion::setFamilyLinks(int familyId, const QSet<int> &links) {
+    bool found = false;
+    for (const auto &f : families["families"].toArray())
+        found |= f.toObject()["id"].toInt() == familyId;
+    if (!found || familyId == 0)
+        throw Error("Choose a numbered family to link");
+    QJsonArray edges;
+    for (const auto &edge : families["links"].toArray()) {
+        const auto pair = edge.toArray();
+        if (pair[0].toInt() != familyId && pair[1].toInt() != familyId)
+            edges << edge;
+    }
+    for (int target : links)
+        edges << QJsonArray{familyId, target};
+    auto next = families;
+    next["links"] = edges;
+    families = validateFamilies(next);
+}
+// Linked families share the existing runtime family identity. Their individual
+// menu policies and class compatibility masks remain independent. No extra hook
+// or resident table is necessary; the catalog retains the user's named groups.
+static QMap<int, int> runtimeFamilies(const QJsonObject &catalog) {
+    QMap<int, int> result;
+    for (const auto &f : catalog["families"].toArray()) {
+        const int id = f.toObject()["id"].toInt();
+        result[id] = id;
+    }
+    for (const auto &edge : catalog["links"].toArray()) {
+        const auto pair = edge.toArray();
+        const int a = result[pair[0].toInt()], b = result[pair[1].toInt()];
+        const int merged = std::min(a, b);
+        for (auto it = result.begin(); it != result.end(); ++it)
+            if (it.value() == a || it.value() == b)
+                it.value() = merged;
+    }
+    return result;
+}
 int Promotion::classCount() const {
     const auto count = families["assignments"].toArray().size();
     if (count != masks.size() || count != flags.size() || gates.size() != count * 8 ||
@@ -318,10 +392,11 @@ PromotionData Promotion::buildExpandedData() const {
     }
     result.bytes.resize(result.maskOffset);
     const auto assignments = catalog["assignments"].toArray();
+    const auto runtime = runtimeFamilies(catalog);
     for (int id = 0; id < count; ++id) {
         const auto family = assignments[id].toInt();
         put32(result.bytes, result.familyOffset + id * 4,
-              quint32(behaviors[family] * 65536 + family));
+              quint32(behaviors[family] * 65536 + runtime[family]));
     }
     result.bytes += masks;
     for (auto value : flags)
@@ -398,10 +473,11 @@ QByteArray Promotion::decodedFamilies() const {
     QMap<int, int> behaviors;
     for (auto f : families["families"].toArray())
         behaviors[f.toObject()["id"].toInt()] = f.toObject()["behavior"].toInt();
+    const auto runtime = runtimeFamilies(families);
     for (auto id : families["assignments"].toArray()) {
         auto pos = out.size();
         out.resize(pos + 4);
-        put32(out, pos, quint32(behaviors[id.toInt()] * 65536 + id.toInt()));
+        put32(out, pos, quint32(behaviors[id.toInt()] * 65536 + runtime[id.toInt()]));
     }
     auto json = QJsonDocument(families).toJson(QJsonDocument::Compact);
     out.resize(980);

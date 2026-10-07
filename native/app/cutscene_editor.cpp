@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/cutscene_editor.h"
 #include "app/scene_action_editor.h"
 #include <QUndoStack>
@@ -541,6 +542,7 @@ const ScenePrograms &CutsceneEditor::programs() const {
     return project_ ? *project_->scenePrograms() : *readOnlyPrograms_;
 }
 void CutsceneEditor::reloadScenes(SceneId preferred) {
+    const ViewPosition keepView(this);
     if (!readOnlyPrograms_ && (!project_ || !project_->scenePrograms()))
         return;
     if (!preferred)

@@ -1,7 +1,8 @@
 #include "app/custom_squad_editor.h"
-#include <QCheckBox>
+#include "app/encounter_labels.h"
+#include "app/view_position.h"
 #include <QApplication>
-#include <QMouseEvent>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
 #include <QFormLayout>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -105,8 +107,8 @@ CustomSquadEditor::CustomSquadEditor(
     enabled_ = new QCheckBox("Use this squad for encounters");
     enabled_->setObjectName("customEnabled");
     enabled_->setToolTip("When checked, this squad replaces the normal creature choices for its "
-                        "scenario and terrain slot. When unchecked, the normal pool applies "
-                        "and this squad remains saved for later use.");
+                         "scenario and terrain slot. When unchecked, the normal pool applies "
+                         "and this squad remains saved for later use.");
     identity->addWidget(new QLabel("Encounter card"), 1, 0);
     identity->addWidget(label_, 1, 1, 1, 2);
     identity->addWidget(enabled_, 1, 3);
@@ -202,6 +204,12 @@ CustomSquadEditor::CustomSquadEditor(
     formation_->setObjectName("customFormationNotice");
     formation_->setWordWrap(true);
     memberLayout->addWidget(formation_);
+    auto memberRules =
+        new QLabel("Custom neutral squads support up to five individually configured members. "
+                   "Member 1 is the leader. Ordinary scenario enemy templates instead use a leader "
+                   "and two shared follower types. Large classes still require a valid formation.");
+    memberRules->setWordWrap(true);
+    memberLayout->addWidget(memberRules);
     auto levels = new QLabel("Level offsets are added to the encounter level. Results outside "
                              "0–255 wrap, matching the game.");
     levels->setWordWrap(true);
@@ -223,6 +231,9 @@ CustomSquadEditor::CustomSquadEditor(
     form->addRow("Base chance", chance_);
     form->addRow("Retreat at or below HP", retreat_);
     behaviorLayout->addLayout(form);
+    auto affinityTitle = new QLabel("Talk / Persuade — player leader affinity bonuses");
+    affinityTitle->setObjectName("customAffinityLabel");
+    behaviorLayout->addWidget(affinityTitle);
     auto bonusTable = new QTableWidget(3, 2);
     bonusTable->setHorizontalHeaderLabels({"Player leader class", "Chance bonus"});
     bonusTable->verticalHeader()->hide();
@@ -242,10 +253,11 @@ CustomSquadEditor::CustomSquadEditor(
         connect(bonus, &QSpinBox::valueChanged, this, [this] { preview(); });
     }
     behaviorLayout->addWidget(bonusTable);
-    auto talkHint = new QLabel("Configured chance uses the Base chance plus one matching leader-class bonus, "
-                               "capped at 100%. Talk fails while another eligible "
-                               "target remains. Failed Talk does not force retreat. Fight and Talk "
-                               "remain available until the encounter resolves.");
+    auto talkHint =
+        new QLabel("Configured chance uses the Base chance plus one matching leader-class bonus, "
+                   "capped at 100%. Talk fails while another eligible "
+                   "target remains. Failed Talk does not force retreat. Fight and Talk "
+                   "remain available until the encounter resolves.");
     talkHint->setWordWrap(true);
     behaviorLayout->addWidget(talkHint);
     auto rewards = new QTableWidget(3, 3);
@@ -323,6 +335,7 @@ CustomSquadEditor::CustomSquadEditor(
     refresh();
 }
 void CustomSquadEditor::refresh() {
+    const ViewPosition keepView(this);
     loading_ = true;
     QSignalBlocker block(list_);
     list_->clear();
@@ -334,7 +347,7 @@ void CustomSquadEditor::refresh() {
             new QListWidgetItem(QString("%1%2 · %3\n%4 · %5")
                                     .arg(s.enabled ? "" : "[Disabled] ")
                                     .arg(s.scenarioKey)
-                                    .arg(s.label)
+                                    .arg(encounterSquadName(*project_, it.key()))
                                     .arg(project_->encounters()->scenarioLabel(s.scenarioKey))
                                     .arg(Encounters::terrainNames()[s.terrainSlot]),
                                 list_);
@@ -576,7 +589,8 @@ bool CustomSquadEditor::eventFilter(QObject *object, QEvent *event) {
         const auto position = mouse->globalPosition().toPoint();
         for (int cell = 0; cell < cells_.size(); ++cell)
             if (cells_[cell]->rect().contains(cells_[cell]->mapFromGlobal(position))) {
-                if (draggedMember_ >= 0 && (position - dragStart_).manhattanLength() >= QApplication::startDragDistance())
+                if (draggedMember_ >= 0 &&
+                    (position - dragStart_).manhattanLength() >= QApplication::startDragDistance())
                     moveMember(draggedMember_, cell);
                 else if (draggedMember_ < 0)
                     moveMember(qBound(0, members_->currentRow(), count_->value() - 1), cell);

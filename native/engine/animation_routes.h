@@ -39,6 +39,7 @@ class AnimationRoutes {
     void setRow(int classId, const Row &);
     AnimationRoutes withDirectory(const QByteArray &) const;
     void cloneEquipment(int source, int target);
+    void newEquipment(int target);
     void cloneClass(int source, int target) {
         setEntry(target, entry(source));
     }

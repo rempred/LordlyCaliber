@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/animation_override_editor.h"
 #include <QComboBox>
 #include <QCompleter>
@@ -202,6 +203,7 @@ void AnimationOverrideEditor::apply(QJsonArray entries, const QString &label,
         refresh();
 }
 void AnimationOverrideEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!classes_)
         return;
     project_->loadAnimationOverrides();

@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/save_editor.h"
 #include "app/save_unit_editor.h"
 #include <QAbstractTableModel>
@@ -711,6 +712,7 @@ void SaveEditor::updateActions() {
                                       tables_->widget(i)->objectName() == "saveSquads");
 }
 void SaveEditor::refresh() {
+    const ViewPosition keepView(this);
     const QSignalBlocker guard(slots_);
     slots_->clear();
     if (document_) {

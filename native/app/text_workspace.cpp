@@ -1,4 +1,5 @@
 #include "app/text_workspace.h"
+#include "app/view_position.h"
 #include <QComboBox>
 #include <QDateTime>
 #include <QHBoxLayout>
@@ -115,6 +116,7 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
         refresh();
     });
     auto selectBank = [=] {
+        const ViewPosition keepView(page, selected->bank == banks->currentData().toString());
         const auto previous = selected->bank == banks->currentData().toString() ? selected->row : 1;
         selected->row = -1;
         selected->bank = banks->currentData().toString();

@@ -185,6 +185,7 @@ class Project {
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
     int appendItem(int templateId, const QString &name);
+    int createItem(const QString &name);
     ItemData itemData() const;
     void validateItemReferences() const;
     QByteArray itemNameBytes(int row) const;

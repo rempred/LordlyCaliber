@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/army_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
@@ -365,6 +366,7 @@ void ArmyEditor::selectModel(int atlas, int model, int palette) {
     refresh();
 }
 void ArmyEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!project_->armyArtwork())
         return;
     refreshing_ = true;

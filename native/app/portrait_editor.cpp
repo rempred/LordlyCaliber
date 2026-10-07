@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/portrait_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
@@ -307,6 +308,7 @@ void PortraitEditor::setColor(QColor color) {
                           ";color:" + (color.lightness() < 128 ? "white" : "black"));
 }
 void PortraitEditor::refresh() {
+    const ViewPosition keepView(this);
     if (!project_->avatarArtwork())
         return;
     refreshing_ = true;

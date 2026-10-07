@@ -1,13 +1,17 @@
 #include "app/scenario_route_editor.h"
+#include "app/view_position.h"
 #include <QComboBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTabWidget>
+#include <QTextBrowser>
 #include <QVBoxLayout>
 #include <algorithm>
 namespace lordly {
@@ -56,6 +60,58 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     : QWidget(parent), project_(project), commit_(std::move(commit)) {
     setObjectName("scenarioRoutesEditor");
     auto layout = new QVBoxLayout(this);
+    auto route =
+        new QGroupBox("Squad behavior — choose a squad, follow its route, then edit a step below");
+    auto routeLayout = new QVBoxLayout(route);
+    auto routeChoices = new QHBoxLayout;
+    routeSquad_ = box("behaviorSquad");
+    routeStart_ = box("behaviorStart");
+    routeChoices->addWidget(new QLabel("Squad"));
+    routeChoices->addWidget(routeSquad_, 2);
+    routeChoices->addWidget(new QLabel("Start with"));
+    routeChoices->addWidget(routeStart_, 1);
+    auto assign = new QPushButton("Assign start");
+    assign->setObjectName("behaviorAssign");
+    routeChoices->addWidget(assign);
+    routeLayout->addLayout(routeChoices);
+    routeSummary_ = new QTextBrowser;
+    routeSummary_->setObjectName("behaviorSummary");
+    routeSummary_->setOpenLinks(false);
+    routeSummary_->setMaximumHeight(135);
+    routeLayout->addWidget(routeSummary_);
+    layout->addWidget(route);
+    connect(routeSquad_, &QComboBox::currentIndexChanged, this, [this] {
+        if (loading_ || key_ < 0)
+            return;
+        const auto &s = project_->scenarios()->scenario(key_);
+        const int row = routeSquad_->currentData().toInt();
+        if (row >= 0 && row < s.layout.deployments.size())
+            select(routeStart_, u8(s.layout.deployments[row], 6));
+        showSquadRoute();
+    });
+    connect(routeStart_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!loading_)
+            showSquadRoute();
+    });
+    connect(routeSummary_, &QTextBrowser::anchorClicked, this, [this](const QUrl &link) {
+        const int id = link.toString().toInt();
+        const auto &nodes = project_->scenarios()->scenario(key_).layout.nodes;
+        for (int i = 0; i < nodes.size(); ++i)
+            if (u8(nodes[i], 0) == id) {
+                selectNode(i);
+                break;
+            }
+    });
+    connect(assign, &QPushButton::clicked, this, [this] {
+        if (routeSquad_->currentIndex() < 0)
+            return;
+        change("Assign squad behavior", [this](Scenarios &s) {
+            const int row = routeSquad_->currentData().toInt();
+            auto deployment = s.scenario(key_).layout.deployments[row];
+            put8(deployment, 6, quint8(routeStart_->currentData().toInt()));
+            s.setDeployment(key_, row, deployment, project_->classData());
+        });
+    });
     auto tabs = new QTabWidget;
     tabs->setObjectName("scenarioRouteTabs");
     layout->addWidget(tabs, 1);
@@ -89,8 +145,8 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     nodeForm->addRow("Condition B", conditionB_);
     next_ = box("routeNext");
     fork_ = box("routeFork");
-    nodeForm->addRow("Next node / branch B", next_);
-    nodeForm->addRow("Branch A node", fork_);
+    nodeForm->addRow("Then go to / branch B destination", next_);
+    nodeForm->addRow("Branch A destination", fork_);
     extension_ = new QLabel;
     extension_->setWordWrap(true);
     nodeForm->addRow(extension_);
@@ -217,6 +273,7 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     setEnabled(false);
 }
 void ScenarioRouteEditor::refresh(int key) {
+    const ViewPosition keepView(this, key_ == key);
     setEnabled(key >= 0);
     if (key < 0) {
         key_ = key;
@@ -227,6 +284,23 @@ void ScenarioRouteEditor::refresh(int key) {
     key_ = key;
     loading_ = true;
     const auto &s = project_->scenarios()->scenario(key_);
+    const int squadRow = routeSquad_->currentData().toInt();
+    routeSquad_->clear();
+    routeStart_->clear();
+    for (int row = 0; row < s.squads.size(); ++row) {
+        const int leader = u8(s.squads[row], 0);
+        routeSquad_->addItem(
+            QString("%1 Squad · %2")
+                .arg(QString(project_->record(Table::Classes, leader).name).replace('\n', ' '))
+                .arg(u8(s.layout.deployments[row], 0) & 127),
+            row);
+    }
+    routeSquad_->setCurrentIndex(std::max(0, routeSquad_->findData(squadRow)));
+    routeStart_->addItem("Hold position", 1);
+    for (const auto &node : s.layout.nodes)
+        routeStart_->addItem(QString("Step %1").arg(u8(node, 0)), u8(node, 0));
+    if (routeSquad_->currentIndex() >= 0)
+        select(routeStart_, u8(s.layout.deployments[routeSquad_->currentData().toInt()], 6));
     nodes_->clear();
     for (const auto &n : s.layout.nodes)
         nodes_->addItem(QString("Node %1 · %2\nNext: %3 · Condition A: %4")
@@ -268,6 +342,76 @@ void ScenarioRouteEditor::refresh(int key) {
     showNode();
     showCondition();
     showGroup();
+    showSquadRoute();
+}
+void ScenarioRouteEditor::showSquadRoute() {
+    if (key_ < 0 || routeSquad_->currentIndex() < 0) {
+        routeSummary_->clear();
+        return;
+    }
+    const auto &s = project_->scenarios()->scenario(key_);
+    auto target = [](int id) {
+        return id == 0     ? QString("wait here")
+               : id == 1   ? QString("hold position")
+               : id == 255 ? QString("end route")
+                           : QString("<a href=\"%1\">step %1</a>").arg(id);
+    };
+    QString html = "<b>" + routeSquad_->currentText().toHtmlEscaped() + "</b> starts with " +
+                   target(routeStart_->currentData().toInt()) + ".<br>";
+    QList<int> pending{routeStart_->currentData().toInt()};
+    QSet<int> seen;
+    while (!pending.isEmpty()) {
+        const int id = pending.takeFirst();
+        if (seen.contains(id) || id < 4 || id == 255)
+            continue;
+        seen.insert(id);
+        const auto found = std::find_if(s.layout.nodes.cbegin(), s.layout.nodes.cend(),
+                                        [id](const auto &n) { return u8(n, 0) == id; });
+        if (found == s.layout.nodes.cend())
+            continue;
+        const auto &n = *found;
+        QString action;
+        if (u8(n, 1) == 0)
+            action =
+                QString("%1 movement; %2")
+                    .arg(QStringList{"Direct", "Hit and Run", "Evasion"}.value(u8(n, 2), "Loaded"),
+                         QStringList{"guard without seeking nearby targets",
+                                     "initiate against nearby targets", "retreat"}
+                             .value(u8(n, 3), "loaded wait order"));
+        else if (u8(n, 1) == 1)
+            action = u8(n, 5) ? QString("move toward X %1, Z %2").arg(u8(n, 4)).arg(u8(n, 5))
+                              : QString("move toward scenario point %1").arg(u8(n, 4));
+        else
+            action = "stay dormant until its gate permits movement";
+        auto condition = [&](int cid) {
+            if (!cid)
+                return QString("no condition");
+            for (const auto &c : s.layout.conditions)
+                if (u8(c, 0) == cid)
+                    return QString("condition %1 (%2)").arg(cid).arg(kindName(u8(c, 1)));
+            return QString("condition %1").arg(cid);
+        };
+        const auto a = condition(u8(n, 10)), b = condition(u8(n, 12));
+        QString transition;
+        if (u8(n, 11) == 1) {
+            transition = "if " + a + ", " + target(u8(n, 16)) + "; otherwise if " + b + ", " +
+                         target(u8(n, 17)) + "; otherwise wait";
+            if (!u8(n, 13) && !u8(n, 14) && !u8(n, 15))
+                pending << u8(n, 16);
+        } else
+            transition = "when " + a +
+                         (u8(n, 11) == 2   ? " AND " + b
+                          : u8(n, 11) == 3 ? " OR " + b
+                                           : "") +
+                         ", " + target(u8(n, 17));
+        if (u8(n, 13) || u8(n, 14) || u8(n, 15))
+            transition = "uses a preserved extended gate; inspect this step's details";
+        html += target(id) + ": " + action + ". " + transition + ".<br>";
+        pending << u8(n, 17);
+    }
+    html += "<i>Click a step to edit it. Conditions are edited in the Conditions tab; waypoints "
+            "can be moved on the Map. Nearby enemies can divert a squad from its route.</i>";
+    routeSummary_->setHtml(html);
 }
 void ScenarioRouteEditor::selectNode(int row) {
     nodes_->setCurrentRow(row);

@@ -20,9 +20,12 @@ class RecordModel : public QAbstractTableModel {
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
     int appendItem(int source, const QString &name);
+    int createItem(const QString &name);
     void applyProject(const Project &project);
   signals:
     void edited();
+    void aboutToReplace();
+    void replaced();
     void editRejected(const QString &message);
 
   private:

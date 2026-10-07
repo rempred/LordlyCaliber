@@ -1,5 +1,6 @@
 #include "app/scenario_world_editor.h"
 #include "app/shop_editor.h"
+#include "app/view_position.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -79,6 +80,9 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     form->addRow("Morale (0–127)", morale_);
     objective_ = new QCheckBox("Mission objective");
     objective_->setObjectName("worldObjective");
+    objective_->setToolTip("Store the special objective-site value instead of morale. This marks "
+                           "an objective site and prevents its shop from opening; it does not "
+                           "create or rewrite the mission's victory events.");
     form->addRow(objective_);
     type_ = new QComboBox;
     type_->setObjectName("worldSiteType");
@@ -86,15 +90,26 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     type_->addItem("Fort", 0x29);
     type_->addItem("Boss fort", 0x49);
     type_->addItem("Castle", 0x89);
-    form->addRow("Type", type_);
+    type_->setToolTip(
+        "The game's stronghold category: town, fort, boss fort or castle. This changes site "
+        "metadata; it does not change the map terrain or create a victory event.");
+    form->addRow("Stronghold type", type_);
     auto facilityRow = new QHBoxLayout;
     for (const auto &label : {"Shop", "Witch’s den", "Treasure", "Mine"}) {
         auto check = new QCheckBox(label);
         check->setObjectName(QString("worldFacility%1").arg(facilities_.size()));
         facilities_ << check;
         if (facilities_.size() == 2)
-            check->setToolTip("Check to add a witch’s den, or clear to remove it. "
-                              "Apply site changes saves this facility for every scenario using the stronghold.");
+            check->setToolTip(
+                "Check to add a witch’s den, or clear to remove it. "
+                "Apply site changes saves this facility for every scenario using the stronghold.");
+        if (facilities_.size() > 2) {
+            check->setText(facilities_.size() == 3 ? "Treasure flag (advanced)"
+                                                   : "Mine flag (advanced)");
+            check->setToolTip(
+                "Original site capability flag. Its complete gameplay effect is not verified. This "
+                "does not add a hidden treasure; use Add treasure on the Map tab for that.");
+        }
         facilityRow->addWidget(check);
     }
     form->addRow("Facilities", facilityRow);
@@ -110,14 +125,22 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     shops->addWidget(removeShop);
     form->addRow(shops);
     connect(createShop, &QPushButton::clicked, this, [this] {
-        if (!sites_->currentItem()) return;
-        try { addShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt()); }
-        catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+        if (!sites_->currentItem())
+            return;
+        try {
+            addShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt());
+        } catch (const Error &e) {
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
     });
     connect(removeShop, &QPushButton::clicked, this, [this] {
-        if (!sites_->currentItem()) return;
-        try { assignShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt(), 0); }
-        catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); }
+        if (!sites_->currentItem())
+            return;
+        try {
+            assignShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt(), 0);
+        } catch (const Error &e) {
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
     });
     allegiance_ = new QComboBox;
     allegiance_->setObjectName("worldAllegiance");
@@ -259,6 +282,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     });
 }
 void ScenarioWorldEditor::refresh(int key) {
+    const ViewPosition keepView(this, key_ == key);
     const int sr = key == key_ ? sites_->currentRow() : 0,
               tr = key == key_ ? treasures_->currentRow() : 0;
     key_ = key;

@@ -1,3 +1,4 @@
+#include "app/view_position.h"
 #include "app/animation_sequence_editor.h"
 #include "app/actor_pose_editor.h"
 #include "app/art_image_assignment.h"
@@ -587,6 +588,7 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
     apply(std::move(next), "Import private sequence frame");
 }
 void AnimationSequenceEditor::refresh() {
+    const ViewPosition keepView(this);
     if (refreshing_ || !classes_)
         return;
     QScopedValueRollback guard(refreshing_, true);
