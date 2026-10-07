@@ -234,6 +234,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             return project->combatArtwork() ? project->combatArtwork()->previewEdits()
                                             : ActorArtworkEdits{};
         };
+        project->loadIconArtwork();
+        scenePreview_->setItems(project->itemData(), *project->iconArtwork());
         const auto initialAnimations = project->bodyAnimationData();
         scenePreview_->setBodyAnimations(initialAnimations);
         actorInspector->setBodyAnimations(initialAnimations);
@@ -241,24 +243,39 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         scenePreview_->setArtwork(initialArtwork);
         actorInspector->setArtwork(initialArtwork);
         auto signature = [project] {
+            QJsonArray items;
+            for (const auto &record : project->records(Table::Items))
+                items << QJsonArray{record.name, QString::fromLatin1(record.bytes.toHex())};
             QJsonArray classes;
             for (const auto &record : project->records(Table::Classes))
                 classes << QJsonArray{record.name,QString::fromLatin1(record.bytes.toHex())};
-            return QJsonObject{{"classes", classes},
-                               {"routes", project->animationRoutes() ? project->animationRoutes()->json() : QJsonObject{}},
-                               {"overrides", project->animationOverrides() ? project->animationOverrides()->json() : QJsonObject{}},
-                               {"sequences", project->animationSequences() ? project->animationSequences()->json() : QJsonObject{}},
-                               {"art", project->avatarArtwork() ? project->avatarArtwork()->json()
-                                                                : QJsonObject{}},
-                               {"combat", project->combatArtwork()
-                                              ? project->combatArtwork()->json()
-                                              : QJsonObject{}}};
+            return QJsonObject{
+                {"classes", classes},
+                {"items", items},
+                {"icons", project->iconArtwork()->json()},
+                {"routes",
+                 project->animationRoutes() ? project->animationRoutes()->json() : QJsonObject{}},
+                {"overrides", project->animationOverrides() ? project->animationOverrides()->json()
+                                                            : QJsonObject{}},
+                {"sequences", project->animationSequences() ? project->animationSequences()->json()
+                                                            : QJsonObject{}},
+                {"art",
+                 project->avatarArtwork() ? project->avatarArtwork()->json() : QJsonObject{}},
+                {"combat",
+                 project->combatArtwork() ? project->combatArtwork()->json() : QJsonObject{}}};
         };
         connect(undo_, &QUndoStack::indexChanged, this,
                 [this, signature, artwork, actorInspector, previous = signature()]() mutable {
                     const auto next = signature();
                     if (next != previous) {
-                        if (next["classes"] != previous["classes"] || next["routes"] != previous["routes"] || next["overrides"] != previous["overrides"] || next["sequences"] != previous["sequences"]) {
+                        if (next["items"] != previous["items"] ||
+                            next["icons"] != previous["icons"])
+                            scenePreview_->setItems(project_->itemData(), *project_->iconArtwork());
+                        if (next["items"] != previous["items"] ||
+                            next["classes"] != previous["classes"] ||
+                            next["routes"] != previous["routes"] ||
+                            next["overrides"] != previous["overrides"] ||
+                            next["sequences"] != previous["sequences"]) {
                             const auto animations = project_->bodyAnimationData();
                             scenePreview_->setBodyAnimations(animations);
                             actorInspector->setBodyAnimations(animations);

@@ -11,7 +11,7 @@ record editing, descriptions, undo, project persistence and source-built export.
 US Rev 0 Classes also provides promotion requirements, family selection and
 creation, compatibility masks, and new classes through ID 255. Choose New class
 for fresh gameplay settings: 1 HP and 1 in each base stat, no equipment, attacks,
-family or stat requirements, and alignment range 0–100. It initially uses Fighter
+family or stat requirements, and alignment range 0–100. It initially uses Knight
 artwork and animations, which can be changed in Sprite studio. Add class from
 selected remains available to copy a class's records, appearance, requirements and
 description. Create and assign family creates an independent family containing
@@ -37,6 +37,16 @@ changes, find text, copy the report or save a text changelog. The comparison use
 the loaded source ROM, so project saves retain the changelog. It includes project
 assets and summarizes binary scene/artwork changes. Apply pending form edits first;
 the independent Save workspace is outside this project report.
+
+Items / Add item from selected creates a new equipment ID, with editable name,
+independent description and ROM-sourced icon/weapon appearance. The current
+nine-bit equipment format supports IDs through 510 (511 remains reserved for
+class visual policy). Export relocates the complete item records and names with
+the existing 4 MB loader, expands description/icon/appearance resources, and
+updates their game references. Inventory slot capacity is unchanged. New items
+appear immediately in equipment and reward pickers and can be saved in inventory.
+Special behavior hardcoded to a particular original item ID stays with that ID;
+copying an item copies its editable data and artwork, not new scripted effects.
 
 Shops starts with the 35 original shops and supports adding shops through ID 255,
 with up to 50 equipment items and 30 consumables per shop. Add opens a searchable,

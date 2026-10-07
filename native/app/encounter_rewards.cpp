@@ -127,6 +127,18 @@ QWidget *EncounterEditor::createRewardsPage() {
 void EncounterEditor::refreshRewardClasses() {
     if (!rewardClasses_)
         return;
+    for (auto box : rewardItems_) {
+        const QSignalBlocker blocker(box);
+        box->clear();
+        box->addItem("None", 0);
+        for (const auto kind : {Table::Items, Table::Consumables})
+            for (int id = 1; id < project_->records(kind).size(); ++id)
+                box->addItem(QString("%1 %2 · %3")
+                                 .arg(kind == Table::Items ? "Equipment" : "Consumable")
+                                 .arg(id)
+                                 .arg(project_->record(kind, id).name),
+                             (kind == Table::Items ? 0x8000 : 0) | id);
+    }
     const auto selected = rewardClasses_->currentItem()
                               ? rewardClasses_->currentItem()->data(Qt::UserRole).toInt()
                               : -1;

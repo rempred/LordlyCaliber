@@ -1,5 +1,20 @@
 # Native Lordly Caliber
 
+## Expandable equipment
+
+ItemData preserves the 12-byte prefix and complete 32-byte equipment records,
+with names stored independently of placement. New IDs use the native nine-bit
+format through 510; 511 remains the class artwork sentinel. Export appends item
+data to the existing Classes loader allocation, reserving its actual extent in
+4 MB RAM. Descriptor version 5 stores the item base/count in words 116/120.
+Generated address metadata authenticates and relocates 62 references in 48
+original owners; no ROM instruction payload is bundled. Inventory slot counts
+remain unchanged. Both item and class description banks can relocate through
+their shared native resource owners. Icon count follows the decoded pack, and
+weapon appearance growth shifts compound-resource sections and their offsets.
+Project/export/save validation rejects newly authored absent-item references.
+
+
 ## Inherited scene launch and Stage resets
 
 SceneLaunchPlan resolves event predecessors from current project bindings and

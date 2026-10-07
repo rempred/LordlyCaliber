@@ -1,3 +1,4 @@
+#include "engine/art_resource_links.h"
 #include "engine/creature_rewards.h"
 #include "engine/custom_runtime.h"
 #include "engine/promotion.h"
@@ -16,8 +17,8 @@ static void validate(const CreatureReward &row) {
     int total = 0;
     for (int i = 0; i < 3; ++i) {
         const auto raw = row.outcomes[i], id = raw & 0x7fff;
-        if (raw < 0 || raw > 65535 || (raw && (id == 0 || id > ((raw & 0x8000) ? 277 : 44))))
-            throw Error("Reward must be None, equipment 1–277, or consumable 1–44");
+        if (raw < 0 || raw > 65535 || (raw && (id == 0 || id > ((raw & 0x8000) ? 510 : 44))))
+            throw Error("Reward must be None, equipment 1–510, or consumable 1–44");
         if (row.weights[i] < 0 || row.weights[i] > 65535)
             throw Error("Reward weights must be 0–65535");
         total += row.weights[i];
@@ -69,7 +70,8 @@ std::optional<quint32> CreatureRewards::placement(const Rom &rom) {
             part["sha256"].toString().toLatin1())
             throw Error("Creature reward runtime dependency differs from its supported source");
     }
-    auto code = rom.bytes().mid(ownerOffset, ownerSize);
+    validateArtOwnerLinks(rom, ownerOffset, ownerSize);
+    auto code = canonicalArtOwner(rom.bytes().mid(ownerOffset, ownerSize), ownerOffset);
     if (const auto custom = CustomPlacement::read(rom))
         code = custom->canonicalReferences(code, ownerOffset);
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);

@@ -149,15 +149,10 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     equipment_->setObjectName("actorEquipment");
     equipment_->addItem("Class default", -1);
     equipment_->addItem("0 · None", 0);
-    QFile catalog(":/catalog.json");
-    QJsonObject names;
-    if (catalog.open(QIODevice::ReadOnly))
-        names = QJsonDocument::fromJson(catalog.readAll()).object()["ITEM_NAMES"].toObject();
-    for (int id = 1; id < 278; ++id)
-        equipment_->addItem(
-            QString("%1 · %2").arg(id).arg(
-                names.value(QString::number(id)).toString("Equipment").replace('\n', ' ')),
-            id);
+    const auto itemData = bodyAnimations_->items(rom_);
+    for (int id = 1; id < itemData.entries().size(); ++id)
+        equipment_->addItem(QString("%1 · %2").arg(id).arg(decodeText(itemData.entries()[id].name)),
+                            id);
     equipment_->setToolTip(
         "Preview equipment appearance. The game's class-specific substitutions still apply.");
     bodyPalette_ = new QSpinBox;
@@ -654,6 +649,18 @@ void ActorPoseEditor::resolveAction() {
 void ActorPoseEditor::setBodyAnimations(BodyAnimationData::Pointer animations) {
     if (!animations) throw Error("Animation preview requires class data");
     bodyAnimations_=std::move(animations);
+    {
+        const QSignalBlocker block(equipment_);
+        const int selected = equipment_->currentData().toInt();
+        equipment_->clear();
+        equipment_->addItem("Class default", -1);
+        equipment_->addItem("0 · None", 0);
+        const auto items = bodyAnimations_->items(rom_);
+        for (int id = 1; id < items.entries().size(); ++id)
+            equipment_->addItem(
+                QString("%1 · %2").arg(id).arg(decodeText(items.entries()[id].name)), id);
+        equipment_->setCurrentIndex(qMax(0, equipment_->findData(selected)));
+    }
     if (kinds_->currentIndex()!=1) return;
     const int source=banks_->currentData().toInt(),owner=owners_->currentData().toInt(),state=poses_->currentData().toInt(),target=step_;
     {

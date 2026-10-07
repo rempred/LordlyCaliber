@@ -8933,6 +8933,51 @@ class UiTests : public QObject {
         QCOMPARE(rejected.size(), 1);
         QCOMPARE(project.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
     }
+    void addItemUndoRedo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        RecordModel model(&project, Table::Items, &undo);
+        const auto before = project.manifest();
+        QCOMPARE(model.appendItem(1, "Fresh blade"), 278);
+        QCOMPARE(model.rowCount(), 279);
+        const auto added = project.manifest();
+        QVERIFY(model.setData(model.index(278, 1), "Named blade", Qt::EditRole));
+        undo.undo();
+        QCOMPARE(project.manifest(), added);
+        undo.undo();
+        QCOMPARE(project.manifest(), before);
+        QCOMPARE(model.rowCount(), 278);
+        undo.redo();
+        QCOMPARE(project.manifest(), added);
+        undo.redo();
+        QCOMPARE(project.record(Table::Items, 278).name, QString("Named blade"));
+        const auto current = project.manifest();
+        QSignalSpy rejected(&model, &RecordModel::editRejected);
+        QCOMPARE(model.appendItem(0, "Invalid"), -1);
+        QCOMPARE(rejected.size(), 1);
+        QCOMPARE(project.manifest(), current);
+        QFile save(QFileInfo(path).dir().filePath("tools/pj64_golden.sra"));
+        QVERIFY(save.open(QIODevice::ReadOnly));
+        SaveEditor saveEditor(&project);
+        saveEditor.loadBytes(save.readAll());
+        const int slot = saveEditor.document()->rows(SaveTable::Equipment).last();
+        QCOMPARE(saveEditor.document()->value(SaveTable::Equipment, slot, "id").toInt(), 0);
+        QVERIFY(saveEditor.edit(SaveTable::Equipment, slot, "id", 278));
+        QVERIFY(saveEditor.edit(SaveTable::Equipment, slot, "owned", 3));
+        QTemporaryDir output;
+        saveEditor.exportFile(output.filePath("new-item.sra"));
+        QFile saved(output.filePath("new-item.sra"));
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        const auto readback = SaveDocument::open(project.rom(), saved.readAll());
+        QCOMPARE(readback.value(SaveTable::Equipment, slot, "id").toInt(), 278);
+        undo.undo();
+        undo.undo();
+        QCOMPARE(model.rowCount(), 278);
+        QVERIFY_THROWS_EXCEPTION(Error, saveEditor.exportFile(output.filePath("missing-item.sra")));
+    }
     void addClassUndoRedo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -8998,6 +9043,9 @@ class UiTests : public QObject {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
             QSKIP("Private ROM not supplied");
+        const auto baseline = Project::fromRom(Rom::open(path));
+        const int classCount = int(baseline.records(Table::Classes).size());
+        const int itemCount = int(baseline.records(Table::Items).size());
         MainWindow window;
         window.show();
         window.loadRom(path);
@@ -9008,11 +9056,38 @@ class UiTests : public QObject {
         QVERIFY(classes);
         QVERIFY(items);
         QVERIFY(consumables);
-        QCOMPARE(classes->model()->rowCount(), 165);
-        QCOMPARE(items->model()->rowCount(), 278);
+        QCOMPARE(classes->model()->rowCount(), classCount);
+        QCOMPARE(items->model()->rowCount(), itemCount);
         QCOMPARE(consumables->model()->rowCount(), 45);
         QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
         QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 63);
+        auto addItem = window.findChild<QPushButton *>("addItem");
+        QVERIFY(addItem);
+        items->setCurrentIndex(items->model()->index(1, 1));
+        QVERIFY(addItem->isEnabled());
+        QTimer::singleShot(0, &window, [&] {
+            auto dialog = window.findChild<QInputDialog *>();
+            QVERIFY(dialog);
+            dialog->setTextValue("Created item");
+            dialog->accept();
+        });
+        addItem->click();
+        QCOMPARE(items->model()->rowCount(), itemCount + 1);
+        QCOMPARE(items->currentIndex().siblingAtColumn(1).data().toString(),
+                 QString("Created item"));
+        for (const auto name : {"scenarioDrop", "rewardItem_0"}) {
+            const auto box = window.findChild<QComboBox *>(name);
+            QVERIFY(box);
+            QVERIFY(box->findData(0x8000 | itemCount) >= 0);
+        }
+        const auto reward = window.findChild<QComboBox *>("sceneReward");
+        QVERIFY(reward);
+        QVERIFY(reward->findData(itemCount) >= 0);
+        const auto equipment = window.findChild<QComboBox *>("actorEquipment");
+        QVERIFY(equipment);
+        QVERIFY(equipment->findData(itemCount) >= 0);
+        window.findChild<QUndoStack *>()->undo();
+        QCOMPARE(items->model()->rowCount(), itemCount);
         auto fresh = window.findChild<QPushButton *>("newClass");
         QVERIFY(fresh);
         classes->setCurrentIndex({}); // Creating a class needs no template selection.
@@ -9023,7 +9098,7 @@ class UiTests : public QObject {
             dialog->reject();
         });
         fresh->click();
-        QCOMPARE(classes->model()->rowCount(), 165);
+        QCOMPARE(classes->model()->rowCount(), classCount);
         QTimer::singleShot(0, &window, [&] {
             auto dialog = window.findChild<QInputDialog *>();
             QVERIFY(dialog);
@@ -9031,14 +9106,14 @@ class UiTests : public QObject {
             dialog->accept();
         });
         fresh->click();
-        QCOMPARE(classes->model()->rowCount(), 166);
+        QCOMPARE(classes->model()->rowCount(), classCount + 1);
         QCOMPARE(classes->currentIndex().siblingAtColumn(1).data().toString(), QString("Fresh class"));
         auto undo = window.findChild<QUndoStack *>();
         QVERIFY(undo);
         undo->undo();
-        QCOMPARE(classes->model()->rowCount(), 165);
+        QCOMPARE(classes->model()->rowCount(), classCount);
         undo->redo();
-        QCOMPARE(classes->model()->rowCount(), 166);
+        QCOMPARE(classes->model()->rowCount(), classCount + 1);
         undo->undo(); // Leave the window clean for teardown.
         auto screenshot = qEnvironmentVariable("LORDLY_TEST_SCREENSHOT");
         if (!screenshot.isEmpty()) {

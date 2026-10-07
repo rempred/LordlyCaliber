@@ -20,6 +20,10 @@ class IconArtwork {
     static QByteArray canonicalOwner(QByteArray code, qsizetype romStart);
     static void validateRelocations(const Rom &);
     static int packIndex(quint16 item);
+    int equipmentCount() const {
+        return equipmentCount_;
+    }
+    void appendEquipment(int source);
     const QByteArray &words(quint16 item) const;
     QImage image(quint16 item) const;
     QVector<quint16> palette(int pack) const;
@@ -54,5 +58,6 @@ class IconArtwork {
     QMap<quint16, QByteArray> originals_, edits_;
     QMap<int, quint32> ownerWords_;
     QByteArray descriptor_;
+    int equipmentCount_ = 277;
 };
 } // namespace lordly

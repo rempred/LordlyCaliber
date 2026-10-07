@@ -20,7 +20,7 @@ void Shops::validate(int id, const ShopStock &stock) {
             unique.insert(id);
         }
     };
-    check(stock.equipment, equipmentCapacity, 277, "equipment entries");
+    check(stock.equipment, equipmentCapacity, 510, "equipment entries");
     check(stock.consumables, consumableCapacity, 44, "consumables");
 }
 Shops Shops::load(const Rom &rom) {

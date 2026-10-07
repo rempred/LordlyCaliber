@@ -137,13 +137,20 @@ ChangeReport Project::changeReport() const {
                           : table == Table::Items ? "Items and equipment"
                                                   : "Consumables";
         for (const auto &row : records(table)) {
-            const bool added = table == Table::Classes && originalClasses_ &&
-                               row.id >= originalClasses_->entries().size();
+            const bool added = (table == Table::Classes && originalClasses_ &&
+                                row.id >= originalClasses_->entries().size()) ||
+                               (table == Table::Items && originalItems_ &&
+                                row.id >= originalItems_->entries().size());
             QStringList lines;
             if (added)
-                lines << "Added class; initial field values follow.";
+                lines << (table == Table::Classes ? "Added class; initial field values follow."
+                                                  : "Added item; initial field values follow.");
             if (table == Table::Classes && classNames_.contains(row.id) && !added)
                 lines << transition("Name", quoted(decodeText(classAsset(row.id).name)),
+                                    quoted(row.name));
+            if (table == Table::Items && itemNames_.contains(row.id) && !added)
+                lines << transition("Name",
+                                    quoted(decodeText(originalItems_->entries()[row.id].name)),
                                     quoted(row.name));
             for (const auto &field : fields(table)) {
                 const auto before = fieldValue(row.original, field),

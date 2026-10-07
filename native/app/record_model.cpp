@@ -25,7 +25,7 @@ class EditField final : public QUndoCommand {
 class EditClassName final : public QUndoCommand {
   public:
     EditClassName(RecordModel *model, int row, QByteArray before, QByteArray after)
-        : QUndoCommand("Rename class"), model_(model), row_(row), before_(std::move(before)),
+        : QUndoCommand("Rename record"), model_(model), row_(row), before_(std::move(before)),
           after_(std::move(after)) {}
     void undo() override {
         model_->applyName(row_, before_);
@@ -41,9 +41,9 @@ class EditClassName final : public QUndoCommand {
 };
 class AddClass final : public QUndoCommand {
   public:
-    AddClass(RecordModel *model, Project before, Project after)
-        : QUndoCommand("Add class"), model_(model), before_(std::move(before)),
-          after_(std::move(after)) {}
+    AddClass(RecordModel *model, Project before, Project after, QString label = "Add class")
+        : QUndoCommand(label), model_(model), before_(std::move(before)), after_(std::move(after)) {
+    }
     void undo() override {
         model_->applyProject(before_);
     }
@@ -69,7 +69,9 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
     const auto &r = project_->record(table_, i.row());
     if (role == Qt::ForegroundRole &&
         (r.bytes != r.original ||
-         (table_ == Table::Classes && project_->classNameModified(i.row()))))
+         (table_ == Table::Classes && project_->classNameModified(i.row())) ||
+         (table_ == Table::Items && project_->hasItemData() &&
+          project_->itemNameModified(i.row()))))
         return QBrush(QColor("#e9bf67"));
     if (role != Qt::DisplayRole && role != Qt::EditRole && role != Qt::ToolTipRole)
         return {};
@@ -108,9 +110,11 @@ QVariant RecordModel::headerData(int n, Qt::Orientation o, int role) const {
 }
 Qt::ItemFlags RecordModel::flags(const QModelIndex &i) const {
     auto result = QAbstractTableModel::flags(i);
-    if (i.column() == 1 && table_ == Table::Classes && project_->hasClassData())
+    if (i.column() == 1 && ((table_ == Table::Classes && project_->hasClassData()) ||
+                            (table_ == Table::Items && project_->hasItemData())))
         result |= Qt::ItemIsEditable;
-    if (i.column() >= 2 && !(table_ == Table::Classes && project_->hasClassData() &&
+    if (i.column() >= 2 && !(((table_ == Table::Classes && project_->hasClassData()) ||
+                              (table_ == Table::Items && project_->hasItemData())) &&
                              fields(table_)[i.column() - 2].offset < 4))
         result |= Qt::ItemIsEditable;
     return result;
@@ -122,8 +126,13 @@ bool RecordModel::setData(const QModelIndex &i, const QVariant &v, int role) {
         if (v.toString() == project_->record(table_, i.row()).name)
             return false;
         try {
-            const auto name = encodeClassName(v.toString());
-            undo_->push(new EditClassName(this, i.row(), project_->classNameBytes(i.row()), name));
+            const auto name = table_ == Table::Items ? encodeItemName(v.toString())
+                                                     : encodeClassName(v.toString());
+            undo_->push(new EditClassName(this, i.row(),
+                                          table_ == Table::Items
+                                              ? project_->itemNameBytes(i.row())
+                                              : project_->classNameBytes(i.row()),
+                                          name));
             return true;
         } catch (const Error &error) {
             emit editRejected(QString::fromUtf8(error.what()));
@@ -149,7 +158,10 @@ void RecordModel::apply(int row, int field, int value) {
     emit edited();
 }
 void RecordModel::applyName(int row, const QByteArray &value) {
-    project_->setClassNameBytes(row, value);
+    if (table_ == Table::Items)
+        project_->setItemNameBytes(row, value);
+    else
+        project_->setClassNameBytes(row, value);
     // Growth/class references elsewhere in the grid display these names too.
     emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
     emit edited();
@@ -174,6 +186,19 @@ int RecordModel::createClass(const QString &name) {
         auto after = *project_;
         const auto id = after.createClass(name);
         undo_->push(new AddClass(this, *project_, std::move(after)));
+        return id;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return -1;
+    }
+}
+int RecordModel::appendItem(int source, const QString &name) {
+    try {
+        if (table_ != Table::Items)
+            throw Error("New items require the Items workspace");
+        auto after = *project_;
+        const int id = after.appendItem(source, name);
+        undo_->push(new AddClass(this, *project_, std::move(after), "Add item"));
         return id;
     } catch (const Error &error) {
         emit editRejected(QString::fromUtf8(error.what()));

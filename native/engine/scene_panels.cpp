@@ -1,4 +1,5 @@
 #include "engine/scene_panels.h"
+#include "engine/item_data.h"
 #include "engine/text.h"
 #include "game/director/panel_animation.h"
 #include <QPainter>
@@ -40,13 +41,27 @@ QString ScenePanels::confirmationChoice(const Rom &rom, int index) {
         throw Error("Confirmation choice has no bounded terminator");
     return label(bytes.first(end));
 }
+QString ScenePanels::currentRewardName(quint16 item) const {
+    if (items_ && !(item & ~0x1ff)) {
+        if (item >= items_->entries().size())
+            throw Error("Reward item exceeds project items");
+        return decodeText(items_->entries()[item].name);
+    }
+    return rewardName(rom_, item);
+}
 QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
     rom.requireSupported();
     if (rom.revision())
         throw Error("Reward names currently require US revision zero");
     const bool consumable = (item & 0x200) != 0;
     const int index = item & 0x1ff;
-    if ((item & ~0x3ff) || index >= (consumable ? 45 : 278))
+    if (!consumable && !(item & ~0x3ff)) {
+        const auto data = ItemData::load(rom);
+        if (index >= data.entries().size())
+            throw Error("Reward item exceeds the loaded table");
+        return decodeText(data.entries()[index].name);
+    }
+    if ((item & ~0x3ff) || index >= 45)
         throw Error("Reward item is outside the current native table");
     const quint32 pointer =
         u32(rom.bytes(), (consumable ? 0x645cc : 0x6230c) + index * (consumable ? 12 : 32));
@@ -152,7 +167,7 @@ void ScenePanels::create(int slot, int preset, int width, int height) {
         QByteArray data(56, 0);
         put16(data, 0, *reward_);
         put16(data, 2, 0xffff);
-        rewardName(rom_, *reward_);
+        currentRewardName(*reward_);
         release(slot);
         owners_[slot] = Owner{0x100, e.identity, 0, std::move(data)};
         entities_.push_back(std::move(e));
@@ -330,13 +345,17 @@ QImage ScenePanels::render() const {
             painter.drawText(QPoint(x, y + 10), label(text));
         };
         if (e.reward) {
-            const auto icon = icons_.image(*e.reward);
-            painter.drawImage(QPoint(left + 4, top + 4),
-                              QImage(reinterpret_cast<const uchar *>(icon.rgba.constData()),
-                                     16, 16, QImage::Format_RGBA8888));
+            if (artwork_ && (*e.reward & 0x1ff))
+                painter.drawImage(QPoint(left + 4, top + 4), artwork_->image(*e.reward));
+            else {
+                const auto icon = icons_.image(*e.reward);
+                painter.drawImage(QPoint(left + 4, top + 4),
+                                  QImage(reinterpret_cast<const uchar *>(icon.rgba.constData()), 16,
+                                         16, QImage::Format_RGBA8888));
+            }
             // Native content callback2A54A8 places the text22 pixels after the icon.
             painter.drawText(QRect(left + 26, top + 4, right - left - 30, 16),
-                             Qt::AlignLeft | Qt::AlignVCenter, rewardName(rom_, *e.reward));
+                             Qt::AlignLeft | Qt::AlignVCenter, currentRewardName(*e.reward));
         } else if (e.parent) {
             for (int i = 0; i < 2; ++i) {
                 painter.drawText(QPoint(left + 21, top + (i ? 14 : 2) + 10),

@@ -5,8 +5,10 @@
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
                                      std::optional<AnimationOverrides> overrides,
-                                     QMap<int,AnimationDescriptor> privateDescriptors)
-    : classes_(std::move(classes)), routes_(std::move(routes)),privateDescriptors_(std::move(privateDescriptors)) {
+                                     QMap<int, AnimationDescriptor> privateDescriptors,
+                                     std::optional<ItemData> items)
+    : items_(std::move(items)), classes_(std::move(classes)), routes_(std::move(routes)),
+      privateDescriptors_(std::move(privateDescriptors)) {
     if (!overrides)
         return;
     if (!overrides->available()) {
@@ -30,8 +32,9 @@ BodyAnimationData::Pointer BodyAnimationData::load(const Rom &rom) {
     BodySelectionImage::validate(rom, routes.privatePoses());
     PoseRuntimeImage::validate(rom, routes.privatePoses(), false, routes.hasBodyPolicies());
     auto overrides = AnimationOverrides::load(rom, classes, routes);
-    return std::make_shared<const BodyAnimationData>(std::move(classes), std::move(routes),
-                                                     std::move(overrides));
+    return std::make_shared<const BodyAnimationData>(
+        std::move(classes), std::move(routes), std::move(overrides),
+        QMap<int, AnimationDescriptor>{}, ItemData::load(rom));
 }
 quint16 BodyAnimationData::handle(int source, int owner, int flagA, int flagB) const {
     if (source < 0 || source >= classes_.entries().size() || owner < 0 || owner > 255 ||

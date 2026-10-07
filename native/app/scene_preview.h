@@ -38,6 +38,7 @@ class ScenePreview : public QWidget {
     void refreshPortraits();
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
+    void setItems(ItemData, IconArtwork);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
     void setObjectNavigationEnabled(bool enabled);
     void beginPositionPick(int command, int slot);
@@ -119,6 +120,8 @@ class ScenePreview : public QWidget {
     std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
     BodyAnimationData::Pointer bodyAnimations_;
+    std::optional<ItemData> items_;
+    std::optional<IconArtwork> itemIcons_;
     DialogueDrawing::PortraitProvider portraits_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;

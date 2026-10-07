@@ -484,6 +484,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
 }
 BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory) {
     auto p = input;
+    p.validateItemReferences();
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
@@ -549,14 +550,31 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool armyRoutes = p.armyArtwork() && !p.armyArtwork()->routes().isEmpty();
     if (armyRoutes)
         p.armyArtwork()->validateRoutes(p.classData());
-    const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified() ||
-                                 expandedClasses || customSquads || avatarEdits || armyRoutes;
+    const bool relocateItems =
+        p.itemNamesModified() || (priorClassPlacement && priorClassPlacement->layout.items);
+    std::optional<ItemData> itemData;
+    if (relocateItems) {
+        itemData = p.itemData();
+        p.loadTexts();
+        p.loadIconArtwork();
+        p.loadAnimationRoutes();
+        const int count = int(itemData->entries().size());
+        if (p.textBanks()["items"].entries.size() != count ||
+            p.iconArtwork()->equipmentCount() != count - 1 ||
+            p.animationRoutes()->section(2).size() < count)
+            throw Error("Item records, descriptions, icons and weapon appearances must have "
+                        "matching counts");
+    }
+    const bool relocateClasses = relocateItems || priorClassPlacement.has_value() ||
+                                 p.classNamesModified() || expandedClasses || customSquads ||
+                                 avatarEdits || armyRoutes;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
     for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
-        if (table == Table::Classes && relocateClasses)
+        if ((table == Table::Classes && relocateClasses) ||
+            (table == Table::Items && relocateItems))
             continue;
         const auto &records = p.records(table);
         bool changed = false;
@@ -587,6 +605,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
              encodeLzss(compiled).size() > bank.resource.capacity)) {
             result.image =
                 linkClassText(Rom::fromBytes(result.image), compiled, int(bank.entries.size()));
+        } else if (bank.spec.id == "items" && !p.rom().revision() &&
+                   (ClassTextPlacement::read(p.rom(), true) || bank.entries.size() != 278 ||
+                    encodeLzss(compiled).size() > bank.resource.capacity)) {
+            result.image = linkClassText(Rom::fromBytes(result.image), compiled,
+                                         int(bank.entries.size()), true);
         } else {
             auto container = bank.resource.container(compiled);
             result.image.replace(bank.resource.romOffset, container.size(), container);
@@ -701,9 +724,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         auto offset = priorClassPlacement ? priorClassPlacement->dataRomOffset
                                           : quint32((result.image.size() + 15) & ~qsizetype(15));
         const auto &data = classData;
+        const auto classImage = data.build(0x80243db0);
+        const auto dataSize = classImage.bytes.size() +
+                              (itemData ? itemData->build(classImage.layout.end).size() : 0);
         if (priorClassPlacement &&
-            data.build(0x80243db0).bytes.size() >
-                priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
+            dataSize > priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
             quint64(priorClassPlacement->dataRomOffset) + priorClassPlacement->layout.end -
                     priorClassPlacement->layout.indexBase !=
                 quint64(result.image.size()))
@@ -711,7 +736,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         std::optional<CustomRuntimeBuild> custom;
         std::function<QByteArray(quint32, quint32)> residentBuilder;
         if (customSquads) {
-            const auto classEnd = quint64(offset) + data.build(0x80243db0).bytes.size();
+            const auto classEnd = quint64(offset) + dataSize;
             const auto prospectiveEnd = qMax(quint64(result.image.size()), classEnd);
             auto index = quint32((prospectiveEnd + 15) & ~quint64(15));
             const auto bytes = p.encounters()->customSquads().bytes(0x2800000).size();
@@ -733,7 +758,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         auto classes = buildClassRuntime(
             data, compiler, directory, offset,
             expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
-            residentBuilder);
+            residentBuilder, itemData ? &*itemData : nullptr);
         classes.removeResident = priorCustom.has_value() && !customSquads;
         const auto menus =
             expandedClasses
@@ -766,6 +791,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(classes.data.layout.count)
                              .arg(classes.data.bytes.size());
     }
+    if (relocateItems)
+        result.report << QString("Rebuilt %1 equipment records, names and their runtime references "
+                                 "within 4 MB RAM")
+                             .arg(itemData->entries().size());
     if (p.rom().revision() == 0 &&
         !(p.promotion() && (p.promotion()->expanded || p.promotion()->modified())) &&
         p.manifest().value("records").toObject().value("classes").toObject().size() > 0) {
@@ -992,10 +1021,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     for (auto table : {Table::Classes, Table::Items, Table::Consumables})
         for (int row = 0; row < p.records(table).size(); ++row)
-            if (table == Table::Classes && relocateClasses
+            if (((table == Table::Classes && relocateClasses) ||
+                 (table == Table::Items && relocateItems))
                     ? (reopened.record(table, row).bytes.sliced(4) !=
                            p.record(table, row).bytes.sliced(4) ||
-                       reopened.classNameBytes(row) != p.classNameBytes(row))
+                       (table == Table::Classes
+                            ? reopened.classNameBytes(row) != p.classNameBytes(row)
+                            : reopened.itemNameBytes(row) != p.itemNameBytes(row)))
                     : reopened.record(table, row).bytes != p.record(table, row).bytes)
                 throw Error("Export reopen differs from the project");
     if (avatarEdits) {

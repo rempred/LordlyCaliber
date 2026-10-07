@@ -178,7 +178,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     form->addRow("In Mission — successful outcomes", normalPass_);
     form->addRow("In Area investigation — successful outcomes", alternatePass_);
     globalLayout->addLayout(form);
-    linkedRates_ = new QCheckBox("Use the normal count for both rolls");
+    linkedRates_ = new QCheckBox("Use the In Mission count for both contexts");
     linkedRates_->setObjectName("encounterLinkRates");
     globalLayout->addWidget(linkedRates_);
     globalRatio_ = new QLabel;
@@ -315,7 +315,7 @@ void EncounterEditor::showGlobalRatio() {
         return;
     }
     globalRatio_->setText(
-        QString("Share of random values passing: normal %1%; alternate %2%.\n"
+        QString("Share of random values passing: In Mission %1%; In Area investigation %2%.\n"
                 "Zero successful outcomes disables that roll. Matching the possible "
                 "outcome count passes this check every time. These figures account for the "
                 "game's 30-bit random-number range; actual encounter frequency also depends "

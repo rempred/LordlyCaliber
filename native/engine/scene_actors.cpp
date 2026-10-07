@@ -119,10 +119,10 @@ quint16 SceneActors::bodyEquipment(int slot) const {
     uint16_t carried[4], equipment;
     for (int i = 0; i < 4; ++i)
         carried[i] = u16(row, 0x36 + i * 2);
-    const auto items = rom_.bytes().mid(0x62300, 278 * 32);
-    if (items.size() != 278 * 32 ||
-        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, carried,
-                              &equipment))
+    const auto itemData = bodyData_ ? bodyData_->items(rom_) : ItemData::load(rom_);
+    const auto items = itemData.recordsWithPrefix();
+    if (lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()),
+                              int(itemData.entries().size()), carried, &equipment))
         throw Error("Body appearance item exceeds the current item table");
     return equipment;
 }
@@ -234,10 +234,10 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
     uint16_t appearance[4], equipment;
     for (int i = 0; i < 4; ++i)
         appearance[i] = u16(row, 0x36 + i * 2);
-    const auto items = rom_.bytes().mid(0x62300, 278 * 32);
-    if (items.size() != 278 * 32 ||
-        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, appearance,
-                              &equipment))
+    const auto itemData = bodyData_ ? bodyData_->items(rom_) : ItemData::load(rom_);
+    const auto items = itemData.recordsWithPrefix();
+    if (lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()),
+                              int(itemData.entries().size()), appearance, &equipment))
         throw Error("Body appearance item exceeds the current item table");
     ActorInstance replacement(rom_, record, bodyData_);
     configureLinkedPose(replacement);

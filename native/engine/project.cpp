@@ -136,6 +136,14 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     p.rom_ = std::move(rom);
     p.catalog_ = catalog;
     const auto classPlacement = ClassPlacement::read(p.rom_);
+    if (!p.rom_.revision()) {
+        try {
+            p.originalItems_ = ItemData::load(p.rom_);
+        } catch (const Error &) {
+            if (classPlacement && classPlacement->layout.items)
+                throw;
+        }
+    }
     if (classPlacement)
         p.originalClasses_ = ClassData::load(p.rom_);
     else if (p.rom_.revision() == 0) {
@@ -163,12 +171,17 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             base = classPlacement->dataRomOffset + classPlacement->layout.records -
                    classPlacement->layout.indexBase;
         }
+        if (table == Table::Items && classPlacement && classPlacement->layout.items) {
+            count = classPlacement->layout.itemCount;
+            base = classPlacement->dataRomOffset + classPlacement->layout.items + 12 -
+                   classPlacement->layout.indexBase;
+        }
         auto names = catalog
                          .value(cls                     ? "CLASS_NAMES"
                                 : table == Table::Items ? "ITEM_NAMES"
                                                         : "CONSUMABLE_NAMES")
                          .toObject();
-        if (cls)
+        if (cls || table == Table::Items)
             for (auto it = names.begin(); it != names.end();) {
                 bool valid = false;
                 const auto id = it.key().toInt(&valid);
@@ -185,7 +198,9 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
                          .toString(QString("%1 %2").arg(cls ? "Class" : "Item").arg(id));
             if (cls && p.originalClasses_)
                 r.name = decodeText(p.originalClasses_->entries()[id].name);
-            if (cls)
+            if (table == Table::Items && p.originalItems_)
+                r.name = decodeText(p.originalItems_->entries()[id].name);
+            if (cls || table == Table::Items)
                 names[QString::number(id)] = r.name;
             r.original = p.rom_.bytes().mid(r.romOffset, stride);
             r.bytes = r.original;
@@ -205,6 +220,8 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         }
         if (cls)
             p.catalog_["CLASS_NAMES"] = names;
+        if (table == Table::Items)
+            p.catalog_["ITEM_NAMES"] = names;
     }
     return p;
 }
@@ -246,12 +263,15 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
     if (t == Table::Classes && originalClasses_ &&
         bytes.first(4) != record(t, row).original.first(4))
         throw Error("Class name pointers are allocated during rebuild; edit the name instead");
+    if (t == Table::Items && originalItems_ && bytes.first(4) != record(t, row).original.first(4))
+        throw Error("Item name pointers are allocated during rebuild; edit the name instead");
     if (t == Table::Consumables && bytes.first(4) != record(t, row).original.first(4))
         throw Error("Consumable name pointers must retain their loaded allocation");
     tables_.at(t)[row].bytes = bytes;
 }
 int Project::changedRecords() const {
-    int count = int(classNames_.size() + addedClasses_.size());
+    int count =
+        int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size());
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -292,6 +312,159 @@ int Project::changedRecords() const {
     if (sceneEvents_)
         count += sceneEvents_->changedSites();
     return count;
+}
+void Project::validateItemReferences() const {
+    const int count = int(records(Table::Items).size());
+    auto check = [&](int value, int before, const QString &context) {
+        if (value >= count && value != before)
+            throw Error(
+                context +
+                QString(" references item %1, which is absent from this project").arg(value));
+    };
+    for (const auto &r : records(Table::Classes))
+        for (int at = 46; at <= 52; at += 2)
+            check(u16(r.bytes, at), r.romOffset < 0 ? -1 : u16(r.original, at), "Class equipment");
+    if (shops_)
+        for (int id = 1; id < shops_->size(); ++id)
+            for (int item : shops_->stock(id).equipment)
+                check(item, shops_->originalStock(id).equipment.contains(quint16(item)) ? item : -1,
+                      "Shop stock");
+    if (encounters_) {
+        const auto original = CreatureRewards::load(rom_);
+        for (int id = 0; id < CreatureRewards::count; ++id)
+            for (int slot = 0; slot < 3; ++slot) {
+                const int item = encounters_->rewards().row(id).outcomes[slot];
+                if (item & 0x8000)
+                    check(item & 0x7fff,
+                          item == original.row(id).outcomes[slot] ? item & 0x7fff : -1,
+                          "Encounter reward");
+            }
+        for (const auto &s : encounters_->customSquads().profiles()) {
+            for (const auto &m : s.members)
+                for (int item : m.equipment)
+                    check(item, -1, "Custom squad equipment");
+            for (int item : s.rewards.outcomes)
+                if (item & 0x8000)
+                    check(item & 0x7fff, -1, "Custom squad reward");
+        }
+    }
+    if (scenarios_)
+        for (const auto &s : scenarios_->entries()) {
+            const auto &original = scenarios_->original(s.key);
+            for (int row = 0; row < s.squads.size(); ++row) {
+                int prior = -1;
+                for (int i = 0; i < original.layout.deployments.size(); ++i)
+                    if ((u8(original.layout.deployments[i], 0) & 127) ==
+                        (u8(s.layout.deployments[row], 0) & 127))
+                        prior = i;
+                for (const int at : {2, 4, 9, 11, 18, 20})
+                    check(u16(s.squads[row], at), prior < 0 ? -1 : u16(original.squads[prior], at),
+                          "Scenario equipment");
+                const auto &d = s.layout.deployments[row];
+                const int value = u16(d, 11);
+                if (u8(d, 10) || (value & 0x8000))
+                    check(value & 0x7fff,
+                          prior < 0 ? -1 : u16(original.layout.deployments[prior], 11) & 0x7fff,
+                          "Scenario reward");
+            }
+        }
+    if (world_) {
+        const auto plan = world_->plan();
+        for (auto it = plan.treasures.begin(); it != plan.treasures.end(); ++it) {
+            const auto &original = world_->original(it.key()).treasures;
+            for (int row = 0; row < ScenarioWorld::treasureCount(it.value()); ++row) {
+                const auto r = ScenarioWorld::treasureRecord(it.value(), row);
+                if (u8(r, 3) != 1)
+                    continue;
+                int before = -1;
+                for (int old = 0; old < ScenarioWorld::treasureCount(original); ++old) {
+                    const auto previous = ScenarioWorld::treasureRecord(original, old);
+                    if (u8(previous, 0) == u8(r, 0) && u8(previous, 3) == 1)
+                        before = u16(previous, 4);
+                }
+                check(u16(r, 4), before, "Treasure");
+            }
+        }
+    }
+    if (animationRoutes_)
+        for (auto it = animationRoutes_->edits().begin(); it != animationRoutes_->edits().end();
+             ++it)
+            check(it->equipmentArt, -1, "Class artwork");
+}
+QByteArray encodeItemName(const QString &name) {
+    if (name.trimmed().isEmpty() || name.contains('\n') || name.size() > 32)
+        throw Error("Enter an item name on one line, at most 32 characters");
+    for (auto c : name)
+        if (c.unicode() < 32 || c.unicode() > 126)
+            throw Error("Use printable game characters for item names");
+    return name.toLatin1();
+}
+QByteArray Project::itemNameBytes(int row) const {
+    record(Table::Items, row);
+    if (!originalItems_)
+        throw Error("Item names require a supported source layout");
+    const int count = int(originalItems_->entries().size());
+    return itemNames_.value(row, row < count ? originalItems_->entries()[row].name
+                                             : addedItems_[row - count].name);
+}
+ItemData Project::itemData() const {
+    if (!originalItems_)
+        throw Error("Expandable items require a supported source layout");
+    auto result = *originalItems_;
+    for (const auto &a : addedItems_) {
+        const int id = result.append(1, a.name);
+        result.set(id, a);
+    }
+    for (int id = 0; id < records(Table::Items).size(); ++id)
+        result.set(id, {record(Table::Items, id).bytes, itemNameBytes(id)});
+    return result;
+}
+void Project::setItemNameBytes(int row, const QByteArray &name) {
+    auto data = itemData();
+    auto a = data.entries().at(row);
+    a.name = name;
+    data.set(row, a);
+    const int count = int(originalItems_->entries().size());
+    const auto original =
+        row < count ? originalItems_->entries()[row].name : addedItems_[row - count].name;
+    if (name == original)
+        itemNames_.remove(row);
+    else
+        itemNames_[row] = name;
+    tables_.at(Table::Items)[row].name = decodeText(name);
+    auto names = catalog_["ITEM_NAMES"].toObject();
+    names[QString::number(row)] = decodeText(name);
+    catalog_["ITEM_NAMES"] = names;
+}
+int Project::appendItemAsset(const ItemAsset &a, const QByteArray &description) {
+    auto data = itemData();
+    const int id = data.append(1, a.name);
+    data.set(id, a);
+    loadTexts();
+    if (texts_["items"].entries.size() != id || description.contains("\r\n"))
+        throw Error("Item descriptions disagree with the item table");
+    addedItems_ << a;
+    tables_.at(Table::Items).push_back({id, decodeText(a.name), a.record, a.record, -1});
+    texts_["items"].entries.push_back({description, description});
+    auto names = catalog_["ITEM_NAMES"].toObject();
+    names[QString::number(id)] = decodeText(a.name);
+    catalog_["ITEM_NAMES"] = names;
+    return id;
+}
+int Project::appendItem(int source, const QString &name) {
+    auto next = *this;
+    next.loadTexts();
+    next.loadIconArtwork();
+    next.loadAnimationRoutes();
+    auto data = next.itemData();
+    const int id = data.append(source, encodeItemName(name));
+    next.appendItemAsset(data.entries()[id], next.texts_["items"].entries[source].bytes);
+    if (next.icons_->equipmentCount() + 1 != id)
+        throw Error("Item and icon counts disagree");
+    next.icons_->appendEquipment(source);
+    next.animationRoutes_->cloneEquipment(source, id);
+    *this = std::move(next);
+    return id;
 }
 QByteArray encodeClassName(const QString &name) {
     if (name.trimmed().isEmpty())
@@ -626,7 +799,8 @@ BodyAnimationData::Pointer Project::bodyAnimationData() {
     for(auto it=animationSequences_->groups().cbegin();it!=animationSequences_->groups().cend();++it)descriptors[it.key()]=it->descriptor;
     auto routes = *animationRoutes_;
     routes.setPrivatePoses(privatePoseMappings());
-    return std::make_shared<const BodyAnimationData>(classData(),std::move(routes),*animationOverrides_,std::move(descriptors));
+    return std::make_shared<const BodyAnimationData>(
+        classData(), std::move(routes), *animationOverrides_, std::move(descriptors), itemData());
 }
 void Project::loadAnimationSequences() {
     if(!animationSequences_)animationSequences_=AnimationSequences::load(rom_);
@@ -776,6 +950,26 @@ QJsonObject Project::manifest() const {
     else result.remove("animationOverrides");
     if(animationSequences_&&(animationSequences_->modified()||legacyAnimationSequencesImported_))result["animationSequences"]=animationSequences_->json();
     else result.remove("animationSequences");
+    QJsonArray newItems;
+    for (int i = 0; i < addedItems_.size(); ++i) {
+        const auto &a = addedItems_[i];
+        const int id = int(originalItems_->entries().size()) + i;
+        newItems << QJsonObject{
+            {"record", QString::fromLatin1(a.record.toHex())},
+            {"name", QString::fromLatin1(a.name.toHex())},
+            {"description", QString::fromLatin1(texts_["items"].entries[id].original.toHex())}};
+    }
+    if (newItems.isEmpty())
+        result.remove("addedItems");
+    else
+        result["addedItems"] = newItems;
+    QJsonObject itemNames;
+    for (auto it = itemNames_.begin(); it != itemNames_.end(); ++it)
+        itemNames[QString::number(it.key())] = QString::fromLatin1(it.value().toHex());
+    if (itemNames.isEmpty())
+        result.remove("itemNames");
+    else
+        result["itemNames"] = itemNames;
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -965,6 +1159,29 @@ void Project::applyManifest(const QJsonObject &object) {
         };
         candidate.appendClassAsset({raw("record"), raw("appearance"), raw("name"), 0},
                                    raw("description"), 0);
+    }
+    if (object.contains("addedItems") && !object["addedItems"].isArray())
+        throw Error("Added items must be an array");
+    for (const auto &value : object["addedItems"].toArray()) {
+        const auto row = value.toObject();
+        auto raw = [&](const QString &key) {
+            const auto hex = row[key].toString().toLatin1(), bytes = QByteArray::fromHex(hex);
+            if (!row[key].isString() || bytes.toHex() != hex.toLower())
+                throw Error("Invalid added item " + key);
+            return bytes;
+        };
+        candidate.appendItemAsset({raw("record"), raw("name")}, raw("description"));
+    }
+    if (object.contains("itemNames") && !object["itemNames"].isObject())
+        throw Error("Item names must be an object");
+    const auto itemNames = object["itemNames"].toObject();
+    for (auto it = itemNames.begin(); it != itemNames.end(); ++it) {
+        bool ok = false;
+        const int id = it.key().toInt(&ok);
+        const auto hex = it.value().toString().toLatin1(), bytes = QByteArray::fromHex(hex);
+        if (!ok || !it.value().isString() || bytes.toHex() != hex.toLower())
+            throw Error("Invalid item name");
+        candidate.setItemNameBytes(id, bytes);
     }
     auto edits = object.value("records").toObject();
     for (auto it = edits.begin(); it != edits.end(); ++it) {

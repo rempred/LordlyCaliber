@@ -298,7 +298,7 @@ void ArtEditor::refresh() {
     const int index = IconArtwork::packIndex(selected_);
     pack_->setCurrentIndex(index);
     icons_->clear();
-    for (int id = 1; id <= IconArtwork::specs()[index].count; ++id) {
+    for (int id = 1; id <= (index ? 44 : project_->iconArtwork()->equipmentCount()); ++id) {
         const auto itemId = quint16((index ? 0x200 : 0) | id);
         auto item =
             new QListWidgetItem(QString("%1 · %2%3")

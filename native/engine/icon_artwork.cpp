@@ -71,7 +71,7 @@ const std::array<IconPackSpec, 2> &IconArtwork::specs() {
 }
 int IconArtwork::packIndex(quint16 item) {
     const int index = (item & 0x200) ? 1 : 0, id = item & 0x1ff;
-    if ((item & ~0x3ff) || id < 1 || id > specs()[index].count)
+    if ((item & ~0x3ff) || id < 1 || id > (index ? 44 : 510))
         throw Error("Icon ID is outside its native pack");
     return index;
 }
@@ -127,13 +127,16 @@ IconArtwork IconArtwork::load(const Rom &rom) {
         }
         const qsizetype at = resourceBase + pack.key;
         const auto stored = u32(rom.bytes(), at), decoded = u32(rom.bytes(), at + 4);
-        if (stored < 4 || stored > 1024 * 1024 || decoded != quint32(512 + spec.count * 256))
+        if (stored < 4 || stored > 1024 * 1024 || decoded < quint32(512 + spec.count * 256) ||
+            (decoded - 512) % 256 || decoded > quint32(512 + (index ? 44 : 510) * 256))
             throw Error("Unsupported icon resource dimensions");
         pack.source = Resource::load(rom, at, qsizetype(stored) + 4).decoded;
         for (int i = 0; i < 256; ++i)
             if (bool(u16(pack.source, i * 2) & 1) == (i == spec.transparent))
                 throw Error("Icon pack transparency index changed");
-        for (int id = 1; id <= spec.count; ++id)
+        if (!index)
+            result.equipmentCount_ = int((decoded - 512) / 256);
+        for (int id = 1; id <= (index ? 44 : result.equipmentCount_); ++id)
             result.originals_[quint16((index ? 0x200 : 0) | id)] = planeWords(pack.source, id);
     }
     const auto descriptor = rom.bytes().mid(descriptorOffset, descriptorSize);
@@ -178,6 +181,12 @@ IconArtwork IconArtwork::load(const Rom &rom) {
         result.placement_ = placement;
     }
     return result;
+}
+void IconArtwork::appendEquipment(int source) {
+    if (equipmentCount_ >= 510 || source < 1 || source > equipmentCount_)
+        throw Error("Invalid new item icon");
+    const auto pixels = words(quint16(source));
+    edits_[quint16(++equipmentCount_)] = pixels;
 }
 const QByteArray &IconArtwork::words(quint16 item) const {
     packIndex(item);
@@ -246,6 +255,7 @@ QByteArray IconArtwork::mapImage(quint16 item, const QImage &input, bool existin
 }
 void IconArtwork::setWords(quint16 item, const QByteArray &bytes) {
     const int index = packIndex(item);
+    words(item);
     if (bytes.size() != 512)
         throw Error("Icon needs 256 pixel words");
     const auto transparent = u16(packs_[index].source, specs()[index].transparent * 2);
@@ -262,7 +272,8 @@ void IconArtwork::setWords(quint16 item, const QByteArray &bytes) {
 }
 void IconArtwork::restore(quint16 item) {
     packIndex(item);
-    edits_.remove(item);
+    if (originals_.contains(item))
+        edits_.remove(item);
 }
 std::array<QByteArray, 2> IconArtwork::decodedPacks() const {
     std::array<QByteArray, 2> result;
@@ -270,7 +281,7 @@ std::array<QByteArray, 2> IconArtwork::decodedPacks() const {
         const auto &spec = specs()[index];
         QVector<quint16> required;
         QSet<quint16> seen;
-        for (int id = 1; id <= spec.count; ++id) {
+        for (int id = 1; id <= (index ? 44 : equipmentCount_); ++id) {
             const auto &data = words(quint16((index ? 0x200 : 0) | id));
             for (int pixel = 0; pixel < 256; ++pixel) {
                 const auto word = u16(data, pixel * 2);
@@ -303,7 +314,7 @@ std::array<QByteArray, 2> IconArtwork::decodedPacks() const {
                 used.insert(free);
             }
         auto out = palette;
-        for (int id = 1; id <= spec.count; ++id) {
+        for (int id = 1; id <= (index ? 44 : equipmentCount_); ++id) {
             const auto &data = words(quint16((index ? 0x200 : 0) | id));
             for (int pixel = 0; pixel < 256; ++pixel) {
                 const auto word = u16(data, pixel * 2);
@@ -318,13 +329,18 @@ QJsonObject IconArtwork::json() const {
     QJsonObject edits;
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         edits[QString::number(it.key())] = QString::fromLatin1(it.value().toBase64());
-    return {{"version", 1}, {"icons", edits}};
+    return {{"version", 1}, {"icons", edits}, {"equipmentCount", equipmentCount_}};
 }
 void IconArtwork::apply(const QJsonObject &object) {
     if (object["version"] != 1 || !object["icons"].isObject())
         throw Error("Unsupported icon artwork project");
     auto candidate = *this;
     candidate.edits_.clear();
+    candidate.equipmentCount_ =
+        object.contains("equipmentCount") ? object["equipmentCount"].toInt(-1) : equipmentCount_;
+    if (candidate.equipmentCount_ < (packs_[0].source.size() - 512) / 256 ||
+        candidate.equipmentCount_ > 510)
+        throw Error("Invalid equipment icon count");
     const auto icons = object["icons"].toObject();
     // Validate complete packs atomically: a multi-icon edit may replace shared colors.
     for (auto it = icons.begin(); it != icons.end(); ++it) {
@@ -332,7 +348,9 @@ void IconArtwork::apply(const QJsonObject &object) {
         const auto id = it.key().toUInt(&ok);
         if (!ok || id > 0xffff || QString::number(id) != it.key())
             throw Error("Invalid icon ID");
-        packIndex(quint16(id));
+        const int pack = packIndex(quint16(id));
+        if (!pack && id > quint32(candidate.equipmentCount_))
+            throw Error("Icon exceeds equipment count");
         candidate.edits_[quint16(id)] = storedWords(it.value());
     }
     for (auto it = candidate.edits_.cbegin(); it != candidate.edits_.cend(); ++it) {
@@ -366,7 +384,7 @@ void IconArtwork::importLegacy(const QJsonObject &object) {
             if (row["pack"] == specs()[i].slug)
                 index = i;
         const double id = row["itemId"].toDouble(-1);
-        if (index < 0 || id < 1 || id > specs()[index].count || id != std::floor(id) ||
+        if (index < 0 || id < 1 || id > (index ? 44 : 510) || id != std::floor(id) ||
             it.key() != specs()[index].slug + ":" + QString::number(int(id)))
             throw Error("Imported icon identity is invalid");
         edits[QString::number((index ? 0x200 : 0) | int(id))] = row["pixelsRgba5551BeBase64"];

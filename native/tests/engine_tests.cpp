@@ -2449,6 +2449,115 @@ class EngineTests : public QObject {
         QCOMPARE(reopened.shops()->json(), original);
         QVERIFY(reopened.pendingLegacySections().isEmpty());
     }
+    void addedItemExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadIconArtwork();
+            project.loadAnimationRoutes();
+            project.loadTexts();
+            const auto icon = project.iconArtwork()->words(1),
+                       description = project.textBanks()["items"].entries[1].bytes;
+            QCOMPARE(project.appendItem(1, "New blade"), 278);
+            QCOMPARE(project.iconArtwork()->words(278), icon);
+            QCOMPARE(project.textBanks()["items"].entries[278].bytes, description);
+            project.setText("items", 278, "Forged for the new item test.");
+            auto item = project.record(Table::Items, 278).bytes;
+            put16(item, 8, 1234);
+            project.replaceBytes(Table::Items, 278, item);
+            project.loadShops();
+            auto shops = *project.shops();
+            shops.setStock(1, {{278, 277, 1}, {44}});
+            project.setShops(shops.json());
+            QTemporaryDir work;
+            QVERIFY(work.isValid());
+            project.saveFolder(work.filePath("project"));
+            project.saveArchive(work.filePath("project.lcproj"));
+            for (const auto location :
+                 {work.filePath("project"), work.filePath("project.lcproj")}) {
+                auto restored = Project::fromRom(source);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.manifest(), project.manifest());
+                QCOMPARE(restored.iconArtwork()->words(278), icon);
+            }
+            for (int stage = 0; stage < 2; ++stage) {
+                if (stage) {
+                    QCOMPARE(project.appendItem(278, "Second blade"), 279);
+                    QCOMPARE(project.appendItem(278, "Third blade"), 280);
+                    QCOMPARE(project.appendClass(5, "Item wielder"), 165);
+                    auto row = project.record(Table::Classes, 165).bytes;
+                    put16(row, 46, 280);
+                    project.replaceBytes(Table::Classes, 165, row);
+                    auto encounters = *project.encounters();
+                    CreatureReward reward; reward.outcomes = {0x8000 | 280, 0, 0};
+                    encounters.setReward(165, reward);
+                    CustomSquad squad; squad.members = {{165,0,8,{280,0}}, {5,0,6,{278,0}}};
+                    squad.rewards = reward; encounters.setCustomSquad(squad, 166);
+                    project.setEncounters(encounters.json());
+                }
+                const auto result = rebuild(project, tools, work.path());
+                auto reopened = Project::fromRom(Rom::fromBytes(result.image));
+                reopened.loadTexts();
+                reopened.loadIconArtwork();
+                reopened.loadAnimationRoutes();
+                reopened.loadShops(); reopened.loadEncounters();
+                if (stage) QCOMPARE(reopened.encounters()->json(), project.encounters()->json());
+                QCOMPARE(reopened.records(Table::Items).size(), stage ? 281 : 279);
+                for (int id = 0; id < project.records(Table::Items).size(); ++id) {
+                    QCOMPARE(reopened.record(Table::Items, id).bytes.mid(4),
+                             project.record(Table::Items, id).bytes.mid(4));
+                    QCOMPARE(reopened.itemNameBytes(id), project.itemNameBytes(id));
+                }
+                QCOMPARE(reopened.textBanks()["items"].serialized(),
+                         project.textBanks()["items"].serialized());
+                QCOMPARE(reopened.iconArtwork()->words(278), icon);
+                QCOMPARE(reopened.animationRoutes()->section(2),
+                         project.animationRoutes()->section(2));
+                QCOMPARE(reopened.shops()->json(), project.shops()->json());
+                const auto placed = ClassPlacement::read(reopened.rom());
+                QVERIFY(placed);
+                QCOMPARE(placed->layout.itemCount, stage ? 281 : 279);
+                QVERIFY(placed->layout.end <= 0x80400000U);
+                QTemporaryDir output(
+                    QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-items-XXXXXX"));
+                QVERIFY(output.isValid());
+                output.setAutoRemove(false);
+                const auto target = output.filePath(QFileInfo(path).fileName());
+                exportRom(project, result, target);
+                QJsonArray records, names;
+                for (const auto &r : project.records(Table::Items)) {
+                    records << QString::fromLatin1(r.bytes.toHex());
+                    names << QString::fromLatin1(project.itemNameBytes(r.id).toHex());
+                }
+                atomicWrite(output.filePath("items.json"),
+                            QJsonDocument(QJsonObject{{"rom", target},
+                                                      {"records", records},
+                                                      {"names", names},
+                                                      {"shops", project.shops()->json()}})
+                                .toJson());
+                qInfo().noquote() << "New item candidate:" << output.path();
+                project = std::move(reopened);
+            }
+            auto missing = Project::fromRom(source);
+            missing.loadShops();
+            auto badStock = *missing.shops();
+            badStock.setStock(1, {{278}, {}});
+            missing.setShops(badStock.json());
+            QVERIFY_THROWS_EXCEPTION(Error, missing.validateItemReferences());
+            auto data = project.itemData();
+            while (data.entries().size() < ItemData::maximumCount)
+                data.append(1, "Boundary");
+            QCOMPARE(data.entries().size(), 511);
+            QVERIFY_THROWS_EXCEPTION(Error, data.append(1, "Overflow"));
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void shopRuntimeExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

@@ -106,15 +106,19 @@ QMap<QString, TextBank> TextBank::load(const Rom &rom) {
         {"consumables", "Consumable descriptions", 0x352b88, 2055, 2064, 50, true}};
     QMap<QString, TextBank> result;
     const auto classText = rom.revision() == 0 ? ClassTextPlacement::read(rom) : std::nullopt;
+    const auto itemText = rom.revision() == 0 ? ClassTextPlacement::read(rom, true) : std::nullopt;
     auto gap = rom.revision() == 0 ? 0x20248c2 : 0x2024516;
     for (const auto &spec : specs) {
         TextBank bank;
         bank.spec = spec;
-        if (spec.id == "classes" && classText) {
-            bank.resource = Resource::load(rom, classText->offset, classText->allocation);
-            bank.spec.count = int(classText->count);
-            bank.spec.capacity = int(classText->allocation) - 8;
-            bank.spec.allocation = int(classText->allocation);
+        const auto placement = spec.id == "classes" ? classText
+                               : spec.id == "items" ? itemText
+                                                    : std::nullopt;
+        if (placement) {
+            bank.resource = Resource::load(rom, placement->offset, placement->allocation);
+            bank.spec.count = int(placement->count);
+            bank.spec.capacity = int(placement->allocation) - 8;
+            bank.spec.allocation = int(placement->allocation);
         } else {
             bank.resource = Resource::load(rom, gap + spec.relativeOffset, spec.allocation);
             bank.resource.capacity = spec.capacity;

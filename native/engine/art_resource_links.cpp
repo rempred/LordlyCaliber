@@ -14,6 +14,19 @@ QByteArray canonicalArtOwner(QByteArray code, qsizetype start) {
         AvatarLibrary::canonicalOwner(IconArtwork::canonicalOwner(std::move(code), start), start),
         start);
 }
+QByteArray retainArtReferences(const Rom &rom, QByteArray code, qsizetype start) {
+    validateArtOwnerLinks(rom, start, code.size());
+    const auto current = rom.bytes().mid(start, code.size());
+    const auto canonical = canonicalArtOwner(current, start);
+    const auto compiled = canonicalArtOwner(code, start);
+    for (qsizetype at = 0; at + 4 <= code.size(); at += 4)
+        if (u32(current, at) != u32(canonical, at)) {
+            if (u32(compiled, at) != u32(canonical, at))
+                throw Error("Compiled owner changed an artwork reference instruction");
+            put32(code, at, u32(current, at));
+        }
+    return code;
+}
 void validateArtResourceLinks(const Rom &rom) {
     AnimationOverrideImage::validateOwner(rom,0,rom.bytes().size());
     DirectDescriptors::validateRelocations(rom);

@@ -217,8 +217,9 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     reward_->setObjectName("sceneReward");
     reward_->setToolTip(
         "Declared sample reward; the game supplies this item from the parent event.");
-    for (int i = 1; i < 278; ++i)
-        reward_->addItem(ScenePanels::rewardName(rom_, quint16(i)), i);
+    const auto rewardItems = ItemData::load(rom_);
+    for (int i = 1; i < rewardItems.entries().size(); ++i)
+        reward_->addItem(decodeText(rewardItems.entries()[i].name), i);
     for (int i = 1; i < 45; ++i)
         reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | i)), 0x200 | i);
     rewardRow->addWidget(reward_, 1);
@@ -466,6 +467,20 @@ void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provide
     if (dialogueDrawing_)
         dialogueDrawing_->setPortraitProvider(portraits_);
     refreshPortraits();
+}
+void ScenePreview::setItems(ItemData itemData, IconArtwork icons) {
+    items_ = std::move(itemData);
+    itemIcons_ = std::move(icons);
+    const QSignalBlocker block(reward_);
+    const int selected = reward_->currentData().toInt();
+    reward_->clear();
+    for (int id = 1; id < items_->entries().size(); ++id)
+        reward_->addItem(decodeText(items_->entries()[id].name), id);
+    for (int id = 1; id < 45; ++id)
+        reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | id)), 0x200 | id);
+    reward_->setCurrentIndex(qMax(0, reward_->findData(selected)));
+    if (resources_)
+        restart();
 }
 void ScenePreview::setBodyAnimations(BodyAnimationData::Pointer animations) {
     bodyAnimations_ = std::move(animations);
@@ -1001,6 +1016,8 @@ void ScenePreview::restart() {
         // Silent preview has no resident voices and starts on route zero with unity buses.
         // Preserve typed requests for an eventual backend; never invent voice lifetimes.
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767, 32767, 32767}));
+        if (items_ && itemIcons_)
+            playback.panels().setItems(*items_, *itemIcons_);
         playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
         if (inputs) inputs->supply(playback);
         const auto launch = SceneImages::launch(startupProgram);

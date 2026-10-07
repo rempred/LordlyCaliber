@@ -1,3 +1,4 @@
+#include "engine/art_resource_links.h"
 #include "rebuild/creature_rewards.h"
 #include <QFile>
 namespace lordly {
@@ -27,7 +28,7 @@ QByteArray rebuildCreatureRewards(const Rom &rom, const CreatureRewards &rewards
     if (qsizetype(offset) + data.size() > image.size())
         image.append(QByteArray(offset + data.size() - image.size(), char(-1)));
     image.replace(offset, data.size(), data);
-    image.replace(CreatureRewards::ownerOffset, code.size(), code);
+    image.replace(CreatureRewards::ownerOffset, code.size(), retainArtReferences(rom, code, CreatureRewards::ownerOffset));
     QByteArray header(CreatureRewards::descriptorSize, 0);
     header.replace(0, 8, "LC05REWD");
     put32(header, 8, 1);

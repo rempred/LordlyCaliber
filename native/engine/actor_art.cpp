@@ -257,7 +257,8 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
     }
     const auto visual = bodyData_->routes().entry(sourceClass_);
     const int item = visual.equipmentArt < 0 ? appearance.equipment : visual.equipmentArt;
-    if (item < 0 || item >= 278)
+    const auto itemData = bodyData_->items(rom);
+    if (item < 0 || item >= itemData.entries().size())
         throw Error("Body equipment exceeds the current item table");
     const auto variants = bodyData_->routes().section(2);
     if (item >= variants.size())
@@ -272,7 +273,7 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
         if (kind == 1)
             child = u8(variants, item);
         else if (kind >= 2) {
-            int selected = u8(rom.bytes(), 0x62300 + item * 32 + 0x11);
+            int selected = u8(itemData.entries()[item].record, 5);
             if (selected == 16) {
                 if (!appearance.paletteReplacement)
                     throw Error("Body equipment needs the launch palette replacement");
@@ -294,13 +295,13 @@ BodyAppearance ActorArt::defaultAppearance(const Rom &rom) const {
     QByteArray records;
     for (const auto &entry : classes.entries())
         records += entry.record;
-    const auto items = rom.bytes().mid(0x62300, 278 * 32);
+    const auto itemData = bodyData_->items(rom);
+    const auto items = itemData.recordsWithPrefix();
     uint16_t carried[4], equipment;
-    if (items.size() != 278 * 32 ||
-        lordly_body_appearance(reinterpret_cast<const uint8_t *>(records.constData()),
+    if (lordly_body_appearance(reinterpret_cast<const uint8_t *>(records.constData()),
                                int(classes.entries().size()), sourceClass_, ownerClass_, carried) ||
-        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, carried,
-                              &equipment))
+        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()),
+                              int(itemData.entries().size()), carried, &equipment))
         throw Error("Standalone body equipment exceeds the current tables");
     return {equipment, {}};
 }

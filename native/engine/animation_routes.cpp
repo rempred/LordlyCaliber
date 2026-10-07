@@ -15,7 +15,7 @@ int originalEquipmentArt(int id) {
 }
 int originalConstruction(int id) { return id == 135 ? 1 : id == 136 || id == 161 ? 2 : 0; }
 quint16 policy(const AnimationRoutes::Entry &entry, bool bodies = false) {
-    if (entry.equipmentArt < -1 || entry.equipmentArt >= 278)
+    if (entry.equipmentArt < -1 || entry.equipmentArt >= 511)
         throw Error("Equipment artwork source is outside the item table");
     if (entry.construction > 2) throw Error("Unknown class body construction policy");
     return quint16((entry.equipmentArt < 0 ? 511 : entry.equipmentArt) |
@@ -229,7 +229,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
                 const auto word = u16(result.source_, prefix + id * 2);
                 const int item = word & 511;
                 if ((word & ~(result.loadedBodyPolicies_ ? 8191 : 1023)) ||
-                    ((word >> 11) & 3) > 2 || (item != 511 && item >= 278) ||
+                    ((word >> 11) & 3) > 2 || (item != 511 && item >= 511) ||
                     (id >= result.rows_.size() && word != 511))
                     throw Error("Invalid class visual policy data");
                 if (id < result.rows_.size()) {
@@ -305,6 +305,32 @@ void AnimationRoutes::restore(int id) {
 int AnimationRoutes::rowCount() const {
     return edits_.isEmpty() ? int(rows_.size()) : std::max(int(rows_.size()), edits_.lastKey() + 1);
 }
+QByteArray AnimationRoutes::effectivePrefix() const {
+    if (equipmentVariants_.isEmpty())
+        return prefix_;
+    const int begin = u16(prefix_, 4), end = sectionEnd(prefix_, begin);
+    auto bytes = prefix_;
+    const int delta = int(equipmentVariants_.size()) - (end - begin);
+    bytes.replace(begin, end - begin, equipmentVariants_);
+    for (int i = 0; i < 18; ++i) {
+        const int at = u16(prefix_, i * 2);
+        if (at >= end)
+            put16(bytes, i * 2, quint16(at + delta));
+    }
+    return bytes;
+}
+void AnimationRoutes::cloneEquipment(int source, int target) {
+    auto variants = section(2);
+    if (source < 1 || source >= variants.size() || target < 1 || target > 510)
+        throw Error("Invalid weapon appearance source or target");
+    const auto value = variants[source];
+    if (target >= variants.size())
+        variants.resize(target + 1, char(0));
+    if (variants.size() % 2)
+        variants += char(0);
+    variants[target] = value;
+    equipmentVariants_ = variants;
+}
 QJsonObject AnimationRoutes::json() const {
     QJsonObject rows;
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it) {
@@ -334,7 +360,8 @@ QJsonObject AnimationRoutes::json() const {
     return {{"version", 1},
             {"sourceSha256", QString::fromLatin1(sha256(source_))},
             {"rows", rows},
-            {"pending", pending}};
+            {"pending", pending},
+            {"equipmentVariants", QString::fromLatin1(equipmentVariants_.toHex())}};
 }
 void AnimationRoutes::apply(const QJsonObject &object) {
     if (object["version"].toInt() != 1 ||
@@ -344,6 +371,14 @@ void AnimationRoutes::apply(const QJsonObject &object) {
     auto next = *this;
     next.edits_.clear();
     next.pending_.clear();
+    next.equipmentVariants_.clear();
+    if (object.contains("equipmentVariants")) {
+        next.equipmentVariants_ = jsonBytes(object["equipmentVariants"]);
+        if (!next.equipmentVariants_.isEmpty() &&
+            (next.equipmentVariants_.size() < 280 || next.equipmentVariants_.size() > 512 ||
+             next.equipmentVariants_.size() % 2))
+            throw Error("Invalid equipment appearance table");
+    }
     const auto rows = object["rows"].toObject();
     for (auto it = rows.begin(); it != rows.end(); ++it) {
         bool ok = false;
@@ -369,7 +404,7 @@ void AnimationRoutes::apply(const QJsonObject &object) {
         }
         if (value.contains("equipmentArt")) {
             const int item = value["equipmentArt"].toInt(-2);
-            if (item < -1 || item >= 278 || value["equipmentArt"].toDouble() != double(item))
+            if (item < -1 || item >= 511 || value["equipmentArt"].toDouble() != double(item))
                 throw Error("Invalid saved equipment artwork source");
             entry.equipmentArt = qint16(item);
         }
@@ -495,7 +530,7 @@ QByteArray AnimationRoutes::decodedResource() const {
     rows.resize(rowCount());
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         rows[it.key()] = it.value();
-    return pack(prefix_, rows, privatePoses_, hasVisualPolicies(), hasBodyPolicies());
+    return pack(effectivePrefix(), rows, privatePoses_, hasVisualPolicies(), hasBodyPolicies());
 }
 bool AnimationRoutes::hasVisualPolicies() const {
     if (loadedVisualPolicies_ || hasBodyPolicies()) return true;
@@ -524,10 +559,11 @@ int AnimationRoutes::equipmentArt(int source, int equipped) const {
 QByteArray AnimationRoutes::section(int index) const {
     if (index < 0 || index >= 15)
         throw Error("Invalid compound animation section");
-    const int begin = u16(prefix_, index * 2), end = sectionEnd(prefix_, begin);
-    if (begin < 36 || end < begin || end > prefix_.size())
+    const auto bytes = effectivePrefix();
+    const int begin = u16(bytes, index * 2), end = sectionEnd(bytes, begin);
+    if (begin < 36 || end < begin || end > bytes.size())
         throw Error("Compound animation section exceeds its source");
-    return prefix_.mid(begin, end - begin);
+    return bytes.mid(begin, end - begin);
 }
 QByteArray AnimationRoutes::rebuild(const Rom &rom, const QByteArray &compiled,
                                     const QByteArray &compiledCopyLoads) const {
@@ -584,9 +620,9 @@ QByteArray AnimationRoutes::rebuild(const Rom &rom, const QByteArray &compiled,
     put32(descriptor, 8, hasBodyPolicies() ? 4 : hasVisualPolicies() ? 3 : privatePoses_.isEmpty() ? 1 : 2);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, quint32(payload.size()));
-    put32(descriptor, 20, quint32(prefix_.size()));
+    put32(descriptor, 20, quint32(effectivePrefix().size()));
     put32(descriptor, 24, quint32(rowCount()));
-    descriptor.replace(28, 36, prefix_.left(36));
+    descriptor.replace(28, 36, effectivePrefix().left(36));
     descriptor.replace(64, 32, QByteArray::fromHex(sha256(payload)));
     image.replace(descriptorOffset, descriptorSize, descriptor);
     if (load(Rom::fromBytes(image)).source_ != compiled)

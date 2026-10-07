@@ -329,6 +329,23 @@ void ScenarioEditor::refresh() {
         if (s.key == previous)
             scenarios_->setCurrentItem(item);
     }
+    for (auto box : gear_) {
+        const QSignalBlocker blocker(box);
+        box->clear();
+        for (const auto &r : project_->records(Table::Items))
+            box->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
+    }
+    {
+        const QSignalBlocker blocker(drop_);
+        drop_->clear();
+        for (const auto kind : {Table::Consumables, Table::Items})
+            for (const auto &r : project_->records(kind))
+                drop_->addItem(QString("%1 %2 · %3")
+                                   .arg(kind == Table::Items ? "Equipment" : "Consumable")
+                                   .arg(r.id)
+                                   .arg(r.name),
+                               r.id | (kind == Table::Items ? 0x8000 : 0));
+    }
     for (auto box : classes_) {
         box->clear();
         for (const auto &r : project_->records(Table::Classes))

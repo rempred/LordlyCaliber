@@ -1,9 +1,18 @@
 #pragma once
-#include "engine/class_data.h"
+#include "engine/animation_overrides.h"
+#include "engine/animation_routes.h"
+#include "engine/animation_sequences.h"
+#include "engine/army_artwork.h"
+#include "engine/avatar_artwork.h"
+#include "engine/body_animation_data.h"
 #include "engine/change_report.h"
+#include "engine/class_data.h"
+#include "engine/combat_artwork.h"
 #include "engine/consumable_effects.h"
 #include "engine/dialogues.h"
 #include "engine/encounters.h"
+#include "engine/icon_artwork.h"
+#include "engine/item_data.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/scenario_world.h"
@@ -11,17 +20,9 @@
 #include "engine/scene_events.h"
 #include "engine/scene_programs.h"
 #include "engine/shops.h"
+#include "engine/sprite_library.h"
 #include "engine/text.h"
 #include "engine/tool_settings.h"
-#include "engine/sprite_library.h"
-#include "engine/icon_artwork.h"
-#include "engine/avatar_artwork.h"
-#include "engine/army_artwork.h"
-#include "engine/combat_artwork.h"
-#include "engine/animation_routes.h"
-#include "engine/animation_overrides.h"
-#include "engine/body_animation_data.h"
-#include "engine/animation_sequences.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -183,6 +184,21 @@ class Project {
     ClassData classData() const;
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
+    int appendItem(int templateId, const QString &name);
+    ItemData itemData() const;
+    void validateItemReferences() const;
+    QByteArray itemNameBytes(int row) const;
+    void setItemNameBytes(int row, const QByteArray &);
+    bool hasItemData() const {
+        return originalItems_.has_value();
+    }
+    bool itemNamesModified() const {
+        return !itemNames_.isEmpty() || !addedItems_.isEmpty();
+    }
+    bool itemNameModified(int row) const {
+        return itemNames_.contains(row) ||
+               (originalItems_ && row >= originalItems_->entries().size());
+    }
     static int classDescriptionIndex(int classId);
 
   private:
@@ -229,6 +245,10 @@ class Project {
     std::optional<Dialogues> dialogues_;
     std::optional<ScenePrograms> scenePrograms_;
     std::optional<SceneEvents> sceneEvents_;
+    std::optional<ItemData> originalItems_;
+    QVector<ItemAsset> addedItems_;
+    QMap<int, QByteArray> itemNames_;
+    int appendItemAsset(const ItemAsset &, const QByteArray &description);
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;
@@ -237,6 +257,7 @@ class Project {
     int appendClassAsset(const ClassAsset &asset, const QByteArray &description,
                          int promotionTemplate);
 };
+QByteArray encodeItemName(const QString &name);
 QByteArray encodeClassName(const QString &name);
 void atomicWrite(const QString &path, const QByteArray &data);
 } // namespace lordly

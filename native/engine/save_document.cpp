@@ -229,6 +229,29 @@ void SaveDocument::validateClassEdits(int count) const {
     } else
         check(originalData_, data_);
 }
+void SaveDocument::validateEquipmentEdits(int count) const {
+    if (count < 278 || count > 511)
+        throw Error("Invalid save item catalog");
+    auto original = *this;
+    original.data_ = originalData_;
+    auto check = [&](const QByteArray &before, const QByteArray &after) {
+        auto field = [&](int at) {
+            if (u16(before, at) != u16(after, at) && u16(after, at) >= count)
+                throw Error("Edited save references equipment absent from this ROM project");
+        };
+        for (int id = 1; id < 100; ++id)
+            for (int at : {42, 44, 46, 48})
+                field(roster + stride * id + at);
+        for (int id = 0; id < (battery() ? 278 : 128); ++id)
+            field((battery() ? 0x196b00 : 0x196ccc) + id * 4);
+    };
+    if (battery()) {
+        for (int slot : {0, 1, 15})
+            if (validSlot(slot))
+                check(original.decode(slot), decode(slot));
+    } else
+        check(originalData_, data_);
+}
 void SaveDocument::validateUnitSupplyEdits(const Project &project) const {
     if (!battery())
         return;
@@ -456,7 +479,7 @@ QVector<SaveField> SaveDocument::fields(SaveTable table) const {
         return {{"id", "Consumable / treasure ID", 0, 2, 0, 44},
                 {"count", "Owned", 3, 1, 0, battery() ? 127U : 255U}};
     if (table == SaveTable::Equipment)
-        return {{"id", "Equipment ID", 0, 2, 0, 277},
+        return {{"id", "Equipment ID", 0, 2, 0, 510},
                 {"owned", "Owned", 3, 1, 0, battery() ? 127U : 255U}};
     return {{"name", "Name", 0, battery() ? 13 : 17, 0, 0},
             {"class", "Primary class", 17, 1, 1, quint32(classCount_ - 1)},
@@ -473,10 +496,10 @@ QVector<SaveField> SaveDocument::fields(SaveTable table) const {
             {"agility", "Agility", 36, 2, 0, 999},
             {"dexterity", "Dexterity", 38, 2, 0, 999},
             {"luck", "Luck", 40, 1, 0, 100},
-            {"weapon", "Weapon", 42, 2, 0, 277},
-            {"body", "Body armor", 44, 2, 0, 277},
-            {"offhand", "Off-hand", 46, 2, 0, 277},
-            {"head", "Head slot", 48, 2, 0, 277},
+            {"weapon", "Weapon", 42, 2, 0, 510},
+            {"body", "Body armor", 44, 2, 0, 510},
+            {"offhand", "Off-hand", 46, 2, 0, 510},
+            {"head", "Head slot", 48, 2, 0, 510},
             {"experience", "Experience", 53, 1, 0, 99}};
 }
 QVariant SaveDocument::value(SaveTable table, int row, const QString &key) const {

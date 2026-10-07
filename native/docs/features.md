@@ -6,7 +6,18 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
-## Current checkpoint — 2026-10-06
+## Current checkpoint — 2026-10-07
+
+The Items workspace now creates equipment IDs through 510, with independent
+names, descriptions, icons and weapon appearance entries. Project folders,
+archives, Undo, repeated export/reopen and original save-codec checks pass.
+Shops now grow through ID 255 and attach/detach through Shops or Scenario Sites;
+the stock picker shows ROM/project icons in a modal. Site facility bit 1 is labeled
+Witch’s den. Terrain IDs include known names; global branches use In Mission and
+In Area investigation. Reward classes used by pools/custom squads sort first.
+Custom formations use square ROM portraits, drag movement/swapping and Front
+at the bottom; Enabled and configured Talk rules have explicit labels/help.
+
 
 Inherited scene launch is now implemented: current event bindings choose the
 predecessor chain, shared Actors/dialogue/scenery survive entry, and ending callers
@@ -140,8 +151,8 @@ acceptance requirements for the editor rewrite.
 |---|---|---|
 | Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | Readable project change review now supports background generation, search, copy and text export relative to the loaded source ROM, with persistence and source-preservation checks. Remaining workspace audit in progress |
 | Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, names/descriptions, promotion, compatibility, equipment-list availability, families and class creation through ID 255 now persist, undo and export through coordinated source rebuilds. Dynamic allocations and reopened-ROM growth verified; full-game validation and remaining feature audit pending |
-| Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Fields and description editing/export implemented; integrated workflow polish remains |
-| Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Search, add/remove/reorder, copy/restore, undo, project persistence/import and source-built export implemented. Supports 50 equipment/30 consumables in the original RAM arrays. Export/reopen and instruction checks pass, including empty stock; full-game validation remains |
+| Items | Equipment creation, names/stats/prices/resistances, packed growth, descriptions, preserved raw fields | New IDs 278–510, independent ROM artwork, dynamic record/name/description allocation, dependent pickers, Undo/project/save/export reopening implemented and checked. Original-ID scripted effects stay with their original IDs. |
+| Shops | Original shops plus new shops through ID 255, stronghold assignment, equipment/consumable inventories, expanded capacity and reopen | Search, add/remove/reorder, copy/restore, undo, project persistence/import and source-built export implemented. Supports 50 equipment/30 consumables in the original RAM arrays. Export/reopen and instruction checks pass, including empty stock; full-game validation remains |
 | Consumables | Values/descriptions, supported behavior/effect editing, rebuild ownership | 45 price/metadata records and ten magnitude/range models edit, undo, persist, import and compile/export. Healing description numbers can update with the effect. Shared stat boosters remain one model; unsupported item behaviors retain their source. Integrated export/reopen and instruction checks implemented; full-game validation remains |
 | Encounters | Pools, terrain/scenario/global rates, custom squads, persuasion/retreat/rewards/card text | All 45 pools, 32 terrain rates/slots, global and independent scenario rates, weighted class rewards, and custom squads now edit, undo, persist, import and compile/export, including added class IDs. Squads support independent members/equipment, formation, card text, persuasion, retreat and rewards. Selectors and callers rebuild from source; the custom runtime uses reclaimed resident memory within 4 MiB. Full pools decline custom encounters before spawning. Full-game validation remains |
 | Scenarios | Enemy squads/formations/equipment, placements/routes, triggers/treasure/towns, added squads | Squad/cohort records, equipment, formation, base levels, placement, drops, supplies, added squads, movement nodes, conditions and groups edit with undo, persist and rebuild/reopen. Browser imports preserve these edits and explicit level intent. Global site metadata, per-scenario allegiance and treasure edits/additions also persist and compile/export; original collection links support independent scenario resources. Class-size/capacity changes receive cross-feature checks. Unknown extended gates are preserved; original condition identities cannot yet be deleted because mission scripts may consume them. Browser imports also preserve site/treasure edits and shared-resource semantics. The coordinate map supports selection, field navigation, route links and undoable movement, with ROM imagery alongside. Calibrated current-ROM terrain overlays now cover49 of57 image selections with an optional view toggle; eight uncertain image/reference matches retain the separate preview. Site lists now follow the original initializer count, exposing all six initial sites in key64 while preserving its one-row header. Dynamic special placements, alternate-overlay key54 and full-game validation remain |

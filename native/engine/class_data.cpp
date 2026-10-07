@@ -11,6 +11,43 @@ namespace lordly {
 static constexpr int retailCount = 165, recordSize = 72, appearanceSize = 6;
 static constexpr quint32 nameRamStart = 0x8018febc, nameRamEnd = 0x80190378;
 static constexpr qsizetype nameRomStart = 0x65dbc;
+QJsonObject classRelocationCatalog() {
+    QJsonObject result;
+    QMap<int, QJsonObject> owners;
+    QJsonObject bases;
+    for (const auto path : {":/game/classes/relocations.json", ":/game/items/relocations.json"}) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            throw Error("Missing record relocation catalog");
+        auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+        if (result.isEmpty())
+            result = catalog;
+        const auto group = catalog["originalBases"].toObject();
+        for (auto it = group.begin(); it != group.end(); ++it)
+            bases[it.key()] = it.value();
+        for (auto value : catalog["owners"].toArray()) {
+            auto row = value.toObject();
+            const int start = row["start"].toInt();
+            if (owners.contains(start)) {
+                auto prior = owners[start];
+                if (prior["size"] != row["size"] || prior["retailSha256"] != row["retailSha256"])
+                    throw Error("Record relocation owners disagree");
+                auto refs = prior["references"].toArray();
+                for (auto r : row["references"].toArray())
+                    refs << r;
+                prior["references"] = refs;
+                owners[start] = prior;
+            } else
+                owners[start] = row;
+        }
+    }
+    QJsonArray rows;
+    for (const auto &o : owners)
+        rows << o;
+    result["owners"] = rows;
+    result["originalBases"] = bases;
+    return result;
+}
 static void validatePlacement(const ClassPlacement &p) {
     p.saves.validate();
     if (p.residentBytes) {
@@ -23,6 +60,10 @@ static void validatePlacement(const ClassPlacement &p) {
         throw Error("Empty resident extension has placement metadata");
     }
     const auto &l = p.layout;
+    if ((l.items && (l.items % 16 || l.items < l.discovery + 32 || l.itemCount < 278 ||
+                     l.itemCount > 511 || quint64(l.items) + 12 + l.itemCount * 32 >= l.end)) ||
+        (!l.items && l.itemCount))
+        throw Error("Invalid expanded item allocation");
     if (l.count < 165 || l.count > 256 || l.indexBase != 0x80243db0 ||
         l.records != l.indexBase + 72 || l.appearances % 16 || l.aliases % 16 || l.names % 16 ||
         l.discovery % 16 || l.end % 16 || l.end > 0x80400000 ||
@@ -55,7 +96,12 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     paddedCode.append(QByteArray(codeCapacity - code.size(), 0));
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05CLAS");
-    put32(header, 8, residentBytes ? 4 : descriptionEntry ? 3 : saves.installed() ? 2 : 1);
+    put32(header, 8,
+          layout.items        ? 5
+          : residentBytes     ? 4
+          : descriptionEntry  ? 3
+          : saves.installed() ? 2
+                              : 1);
     put32(header, 12, dataRomOffset);
     put32(header, 16, quint32(data.size()));
     put32(header, 20, layout.count);
@@ -82,6 +128,8 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     put32(header, 104, residentAddress);
     put32(header, 108, residentBytes);
     put32(header, 112, residentChecksum);
+    put32(header, 116, layout.items);
+    put32(header, 120, layout.itemCount);
     put32(header, 124, crc32(header.first(124)));
     return header;
 }
@@ -90,14 +138,16 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     if (!header.startsWith("LC05CLAS"))
         return std::nullopt;
     const auto version = u32(header, 8);
-    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 4 ||
-        u32(header, 124) != crc32(header.first(124)) || header.mid(116, 8) != QByteArray(8, 0) ||
+    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 5 ||
+        u32(header, 124) != crc32(header.first(124)) ||
+        (version < 5 && header.mid(116, 8) != QByteArray(8, 0)) ||
+        (version == 5 && !u32(header, 116)) ||
         (version < 4 && header.mid(104, 12) != QByteArray(12, 0)) ||
         (version == 4 && !u32(header, 108)) || (version < 3 && u32(header, 100)) ||
         (version == 3 && !u32(header, 100)) ||
         (version == 1 && header.mid(84, 16) != QByteArray(16, 0)) ||
         ((version == 2 || version == 3) && !u32(header, 84)) ||
-        (version == 4 && !u32(header, 84) && header.mid(84, 16) != QByteArray(16, 0)))
+        (version >= 4 && !u32(header, 84) && header.mid(84, 16) != QByteArray(16, 0)))
         throw Error("Unrecognized or damaged relocated class descriptor");
     ClassPlacement result;
     auto &l = result.layout;
@@ -110,6 +160,8 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     l.names = u32(header, 40);
     l.discovery = u32(header, 44);
     l.end = u32(header, 48);
+    l.items = u32(header, 116);
+    l.itemCount = int(u32(header, 120));
     result.bootEntry = u32(header, 60);
     result.heapEntry = u32(header, 64);
     result.secondaryEntry = u32(header, 68);
@@ -198,14 +250,13 @@ static QByteArray transformReferences(const ClassPlacement &placement, const QBy
                                           canonical ? original : current);
             }
     }
-    QFile file(":/game/classes/relocations.json");
-    if (!file.open(QIODevice::ReadOnly))
-        throw Error("Missing class relocation catalog");
-    const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+    const auto catalog = classRelocationCatalog();
     const auto original = catalog["originalBases"].toObject();
-    const QMap<QString, quint32> current = {{"classes", placement.layout.indexBase},
-                                            {"appearances", placement.layout.appearances},
-                                            {"directory", placement.directory}};
+    const QMap<QString, quint32> current = {
+        {"classes", placement.layout.indexBase},
+        {"appearances", placement.layout.appearances},
+        {"directory", placement.directory},
+        {"items", placement.layout.items ? placement.layout.items : 0x8018c400U}};
     auto result = bytes;
     for (const auto value : catalog["owners"].toArray()) {
         const auto owner = value.toObject();

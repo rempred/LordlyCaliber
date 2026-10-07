@@ -10,6 +10,7 @@
 namespace lordly {
 // Source-built owners may use different instruction locations for the same
 // class data. Select their references only after authenticating the full owner.
+QJsonObject classRelocationCatalog();
 QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &bytes,
                                 const QMap<QString, quint32> &bases,
                                 const QJsonObject &originalBases);
@@ -21,6 +22,8 @@ struct ClassDataLayout {
     quint32 indexBase = 0, records = 0, appearances = 0, aliases = 0, names = 0;
     quint32 discovery = 0, end = 0;
     int count = 0;
+    quint32 items = 0;
+    int itemCount = 0;
 };
 struct ClassDataImage {
     ClassDataLayout layout;

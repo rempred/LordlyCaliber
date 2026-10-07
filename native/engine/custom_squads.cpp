@@ -65,7 +65,7 @@ CustomSquad CustomSquad::parse(const QJsonObject &o, int classCount) {
         CustomMember member{integer(m["classId"], 2, classCount - 1),
                             integer(m["levelOffset"], -128, 127),
                             integer(m["cell"], 0, 8),
-                            {integer(equipment[0], 0, 277), integer(equipment[1], 0, 277)}};
+                            {integer(equipment[0], 0, 510), integer(equipment[1], 0, 510)}};
         if (cells.contains(member.cell))
             throw Error("Custom squad members cannot share a formation cell");
         cells.insert(member.cell);
@@ -307,7 +307,7 @@ void CustomSquads::importLegacy(const QJsonObject &values, int classCount) {
             row.members << CustomMember{integer(m["class_id"], 2, classCount - 1),
                                         raw < 128 ? raw : raw - 256,
                                         integer(m["cell"], 0, 8),
-                                        {integer(eq[0], 0, 277), integer(eq[1], 0, 277)}};
+                                        {integer(eq[0], 0, 510), integer(eq[1], 0, 510)}};
         }
         for (const auto &name : {"persuasion", "retreat", "rewards"})
             if (o.contains(name) && !o[name].isObject())

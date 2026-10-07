@@ -425,6 +425,7 @@ void SaveEditor::exportFile(const QString &path) {
     const auto refresh = prepared.planArmyRefresh(*project_);
     if (!refresh.spans.isEmpty())
         prepared.apply(refresh, true);
+    prepared.validateEquipmentEdits(int(project_->records(Table::Items).size()));
     prepared.validateClassEdits(int(project_->records(Table::Classes).size()));
     prepared.validateUnitSupplyEdits(*project_);
     const auto bytes = prepared.serialize();

@@ -38,13 +38,15 @@ class AnimationRoutes {
     void setEntry(int classId, const Entry &);
     void setRow(int classId, const Row &);
     AnimationRoutes withDirectory(const QByteArray &) const;
+    void cloneEquipment(int source, int target);
     void cloneClass(int source, int target) {
         setEntry(target, entry(source));
     }
     void restore(int classId);
     int rowCount() const;
     bool modified() const {
-        return !edits_.isEmpty() || !pending_.isEmpty() || privatePoses_ != loadedPrivatePoses_;
+        return !equipmentVariants_.isEmpty() || !edits_.isEmpty() || !pending_.isEmpty() ||
+               privatePoses_ != loadedPrivatePoses_;
     }
     void requireAssignment(int id);
     const QSet<int> &pending() const {
@@ -70,6 +72,8 @@ class AnimationRoutes {
                        const QByteArray &compiledCopyLoads) const;
 
   private:
+    QByteArray effectivePrefix() const;
+    QByteArray equipmentVariants_;
     static QVector<Entry> parseEntries(const QByteArray &);
     static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &, bool policies = false, bool bodies = false);
     QByteArray source_, prefix_, descriptor_, root_, privatePoses_, loadedPrivatePoses_;

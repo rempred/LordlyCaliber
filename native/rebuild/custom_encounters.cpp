@@ -1,3 +1,4 @@
+#include "engine/art_resource_links.h"
 #include "rebuild/custom_encounters.h"
 #include "engine/class_data.h"
 #include "engine/creature_rewards.h"
@@ -106,7 +107,7 @@ QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const 
             throw Error("Custom caller source exceeds its original function");
         if (classes)
             code = classes->placedReferences(code, at);
-        image.replace(at, size, code);
+        image.replace(at, size, retainArtReferences(rom, code, at));
     }
     auto compile = [&](const QString &name, const QByteArray &definitions, quint32 address,
                        QMap<QString, quint32> symbols, int offset, int size) {
@@ -121,7 +122,7 @@ QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const 
             directory, "custom_shared_" + name, address, symbols, true);
         if (code.size() != size)
             throw Error("Shared custom encounter caller exceeds its original function");
-        image.replace(offset, size, code);
+        image.replace(offset, size, retainArtReferences(rom, code, offset));
     };
     compile("dispatcher",
             scenario ? ScenarioRates::definitions(scenario->offset) : rate.assemblyDefinitions(),

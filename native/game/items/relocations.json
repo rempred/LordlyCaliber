@@ -1,0 +1,766 @@
+{
+  "generator": "native/tools/generate-item-relocations.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "ownerSource": "config/splat/us_rev0.semantic.json",
+  "originalBases": {
+    "items": 2149106688
+  },
+  "owners": [
+    {
+      "start": 283776,
+      "size": 24,
+      "retailSha256": "a17356a4a0c086ff7d91b378fcdfb56e0662af0ce231d1813ce89bac6156162a",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 39
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283800,
+      "size": 24,
+      "retailSha256": "c1d57bb7acfe0fd88bc2e67c44fdec7979f33f19997140aece5b52ceb1cc6a27",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 40
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283824,
+      "size": 24,
+      "retailSha256": "1e7e1364ab0fbd3c9290d3fa194050bb5efa2b60c58ff3835860ba7098e04962",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 12
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283848,
+      "size": 24,
+      "retailSha256": "3faee5798006b9b1a5495b2eb65091f661a5ced9e4e5d71745d9682f3079ddfd",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 16
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283872,
+      "size": 52,
+      "retailSha256": "b540a458f1916845ea041fb950aab5f60a758ecd6957c1ecb1637ba37c0cfad1",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 17
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283924,
+      "size": 24,
+      "retailSha256": "18c45ad0627c0153e2007bf60be54c9627f3a147936323d7ed1883f054a3649c",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 18
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283948,
+      "size": 24,
+      "retailSha256": "3fd656a4e9dae80ae80cc8cb73364ea1f7921da62490496f9a41470924d287d9",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283972,
+      "size": 24,
+      "retailSha256": "e8a4bebf86e813ec6f1bf2b1f8cdd7fede18cd572750feaf3b0beca0d71923ba",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 28
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 283996,
+      "size": 80,
+      "retailSha256": "729dd3b53778aa6af841a1d22c2eeaca7f630c94d3ebf361b547c52dd5949927",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 22
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284076,
+      "size": 80,
+      "retailSha256": "56f980eb5028b6274160ab8d28e7a8c60425c4decc00c2c93e8848c6c7e8bb29",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 26
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284156,
+      "size": 80,
+      "retailSha256": "ba2b4431d1417da306126344043df13be38055eb1ba9faaa2ee8f6814ae5852c",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 23
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284236,
+      "size": 80,
+      "retailSha256": "822874b18965996e3e1cdd91a7ee57aadd2beee2ce33937fb32add013e083141",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 27
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284316,
+      "size": 80,
+      "retailSha256": "5ea4a0390edce3b3a8bbeba15ba8dce857c491ad0de9b71c0281eb5239b54a64",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 24
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284396,
+      "size": 80,
+      "retailSha256": "63dee4ffa82cc054c6bb005c9e83b21ce4594281d6c8a2ce2818b7030c1191dd",
+      "references": [
+        {
+          "group": "items",
+          "high": 56,
+          "low": 64,
+          "addend": 25
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284476,
+      "size": 24,
+      "retailSha256": "608e32f432d6a5c721bd76a846cc07ea91371960d889f283594a57f5a35f7d02",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 29
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284500,
+      "size": 24,
+      "retailSha256": "c8219bb690553ab20f3d4e1dff0b61a563782d5bb9ba7ac6369793d5a278c86b",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 30
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284524,
+      "size": 24,
+      "retailSha256": "39a9420769178af71d7a1e1bd9b21977200e6840deb58f661c7fa6f5873a1636",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 31
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284548,
+      "size": 24,
+      "retailSha256": "a9c37e7ec1ae49c1efb4e7f44c1e431bcf3c6703dc8774d9e737e5bad63903d8",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 32
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284572,
+      "size": 24,
+      "retailSha256": "3613c1b1deb16db9c7bd96cffffc7409bac62de4c0bd4ba37d40b79e7b477f83",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 33
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284596,
+      "size": 24,
+      "retailSha256": "397814c0c1f8bfd9d63e0dd41b18d5e5fd10ab3c103c98191bc9445e1ef95be4",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 34
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284620,
+      "size": 24,
+      "retailSha256": "68e31abf6c3be64dba771611261ea5bbc82a40d8d77977c2a72d12f938cfead6",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 20,
+          "addend": 35
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284644,
+      "size": 28,
+      "retailSha256": "3d0fc98bdddd20722d15b7dab766e7350a70705613f9e7df0ba1fe27946082d2",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 36
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284672,
+      "size": 32,
+      "retailSha256": "a04303899f5e3e959d5a62302eb239ade903bb78b338af756bb365f6c393098b",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 36
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284704,
+      "size": 32,
+      "retailSha256": "12cf8701bfb7d1bb854723250a5832c61741960a336cae38ec860990dc03fafe",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 36
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284736,
+      "size": 28,
+      "retailSha256": "5cc97ddb426ea2fca74989b26034e7c21646a0e478b75a6e5ce6c733dfa410bd",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 36
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284764,
+      "size": 28,
+      "retailSha256": "da57512a5c8b6dcc2442d76cd240e7fbf88d97370af814d503cb80bd2f16e08c",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 37
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284792,
+      "size": 32,
+      "retailSha256": "87c903581851ab1ad90e6b694960a6d5a96933ff9ae7af0397f5431df2608c0d",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 37
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284824,
+      "size": 32,
+      "retailSha256": "3acca5a7ee9a426af714fc46ff425940966c0526c29e252a3d91444349ed521a",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 37
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284856,
+      "size": 28,
+      "retailSha256": "a3a2e14d747206508acd6731730c9252b365bb501a5aa646131145d6e34f1b9a",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 37
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284884,
+      "size": 28,
+      "retailSha256": "aba5c07ea18f29ae0eef1645946ea602e13b4c4b1065e7edc30ebb35b92b5ffe",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 38
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284912,
+      "size": 68,
+      "retailSha256": "d3e736660b4fa458938f332f3c64bef887f76f9aa9582e875090e886196db762",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 16
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 284980,
+      "size": 284,
+      "retailSha256": "9133ef83cccd5a131b1c28dd2b3870df9f955f8886c64bf873cd36ea4d30a959",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 76,
+          "low": 84,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 144,
+          "low": 152,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 212,
+          "low": 220,
+          "addend": 16
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 285264,
+      "size": 144,
+      "retailSha256": "614b9252854fb21209e378e8dfbb980edec335e67efa263b28a2cedaf8a5ed3c",
+      "references": [
+        {
+          "group": "items",
+          "high": 8,
+          "low": 16,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 44,
+          "low": 52,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 76,
+          "low": 84,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 108,
+          "low": 116,
+          "addend": 16
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 605812,
+      "size": 1324,
+      "retailSha256": "b9875cb3fefb9d74cfc2c65eb5f287387463a9cb344504c5122674d354478755",
+      "references": [
+        {
+          "group": "items",
+          "high": 564,
+          "low": 572,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 610904,
+      "size": 6428,
+      "retailSha256": "55891ab672ea0c35cbbbc6c23297d37b50ade93ecf695fcf2a84452adaafd522",
+      "references": [
+        {
+          "group": "items",
+          "high": 4152,
+          "low": 4160,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 626184,
+      "size": 1732,
+      "retailSha256": "3a36b9f3246589942659011a35fd471a44ae05b8eb6dbc50f89b694c41e38594",
+      "references": [
+        {
+          "group": "items",
+          "high": 344,
+          "low": 356,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 784264,
+      "size": 260,
+      "retailSha256": "406d7e699c55cfc5c973aecec6e49bc700c6311134204e05cb9b8a7cd6433a3a",
+      "references": [
+        {
+          "group": "items",
+          "high": 104,
+          "low": 112,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 784704,
+      "size": 136,
+      "retailSha256": "3458528dd806707b843db07f053d0f28172dc7da12e8d8ca8ebc14b4c0fa178c",
+      "references": [
+        {
+          "group": "items",
+          "high": 76,
+          "low": 84,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 784840,
+      "size": 672,
+      "retailSha256": "e7e4e6993eb74d6683f38f956015501044459f9fbc9b3e9645cf05c184f9e601",
+      "references": [
+        {
+          "group": "items",
+          "high": 592,
+          "low": 600,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 809136,
+      "size": 896,
+      "retailSha256": "10209aca87dded27ca974193f84ae8c643ea002c259b991d373bf3e430ddb333",
+      "references": [
+        {
+          "group": "items",
+          "high": 684,
+          "low": 692,
+          "addend": 38
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 812664,
+      "size": 1396,
+      "retailSha256": "021a5644dd3d0076a4f847cab1594ae213fe5ae8e04eb3d439764510a8e66c5c",
+      "references": [
+        {
+          "group": "items",
+          "high": 328,
+          "low": 336,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 340,
+          "low": 348,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 448,
+          "low": 456,
+          "addend": 17
+        },
+        {
+          "group": "items",
+          "high": 460,
+          "low": 468,
+          "addend": 17
+        },
+        {
+          "group": "items",
+          "high": 524,
+          "low": 532,
+          "addend": 20
+        },
+        {
+          "group": "items",
+          "high": 536,
+          "low": 544,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 833836,
+      "size": 2432,
+      "retailSha256": "c300f9c5ee3e9fb4ad392d72b81dc3ca0558d4c1d452938e8fbac88262108287",
+      "references": [
+        {
+          "group": "items",
+          "high": 1392,
+          "low": 1400,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1669088,
+      "size": 4580,
+      "retailSha256": "e1b25141cc49a6b8d9d30ea7dba9c2a582a5a7a6be6c1a582845f6bf4a112aad",
+      "references": [
+        {
+          "group": "items",
+          "high": 1648,
+          "low": 1656,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1673668,
+      "size": 2800,
+      "retailSha256": "f18f6fb71140cc3b250bdc122998183f8705aedb8dad8ecc95f8009d5e7b777e",
+      "references": [
+        {
+          "group": "items",
+          "high": 1528,
+          "low": 1536,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1680020,
+      "size": 1904,
+      "retailSha256": "041d161509dabe0356ef2b87e81ca8d16e0dc2851a902854e90b489cfb93bd0a",
+      "references": [
+        {
+          "group": "items",
+          "high": 304,
+          "low": 312,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1683888,
+      "size": 108,
+      "retailSha256": "a25ac0f7c6636810076834e35df176caaf2e2b597f92e6d392ea0a6329e82a87",
+      "references": [
+        {
+          "group": "items",
+          "high": 4,
+          "low": 12,
+          "addend": 16
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1684076,
+      "size": 600,
+      "retailSha256": "e8ab1637dd59d26ebf66cca50eddd9d4c24268b9e46a99fecd090ef75debb89e",
+      "references": [
+        {
+          "group": "items",
+          "high": 336,
+          "low": 344,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1685504,
+      "size": 692,
+      "retailSha256": "b8b01be86c285f447e6d53f1eb52ecf027708b123d4ef6e65d20d639cd0f4a74",
+      "references": [
+        {
+          "group": "items",
+          "high": 120,
+          "low": 128,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 220,
+          "low": 228,
+          "addend": 16
+        },
+        {
+          "group": "items",
+          "high": 476,
+          "low": 484,
+          "addend": 20
+        },
+        {
+          "group": "items",
+          "high": 524,
+          "low": 532,
+          "addend": 20
+        }
+      ],
+      "calls": []
+    }
+  ]
+}

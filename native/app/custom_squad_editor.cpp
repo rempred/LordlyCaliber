@@ -343,6 +343,24 @@ void CustomSquadEditor::refresh() {
         if (it.key() == editing_)
             selectedRow = list_->count() - 1;
     }
+    for (auto box : equipment_) {
+        const QSignalBlocker blocker(box);
+        box->clear();
+        for (const auto &r : project_->records(Table::Items))
+            box->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
+    }
+    for (auto box : rewards_) {
+        const QSignalBlocker blocker(box);
+        box->clear();
+        box->addItem("None", 0);
+        for (const auto kind : {Table::Items, Table::Consumables})
+            for (int id = 1; id < project_->records(kind).size(); ++id)
+                box->addItem(QString("%1 %2 · %3")
+                                 .arg(kind == Table::Items ? "Equipment" : "Consumable")
+                                 .arg(id)
+                                 .arg(project_->record(kind, id).name),
+                             (kind == Table::Items ? 0x8000 : 0) | id);
+    }
     for (auto box : classes_ + bonusClasses_) {
         box->clear();
         if (bonusClasses_.contains(box))

@@ -14,9 +14,16 @@ namespace lordly {
 ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves,
-                  const std::function<QByteArray(quint32, quint32)> &residentBuilder) {
+                  const std::function<QByteArray(quint32, quint32)> &residentBuilder,
+                  const ItemData *items) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
+    if (items) {
+        result.data.layout.items = result.data.layout.end;
+        result.data.layout.itemCount = int(items->entries().size());
+        result.data.bytes += items->build(result.data.layout.items);
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+    }
     if (expandedSaves || result.data.layout.count > 165) {
         result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory);
         result.placement.saves = result.saves->placement;
@@ -100,7 +107,6 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         build.descriptor != build.placement.descriptor(build.compiledData, build.code.bytes))
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
-    const auto textPlacement = ClassTextPlacement::read(rom);
     const auto shopPlacement = ShopPlacement::read(rom);
     if (prior && prior->saves.installed() && !build.saves)
         throw Error("Rebuilding this class allocation also requires its expanded save runtime");
@@ -118,19 +124,19 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             configuredOwners.insert(owner.start);
     if (inventory && !menus && prior->layout.count != build.data.layout.count)
         throw Error("Growing expanded classes also requires rebuilding their menu code");
-    QFile file(":/game/classes/relocations.json");
-    if (!file.open(QIODevice::ReadOnly))
-        throw Error("Missing class relocation catalog");
-    const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+    const auto catalog = classRelocationCatalog();
     const auto original = catalog["originalBases"].toObject();
-    const QMap<QString, quint32> nextBases = {{"classes", build.data.layout.indexBase},
-                                              {"appearances", build.data.layout.appearances},
-                                              {"directory", build.placement.directory}};
+    const QMap<QString, quint32> nextBases = {
+        {"classes", build.data.layout.indexBase},
+        {"appearances", build.data.layout.appearances},
+        {"directory", build.placement.directory},
+        {"items", build.data.layout.items ? build.data.layout.items : 0x8018c400U}};
     const QMap<QString, quint32> previousBases = {
         {"classes", prior ? prior->layout.indexBase : quint32(original["classes"].toDouble())},
         {"appearances",
          prior ? prior->layout.appearances : quint32(original["appearances"].toDouble())},
-        {"directory", prior ? prior->directory : quint32(original["directory"].toDouble())}};
+        {"directory", prior ? prior->directory : quint32(original["directory"].toDouble())},
+        {"items", prior && prior->layout.items ? prior->layout.items : 0x8018c400U}};
     const QMap<QString, quint32> nextCalls = {
         {"lc_boot_classes", build.placement.bootEntry},
         {"lc_heap_reset", build.placement.heapEntry},
@@ -217,8 +223,7 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             put32(canonical, at, (word & 0xffff0000U) | retail);
             patch(start + at, (word & 0xffff0000U) | next);
         }
-        if (textPlacement)
-            canonical = textPlacement->canonicalReferences(canonical, start);
+        canonical = ClassTextPlacement::canonicalAll(rom, canonical, start);
         if (shopPlacement)
             canonical = shopPlacement->canonicalReferences(canonical, start);
         validateArtOwnerLinks(rom,start,size);

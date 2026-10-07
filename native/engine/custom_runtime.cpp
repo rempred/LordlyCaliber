@@ -1,3 +1,4 @@
+#include "engine/art_resource_links.h"
 #include "engine/custom_runtime.h"
 #include "engine/class_data.h"
 #include "engine/creature_rewards.h"
@@ -175,7 +176,8 @@ void verifyCustomCallers(const Rom &rom, const std::optional<CustomPlacement> &p
             code = classes->canonicalReferences(code, at);
         if (placement)
             code = placement->canonicalReferences(code, at);
-        if (code.size() != size || sha256(code) != owner["retailSha256"].toString().toLatin1())
+        validateArtOwnerLinks(rom, at, size);
+        if (code.size() != size || sha256(canonicalArtOwner(code, at)) != owner["retailSha256"].toString().toLatin1())
             throw Error("Unrecognized custom encounter caller at z64 " + QString::number(at, 16));
     }
 }

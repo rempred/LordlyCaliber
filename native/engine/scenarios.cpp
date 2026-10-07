@@ -202,9 +202,9 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
             e.baseLevel() != base.layout.baseLevel())
             levels(record, e.baseLevel());
         for (const int at : {2, 4, 9, 11, 18, 20})
-            if (u16(record, at) > 277 && (before.isEmpty() || u16(record, at) != u16(before, at)))
+            if (u16(record, at) > 510 && (before.isEmpty() || u16(record, at) != u16(before, at)))
                 throw Error(
-                    "Choose equipment 0–277; unknown original equipment can only be preserved");
+                    "Choose equipment 0–510; unknown original equipment can only be preserved");
         // The accepted ambiguous join is zero-based EDAT 199: key 25, source 40.
         if (s.key == 25 && source == 40 && !before.isEmpty() &&
             (record[8] != before[8] || record[17] != before[17]))
@@ -226,7 +226,7 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
         }
         if (beforeRow.isEmpty() || row.mid(10, 3) != beforeRow.mid(10, 3)) {
             const int value = u16(row, 11), id = value & 0x7fff;
-            if (id > ((u8(row, 10) || (value & 0x8000)) ? 277 : 44))
+            if (id > ((u8(row, 10) || (value & 0x8000)) ? 510 : 44))
                 throw Error("Squad drop refers to an unavailable item");
         }
     }

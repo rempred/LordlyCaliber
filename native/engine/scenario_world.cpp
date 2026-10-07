@@ -148,7 +148,7 @@ void ScenarioWorld::validateScenario(int key, const WorldScenario &value) const 
             unchanged |= record == treasureRecord(base.treasures, j);
         const int id = u8(record, 0), table = u8(record, 3), item = u16(record, 4);
         if (!unchanged && (!id || ids.contains(id) || (table != 1 && table != 2) ||
-                           item > (table == 1 ? 277 : 44)))
+                           item > (table == 1 ? 510 : 44)))
             throw Error("Treasure needs a distinct flag ID, valid table and valid item");
         ids.insert(id);
     }

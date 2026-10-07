@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/class_data.h"
+#include "engine/item_data.h"
 #include "rebuild/compiler.h"
 #include "rebuild/save_runtime.h"
 
@@ -25,7 +26,8 @@ struct ClassRuntimeBuild {
 ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves = false,
-                  const std::function<QByteArray(quint32, quint32)> &residentBuilder = {});
+                  const std::function<QByteArray(quint32, quint32)> &residentBuilder = {},
+                  const ItemData *items = nullptr);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

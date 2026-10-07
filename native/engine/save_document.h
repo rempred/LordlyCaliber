@@ -93,6 +93,7 @@ class SaveDocument {
     QByteArray serialize() const;
     void setClassCount(int);
     void validateClassEdits(int classCount) const;
+    void validateEquipmentEdits(int itemCount) const;
     void validateUnitSupplyEdits(const Project &) const;
     SaveChange planArmyRefresh(const Project &) const;
     const QByteArray &memory() const {

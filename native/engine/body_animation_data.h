@@ -1,6 +1,7 @@
 #pragma once
-#include "engine/animation_overrides.h"
 #include "engine/animation_descriptor.h"
+#include "engine/animation_overrides.h"
+#include "engine/item_data.h"
 #include <memory>
 namespace lordly {
 // Immutable project snapshot, shared by playback checkpoints and their Actors.
@@ -10,7 +11,8 @@ class BodyAnimationData {
     using Pointer = std::shared_ptr<const BodyAnimationData>;
     BodyAnimationData(ClassData classes, AnimationRoutes routes,
                       std::optional<AnimationOverrides> overrides = {},
-                      QMap<int,AnimationDescriptor> privateDescriptors = {});
+                      QMap<int, AnimationDescriptor> privateDescriptors = {},
+                      std::optional<ItemData> items = {});
     static Pointer load(const Rom &);
     const ClassData &classes() const {
         return classes_;
@@ -18,11 +20,15 @@ class BodyAnimationData {
     const AnimationRoutes &routes() const {
         return routes_;
     }
+    ItemData items(const Rom &rom) const {
+        return items_ ? *items_ : ItemData::load(rom);
+    }
     quint16 handle(int source, int owner, int flagA, int flagB) const;
     const AnimationDescriptor *descriptor(int source,int owner,int flagA,int flagB)const;
     int selector(int source, int owner, int action, int mode, int bodyFlags) const;
 
   private:
+    std::optional<ItemData> items_;
     ClassData classes_;
     AnimationRoutes routes_;
     QVector<AnimationOverrideImage::Row> overrides_;

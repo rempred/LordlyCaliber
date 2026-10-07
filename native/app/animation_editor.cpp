@@ -341,6 +341,10 @@ void AnimationEditor::refresh() {
         return;
     project_->loadAnimationRoutes();
     QScopedValueRollback<bool> guard(refreshing_, true);
+    equipmentArt_->clear();
+    equipmentArt_->addItem("Use equipped item", -1);
+    for (const auto &r : project_->records(Table::Items))
+        equipmentArt_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
     const auto source = sources_->currentData().toInt();
     classes_->clear();
     sources_->clear();
