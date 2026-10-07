@@ -18,6 +18,7 @@ class RecordModel : public QAbstractTableModel {
     void apply(int row, int field, int value);
     void applyName(int row, const QByteArray &value);
     int appendClass(int templateId, const QString &name);
+    int createClass(const QString &name);
     void applyProject(const Project &project);
   signals:
     void edited();

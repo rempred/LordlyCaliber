@@ -92,21 +92,31 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     name_->setPlaceholderText("Family name");
     name_->setMaxLength(80);
     name_->setObjectName("newFamilyName");
-    templates_ = new QComboBox;
-    templates_->setObjectName("familyTemplate");
+    rules_ = new QComboBox;
+    rules_->setObjectName("newFamilyRules");
+    rules_->addItem("Within family", int(Promotion::FamilyRules::WithinFamily));
+    rules_->addItem("Within family + Lich", int(Promotion::FamilyRules::WithLich));
+    rules_->addItem("Within family + Lich / Vampire", int(Promotion::FamilyRules::WithLichAndVampire));
+    rules_->addItem("No manual class changes", int(Promotion::FamilyRules::NoManualChanges));
+    rules_->setToolTip("Within family uses normal stat, equipment and compatibility checks. "
+                       "It also permits category 0x08 changes between classes using this rule. "
+                       "Lich/Vampire options add the game's special targets; their other "
+                       "requirements still apply.");
     familyForm->addRow("Name", name_);
-    familyForm->addRow("Behavior template", templates_);
+    familyForm->addRow("Class-change rules", rules_);
     auto add = new QPushButton("Create and assign family");
     add->setObjectName("createFamily");
     layout->addWidget(add);
     connect(add, &QPushButton::clicked, this, [this] {
         edit("Create class family", [this](Promotion &p) {
-            p.assign(id_, p.addFamily(name_->text(), templates_->currentData().toInt()));
+            p.assign(id_, p.createFamily(name_->text(), Promotion::FamilyRules(rules_->currentData().toInt())));
         });
     });
     auto detail =
-        new QLabel("A new family has its own membership and inherits the selected family's game "
-                   "rules. Stat and alignment requirements remain editable above.");
+        new QLabel("Creates a new family containing only this class. Assign other classes to it "
+                   "using Class family above. No members or promotion requirements are copied. "
+                   "Class-change rules control manual changes and optional special targets; "
+                   "compatibility, stats, equipment and story conditions still apply.");
     detail->setWordWrap(true);
     layout->addWidget(detail);
     layout->addStretch();
@@ -124,7 +134,7 @@ void PromotionEditor::refresh() {
     mask_->setEnabled(editable);
     equipmentSets_->setEnabled(editable);
     name_->setEnabled(editable);
-    templates_->setEnabled(editable);
+    rules_->setEnabled(editable);
     findChild<QPushButton *>("createFamily")->setEnabled(editable);
     for (auto spin : gates_)
         spin->setEnabled(editable);
@@ -133,8 +143,6 @@ void PromotionEditor::refresh() {
                                  : "Manual class-change requirements. Equipment, story and "
                                    "character conditions also apply.");
     families_->clear();
-    auto templateId = templates_->currentData().toInt();
-    templates_->clear();
     if (available) {
         const auto &p = *project_->promotion();
         for (auto f : p.families["families"].toArray()) {
@@ -142,10 +150,7 @@ void PromotionEditor::refresh() {
             auto id = o["id"].toInt();
             auto label = QString("%1 · %2").arg(id).arg(o["name"].toString());
             families_->addItem(label, id);
-            if (o["behavior"].toInt() > 0)
-                templates_->addItem(label, id);
         }
-        templates_->setCurrentIndex(std::max(0, templates_->findData(templateId)));
         if (editable) {
             families_->setCurrentIndex(
                 families_->findData(p.families["assignments"].toArray()[id_].toInt()));

@@ -8887,6 +8887,32 @@ class UiTests : public QObject {
         QCOMPARE(model.appendClass(0, "Invalid"), -1);
         QCOMPARE(rejected.size(), 1);
         QCOMPARE(project.manifest(), current);
+        // Fresh gameplay settings must not inherit even a modified starter's data.
+        project.setText("classes", 5, "Do not copy this description");
+        auto promotion = *project.promotion();
+        promotion.setGate(5, 0, 123);
+        promotion.setMask(5, 0x5a);
+        project.setPromotion(promotion.json());
+        auto record = project.record(Table::Classes, 5).bytes;
+        put16(record, 8, 999);
+        project.replaceBytes(Table::Classes, 5, record);
+        const auto beforeFresh = project.manifest();
+        QCOMPARE(model.createClass("Fresh class"), 166);
+        const auto &fresh = project.record(Table::Classes, 166).bytes;
+        QCOMPARE(u16(fresh, 8), 1U);
+        QCOMPARE(fresh.mid(46, 15), QByteArray(15, 0)); // No equipment or actions.
+        QCOMPARE(u8(fresh, 65), quint8(166)); // Own growth; no Fighter gameplay dependency.
+        QVERIFY(project.textBanks()["classes"].entries[226].bytes.isEmpty());
+        QCOMPARE(project.promotion()->gates.mid(166 * 8, 8), QByteArray::fromHex("0000000000000064"));
+        QCOMPARE(u8(project.promotion()->masks, 166), quint8(1));
+        QCOMPARE(project.promotion()->families["assignments"].toArray()[166].toInt(), 0);
+        const auto freshManifest = project.manifest();
+        undo.undo();
+        QCOMPARE(project.manifest(), beforeFresh);
+        undo.redo();
+        QCOMPARE(project.manifest(), freshManifest);
+        QCOMPARE(model.createClass(""), -1);
+        QCOMPARE(project.manifest(), freshManifest);
     }
     void loadDesktopWorkspace() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -8907,6 +8933,33 @@ class UiTests : public QObject {
         QCOMPARE(consumables->model()->rowCount(), 45);
         QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
         QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 63);
+        auto fresh = window.findChild<QPushButton *>("newClass");
+        QVERIFY(fresh);
+        classes->setCurrentIndex({}); // Creating a class needs no template selection.
+        QVERIFY(fresh->isEnabled());
+        QTimer::singleShot(0, &window, [&] {
+            auto dialog = window.findChild<QInputDialog *>();
+            QVERIFY(dialog);
+            dialog->reject();
+        });
+        fresh->click();
+        QCOMPARE(classes->model()->rowCount(), 165);
+        QTimer::singleShot(0, &window, [&] {
+            auto dialog = window.findChild<QInputDialog *>();
+            QVERIFY(dialog);
+            dialog->setTextValue("Fresh class");
+            dialog->accept();
+        });
+        fresh->click();
+        QCOMPARE(classes->model()->rowCount(), 166);
+        QCOMPARE(classes->currentIndex().siblingAtColumn(1).data().toString(), QString("Fresh class"));
+        auto undo = window.findChild<QUndoStack *>();
+        QVERIFY(undo);
+        undo->undo();
+        QCOMPARE(classes->model()->rowCount(), 165);
+        undo->redo();
+        QCOMPARE(classes->model()->rowCount(), 166);
+        undo->undo(); // Leave the window clean for teardown.
         auto screenshot = qEnvironmentVariable("LORDLY_TEST_SCREENSHOT");
         if (!screenshot.isEmpty()) {
             QTest::qWait(100);
@@ -8942,9 +8995,17 @@ class UiTests : public QObject {
         undo.redo();
         QCOMPARE(gate->value(), 90);
         editor.findChild<QLineEdit *>("newFamilyName")->setText("Order of Dawn");
-        editor.findChild<QComboBox *>("familyTemplate")->setCurrentIndex(0);
+        auto rules = editor.findChild<QComboBox *>("newFamilyRules");
+        QVERIFY(rules);
+        QCOMPARE(rules->currentData().toInt(), int(Promotion::FamilyRules::WithinFamily));
+        const auto priorAssignments = project.promotion()->families["assignments"].toArray();
         editor.findChild<QPushButton *>("createFamily")->click();
         QCOMPARE(project.promotion()->families["assignments"].toArray()[5].toInt(), 16);
+        QCOMPARE(project.promotion()->families["families"].toArray().last().toObject()["behavior"].toInt(), 5);
+        for (int id = 0; id < priorAssignments.size(); ++id)
+            if (id != 5)
+                QCOMPARE(project.promotion()->families["assignments"].toArray()[id], priorAssignments[id]);
+        QCOMPARE(gate->value(), 90); // Creating a family does not overwrite class requirements.
         undo.undo();
         QCOMPARE(project.promotion()->families, project.promotion()->originalFamilies);
         undo.redo();
@@ -8971,8 +9032,10 @@ class UiTests : public QObject {
         QCOMPARE(project.promotion()->classCount(), 166);
         const auto previousFamily = project.promotion()->families["assignments"].toArray()[165];
         editor.findChild<QLineEdit *>("newFamilyName")->setText("Added class family");
+        rules->setCurrentIndex(rules->findData(int(Promotion::FamilyRules::WithLich)));
         editor.findChild<QPushButton *>("createFamily")->click();
         QCOMPARE(project.promotion()->families["assignments"].toArray()[165].toInt(), 17);
+        QCOMPARE(project.promotion()->families["families"].toArray().last().toObject()["behavior"].toInt(), 2);
         undo.undo();
         QCOMPARE(project.promotion()->families["assignments"].toArray()[165], previousFamily);
         undo.redo();

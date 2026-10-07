@@ -26,7 +26,7 @@ class PromotionEditor : public QWidget {
     QVector<QSpinBox *> gates_;
     QSpinBox *mask_;
     QCheckBox *equipmentSets_;
-    QComboBox *families_, *templates_;
+    QComboBox *families_, *rules_;
     QLineEdit *name_;
     QLabel *notice_;
 };

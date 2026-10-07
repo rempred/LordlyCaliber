@@ -405,35 +405,66 @@ int Project::appendClass(int templateId, const QString &name) {
     if (sourceText >= bank.entries.size())
         throw Error("The template class description is missing");
     candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
-    candidate.loadAnimationRoutes();
-    candidate.animationRoutes_->cloneClass(templateId,id);
-    candidate.animationSequences_->cloneClass(templateId,id);
-    candidate.loadAnimationOverrides();
-    if(candidate.animationOverrides_->available()) {
-        auto entries=candidate.animationOverrides_->entries();
-        for(const auto &value:candidate.animationOverrides_->entries()) {
-            auto row=value.toObject();
-            if(row["classId"].toInt()==templateId){row["classId"]=id;entries<<row;}
-        }
-        if(entries!=candidate.animationOverrides_->entries())candidate.animationOverrides_->setEntries(entries,candidate.rom_,candidate.classData(),*candidate.animationRoutes_);
-    } else {
-        for(const auto &row:candidate.animationOverrides_->image().rows())
-            if(row[0]==templateId)throw Error("This template has advanced animation overrides that cannot be copied to a new class; choose a template with an editable animation assignment");
-    }
-    if (candidate.army_ && candidate.army_->routes().contains(templateId)) {
-        const auto route = candidate.army_->routes()[templateId];
-        candidate.army_->setRoute(candidate.classData(), id, route.lane, route.model);
-    }
-    if (candidate.avatars_) {
-        const auto current = candidate.classData();
-        for (int selector = 0; selector < 2; ++selector) {
-            const auto words = candidate.avatars_->words(current, templateId, selector);
-            if (!words.isEmpty())
-                candidate.avatars_->setWords(current, id, selector, words);
-        }
-    }
+    candidate.copyClassVisuals(templateId, id);
     *this = std::move(candidate);
     return id;
+}
+int Project::createClass(const QString &name) {
+    auto candidate = *this;
+    const int id = int(candidate.records(Table::Classes).size());
+    // The starter uses existing visuals, but no existing class's gameplay record.
+    ClassAsset asset{QByteArray(72, 0), candidate.classData().entries()[5].appearance,
+                     encodeClassName(name), 0};
+    put8(asset.record, ClassData::unitSizeOffset, 1);
+    put16(asset.record, 8, 1); // Nonzero starting HP and six base stats.
+    for (int offset = 12; offset <= 32; offset += 4)
+        put16(asset.record, offset, 1);
+    put8(asset.record, 35, 50);
+    put8(asset.record, 36, 50);
+    put8(asset.record, 44, 2); // Plain movement.
+    put8(asset.record, 65, quint8(id));
+    put8(asset.record, 66, 255); // No automatic growth-class transitions.
+    put8(asset.record, 67, quint8(id));
+    put8(asset.record, 68, 255);
+    put8(asset.record, 70, 255); // Random / no fixed element.
+    candidate.appendClassAsset(asset, {}, 0);
+    for (int field = 0; field < 8; ++field)
+        candidate.promotion_->setGate(id, field, field == 7 ? 100 : 0);
+    candidate.promotion_->assign(id, 0);
+    candidate.promotion_->setMask(id, 1); // Ordinary humanoid compatibility.
+    candidate.promotion_->flags[id] = 0;
+    candidate.copyClassVisuals(5, id);
+    *this = std::move(candidate);
+    return id;
+}
+void Project::copyClassVisuals(int sourceId, int targetId) {
+    loadAnimationRoutes();
+    animationRoutes_->cloneClass(sourceId, targetId);
+    animationSequences_->cloneClass(sourceId, targetId);
+    loadAnimationOverrides();
+    if(animationOverrides_->available()) {
+        auto entries=animationOverrides_->entries();
+        for(const auto &value:animationOverrides_->entries()) {
+            auto row=value.toObject();
+            if(row["classId"].toInt()==sourceId){row["classId"]=targetId;entries<<row;}
+        }
+        if(entries!=animationOverrides_->entries())animationOverrides_->setEntries(entries,rom_,classData(),*animationRoutes_);
+    } else {
+        for(const auto &row:animationOverrides_->image().rows())
+            if(row[0]==sourceId)throw Error("This template has advanced animation overrides that cannot be copied to a new class; choose a template with an editable animation assignment");
+    }
+    if (army_ && army_->routes().contains(sourceId)) {
+        const auto route = army_->routes()[sourceId];
+        army_->setRoute(classData(), targetId, route.lane, route.model);
+    }
+    if (avatars_) {
+        const auto current = classData();
+        for (int selector = 0; selector < 2; ++selector) {
+            const auto words = avatars_->words(current, sourceId, selector);
+            if (!words.isEmpty())
+                avatars_->setWords(current, targetId, selector, words);
+        }
+    }
 }
 void Project::loadTexts() {
     if (texts_.isEmpty())

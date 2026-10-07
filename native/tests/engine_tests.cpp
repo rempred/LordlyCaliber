@@ -3618,6 +3618,13 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             auto project = Project::fromRom(source);
             project.loadTexts();
             const auto originalDescriptions = project.textBanks()["classes"].entries;
+            QCOMPARE(project.createClass("Fresh class"), 165);
+            QVERIFY(project.textBanks()["classes"].entries[225].bytes.isEmpty());
+            QTemporaryDir folder;
+            project.saveFolder(folder.path());
+            auto loaded = Project::fromRom(source);
+            loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.manifest(), project.manifest());
             QTemporaryDir build;
             for (const int count : {166, 256, 256}) {
                 while (project.records(Table::Classes).size() < count)
@@ -3629,10 +3636,9 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                 promotion.setGate(count - 1, 0, 75);
                 promotion.assign(
                     count - 1,
-                    promotion.addFamily(QString("Family %1 %2")
-                                            .arg(count)
-                                            .arg(promotion.families["families"].toArray().size()),
-                                        1));
+                    promotion.createFamily(QString("Family %1 %2")
+                                               .arg(count)
+                                               .arg(promotion.families["families"].toArray().size())));
                 project.setPromotion(promotion.json());
                 const auto expectedData = project.classData().build(0x80243db0).bytes;
                 const auto result = rebuild(project, tools, build.path());
@@ -3724,6 +3730,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                 QCOMPARE(project.appendClass(165, QString("Added class %1").arg(id)), id);
             const auto authored = project.manifest();
             QVERIFY_THROWS_EXCEPTION(Error, project.appendClass(5, "Too many"));
+            QVERIFY_THROWS_EXCEPTION(Error, project.createClass("Too many"));
             QCOMPARE(project.manifest(), authored);
             QTemporaryDir folder, archive;
             project.saveFolder(folder.path());

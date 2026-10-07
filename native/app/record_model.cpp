@@ -167,6 +167,19 @@ int RecordModel::appendClass(int templateId, const QString &name) {
         return -1;
     }
 }
+int RecordModel::createClass(const QString &name) {
+    try {
+        if (table_ != Table::Classes)
+            throw Error("New classes require the Classes workspace");
+        auto after = *project_;
+        const auto id = after.createClass(name);
+        undo_->push(new AddClass(this, *project_, std::move(after)));
+        return id;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return -1;
+    }
+}
 void RecordModel::applyProject(const Project &project) {
     beginResetModel();
     *project_ = project;

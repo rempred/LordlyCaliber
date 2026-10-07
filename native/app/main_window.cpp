@@ -295,11 +295,32 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
-    QPushButton *addClass = nullptr;
+    QPushButton *addClass = nullptr, *newClass = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         addClass = new QPushButton("Add class from selected…");
         addClass->setObjectName("addClass");
-        layout->insertWidget(1, addClass, 0, Qt::AlignLeft);
+        newClass = new QPushButton("New class…");
+        newClass->setObjectName("newClass");
+        auto actions = new QHBoxLayout;
+        actions->addWidget(newClass);
+        actions->addWidget(addClass);
+        actions->addStretch();
+        layout->insertLayout(1, actions);
+        connect(newClass, &QPushButton::clicked, page, [this, model, proxy, grid, search] {
+            bool accepted = false;
+            const auto name = QInputDialog::getText(
+                this, "New class",
+                "New class name\nStarts with 1 HP and 1 in each base stat, no equipment, attacks or family."
+                "\nFighter artwork and animations are assigned initially; change them in Sprite studio.",
+                QLineEdit::Normal, "New class", &accepted);
+            if (!accepted)
+                return;
+            const auto id = model->createClass(name);
+            if (id >= 0) {
+                search->clear();
+                grid->setCurrentIndex(proxy->mapFromSource(model->index(id, 1)));
+            }
+        });
         connect(
             addClass, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
                 if (*selected < 1)
@@ -354,9 +375,11 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         addInspectorPage(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, editors, promotion, effects, model, addClass] {
+    auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass] {
         if (*selected >= model->rowCount())
             *selected = -1;
+        if (newClass)
+            newClass->setEnabled(model->rowCount() < 256);
         if (addClass)
             addClass->setEnabled(*selected >= 1 && model->rowCount() < 256);
         if (promotion)

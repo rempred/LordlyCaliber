@@ -248,6 +248,20 @@ int Promotion::addFamily(const QString &name, int templateId) {
     families = validateFamilies(candidate);
     return next;
 }
+int Promotion::createFamily(const QString &name, FamilyRules rules) {
+    const int behavior = int(rules);
+    if (behavior != 1 && behavior != 2 && behavior != 3 && behavior != 5)
+        throw Error("Unknown class-change rules");
+    auto candidate = families;
+    auto list = candidate["families"].toArray();
+    int next = 16;
+    for (const auto &value : list)
+        next = std::max(next, value.toObject()["id"].toInt() + 1);
+    list << QJsonObject{{"id", next}, {"name", name.trimmed()}, {"behavior", behavior}};
+    candidate["families"] = list;
+    families = validateFamilies(candidate);
+    return next;
+}
 int Promotion::classCount() const {
     const auto count = families["assignments"].toArray().size();
     if (count != masks.size() || count != flags.size() || gates.size() != count * 8 ||

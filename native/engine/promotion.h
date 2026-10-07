@@ -25,6 +25,9 @@ class Promotion {
     void setEquipmentSetListed(int classId, bool listed);
     void assign(int classId, int familyId);
     int addFamily(const QString &name, int templateId);
+    enum class FamilyRules { WithinFamily = 5, WithLich = 2, WithLichAndVampire = 1,
+                             NoManualChanges = 3 };
+    int createFamily(const QString &name, FamilyRules rules = FamilyRules::WithinFamily);
     int classCount() const;
     void growToClassCount(int count);
     int appendClass(int templateId);

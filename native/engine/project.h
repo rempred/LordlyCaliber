@@ -182,6 +182,7 @@ class Project {
     void setClassNameBytes(int row, const QByteArray &name);
     ClassData classData() const;
     int appendClass(int templateId, const QString &name);
+    int createClass(const QString &name);
     static int classDescriptionIndex(int classId);
 
   private:
@@ -232,6 +233,7 @@ class Project {
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;
     const ClassAsset &classAsset(int row) const;
+    void copyClassVisuals(int sourceId, int targetId);
     int appendClassAsset(const ClassAsset &asset, const QByteArray &description,
                          int promotionTemplate);
 };
