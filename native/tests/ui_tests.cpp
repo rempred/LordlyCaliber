@@ -3384,6 +3384,50 @@ class UiTests : public QObject {
             editor.loadBytes(input);
             editor.findChild<QTabWidget *>()->setCurrentWidget(
                 editor.findChild<QWidget *>("saveSquads"));
+            auto recruit=editor.findChild<QPushButton *>("saveArmyRecruitSquad");
+            QVERIFY(recruit && recruit->isEnabled());
+            const int newCharacter=editor.document()->freeCharacterSlot();
+            bool sawRecruit=false;
+            QTimer::singleShot(0,&editor,[&] {
+                auto dialog=editor.findChild<QDialog *>("saveNewCharacterDialog");
+                if (!dialog) return;
+                auto choices=dialog->findChild<QComboBox *>("saveNewCharacterClass");
+                auto name=dialog->findChild<QLineEdit *>("saveNewCharacterName");
+                sawRecruit=choices && name && choices->findData(5)>=0;
+                if (!sawRecruit) {dialog->reject();return;}
+                choices->setCurrentIndex(choices->findData(5)); name->setText("New leader");
+                dialog->accept();
+            });
+            recruit->click();
+            QVERIFY(sawRecruit);
+            QCOMPARE(editor.undoStack()->count(),1);
+            QCOMPARE(editor.document()->units().size(),6);
+            QCOMPARE(editor.document()->value(SaveTable::Characters,newCharacter,"name").toString(),QString("New leader"));
+            QCOMPARE(editor.document()->units().last().members[0],newCharacter);
+            const auto recruited=editor.document()->serialize();
+            editor.undoStack()->undo(); QCOMPARE(editor.document()->serialize(),input);
+            editor.undoStack()->redo(); QCOMPARE(editor.document()->serialize(),recruited);
+            const auto recruitedFile=work.filePath("recruited-squad.SaveRAM");
+            editor.exportFile(recruitedFile);
+            QFile reopenedRecruit(recruitedFile); QVERIFY(reopenedRecruit.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom,reopenedRecruit.readAll()).memory(),editor.document()->memory());
+            editor.resize(1440,1000);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/save-army-management.png"));
+            editor.resize(1100,800);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/save-army-small.png"));
+            auto details=editor.findChild<QTabWidget *>("saveArmyDetails");
+            for (int page=1; page<details->count(); ++page) {
+                details->setCurrentIndex(page);
+                QCoreApplication::processEvents();
+                QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+QString("/save-army-detail-%1.png").arg(page)));
+            }
+            details->setCurrentIndex(0);
+            editor.loadBytes(input);
+            QVERIFY(!editor.recruitUnit(5,"Invalid",9));
+            QCOMPARE(editor.document()->serialize(),input); // No orphan recruit on invalid formation.
+            QCOMPARE(editor.undoStack()->count(),0);
             auto leaders = editor.findChild<QComboBox *>("saveNewUnitLeader");
             auto cells = editor.findChild<QComboBox *>("saveNewUnitCell");
             auto create = editor.findChild<QPushButton *>("saveCreateUnit");
@@ -3430,6 +3474,9 @@ class UiTests : public QObject {
             QCOMPARE(editor.document()->units()[0].label, 1);
             editor.loadBytes(inputFor("create-full.bin"));
             QVERIFY(!create->isEnabled());
+            const auto full=editor.document()->serialize();
+            QVERIFY(!editor.recruitUnit(5,"No room",4));
+            QCOMPARE(editor.document()->serialize(),full);
             editor.loadBytes(inputFor("create-order-conflict.bin"));
             leaders->setCurrentIndex(leaders->findData(10));
             create->click();
@@ -3802,11 +3849,13 @@ class UiTests : public QObject {
             auto supplyScroll = editor.findChild<QScrollArea *>("saveUnitDetailScroll");
             QVERIFY(supplyScroll);
             editor.resize(1250, 1050);
+            editor.findChild<QTabWidget *>("saveArmyDetails")->setCurrentIndex(3);
             supplyScroll->ensureWidgetVisible(editor.findChild<QComboBox *>("saveUnitSupply9"));
             QCoreApplication::processEvents();
             QVERIFY(supply->isVisible());
             QVERIFY(editor.grab().save("save-squad-supplies.png"));
             editor.loadBytes(input);
+            editor.findChild<QTabWidget *>("saveArmyDetails")->setCurrentIndex(0);
             QCOMPARE(units->count(), 5);
             QCOMPARE(members->item(0)->text(), QString("Member1 · Leader"));
             QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
@@ -4049,6 +4098,9 @@ class UiTests : public QObject {
             QVERIFY(!undo->isEnabled());
             QVERIFY(!editor->findChild<QPushButton *>("exportSave")->isEnabled());
             QVERIFY(group->activeStack() == nullptr);
+            editor->selectCharacter(1);
+            QCOMPARE(editor->findChild<QTabWidget *>()->currentWidget(), panel);
+            QVERIFY(editor->hasPendingUnitEdits());
             units->setCurrentRow(1);
             QCOMPARE(units->currentRow(), 0);
             QCOMPARE(unity->value(), 99);

@@ -21,7 +21,9 @@ class FormationBoard final : public QWidget {
                  bool conflict = false);
     void setCellHint(int cell, const QString &label);
     void finishUpdate();
-    QSize sizeHint() const override { return {416, 360}; }
+    QImage overviewImage();
+    void setPixelScale(int scale);
+    QSize sizeHint() const override { return {104 * zoom_, 90 * zoom_}; }
   signals:
     void cellPressed(int cell);
     void cellDragStarted(int cell);
@@ -50,5 +52,7 @@ class FormationBoard final : public QWidget {
     int pressed_ = -1, target_ = -1;
     QPoint pressPosition_, pointerPosition_;
     bool dragging_ = false;
+    bool overview_ = false;
+    int zoom_ = 4;
 };
 }

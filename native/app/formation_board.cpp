@@ -9,7 +9,6 @@
 
 namespace lordly {
 namespace {
-constexpr int zoom = 4;
 // Real buttons retain keyboard focus, activation and accessible names. The board
 // paints their shared artwork in depth order; their masks follow the tile tops.
 class BoardCell final : public QPushButton {
@@ -39,22 +38,28 @@ FormationBoard::FormationBoard(Project *project, const QString &prefix, bool pla
     clearUnits();
     arrangeCells();
 }
-QPointF FormationBoard::origin() const { return {16, 80}; }
+void FormationBoard::setPixelScale(int scale) {
+    zoom_ = std::clamp(scale, 1, 6);
+    setFixedSize(sizeHint());
+    arrangeCells();
+    update();
+}
+QPointF FormationBoard::origin() const { return {4.0 * zoom_, 20.0 * zoom_}; }
 QPointF FormationBoard::foot(int cell) const {
     // Keep the accepted front-row foot offset on every tile. A separate native
     // sprite-grid projection left middle/rear units above this board's tile tops.
-    return QPointF(cellCenter(cell)) + QPointF(-zoom, zoom);
+    return QPointF(cellCenter(cell)) + QPointF(-zoom_, zoom_);
 }
 QPolygonF FormationBoard::cellPolygon(int id) const {
     const auto center = QPointF(cellCenter(id));
     // Exclude the beveled risers and transparent corners from highlights and drops.
-    return {center + QPointF(-13, -2) * zoom, center + QPointF(4, -8) * zoom,
-            center + QPointF(13, 2) * zoom, center + QPointF(-4, 8) * zoom};
+    return {center + QPointF(-13, -2) * zoom_, center + QPointF(4, -8) * zoom_,
+            center + QPointF(13, 2) * zoom_, center + QPointF(-4, 8) * zoom_};
 }
 QPoint FormationBoard::cellCenter(int id) const {
     const int display = playerFormation_ ? 8 - id : id;
     return (origin() + QPointF(53 - 19*(display%3) + 10*(display/3),
-                               13 + 6*(display%3) + 13*(display/3)) * zoom).toPoint();
+                               13 + 6*(display%3) + 13*(display/3)) * zoom_).toPoint();
 }
 int FormationBoard::cellAt(QPoint p) const {
     for (int i = 0; i < 9; ++i)
@@ -62,7 +67,7 @@ int FormationBoard::cellAt(QPoint p) const {
     return -1;
 }
 QRectF FormationBoard::spriteRect(int cell) const {
-    const auto size = sprites_[cell].size() * zoom;
+    const auto size = sprites_[cell].size() * zoom_;
     return {foot(cell) - QPointF(size.width() / 2.0, size.height()), QSizeF(size)};
 }
 int FormationBoard::memberAt(QPoint p) const {
@@ -70,7 +75,7 @@ int FormationBoard::memberAt(QPoint p) const {
     for (int i = 0; i < 9; ++i) {
         if (!occupied_[i] || sprites_[i].isNull()) continue;
         const auto rect = spriteRect(i);
-        const auto local = ((QPointF(p) - rect.topLeft()) / zoom).toPoint();
+        const auto local = ((QPointF(p) - rect.topLeft()) / zoom_).toPoint();
         if (rect.contains(p) && sprites_[i].rect().contains(local) &&
             qAlpha(sprites_[i].pixel(local)) && (result < 0 || foot(i).y() > foot(result).y()))
             result = i;
@@ -120,10 +125,18 @@ void FormationBoard::setCellHint(int cell, const QString &hint) {
     cells_[cell]->setToolTip(hint);
 }
 void FormationBoard::finishUpdate() { update(); }
+QImage FormationBoard::overviewImage() {
+    QImage result(size(), QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::transparent);
+    overview_ = true;
+    render(&result, {}, {}, QWidget::DrawChildren);
+    overview_ = false;
+    return result.copy(0, 3 * zoom_, width(), height()-9 * zoom_).scaledToWidth(208, Qt::FastTransformation);
+}
 void FormationBoard::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::SmoothPixmapTransform, false);
-    if (!board_.isNull()) p.drawImage(QRectF(origin(), QSizeF(board_.size() * zoom)), board_);
+    if (!board_.isNull()) p.drawImage(QRectF(origin(), QSizeF(board_.size() * zoom_)), board_);
     else {
         p.setPen(palette().color(QPalette::Text));
         p.drawText(QRect(0, 0, width(), 45), Qt::TextWordWrap, artworkError_);
@@ -160,13 +173,14 @@ void FormationBoard::paintEvent(QPaintEvent *) {
     }
     p.setOpacity(1);
     if (dragging_ && pressed_ >= 0 && !sprites_[pressed_].isNull()) {
-        const auto size = sprites_[pressed_].size() * zoom;
+        const auto size = sprites_[pressed_].size() * zoom_;
         p.drawImage(QRectF(pointerPosition_ - QPoint(size.width()/2,size.height()/2), size),
                     sprites_[pressed_]);
     }
     p.setPen(palette().color(QPalette::Text));
-    p.drawText(QRect(0, height()-23, width(), 23), Qt::AlignCenter,
-               playerFormation_ ? "Front · player squad (cells 1–3)" : "Front · enemy squad (cells 7–9)");
+    if (!overview_)
+        p.drawText(QRect(0, height()-23, width(), 23), Qt::AlignCenter,
+                   playerFormation_ ? "Front · player squad (cells 1–3)" : "Front · enemy squad (cells 7–9)");
 }
 void FormationBoard::cancelDrag() {
     pressed_ = target_ = -1; dragging_ = false; update();

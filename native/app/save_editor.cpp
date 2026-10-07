@@ -234,6 +234,7 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
         auto page = new QWidget;
         auto inner = new QVBoxLayout(page);
         auto search = new QLineEdit;
+        search->setObjectName(QString(id) + "Search");
         search->setPlaceholderText("Search records, names and values…");
         search->setClearButtonEnabled(true);
         inner->addWidget(search);
@@ -273,48 +274,9 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
             connect(grid->selectionModel(), &QItemSelectionModel::currentChanged, this, update);
             connect(remove, &QPushButton::clicked, this,
                     [this, selectedId] { removeCharacter(selectedId()); });
-            connect(add, &QPushButton::clicked, this, [this, grid, search] {
-                if (!document_ || !allowImmediateEdit())
-                    return;
-                const int id = document_->freeCharacterSlot();
-                QDialog dialog(this);
-                dialog.setObjectName("saveNewCharacterDialog");
-                dialog.setWindowTitle("Add reserve character");
-                auto layout = new QVBoxLayout(&dialog);
-                auto note = new QLabel("Creates a level-one reserve character using the current "
-                                       "class’s starting stats. "
-                                       "Random body and Element choices follow the class rules.");
-                note->setWordWrap(true);
-                layout->addWidget(note);
-                auto name = new QLineEdit("Recruit");
-                name->setObjectName("saveNewCharacterName");
-                name->setMaxLength(12);
-                name->setPlaceholderText("Character name");
-                layout->addWidget(name);
-                auto classes = new QComboBox;
-                classes->setObjectName("saveNewCharacterClass");
-                for (const auto &record : project_->records(Table::Classes))
-                    if (record.id)
-                        classes->addItem(QString("%1 — %2").arg(record.id).arg(record.name),
-                                         record.id);
-                classes->setCurrentIndex(classes->findData(5));
-                layout->addWidget(classes);
-                auto actions =
-                    new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-                actions->button(QDialogButtonBox::Ok)->setText("Create character");
-                layout->addWidget(actions);
-                connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-                connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-                if (dialog.exec() == QDialog::Accepted &&
-                    createCharacter(classes->currentData().toInt(), name->text())) {
-                    search->clear();
-                    for (int row = 0; row < grid->model()->rowCount(); ++row)
-                        if (grid->model()->index(row, 0).data().toInt() == id) {
-                            const auto index=grid->model()->index(row,1);
-                            grid->setCurrentIndex(index);
-                            grid->scrollTo(index,QAbstractItemView::PositionAtCenter);
-                        }
-                }
+            connect(add, &QPushButton::clicked, this, [this] {
+                const int id = promptAddCharacter();
+                if (id >= 0) selectCharacter(id);
             });
             update();
         }
@@ -322,7 +284,9 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
                 &QSortFilterProxyModel::setFilterFixedString);
         tables_->addTab(page, title);
     }
-    tables_->addTab(new SaveUnitEditor(this), "Squads");
+    auto army = new SaveUnitEditor(this);
+    tables_->addTab(army, "Army Management");
+    tables_->setCurrentWidget(army);
     auto note = new QLabel(
         "Save files have their own undo history and are exported separately from ROM projects. "
         "Character IDs, body codes, fatigue and unknown fields are preserved.");
@@ -571,6 +535,74 @@ bool SaveEditor::createCharacter(int classId, const QString &name) {
         error_->setText(QString::fromUtf8(e.what()));
         return false;
     }
+}
+int SaveEditor::promptAddCharacter(bool formSquad) {
+    if (!document_ || !allowImmediateEdit()) return -1;
+    const int id = document_->freeCharacterSlot();
+    if (id < 0) { error_->setText("No free character slot is available in this save."); return -1; }
+    QDialog dialog(this);
+    dialog.setObjectName("saveNewCharacterDialog");
+    dialog.setWindowTitle(formSquad ? "Add squad with a new leader" : "Add reserve character");
+    auto layout = new QVBoxLayout(&dialog);
+    auto note = new QLabel(formSquad
+        ? "Recruit a level-one leader and form a new squad. Both are created together in one Undo step."
+        : "Recruit a level-one reserve character using the current class's starting stats and body/Element rules.");
+    note->setWordWrap(true); layout->addWidget(note);
+    auto name = new QLineEdit("Recruit");
+    name->setObjectName("saveNewCharacterName"); name->setMaxLength(12);
+    layout->addWidget(new QLabel("Name")); layout->addWidget(name);
+    auto choices = new QComboBox;
+    choices->setObjectName("saveNewCharacterClass");
+    const auto classes = project_->classData();
+    for (const auto &record : project_->records(Table::Classes)) {
+        if (!record.id) continue;
+        const int secondary = u8(classes.entries()[record.id].record, 69);
+        if (formSquad && !classes.commandType(record.id, secondary ? secondary : record.id)) continue;
+        choices->addItem(QString("%1 · %2").arg(record.id).arg(record.name.simplified()), record.id);
+    }
+    choices->setCurrentIndex(std::max(0, choices->findData(5)));
+    layout->addWidget(new QLabel(formSquad ? "Leader class" : "Class")); layout->addWidget(choices);
+    auto cell = new QComboBox;
+    cell->setObjectName("saveNewSquadCell");
+    for (int i=0; i<9; ++i) cell->addItem(QString("Cell %1 · %2").arg(i+1).arg(i<3 ? "Front" : i<6 ? "Middle" : "Rear"),i);
+    cell->setCurrentIndex(4);
+    if (formSquad) {layout->addWidget(new QLabel("Starting position"));layout->addWidget(cell);}
+    else cell->setParent(&dialog);
+    cell->setVisible(formSquad);
+    auto actions = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    actions->button(QDialogButtonBox::Ok)->setText(formSquad ? "Recruit and form squad" : "Create character");
+    actions->button(QDialogButtonBox::Ok)->setEnabled(choices->count() > 0);
+    if (!choices->count()) note->setText("No class in this project can lead a squad. Enable command capability in Classes first.");
+    layout->addWidget(actions);
+    connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return -1;
+    const bool created = formSquad ? recruitUnit(choices->currentData().toInt(), name->text(), cell->currentData().toInt())
+                                   : createCharacter(choices->currentData().toInt(), name->text());
+    return created ? id : -1;
+}
+void SaveEditor::selectCharacter(int id) {
+    if (!document_ || !allowImmediateEdit()) return;
+    auto grid = findChild<QTableView *>("saveCharacters");
+    findChild<QLineEdit *>("saveCharactersSearch")->clear();
+    tables_->setCurrentIndex(0);
+    for (int row=0; row<grid->model()->rowCount(); ++row)
+        if (grid->model()->index(row,0).data().toInt()==id) {
+            const auto index=grid->model()->index(row,1);
+            grid->setCurrentIndex(index); grid->scrollTo(index,QAbstractItemView::PositionAtCenter);
+            break;
+        }
+}
+bool SaveEditor::recruitUnit(int classId, const QString &name, int cell) {
+    if (!document_ || !allowImmediateEdit()) return false;
+    try {
+        document_->setClassCount(int(project_->records(Table::Classes).size()));
+        auto change = document_->planRecruitUnit(classId, name, cell, project_->classData(),
+                                                  QRandomGenerator::global()->generate());
+        undo_->push(new SaveCommand(this, std::move(change), "recruit leader and form squad"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {error_->setText(QString::fromUtf8(e.what()));return false;}
 }
 bool SaveEditor::removeCharacter(int id) {
     if (!document_ || !allowImmediateEdit())

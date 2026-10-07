@@ -244,6 +244,25 @@ QImage ArmyArtwork::boardImage(const Rom &rom) {
             result.setPixelColor(x, y, color(u16(pack, u8(pack, 0x300 + y * 96 + x) * 2)));
     return result;
 }
+QImage ArmyArtwork::floorImage(const Rom &rom) {
+    rom.requireSupported();
+    if (rom.revision()) throw Error("Army floor artwork requires US revision zero");
+    // Normal Army/menu floor, key 01DB156C. Two 16-color palettes precede
+    // two 64x64 CI4 planes; the first palette/plane is the blue stone floor.
+    const auto key = resourceKey(u32(rom.bytes(), 0xaed98), u32(rom.bytes(), 0xaeda0));
+    const qsizetype at = resourceBase + key;
+    const auto stored = u32(rom.bytes(), at);
+    if (stored > 65536 || u32(rom.bytes(), at + 4) != 4160)
+        throw Error("Army floor artwork has unsupported dimensions");
+    const auto pack = Resource::load(rom, at, qsizetype(stored) + 4).decoded;
+    QImage result(64, 64, QImage::Format_ARGB32);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            const auto byte = u8(pack, 64 + y * 32 + x / 2);
+            result.setPixelColor(x, y, color(u16(pack, ((x & 1) ? byte & 15 : byte >> 4) * 2)));
+        }
+    return result;
+}
 int ArmyArtwork::classModel(const ClassAsset &asset) {
     return u8(asset.appearance, 4) & 63;
 }

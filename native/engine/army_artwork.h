@@ -20,6 +20,7 @@ class ArmyArtwork {
     static const std::array<ArmyAtlasSpec, 6> &specs();
     static ArmyArtwork load(const Rom &);
     static QImage boardImage(const Rom &);
+    static QImage floorImage(const Rom &);
     static QByteArray canonicalOwner(QByteArray, qsizetype romStart);
     static void validateRelocations(const Rom &);
     static int classLane(const ClassAsset &);

@@ -70,6 +70,8 @@ class SaveDocument {
     SaveChange planRemoveCharacter(int id) const;
     QVector<int> newUnitLeaders(const ClassData &) const;
     SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;
+    SaveChange planRecruitUnit(int classId, const QString &name, int cell,
+                               const ClassData &, quint32 randomSeed) const;
     SaveChange planDisbandUnit(int index) const;
     int reserveSoldiers() const;
     int soldiersInGroup(int member) const;

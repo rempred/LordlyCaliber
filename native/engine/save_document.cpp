@@ -1217,6 +1217,17 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }
+SaveChange SaveDocument::planRecruitUnit(int classId, const QString &name, int cell,
+                                        const ClassData &classes, quint32 seed) const {
+    auto candidate = *this;
+    const int leader = candidate.freeCharacterSlot();
+    candidate.apply(candidate.planCreateCharacter(classId, name, classes, seed), true);
+    candidate.apply(candidate.planCreateUnit(leader, cell, classes), true);
+    // Validate both operations before changing the loaded save; one Undo restores
+    // the character, assignment, squad number and Army ordering together.
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 SaveChange SaveDocument::planDisbandUnit(int index) const {
     if (!canEditUnits())
         throw Error("Squad disbanding requires a regular battery-save slot");

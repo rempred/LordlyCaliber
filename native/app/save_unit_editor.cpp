@@ -3,6 +3,9 @@
 #include "app/formation_board.h"
 #include "app/save_editor.h"
 #include <QComboBox>
+#include <QPainter>
+#include <QStyledItemDelegate>
+#include <QTabWidget>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -18,14 +21,74 @@
 #include <algorithm>
 
 namespace lordly {
+namespace {
+class ArmyList final : public QListWidget {
+  public:
+    explicit ArmyList(const QImage &floor) : floor_(floor.isNull() ? QPixmap{} : QPixmap::fromImage(floor.scaled(128,128,Qt::IgnoreAspectRatio,Qt::FastTransformation))) {
+        setStyleSheet("QListWidget {background:transparent;border:2px solid #79672d;}"
+                      "QListWidget::item {background:transparent;color:#fff2d1;}"
+                      "QListWidget::item:selected {background:#715322;color:#fff2d1;}");
+        setViewMode(QListView::IconMode); setResizeMode(QListView::Adjust);
+        setMovement(QListView::Static); setSelectionMode(QAbstractItemView::SingleSelection);
+        setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    }
+  protected:
+    void paintEvent(QPaintEvent *event) override {
+        QPainter p(viewport());
+        p.fillRect(viewport()->rect(), QColor("#222730"));
+        if (!floor_.isNull()) p.drawTiledPixmap(viewport()->rect(), floor_);
+        p.fillRect(viewport()->rect(), QColor(0,0,0,95));
+        p.end();
+        QListWidget::paintEvent(event);
+    }
+  private:
+    QPixmap floor_;
+};
+class ArmyUnitDelegate final : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override {return {220,206};}
+    void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
+        p->save();
+        const auto image = index.data(Qt::UserRole+1).value<QImage>();
+        p->drawImage(option.rect.topLeft()+QPoint(6,0), image);
+        const bool selected = option.state & QStyle::State_Selected;
+        const QRect name(option.rect.left()+9,option.rect.bottom()-37,202,34);
+        p->setPen(QPen(selected ? QColor("#fff291") : QColor("#a88d45"),selected ? 2 : 1));
+        p->setBrush(selected ? QColor("#e7ce85") : QColor("#e2d7ac"));
+        p->drawRoundedRect(name,2,2);
+        p->setPen(QColor("#292414"));
+        p->drawText(name.adjusted(5,1,-5,-1),Qt::AlignCenter|Qt::TextWordWrap,index.data().toString());
+        if (selected) {
+            p->setBrush(QColor("#fff291"));
+            p->drawPolygon(QPolygon{option.rect.topLeft()+QPoint(14,42),option.rect.topLeft()+QPoint(26,48),option.rect.topLeft()+QPoint(14,54)});
+        }
+        p->restore();
+    }
+};
+}
+
 SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(editor) {
     setObjectName("saveSquads");
     auto layout = new QVBoxLayout(this);
     note_ = new QLabel;
     note_->setWordWrap(true);
     layout->addWidget(note_);
+    armyCounts_ = new QLabel;
+    armyCounts_->setObjectName("saveArmyCounts");
+    armyCounts_->setAlignment(Qt::AlignCenter);
+    armyCounts_->setMinimumHeight(48);
+    armyCounts_->setStyleSheet("background:#ded6a6;color:#302c14;border:3px ridge #a4a05b;padding:5px;font-size:16px;font-weight:bold;");
+    layout->addWidget(armyCounts_);
     auto creation = new QHBoxLayout;
-    creation->addWidget(new QLabel("New squad leader"));
+    addCharacter_ = new QPushButton("Add character…");
+    addCharacter_->setObjectName("saveArmyAddCharacter");
+    recruitSquad_ = new QPushButton("Add squad…");
+    recruitSquad_->setObjectName("saveArmyRecruitSquad");
+    creation->addWidget(addCharacter_); creation->addWidget(recruitSquad_);
+    creation->addSpacing(12);
+    creation->addWidget(new QLabel("Reserve leader"));
     newLeader_ = new QComboBox;
     newLeader_->setObjectName("saveNewUnitLeader");
     creation->addWidget(newLeader_, 1);
@@ -36,10 +99,27 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
         newCell_->addItem(QString::number(cell + 1), cell);
     newCell_->setCurrentIndex(4);
     creation->addWidget(newCell_);
-    create_ = new QPushButton("Create squad");
+    create_ = new QPushButton("Form squad from reserve");
     create_->setObjectName("saveCreateUnit");
     creation->addWidget(create_);
     layout->addLayout(creation);
+    creationNote_ = new QLabel;
+    creationNote_->setObjectName("saveArmyCreationNote");
+    creationNote_->setWordWrap(true); layout->addWidget(creationNote_);
+    connect(addCharacter_, &QPushButton::clicked, this, [this] {
+        const int id=editor_->promptAddCharacter();
+        if (id>=0) {
+            for (int row=0;row<reserves_->count();++row)
+                if (reserves_->item(row)->data(Qt::UserRole).toInt()==id) reserves_->setCurrentRow(row);
+            if (const int leader = newLeader_->findData(id); leader >= 0)
+                newLeader_->setCurrentIndex(leader);
+            detailTabs_->setCurrentIndex(1);
+        }
+    });
+    connect(recruitSquad_, &QPushButton::clicked, this, [this] {
+        const int id=editor_->promptAddCharacter(true);
+        if (id>=0) selectLeader(id);
+    });
     connect(create_, &QPushButton::clicked, this, [this] {
         const int leader = newLeader_->currentData().toInt();
         if (editor_->createUnit(leader, newCell_->currentData().toInt()))
@@ -51,21 +131,63 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     });
     auto split = new QSplitter;
     layout->addWidget(split, 1);
-    units_ = new QListWidget;
+    QImage floor;
+    try {floor=ArmyArtwork::floorImage(editor_->project()->rom());} catch (const Error &) {}
+    auto roster = new QWidget;
+    auto rosterLayout = new QVBoxLayout(roster);
+    rosterLayout->setContentsMargins(0,0,0,0);
+    units_ = new ArmyList(floor);
     units_->setObjectName("saveUnitList");
-    split->addWidget(units_);
+    units_->setItemDelegate(new ArmyUnitDelegate(units_));
+    units_->setGridSize({220,206}); units_->setMinimumWidth(250);
+    rosterLayout->addWidget(units_,1);
+    auto reserveTitle = new QLabel("RESERVE CHARACTERS · double-click to edit");
+    reserveTitle->setStyleSheet("background:#ded6a6;border:1px solid #a4a05b;padding:4px;font-weight:bold;");
+    rosterLayout->addWidget(reserveTitle);
+    reserves_ = new ArmyList(floor);
+    reserves_->setObjectName("saveArmyReserve");
+    reserves_->setIconSize({48,56}); reserves_->setGridSize({112,90});
+    reserves_->setFixedHeight(110);
+    rosterLayout->addWidget(reserves_);
+    funds_ = new QLabel;
+    funds_->setObjectName("saveArmyFunds");
+    funds_->setStyleSheet("background:#ded6a6;color:#302c14;border:3px ridge #a4a05b;padding:7px;font-size:16px;font-weight:bold;");
+    rosterLayout->addWidget(funds_);
+    split->addWidget(roster);
     auto detail = new QWidget;
     auto body = new QVBoxLayout(detail);
     members_ = new QListWidget;
     members_->setObjectName("saveUnitMembers");
-    members_->setMaximumHeight(150);
+    members_->setViewMode(QListView::IconMode);
+    members_->setResizeMode(QListView::Adjust);
+    members_->setMovement(QListView::Static);
+    members_->setGridSize({72,86});
+    members_->setWrapping(false);
+    members_->setFixedHeight(100);
+    members_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     body->addWidget(members_);
+    members_->setIconSize({48,56});
+    detailTabs_ = new QTabWidget;
+    detailTabs_->setObjectName("saveArmyDetails");
+    body->addWidget(detailTabs_,1);
+    auto makePage=[&](const char *title) {
+        auto page=new QWidget;
+        auto contents=new QVBoxLayout(page);
+        contents->setAlignment(Qt::AlignTop);
+        detailTabs_->addTab(page,title);
+        return contents;
+    };
+    auto formationBody=makePage("Formation");
+    auto transfersBody=makePage("Members");
+    auto legionBody=makePage("Legion");
+    auto itemsBody=makePage("Items");
+
     legion_ = new QLabel;
     legion_->setObjectName("saveUnitLegion");
-    body->addWidget(legion_);
+    legionBody->addWidget(legion_);
     createLegion_ = new QPushButton("Create a legion from this command squad");
     createLegion_->setObjectName("saveCreateLegion");
-    body->addWidget(createLegion_);
+    legionBody->addWidget(createLegion_);
     connect(createLegion_, &QPushButton::clicked, this, [this] {
         if (units_->currentItem())
             editor_->createLegion(units_->currentItem()->data(Qt::UserRole).toInt());
@@ -78,7 +200,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     joinLegion_ = new QPushButton("Join legion");
     joinLegion_->setObjectName("saveJoinLegion");
     legionRow->addWidget(joinLegion_);
-    body->addLayout(legionRow);
+    legionBody->addLayout(legionRow);
     connect(joinLegion_, &QPushButton::clicked, this, [this] {
         if (legionTarget_->currentIndex() >= 0 && units_->currentItem())
             editor_->joinLegion(legionTarget_->currentData().toInt(),
@@ -86,7 +208,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     });
     detachLegion_ = new QPushButton("Detach this squad from its legion");
     detachLegion_->setObjectName("saveDetachLegionUnit");
-    body->addWidget(detachLegion_);
+    legionBody->addWidget(detachLegion_);
     connect(detachLegion_, &QPushButton::clicked, this, [this] {
         if (shownLegion_ >= 0 && units_->currentItem())
             editor_->detachLegionUnit(shownLegion_,
@@ -94,17 +216,17 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     });
     disbandLegion_ = new QPushButton("Disband legion, keep its squads");
     disbandLegion_->setObjectName("saveDisbandLegion");
-    body->addWidget(disbandLegion_);
+    legionBody->addWidget(disbandLegion_);
     connect(disbandLegion_, &QPushButton::clicked, this, [this] {
         if (shownLegion_ >= 0)
             editor_->disbandLegion(shownLegion_);
     });
-    leader_ = new QPushButton("Make selected member the squad leader");
+    leader_ = new QPushButton("Make selected member the leader");
     leader_->setObjectName("saveChangeLeader");
-    body->addWidget(leader_);
+    transfersBody->addWidget(leader_);
     disband_ = new QPushButton("Disband this squad to reserve");
     disband_->setObjectName("saveDisbandUnit");
-    body->addWidget(disband_);
+    transfersBody->addWidget(disband_);
     connect(disband_, &QPushButton::clicked, this, [this] {
         if (units_->currentItem())
             editor_->disbandUnit(units_->currentItem()->data(Qt::UserRole).toInt());
@@ -115,10 +237,11 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
                                       members_->currentRow());
     });
     auto help =
-        new QLabel("Drag a unit, or select a member and choose a formation cell. Occupied cells swap members.");
+        new QLabel("Drag a character to move or swap them. Select a member above to place them by clicking a cell.");
     help->setWordWrap(true);
-    body->addWidget(help);
+    formationBody->addWidget(help);
     board_ = new FormationBoard(editor_->project(), "saveUnitCell", true);
+    board_->setPixelScale(3);
     for (int cell = 0; cell < 9; ++cell) {
         auto button = board_->cell(cell);
         grid_.append(button);
@@ -137,7 +260,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
             if (ids_[i] && cells_[i] == cell) {members_->setCurrentRow(i);break;}
     });
     connect(board_, &FormationBoard::cellMoved, this, [this](int, int to) {grid_[to]->click();});
-    body->addWidget(board_, 0, Qt::AlignLeft);
+    formationBody->addWidget(board_, 0, Qt::AlignHCenter);
     auto form = new QFormLayout;
     unity_ = new QSpinBox;
     unity_->setObjectName("saveUnitUnity");
@@ -146,7 +269,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     tactic_->setObjectName("saveUnitTactic");
     form->addRow("Unity", unity_);
     form->addRow("Tactic", tactic_);
-    body->addLayout(form);
+    formationBody->addLayout(form);
     apply_ = new QPushButton("Apply squad changes");
     apply_->setObjectName("saveUnitApply");
     auto draftActions = new QHBoxLayout;
@@ -154,12 +277,12 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     discard_ = new QPushButton("Discard squad changes");
     discard_->setObjectName("saveUnitDiscard");
     draftActions->addWidget(discard_);
-    body->addLayout(draftActions);
+    formationBody->addLayout(draftActions);
     draftNote_ = new QLabel("Unapplied changes. Apply or discard them before changing squads, "
                             "save slots, other save fields, exporting, or using Undo.");
     draftNote_->setObjectName("saveUnitDraftNote");
     draftNote_->setWordWrap(true);
-    body->addWidget(draftNote_);
+    formationBody->addWidget(draftNote_);
     connect(discard_, &QPushButton::clicked, this, [this] { showUnit(); });
     auto transfers = new QFormLayout;
     targetUnit_ = new QComboBox;
@@ -168,13 +291,13 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     targetMember_->setObjectName("saveSwapMember");
     transfers->addRow("Destination squad", targetUnit_);
     transfers->addRow("Member or empty cell", targetMember_);
-    body->addLayout(transfers);
+    transfersBody->addLayout(transfers);
     swap_ = new QPushButton("Swap selected members");
     swap_->setObjectName("saveSwapApply");
-    body->addWidget(swap_);
+    transfersBody->addWidget(swap_);
     toReserve_ = new QPushButton("Move selected member to reserve");
     toReserve_->setObjectName("saveMoveToReserve");
-    body->addWidget(toReserve_);
+    transfersBody->addWidget(toReserve_);
     auto reserve = new QFormLayout;
     reserveMember_ = new QComboBox;
     reserveMember_->setObjectName("saveReserveMember");
@@ -182,16 +305,16 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     reserveCell_->setObjectName("saveReserveCell");
     reserve->addRow("Reserve character", reserveMember_);
     reserve->addRow("Empty cell in this squad", reserveCell_);
-    body->addLayout(reserve);
+    transfersBody->addLayout(reserve);
     fromReserve_ = new QPushButton("Add reserve character to this squad");
     fromReserve_->setObjectName("saveAddFromReserve");
-    body->addWidget(fromReserve_);
+    transfersBody->addWidget(fromReserve_);
     soldierPool_ = new QLabel;
     soldierPool_->setObjectName("saveSoldierPool");
-    body->addWidget(soldierPool_);
+    transfersBody->addWidget(soldierPool_);
     addSoldier_ = new QPushButton("Create Soldier group in this squad");
     addSoldier_->setObjectName("saveAddSoldierGroup");
-    body->addWidget(addSoldier_);
+    transfersBody->addWidget(addSoldier_);
     auto suppliesGroup = new QGroupBox("Carried items");
     auto suppliesLayout = new QGridLayout(suppliesGroup);
     suppliesLayout->setColumnStretch(1, 1);
@@ -204,7 +327,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
         auto choice = new QComboBox;
         choice->setObjectName(QString("saveUnitSupply%1").arg(i));
         choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        choice->setMinimumContentsLength(18);
+        choice->setMinimumContentsLength(12);
         supplies_ << choice;
         suppliesLayout->addWidget(new QLabel(QString::number(i + 1)), i / 2 + 1, (i % 2) * 2);
         suppliesLayout->addWidget(choice, i / 2 + 1, (i % 2) * 2 + 1);
@@ -223,13 +346,30 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
                                  "directly; quantities in stored inventory stay unchanged.");
     supplyHelp->setWordWrap(true);
     suppliesLayout->addWidget(supplyHelp, 6, 0, 1, 4);
-    body->addWidget(suppliesGroup);
+    itemsBody->addWidget(suppliesGroup);
     auto detailArea = new QScrollArea;
     detailArea->setObjectName("saveUnitDetailScroll");
     detailArea->setWidgetResizable(true);
+    detailArea->setMinimumWidth(440);
     detailArea->setWidget(detail);
     split->addWidget(detailArea);
-    split->setStretchFactor(1, 2);
+    split->setStretchFactor(0, 3); split->setStretchFactor(1, 2);
+    split->setSizes({660,480});
+    connect(reserves_, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row<0 || loading_) return;
+        const int id=reserves_->item(row)->data(Qt::UserRole).toInt();
+        if (const int leader = newLeader_->findData(id); leader >= 0)
+            newLeader_->setCurrentIndex(leader);
+        reserveMember_->setCurrentIndex(reserveMember_->findData(id));
+        detailTabs_->setCurrentIndex(1);
+    });
+    connect(reserves_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        editor_->selectCharacter(item->data(Qt::UserRole).toInt());
+    });
+    connect(members_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        const int row=members_->row(item);
+        if (row>=0 && row<ids_.size() && ids_[row]>0 && ids_[row]<100) editor_->selectCharacter(ids_[row]);
+    });
     connect(units_, &QListWidget::currentRowChanged, this, [this] {
         if (!loading_ && editor_->hasPendingUnitEdits()) {
             const QSignalBlocker guard(units_);
@@ -284,7 +424,9 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
 }
 void SaveUnitEditor::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
-    drawFormation(); // Refresh current project artwork and capacity after another workspace.
+    // Include overview/reserve sprites when returning from class or artwork edits.
+    if (editor_->hasPendingUnitEdits()) drawFormation();
+    else refresh();
 }
 QString SaveUnitEditor::memberName(int id) const {
     if (!id)
@@ -299,23 +441,69 @@ QString SaveUnitEditor::memberName(int id) const {
         return QString("Missing character %1").arg(id);
     }
 }
+QImage SaveUnitEditor::memberSprite(int id) const {
+    if (id <= 0 || id >= 220) return {};
+    try {
+        const int classId = id>=100 ? 0 : editor_->document()->value(SaveTable::Characters,id,"class").toInt();
+        editor_->project()->loadArmyArtwork();
+        const auto classes=editor_->project()->classData();
+        if (classId<0 || classId>=classes.entries().size()) return {};
+        const auto &asset=classes.entries()[classId];
+        return editor_->project()->armyArtwork()->image(ArmyArtwork::classLane(asset)*2,ArmyArtwork::classModel(asset));
+    } catch (const Error &) {return {};}
+}
+void SaveUnitEditor::selectLeader(int id) {
+    if (!editor_->document()) return;
+    for (const auto &unit : editor_->document()->units())
+        if (unit.members[0]==id)
+            for (int row=0;row<units_->count();++row)
+                if (units_->item(row)->data(Qt::UserRole).toInt()==unit.index) {
+                    units_->setCurrentRow(row); units_->scrollToItem(units_->currentItem()); return;
+                }
+}
 void SaveUnitEditor::refresh() {
     const ViewPosition keepView(this);
     loading_ = true;
-    const int prior =
-        units_->currentItem() ? units_->currentItem()->data(Qt::UserRole).toInt() : -1;
-    units_->clear();
-    if (editor_->document())
-        for (const auto &unit : editor_->document()->units()) {
-            auto item = new QListWidgetItem(
-                QString("Squad %1 · %2").arg(unit.label).arg(memberName(unit.members[0])), units_);
-            item->setData(Qt::UserRole, unit.index);
-            if (unit.index == prior)
-                units_->setCurrentItem(item);
+    const int prior = units_->currentItem() ? units_->currentItem()->data(Qt::UserRole).toInt() : -1;
+    const int reservePrior=reserves_->currentItem() ? reserves_->currentItem()->data(Qt::UserRole).toInt() : -1;
+    units_->clear(); reserves_->clear();
+    int soldiers=0, characters=0;
+    quint32 funds=0;
+    if (editor_->document()) {
+        const auto &doc=*editor_->document();
+        characters=doc.rows(SaveTable::Characters).size();
+        soldiers=doc.reserveSoldiers();
+        funds=doc.value(SaveTable::Game,0,"goth").toUInt();
+        FormationBoard thumbnail(editor_->project(),"armyThumbnail",true);
+        for (const auto &unit : doc.units()) {
+            thumbnail.clearUnits();
+            for (int i=0;i<unit.members.size();++i) if (unit.members[i]) {
+                const int member=unit.members[i];
+                if (member>=100 && member<220) soldiers+=doc.soldiersInGroup(member);
+                int classId=-1;
+                try {classId=member>=100 && member<220 ? 0 : doc.value(SaveTable::Characters,member,"class").toInt();}
+                catch (const Error &) {}
+                thumbnail.setUnit(unit.cells[i],classId,memberName(member));
+            }
+            auto item=new QListWidgetItem(QString("Squad %1 · %2").arg(unit.label).arg(memberName(unit.members[0])),units_);
+            item->setData(Qt::UserRole,unit.index);
+            item->setData(Qt::UserRole+1,thumbnail.overviewImage());
+            item->setToolTip(item->text()+QString("\nUnity %1 · double-click a member to edit their character").arg(unit.unity));
+            if (unit.index==prior) units_->setCurrentItem(item);
         }
-    if (!units_->currentItem() && units_->count())
-        units_->setCurrentRow(0);
-    loading_ = false;
+        for (int id : doc.reserveMembers()) {
+            const auto image=memberSprite(id);
+            const auto icon=image.isNull() ? QIcon{} : QIcon(QPixmap::fromImage(image.scaled(image.size()*2,Qt::IgnoreAspectRatio,Qt::FastTransformation)));
+            auto item=new QListWidgetItem(icon,memberName(id),reserves_);
+            item->setData(Qt::UserRole,id); item->setToolTip(memberName(id));
+            if (id==reservePrior) reserves_->setCurrentItem(item);
+        }
+    }
+    armyCounts_->setText(QString("SOLDIERS   %1       |       CHARACTERS   %2       |       UNITS   %3 / 30")
+                        .arg(soldiers).arg(characters).arg(units_->count()));
+    funds_->setText(QString("WAR FUNDS     %1 Goth").arg(QLocale().toString(funds)));
+    if (!units_->currentItem() && units_->count()) units_->setCurrentRow(0);
+    loading_=false;
     showUnit();
 }
 void SaveUnitEditor::showUnit() {
@@ -340,6 +528,12 @@ void SaveUnitEditor::showUnit() {
             for (int i = 0; i < 5; ++i) {
                 auto item = new QListWidgetItem(memberName(ids_[i]) + (i == 0 ? " · Leader" : ""),
                                                 members_);
+                item->setToolTip(item->text());
+                if (ids_[i]) {
+                    const auto image=memberSprite(ids_[i]);
+                    if (!image.isNull())
+                        item->setIcon(QIcon(QPixmap::fromImage(image.scaled(image.size()*2,Qt::IgnoreAspectRatio,Qt::FastTransformation))));
+                }
                 if (!ids_[i])
                     item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
             }
@@ -353,14 +547,9 @@ void SaveUnitEditor::showUnit() {
         }
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
-    note_->setText(
-        editable
-            ? "Edit formations, Unity, tactics and carried items. Move nonleaders between "
-              "squads, or manage reserve characters and Soldier groups. Direct moves/swaps "
-              "and Soldier reserve changes retain Unity; ordinary reserve moves reset it. "
-              "Leader changes retain Unity and formation positions. Movement type is recalculated."
-            : "Squads are read-only in suspend saves and runtime states. Formation "
-              "edits require a regular battery-save slot.");
+    note_->setText(editable ? "Choose a squad board or reserve character. Double-click a member to edit their stats and equipment."
+                            : editor_->document() ? "Viewing a runtime/suspend save. Use a regular battery-save slot to create or reorganize squads."
+                                                  : "Open a save to view and manage your army.");
     apply_->setEnabled(editable && !ids_.isEmpty());
     unity_->setEnabled(apply_->isEnabled());
     tactic_->setEnabled(apply_->isEnabled());
@@ -582,11 +771,11 @@ void SaveUnitEditor::refreshSwapTargets() {
                       "and retains Unity. Carried items must still fit.")
                   .arg(returning)
             : QString(
-                  "Move the selected ordinary nonleader to reserve; carried items must still fit"));
+                  "Move the selected ordinary nonleader to reserve and reset squad Unity; carried items must still fit"));
     fromReserve_->setToolTip(
         pending
             ? "Apply squad edits before moving members"
-            : "Add the selected reserve character to an empty cell; formation limits still apply");
+            : "Add the selected reserve character to an empty cell and reset squad Unity; formation limits still apply");
     swap_->setToolTip(pending ? "Apply squad edits before moving members"
                               : "Move or swap nonleaders, retaining Unity and Soldier HP/state; "
                                 "carried items must fit");
@@ -604,6 +793,18 @@ void SaveUnitEditor::refreshCreation(bool pending) {
     }
     if (newLeader_->findData(prior) >= 0)
         newLeader_->setCurrentIndex(newLeader_->findData(prior));
+    const bool editable=editor_->document() && editor_->document()->canEditUnits();
+    const bool slot=editable && editor_->document()->freeCharacterSlot()>=0;
+    const bool squadSlot=editable && editor_->document()->units().size()<30;
+    addCharacter_->setEnabled(slot && !pending);
+    recruitSquad_->setEnabled(slot && squadSlot && !pending);
+    reserves_->setEnabled(!pending);
+    creationNote_->setText(pending ? "Apply or discard formation edits before recruiting or forming another squad."
+        : !editable ? "Character and squad creation requires a regular battery-save slot."
+        : !squadSlot ? "All 30 squad slots are in use. Disband a squad to make room."
+        : !newLeader_->count() ? "No eligible reserve leader. Add squad recruits a new leader, or add a character to your reserves."
+        : "Add squad recruits a new leader. Form squad from reserve uses the selected existing character.");
+    if (editable && !slot) creationNote_->setText(creationNote_->text()+" The character roster is full.");
     create_->setEnabled(available && !pending);
     newLeader_->setEnabled(available && !pending);
     newCell_->setEnabled(available && !pending);
