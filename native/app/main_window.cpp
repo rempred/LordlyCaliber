@@ -124,14 +124,17 @@ MainWindow::MainWindow(QWidget *parent)
     auto redoAction = undoGroup_->createRedoAction(this, "&Redo");
     redoAction->setShortcut(QKeySequence::Redo);
     edit->addAction(redoAction);
-    auto toolbar = addToolBar("Project");
+    auto toolbar = new QToolBar("Project", menuBar());
+    toolbar->setObjectName("projectActions");
     toolbar->setMovable(false);
+    toolbar->setFloatable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
     toolbar->addAction(open);
     toolbar->addAction(save);
     toolbar->addAction(build);
     toolbar->addAction(review);
-    toolbar->addSeparator();
-    toolbar->addWidget(summary_);
+    menuBar()->setCornerWidget(toolbar, Qt::TopRightCorner);
+    statusBar()->addPermanentWidget(summary_);
     auto welcome =
         new QLabel("<h1>Lordly Caliber</h1><p>Open your Ogre Battle 64 ROM to begin.</p><p>Your "
                    "source ROM stays unchanged. Save your work as a project.</p>");
@@ -246,6 +249,7 @@ void MainWindow::installProject(Project project) {
                         "Sprites");
     if (project_->rom().revision() == 0) {
         auto artwork = new QTabWidget;
+        artwork->setObjectName("artWorkspace");
         artwork->addTab(new ArtEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Item icons");
         artwork->addTab(new PortraitEditor(project_.get(), undo_, [this] { updateStatus(); }),
@@ -254,12 +258,23 @@ void MainWindow::installProject(Project project) {
                         "Army sprites");
         artwork->addTab(new CombatAnimationEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Combat animations");
-        auto advanced = new QTabWidget;
-        advanced->addTab(new CombatEditor(project_.get(), undo_, [this] { updateStatus(); }), "Shared combat artwork");
-        advanced->addTab(new AnimationEditor(project_.get(), undo_, [this] { updateStatus(); }), "Class animation settings");
-        advanced->addTab(new AnimationOverrideEditor(project_.get(), undo_, [this] { updateStatus(); }), "Attack overrides");
-        advanced->addTab(new AnimationSequenceEditor(project_.get(), undo_, [this] { updateStatus(); }), "Private sequences");
+        auto advanced = new QStackedWidget;
+        advanced->addWidget(new CombatEditor(project_.get(), undo_, [this] { updateStatus(); }));
+        advanced->addWidget(new AnimationEditor(project_.get(), undo_, [this] { updateStatus(); }));
+        advanced->addWidget(new AnimationOverrideEditor(project_.get(), undo_, [this] { updateStatus(); }));
+        advanced->addWidget(new AnimationSequenceEditor(project_.get(), undo_, [this] { updateStatus(); }));
         artwork->addTab(advanced, "Advanced animations");
+        auto advancedTool = new QComboBox;
+        advancedTool->setObjectName("advancedAnimationTool");
+        advancedTool->setAccessibleName("Advanced animation tool");
+        advancedTool->setToolTip("Choose an advanced animation editor");
+        advancedTool->addItems({"Shared combat artwork", "Class animation settings", "Attack overrides", "Private sequences"});
+        artwork->setCornerWidget(advancedTool, Qt::TopRightCorner);
+        advancedTool->hide();
+        connect(advancedTool, &QComboBox::currentIndexChanged, advanced, &QStackedWidget::setCurrentIndex);
+        connect(artwork, &QTabWidget::currentChanged, advancedTool, [artwork, advanced, advancedTool](int index) {
+            advancedTool->setVisible(artwork->widget(index) == advanced);
+        });
         workspaces_->addTab(artwork, "Art");
     }
     if (project_->rom().revision() == 0) {

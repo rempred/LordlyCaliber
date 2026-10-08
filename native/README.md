@@ -10,6 +10,10 @@ For local iteration, run `native/live/LordlyCaliber.exe`. The maintainer command
 `native/tools/package.ps1 -Live` updates that stable folder without creating a ZIP.
 Close the live editor after saving your work before updating it.
 
+Open, Save, Build and Review are at the right of the File/Edit menu bar. The
+workspace tabs and their section tabs remain below it. Advanced animations uses
+the selector at the right of the Art tab row to choose its editing tool.
+
 Art / Combat animations provides class, action, side, mode and artwork-variant
 filters. Choosing an animation only previews it; **Assign** applies it. Normal
 assignments cover game modes0 and1; Blocked is mode2. Enable frame and sprite editing

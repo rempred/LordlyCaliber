@@ -9453,6 +9453,20 @@ class UiTests : public QObject {
         if (!screenshot.isEmpty()) {
             QTest::qWait(100);
             QVERIFY(window.grab().save(screenshot));
+            // Optional visual captures use the same loaded desktop, including its
+            // advanced-tool navigation. No extra ROM or export fixture is needed.
+            auto artwork = window.findChild<QTabWidget *>("artWorkspace");
+            if (artwork) {
+                auto workspaces = qobject_cast<QTabWidget *>(window.centralWidget());
+                workspaces->setCurrentWidget(artwork);
+                artwork->setCurrentIndex(artwork->count() - 1);
+                const auto prefix = QFileInfo(screenshot).absolutePath() + "/" + QFileInfo(screenshot).completeBaseName();
+                for (int width : {1440, 1100}) {
+                    window.resize(width, 900);
+                    QTest::qWait(50);
+                    QVERIFY(window.grab().save(prefix + QString("-advanced-%1.png").arg(width)));
+                }
+            }
         }
     }
     void promotionControlsAndUndo() {

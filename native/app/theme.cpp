@@ -68,6 +68,28 @@ QToolBar {
 }
 QToolBar QLabel { color: #ecd8a8; }
 QToolBar::separator { background: #a07b2a; width: 1px; margin: 4px; }
+QToolBar#projectActions {
+    background: transparent;
+    border: none;
+    spacing: 3px;
+    padding: 2px 4px;
+}
+QToolBar#projectActions QToolButton {
+    background: transparent;
+    color: #ecd8a8;
+    border: 1px solid transparent;
+    padding: 3px 8px;
+}
+QToolBar#projectActions QToolButton:hover {
+    background: #5a3a1c;
+    border-color: #9a7a3e;
+}
+QToolBar#projectActions QToolButton:pressed {
+    background: #c8a566;
+    color: #2a1a08;
+}
+QToolBar#projectActions QToolButton:focus { border-color: #e0b35a; }
+QToolBar#projectActions QToolButton:disabled { color: #806c50; }
 QStatusBar { background: #dcc286; color: #2a1a08; border-top: 1px solid #7a5a24; }
 QStatusBar::item { border: none; }
 QTabWidget::pane { border: 1px solid #9a7a3e; background: #ecd8a8; }
