@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
+  "groups": [
+    {
+      "id": "combat-pose-metadata", "priority": 1,
+      "behavior": "Combat animation directory and instruction lookup",
+      "symbols": ["func_00204EE0", "func_00204F24", "func_00204F2C", "func_00204F34", "func_002050AC"],
+      "editorFiles": ["engine/pose_bank.cpp", "game/art/body-record.c", "rebuild/pose_runtime.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Base pose readers on the accepted implementation for both preview and exported animation changes.",
+      "preserve": "The five functions share combat_pose_metadata.c. Keep the coupled source and its section requirements together when importing. Retain host bounds, private pose registration, wide frames/states and nullable operand writes. The two empty helpers are companions, not separate editor features."
+    },
+    {
+      "id": "combat-action-selection", "priority": 1,
+      "behavior": "Class/action/mode animation selection and fallback",
+      "symbols": ["func_00201798"],
+      "editorFiles": ["engine/body_animation_data.cpp", "game/art/body-record.c"],
+      "editorUse": "reconstructed",
+      "benefit": "Use the accepted source for the base action selection underneath the guided Combat animations workflow.",
+      "preserve": "Expanded classes, full-byte class-copy comparison, missing-source-group fallback, default selector 40, all three modes and OBSO override precedence."
+    },
+    {
+      "id": "actor-sequencer", "priority": 1,
+      "behavior": "Actor pose execution and frame timing",
+      "symbols": ["func_0029E218"],
+      "editorFiles": ["game/director/actor_pose.c", "engine/actor_pose.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace reconstructed pose dispatch with recovered control flow when matching C becomes available.",
+      "preserve": "Bounded/resumable preview execution, shared callbacks and private or wide-frame extensions."
+    },
+    {
+      "id": "actor-initialization", "priority": 1,
+      "behavior": "Ordinary and combat-body actor initialization",
+      "symbols": ["func_0029DC0C", "func_002A9364"],
+      "editorFiles": ["game/director/actor_record.c", "engine/actor_instance.cpp", "engine/scene_actors.cpp"],
+      "editorUse": "partial",
+      "benefit": "Improve initialization of scene actors, linked equipment bodies and their initial poses.",
+      "preserve": "Current source/owner distinctions, linked-body policy and host resource ownership. Existing code implements record-boundary portions, not every original service."
+    },
+    {
+      "id": "dynamic-roster", "priority": 1,
+      "behavior": "Dynamic cutscene cast selection from the player's army",
+      "symbols": ["func_002ABB3C", "func_002AB574", "func_00045E5C"],
+      "editorFiles": ["game/director/actor_roster.c", "engine/scene_actors.cpp", "game/director/story_cast.c"],
+      "editorUse": "partial",
+      "symbolUses": {"func_002ABB3C": "adapted"},
+      "benefit": "Keep roster selection, equivalent appearances and leader fallback aligned with recovered behavior, including dynamic scenes such as 01FA8BF4.",
+      "preserve": "002ABB3C already has a host adaptation; the predicates are reconstructed. Story-script cast choices are separate data/logic and are not automatically replaced by a roster function."
+    },
+    {
+      "id": "actor-motion", "priority": 1,
+      "behavior": "Actor coordinates, motion duration and cleanup",
+      "symbols": ["func_002A0B14", "func_002A0EF0"],
+      "editorFiles": ["game/director/actor_motion.c", "engine/actor_motion.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_002A0B14": "adapted"},
+      "benefit": "Update the movement adaptation and replace the reconstructed planar update as matching C arrives.",
+      "preserve": "Terrain height service, empty-slot suspension, signed halfwords and single-precision operation order; the host owns scheduling."
+    },
+    {
+      "id": "actor-layering", "priority": 1,
+      "behavior": "Scene draw ordering and actor depth comparison",
+      "symbols": ["func_0029D634", "func_0029D4F0", "func_002A17E0", "func_0020FEEC"],
+      "editorFiles": ["game/director/scene_draw_queue.c", "engine/scene_draw_queue.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace reconstructed queue construction/comparison/sort where it affects sprite overlap.",
+      "preserve": "Tie ordering, signed comparisons and explicit host record ownership. Keep the correct overlay instance of the sorting routine."
+    },
+    {
+      "id": "actor-projection", "priority": 1,
+      "behavior": "Actor matrices and screen placement",
+      "symbols": ["func_002AE654", "func_002AEB48", "func_0029CBDC", "func_002A1484"],
+      "editorFiles": ["game/director/actor_matrices.c", "engine/actor_matrices.cpp", "engine/actor_renderer.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Improve recovered camera and actor projection used by editable scene previews.",
+      "preserve": "Coordinate spaces, float widths, matrix order and integrated-graphics renderer boundary. Full RSP emulation is not a prerequisite."
+    },
+    {
+      "id": "actor-material", "priority": 1,
+      "behavior": "Actor tint, material and primitive-color animation",
+      "symbols": ["func_0029B78C", "func_0029BA80", "func_0029EAFC", "func_002ADF9C"],
+      "editorFiles": ["game/director/actor_material.c", "game/director/actor_render.c", "engine/actor_render_state.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Use recovered material/color behavior when improving scene appearance.",
+      "preserve": "The native renderer remains responsible for drawing. Current adaptations cover the relevant CPU behavior, not every display-list operation."
+    },
+    {
+      "id": "image-decoding", "priority": 1,
+      "behavior": "Combat/body image conversion and resource interpretation",
+      "symbols": ["func_00204A70", "func_00203414", "func_00203664", "func_00201E38", "func_00206174"],
+      "editorFiles": ["engine/raw_image.cpp", "engine/actor_art.cpp", "engine/resource.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Compare current image/resource readers with accepted decoding, stride and resource lookup logic.",
+      "preserve": "Big-endian fields, primary/secondary planes, palette/opacity handling and malformed-input bounds. The N64 allocator and reverse-argument memcpy are not PC services."
+    },
+    {
+      "id": "scene-dispatch", "priority": 2,
+      "behavior": "Cutscene command dispatch, control flow and input substitution",
+      "symbols": ["func_00284288", "func_002861C8", "func_00283FA8"],
+      "editorFiles": ["game/director/dispatch_core.c", "game/director/control_flow.c", "game/director/stream_words.c"],
+      "editorUse": "adapted",
+      "benefit": "Track accepted-source changes against existing PC adaptations rather than re-deriving scene control flow.",
+      "preserve": "Explicit services, bounded suspension, word-wise substitution and missing-input errors. Stored target sources in game/director are references; the portable adaptations execute on PC."
+    },
+    {
+      "id": "scene-scheduling", "priority": 2,
+      "behavior": "Scene service updates and resource queue scheduling",
+      "symbols": ["func_002A0680", "func_0020DB10"],
+      "editorFiles": ["game/director/scene_schedule.c", "engine/scene_resource_dispatch.cpp"],
+      "editorUse": "partial",
+      "benefit": "Use matching control flow to clarify relevant scene service ordering without reconstructing the whole game scheduler.",
+      "preserve": "A matching hybrid function is useful reference but must not be labeled matching pure C. Host services and suspension stay explicit."
+    },
+    {
+      "id": "body-handles", "priority": 2,
+      "behavior": "Class artwork handles, speed and presentation",
+      "symbols": ["func_002015C8", "func_00201670", "func_002016F4"],
+      "editorFiles": ["game/director/actor_state.c", "game/director/actor_presentation.c", "engine/body_animation_data.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Track upstream improvements to existing class-body adaptations.",
+      "preserve": "Intentional full-handle support and expanded tables; the original handle getter masks to 12 bits. Preserve editor extensions rather than blindly restoring retail limits."
+    },
+    {
+      "id": "body-appearance", "priority": 2,
+      "behavior": "Default equipment appearance and combat-body registration",
+      "symbols": ["func_00043E88", "func_00043EDC", "func_00043F30", "func_00043F84", "func_00207658"],
+      "editorFiles": ["game/director/actor_body.c", "engine/actor_art.cpp", "engine/scene_actors.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_00043E88": "adapted", "func_00043EDC": "adapted", "func_00043F30": "adapted", "func_00043F84": "adapted"},
+      "benefit": "Track existing appearance adaptations and assess remaining useful registration behavior.",
+      "preserve": "Only resolve_variant from 00207658 is adapted here; its entire pool allocator is not integrated. Retain explicit host resource lifetime and modified class visual policies."
+    },
+    {
+      "id": "body-equipment", "priority": 2,
+      "behavior": "Weapon/body equipment selection and classification",
+      "symbols": ["func_00045934", "func_0020C120"],
+      "editorFiles": ["game/director/actor_body.c", "engine/actor_art.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace reconstructed predicates for equipment choice and linked body classification.",
+      "preserve": "Expanded item limits, host bounds and primary/secondary body distinction."
+    },
+    {
+      "id": "actor-state-lookup", "priority": 2,
+      "behavior": "Animation/facing to physical pose-state lookup",
+      "symbols": ["func_002A13EC"],
+      "editorFiles": ["game/director/actor_state.c", "engine/actor_art.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Refresh the recovered flat-list lookup if it becomes matching pure C.",
+      "preserve": "Match position is the state, not the stored value; retain signed sentinels, wrapping and bounds. An adapted hybrid reference is not an imported pure-C function."
+    },
+    {
+      "id": "direct-animation", "priority": 2,
+      "behavior": "Direct-descriptor animation execution",
+      "symbols": ["func_001F0E64", "func_001F1218"],
+      "editorFiles": ["game/director/direct_pose.c", "engine/actor_pose.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Track accepted changes to the direct-descriptor path already running through portable C.",
+      "preserve": "Bounded stacks, explicit byte storage and resumable host callbacks."
+    },
+    {
+      "id": "image-presentation", "priority": 2,
+      "behavior": "Background/image placement, scale and rotation",
+      "symbols": ["func_002B25DC", "func_002B24F0", "func_002B3300", "func_002B3494"],
+      "editorFiles": ["game/director/image_presentation.c", "engine/scene_images.cpp"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace reconstructed image transforms as matching C arrives, improving cutscene backgrounds.",
+      "preserve": "Current edited-image support, arithmetic widths and packed-matrix intermediates."
+    },
+    {
+      "id": "scene-transforms", "priority": 2,
+      "behavior": "Camera/scene transforms and completion",
+      "symbols": ["func_002AF78C", "func_002B118C", "func_002B151C", "func_002B1014"],
+      "editorFiles": ["game/director/scene_transform.c", "engine/scene_transforms.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_002B1014": "adapted"},
+      "benefit": "Replace reconstructed updates; the completion predicate already adapts accepted C.",
+      "preserve": "Host-owned jobs and the original completion semantics."
+    },
+    {
+      "id": "camera-projection", "priority": 2,
+      "behavior": "Camera projection initialization and interpolation",
+      "symbols": ["func_002A90EC", "func_002A91E4", "func_002A9258"],
+      "editorFiles": ["game/director/scene_projection.c", "engine/actor_renderer.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_002A91E4": "adapted"},
+      "benefit": "Replace reconstructed init/update around the already adapted accepted start routine.",
+      "preserve": "Frame count narrowing, float order and separate coordinate spaces."
+    },
+    {
+      "id": "dialogue-layout", "priority": 2,
+      "behavior": "Dialogue layout and draw-command generation",
+      "symbols": ["func_000E5968", "func_000E6D90"],
+      "editorFiles": ["game/director/dialogue_layout.c", "game/director/dialogue_draw_plan.c"],
+      "editorUse": "adapted",
+      "benefit": "Track updates to already integrated dialogue geometry and rendering services.",
+      "preserve": "Big-endian fields, bounded resource access and the explicit PC draw sink."
+    },
+    {
+      "id": "dialogue-motion", "priority": 2,
+      "behavior": "Dialogue movement and prefix controls",
+      "symbols": ["func_000EA184", "func_000EA930"],
+      "editorFiles": ["game/director/dialogue_motion.c", "game/director/dialogue_prefix.c"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace reconstructed dialogue motion/prefix behavior when matching C becomes available.",
+      "preserve": "Halfword truncation, completion flags and stopping before the first body-text control."
+    },
+    {
+      "id": "image-colors", "priority": 2,
+      "behavior": "Sepia and warm color conversion",
+      "symbols": ["func_00203030", "func_00202198", "func_00202258"],
+      "editorFiles": ["game/images/sepia.c"],
+      "editorUse": "adapted",
+      "benefit": "Track accepted source changes against the existing portable pixel transforms.",
+      "preserve": "Alpha bits and exact integer rounding; PC byte order is explicit."
+    },
+    {
+      "id": "class-family-lookup", "priority": 2,
+      "behavior": "Retail class-family lookup during ROM export",
+      "symbols": ["func_000BBD50"],
+      "editorFiles": ["game/accepted/func_000bbd50.c", "rebuild/compiler.cpp"],
+      "editorUse": "original",
+      "benefit": "Track updates to an unchanged accepted source already compiled during applicable user exports.",
+      "preserve": "This original function has a retail bound; expanded-family exports use the maintained extension path."
+    },
+    {
+      "id": "class-compatibility", "priority": 2,
+      "behavior": "Promotion compatibility mask lookup",
+      "symbols": ["func_000BBD80"],
+      "editorFiles": ["game/promotion/compatibility-mask.c", "rebuild/promotion_runtime.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Track the accepted base of the existing configurable ROM-side reader.",
+      "preserve": "Relocated per-class masks and expanded class IDs."
+    },
+    {
+      "id": "promotion-menus", "priority": 2,
+      "behavior": "Class-change lists, navigation, discovery and equipment lists",
+      "symbols": ["func_000BF248", "func_000C91A0", "func_000C3DAC", "func_000BF5DC"],
+      "editorFiles": ["game/promotion/family-menu.c", "game/promotion/class-selection.c", "game/promotion/class-discovery.c", "game/promotion/equipment-class-menu.c"],
+      "editorUse": "reconstructed",
+      "benefit": "Replace or update maintained modified-game C with accepted source where it simplifies ROM rebuilding.",
+      "preserve": "New families and linked families, expanded rosters, empty-list protection, larger IDs and the game's eligibility/service ordering. Matching C alone does not remove retail limits."
+    },
+    {
+      "id": "save-army-helpers", "priority": 2,
+      "behavior": "Save-editor leader restrictions and Soldier reserve groups",
+      "symbols": ["func_000BEA34", "func_000B86F8", "func_000B86C4", "func_000B81CC"],
+      "editorFiles": ["game/army/leader.c", "game/army/soldier_reserve.c", "engine/save_document.cpp"],
+      "editorUse": "partial",
+      "benefit": "Use recovered helpers for reserve allocation, group HP/count and fixed leaders.",
+      "preserve": "B81CC is a larger owner: only its new-group HP segment is currently adapted. Preserve packed-save ownership, maximum capacities and Undo."
+    },
+    {
+      "id": "character-creation", "priority": 2,
+      "behavior": "New unit base stats, growth family and equipment",
+      "symbols": ["func_0004501C"],
+      "editorFiles": ["game/army/character.c", "engine/save_document.cpp"],
+      "editorUse": "partial",
+      "benefit": "Use accepted initialization logic for the save editor's Add unit workflow.",
+      "preserve": "Only the level-one branch is currently implemented. Retain injected randomness, expanded-class validation and atomic record changes."
+    },
+    {
+      "id": "squad-behavior", "priority": 3,
+      "behavior": "Scenario squad conditions, evaluation and lifecycle",
+      "symbols": ["func_00120CF0", "func_00121724", "func_00121DA8", "func_00121F38", "func_00123458", "func_001237F0", "func_0012DA10", "func_0012DB2C", "func_0012A828", "func_0012F8C0"],
+      "editorFiles": ["engine/scenario_routes.cpp", "engine/custom_squads.cpp"],
+      "editorUse": "candidate",
+      "benefit": "Assess the accepted Squad W3 batch for meaningful route/condition explanations and bounded previews of authored squad behavior.",
+      "preserve": "These are candidate consumers, not a claim the editor already implements this runtime. Full battle/world simulation is not required for route editing. Read each function's services before selecting a subset."
+    },
+    {
+      "id": "shop-rules", "priority": 3,
+      "behavior": "Shop price, classification and menu rules",
+      "symbols": ["func_0019BD14", "func_0019B21C", "func_0019B26C", "func_001994B4", "func_0019A294", "func_0019BE40"],
+      "editorFiles": ["engine/shops.cpp", "engine/shop_runtime.cpp", "rebuild/shop_runtime.cpp"],
+      "editorUse": "candidate",
+      "benefit": "Assess accepted price/classification helpers before adopting larger Shop state-machine functions; use them where they improve stock/equipment behavior or source-built exports.",
+      "preserve": "Current expanded shop IDs, stronghold assignments and native Qt interaction. Porting the game's complete menu renderer is not required."
+    }
+  ]
+}

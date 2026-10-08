@@ -1,5 +1,10 @@
 # Game source owners
 
+For current upstream adoption priorities and a symbol/source-file lookup, see
+[Using newly accepted Decomp C](../docs/decomp-intake.md) and the maintained
+[function interest list](decomp-interest.json). Matching status comes from
+Decomp's existing reports; the list tracks editor uses and intentional extensions.
+
 `accepted/func_000bbd50.c` is copied unchanged from OB64 Decomp's accepted
 `src/lib/func_000bbd50.c` at commit `96b75a67b71bf6f5e938dbef34e355c48f039865`.
 It is a pure-C class-family lookup for the existing retail promotion roster.
