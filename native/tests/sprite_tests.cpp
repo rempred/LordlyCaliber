@@ -15,6 +15,26 @@ using namespace lordly;
 class SpriteTests : public QObject {
     Q_OBJECT
   private slots:
+    void rgba32ChildOffsets() {
+        // Accepted 00203414 assigns zero secondary bytes to RGBA32. A set
+        // secondary flag must not consume a nonexistent plane or the next header.
+        QByteArray bytes = QByteArray::fromHex("5554020200010001");
+        bytes += QByteArray::fromHex("555400030001000112345678000000000000000000000000");
+        bytes += QByteArray::fromHex("5554010100010001abcdefef000000000000000000000000");
+        const auto sprite = SpriteObject::decode(bytes);
+        QCOMPARE(sprite.children().size(), 2);
+        QCOMPARE(sprite.children()[1].colorOffset, qsizetype(40));
+        QVERIFY(sprite.materialize(0).alpha.isEmpty());
+        QCOMPARE(sprite.frame(0).image.rgba, QByteArray::fromHex("12345678"));
+        QCOMPARE(sprite.frame(1).image.rgba, QByteArray::fromHex("abcdefef"));
+        auto pixels = sprite.pixels(0);
+        pixels.color = QByteArray::fromHex("10203040");
+        const auto edited = SpriteObject::decode(sprite.rebuild({{0, pixels}}));
+        QCOMPARE(edited.frame(0).image.rgba, pixels.color);
+        QCOMPARE(edited.frame(1).image.rgba, sprite.frame(1).image.rgba);
+        QCOMPARE(u8(edited.source(), 11), quint8(3)); // Preserve the source flags.
+        QVERIFY_THROWS_EXCEPTION(Error, SpriteObject::decode(bytes.chopped(1)));
+    }
     void repeatedSepiaKeepsAlpha() {
         const auto bytes=QByteArray::fromHex("55540101000200015554000300020001f800003f000000008f00000000000000");
         const auto sprite=SpriteObject::decode(bytes);

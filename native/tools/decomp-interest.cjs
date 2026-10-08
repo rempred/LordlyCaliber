@@ -26,6 +26,11 @@ function main(args) {
   if (ready && !decomp) throw Error('--ready needs --decomp to read existing matching records');
   const catalog = read(path.join(native, 'game/decomp-interest.json'));
   if (catalog.schemaVersion !== 1) throw Error('Unsupported interest catalog schema');
+  const importsFile = path.join(native, 'game/accepted/animation-imports.json');
+  const imported = new Map();
+  if (fs.existsSync(importsFile))
+    for (const entry of read(importsFile).imports)
+      for (const symbol of entry.symbols) imported.set(key(symbol), entry);
   const sources = new Map(), evidence = new Map();
   let verifiedAt = null;
   if (decomp) {
@@ -76,13 +81,17 @@ function main(args) {
       }
       // "Ready" means available for an integration review, not a drop-in port.
       const editorUse = group.symbolUses?.[symbol] || group.editorUse;
-      const needsIntegration = !['adapted', 'original'].includes(editorUse);
-      if (ready && !(available && needsIntegration)) continue;
+      const baseline = imported.get(key(symbol));
+      const upstreamUpdate = Boolean(target && baseline &&
+        (target.source !== baseline.source || target.sourceSha256 !== baseline.sourceSha256));
+      const needsIntegration = !['adapted', 'original', 'companion'].includes(editorUse);
+      if (ready && !(available && (needsIntegration || (upstreamUpdate && editorUse !== 'companion')))) continue;
       const searchable = [symbol, source || '', group.id, group.behavior].map(key);
       const symbolQuery = path.posix.basename(query).replace(/\.c$/, '');
       if (query && key(symbol) !== symbolQuery && !searchable.some(s => s.includes(query) || (source && query.endsWith('/' + key(source))))) continue;
       rows.push({ priority: group.priority, group: group.id, behavior: group.behavior,
         symbol, source, matching, available, editorUse, groupUse: group.editorUse,
+        upstreamUpdate, importedSourceSha256: baseline?.sourceSha256 || null,
         editorFiles: group.editorFiles, benefit: group.benefit, preserve: group.preserve,
         verifiedSourceSha256: target?.sourceSha256 || null });
     }
@@ -103,7 +112,7 @@ function main(args) {
       console.log(`Keep: ${row.preserve}\n\n| Function | Upstream source | Matching record | Editor use |\n|---|---|---|---|`);
       prior = row.group;
     }
-    console.log(`| ${row.symbol} | ${row.source || 'Resolve when admitted'} | ${row.matching} | ${row.editorUse} |`);
+    console.log(`| ${row.symbol} | ${row.source || 'Resolve when admitted'} | ${row.matching} | ${row.editorUse}${row.upstreamUpdate ? ' (upstream changed)' : ''} |`);
   }
   if (!rows.length) console.log('No matching interests for this filter.');
 }

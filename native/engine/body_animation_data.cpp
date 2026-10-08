@@ -2,6 +2,7 @@
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
 #include "engine/body_visual_policy.h"
+#include "game/art/animation_readers.h"
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
                                      std::optional<AnimationOverrides> overrides,
@@ -49,19 +50,18 @@ int BodyAnimationData::selector(int source, int owner, int action, int mode, int
         throw Error("Invalid attack animation context");
     if (!overrideError_.isEmpty())
         throw Error(overrideError_);
-    // Original ROM201798: source's group is eligible only when its full-byte
-    // class-copy match equals owner and that source group exists.
-    auto row = routes_.entry(source).selectors;
-    if (u8(classes_.entries()[source].record, 69) != owner || row.isEmpty())
-        row = routes_.entry(owner).selectors;
-    if (row.isEmpty())
-        throw Error("This owner has no action selector group");
-    int original = 40;
-    for (int at = 0; at + 1 < row.size(); at += 4)
-        if (u8(row, at) == action) {
-            original = u8(row, at + 1 + mode);
-            break;
-        }
+    const auto sourceRow = routes_.entry(source).selectors;
+    const bool sourceMatches = u8(classes_.entries()[source].record, 69) == owner;
+    // Preserve lazy owner lookup: a usable source group does not require an
+    // owner group to exist or have a completed artwork assignment.
+    const auto ownerRow = sourceMatches && !sourceRow.isEmpty()
+                              ? QByteArray() : routes_.entry(owner).selectors;
+    uint8_t original = 40;
+    if (lordly_action_selector(sourceMatches,
+            reinterpret_cast<const uint8_t *>(sourceRow.constData()), size_t(sourceRow.size()),
+            reinterpret_cast<const uint8_t *>(ownerRow.constData()), size_t(ownerRow.size()),
+            unsigned(action), unsigned(mode), &original))
+        throw Error("This owner has no valid action selector group");
     // OBSO uses first match in canonical order, with exact-body rows first.
     for (const auto &entry : overrides_)
         if (entry[0] == source && entry[1] == owner && entry[2] == action &&

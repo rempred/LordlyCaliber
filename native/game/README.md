@@ -5,6 +5,32 @@ For current upstream adoption priorities and a symbol/source-file lookup, see
 [function interest list](decomp-interest.json). Matching status comes from
 Decomp's existing reports; the list tracks editor uses and intentional extensions.
 
+## Accepted animation and sprite readers
+
+`accepted/animation-imports.json` records the exact upstream source versions and
+verified source identities for this integration. The complete original C files
+are retained unchanged beside it; portable differences live in the adapters.
+
+| Accepted function | Executed editor implementation |
+|---|---|
+| `00201798` | `art/animation_readers.c`: base action/mode selector; the C++ caller applies existing OBSO overrides afterwards. |
+| `00204F34`, `002050AC` | `art/animation_readers.c`: counted pose decoding into the playback cache. `art/pose_operands.h` also executes in the ROM class reader compiled during export. |
+| `00201E38` | The unchanged accepted C is compiled into the PC engine and used for sprite row strides. |
+| `00203414` | `images/sprite_readers.c`: bounded, big-endian child-layout traversal. |
+| `00203664` | `images/sprite_readers.c`: nibble/byte/halfword subtraction and RGBA32 XOR kernels. Recursion, cycle checks and allocation remain with `SpriteObject`. |
+
+The PC adaptations take explicit buffers instead of N64 pointers. Pose decoding
+walks each program once; cached playback remains constant-time. The shared ROM
+operand helper retains nullable/aliased writes and the existing compact layout,
+leaving room for private registration. Wide frames/states, additional classes and
+normal/blocked override semantics remain supported. No original instruction blob
+is shipped, and end users need no Decomp checkout.
+
+The accepted sprite-layout reader specifies zero secondary-plane bytes for RGBA32
+even with child flag2 set. The adapter follows that rule and preserves the flag
+when editing. Complete accepted files are also retained for functions only partly
+adapted; source presence alone does not mean the full function runs on the PC.
+
 `accepted/func_000bbd50.c` is copied unchanged from OB64 Decomp's accepted
 `src/lib/func_000bbd50.c` at commit `96b75a67b71bf6f5e938dbef34e355c48f039865`.
 It is a pure-C class-family lookup for the existing retail promotion roster.

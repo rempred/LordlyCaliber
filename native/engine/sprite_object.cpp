@@ -1,41 +1,23 @@
 #include "engine/sprite_object.h"
 #include "engine/artwork_dither.h"
 #include "game/images/sepia.h"
+#include "game/images/stride.h"
+#include "game/images/sprite_readers.h"
 namespace lordly {
 namespace {
 int stride(int format, int width) {
-    switch (format) {
-    case 0:
-        return ((width + 15) / 16) * 8;
-    case 1:
-        return ((width + 7) / 8) * 8;
-    case 2:
-        return ((width + 3) / 4) * 8;
-    case 3:
-        return ((width + 3) / 4) * 16;
-    }
-    throw Error("Unknown sprite lane format");
+    if (format < 0 || format > 3)
+        throw Error("Unknown sprite lane format");
+    return int(func_00201E38(format, unsigned(width)));
 }
 QByteArray combine(const QByteArray &base, const QByteArray &delta, int format) {
     if (base.size() != delta.size() || base.isEmpty())
         throw Error("Sprite delta lacks a matching base lane");
     auto result = delta;
-    for (qsizetype i = 0; i < delta.size();) {
-        if (format == 0) {
-            const int b = u8(base, i), d = u8(delta, i);
-            put8(result, i++,
-                 quint8(((((b >> 4) - (d >> 4)) & 15) << 4) | (((b & 15) - (d & 15)) & 15)));
-        } else if (format == 1) {
-            put8(result, i, quint8(u8(base, i) - u8(delta, i)));
-            ++i;
-        } else if (format == 2) {
-            put16(result, i, quint16(u16(base, i) - u16(delta, i)));
-            i += 2;
-        } else {
-            put8(result, i, u8(base, i) ^ u8(delta, i));
-            ++i;
-        }
-    }
+    if (lordly_sprite_delta(reinterpret_cast<uint8_t *>(result.data()),
+            reinterpret_cast<const uint8_t *>(base.constData()),
+            reinterpret_cast<const uint8_t *>(delta.constData()), size_t(delta.size()), unsigned(format)))
+        throw Error("Invalid sprite delta format or lane size");
     return result;
 }
 } // namespace
@@ -91,48 +73,23 @@ SpriteObject SpriteObject::fromImage(const RasterImage &image, bool dither) {
     return decode(std::move(bytes));
 }
 SpriteObject SpriteObject::decode(QByteArray bytes) {
-    if (bytes.size() < 8 || u16(bytes, 0) != 0x5554 || bytes.size() > 64 * 1024 * 1024)
-        throw Error("Invalid native sprite container");
+    LordlySpriteLayout layout;
+    if (lordly_sprite_layout(reinterpret_cast<const uint8_t *>(bytes.constData()),
+                             size_t(bytes.size()), &layout))
+        throw Error("Invalid sprite header, dimensions or child lane bounds");
     SpriteObject result;
-    result.width_ = u16(bytes, 4);
-    result.height_ = u16(bytes, 6);
-    if (!result.width_ || !result.height_ || result.width_ > 8192 || result.height_ > 8192 ||
-        quint64(result.width_) * result.height_ > 4194304)
-        throw Error("Sprite dimensions exceed the pixel budget");
-    const int flags = u8(bytes, 3), count = u8(bytes, 2);
-    if (!count)
-        throw Error("Sprite has no child variants");
-    result.colorFormat_ = flags & 2 ? 3 : flags & 4 ? 1 : 2;
-    result.alphaFormat_ = flags & 1 ? 0 : 1;
-    result.colorStride_ = stride(result.colorFormat_, result.width_);
-    result.alphaStride_ = stride(result.alphaFormat_, result.width_);
-    qsizetype cursor = 8;
-    for (int i = 0; i < count; ++i) {
-        if (u16(bytes, cursor) != 0x5554)
-            throw Error("Sprite child header is missing");
-        SpriteChild child{u8(bytes, cursor + 2), u8(bytes, cursor + 3), u16(bytes, cursor + 4),
-                          u16(bytes, cursor + 6)};
-        cursor += 8;
-        if (child.flags & 1) {
-            child.colorOffset = cursor;
-            cursor += result.colorStride_ * result.height_;
-        }
-        if (child.flags & 2) {
-            child.alphaOffset = cursor;
-            cursor += result.alphaStride_ * result.height_;
-        }
-        if (child.flags & 4) {
-            child.paletteOffset = cursor;
-            cursor += 512;
-        }
-        if (cursor > bytes.size())
-            throw Error("Sprite child lanes exceed their source");
-        if (child.discriminator >= count)
-            throw Error("Sprite child discriminator is out of range");
-        result.children_ << child;
+    result.width_ = int(layout.width);
+    result.height_ = int(layout.height);
+    result.colorFormat_ = int(layout.color_format);
+    result.alphaFormat_ = int(layout.alpha_format);
+    result.colorStride_ = int(layout.color_stride);
+    result.alphaStride_ = int(layout.alpha_stride);
+    const auto offset = [](size_t at) { return at == SIZE_MAX ? qsizetype(-1) : qsizetype(at); };
+    for (unsigned i = 0; i < layout.count; ++i) {
+        const auto &child = layout.children[i];
+        result.children_ << SpriteChild{child.discriminator, child.flags, child.width, child.height,
+            offset(child.color), offset(child.alpha), offset(child.palette)};
     }
-    if (cursor != bytes.size())
-        throw Error("Sprite container has unaccounted trailing bytes");
     result.source_ = std::move(bytes);
     return result;
 }

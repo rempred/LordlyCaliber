@@ -1,9 +1,10 @@
 #include "engine/pose_bank.h"
+#include "game/art/animation_readers.h"
 #include <QMap>
 #include <array>
 namespace lordly {
 namespace {
-constexpr std::array<int, 23> widths{1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
+constexpr std::array<uint8_t, 23> widths{1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
                                      1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4, 3};
 bool frame(const PoseRecord &r) {
     return r.opcode == 1 || r.opcode == 21;
@@ -40,17 +41,17 @@ PoseProgram PoseBank::parseProgram(const QByteArray &source) {
     PoseProgram result{source, {}};
     if (source.isEmpty())
         return result;
-    const int count = u8(source, 0);
-    int cursor = 1;
-    for (int i = 0; i < count; ++i) {
-        const int opcode = u8(source, cursor);
-        if (opcode >= int(widths.size()) || cursor + widths[opcode] > source.size())
-            throw Error("Actor pose opcode exceeds its program");
-        result.records << PoseRecord{opcode, source.mid(cursor + 1, widths[opcode] - 1)};
-        cursor += widths[opcode];
+    std::array<LordlyPoseCommand, 255> commands;
+    unsigned count = 0;
+    if (lordly_pose_decode(reinterpret_cast<const uint8_t *>(source.constData()),
+            size_t(source.size()), widths.data(), widths.size(), commands.data(), &count))
+        throw Error("Actor pose has invalid instructions or unaccounted bytes");
+    result.records.reserve(int(count));
+    for (unsigned i = 0; i < count; ++i) {
+        const auto &command = commands[i];
+        result.records << PoseRecord{command.opcode,
+            QByteArray(reinterpret_cast<const char *>(command.operands), command.width - 1)};
     }
-    if (cursor != source.size())
-        throw Error("Actor pose has unaccounted bytes");
     return result;
 }
 PoseBank PoseBank::parse(const QByteArray &bytes) {

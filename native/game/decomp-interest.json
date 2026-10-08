@@ -6,18 +6,19 @@
       "id": "combat-pose-metadata", "priority": 1,
       "behavior": "Combat animation directory and instruction lookup",
       "symbols": ["func_00204EE0", "func_00204F24", "func_00204F2C", "func_00204F34", "func_002050AC"],
-      "editorFiles": ["engine/pose_bank.cpp", "game/art/body-record.c", "rebuild/pose_runtime.cpp"],
-      "editorUse": "reconstructed",
-      "benefit": "Base pose readers on the accepted implementation for both preview and exported animation changes.",
-      "preserve": "The five functions share combat_pose_metadata.c. Keep the coupled source and its section requirements together when importing. Retain host bounds, private pose registration, wide frames/states and nullable operand writes. The two empty helpers are companions, not separate editor features."
+      "editorFiles": ["engine/pose_bank.cpp", "game/art/animation_readers.c", "game/art/pose_operands.h", "game/art/body-record.c", "rebuild/pose_runtime.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_00204F34": "adapted", "func_002050AC": "adapted", "func_00204F24": "companion", "func_00204F2C": "companion"},
+      "benefit": "PC pose decoding and the ROM class reader now share accepted operand behavior; track future upstream changes.",
+      "preserve": "All five functions are retained unchanged in accepted/combat_pose_metadata.c. PC decoding is a bounded linear bulk walk with cached playback. Keep private registration and wide frames/states. The generic directory getter remains host-owned; the two empty helpers are source companions, not missing features."
     },
     {
       "id": "combat-action-selection", "priority": 1,
       "behavior": "Class/action/mode animation selection and fallback",
       "symbols": ["func_00201798"],
-      "editorFiles": ["engine/body_animation_data.cpp", "game/art/body-record.c"],
-      "editorUse": "reconstructed",
-      "benefit": "Use the accepted source for the base action selection underneath the guided Combat animations workflow.",
+      "editorFiles": ["engine/body_animation_data.cpp", "game/art/animation_readers.c"],
+      "editorUse": "adapted",
+      "benefit": "The guided Combat animation preview uses a bounded C adaptation of the accepted selector underneath existing overrides.",
       "preserve": "Expanded classes, full-byte class-copy comparison, missing-source-group fallback, default selector 40, all three modes and OBSO override precedence."
     },
     {
@@ -89,10 +90,11 @@
       "id": "image-decoding", "priority": 1,
       "behavior": "Combat/body image conversion and resource interpretation",
       "symbols": ["func_00204A70", "func_00203414", "func_00203664", "func_00201E38", "func_00206174"],
-      "editorFiles": ["engine/raw_image.cpp", "engine/actor_art.cpp", "engine/resource.cpp"],
-      "editorUse": "reconstructed",
-      "benefit": "Compare current image/resource readers with accepted decoding, stride and resource lookup logic.",
-      "preserve": "Big-endian fields, primary/secondary planes, palette/opacity handling and malformed-input bounds. The N64 allocator and reverse-argument memcpy are not PC services."
+      "editorFiles": ["engine/sprite_object.cpp", "game/images/sprite_readers.c", "game/accepted/func_00201E38.c", "engine/actor_art.cpp", "engine/resource.cpp"],
+      "editorUse": "partial",
+      "symbolUses": {"func_00201E38": "original", "func_00203414": "adapted"},
+      "benefit": "Sprite strides compile unchanged accepted C; the child layout and delta arithmetic use portable adaptations. Conversion/allocation and registry functions remain possible later consumers.",
+      "preserve": "00203664 currently supplies delta kernels, with recursive resolution and bounded storage still host-owned. Preserve big-endian lanes, palette/opacity handling and edited child independence. RGBA32 has zero secondary bytes. The N64 allocator and reverse-argument memcpy are not PC services."
     },
     {
       "id": "scene-dispatch", "priority": 2,

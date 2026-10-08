@@ -21,7 +21,10 @@ Omit `--match` for the full list. `--json` gives structured output; without
 `--ready` lists matching pure-C functions whose current source and recorded headers
 are available and whose listed consumer is reconstructed, partial or a candidate.
 It means ready to assess for integration, not safe to copy directly into PC code.
-`adapted` and `original` consumers remain visible in the full list for updates.
+`adapted` and `original` consumers remain visible in the full list. For sources
+recorded in `game/accepted/animation-imports.json`, a newer verified source identity
+is marked **upstream changed** and returns to `--ready`. `companion` marks an empty
+helper retained with its coupled source, rather than a missing editor feature.
 
 Matching status is read from Decomp's existing `build/current/state.json`,
 `verification.json` and `fresh-compilation.json`. The active target registry
@@ -34,7 +37,8 @@ Missing/changing reports produce an explicit error, not an empty ready list.
 The command reads existing evidence without running Decomp tools or entering its
 production build directory. It does not import sources, rebuild anything, watch
 for changes or maintain a second acceptance database. It does not compare older
-portable adaptations semantically or claim their copied source is up to date.
+portable adaptations semantically. Older adaptations without an import identity
+still require comparing their documented revision when updating them.
 
 ## Integration order
 

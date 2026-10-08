@@ -1,9 +1,11 @@
-/* Class pose reader z64 204F34..2050AC, live 801C1AA4.
+/* Adapted accepted func_00204F34 in accepted/combat_pose_metadata.c.
+ * Class pose reader z64 204F34..2050AC, live 801C1AA4.
  * The incoming stack arguments remain in their ABI slots across the resource
  * calls, leaving room for the registration query in this same code allocation.
  * Output operands are written in the original order, including nullable outputs.
  * The original reader requires a valid registry allocation before reading its count.
  */
+#include "pose_operands.h"
 typedef unsigned char u8;
 typedef signed short s16;
 typedef unsigned short u16;
@@ -28,15 +30,7 @@ int lc_body_record(s32 source, s32 owner, s32 flag_a, s32 flag_b, volatile s32 s
     for (i = 0; i < count; i++) {
         width = lc_widths[*p];
         if (i == cursor) {
-            if (width >= 2 && width <= 4) {
-                if (a)
-                    *a = p[1];
-                if (width >= 3 && b)
-                    *b = p[2];
-                if (width == 4 && c)
-                    *c = p[3];
-            }
-            return *p;
+            return lc_pose_operands(p, width, a, b, c);
         }
         p += width;
     }

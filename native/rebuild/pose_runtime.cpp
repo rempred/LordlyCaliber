@@ -4,8 +4,8 @@
 #include <QFile>
 namespace lordly {
 namespace {
-QByteArray source(const QString &name) {
-    QFile file(":/game/art/" + name + ".c");
+QByteArray source(const QString &name, const QString &extension = ".c") {
+    QFile file(":/game/art/" + name + extension);
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing pose execution source");
     return file.readAll();
@@ -54,7 +54,8 @@ QByteArray rebuildPoseRuntime(const Rom &target, const Rom &original, const QByt
                              .arg(int(bodyPolicies))
                              .toLatin1();
     const auto reader = compiler.compileModule(defines + source("body-record"), directory,
-                                               "body_record", PoseRuntimeImage::readerAddress, {},
+                                               "body_record", PoseRuntimeImage::readerAddress,
+                                               {{"pose_operands.h", source("pose_operands", ".h")}},
                                                {{"lc_body_handle", 0x801be138},
                                                 {"lc_pose_program", 0x801c2ce4},
                                                 {"lc_widths", 0x801ceee0},
