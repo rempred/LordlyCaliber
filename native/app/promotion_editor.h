@@ -29,7 +29,7 @@ class PromotionEditor : public QWidget {
     QCheckBox *equipmentSets_;
     QComboBox *families_, *rules_;
     QLineEdit *name_;
-    QLabel *notice_;
+    QLabel *notice_, *linksTitle_;
     QListWidget *links_;
 };
 } // namespace lordly

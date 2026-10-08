@@ -18,6 +18,7 @@ class ArmyEditor : public QWidget {
     ArmyEditor(Project *, QUndoStack *, std::function<void()> changed, QWidget *parent = nullptr);
     ~ArmyEditor() override;
     void selectModel(int atlas, int model, int palette = 0);
+    void selectClass(int classId, int facing = 0, int palette = 0);
     void assignImage(const QImage &, int alphaThreshold = 128);
     QString copyToLibrary();
     void importImage(const QString &);
@@ -34,15 +35,15 @@ class ArmyEditor : public QWidget {
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
-    int atlas_ = 0, model_ = 0, paletteOrdinal_ = 0;
+    int atlas_ = 0, model_ = 0, paletteOrdinal_ = 0, class_ = 1;
     bool refreshing_ = false;
-    QComboBox *atlasSelect_, *paletteSelect_, *library_, *routeClass_;
+    QComboBox *atlasSelect_, *paletteSelect_, *library_, *routeClass_, *viewMode_;
     QSpinBox *frame_, *ink_;
     QListWidget *models_;
     QLineEdit *search_;
     QTableWidget *colors_;
     SpriteCanvas *canvas_;
     QLabel *title_, *consumers_, *alternate_, *notice_, *routeInfo_;
-    QPushButton *create_, *assignRoute_, *restoreRoute_;
+    QPushButton *create_, *assignRoute_, *restoreRoute_, *restoreSprite_;
 };
 } // namespace lordly

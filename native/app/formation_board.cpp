@@ -57,7 +57,9 @@ QPolygonF FormationBoard::cellPolygon(int id) const {
             center + QPointF(13, 2) * zoom_, center + QPointF(-4, 8) * zoom_};
 }
 QPoint FormationBoard::cellCenter(int id) const {
-    const int display = playerFormation_ ? 8 - id : id;
+    // Army Management uses the front-facing board for both player saves and
+    // enemy editors. Stored cells 6..8 are the front row in both formats.
+    const int display = id;
     return (origin() + QPointF(53 - 19*(display%3) + 10*(display/3),
                                13 + 6*(display%3) + 13*(display/3)) * zoom_).toPoint();
 }
@@ -180,7 +182,7 @@ void FormationBoard::paintEvent(QPaintEvent *) {
     p.setPen(palette().color(QPalette::Text));
     if (!overview_)
         p.drawText(QRect(0, height()-23, width(), 23), Qt::AlignCenter,
-                   playerFormation_ ? "Front · player squad (cells 1–3)" : "Front · enemy squad (cells 7–9)");
+                   playerFormation_ ? "Front · player squad (cells 7–9)" : "Front · enemy squad (cells 7–9)");
 }
 void FormationBoard::cancelDrag() {
     pressed_ = target_ = -1; dragging_ = false; update();

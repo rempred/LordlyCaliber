@@ -22,11 +22,15 @@ class AnimationSequenceEditor : public QWidget {
     void copySequence(int sourceClass, int sourceRoute, int sourcePose, bool controls = true);
     void copyFrame(int sourceClass, int sourceRoute, int sourcePose, int sourceRecord, bool duration);
     void translateFrames(const QMap<int, QSet<int>> &, QPoint, int layer = -1);
+    void setContext(int classId, int flags, int pose);
+    void setGuided(bool);
+    void assignAnimation(int action, bool blocked, int pose);
 
   private:
     void refresh();
     void selectRecord();
     void editLayers();
+    void editSprite();
     void chooseSource(bool compare, int destinationRecord = -1, bool duration = false);
     void chooseTranslation();
     void prepareImage(const QImage &);
@@ -54,5 +58,7 @@ class AnimationSequenceEditor : public QWidget {
     QWidget *edits_ = nullptr;
     QPushButton *create_ = nullptr, *remove_ = nullptr;
     ActorPoseEditor *preview_ = nullptr;
+    QVector<QWidget *> advanced_;
+    QWidget *assignmentControls_ = nullptr;
 };
 } // namespace lordly

@@ -94,7 +94,10 @@ class ArmyArtworkTests : public QObject {
             QCOMPARE(project.appendClass(1, "Independent model"), 165);
             QCOMPARE(project.appendClass(71, "Independent large"), 166);
             auto army = *project.armyArtwork();
-            army.setRoute(project.classData(), 165, 0, 56);
+            QCOMPARE(army.isolateClass(project.classData(), 165),56);
+            const auto sourceModel = ArmyArtwork::classModel(ClassData::load(rom).entries()[1]);
+            QCOMPARE(army.indices(0,56),original.indices(0,sourceModel));
+            QCOMPARE(army.indices(1,56),original.indices(1,sourceModel));
             army.setRoute(project.classData(), 166, 2, 63);
             project.setArmyArtwork(army.json());
             QVERIFY_THROWS_EXCEPTION(Error, army.validateRoutes(project.classData()));

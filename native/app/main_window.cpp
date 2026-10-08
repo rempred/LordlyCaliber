@@ -6,6 +6,7 @@
 #include "app/art_editor.h"
 #include "app/change_report_dialog.h"
 #include "app/combat_editor.h"
+#include "app/combat_animation_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
@@ -251,16 +252,14 @@ void MainWindow::installProject(Project project) {
                         "Portraits");
         artwork->addTab(new ArmyEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Army sprites");
-        artwork->addTab(new CombatEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Combat artwork");
-        artwork->addTab(new AnimationEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Class animations");
-        artwork->addTab(
-            new AnimationOverrideEditor(project_.get(), undo_, [this] { updateStatus(); }),
-            "Attack overrides");
-        artwork->addTab(
-            new AnimationSequenceEditor(project_.get(), undo_, [this] { updateStatus(); }),
-            "Private sequences");
+        artwork->addTab(new CombatAnimationEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Combat animations");
+        auto advanced = new QTabWidget;
+        advanced->addTab(new CombatEditor(project_.get(), undo_, [this] { updateStatus(); }), "Shared combat artwork");
+        advanced->addTab(new AnimationEditor(project_.get(), undo_, [this] { updateStatus(); }), "Class animation settings");
+        advanced->addTab(new AnimationOverrideEditor(project_.get(), undo_, [this] { updateStatus(); }), "Attack overrides");
+        advanced->addTab(new AnimationSequenceEditor(project_.get(), undo_, [this] { updateStatus(); }), "Private sequences");
+        artwork->addTab(advanced, "Advanced animations");
         workspaces_->addTab(artwork, "Art");
     }
     if (project_->rom().revision() == 0) {
@@ -359,7 +358,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 bool accepted = false;
                 const auto name = QInputDialog::getText(
                     this, "Add class", "New class name", QLineEdit::Normal,
-                    QString(project_->record(Table::Classes, *selected).name).replace('\n', ' ') +
+                    decodeText(project_->classNameBytes(*selected)).replace('\n', ' ') +
                         " copy",
                     &accepted);
                 if (!accepted)
@@ -427,11 +426,21 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             addInspectorPage(scroll, f.group);
             groups[f.group] = form;
         }
+        if (f.offset < 4 && ((table == Table::Classes && project_->hasClassData()) ||
+                             (table == Table::Items && project_->hasItemData()))) {
+            if (!f.offset)
+                groups[f.group]->addRow("Name address", new QLabel("Automatic — allocated during ROM export"));
+            grid->setColumnHidden(n + 2, true);
+            editors->push_back(nullptr);
+            continue;
+        }
         auto editor = new ValueEditor(f, project_->catalog(), [model, selected, n](int value) {
             if (*selected >= 0)
                 model->setData(model->index(*selected, n + 2), value, Qt::EditRole);
         });
         editor->setEnabled(false);
+        if (f.key == "classCopyMatch")
+            editor->setToolTip("When a character's secondary class matches this link, the game uses this class's own data. Otherwise it uses the secondary class. This is not a promotion requirement.");
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
     }
@@ -466,6 +475,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             effects->selectConsumable(*selected);
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];
+            if (!editor) continue;
             editor->setEnabled(*selected >= 0 &&
                                (model->flags(model->index(*selected, n + 2)) & Qt::ItemIsEditable));
             editor->setChoices(project_->catalog());

@@ -1,6 +1,7 @@
 #include "engine/army_artwork.h"
 #include "engine/artwork_dither.h"
 #include "engine/resource.h"
+#include <QJsonArray>
 #include <algorithm>
 #include <limits>
 namespace lordly {
@@ -281,6 +282,30 @@ void ArmyArtwork::setRoute(const ClassData &classes, int id, int lane, int model
         throw Error("The selected model group does not match this class's unit size");
     routes_[id] = {lane, model};
 }
+int ArmyArtwork::isolateClass(const ClassData &classes, int id) {
+    if (id < 0 || id >= classes.entries().size()) throw Error("Choose an Army class");
+    const auto &asset = classes.entries()[id];
+    const int lane = classLane(asset), model = classModel(asset), front = lane * 2;
+    if (consumers(classes, front, model).size() <= 1) return model;
+    // Only allocate beyond loaded planes; preserve unused original artwork and
+    // authored unassigned slots. A model assignment owns both facings.
+    for (int copy = std::max(sourceCount(front), sourceCount(front + 1)); copy < 64; ++copy) {
+        if (((modified(front, copy) || modified(front + 1, copy)) && !privateModels_.contains(lane * 64 + copy)) ||
+            !consumers(classes, front, copy).isEmpty()) continue;
+        auto next = *this;
+        for (int side = 0; side < 2; ++side) {
+            auto pixels = indices(front + side, model);
+            const auto &spec = specs()[front + side];
+            if (pixels.isEmpty()) pixels = QByteArray(spec.width * spec.height, char(spec.transparent.first()));
+            next.setIndices(front + side, copy, pixels);
+        }
+        next.setRoute(classes, id, lane, copy);
+        next.privateModels_.insert(lane * 64 + copy);
+        *this = std::move(next);
+        return copy;
+    }
+    throw Error("This Army group has no free model slots. No shared artwork was changed.");
+}
 void ArmyArtwork::applyRoutes(ClassData &classes) const {
     for (auto it = routes_.cbegin(); it != routes_.cend(); ++it) {
         if (it.key() < 0 || it.key() >= classes.entries().size())
@@ -427,7 +452,13 @@ QJsonObject ArmyArtwork::json() const {
     QJsonObject routes;
     for (auto it = routes_.cbegin(); it != routes_.cend(); ++it)
         routes[QString::number(it.key())] = QJsonObject{{"lane", it->lane}, {"model", it->model}};
-    return {{"version", 1}, {"planes", planes}, {"routes", routes}};
+    QJsonObject result{{"version", 1}, {"planes", planes}, {"routes", routes}};
+    if (!privateModels_.isEmpty()) {
+        auto sorted = privateModels_.values(); std::sort(sorted.begin(), sorted.end());
+        QJsonArray models; for (int id : sorted) models << id;
+        result["privateModels"] = models;
+    }
+    return result;
 }
 void ArmyArtwork::apply(const QJsonObject &value) {
     if (value["version"].toInt() != 1 || !value["planes"].isObject())
@@ -435,6 +466,16 @@ void ArmyArtwork::apply(const QJsonObject &value) {
     auto next = *this;
     next.edits_.clear();
     next.routes_.clear();
+    next.privateModels_.clear();
+    if (value.contains("privateModels") && !value["privateModels"].isArray())
+        throw Error("Invalid private Army model list");
+    for (const auto &entry : value["privateModels"].toArray()) {
+        const int id = entry.toInt(-1);
+        if (id < 0 || id >= 192 || entry.toDouble() != id ||
+            id % 64 < std::max(sourceCount(id / 64 * 2), sourceCount(id / 64 * 2 + 1)))
+            throw Error("Invalid private Army model slot");
+        next.privateModels_.insert(id);
+    }
     if (value.contains("routes") && !value["routes"].isObject())
         throw Error("Invalid saved Army class routes");
     const auto routes = value["routes"].toObject();

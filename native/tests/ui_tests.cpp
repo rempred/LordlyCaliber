@@ -2122,7 +2122,7 @@ class UiTests : public QObject {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
             auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ArmyEditor editor(&project,&undo,[]{});editor.resize(1300,820);editor.show();
-            auto models=editor.findChild<QListWidget *>("armyModels");QVERIFY(models);QCOMPARE(models->count(),64);
+            auto models=editor.findChild<QListWidget *>("armyModels");QVERIFY(models);QVERIFY(models->count()>0);
             editor.selectModel(3,24);QCOMPARE(models->count(),64);auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");QVERIFY(canvas);QVERIFY(!canvas->isEnabled());
             auto create=editor.findChild<QPushButton *>("armyCreate");QVERIFY(create->isEnabled());create->click();QVERIFY(canvas->isEnabled());QVERIFY(project.armyArtwork()->present(3,24));QCOMPARE(project.armyArtwork()->indices(3,24),QByteArray(384,char(-1)));
             editor.findChild<QSpinBox *>("armyInk")->setValue(1);QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,3)*canvas->zoom()+QPoint(2,2));
@@ -2145,6 +2145,75 @@ class UiTests : public QObject {
             editor.findChild<QPushButton *>("armyRestoreRoute")->click();QVERIFY(!project.armyArtwork()->routes().contains(165));undo.undo();QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[165]),56);
             editor.selectModel(4,16,0);QVERIFY(!editor.findChild<QPushButton *>("armyAssignRoute")->isEnabled());QVERIFY(editor.grab().save("army-artwork-loaded-workspace.png"));
         }catch(const Error &e){QFAIL(e.what());}
+    }
+    void classLabelsPreserveNames() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        QFile labels(":/catalog.json"); QVERIFY(labels.open(QIODevice::ReadOnly));
+        const auto catalog=QJsonDocument::fromJson(labels.readAll()).object();
+        auto project=Project::fromRom(Rom::open(path),catalog);
+        const auto original=project.classData();
+        const auto names=catalog["CLASS_NAMES"].toObject();
+        for (int id=0; id<165; ++id)
+            QCOMPARE(project.record(Table::Classes,id).name,names[QString::number(id)].toString());
+        QUndoStack undo;
+        RecordModel model(&project,Table::Classes,&undo);
+        const auto index=model.index(154,1);
+        QCOMPARE(index.data().toString(),QString("Sword Master (Kageiye)"));
+        QCOMPARE(index.data(Qt::EditRole).toString(),QString("Sword Master"));
+        QVERIFY(!model.setData(index,index.data(Qt::EditRole),Qt::EditRole));
+        QCOMPARE(project.classNameBytes(154),original.entries()[154].name);
+        QVERIFY(model.setData(index,"Custom duelist",Qt::EditRole));
+        QCOMPARE(index.data().toString(),QString("Custom duelist"));
+        undo.undo();
+        QCOMPARE(index.data().toString(),QString("Sword Master (Kageiye)"));
+        QCOMPARE(project.classNameBytes(154),original.entries()[154].name);
+        undo.redo();
+        QTemporaryDir work; project.saveFolder(work.filePath("project"));
+        auto reopened=Project::fromRom(project.rom(),catalog);
+        reopened.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(reopened.record(Table::Classes,154).name,QString("Custom duelist"));
+        QCOMPARE(reopened.classNameBytes(154),QByteArray("Custom duelist"));
+        QCOMPARE(reopened.record(Table::Classes,103).name,QString("Temple Cmdr (Baldwin)"));
+    }
+    void armyClassIsolation() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));
+        const int added=project.appendClass(5,"Separate Knight");
+        QUndoStack undo; ArmyEditor editor(&project,&undo,[]{}); editor.show();
+        editor.selectClass(added);
+        auto models=editor.findChild<QListWidget *>("armyModels");
+        QSet<int> listed;
+        for(int row=0;row<models->count();++row) listed << models->item(row)->data(Qt::UserRole+1).toInt();
+        QVERIFY(listed.contains(5)); QVERIFY(listed.contains(added));
+        const int source=ArmyArtwork::classModel(project.classData().entries()[5]);
+        const auto front=project.armyArtwork()->indices(0,source), back=project.armyArtwork()->indices(1,source);
+        auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");
+        editor.findChild<QSpinBox *>("armyInk")->setValue((u8(front,0)+1)%256);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,2));
+        const int copy=ArmyArtwork::classModel(project.classData().entries()[added]);
+        QVERIFY(copy!=source);
+        QCOMPARE(project.armyArtwork()->indices(0,source),front);
+        QCOMPARE(project.armyArtwork()->indices(1,source),back);
+        QCOMPARE(project.armyArtwork()->indices(1,copy),back);
+        const auto copied=project.armyArtwork()->indices(0,copy);
+        QVERIFY(copied!=front);
+        undo.undo(); QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[added]),source);
+        undo.redo(); QCOMPARE(project.armyArtwork()->indices(0,copy),copied);
+        editor.selectClass(5);
+        editor.findChild<QSpinBox *>("armyInk")->setValue((u8(front,0)+2)%256);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,2));
+        QCOMPARE(project.armyArtwork()->indices(0,copy),copied);
+        QTemporaryDir work; project.saveFolder(work.filePath("project"));
+        auto reopened=Project::fromRom(project.rom());
+        reopened.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(reopened.armyArtwork()->json(),project.armyArtwork()->json());
+        QCOMPARE(reopened.armyArtwork()->indices(0,copy),copied);
+        editor.selectClass(added);
+        editor.findChild<QPushButton *>("armyRestore")->click();
+        QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[added]),source);
+        QCOMPARE(project.armyArtwork()->indices(0,source),front);
     }
     void indexedPixelTools() {
         SpriteCanvas canvas;canvas.setZoom(8);canvas.setGrid(false);canvas.show();
@@ -3861,6 +3930,7 @@ class UiTests : public QObject {
             QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
             auto armyBoard = editor.findChild<FormationBoard *>("saveUnitCellBoard");
             QVERIFY(armyBoard);
+            QVERIFY(armyBoard->cellCenter(6).y() > armyBoard->cellCenter(0).y()); // Saved front row nearest viewer.
             auto dragSaveMember = [&](int from, int to) {
                 auto source = armyBoard->cell(from);
                 const auto start = source->mapFrom(armyBoard, armyBoard->cellCenter(from));

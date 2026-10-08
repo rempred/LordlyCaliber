@@ -6,14 +6,31 @@ descriptions, save a project, and choose Build and export ROM. The source ROM
 is read-only. The included N64 toolchain compiles game sources and edited data
 during export; no Decomp checkout is required.
 
+For local iteration, run `native/live/LordlyCaliber.exe`. The maintainer command
+`native/tools/package.ps1 -Live` updates that stable folder without creating a ZIP.
+Close the live editor after saving your work before updating it.
+
+Art / Combat animations provides class, action, side, mode and artwork-variant
+filters. Choosing an animation only previews it; **Assign** applies it. Normal
+assignments cover game modes0 and1; Blocked is mode2. Enable frame and sprite editing
+to create an independent class copy, then change timing/order, edit layers or paint
+a frame's sprite. Select a frame to inspect it; Play resumes sequence playback.
+The prior detailed controls remain under Art / Advanced animations.
+
+Art / Army sprites lists classes separately. Editing shared artwork automatically
+copies both facings for that class, leaving others unchanged. Shared-model editing
+is available explicitly in the advanced view. Legacy boss labels identify classes
+without changing their in-game names. Save and enemy formation boards both show
+cells7–9 in the front row.
+
 This is a local development build, not the published 0.5 release. Classes and Items provide
 record editing, descriptions, undo, project persistence and source-built export.
 US Rev 0 Classes also provides promotion requirements, family selection and
 creation, compatibility masks, and new classes through ID 255. Choose New class
 for fresh gameplay settings: 1 HP and 1 in each base stat, no equipment, attacks,
 family or stat requirements, and alignment range 0–100. It initially uses Knight
-artwork and animations, which can be changed in Sprite studio. Add class from
-selected remains available to copy a class's records, appearance, requirements and
+artwork and animations, which can be changed in Art. Copy Class
+remains available to copy a class's records, appearance, requirements and
 description. Create and assign family creates an independent family containing
 only the selected class. Choose its class-change rules directly: within family,
 within family plus Lich, within family plus Lich/Vampire, or no manual changes.

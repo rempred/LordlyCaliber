@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/class_data.h"
 #include <QImage>
+#include <QSet>
 #include <array>
 namespace lordly {
 struct ArmyAtlasSpec {
@@ -30,6 +31,7 @@ class ArmyArtwork {
         return routes_;
     }
     void setRoute(const ClassData &, int classId, int lane, int model);
+    int isolateClass(const ClassData &, int classId);
     void restoreRoute(int classId) {
         routes_.remove(classId);
     }
@@ -77,6 +79,7 @@ class ArmyArtwork {
     std::optional<Placement> placement_;
     QMap<int, QByteArray> edits_;
     QMap<int, ArmyClassRoute> routes_;
+    QSet<int> privateModels_; // Allocated copies may be reused after their class routes are restored.
     QMap<int, quint32> ownerWords_;
     QByteArray descriptor_;
 };

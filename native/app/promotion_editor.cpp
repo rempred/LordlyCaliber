@@ -86,7 +86,9 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
              [this](Promotion &p) { p.assign(id_, families_->currentData().toInt()); });
     });
     layout->addSpacing(12);
-    layout->addWidget(new QLabel("Linked families — shared manual class-change destinations"));
+    linksTitle_ = new QLabel;
+    linksTitle_->setWordWrap(true);
+    layout->addWidget(linksTitle_);
     links_ = new QListWidget;
     links_->setObjectName("familyLinks");
     links_->setMaximumHeight(170);
@@ -201,6 +203,7 @@ void PromotionEditor::refresh() {
         }
     }
     const int family = families_->currentData().toInt();
+    linksTitle_->setText(QString("Link Family %1 to other families — shares manual class-change destinations. The current family is omitted.").arg(family));
     links_->setEnabled(editable && family != 0);
     findChild<QPushButton *>("applyFamilyLinks")->setEnabled(editable && family != 0);
     if (available && editable) {

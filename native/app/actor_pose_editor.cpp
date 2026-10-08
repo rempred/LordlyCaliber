@@ -569,6 +569,7 @@ void ActorPoseEditor::loadBank() {
 }
 void ActorPoseEditor::restart() {
     stop();
+    selectedFrame_.reset();
     if (!art_ || poses_->currentIndex() < 0)
         return;
     if (kinds_->currentIndex() == 2)
@@ -597,6 +598,7 @@ void ActorPoseEditor::restart() {
 }
 void ActorPoseEditor::seek(int target) {
     stop();
+    selectedFrame_.reset();
     if (!art_)
         return;
     if (!player_ || target < step_ || suspendedPose())
@@ -617,6 +619,7 @@ void ActorPoseEditor::seek(int target) {
     draw();
 }
 void ActorPoseEditor::step() {
+    selectedFrame_.reset();
     if (!player_ || step_ >= position_->maximum()) {
         stop();
         return;
@@ -687,6 +690,11 @@ void ActorPoseEditor::setArtwork(const ActorArtworkEdits &edits) {
     renderer_.setArtwork(edits);
     draw();
 }
+void ActorPoseEditor::showFrame(int frame) {
+    stop();
+    selectedFrame_ = frame;
+    draw();
+}
 void ActorPoseEditor::draw() {
     // Drop observers before deleting selected scene items (selectionChanged is synchronous).
     items_.clear();
@@ -701,7 +709,8 @@ void ActorPoseEditor::draw() {
             drawProjected();
             return;
         }
-        const auto a = preview(*player_);
+        auto a = preview(*player_);
+        if (selectedFrame_) a.frame = *selectedFrame_;
         const auto body = appearance();
         const auto frame = body ? art_->bodyFrame(rom_, a.frame, *body, sepia_->isChecked(),
                                                   artwork_.value(art_->descriptorKey()))
@@ -767,6 +776,7 @@ void ActorPoseEditor::draw() {
                 .arg(fallbacks)
                 .arg(a.audio));
         setProperty("frameToken", a.frame);
+        if (selectedFrame_) status_->setText(QString("Selected frame %1 · Play resumes sequence playback").arg(a.frame));
         setProperty("poseCursor", a.cursor);
         setProperty("poseDelay", a.delay);
         setProperty("poseX", a.x);
@@ -789,6 +799,7 @@ std::optional<BodyAppearance> ActorPoseEditor::appearance() const {
 void ActorPoseEditor::drawProjected() {
     const auto &runtime = std::get<ActorPosePlayer>(*player_);
     auto pose = runtime.actor();
+    if (selectedFrame_) pose.frame = *selectedFrame_;
     pose.position.x += float(placement_[0]->value());
     pose.position.y += float(placement_[1]->value());
     pose.position.z += float(placement_[2]->value());

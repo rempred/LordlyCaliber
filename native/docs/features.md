@@ -8,6 +8,27 @@ preview behavior work; a visible tab alone does not count.
 
 ## Current checkpoint — 2026-10-07
 
+Combat animations now provides class, assigned action, player/enemy side, mode,
+artwork variant and animation selectors, an explicit Assign button, playback,
+frame timing/order/layers and per-frame sprite painting. Existing detailed editors
+remain under Advanced animations. Normal assignments retain the existing modes0/1
+patch semantics; Blocked is mode2. Linked fixed motions copy both component
+programs. Preview selection does not modify the project, and incomplete class
+searches disable editing instead of leaving the prior class active.
+
+Army artwork shows copied/new classes individually and separates both facings on
+first edit. Legacy boss labels are restored without changing ROM names. Save's
+front/rear display is corrected; the enemy boards already used front cells7–9.
+The live development folder is native/live; package.ps1 -Live updates it without
+a ZIP and refuses to replace an open live executable.
+
+Focused class-name/Save, Army isolation/shared editing, combat artwork, guided
+animation/linked-motion/pixel/Undo, existing sequence editing and full desktop
+workflows pass. Real-ROM Army and animation exports pass allocation/reference/
+checksum validation, project persistence and reopening. The live folder passes
+isolated startup and bundled compile/export/reopen. Captures were inspected.
+No new emulator session or complete in-game combat acceptance is claimed.
+
 Boot/runtime correction: exported class relocation now preserves the original
 BSS clear and protects persistent data during the lower title/new-game heap reset.
 Old native exports are repairable by re-exporting. The reported black screen was

@@ -28,6 +28,7 @@ class ActorPoseEditor : public QWidget {
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
     void selectPrivateSequence(int classId,int flags,int state);
+    void showFrame(int frame);
     void setSpriteLibrary(std::function<void(SpriteAsset)>);
     SpriteAsset poseAsset() const;
 
@@ -81,5 +82,6 @@ class ActorPoseEditor : public QWidget {
     QVector<QGraphicsPixmapItem *> items_;
     bool fit_ = true;
     int step_ = 0;
+    std::optional<int> selectedFrame_;
 };
 } // namespace lordly

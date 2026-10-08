@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Class artwork identity and combat animation authoring
+
+The guided Combat animations page uses the existing AnimationSequences,
+AnimationOverrides and ActorPoseEditor owners. Selecting an animation previews it;
+Assign commits one undoable class/side/art-variant assignment. Existing OBSO Normal
+semantics cover modes0/1, while Blocked is mode2. Fixed Idle/Advance/Return/Hit
+motions copy programs into their fixed selectors, including the companion programs
+for linked classes. Raw editors remain under Advanced animations. Frame selection
+has a static preview that clears when playback resumes. Painting appends private
+sprite/frame resources for the selected instruction, retaining other frames and
+sprite variants. Native palette/opacity mapping is shared with CombatArtwork.
+
+Army artwork defaults to class entries. Shared models are detached on first edit,
+copying both facing planes into an unused slot beyond the loaded atlas extent.
+The six-bit model limit remains64 per group; allocation refuses when full rather
+than modifying another class. Optional privateModels in version1 project JSON
+identifies unused automatic copies that may be reused after route restoration.
+Explicit shared-model editing remains available in the advanced view.
+
+Legacy class labels are display metadata, distinct from encoded in-game names.
+Labels are retained while the name still matches the stock label's base name;
+authored names take precedence. Name editing uses raw text and therefore does not
+write boss annotations into the ROM. The immutable label catalog survives project
+cloning and Undo. FormationBoard uses front cells7–9 in both Save and enemy views;
+the earlier player-only display reversal was incorrect. Stored cells are unchanged.
+
 ## Persistent class data across startup and title transitions
 
 The entry-point BSS clear remains at RAM 0x800AEDB0..0x800E9C20. Its start

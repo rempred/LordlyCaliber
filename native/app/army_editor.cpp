@@ -65,7 +65,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     setObjectName("armyEditor");
     auto outer = new QVBoxLayout(this);
     outer->addWidget(
-        new QLabel("<b>Army and formation sprites</b> · Shared models with two fixed palettes"));
+        new QLabel("<b>Army and formation sprites</b> · Select a class to edit its own artwork"));
     notice_ = new QLabel;
     notice_->setObjectName("armyNotice");
     notice_->setWordWrap(true);
@@ -93,14 +93,15 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     });
     action("Export PNG…", "armyExport", [this] {
         const auto path = QFileDialog::getSaveFileName(this, "Export Army sprite",
-                                                       modelName(model_) + ".png", "PNG (*.png)");
+                                                       (class_ >= 0 ? project_->record(Table::Classes, class_).name : modelName(model_)) + ".png", "PNG (*.png)");
         if (!path.isEmpty())
             exportImage(path);
     });
     action("Copy to sprite library", "armyCopyToLibrary", [this] { copyToLibrary(); });
-    action("Restore loaded sprite", "armyRestore", [this] {
+    restoreSprite_ = action("Restore loaded sprite", "armyRestore", [this] {
         auto next = *project_->armyArtwork();
-        next.restore(atlas_, model_);
+        if (class_ >= 0 && next.routes().contains(class_)) next.restoreRoute(class_);
+        else next.restore(atlas_, model_);
         if (next.json() != project_->armyArtwork()->json())
             undo_->push(new ArmyCommand(project_, "Restore Army sprite", next.json()));
     });
@@ -115,6 +116,10 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     auto browser = new QWidget;
     auto browse = new QVBoxLayout(browser);
     browse->setContentsMargins(0, 0, 0, 0);
+    viewMode_ = new QComboBox;
+    viewMode_->setObjectName("armyViewMode");
+    viewMode_->addItems({"Classes — independent edits", "Shared models — advanced"});
+    browse->addWidget(viewMode_);
     atlasSelect_ = new QComboBox;
     atlasSelect_->setObjectName("armyAtlas");
     for (const auto &spec : ArmyArtwork::specs())
@@ -263,10 +268,14 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     outer->addWidget(notice_);
     connect(atlasSelect_, &QComboBox::currentIndexChanged, this, [this](int i) {
         if (!refreshing_) {
+            if (atlas_ / 2 != i / 2) class_ = -1;
             atlas_ = i;
             model_ = 0;
             refresh();
         }
+    });
+    connect(viewMode_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!refreshing_) { class_ = -1; refresh(); }
     });
     connect(paletteSelect_, &QComboBox::currentIndexChanged, this, [this](int i) {
         if (!refreshing_) {
@@ -277,6 +286,11 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     connect(models_, &QListWidget::currentRowChanged, this, [this](int row) {
         if (!refreshing_ && row >= 0) {
             model_ = models_->item(row)->data(Qt::UserRole).toInt();
+            class_ = models_->item(row)->data(Qt::UserRole + 1).toInt();
+            if (class_ >= 0) {
+                const QSignalBlocker block(routeClass_);
+                routeClass_->setCurrentIndex(routeClass_->findData(class_));
+            }
             refreshPlane();
         }
     });
@@ -342,8 +356,8 @@ ArmyEditor::~ArmyEditor() {
 void ArmyEditor::guarded(const std::function<void()> &action) {
     try {
         action();
-        notice_->setText("Sprite edits affect every listed class and both palettes. The palettes "
-                         "remain unchanged.");
+        notice_->setText(class_ >= 0 ? "Changes affect only the selected class. Both fixed palettes use these pixel indices."
+                                    : "Advanced shared-model editing affects every listed class. Both palettes use these pixel indices.");
     } catch (const std::exception &e) {
         refresh();
         notice_->setText(QString::fromUtf8(e.what()));
@@ -360,8 +374,20 @@ void ArmyEditor::selectModel(int atlas, int model, int palette) {
     if (!project_->armyArtwork())
         throw Error("Army artwork is unavailable");
     project_->armyArtwork()->words(atlas, model, palette);
+    {const QSignalBlocker block(viewMode_); viewMode_->setCurrentIndex(1);}
+    class_ = -1;
     atlas_ = atlas;
     model_ = model;
+    paletteOrdinal_ = palette;
+    refresh();
+}
+void ArmyEditor::selectClass(int id, int facing, int palette) {
+    const auto classes = project_->classData();
+    if (id < 0 || id >= classes.entries().size() || facing < 0 || facing > 1)
+        throw Error("Invalid Army class or facing");
+    {const QSignalBlocker block(viewMode_); viewMode_->setCurrentIndex(0);}
+    class_ = id;
+    atlas_ = ArmyArtwork::classLane(classes.entries()[id]) * 2 + facing;
     paletteOrdinal_ = palette;
     refresh();
 }
@@ -370,20 +396,26 @@ void ArmyEditor::refresh() {
     if (!project_->armyArtwork())
         return;
     refreshing_ = true;
+    const auto classes = project_->classData();
+    if (viewMode_->currentIndex() == 0 && class_ >= 0 && class_ < classes.entries().size()) {
+        atlas_ = ArmyArtwork::classLane(classes.entries()[class_]) * 2 + atlas_ % 2;
+        model_ = ArmyArtwork::classModel(classes.entries()[class_]);
+    }
     atlasSelect_->setCurrentIndex(atlas_);
     paletteSelect_->setCurrentIndex(paletteOrdinal_);
     models_->clear();
-    const auto classes = project_->classData();
-    for (int model = 0; model < ArmyArtwork::specs()[atlas_].capacity; ++model) {
+    const auto append = [&](int model, int classId) {
         const bool present = project_->armyArtwork()->present(atlas_, model);
+        const auto label = classId >= 0 ? QString("%1 · %2").arg(classId).arg(project_->record(Table::Classes, classId).name)
+                                       : QString("0x%1 · %2").arg(model, 2, 16, QChar('0')).arg(modelName(model));
         auto item = new QListWidgetItem(
-            QString("0x%1 · %2%3%4")
-                .arg(model, 2, 16, QChar('0'))
-                .arg(modelName(model))
+            QString("%1%2%3")
+                .arg(label)
                 .arg(present ? "" : " · missing")
                 .arg(project_->armyArtwork()->modified(atlas_, model) ? " *" : ""),
             models_);
         item->setData(Qt::UserRole, model);
+        item->setData(Qt::UserRole + 1, classId);
         item->setIcon(
             QPixmap::fromImage(project_->armyArtwork()
                                    ->image(atlas_, model, paletteOrdinal_)
@@ -393,11 +425,27 @@ void ArmyEditor::refresh() {
             names << project_->record(Table::Classes, id).name;
         item->setToolTip(item->text() + "\n" + names.join(", "));
         item->setHidden(!item->toolTip().contains(search_->text(), Qt::CaseInsensitive));
-        if (model == model_)
+        if (classId >= 0 ? classId == class_ : model == model_)
             models_->setCurrentItem(item);
+    };
+    if (viewMode_->currentIndex() == 0) {
+        for (int id = 1; id < classes.entries().size(); ++id)
+            if (ArmyArtwork::classLane(classes.entries()[id]) == atlas_ / 2)
+                append(ArmyArtwork::classModel(classes.entries()[id]), id);
+    } else {
+        class_ = -1;
+        for (int model = 0; model < ArmyArtwork::specs()[atlas_].capacity; ++model) append(model, -1);
+    }
+    if (!models_->currentItem() && models_->count()) models_->setCurrentRow(0);
+    if (models_->currentItem()) {
+        model_ = models_->currentItem()->data(Qt::UserRole).toInt();
+        class_ = models_->currentItem()->data(Qt::UserRole + 1).toInt();
     }
     const auto selectedClass =
-        routeClass_->currentData().isValid() ? routeClass_->currentData().toInt() : 1;
+        class_ >= 0 ? class_ : routeClass_->currentData().isValid() ? routeClass_->currentData().toInt() : 1;
+    for (auto widget : {static_cast<QWidget *>(routeClass_), static_cast<QWidget *>(assignRoute_),
+                        static_cast<QWidget *>(restoreRoute_), static_cast<QWidget *>(findChild<QPushButton *>("armyShowRoute"))})
+        widget->setVisible(viewMode_->currentIndex() == 1);
     {
         QSignalBlocker blocker(routeClass_);
         routeClass_->clear();
@@ -456,7 +504,7 @@ void ArmyEditor::refreshPlane() {
                                .scaled(spec.width * 3, spec.height * 3, Qt::IgnoreAspectRatio,
                                        Qt::FastTransformation)));
     title_->setText(QString("%1 · Model 0x%2 · %3 × %4%5")
-                        .arg(modelName(model_))
+                        .arg(class_ >= 0 ? project_->record(Table::Classes, class_).name : modelName(model_))
                         .arg(model_, 2, 16, QChar('0'))
                         .arg(spec.width)
                         .arg(spec.height)
@@ -465,10 +513,12 @@ void ArmyEditor::refreshPlane() {
     for (const auto id : project_->armyArtwork()->consumers(project_->classData(), atlas_, model_))
         names << QString("%1 (%2)").arg(project_->record(Table::Classes, id).name).arg(id);
     consumers_->setText(names.isEmpty() ? "No current class uses this model."
-                                        : "Shared by: " + names.join(", "));
+                       : (class_ >= 0 ? "Currently uses the same source artwork as: " : "Shared by: ") + names.join(", "));
+    restoreSprite_->setText(class_ >= 0 ? "Restore class artwork" : "Restore loaded sprite");
     notice_->setText(
         present
-            ? "Paint indices to retain both palette appearances. Edits affect every listed class."
+            ? (class_ >= 0 ? "Editing automatically separates shared artwork. Other classes remain unchanged."
+                           : "Paint indices to retain both palette appearances. Edits affect every listed class.")
             : "This plane is absent in the loaded ROM. Create a plane or import "
               "artwork to author it.");
     refreshRoute();
@@ -496,7 +546,9 @@ void ArmyEditor::refreshRoute() {
 }
 void ArmyEditor::apply(const QByteArray &pixels, const QString &label) {
     auto next = *project_->armyArtwork();
-    next.setIndices(atlas_, model_, pixels);
+    if (pixels == next.indices(atlas_, model_)) return;
+    const int destination = class_ >= 0 ? next.isolateClass(project_->classData(), class_) : model_;
+    next.setIndices(atlas_, destination, pixels);
     if (next.json() != project_->armyArtwork()->json())
         undo_->push(new ArmyCommand(project_, label, next.json()));
 }
@@ -509,7 +561,7 @@ QString ArmyEditor::copyToLibrary() {
     if (!project_->armyArtwork()->present(atlas_, model_))
         throw Error("Create or import this plane first");
     auto asset =
-        SpriteAsset::fromImage(modelName(model_) + " · " + ArmyArtwork::specs()[atlas_].label,
+        SpriteAsset::fromImage((class_ >= 0 ? project_->record(Table::Classes, class_).name : modelName(model_)) + " · " + ArmyArtwork::specs()[atlas_].label,
                                project_->armyArtwork()->image(atlas_, model_, paletteOrdinal_));
     asset.provenance = {{"gameSource", "army-sprite"},
                         {"atlas", ArmyArtwork::specs()[atlas_].slug},

@@ -564,7 +564,7 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     layout->addWidget(new QLabel(formSquad ? "Leader class" : "Class")); layout->addWidget(choices);
     auto cell = new QComboBox;
     cell->setObjectName("saveNewSquadCell");
-    for (int i=0; i<9; ++i) cell->addItem(QString("Cell %1 · %2").arg(i+1).arg(i<3 ? "Front" : i<6 ? "Middle" : "Rear"),i);
+    for (int i=0; i<9; ++i) cell->addItem(QString("Cell %1 · %2").arg(i+1).arg(i<3 ? "Rear" : i<6 ? "Middle" : "Front"),i);
     cell->setCurrentIndex(4);
     if (formSquad) {layout->addWidget(new QLabel("Starting position"));layout->addWidget(cell);}
     else cell->setParent(&dialog);

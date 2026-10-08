@@ -6,6 +6,7 @@
 #include "app/sprite_library_command.h"
 #include "engine/sprite_object.h"
 #include "engine/sprite_sources.h"
+#include "engine/animation_transfer.h"
 #include <QComboBox>
 #include <QCompleter>
 #include <QFileDialog>
@@ -17,6 +18,8 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScopedValueRollback>
+#include <QSignalBlocker>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
@@ -65,12 +68,14 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("animationSequenceEditor");
     auto layout = new QVBoxLayout(this);
-    layout->addWidget(new QLabel("<b>Private class sequences</b>"));
+    auto title = new QLabel("<b>Private class sequences</b>");
+    layout->addWidget(title);
     auto description = new QLabel(
         "Create an independent copy for a class and body route. Edit frame timing and order while "
         "retaining the pose's control instructions. The preview uses the current project.");
     description->setWordWrap(true);
     layout->addWidget(description);
+    advanced_ << title << description;
     notice_ = new QLabel;
     notice_->setObjectName("sequenceNotice");
     notice_->setWordWrap(true);
@@ -97,6 +102,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     choices->addWidget(routes_);
     choices->addWidget(poses_);
     layout->addLayout(choices);
+    advanced_ << classes_ << routes_ << poses_;
     auto buttons = new QHBoxLayout;
     create_ = new QPushButton("Make private copy");
     create_->setObjectName("sequenceCreate");
@@ -207,6 +213,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
              [](PoseBank &bank, int state, int row) { bank.moveFrame(state, row, row + 1); });
     });
     add("Edit frame layers", "sequenceEditLayers", 3, 0, [this] { editLayers(); });
+    add("Paint frame sprite…", "sequenceEditSprite", 5, 0, [this] { editSprite(); });
     add("Copy frame art…", "sequenceCopyFrameArt", 4, 0, [this] {
         if (records_->currentRow() < 0) throw Error("Choose a destination frame instruction");
         chooseSource(false, records_->currentRow(), false);
@@ -250,6 +257,10 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
                              .composite(libraryFrame_->value() - 1));
         });
     });
+    assignmentControls_ = new QWidget;
+    auto assignmentForm = new QFormLayout(assignmentControls_);
+    assignmentForm->setContentsMargins(0, 0, 0, 0);
+    form->addRow(assignmentControls_);
     auto attackRow = new QHBoxLayout;
     actions_ = new QComboBox;
     actions_->setObjectName("sequenceAttack");
@@ -262,7 +273,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     attackModes_->addItems({"Normal", "Blocked"});
     attackRow->addWidget(actions_, 1);
     attackRow->addWidget(attackModes_);
-    form->addRow("Attack", attackRow);
+    assignmentForm->addRow("Attack", attackRow);
     auto assignmentButtons = new QHBoxLayout;
     auto assign = new QPushButton("Copy pose to attack");
     assign->setObjectName("sequenceAssignAttack");
@@ -270,11 +281,11 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     restore->setObjectName("sequenceRestoreAttack");
     assignmentButtons->addWidget(assign);
     assignmentButtons->addWidget(restore);
-    form->addRow(assignmentButtons);
+    assignmentForm->addRow(assignmentButtons);
     assignmentSummary_ = new QLabel;
     assignmentSummary_->setObjectName("sequenceAssignmentSummary");
     assignmentSummary_->setWordWrap(true);
-    form->addRow(assignmentSummary_);
+    assignmentForm->addRow(assignmentSummary_);
     connect(actions_, &QComboBox::currentIndexChanged, this, [this] { refreshAssignments(); });
     connect(assign, &QPushButton::clicked, this, [this] {
         guarded([this] {
@@ -301,7 +312,11 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     panel->addWidget(summary_);
     preview_ = new ActorPoseEditor(project_->rom());
     preview_->setObjectName("sequencePreview");
-    split->addWidget(left);
+    auto leftScroll = new QScrollArea;
+    leftScroll->setWidgetResizable(true);
+    leftScroll->setFrameShape(QFrame::NoFrame);
+    leftScroll->setWidget(left);
+    split->addWidget(leftScroll);
     split->addWidget(preview_);
     split->setStretchFactor(0, 2);
     split->setStretchFactor(1, 3);
@@ -343,6 +358,53 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
     refresh();
 }
+void AnimationSequenceEditor::setContext(int id, int flags, int pose) {
+    if (!classes_) return;
+    {
+        const QSignalBlocker a(classes_), b(routes_);
+        classes_->setCurrentIndex(classes_->findData(id));
+        routes_->setCurrentIndex(flags);
+        preferredPose_ = pose;
+    }
+    refresh();
+}
+void AnimationSequenceEditor::setGuided(bool value) {
+    for (auto widget : advanced_) widget->setVisible(!value);
+    if (assignmentControls_) assignmentControls_->setVisible(!value);
+    create_->setText(value ? "Enable frame and sprite editing" : "Make private copy");
+    create_->setToolTip("Creates an independent animation set for this class, side and artwork variant. Other classes keep their artwork.");
+    remove_->setText(value ? "Restore this animation set" : "Remove private copy");
+    remove_->setToolTip("Restores all animations and assignments in this class, side and artwork variant. Undo can recover the edits.");
+}
+void AnimationSequenceEditor::assignAnimation(int action, bool blocked, int pose) {
+    const int id = selectedClass(), flags = routes_->currentIndex();
+    project_->loadCombatArtwork();
+    auto candidate = *project_;
+    auto sequences = *candidate.animationSequences();
+    if (!sequences.find(id, flags))
+        sequences.create(id, flags, *candidate.animationRoutes(), candidate.combatArtwork()->previewEdits());
+    if (action < 0) {
+        const QMap<int, int> fixed{{-1, 0}, {-2, 5}, {-3, 11}, {-4, 17}};
+        if (!fixed.contains(action)) throw Error("Unknown combat motion");
+        const auto source = *sequences.find(id, flags);
+        const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
+                                          project_->bodyAnimationData()).withDescriptor(source);
+        auto target = copyAnimationPose(project_->rom(), source, fixed[action], source, art, pose, true);
+        if (owner(id) == 10 || owner(id) == 25 || owner(id) == 123) {
+            const auto pairs = sequences.groups().value(id * 4 + flags).pairedPoses;
+            const int companion = pose < 50 ? pose + 50 : pairs.value(pose, -1);
+            if (companion < 0) throw Error("Choose a primary animation with a linked companion");
+            target = copyAnimationPose(project_->rom(), target, fixed[action] + 50,
+                                       source, art, companion, true);
+        }
+        sequences.setDescriptor(id, flags, target);
+        candidate.setAnimationSequences(sequences.json());
+    } else {
+        candidate.setAnimationSequences(sequences.json());
+        candidate.assignPrivateAttack(id, flags, action, blocked, pose, false);
+    }
+    publish(candidate, "Assign combat animation");
+}
 int AnimationSequenceEditor::selectedClass() const {
     if (classes_->currentIndex() < 0 ||
         classes_->currentText() != classes_->itemText(classes_->currentIndex()))
@@ -359,14 +421,18 @@ AnimationDescriptor AnimationSequenceEditor::descriptor() const {
         return *value;
     const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
                                         project_->bodyAnimationData());
-    return AnimationDescriptor::load(project_->rom(), art.descriptorKey());
+    return AnimationDescriptor::load(project_->rom(), art.descriptorKey(),
+        project_->combatArtwork() ? project_->combatArtwork()->previewEdits().value(art.descriptorKey())
+                                  : QMap<int, QByteArray>{});
 }
 void AnimationSequenceEditor::guarded(const std::function<void()> &action) {
     try {
         action();
         notice_->clear();
+        notice_->hide();
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what()));
+        notice_->show();
     }
 }
 void AnimationSequenceEditor::apply(AnimationSequences next, const QString &label) {
@@ -435,6 +501,7 @@ void AnimationSequenceEditor::selectRecord() {
         return;
     frame_->setValue(token(records[row]));
     ticks_->setValue(u8(records[row].operands, records[row].operands.size() - 1));
+    preview_->showFrame(token(records[row]));
 }
 void AnimationSequenceEditor::editLayers() {
     const int id = selectedClass(), flags = routes_->currentIndex(),
@@ -635,7 +702,6 @@ void AnimationSequenceEditor::refresh() {
                 records_->setItem(i, col, new QTableWidgetItem(values[col]));
         }
         records_->selectRow(std::clamp(row, 0, std::max(0, int(records.size()) - 1)));
-        selectRecord();
         summary_->setText(QString("%1 · %2 pose instructions · %3 available frames")
                               .arg(owned ? "Private copy" : "Shared original")
                               .arg(records.size())
@@ -650,6 +716,7 @@ void AnimationSequenceEditor::refresh() {
             preview_->setArtwork(project_->combatArtwork()->previewEdits());
         preview_->selectPrivateSequence(selectedClass(), routes_->currentIndex(),
                                         poses_->currentData().toInt());
+        selectRecord();
         refreshAssignments();
     });
 }

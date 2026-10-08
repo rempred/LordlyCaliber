@@ -17,6 +17,19 @@
 #include <tuple>
 
 namespace lordly {
+namespace {
+QString classLabel(const QJsonObject &labels, int id, const QString &name) {
+    const auto label = labels[QString::number(id)].toString();
+    if (label.isEmpty()) return name;
+    auto stock = label.section(" (", 0, 0);
+    // Two legacy display abbreviations differ from the game's class-name text.
+    if (stock == "Temple Cmdr") stock = "Temple Command";
+    if (stock == "Danika Tendril") stock = "Danika";
+    const auto compact = [](QString s) { return s.remove(' ').toLower(); };
+    return name.simplified() == stock || compact(name.simplified()) == compact(label)
+               ? label : name;
+}
+}
 QString tableKey(Table t) {
     switch (t) {
     case Table::Classes:
@@ -70,7 +83,7 @@ const QVector<Field> &fields(Table table) {
         add("baseTransitionLevel", "First transition level", "Growth", 66);
         add("intermediateClass", "Intermediate growth class", "Growth", 67, 1, "CLASS_NAMES");
         add("finalTransitionLevel", "Second transition level", "Growth", 68);
-        add("classCopyMatch", "Class-copy match", "Growth", 69, 1, "CLASS_NAMES");
+        add("classCopyMatch", "Secondary class link", "Growth", 69, 1, "CLASS_NAMES");
         add("element", "Default element", "Combat", 70, 1, "DEFAULT_ELEMENTS");
         add("itemCapacity", "Carried-item contribution", "Equipment",
             ClassData::itemCapacityOffset);
@@ -140,6 +153,8 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     Project p;
     p.rom_ = std::move(rom);
     p.catalog_ = catalog;
+    p.catalog_["CLASS_LABELS"] = catalog.contains("CLASS_LABELS")
+                                     ? catalog["CLASS_LABELS"] : catalog["CLASS_NAMES"];
     const auto classPlacement = ClassPlacement::read(p.rom_);
     if (!p.rom_.revision()) {
         try {
@@ -202,7 +217,8 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             r.name = names.value(QString::number(id))
                          .toString(QString("%1 %2").arg(cls ? "Class" : "Item").arg(id));
             if (cls && p.originalClasses_)
-                r.name = decodeText(p.originalClasses_->entries()[id].name);
+                r.name = classLabel(p.catalog_["CLASS_LABELS"].toObject(), id,
+                                    decodeText(p.originalClasses_->entries()[id].name));
             if (table == Table::Items && p.originalItems_)
                 r.name = decodeText(p.originalItems_->entries()[id].name);
             if (cls || table == Table::Items)
@@ -534,7 +550,8 @@ void Project::setClassNameBytes(int row, const QByteArray &name) {
         classNames_.remove(row);
     else
         classNames_[row] = name;
-    tables_.at(Table::Classes)[row].name = decodeText(name);
+    tables_.at(Table::Classes)[row].name =
+        classLabel(catalog_["CLASS_LABELS"].toObject(), row, decodeText(name));
     auto names = catalog_["CLASS_NAMES"].toObject();
     names[QString::number(row)] = tables_.at(Table::Classes)[row].name;
     catalog_["CLASS_NAMES"] = names;

@@ -1,4 +1,7 @@
 #include "app/animation_sequence_editor.h"
+#include "app/combat_animation_editor.h"
+#include "app/sprite_editor.h"
+#include "app/theme.h"
 #include "engine/actor_art.h"
 #include "engine/actor_pose.h"
 #include "engine/animation_transfer.h"
@@ -31,6 +34,135 @@ class SequenceEditorTests : public QObject {
   private slots:
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
+    }
+    void guidedCombatWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            applyEditorTheme(*qApp);
+            auto project = Project::fromRom(Rom::open(path)); QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {}); editor.resize(1440, 960); editor.show();
+            const auto combo = [&](const char *name) { return editor.findChild<QComboBox *>(name); };
+            const auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
+            auto classes = combo("combatAnimationClass"), actions = combo("combatAnimationAction"),
+                 choice = combo("combatAnimationChoice"), side = combo("combatAnimationSide"), mode = combo("combatAnimationMode");
+            classes->setCurrentIndex(classes->findData(2));
+            const int action = u8(project.record(Table::Classes, 2).bytes, 55);
+            QVERIFY(actions->findData(action) >= 0);
+            actions->setCurrentIndex(actions->findData(action)); side->setCurrentIndex(1); mode->setCurrentIndex(1);
+            const auto initial = project.animationSequences()->json(), overrides = project.animationOverrides()->json();
+            const auto body = project.bodyAnimationData();
+            const int old = body->selector(2, 2, action, 2, 1), normal = body->selector(2, 2, action, 0, 1), player = body->selector(2, 2, action, 2, 0);
+            QCOMPARE(choice->currentData().toInt(), old);
+            const int replacement = old == 0 ? 40 : 0;
+            QVERIFY(choice->findData(replacement) >= 0); choice->setCurrentIndex(choice->findData(replacement));
+            QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(project.animationOverrides()->json(), overrides); QCOMPARE(undo.count(), 0);
+            const auto classText = classes->currentText(); classes->setEditText("unfinished class search");
+            QVERIFY(!button("combatAnimationAssign")->isEnabled());
+            QVERIFY(!editor.findChild<AnimationSequenceEditor *>()->isEnabled());
+            QCOMPARE(project.animationSequences()->json(), initial);
+            classes->setEditText(classText);
+            button("combatAnimationAssign")->click();
+            QVERIFY2(project.animationSequences()->find(2, 1), qPrintable(editor.findChild<QLabel *>("combatAnimationNotice")->text()));
+            QCOMPARE(undo.count(), 1);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, action, 2, 1), replacement);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, action, 0, 1), normal);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, action, 2, 0), player);
+            const auto assigned = project.animationSequences()->json();
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(project.animationOverrides()->json(), overrides);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), assigned);
+            auto records = editor.findChild<QTableWidget *>("sequenceRecords");
+            int selected = -1;
+            for (int i = 0; i < records->rowCount(); ++i) if (records->item(i, 0)->text() == "Frame") { selected = i; break; }
+            QVERIFY(selected >= 0); records->selectRow(selected);
+            const auto original = *project.animationSequences()->find(2, 1);
+            const auto command = original.poses().effective(replacement).records[selected];
+            const auto frameToken = [](const PoseRecord &r) { return u8(r.operands, 0) + (r.opcode == 21 ? 256 * u8(r.operands, 1) : 0); };
+            const auto frame = original.frame(frameToken(command)); const int artId = u16(frame, 2);
+            const auto sprite = SpriteObject::decode(original.sprite(artId));
+            const auto config = original.controls()[2];
+            const auto palette = original.controls()[3].mid(u8(config, u32(config, 0x1c) + artId) * 512, 512);
+            const auto pixels = sprite.frame(0, palette).image;
+            QPoint painted(-1, -1);
+            for (int y = 0; y < pixels.height && painted.x() < 0; ++y)
+                for (int x = 0; x < pixels.width; ++x) if (u8(pixels.rgba, (y * pixels.width + x) * 4 + 3)) { painted = {x, y}; break; }
+            QVERIFY(painted.x() >= 0);
+            QString problem;
+            const auto respond = [&](bool accept) {
+                QTimer::singleShot(50, [&editor, &problem, painted, accept] {
+                    auto dialog = editor.findChild<QDialog *>("sequenceSpriteDialog");
+                    if (!dialog) { problem = "Missing sprite painter"; return; }
+                    QTimer::singleShot(5000, dialog, &QDialog::reject);
+                    auto canvas = dialog->findChild<SpriteCanvas *>("sequenceSpriteCanvas");
+                    if (!canvas || !canvas->isEnabled()) { problem = "Sprite canvas is unavailable"; dialog->reject(); return; }
+                    canvas->setTool(SpriteCanvas::Tool::Eraser);
+                    QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, painted * canvas->zoom() + QPoint(2, 2));
+                    auto ok = dialog->findChild<QDialogButtonBox *>("sequenceSpriteButtons")->button(QDialogButtonBox::Ok);
+                    if (!ok->isEnabled()) { problem = "Painting produced no editable frame"; dialog->reject(); return; }
+                    dialog->grab().save("native/build/combat-sprite-painter.png");
+                    if (accept) ok->click(); else dialog->reject();
+                });
+            };
+            respond(false); button("sequenceEditSprite")->click();
+            QVERIFY2(problem.isEmpty(), qPrintable(problem)); QCOMPARE(project.animationSequences()->json(), assigned); QCOMPARE(undo.count(), 1);
+            respond(true); button("sequenceEditSprite")->click();
+            QVERIFY2(problem.isEmpty(), qPrintable(problem)); QCOMPARE(undo.count(), 2);
+            const auto changed = *project.animationSequences()->find(2, 1);
+            const auto changedFrame = changed.frame(frameToken(changed.poses().effective(replacement).records[selected]));
+            QCOMPARE(editor.findChild<QWidget *>("sequencePreview")->property("frameToken").toInt(),
+                     frameToken(changed.poses().effective(replacement).records[selected]));
+            const int newArt = u16(changedFrame, 2); QVERIFY(newArt != artId);
+            QCOMPARE(changed.sprite(artId), original.sprite(artId));
+            const auto changedSprite = SpriteObject::decode(changed.sprite(newArt));
+            QVERIFY(changedSprite.pixels(0) != sprite.pixels(0));
+            for (int i = 1; i < sprite.children().size(); ++i) QCOMPARE(changedSprite.pixels(i), sprite.pixels(i));
+            const auto after = project.animationSequences()->json();
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), assigned);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), after);
+            QTest::qWait(30); QVERIFY(editor.grab().save("native/build/combat-animation-workflow.png"));
+            button("actorStep")->click();
+            QVERIFY(!editor.findChild<QLabel *>("actorStatus")->text().startsWith("Selected frame"));
+            QCOMPARE(project.animationSequences()->json(), after);
+            // A linked class has two pose programs for every fixed combat motion.
+            classes->setCurrentIndex(classes->findData(10)); side->setCurrentIndex(0);
+            actions->setCurrentIndex(actions->findData(-1)); choice->setCurrentIndex(choice->findData(5));
+            const auto linkedArt = ActorArt::loadBody(project.rom(), 10, 10, 0, 0, project.bodyAnimationData());
+            const auto linkedSource = AnimationDescriptor::load(project.rom(), linkedArt.descriptorKey());
+            button("combatAnimationAssign")->click();
+            QVERIFY2(project.animationSequences()->find(10, 0), qPrintable(editor.findChild<QLabel *>("combatAnimationNotice")->text()));
+            const auto linkedTarget = *project.animationSequences()->find(10, 0);
+            const auto targetArt = linkedArt.withDescriptor(linkedTarget);
+            const auto appearance = linkedArt.defaultAppearance(project.rom());
+            for (int offset : {0, 50}) {
+                const auto from = linkedSource.poses().effective(5 + offset).records;
+                const auto to = linkedTarget.poses().effective(offset).records;
+                QCOMPARE(from.size(), to.size());
+                for (int i = 0; i < from.size(); ++i) if (from[i].opcode == 1 || from[i].opcode == 21) {
+                    const auto expected = linkedArt.bodyFrame(project.rom(), frameToken(from[i]), appearance);
+                    const auto actual = targetArt.bodyFrame(project.rom(), frameToken(to[i]), appearance);
+                    QCOMPARE(actual.size(), expected.size());
+                    for (int j = 0; j < actual.size(); ++j) {
+                        QCOMPARE(actual[j].pixels.image.rgba, expected[j].pixels.image.rgba);
+                        QCOMPARE(actual[j].metadata.origin, expected[j].metadata.origin);
+                    }
+                }
+            }
+            const auto finalSequences = project.animationSequences()->json();
+            QTemporaryDir work; project.saveFolder(work.filePath("project"));
+            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopened.animationSequences()->json(), finalSequences);
+            const auto built = rebuild(reopened, tools, work.path());
+            QTemporaryDir candidates(QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-guided-combat-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName()); exportRom(reopened, built, output);
+            const auto exported = Rom::open(output); const auto runtime = BodyAnimationData::load(exported);
+            QCOMPARE(runtime->selector(2, 2, action, 2, 1), replacement);
+            QCOMPARE(runtime->selector(2, 2, action, 0, 1), normal); QCOMPARE(runtime->selector(2, 2, action, 2, 0), player);
+            const auto exportedArt = ActorArt::loadBody(exported, 2, 2, 0, 1, runtime);
+            const auto exportedDescriptor = AnimationDescriptor::load(exported, exportedArt.descriptorKey());
+            QCOMPARE(exportedDescriptor.sprite(newArt), changed.sprite(newArt));
+            qInfo().noquote() << "Guided combat candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
     }
     void completeSequenceReplacement() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

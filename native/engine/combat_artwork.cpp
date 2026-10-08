@@ -257,14 +257,20 @@ QMap<QString, QByteArray> CombatArtwork::decodedResources() const {
 }
 SpritePixels CombatArtwork::mapImage(const QString &id, int child, const QImage &image,
                                      bool dither) const {
-    const auto sprite = original(id);
+    return mapSpriteImage(current(id), child, palette(id, child), image, dither);
+}
+SpritePixels CombatArtwork::mapSpriteImage(const SpriteObject &sprite, int child,
+                                           const QByteArray &palette, const QImage &image, bool dither) {
     if (image.size() != QSize(sprite.width(), sprite.height()))
         throw Error("Imported combat artwork must match its stored dimensions");
-    auto result = pixels(id, child);
-    const auto colors = palette(id, child);
+    auto result = sprite.pixels(child);
+    const auto embedded = sprite.materialize(child).palette;
+    const auto colors = embedded.isEmpty() ? palette : embedded;
     const int bytes = sprite.colorFormat() == 1 ? 1 : sprite.colorFormat() == 2 ? 2 : 4;
     auto expand = [](int value) { return (value * 255 + 15) / 31; };
-    const auto old = this->image(id, child);
+    const auto rendered = sprite.frame(child, palette).image;
+    const auto old = QImage(reinterpret_cast<const uchar *>(rendered.rgba.constData()),
+                           rendered.width, rendered.height, rendered.width * 4, QImage::Format_RGBA8888);
     for (int y = 0; y < image.height(); ++y)
         for (int x = 0; x < image.width(); ++x) {
             const int pixel = y * image.width() + x;

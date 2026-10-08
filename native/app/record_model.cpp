@@ -79,6 +79,8 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
         return role == Qt::DisplayRole
                    ? QVariant(QString("%1").arg(r.id, 2, 16, QChar('0')).toUpper())
                    : QVariant(r.id);
+    if (i.column() == 1 && role == Qt::EditRole && table_ == Table::Classes && project_->hasClassData())
+        return decodeText(project_->classNameBytes(i.row()));
     if (i.column() == 1)
         return r.name;
     const auto &f = fields(table_)[i.column() - 2];
@@ -123,7 +125,7 @@ bool RecordModel::setData(const QModelIndex &i, const QVariant &v, int role) {
     if (role != Qt::EditRole || !i.isValid() || !(flags(i) & Qt::ItemIsEditable))
         return false;
     if (i.column() == 1) {
-        if (v.toString() == project_->record(table_, i.row()).name)
+        if (v.toString() == data(i, Qt::EditRole).toString())
             return false;
         try {
             const auto name = table_ == Table::Items ? encodeItemName(v.toString())
