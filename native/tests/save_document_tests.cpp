@@ -23,6 +23,14 @@ class SaveDocumentTests : public QObject {
             const auto rom = Rom::open(path);
             const auto project = Project::fromRom(rom);
             QByteArray table;
+            QByteArray items;
+            const auto itemData = project.itemData();
+            for (const auto &r : itemData.entries())
+                items += r.record;
+            // These retail items have no growth bonuses. Distinct authored
+            // fields exercise each recovered getter, including HP/STR sharing.
+            put8(items, 210 * 32 + 24, 0x93); put8(items, 210 * 32 + 25, 0x6a);
+            put8(items, 277 * 32 + 24, 0x6c); put8(items, 277 * 32 + 25, 0xb9);
             for (const auto &r : project.records(Table::Classes))
                 table += r.bytes;
             struct Random {
@@ -36,21 +44,32 @@ class SaveDocumentTests : public QObject {
             };
             QJsonArray cases;
             const auto compare = [&](const QByteArray &classes, int primary, int secondary,
-                                     uint32_t draw) {
+                                     uint32_t draw, int level = 1, bool explicitEquipment = false) {
                 QByteArray before(56, char(0x6d));
                 before[17] = char(primary);
                 before[18] = char(secondary);
+                if (level > 1) {
+                    before.replace(42, 8, QByteArray(8, 0));
+                    if (explicitEquipment) {
+                        put16(before, 42, 277);
+                        put16(before, 46, 210);
+                    }
+                }
                 auto after = before;
                 Random state{0, draw};
-                if (!lordly_character_level_one(
-                        reinterpret_cast<uint8_t *>(after.data()),
+                if (!lordly_character_initialize(
+                        reinterpret_cast<uint8_t *>(after.data()), unsigned(level),
                         reinterpret_cast<const uint8_t *>(classes.constData()),
-                        unsigned(classes.size() / 72), random, &state))
+                        unsigned(classes.size() / 72),
+                        reinterpret_cast<const uint8_t *>(items.constData()),
+                        unsigned(items.size() / 32), random, &state))
                     throw Error("Unexpected initializer rejection");
+                QJsonArray draws;
+                for (unsigned i = 0; i < state.used; ++i) draws << int(draw);
                 cases << QJsonObject{{"classes", QString::fromLatin1(classes.toHex())},
                                      {"before", QString::fromLatin1(before.toHex())},
                                      {"after", QString::fromLatin1(after.toHex())},
-                                     {"draws", QJsonArray{int(draw), int(draw)}},
+                                     {"draws", draws}, {"level", level},
                                      {"used", int(state.used)}};
             };
             for (int id = 1; id < 165; ++id)
@@ -82,10 +101,20 @@ class SaveDocumentTests : public QObject {
             QVERIFY(!lordly_character_level_one(
                 reinterpret_cast<uint8_t *>(record.data()),
                 reinterpret_cast<const uint8_t *>(invalid.constData()), 165, random, &state));
+            for (int id : {1, 5, 22, 71, 98, 160})
+                for (int level : {2, 10, 30, 99})
+                    for (uint32_t draw : {0U, 1U})
+                        compare(table, id, id, draw, level, draw != 0);
+            auto transitions = table;
+            transitions[5 * 72 + 65] = 10; transitions[5 * 72 + 66] = 3;
+            transitions[5 * 72 + 67] = 33; transitions[5 * 72 + 68] = 7;
+            for (int level : {3, 4, 7, 8}) compare(transitions, 5, 5, 1, level);
+            for (int at : {8, 12, 16, 20, 24, 28, 32}) put16(transitions, 10 * 72 + at, 998);
+            compare(transitions, 5, 5, 1, 10, true);
             QTemporaryDir work;
             const auto file = work.filePath("character-reference.json");
             atomicWrite(
-                file, QJsonDocument(QJsonObject{{"cases", cases}}).toJson(QJsonDocument::Compact));
+                file, QJsonDocument(QJsonObject{{"cases", cases}, {"items", QString::fromLatin1(items.toHex())}}).toJson(QJsonDocument::Compact));
             QProcess reference;
             reference.start("node", {QFINDTESTDATA("army-character-mips.cjs"), file});
             QVERIFY(reference.waitForFinished(30000));
@@ -102,6 +131,7 @@ class SaveDocumentTests : public QObject {
                 QSKIP("Private ROM required");
             const auto rom = Rom::open(path);
             const auto project = Project::fromRom(rom);
+            const auto items = project.itemData();
             QTemporaryDir work;
             QProcess generator;
             generator.start("node",
@@ -139,13 +169,13 @@ class SaveDocumentTests : public QObject {
                     QVERIFY_THROWS_EXCEPTION(
                         Error, doc.planCreateCharacter(5, "Too long name", project.classData(), 7));
                     const auto create =
-                        doc.planCreateCharacter(5, "Recruit", project.classData(), 7);
+                        doc.planCreateCharacter(5, "Recruit", project.classData(), 7, 20, &items);
                     doc.apply(create, true);
                     QCOMPARE(doc.freeCharacterSlot(), 22);
                     QVERIFY(doc.reserveMembers().contains(21));
                     QCOMPARE(doc.value(SaveTable::Characters, 21, "name").toString(),
                              QString("Recruit"));
-                    QCOMPARE(doc.value(SaveTable::Characters, 21, "level").toInt(), 1);
+                    QCOMPARE(doc.value(SaveTable::Characters, 21, "level").toInt(), 20);
                     QCOMPARE(doc.value(SaveTable::Characters, 21, "hpMax"),
                              doc.value(SaveTable::Characters, 21, "hpCur"));
                     QCOMPARE(u8(doc.memory(), 0x193bc0 + 21 * 56 + 52), quint8(21));

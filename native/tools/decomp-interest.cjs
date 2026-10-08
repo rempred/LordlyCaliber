@@ -26,11 +26,13 @@ function main(args) {
   if (ready && !decomp) throw Error('--ready needs --decomp to read existing matching records');
   const catalog = read(path.join(native, 'game/decomp-interest.json'));
   if (catalog.schemaVersion !== 1) throw Error('Unsupported interest catalog schema');
-  const importsFile = path.join(native, 'game/accepted/animation-imports.json');
   const imported = new Map();
-  if (fs.existsSync(importsFile))
-    for (const entry of read(importsFile).imports)
-      for (const symbol of entry.symbols) imported.set(key(symbol), entry);
+  for (const manifest of ['animation-imports.json', 'gameplay-imports.json']) {
+    const importsFile = path.join(native, 'game/accepted', manifest);
+    if (fs.existsSync(importsFile))
+      for (const entry of read(importsFile).imports)
+        for (const symbol of entry.symbols) imported.set(key(symbol), entry);
+  }
   const sources = new Map(), evidence = new Map();
   let verifiedAt = null;
   if (decomp) {

@@ -4,6 +4,7 @@
 #include <QVector>
 namespace lordly {
 class ClassData;
+class ItemData;
 class Project;
 enum class SaveTable { Characters, Equipment, Consumables, Game };
 struct SaveField {
@@ -66,12 +67,13 @@ class SaveDocument {
     QVector<int> reserveMembers() const;
     int freeCharacterSlot() const;
     SaveChange planCreateCharacter(int classId, const QString &name, const ClassData &,
-                                   quint32 randomSeed) const;
+                                   quint32 randomSeed, int level = 1, const ItemData *items = nullptr) const;
     SaveChange planRemoveCharacter(int id) const;
     QVector<int> newUnitLeaders(const ClassData &) const;
     SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;
     SaveChange planRecruitUnit(int classId, const QString &name, int cell,
-                               const ClassData &, quint32 randomSeed) const;
+                               const ClassData &, quint32 randomSeed, int level = 1,
+                               const ItemData *items = nullptr) const;
     SaveChange planDisbandUnit(int index) const;
     int reserveSoldiers() const;
     int soldiersInGroup(int member) const;

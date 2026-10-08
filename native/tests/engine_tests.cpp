@@ -2669,7 +2669,7 @@ class EngineTests : public QObject {
                 const auto result = rebuild(project, tools, build.path());
                 const auto placed = ShopPlacement::read(Rom::fromBytes(result.image));
                 QVERIFY(placed);
-                QCOMPARE(placed->version, stage ? 3 : 2);
+                QCOMPARE(placed->version, 4);
                 QCOMPARE(placed->count, stage ? 37 : 36);
                 QCOMPARE(placed->offset % 16, 0U);
                 auto checksum = result.image;

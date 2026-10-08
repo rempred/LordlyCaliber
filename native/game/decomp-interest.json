@@ -255,11 +255,11 @@
     {
       "id": "character-creation", "priority": 2,
       "behavior": "New unit base stats, growth family and equipment",
-      "symbols": ["func_0004501C"],
+      "symbols": ["func_0004501C", "func_00044aa4", "func_000457e4", "func_00045820", "func_00045840", "func_0004585c", "func_00045878", "func_00045898", "func_000458b8"],
       "editorFiles": ["game/army/character.c", "engine/save_document.cpp"],
-      "editorUse": "partial",
+      "editorUse": "adapted",
       "benefit": "Use accepted initialization logic for the save editor's Add unit workflow.",
-      "preserve": "Only the level-one branch is currently implemented. Retain injected randomness, expanded-class validation and atomic record changes."
+      "preserve": "Levels 1–99, growth-class transitions, default/explicit equipment, retail HP/STR getter reuse and final luck reset. Preserve injected randomness, expanded IDs, bounds and atomic record changes."
     },
     {
       "id": "squad-behavior", "priority": 3,
@@ -274,9 +274,10 @@
       "id": "shop-rules", "priority": 3,
       "behavior": "Shop price, classification and menu rules",
       "symbols": ["func_0019BD14", "func_0019B21C", "func_0019B26C", "func_001994B4", "func_0019A294", "func_0019BE40"],
-      "editorFiles": ["engine/shops.cpp", "engine/shop_runtime.cpp", "rebuild/shop_runtime.cpp"],
-      "editorUse": "candidate",
-      "benefit": "Assess accepted price/classification helpers before adopting larger Shop state-machine functions; use them where they improve stock/equipment behavior or source-built exports.",
+      "editorFiles": ["engine/shops.cpp", "engine/shop_runtime.cpp", "rebuild/shop_runtime.cpp", "game/shops/stock.c"],
+      "editorUse": "partial",
+      "symbolUses": {"func_0019BE40": "adapted"},
+      "benefit": "The full stock producer uses accepted-derived C during export. Assess the remaining price/classification helpers when they improve an editor workflow.",
       "preserve": "Current expanded shop IDs, stronghold assignments and native Qt interaction. Porting the game's complete menu renderer is not required."
     }
   ]

@@ -1088,7 +1088,8 @@ int SaveDocument::freeCharacterSlot() const {
     return -1;
 }
 SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
-                                             const ClassData &classes, quint32 seed) const {
+                                             const ClassData &classes, quint32 seed, int level,
+                                             const ItemData *items) const {
     if (!canEditUnits())
         throw Error("Character creation requires a regular battery-save slot");
     const int id = freeCharacterSlot();
@@ -1096,22 +1097,29 @@ SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
         throw Error("There is no unassigned empty character slot in this save");
     if (classId < 1 || classId >= classes.entries().size() || classId >= classCount_)
         throw Error("Choose a class present in the current ROM project");
+    if (level < 1 || level > 99 || (level > 1 && !items))
+        throw Error("Choose a level from 1 to 99; growth requires the current project's items");
     const int secondary = u8(classes.entries()[classId].record, 69);
-    QByteArray record(stride, 0), table;
+    QByteArray record(stride, 0), table, equipment;
     record[17] = char(classId);
     record[18] = char(secondary ? secondary : classId);
     record[52] = char(id);
     for (const auto &entry : classes.entries())
         table += entry.record;
+    if (items)
+        for (const auto &entry : items->entries())
+            equipment += entry.record;
     const auto random = [](void *context) -> uint32_t {
         auto &state = *static_cast<quint32 *>(context);
         state = state * 1664525U + 1013904223U;
         return state >> 1;
     };
-    if (!lordly_character_level_one(reinterpret_cast<uint8_t *>(record.data()),
+    if (!lordly_character_initialize(reinterpret_cast<uint8_t *>(record.data()), unsigned(level),
                                     reinterpret_cast<const uint8_t *>(table.constData()),
-                                    unsigned(classes.entries().size()), random, &seed))
-        throw Error("The class has an invalid starting or secondary class reference");
+                                    unsigned(classes.entries().size()),
+                                    reinterpret_cast<const uint8_t *>(equipment.constData()),
+                                    unsigned(equipment.size() / 32), random, &seed))
+        throw Error("The class has an invalid starting, growth or equipment reference");
     if (u8(record, 20) > 7 || u8(record, 26) > 4 || u8(record, 27) > 100 || u8(record, 40) > 100 ||
         !u16(record, 22))
         throw Error(
@@ -1218,10 +1226,11 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
                       recordSize(slot_, expanded_));
 }
 SaveChange SaveDocument::planRecruitUnit(int classId, const QString &name, int cell,
-                                        const ClassData &classes, quint32 seed) const {
+                                        const ClassData &classes, quint32 seed, int level,
+                                        const ItemData *items) const {
     auto candidate = *this;
     const int leader = candidate.freeCharacterSlot();
-    candidate.apply(candidate.planCreateCharacter(classId, name, classes, seed), true);
+    candidate.apply(candidate.planCreateCharacter(classId, name, classes, seed, level, items), true);
     candidate.apply(candidate.planCreateUnit(leader, cell, classes), true);
     // Validate both operations before changing the loaded save; one Undo restores
     // the character, assignment, squad number and Army ordering together.

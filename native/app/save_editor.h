@@ -37,8 +37,8 @@ class SaveEditor : public QWidget {
     bool editUnit(int index, const QVector<int> &cells, int unity, int tactic);
     bool changeUnitLeader(int index, int member);
     bool createUnit(int leader, int cell);
-    bool createCharacter(int classId, const QString &name);
-    bool recruitUnit(int classId, const QString &name, int cell);
+    bool createCharacter(int classId, const QString &name, int level = 1);
+    bool recruitUnit(int classId, const QString &name, int cell, int level = 1);
     int promptAddCharacter(bool formSquad = false);
     void selectCharacter(int id);
     bool removeCharacter(int id);

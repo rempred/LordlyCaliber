@@ -2698,19 +2698,22 @@ class UiTests : public QObject {
                     return;
                 auto choices = dialog->findChild<QComboBox *>("saveNewCharacterClass");
                 auto name = dialog->findChild<QLineEdit *>("saveNewCharacterName");
-                offered = choices && name && choices->findData(added) >= 0;
+                auto level = dialog->findChild<QSpinBox *>("saveNewCharacterLevel");
+                offered = choices && name && level && choices->findData(added) >= 0;
                 if (!offered) {
                     dialog->reject();
                     return;
                 }
                 choices->setCurrentIndex(choices->findData(added));
                 name->setText("Recruit");
+                level->setValue(20);
                 dialog->accept();
             });
             add->click();
             QVERIFY(offered);
             QCOMPARE(editor.undoStack()->count(), 1);
             QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "class").toInt(), added);
+            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "level").toInt(), 20);
             QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "name").toString(),
                      QString("Recruit"));
             QCOMPARE(grid->model()->index(grid->currentIndex().row(), 0).data().toInt(), 21);
@@ -3462,9 +3465,10 @@ class UiTests : public QObject {
                 if (!dialog) return;
                 auto choices=dialog->findChild<QComboBox *>("saveNewCharacterClass");
                 auto name=dialog->findChild<QLineEdit *>("saveNewCharacterName");
-                sawRecruit=choices && name && choices->findData(5)>=0;
+                auto level=dialog->findChild<QSpinBox *>("saveNewCharacterLevel");
+                sawRecruit=choices && name && level && choices->findData(5)>=0;
                 if (!sawRecruit) {dialog->reject();return;}
-                choices->setCurrentIndex(choices->findData(5)); name->setText("New leader");
+                choices->setCurrentIndex(choices->findData(5)); name->setText("New leader"); level->setValue(30);
                 dialog->accept();
             });
             recruit->click();
@@ -3473,6 +3477,7 @@ class UiTests : public QObject {
             QCOMPARE(editor.document()->units().size(),6);
             QCOMPARE(editor.document()->value(SaveTable::Characters,newCharacter,"name").toString(),QString("New leader"));
             QCOMPARE(editor.document()->units().last().members[0],newCharacter);
+            QCOMPARE(editor.document()->value(SaveTable::Characters,newCharacter,"level").toInt(),30);
             const auto recruited=editor.document()->serialize();
             editor.undoStack()->undo(); QCOMPARE(editor.document()->serialize(),input);
             editor.undoStack()->redo(); QCOMPARE(editor.document()->serialize(),recruited);

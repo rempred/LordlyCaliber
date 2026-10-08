@@ -5,6 +5,34 @@ For current upstream adoption priorities and a symbol/source-file lookup, see
 [function interest list](decomp-interest.json). Matching status comes from
 Decomp's existing reports; the list tracks editor uses and intentional extensions.
 
+## Accepted stock and character initialization
+
+`accepted/gameplay-imports.json` identifies the unchanged matching originals for
+this integration. `shops/stock.c` adapts `func_0019BE40` into a complete ROM-side
+function compiled during export. Allocation, scenario/site-to-stronghold lookup,
+and archive cleanup follow the recovered C. Authored halfword stock replaces the
+retail archive range and fixed consumables, retaining expanded items and shops.
+The function and the small assembly selection guard share the original 432-byte
+owner (z64 `19BE40`, Shop RAM `802195E0`). The guard retains its existing `s0`
+category convention. Version-4 descriptors cover the complete function and its
+inventory relocation; versions 1–3 remain readable and upgrade during export.
+`shops/producer.s` is the earlier producer retained for compatibility research,
+not a source used by new exports.
+
+`army/character.c` adapts `func_0004501C`, `func_00044aa4` and their seven item
+growth getters into the PC engine. Save recruitment now offers levels 1–99 for
+both reserve characters and new squad leaders. It uses the project's class and
+item tables, growth-class transitions, randomized growth, default equipment,
+999 stat caps and the initializer's final HP/luck reset. The game uses the same
+item getter for HP and STR growth; that behavior is retained. Explicit endian
+reads and caller-owned random state replace N64 addresses and global RNG. The
+save allocation, packed format, names and atomic Undo remain host responsibilities.
+
+Existing execution checks compare the adaptation with original ROM instructions;
+shop checks execute exported code with allocation/resource/DMA services trapped.
+These establish relevant records, references and service calls, not full-game
+rendering or a natural recruitment/shop session.
+
 ## Accepted animation and sprite readers
 
 `accepted/animation-imports.json` records the exact upstream source versions and

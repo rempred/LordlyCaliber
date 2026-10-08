@@ -22,7 +22,7 @@ Omit `--match` for the full list. `--json` gives structured output; without
 are available and whose listed consumer is reconstructed, partial or a candidate.
 It means ready to assess for integration, not safe to copy directly into PC code.
 `adapted` and `original` consumers remain visible in the full list. For sources
-recorded in `game/accepted/animation-imports.json`, a newer verified source identity
+recorded in `game/accepted/animation-imports.json` or `gameplay-imports.json`, a newer verified source identity
 is marked **upstream changed** and returns to `--ready`. `companion` marks an empty
 helper retained with its coupled source, rather than a missing editor feature.
 

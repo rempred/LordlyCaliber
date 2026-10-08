@@ -11,6 +11,7 @@ const ram=offset=>(offset+0x8007d7a0)>>>0;
 const temp=0x80300000, equipment=0x8021a010, consumables=0x8021a0d8;
 assert.equal(rom.toString('ascii',0x27c4000,0x27c4008),'LC05SHOP');
 const data=rom.readUInt32BE(0x27c400c);
+const version=rom.readUInt32BE(0x27c4008);
 const clobber=m=>{
   for(const r of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])m.set(r,0xcccccccc);
 };
@@ -24,7 +25,7 @@ function cpu(){
 }
 let producers=0,splitters=0,readers=0,categories=0,guards=0;
 const shopCount = fixture.shops.records.length;
-for(const id of [...Array(shopCount).keys(),shopCount,255,0xffffffff]){
+for(const id of [...Array(shopCount).keys(),...([shopCount,255,0xffffffff].filter(x=>version<4||x<256))]){
   const m=cpu(), expected=fixture.shops.records[id<shopCount?id:0];
   const saved=['s0','s1','s2','s3','s4','s5','s6','s7'];
   saved.forEach((r,i)=>m.set(r,0x12340000+i));
@@ -35,7 +36,30 @@ for(const id of [...Array(shopCount).keys(),shopCount,255,0xffffffff]){
     c.load(temp,rom.subarray(c.get('a0'),c.get('a0')+176));
     transfers++;clobber(c);
   });
-  m.set('v1',id);m.call(ram(0x19bf18),ram(0x19bfc4));
+  if(version>=4){
+    const sites=0x80311000,strongholds=0x80312000,events=[];
+    m.w8(0x8018f481,3);m.w8(0x801e7e15+12*3,17);
+    m.w16(sites+1+4*2,5);m.w8(strongholds+28*4+27,id);
+    m.trap(0x80070f30,c=>{assert.equal(c.get('a0'),512);events.push('allocate');clobber(c);c.set('v0',temp);});
+    m.trap(0x80093380,c=>{
+      assert.equal(c.get('a0'),temp);assert.equal(c.get('a1'),512);
+      assert.equal(c.r32(0x80219f20),temp);c.load(temp,Buffer.alloc(512));events.push('clear');clobber(c);
+    });
+    m.trap(0x8007938c,c=>{
+      assert.equal(c.get('a0'),0x021af9f8);assert.equal(c.get('a1'),2);assert.equal(c.get('a2'),0xfffffffd);
+      const index=c.get('a3');assert([17,0].includes(index));events.push(index);
+      clobber(c);c.set('v0',index===17?sites:strongholds);
+    });
+    m.trap(0x80079618,c=>{
+      assert.equal(c.get('a0'),0x021af9f8);assert.equal(c.get('a1'),2);assert.equal(c.get('a2'),0xffffffef);
+      assert.equal(transfers,1);events.push('release');clobber(c);
+    });
+    m.set('a0',2);m.call(ram(0x19be40));
+    assert.deepEqual(events,['allocate','clear',17,0,'release']);
+    assert.equal(m.get('sp'),0x80060000);
+  }else{
+    m.set('v1',id);m.call(ram(0x19bf18),ram(0x19bfc4));
+  }
   assert.equal(transfers,1);saved.forEach((r,i)=>assert.equal(m.get(r),0x12340000+i));
   const combined=[...expected.consumables,...expected.equipment.map(x=>x|0x8000),0];
   combined.forEach((v,i)=>assert.equal(m.r16(temp+i*2),v));

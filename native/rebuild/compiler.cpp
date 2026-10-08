@@ -532,7 +532,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         p.encounters()->customSquads().validateFormations(p.classData());
     if (priorCustom)
         result.image = removeCustomInstallation(p.rom(), *priorCustom, compiler, directory);
-    if (priorShopPlacement && priorShopPlacement->version < 2)
+    if (priorShopPlacement && priorShopPlacement->version < 4)
         p.loadShops();
     const bool expandedClasses =
         p.records(Table::Classes).size() > 165 ||
@@ -700,7 +700,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                          "within the original resident allocation";
     }
     if (p.shops() &&
-        (p.shops()->modified() || (priorShopPlacement && priorShopPlacement->version < 2))) {
+        (p.shops()->modified() || (priorShopPlacement && priorShopPlacement->version < 4))) {
         result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
         result.report << "Compiled shop stock, producer and halfword readers; retained original "
                          "RAM allocations";

@@ -157,7 +157,7 @@ qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
 qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/encounters/dispatcher.s game/encounters/dispatcher.json)
 qt_add_resources(lordly_engine encounter_labels PREFIX "/" BASE . FILES game/encounters/labels.json)
 qt_add_resources(lordly_engine consumable_sources PREFIX "/" BASE . FILES game/consumables/effects.json game/consumables/effects.s)
-qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/producer.s game/shops/consumers.s)
+qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/stock.c game/shops/selection-guard.s game/shops/consumers.s)
 target_link_libraries(lordly_engine PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Qml)
 target_sources(lordly_engine PRIVATE engine/scene_document_compiler.cpp engine/scene_import.cpp)
 qt_add_resources(lordly_engine legacy_scene_catalog PREFIX "/" BASE . FILES game/director/legacy-scenes.json)

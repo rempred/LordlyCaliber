@@ -523,11 +523,12 @@ bool SaveEditor::disbandUnit(int index) {
         return false;
     }
 }
-bool SaveEditor::createCharacter(int classId, const QString &name) {
+bool SaveEditor::createCharacter(int classId, const QString &name, int level) {
     if (!document_ || !allowImmediateEdit()) return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
-        auto change=document_->planCreateCharacter(classId,name,project_->classData(),QRandomGenerator::global()->generate());
+        const auto items = project_->itemData();
+        auto change=document_->planCreateCharacter(classId,name,project_->classData(),QRandomGenerator::global()->generate(), level, &items);
         undo_->push(new SaveCommand(this, std::move(change), "create reserve character"));
         error_->clear();
         return true;
@@ -545,8 +546,8 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     dialog.setWindowTitle(formSquad ? "Add squad with a new leader" : "Add reserve character");
     auto layout = new QVBoxLayout(&dialog);
     auto note = new QLabel(formSquad
-        ? "Recruit a level-one leader and form a new squad. Both are created together in one Undo step."
-        : "Recruit a level-one reserve character using the current class's starting stats and body/Element rules.");
+        ? "Recruit a leader and form a new squad in one Undo step. Stats follow the game's initialization and level growth."
+        : "Recruit a reserve character using the game's starting stats and level growth, including the current project's class and default equipment bonuses.");
     note->setWordWrap(true); layout->addWidget(note);
     auto name = new QLineEdit("Recruit");
     name->setObjectName("saveNewCharacterName"); name->setMaxLength(12);
@@ -562,6 +563,10 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     }
     choices->setCurrentIndex(std::max(0, choices->findData(5)));
     layout->addWidget(new QLabel(formSquad ? "Leader class" : "Class")); layout->addWidget(choices);
+    auto level = new QSpinBox;
+    level->setObjectName("saveNewCharacterLevel");
+    level->setRange(1, 99); level->setValue(1);
+    layout->addWidget(new QLabel("Level")); layout->addWidget(level);
     auto cell = new QComboBox;
     cell->setObjectName("saveNewSquadCell");
     for (int i=0; i<9; ++i) cell->addItem(QString("Cell %1 · %2").arg(i+1).arg(i<3 ? "Rear" : i<6 ? "Middle" : "Front"),i);
@@ -577,8 +582,8 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     if (dialog.exec() != QDialog::Accepted) return -1;
-    const bool created = formSquad ? recruitUnit(choices->currentData().toInt(), name->text(), cell->currentData().toInt())
-                                   : createCharacter(choices->currentData().toInt(), name->text());
+    const bool created = formSquad ? recruitUnit(choices->currentData().toInt(), name->text(), cell->currentData().toInt(), level->value())
+                                   : createCharacter(choices->currentData().toInt(), name->text(), level->value());
     return created ? id : -1;
 }
 void SaveEditor::selectCharacter(int id) {
@@ -593,12 +598,13 @@ void SaveEditor::selectCharacter(int id) {
             break;
         }
 }
-bool SaveEditor::recruitUnit(int classId, const QString &name, int cell) {
+bool SaveEditor::recruitUnit(int classId, const QString &name, int cell, int level) {
     if (!document_ || !allowImmediateEdit()) return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
+        const auto items = project_->itemData();
         auto change = document_->planRecruitUnit(classId, name, cell, project_->classData(),
-                                                  QRandomGenerator::global()->generate());
+                                                  QRandomGenerator::global()->generate(), level, &items);
         undo_->push(new SaveCommand(this, std::move(change), "recruit leader and form squad"));
         error_->clear();
         return true;

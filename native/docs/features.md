@@ -6,6 +6,16 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
+## Accepted C integration — 2026-10-08
+
+Save's Add reserve character and Recruit squad dialogs now accept levels 1–99,
+using accepted-derived initialization and growth with the current class/item
+tables. Existing atomic Undo, save export/reopening and expanded class IDs remain.
+Shop exports compile the full accepted-derived stock function in its original
+space, retaining expanded stock and the empty-category guard. Earlier native
+shop descriptors remain readable and upgrade on export. Sources are bundled;
+users need no Decomp checkout. See `game/README.md` for adaptation boundaries.
+
 ## Current checkpoint — 2026-10-07
 
 Combat animations now provides class, assigned action, player/enemy side, mode,
