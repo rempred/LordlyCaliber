@@ -7,8 +7,13 @@ entry-card titles for keys 0–61. The game selects image child `32 + scenarioKe
 from directory `0x01890C90`; its separate dated scene-history text is not a
 mission-name source. `tools/generate-encounter-labels.cjs` combines those titles
 with existing wiki location and meaningful branch annotations. Its generated
-`labels.json` serves Scenarios and encounter navigation. Generic alias/flag notes
-are omitted for verified titles. Keys 10, 22, 35 and 62 are stock placeholders:
+`labels.json` serves Scenarios and encounter navigation. Normal entries display
+runtime key, map name, then exact mission title and meaningful branch details.
+Map names come from the existing parent `wiki/scenario-map-calibration.json`
+catalog; redundant parenthetical location/visit suffixes are omitted. The two
+Tremos map layouts retain North/South qualifiers. Dev Keys retain no speculative
+map names. Map names are searchable through the same labels. Generic alias/flag
+notes are omitted for verified titles. Keys 10, 22, 35 and 62 are stock placeholders:
 their US Rev 0 12-byte descriptors at z64 `0x13C550 + 12*key`
 are zero, and their ESET selectors at `0x654A0 + 9*key + 8` select `eset0_00.bin`.
 Keys 10/22/35 still have real title cards; that does not prove playable branches.

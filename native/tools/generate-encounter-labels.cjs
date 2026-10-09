@@ -3,6 +3,9 @@
 const fs=require('node:fs'),path=require('node:path');
 const input=JSON.parse(fs.readFileSync(process.argv[2]));
 if(!Array.isArray(input.runtimeKeys))throw Error('Expected runtime-key identity catalog');
+const mapCatalog=JSON.parse(fs.readFileSync(process.argv[3]
+  ||path.join(path.dirname(process.argv[2]),'scenario-map-calibration.json')));
+if(!Array.isArray(mapCatalog.scenarios))throw Error('Expected scenario map catalog');
 const cards=JSON.parse(fs.readFileSync(path.join(__dirname,'../game/encounters/entry-titles.json')));
 const labels={};
 for(const row of input.runtimeKeys){
@@ -49,12 +52,31 @@ for(const key of devKeys){
   annotations[key]='Dev Key';
   labels[key]='Dev Key';
 }
+const mapNames={};
+const mapDisplayNames={
+  'VolmusMines(1)':'Volmus Mine', 'VolmusMines(2)':'Volmus Mine',
+  'MountKeryoleth(Danika)':'Mount Keryoleth',
+  'TremosMountainsNorth':'Tremos Mountains (North)',
+  'TremosMountainsSouth':'Tremos Mountains (South)'
+};
+for(const row of mapCatalog.scenarios){
+  const key=row.runtimeKey;
+  // The old catalog assigns speculative maps to some internal keys. Do not
+  // revive those names merely because the normal scenario list gains maps.
+  if(devKeys.includes(key)||!row.mapName||!titles[key])continue;
+  mapNames[key]=mapDisplayNames[row.mapName]||row.mapName.replace(/\(\d+\)$/,'')
+    .replace(/([a-z])([A-Z])/g,'$1 $2').replace(/\bOf\b/g,'of');
+  // The separate map label replaces parenthetical visit/location annotations.
+  // Preserve story choices and other meaningful branch descriptions.
+  const branch=(annotations[key]||'').replace(/^\([^)]*\)\s*/,'');
+  labels[key]=`${mapNames[key]} · ${titles[key]}${branch?' '+branch.replace(/^- /,'— '):''}`;
+}
 notes[20]='The Grim Path: decline peace with the Western Division; Ankiseth is the opposing commander.';
 notes[21]='The Grim Path: make peace with the Western Division; Baldwin is the opposing commander.';
 notes[22]+=' The known Grim Path story branches use keys 20 and 21; a third playable branch has not been established.';
 const output=path.join(__dirname,'../game/encounters/labels.json');
 fs.mkdirSync(path.dirname(output),{recursive:true});
 fs.writeFileSync(output,JSON.stringify({generator:'native/tools/generate-encounter-labels.cjs',
-  input:'Verified native/game/encounters/entry-titles.json titles with parent wiki/runtime-key-branch-labels.json location/branch annotations; Dev Keys follow browser editor/scenario.js classification and US Rev 0 placeholder descriptors (see native/docs/architecture.md)',
-  titles,annotations,notes,devKeys,labels},null,2)+'\n');
+  input:'Verified native/game/encounters/entry-titles.json titles, parent wiki/runtime-key-branch-labels.json branch annotations and wiki/scenario-map-calibration.json map names; Dev Keys follow browser editor/scenario.js classification and US Rev 0 placeholder descriptors (see native/docs/architecture.md)',
+  titles,mapNames,annotations,notes,devKeys,labels},null,2)+'\n');
 console.log(`Generated ${Object.keys(labels).length} encounter navigation labels`);

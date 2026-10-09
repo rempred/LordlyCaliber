@@ -75,7 +75,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     auto layout = new QVBoxLayout(this);
     search_ = new QLineEdit;
     search_->setObjectName("scenarioSearch");
-    search_->setPlaceholderText("Find a scenario by title, branch, or runtime key…");
+    search_->setPlaceholderText("Find a scenario by map, title, branch, or runtime key…");
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto split = new QSplitter;
