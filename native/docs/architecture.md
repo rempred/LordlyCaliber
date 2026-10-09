@@ -8,15 +8,23 @@ from directory `0x01890C90`; its separate dated scene-history text is not a
 mission-name source. `tools/generate-encounter-labels.cjs` combines those titles
 with existing wiki location and meaningful branch annotations. Its generated
 `labels.json` serves Scenarios and encounter navigation. Generic alias/flag notes
-are omitted for verified titles. Keys 10, 22, 35 and 62 are explicitly labeled
-stock placeholders: their US Rev 0 12-byte descriptors at z64 `0x13C550 + 12*key`
+are omitted for verified titles. Keys 10, 22, 35 and 62 are stock placeholders:
+their US Rev 0 12-byte descriptors at z64 `0x13C550 + 12*key`
 are zero, and their ESET selectors at `0x654A0 + 9*key + 8` select `eset0_00.bin`.
 Keys 10/22/35 still have real title cards; that does not prove playable branches.
-Other keys beyond the card directory retain existing labels or numeric fallback.
+The navigation catalog's `devKeys` list mirrors the browser editor's curated
+classification in `editor/scenario.js`: 10, 22, 35, 54, 62, 63 and 64. Joe's
+requested label for all these broken/internal/unused slots is **Dev Key**.
+Earlier speculative retail mission labels for 63/64 are not map identifications
+and are omitted. Verified title cards remain separately recorded in `titles`.
 These are display labels only and do not alter scenario identities,
 resources, project data or ROM title artwork.
-The Scenario list retains every supported key and shows full names and context
-in tooltips. Grim Path's opening event row 22 selects runtime key 20 or 21;
+The Scenario list sorts normal entries by runtime key, followed by Dev Keys in
+runtime-key order. Each item's stored runtime key remains its editing identity.
+All 63 supported keys stay editable; key 54 is also visible but disabled because
+its alternate loading path remains unsupported. Search excludes it from automatic
+selection. Full names and context appear in tooltips.
+Grim Path's opening event row 22 selects runtime key 20 or 21;
 their dedicated battle rows 23 and 24 select 20 and 21 respectively. Scanning
 immediate E7/E9 stores in the 113 decoded event scripts found no selection of
 runtime key 22. This supports treating it as a stock placeholder, not a third

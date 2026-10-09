@@ -8491,9 +8491,18 @@ class UiTests : public QObject {
             box->setCurrentIndex(at);
         };
         auto list = editor.findChild<QListWidget *>("scenarioList");
-        QCOMPARE(list->count(), 63);
+        QCOMPARE(list->count(), 64);
+        const QList<int> devKeys{10, 22, 35, 54, 62, 63, 64};
+        for (int i = 0; i < devKeys.size(); ++i) {
+            const auto item = list->item(list->count() - devKeys.size() + i);
+            QCOMPARE(item->data(Qt::UserRole).toInt(), devKeys[i]);
+            QVERIFY(item->text().contains("Dev Key"));
+            QCOMPARE(bool(item->flags() & Qt::ItemIsEnabled), devKeys[i] != 54);
+        }
         const auto untouched = project.scenarios()->json();
         for (int i = 0; i < list->count(); ++i) {
+            if (!(list->item(i)->flags() & Qt::ItemIsEnabled))
+                continue;
             list->setCurrentRow(i);
             auto squads = editor.findChild<QListWidget *>("scenarioSquads");
             for (int row = 0; row < squads->count(); ++row) {
@@ -8552,6 +8561,7 @@ class UiTests : public QObject {
         QCOMPARE(project.scenarios()->json(), before);
         undo.redo();
         QCOMPARE(project.scenarios()->json(), after);
+        QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), 10);
         spin("scenarioLevel_0")->setValue(127);
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), after);
@@ -8571,6 +8581,9 @@ class UiTests : public QObject {
         QVERIFY(
             editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-squads.png"));
         auto search = editor.findChild<QLineEdit *>("scenarioSearch");
+        search->setText("54");
+        QCOMPARE(list->currentRow(), -1); // The unsupported Dev Key stays visible but unselectable.
+        QVERIFY(!list->item(list->count() - 4)->isHidden());
         search->setText("no matching mission");
         QCOMPARE(list->currentRow(), -1);
         search->clear();
@@ -9392,7 +9405,7 @@ class UiTests : public QObject {
         QCOMPARE(items->model()->rowCount(), itemCount);
         QCOMPARE(consumables->model()->rowCount(), 45);
         QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
-        QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 63);
+        QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 64);
         auto addItem = window.findChild<QPushButton *>("addItem");
         QVERIFY(addItem);
         items->setCurrentIndex(items->model()->index(1, 1));

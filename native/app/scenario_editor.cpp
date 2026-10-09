@@ -11,12 +11,14 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -330,7 +332,8 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     refresh();
 }
 int ScenarioEditor::key() const {
-    return scenarios_->currentItem() ? scenarios_->currentItem()->data(Qt::UserRole).toInt() : -1;
+    const auto item = scenarios_->currentItem();
+    return item && (item->flags() & Qt::ItemIsEnabled) ? item->data(Qt::UserRole).toInt() : -1;
 }
 void ScenarioEditor::refresh() {
     const ViewPosition keepView(this);
@@ -338,24 +341,44 @@ void ScenarioEditor::refresh() {
     QSignalBlocker block(scenarios_);
     const int previous = key();
     QFile labels(":/game/encounters/labels.json");
-    QJsonObject notes;
+    QJsonObject catalog;
     if (labels.open(QIODevice::ReadOnly))
-        notes = QJsonDocument::fromJson(labels.readAll()).object()["notes"].toObject();
+        catalog = QJsonDocument::fromJson(labels.readAll()).object();
+    const auto notes = catalog["notes"].toObject();
+    const auto names = catalog["labels"].toObject();
+    const auto &entries = project_->scenarios()->entries();
+    auto keys = entries.keys();
+    QSet<int> devKeys;
+    for (const auto value : catalog["devKeys"].toArray()) {
+        const int id = value.toInt();
+        devKeys.insert(id);
+        if (!entries.contains(id))
+            keys.append(id);
+    }
+    std::sort(keys.begin(), keys.end(), [&](int a, int b) {
+        if (devKeys.contains(a) != devKeys.contains(b))
+            return !devKeys.contains(a);
+        return a < b;
+    });
     scenarios_->clear();
-    for (const auto &s : project_->scenarios()->entries()) {
+    for (const int id : keys) {
+        const auto entry = entries.constFind(id);
+        const bool editable = entry != entries.cend();
+        const auto name = editable ? entry->name : names[QString::number(id)].toString();
+        const bool modified = editable && entry->json() != project_->scenarios()->original(id).json();
         auto item = new QListWidgetItem(
-            QString("%1 · %2%3")
-                .arg(s.key)
-                .arg(s.name)
-                .arg(s.json() != project_->scenarios()->original(s.key).json() ? " *" : ""),
+            QString("%1 · %2%3%4").arg(id).arg(name)
+                .arg(editable ? "" : " — editing unavailable").arg(modified ? " *" : ""),
             scenarios_);
-        item->setData(Qt::UserRole, s.key);
-        auto help = QString("Runtime key %1\n%2").arg(s.key).arg(s.name);
-        const auto note = notes[QString::number(s.key)].toString();
+        item->setData(Qt::UserRole, id);
+        if (!editable)
+            item->setFlags(item->flags() & ~(Qt::ItemIsEnabled | Qt::ItemIsSelectable));
+        auto help = QString("Runtime key %1\n%2").arg(id).arg(name);
+        const auto note = notes[QString::number(id)].toString();
         if (!note.isEmpty())
             help += "\n\n" + note;
         item->setToolTip(help);
-        if (s.key == previous)
+        if (editable && id == previous)
             scenarios_->setCurrentItem(item);
     }
     for (auto box : gear_) {
@@ -390,10 +413,10 @@ void ScenarioEditor::filter() {
     for (int i = 0; i < scenarios_->count(); ++i) {
         auto item = scenarios_->item(i);
         item->setHidden(!item->text().contains(search_->text().trimmed(), Qt::CaseInsensitive));
-        if (!item->isHidden() && first < 0)
+        if (!item->isHidden() && (item->flags() & Qt::ItemIsEnabled) && first < 0)
             first = i;
     }
-    if (!scenarios_->currentItem() || scenarios_->currentItem()->isHidden())
+    if (key() < 0 || scenarios_->currentItem()->isHidden())
         scenarios_->setCurrentRow(first);
 }
 void ScenarioEditor::showScenario() {
