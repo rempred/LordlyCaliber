@@ -7,6 +7,7 @@
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -16,14 +17,41 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace lordly {
+static QImage mapIcon(const QImage &source, bool portrait) {
+    if (source.isNull()) return {};
+    QImage result(32, 32, QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::transparent);
+    QPainter painter(&result);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPainterPath circle;
+    circle.addEllipse(QRectF(1, 1, 30, 30));
+    painter.setClipPath(circle);
+    painter.fillRect(result.rect(), QColor("#1d1a16"));
+    if (portrait) {
+        const int side = std::min(source.width(), source.height());
+        painter.drawImage(QRectF(1, 1, 30, 30), source,
+            QRectF((source.width() - side) / 2., (source.height() - side) / 2., side, side));
+    } else {
+        const QSize size = source.size().scaled(24, 24, Qt::KeepAspectRatio);
+        painter.drawImage(QRectF(QPointF((32 - size.width()) / 2., (32 - size.height()) / 2.), size), source);
+    }
+    return result;
+}
 struct MapMarker {
     MapObject kind;
     int row;
     QString label;
     std::optional<QPointF> position;
     QColor color;
+    QImage icon;
+    qreal radius() const {
+        return kind == MapObject::Squad || kind == MapObject::Treasure ? 16. :
+               kind == MapObject::Waypoint ? 4. : 6.;
+    }
+    int layer() const { return kind == MapObject::Site ? 0 : kind == MapObject::Waypoint ? 1 : 2; }
     bool movable() const {
         return kind != MapObject::Site;
     }
@@ -102,14 +130,30 @@ class MapCanvas : public QWidget {
         for (int i = 0; i < markers.size(); ++i)
             if (i != current)
                 drawOrder << i;
-        for (int i : drawOrder) {
+        // Draw the selected marker last, then reserve icon bounds while placing labels.
+        auto paintOrder = drawOrder;
+        std::stable_sort(paintOrder.begin(), paintOrder.end(), [&](int a, int b) {
+            return (a == current ? 3 : markers[a].layer()) < (b == current ? 3 : markers[b].layer());
+        });
+        for (int i : paintOrder) {
             const auto &m = markers[i];
             if (!m.position)
                 continue;
-            const QPointF center = i == drag_ && dragging_ ? mouse_ : toPixel(*m.position);
-            p.setPen(QPen(i == current ? Qt::white : QColor("#0d131a"), i == current ? 3 : 1.5));
+            const QPointF center = i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
+            const qreal radius = m.radius();
+            labelAreas << QRectF(center - QPointF(radius + 3, radius + 3), QSizeF((radius + 3) * 2, (radius + 3) * 2));
+            p.setPen(QPen(i == current ? QColor("#fff2a8") : QColor("#0d131a"), i == current ? 3 : 1.5));
             p.setBrush(m.color);
-            if (m.kind == MapObject::Site)
+            if (!m.icon.isNull()) {
+                p.drawImage(QRectF(center - QPointF(16, 16), QSizeF(32, 32)), m.icon);
+                p.setBrush(Qt::NoBrush);
+                p.setPen(QPen(m.color, 2));
+                p.drawEllipse(center, 15., 15.);
+                if (i == current) {
+                    p.setPen(QPen(QColor("#fff2a8"), 3));
+                    p.drawEllipse(center, 18., 18.);
+                }
+            } else if (m.kind == MapObject::Site)
                 p.drawRect(QRectF(center - QPointF(6, 6), QSizeF(12, 12)));
             else if (m.kind == MapObject::Treasure) {
                 QPolygonF diamond;
@@ -117,11 +161,15 @@ class MapCanvas : public QWidget {
                         << center + QPointF(0, 7) << center + QPointF(-7, 0);
                 p.drawPolygon(diamond);
             } else
-                p.drawEllipse(center, m.kind == MapObject::Waypoint ? 4. : 7.,
-                              m.kind == MapObject::Waypoint ? 4. : 7.);
+                p.drawEllipse(center, radius, radius);
+        }
+        for (int i : drawOrder) {
+            const auto &m = markers[i];
+            if (!m.position) continue;
+            const QPointF center = i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
             if (labels || i == current) {
                 const QString text = m.label.section(" · ", 0, 0);
-                QRectF label(center + QPointF(10, -10),
+                QRectF label(center + QPointF(m.radius() + 6, -10),
                              QSizeF(p.fontMetrics().horizontalAdvance(text) + 8, 20));
                 for (int attempt = 0; attempt < 12; ++attempt) {
                     if (std::none_of(labelAreas.begin(), labelAreas.end(),
@@ -152,16 +200,18 @@ class MapCanvas : public QWidget {
             return;
         }
         int hit = -1;
-        qreal distance = 12;
+        qreal distance = std::numeric_limits<qreal>::max();
         // Keep a list-selected marker reachable when several share a position.
-        if (current >= 0 && markers[current].position &&
-            QLineF(toPixel(*markers[current].position), press_).length() <= 12)
+        if (current >= 0 && current < markers.size() && markers[current].position &&
+            QLineF(toPixel(*markers[current].position), press_).length() <= std::max(12., markers[current].radius() + 2))
             hit = current;
         else
             for (int i = 0; i < markers.size(); ++i)
                 if (markers[i].position) {
                     const auto d = QLineF(toPixel(*markers[i].position), press_).length();
-                    if (d <= distance) {
+                    if (d <= std::max(12., markers[i].radius() + 2) &&
+                        (hit < 0 || markers[i].layer() > markers[hit].layer() ||
+                         (markers[i].layer() == markers[hit].layer() && d <= distance))) {
                         hit = i;
                         distance = d;
                     }
@@ -170,6 +220,7 @@ class MapCanvas : public QWidget {
         if (selected)
             selected(hit);
         drag_ = hit >= 0 && markers[hit].movable() ? hit : -1;
+        dragOffset_ = drag_ >= 0 ? press_ - toPixel(*markers[drag_].position) : QPointF();
         update();
     }
     void mouseMoveEvent(QMouseEvent *e) override {
@@ -192,7 +243,7 @@ class MapCanvas : public QWidget {
         drag_ = -1;
         dragging_ = false;
         if (changed && moved)
-            moved(index, fromPixel(e->position()));
+            moved(index, fromPixel(e->position() - dragOffset_));
         update();
     }
     void wheelEvent(QWheelEvent *e) override {
@@ -205,7 +256,7 @@ class MapCanvas : public QWidget {
 
   private:
     qreal zoom_ = 1;
-    QPointF pan_, mouse_, press_;
+    QPointF pan_, mouse_, press_, dragOffset_;
     int drag_ = -1;
     bool dragging_ = false, panning_ = false;
 };
@@ -259,6 +310,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     auto side = new QVBoxLayout(sidebar);
     objects_ = new QListWidget;
     objects_->setObjectName("mapObjects");
+    objects_->setIconSize(QSize(32, 32));
     side->addWidget(objects_, 1);
     selection_ = new QLabel;
     selection_->setWordWrap(true);
@@ -391,6 +443,31 @@ void ScenarioMapEditor::refresh(int key) {
     referenceName_->clear();
     notice_->clear();
     try {
+        QStringList artworkWarnings;
+        try { project_->loadAvatarArtwork(); }
+        catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
+        try { project_->loadIconArtwork(); }
+        catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
+        QMap<int, QImage> portraits, itemIcons;
+        const auto classes = project_->classData();
+        auto artwork = [&](int id, bool portrait, int selector = 0) -> QImage {
+            auto &cache = portrait ? portraits : itemIcons;
+            const int cacheKey = portrait ? id * 2 + selector : id;
+            if (!cache.contains(cacheKey)) {
+                QImage image;
+                try {
+                    if (portrait && project_->avatarArtwork()) {
+                        auto words = project_->avatarArtwork()->words(classes, id, selector);
+                        if (words.isEmpty()) words = project_->avatarArtwork()->words(classes, id, 1 - selector);
+                        if (!words.isEmpty()) image = AvatarArtwork::render(words);
+                    }
+                    if (!portrait && project_->iconArtwork())
+                        image = project_->iconArtwork()->image(quint16(id));
+                } catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
+                cache[cacheKey] = mapIcon(image, portrait);
+            }
+            return cache[cacheKey];
+        };
         if (!maps_.contains(key))
             maps_[key] = ScenarioMap::load(project_->rom(), key);
         const auto &map = maps_[key];
@@ -401,11 +478,13 @@ void ScenarioMapEditor::refresh(int key) {
                            (point->y() - map.bounds.top()) / map.bounds.height() * 256.);
         };
         auto add = [&](MapObject kind, int row, QString label, std::optional<QPointF> position,
-                       QColor color) {
-            canvas_->markers << MapMarker{kind, row, label, normalize(position), color};
+                       QColor color, QImage icon = {}) {
+            canvas_->markers << MapMarker{kind, row, label, normalize(position), color, icon};
             auto item =
                 new QListWidgetItem(label + (position ? "" : " · unresolved placement"), objects_);
             item->setForeground(color.darker(140));
+            if (!icon.isNull()) item->setIcon(QPixmap::fromImage(icon));
+            item->setToolTip(item->text());
         };
         const auto &s = project_->scenarios()->scenario(key);
         for (int i = 0; i < s.layout.deployments.size(); ++i) {
@@ -416,7 +495,8 @@ void ScenarioMapEditor::refresh(int key) {
                     .arg(u8(d, 0) & 127)
                     .arg(QString(project_->record(Table::Classes, id).name).replace('\n', ' ')),
                 map.placement(u8(d, 3), u8(d, 4)),
-                u8(d, 0) & 128 ? QColor("#69c9f0") : QColor("#f08780"));
+                u8(d, 0) & 128 ? QColor("#69c9f0") : QColor("#f08780"),
+                artwork(id, true, u8(d, 0) & 128 ? 0 : 1));
         }
         QMap<int, int> nodeMarkers;
         for (int i = 0; i < s.layout.nodes.size(); ++i) {
@@ -446,9 +526,14 @@ void ScenarioMapEditor::refresh(int key) {
             }
             for (int i = 0; i < ScenarioWorld::treasureCount(scene.treasures); ++i) {
                 const auto r = ScenarioWorld::treasureRecord(scene.treasures, i);
+                const int itemId = u16(r, 4);
+                const bool equipment = u8(r, 3) == 1;
+                const auto &records = project_->records(equipment ? Table::Items : Table::Consumables);
+                const QString name = itemId < records.size() ? records[itemId].name : QString("Item %1").arg(itemId);
                 add(MapObject::Treasure, i,
-                    QString("Treasure %1 · flag %2").arg(i + 1).arg(u8(r, 0)),
-                    map.world(u8(r, 1), u8(r, 2)), QColor("#f4cc6c"));
+                    QString("Treasure %1 · %2 · flag %3").arg(i + 1).arg(name).arg(u8(r, 0)),
+                    map.world(u8(r, 1), u8(r, 2)), QColor("#f4cc6c"),
+                    artwork(itemId | (equipment ? 0 : 0x200), false));
             }
         }
         if (map.image) {
@@ -472,6 +557,9 @@ void ScenarioMapEditor::refresh(int key) {
                          "coordinates. Selecting a point-based object "
                          "and moving it changes its placement to map coordinates. " +
                          map.placementNotice);
+        artworkWarnings.removeDuplicates();
+        if (!artworkWarnings.isEmpty())
+            notice_->setText(notice_->text() + "\nSome marker artwork could not be decoded: " + artworkWarnings.join("; "));
         objects_->setCurrentRow(canvas_->markers.isEmpty()
                                     ? -1
                                     : std::clamp(previous, 0, int(canvas_->markers.size()) - 1));

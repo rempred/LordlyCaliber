@@ -8050,6 +8050,49 @@ class UiTests : public QObject {
             auto x = editor.findChild<QSpinBox *>("mapX"), z = editor.findChild<QSpinBox *>("mapZ");
             auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
             QVERIFY(objects && apply && fields && x && z && canvas);
+            // Marker artwork follows the current records, including edits and Undo.
+            QVERIFY(!objects->item(0)->icon().isNull());
+            const auto leaderIcon = objects->item(0)->icon().pixmap(32, 32).toImage();
+            QCOMPARE(leaderIcon.pixelColor(0, 0).alpha(), 0); // Circular crop, not a square portrait.
+            QVERIFY(leaderIcon.pixelColor(16, 16).alpha() > 0);
+            QSet<QRgb> portraitColors;
+            for (int py = 2; py < 30; ++py)
+                for (int px = 2; px < 30; ++px)
+                    if (leaderIcon.pixelColor(px, py).alpha() == 255) portraitColors.insert(leaderIcon.pixel(px, py));
+            QVERIFY(portraitColors.size() > 8); // The stock boss has an enemy portrait, not a blank badge.
+            const auto beforeLeader = project.scenarios()->json();
+            objects->setCurrentRow(0);
+            fields->click();
+            auto leaderClass = editor.findChild<QComboBox *>("scenarioClass_0");
+            const int alternateClass = leaderClass->currentData().toInt() == 5 ? 6 : 5;
+            leaderClass->setCurrentIndex(leaderClass->findData(alternateClass));
+            editor.findChild<QPushButton *>("scenarioSquadApply")->click();
+            QCOMPARE(u8(project.scenarios()->scenario(1).squads[0], 0), quint8(alternateClass));
+            QVERIFY(objects->item(0)->icon().pixmap(32, 32).toImage() != leaderIcon);
+            undo.undo();
+            QCOMPARE(project.scenarios()->json(), beforeLeader);
+            QCOMPARE(objects->item(0)->icon().pixmap(32, 32).toImage(), leaderIcon);
+            int treasureIconRow = -1;
+            for (int row = 0; row < objects->count(); ++row)
+                if (objects->item(row)->text().startsWith("Treasure 1 ·")) treasureIconRow = row;
+            QVERIFY(treasureIconRow >= 0);
+            QVERIFY(!objects->item(treasureIconRow)->icon().isNull());
+            const auto treasureIcon = objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage();
+            const auto beforeItem = project.world()->json();
+            const auto firstTreasure = ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
+            objects->setCurrentRow(treasureIconRow);
+            fields->click();
+            auto itemTable = editor.findChild<QComboBox *>("worldTreasureTable");
+            itemTable->setCurrentIndex(itemTable->findData(u8(firstTreasure, 3) == 1 ? 2 : 1));
+            auto treasureChoice = editor.findChild<QComboBox *>("worldTreasureItem");
+            treasureChoice->setCurrentIndex(treasureChoice->findData(1));
+            editor.findChild<QPushButton *>("worldTreasureApply")->click();
+            QVERIFY(objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage() != treasureIcon);
+            undo.undo();
+            QCOMPARE(project.world()->json(), beforeItem);
+            QCOMPARE(objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage(), treasureIcon);
+            pages->setCurrentIndex(3);
+            objects->setCurrentRow(0);
             auto terrain = editor.findChild<QCheckBox *>("mapTerrain");
             QVERIFY(terrain);
             QVERIFY(terrain->isEnabled());
@@ -8107,9 +8150,10 @@ class UiTests : public QObject {
             QApplication::sendEvent(canvas, &wheel);
             const int zoomedShift = qRound(shift * std::pow(1.0015, 120));
             const QPoint destination = anchor + QPoint(zoomedShift, -zoomedShift);
-            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, anchor);
-            QTest::mouseMove(canvas, destination, 20);
-            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, destination);
+            const QPoint iconEdge(14, 0); // The visible portrait edge must hit and keep its grab offset.
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, anchor + iconEdge);
+            QTest::mouseMove(canvas, destination + iconEdge, 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, destination + iconEdge);
             const auto moved = project.scenarios()->scenario(1).layout.deployments[0];
             QVERIFY(std::abs(int(u8(moved, 3)) - 192) <= 1);
             QVERIFY(std::abs(int(u8(moved, 4)) - 64) <= 1);

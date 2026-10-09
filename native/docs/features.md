@@ -6,6 +6,12 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
+Scenario maps use circular squad-leader portraits and treasure-item icons from
+the current ROM/artwork edits. Enemy/allied portrait selection falls back to the
+other portrait slot when absent. Colored rings retain allegiance and selection;
+icons draw above sites/waypoints. Icons also identify entries in the object list,
+refresh with record edits and Undo, and preserve the grab offset during dragging.
+
 Map encounters combines terrain names, per-terrain chances and the selected
 map's two creature choices. Terrains sharing a pool occupy one row; pool IDs are
 secondary labels. Rows explain missing assignments, zero terrain chances and
