@@ -6,10 +6,12 @@ if(!Array.isArray(input.runtimeKeys))throw Error('Expected runtime-key identity 
 const labels={};
 for(const row of input.runtimeKeys){
   if(!Number.isInteger(row.runtimeKey)||row.runtimeKey<1||row.runtimeKey>66)throw Error('Invalid runtime key');
-  if(row.branchConfidence==='high'&&typeof row.editorLabel==='string')labels[row.runtimeKey]=row.editorLabel;
+  // Match the browser editor's navigation labels, including branch/alias notes.
+  // Branch confidence does not determine whether a mission has a usable name.
+  if(typeof row.editorLabel==='string'&&row.editorLabel.trim())labels[row.runtimeKey]=row.editorLabel;
 }
 const output=path.join(__dirname,'../game/encounters/labels.json');
 fs.mkdirSync(path.dirname(output),{recursive:true});
 fs.writeFileSync(output,JSON.stringify({generator:'native/tools/generate-encounter-labels.cjs',
-  input:'Parent wiki/runtime-key-branch-labels.json; high-confidence labels only; other keys retain numeric identity',labels},null,2)+'\n');
+  input:'Parent wiki/runtime-key-branch-labels.json; existing editorLabel values including branch/alias qualifications; keys without labels retain numeric identity',labels},null,2)+'\n');
 console.log(`Generated ${Object.keys(labels).length} encounter navigation labels`);
