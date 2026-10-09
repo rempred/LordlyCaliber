@@ -7,9 +7,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
+#include <QFile>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -71,7 +73,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     auto layout = new QVBoxLayout(this);
     search_ = new QLineEdit;
     search_->setObjectName("scenarioSearch");
-    search_->setPlaceholderText("Find a scenario by name or key…");
+    search_->setPlaceholderText("Find a scenario by title, branch, or runtime key…");
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto split = new QSplitter;
@@ -335,6 +337,10 @@ void ScenarioEditor::refresh() {
     loading_ = true;
     QSignalBlocker block(scenarios_);
     const int previous = key();
+    QFile labels(":/game/encounters/labels.json");
+    QJsonObject notes;
+    if (labels.open(QIODevice::ReadOnly))
+        notes = QJsonDocument::fromJson(labels.readAll()).object()["notes"].toObject();
     scenarios_->clear();
     for (const auto &s : project_->scenarios()->entries()) {
         auto item = new QListWidgetItem(
@@ -344,6 +350,11 @@ void ScenarioEditor::refresh() {
                 .arg(s.json() != project_->scenarios()->original(s.key).json() ? " *" : ""),
             scenarios_);
         item->setData(Qt::UserRole, s.key);
+        auto help = QString("Runtime key %1\n%2").arg(s.key).arg(s.name);
+        const auto note = notes[QString::number(s.key)].toString();
+        if (!note.isEmpty())
+            help += "\n\n" + note;
+        item->setToolTip(help);
         if (s.key == previous)
             scenarios_->setCurrentItem(item);
     }

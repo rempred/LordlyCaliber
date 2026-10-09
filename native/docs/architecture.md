@@ -8,9 +8,19 @@ from directory `0x01890C90`; its separate dated scene-history text is not a
 mission-name source. `tools/generate-encounter-labels.cjs` combines those titles
 with existing wiki location and meaningful branch annotations. Its generated
 `labels.json` serves Scenarios and encounter navigation. Generic alias/flag notes
-are omitted for verified titles; keys 62–66 retain existing labels or numeric
-fallback. These are display labels only and do not alter scenario identities,
+are omitted for verified titles. Keys 10, 22, 35 and 62 are explicitly labeled
+stock placeholders: their US Rev 0 12-byte descriptors at z64 `0x13C550 + 12*key`
+are zero, and their ESET selectors at `0x654A0 + 9*key + 8` select `eset0_00.bin`.
+Keys 10/22/35 still have real title cards; that does not prove playable branches.
+Other keys beyond the card directory retain existing labels or numeric fallback.
+These are display labels only and do not alter scenario identities,
 resources, project data or ROM title artwork.
+The Scenario list retains every supported key and shows full names and context
+in tooltips. Grim Path's opening event row 22 selects runtime key 20 or 21;
+their dedicated battle rows 23 and 24 select 20 and 21 respectively. Scanning
+immediate E7/E9 stores in the 113 decoded event scripts found no selection of
+runtime key 22. This supports treating it as a stock placeholder, not a third
+known story branch; its original development purpose remains unknown.
 Encounter navigation displays the runtime key or keys selected by the loaded
 ROM's scenario table. The shared encounter-row number remains an internal edit
 identity; copy/restore and project data continue to use that same row.

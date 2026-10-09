@@ -28,9 +28,25 @@ for(let key=0;key<=61;key++){
   if(annotation)annotations[key]=annotation.trim();
   labels[key]=title+annotation;
 }
+// A title card does not establish a playable scenario. These four US Rev 0
+// slots have zero 12-byte descriptors at z64 0x13C550 + 12*key and select
+// the default eset0_00.bin at 0x654A0 + 9*key + 8. Keep their titles and access,
+// but distinguish them from the real story variants. See docs/architecture.md.
+const notes={};
+for(const key of [10,22,35,62]){
+  annotations[key]='[Stock placeholder]';
+  labels[key]=`[Stock placeholder] ${titles[key]||'Untitled'}`;
+  notes[key]='This slot has no scenario setup of its own in the original ROM and uses the default squad data. '
+    +(titles[key]?'It has title artwork, but that alone does not make it a playable story branch. '
+      :'There is no entry-title card for this key. ')
+    +'The slot remains available for editing; its original development purpose is unconfirmed.';
+}
+notes[20]='The Grim Path: decline peace with the Western Division; Ankiseth is the opposing commander.';
+notes[21]='The Grim Path: make peace with the Western Division; Baldwin is the opposing commander.';
+notes[22]+=' The known Grim Path story branches use keys 20 and 21; a third playable branch has not been established.';
 const output=path.join(__dirname,'../game/encounters/labels.json');
 fs.mkdirSync(path.dirname(output),{recursive:true});
 fs.writeFileSync(output,JSON.stringify({generator:'native/tools/generate-encounter-labels.cjs',
-  input:'Verified native/game/encounters/entry-titles.json titles with parent wiki/runtime-key-branch-labels.json location/branch annotations; keys beyond the title directory retain existing labels or numeric identity',
-  titles,annotations,labels},null,2)+'\n');
+  input:'Verified native/game/encounters/entry-titles.json titles with parent wiki/runtime-key-branch-labels.json location/branch annotations; stock placeholder slots identified from US Rev 0 scenario descriptors (see native/docs/architecture.md); other keys beyond the title directory retain existing labels or numeric identity',
+  titles,annotations,notes,labels},null,2)+'\n');
 console.log(`Generated ${Object.keys(labels).length} encounter navigation labels`);

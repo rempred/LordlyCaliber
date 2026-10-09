@@ -1,6 +1,6 @@
 {
   "generator": "native/tools/generate-encounter-labels.cjs",
-  "input": "Verified native/game/encounters/entry-titles.json titles with parent wiki/runtime-key-branch-labels.json location/branch annotations; keys beyond the title directory retain existing labels or numeric identity",
+  "input": "Verified native/game/encounters/entry-titles.json titles with parent wiki/runtime-key-branch-labels.json location/branch annotations; stock placeholder slots identified from US Rev 0 scenario descriptors (see native/docs/architecture.md); other keys beyond the title directory retain existing labels or numeric identity",
   "titles": {
     "0": "The Meeting",
     "1": "The Southern Reaches",
@@ -71,6 +71,7 @@
     "4": "(Mylesia I)",
     "6": "(Volmus Mine II)",
     "8": "(Dardunnelles, the Crossroads I)",
+    "10": "[Stock placeholder]",
     "11": "(Crenel Canyon II)",
     "12": "(Mylesia II)",
     "15": "- Audvera after Sable",
@@ -78,6 +79,7 @@
     "19": "(Mount Keryoleth I)",
     "20": "- decline peace / Ankiseth",
     "21": "- make peace / Baldwin",
+    "22": "[Stock placeholder]",
     "23": "(Dardunnelles, the Crossroads II)",
     "24": "(Gules Hills I)",
     "30": "(Tremos Mountains II)",
@@ -85,6 +87,7 @@
     "32": "(Temple of Berthe II)",
     "33": "(Tremos Mountains I)",
     "34": "(Tremos Mountains II)",
+    "35": "[Stock placeholder]",
     "36": "(Gules Hills II)",
     "37": "- Xevec branch",
     "38": "- Dio branch",
@@ -103,7 +106,16 @@
     "58": "- after Latium / Silvis",
     "59": "(Aurua Plains II)",
     "60": "- Procus and Yumil / Yumil variant B",
-    "61": "- Yumil only / Yumil variant B"
+    "61": "- Yumil only / Yumil variant B",
+    "62": "[Stock placeholder]"
+  },
+  "notes": {
+    "10": "This slot has no scenario setup of its own in the original ROM and uses the default squad data. It has title artwork, but that alone does not make it a playable story branch. The slot remains available for editing; its original development purpose is unconfirmed.",
+    "20": "The Grim Path: decline peace with the Western Division; Ankiseth is the opposing commander.",
+    "21": "The Grim Path: make peace with the Western Division; Baldwin is the opposing commander.",
+    "22": "This slot has no scenario setup of its own in the original ROM and uses the default squad data. It has title artwork, but that alone does not make it a playable story branch. The slot remains available for editing; its original development purpose is unconfirmed. The known Grim Path story branches use keys 20 and 21; a third playable branch has not been established.",
+    "35": "This slot has no scenario setup of its own in the original ROM and uses the default squad data. It has title artwork, but that alone does not make it a playable story branch. The slot remains available for editing; its original development purpose is unconfirmed.",
+    "62": "This slot has no scenario setup of its own in the original ROM and uses the default squad data. There is no entry-title card for this key. The slot remains available for editing; its original development purpose is unconfirmed."
   },
   "labels": {
     "0": "The Meeting",
@@ -116,7 +128,7 @@
     "7": "A New Beginning",
     "8": "The Infernal Aura (Dardunnelles, the Crossroads I)",
     "9": "Liberation of Alba",
-    "10": "Liberation of Alba",
+    "10": "[Stock placeholder] Liberation of Alba",
     "11": "Idealism and Realism (Crenel Canyon II)",
     "12": "Warriors of the Fallen Kingdom (Mylesia II)",
     "13": "The Steadfast",
@@ -128,7 +140,7 @@
     "19": "A Legendary Land (Mount Keryoleth I)",
     "20": "The Grim Path - decline peace / Ankiseth",
     "21": "The Grim Path - make peace / Baldwin",
-    "22": "The Grim Path",
+    "22": "[Stock placeholder] The Grim Path",
     "23": "The Setting Sun (Dardunnelles, the Crossroads II)",
     "24": "Brigade of Radiant Cross (Gules Hills I)",
     "25": "The Eastern Orthodox Church",
@@ -141,7 +153,7 @@
     "32": "Gateway to Another World (Temple of Berthe II)",
     "33": "The Mercenaries (Tremos Mountains I)",
     "34": "No Man's Land (Tremos Mountains II)",
-    "35": "No Man's Land",
+    "35": "[Stock placeholder] No Man's Land",
     "36": "The March to Latium (Gules Hills II)",
     "37": "Betrayal - Xevec branch",
     "38": "Separate Ways - Dio branch",
@@ -168,7 +180,7 @@
     "59": "Caliber (Aurua Plains II)",
     "60": "Promises - Procus and Yumil / Yumil variant B",
     "61": "Promises - Yumil only / Yumil variant B",
-    "62": "Runtime Key 62 - internal alias",
+    "62": "[Stock placeholder] Untitled",
     "63": "The Infernal Aura (Dardunnelles, the Crossroads I) - flagged key 63",
     "64": "A New Beginning - flagged key 64"
   }
