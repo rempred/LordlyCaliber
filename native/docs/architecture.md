@@ -1,5 +1,17 @@
 # Native Lordly Caliber
 
+## Scenario navigation titles
+
+`game/encounters/entry-titles.json` maintains the visually verified US Rev 0
+entry-card titles for keys 0–61. The game selects image child `32 + scenarioKey`
+from directory `0x01890C90`; its separate dated scene-history text is not a
+mission-name source. `tools/generate-encounter-labels.cjs` combines those titles
+with existing wiki location and meaningful branch annotations. Its generated
+`labels.json` serves Scenarios and encounter navigation. Generic alias/flag notes
+are omitted for verified titles; keys 62–66 retain existing labels or numeric
+fallback. These are display labels only and do not alter scenario identities,
+resources, project data or ROM title artwork.
+
 ## Class artwork identity and combat animation authoring
 
 The guided Combat animations page uses the existing AnimationSequences,
