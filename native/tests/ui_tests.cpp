@@ -9323,6 +9323,74 @@ class UiTests : public QObject {
         undo.redo();
         QCOMPARE(project.manifest(), blank);
     }
+    void descriptionWorkspaceEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadTexts();
+        const auto before = project.manifest();
+        const auto action55 = project.textBanks()["actions"].entries[55].bytes;
+        QVERIFY(!action55.isEmpty());
+        QVERIFY(project.textBanks()["actions"].entries[56].bytes.isEmpty());
+        QUndoStack undo;
+        auto page = std::unique_ptr<QWidget>(createTextWorkspace(&project, &undo, [] {}));
+        auto banks = page->findChild<QComboBox *>("descriptionBank");
+        auto entries = page->findChild<QListWidget *>("descriptionEntries");
+        auto editor = page->findChild<QPlainTextEdit *>("descriptionEditor");
+        auto empty = page->findChild<QCheckBox *>("descriptionShowEmpty");
+        auto search = page->findChild<QLineEdit *>("descriptionSearch");
+        auto counts = page->findChild<QLabel *>("descriptionCounts");
+        QCOMPARE(banks->currentData().toString(), QString("actions"));
+        QCOMPARE(counts->text(), QString("102 with text · 57 empty entries"));
+        QVERIFY(!entries->item(55)->isHidden());
+        QVERIFY(entries->item(56)->isHidden());
+        entries->setCurrentRow(55);
+        QVERIFY(!editor->toPlainText().isEmpty());
+        empty->setChecked(true);
+        search->setText("Empty");
+        entries->setCurrentRow(56);
+        QVERIFY(editor->toPlainText().isEmpty());
+        QVERIFY(editor->placeholderText().contains("No description text"));
+        QVERIFY(entries->item(56)->text().contains("Empty"));
+        QCOMPARE(project.manifest(), before); // Displaying empty slots never authors replacement text.
+        editor->setPlainText("Authored action description.");
+        QCOMPARE(project.textBanks()["actions"].text(56), QString("Authored action description."));
+        QCOMPARE(entries->currentRow(), 56);
+        QCOMPARE(editor->toPlainText(), QString("Authored action description."));
+        QVERIFY(!entries->item(56)->isHidden()); // Keep typing even when the label no longer matches.
+        QCOMPARE(project.textBanks()["actions"].entries[55].bytes, action55);
+        QVERIFY(!entries->item(56)->text().contains("Empty"));
+        QCOMPARE(counts->text(), QString("103 with text · 56 empty entries"));
+        search->clear();
+        empty->setChecked(false);
+        undo.undo();
+        QCOMPARE(project.manifest(), before);
+        QCOMPARE(entries->currentRow(), 56);
+        QVERIFY(editor->toPlainText().isEmpty());
+        QVERIFY(!entries->item(56)->isHidden()); // Retain the edit target across Undo.
+        undo.redo();
+        QCOMPARE(project.textBanks()["actions"].text(56), QString("Authored action description."));
+        search->setText("nothing matches this description");
+        QCOMPARE(entries->currentRow(), -1);
+        QVERIFY(!editor->isEnabled());
+        QVERIFY(editor->toPlainText().isEmpty());
+        search->clear();
+        QVERIFY(editor->isEnabled());
+        banks->setCurrentIndex(banks->findData("classes"));
+        QCOMPARE(counts->text(), QString("188 with text · 37 empty entries"));
+        QVERIFY(entries->item(165)->isHidden());
+        QVERIFY(entries->item(165)->text().contains("Reserved slot"));
+        QVERIFY(entries->item(200)->text().contains("Class-change help 2800"));
+        RecordModel model(&project, Table::Classes, &undo);
+        QCOMPARE(model.createClass("Blank hero"), 165);
+        empty->setChecked(true);
+        entries->setCurrentRow(225);
+        QVERIFY(entries->item(225)->text().contains("Class 165 · Blank hero"));
+        QVERIFY(editor->toPlainText().isEmpty());
+        banks->setCurrentIndex(banks->findData("consumables"));
+        QVERIFY(entries->item(1)->text().contains(project.record(Table::Consumables, 1).name));
+    }
     void addClassUndoRedo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
