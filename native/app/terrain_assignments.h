@@ -15,9 +15,12 @@ inline void dragPool(QWidget *source, int pool, int row, const QString &label) {
     data->setData(poolMime, QByteArray::number(pool) + ":" + QByteArray::number(row));
     auto drag = new QDrag(source);
     drag->setMimeData(data);
-    QPixmap image(140, 32); image.fill(QColor("#285d74"));
-    QPainter painter(&image); painter.setPen(Qt::white); painter.drawText(image.rect(), Qt::AlignCenter, label); painter.end();
-    drag->setPixmap(image); drag->setHotSpot(QPoint(70, 16));
+    const auto bounds = source->fontMetrics().boundingRect(QRect(0, 0, 240, 300), Qt::TextWordWrap, label);
+    QPixmap image(256, qMax(40, bounds.height() + 16)); image.fill(source->palette().color(QPalette::Highlight));
+    QPainter painter(&image); painter.setFont(source->font());
+    painter.setPen(source->palette().color(QPalette::HighlightedText));
+    painter.drawText(image.rect().adjusted(8, 8, -8, -8), Qt::AlignLeft | Qt::TextWordWrap, label); painter.end();
+    drag->setPixmap(image); drag->setHotSpot(QPoint(16, 16));
     drag->exec(Qt::MoveAction | Qt::CopyAction, row < 0 ? Qt::CopyAction : Qt::MoveAction);
 }
 class PoolTiles : public QListWidget {

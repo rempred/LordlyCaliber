@@ -24,6 +24,8 @@ class EncounterEditor : public QWidget {
     void changeTerrain(int terrain);
     void showGlobalRatio();
     void refreshPoolRows();
+    void editTerrainRules(int slot);
+    QString poolContents(int slot) const;
     void applyGlobalRate(bool restore);
     QWidget *createRewardsPage();
     void refreshRewardClasses();
@@ -44,7 +46,7 @@ class EncounterEditor : public QWidget {
     std::function<void()> changed_;
     QListWidget *pools_;
     QLineEdit *search_;
-    QLabel *heading_, *notice_;
+    QLabel *heading_, *notice_, *terrainContext_;
     QComboBox *copyFrom_;
     QVector<QComboBox *> pairs_;
     QTableWidget *pairTable_, *terrainTable_, *estimates_ = nullptr;

@@ -6,6 +6,14 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
+Map encounters combines terrain names, per-terrain chances and the selected
+map's two creature choices. Terrains sharing a pool occupy one row; pool IDs are
+secondary labels. Rows explain missing assignments, zero terrain chances and
+empty creature pairs, and identify active custom-squad overrides. Edit rules
+opens the corresponding row under Terrain rules · All maps. That page previews
+the selected map's creatures on assigned/available pool tiles while retaining
+game-wide assignments, sharing/move/swap dragging and pool expansion.
+
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
 Class attack fields and combat/advanced action selectors open the selected
