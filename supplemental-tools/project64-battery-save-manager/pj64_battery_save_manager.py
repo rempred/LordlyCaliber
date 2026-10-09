@@ -35,7 +35,7 @@ import uuid
 from typing import Any, Iterable, Mapping, Sequence
 
 
-TOOL_VERSION = "1.2.2"
+TOOL_VERSION = "1.3.0"
 TOOL_SOURCE = (
     "editor/supplemental-tools/project64-battery-save-manager/"
     "pj64_battery_save_manager.py"
@@ -131,6 +131,8 @@ def user_data_root(
 
 USER_DATA_ROOT = user_data_root()
 DEFAULT_INDEX = USER_DATA_ROOT / "pj64-battery-save-index.json"
+GUI_SETTINGS = USER_DATA_ROOT / "settings.json"
+GUI_INDEX = USER_DATA_ROOT / "gui-index.json"
 DEFAULT_ASSIGNMENT_DIR = USER_DATA_ROOT / "assignment-manifests"
 
 
@@ -224,14 +226,10 @@ def _read_ascii(data: bytes, offset: int, maximum: int) -> str:
 
 
 def _slot_checksums(native: bytes, base: int) -> tuple[int, int]:
-    total = base & 0xFFFF
-    bit_count = base & 0xFFFF
     start = base + CHECKSUM_REGION_OFFSET
     end = start + CHECKSUM_REGION_SIZE
-    for value in native[start:end]:
-        total = (total + value) & 0xFFFF
-        bit_count = (bit_count + value.bit_count()) & 0xFFFF
-    return total, bit_count
+    payload = native[start:end]
+    return (base + sum(payload)) & 0xFFFF, (base + sum(value.bit_count() for value in payload)) & 0xFFFF
 
 
 def _read_packed_bits(payload: bytes, bit_offset: int, bit_count: int) -> int:
@@ -294,13 +292,14 @@ def decode_world_availability(native: bytes, slot_base: int) -> dict[str, Any]:
     }
 
 
-def inspect_sra(path: Path) -> dict[str, Any]:
+def inspect_sra(path: Path, decoded: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     resolved = path.expanduser().resolve()
     stat = resolved.stat()
     raw = resolved.read_bytes()
     result: dict[str, Any] = {
         "path": str(resolved),
         "size": len(raw),
+        "mtimeNs": stat.st_mtime_ns,
         "sha256": hashlib.sha256(raw).hexdigest().upper(),
         "mtimeUtc": utc_text(dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc)),
         "format": "pj64-sra" if len(raw) == PJ64_SRA_SIZE else "invalid-size",
@@ -308,6 +307,9 @@ def inspect_sra(path: Path) -> dict[str, Any]:
         "slots": [],
     }
     if len(raw) != PJ64_SRA_SIZE:
+        return result
+    if decoded is not None and result["sha256"] in decoded:
+        result.update(decoded[result["sha256"]])
         return result
     native = pj64_to_native_saveram(raw)
     slots = []
@@ -334,6 +336,8 @@ def inspect_sra(path: Path) -> dict[str, Any]:
         )
     result["slots"] = slots
     result["validOb64BatterySave"] = any(slot["valid"] for slot in slots)
+    if decoded is not None:
+        decoded[result["sha256"]] = {"slots": slots, "validOb64BatterySave": result["validOb64BatterySave"]}
     return result
 
 
@@ -368,9 +372,21 @@ def discover_save_roots(extra_roots: Iterable[Path] = ()) -> list[Path]:
     return sorted(unique.values(), key=lambda path: os.path.normcase(str(path)))
 
 
-def scan_save_roots(save_roots: Sequence[Path]) -> list[dict[str, Any]]:
+def scan_save_roots(
+    save_roots: Sequence[Path], previous: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     locations: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
+    cached: dict[str, dict[str, Any]] = {}
+    decoded: dict[str, dict[str, Any]] = {}
+    if previous and previous.get("toolVersion") == TOOL_VERSION:
+        for group in previous.get("saves", []):
+            for location in group["locations"]:
+                cached[os.path.normcase(location["path"])] = {
+                    **location, "sha256": group["sha256"], "size": group["size"],
+                    "validOb64BatterySave": group["validOb64BatterySave"], "slots": group["slots"],
+                    "format": "pj64-sra" if group["size"] == PJ64_SRA_SIZE else "invalid-size",
+                }
     for save_root in save_roots:
         resolved_root = save_root.expanduser().resolve()
         for directory, child_names, file_names in os.walk(resolved_root, onerror=lambda _error: None):
@@ -387,7 +403,16 @@ def scan_save_roots(save_roots: Sequence[Path]) -> list[dict[str, Any]]:
             if normalized_path in seen_paths:
                 continue
             seen_paths.add(normalized_path)
-            metadata = inspect_sra(save_path)
+            try:
+                stat = save_path.stat()
+                prior = cached.get(normalized_path)
+                if prior and prior.get("mtimeNs") == stat.st_mtime_ns and prior["size"] == stat.st_size:
+                    metadata = dict(prior)
+                else:
+                    metadata = inspect_sra(save_path, decoded)
+            except OSError:
+                # A save may disappear while Project64 is writing or a folder is moved.
+                continue
             metadata.update(
                 {
                     "saveRoot": str(resolved_root),
@@ -432,7 +457,8 @@ def group_locations(locations: Sequence[dict[str, Any]]) -> list[dict[str, Any]]
                 "locations": [
                     {
                         key: copy[key]
-                        for key in ("path", "saveRoot", "folderHash", "mtimeUtc")
+                        for key in ("path", "saveRoot", "folderHash", "mtimeUtc", "mtimeNs")
+                        if key in copy
                     }
                     for copy in copies
                 ],
@@ -452,8 +478,11 @@ def find_roms(rom_dirs: Sequence[Path]) -> list[Path]:
     return sorted(roms.values(), key=lambda path: os.path.normcase(str(path)))
 
 
-def build_index(save_roots: Sequence[Path], rom_dirs: Sequence[Path] = ()) -> dict[str, Any]:
-    locations = scan_save_roots(save_roots)
+def build_index(
+    save_roots: Sequence[Path], rom_dirs: Sequence[Path] = (),
+    *, previous: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    locations = scan_save_roots(save_roots, previous)
     roms = []
     for path in find_roms(rom_dirs):
         try:
@@ -490,6 +519,25 @@ def write_json(path: Path, value: Any) -> None:
     temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
     temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, path)
+
+
+def load_gui_settings(path: Path = GUI_SETTINGS) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if value.get("schemaVersion") != 1 or not isinstance(value.get("saveRoots"), list):
+        raise BatterySaveError(f"Unsupported settings: {path}")
+    if not all(isinstance(root, str) for root in value["saveRoots"]):
+        raise BatterySaveError(f"Invalid library folders in {path}")
+    return value
+
+
+def initial_library_roots(settings: Mapping[str, Any] | None, extra: Sequence[Path] = ()) -> list[Path]:
+    # An explicitly empty saved list is intentional. Discovery is first-run only.
+    roots = discover_save_roots() if settings is None else [Path(p) for p in settings["saveRoots"]]
+    unique = {os.path.normcase(str(p.expanduser().resolve())): p.expanduser().resolve()
+              for p in [*roots, *extra]}
+    return list(unique.values())
 
 
 def load_index(path: Path) -> dict[str, Any]:
@@ -608,17 +656,27 @@ def assign_save(
     allow_running: bool,
     manifest_path: Path | None = None,
     command_line: Sequence[str] | None = None,
+    expected_source_sha256: str | None = None,
+    expected_destination_sha256: str | None = None,
+    expected_rom_sha256: str | None = None,
 ) -> dict[str, Any]:
     source_meta = inspect_sra(source)
+    if expected_source_sha256 and source_meta["sha256"] != expected_source_sha256:
+        raise BatterySaveError("Selected save changed since it was listed. Refresh and select it again.")
     if not source_meta["validOb64BatterySave"] and not allow_invalid:
         raise BatterySaveError(
             f"source is not a checksum-valid OB64 Project64 battery save: {source}; "
             "use --allow-invalid only for a deliberate forensic copy"
         )
     rom_meta, destination_directory = rom_save_directory(rom, save_root)
+    if expected_rom_sha256 and rom_meta["sha256"] != expected_rom_sha256:
+        raise BatterySaveError("The ROM changed during assignment. Select it again before copying.")
     resolved_root = save_root.expanduser().resolve()
     destination = destination_directory / SAVE_FILENAME
     destination_before = inspect_sra(destination) if destination.is_file() else None
+    if expected_destination_sha256 and (not destination_before or
+            destination_before["sha256"] != expected_destination_sha256):
+        raise BatterySaveError("Destination save changed since confirmation. Review it before replacing.")
     action = "copy"
     if destination_before:
         if destination_before["sha256"] == source_meta["sha256"]:
@@ -914,9 +972,13 @@ def standalone_save_group(path: Path) -> dict[str, Any]:
     }
 
 
-def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
-    """Launch the standard-library Tk desktop interface."""
+def create_gui(
+    window: Any, initial_roots: Sequence[Path] = (), *,
+    settings_path: Path = GUI_SETTINGS, index_path: Path = GUI_INDEX,
+) -> Any:
+    """Create the desktop workflow with caller-owned window and storage."""
     try:
+        import queue
         import threading
         import tkinter as tk
         from tkinter import filedialog, messagebox, ttk
@@ -924,11 +986,6 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
         raise BatterySaveError(
             "the desktop GUI requires Python's standard tkinter package"
         ) from error
-
-    try:
-        window = tk.Tk()
-    except tk.TclError as error:
-        raise BatterySaveError(f"could not open the desktop GUI: {error}") from error
 
     class BatterySaveManagerGui:
         def __init__(self, root: Any) -> None:
@@ -944,6 +1001,13 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             self.selected_source: Path | None = None
             self.rom_meta: dict[str, Any] | None = None
             self.busy = False
+            self.close_requested = False
+            self.scanning = False
+            self.rom_generation = 0
+            self.events: Any = queue.Queue()
+            self.settings = load_gui_settings(settings_path)
+            self.restoring = True
+            self.settings_timer: Any = None
 
             self.status_var = tk.StringVar(value="Choose a save library folder or an individual .sra file.")
             self.source_var = tk.StringVar(value="No battery save selected")
@@ -952,18 +1016,77 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             )
             self.rom_var = tk.StringVar(value="")
             self.rom_hash_var = tk.StringVar(value="No ROM selected")
-            self.save_root_var = tk.StringVar(value="")
+            self.save_root_var = tk.StringVar(value=(self.settings or {}).get("destinationRoot", ""))
             self.target_var = tk.StringVar(value="Select a ROM and destination Save root.")
+            self.result_var = tk.StringVar(value="")
 
             self._build_styles()
             self._build_layout()
-            self.save_root_var.trace_add("write", lambda *_args: self._update_target())
+            self.save_root_var.trace_add("write", lambda *_args: self._destination_changed())
 
-            discovered = discover_save_roots(initial_roots)
-            for path in discovered:
+            for path in initial_library_roots(self.settings, initial_roots):
                 self._append_root(path)
+            if not self.save_root_var.get():
+                destinations = [p for p in self.save_roots if p.name.lower() == "save"]
+                if len(destinations) == 1:
+                    self.save_root_var.set(str(destinations[0]))
+            if index_path.is_file():
+                try:
+                    cached = load_index(index_path)
+                    if cached.get("toolVersion") == TOOL_VERSION and cached.get("saveRoots") == [str(p) for p in self.save_roots]:
+                        self.index = cached
+                        self._populate_index(cached)
+                        self.export_button.configure(state="normal")
+                        self.status_var.set("Showing saved library; checking for changes...")
+                except (OSError, ValueError, KeyError, TypeError, BatterySaveError):
+                    self.index = None  # The optional cache will be replaced by a fresh scan.
+            self.restoring = False
+            self._save_settings()
+            self.root.protocol("WM_DELETE_WINDOW", self.close)
+            self.root.after(50, self._poll_events)
+            saved_rom = (self.settings or {}).get("rom", "")
+            if saved_rom:
+                self.root.after(0, self._load_rom, Path(saved_rom))
             if self.save_roots:
                 self.root.after(150, self.scan_library)
+
+        def _save_settings(self) -> None:
+            if self.restoring:
+                return
+            if self.settings_timer is not None:
+                self.root.after_cancel(self.settings_timer)
+                self.settings_timer = None
+            value = {"schemaVersion": 1, "saveRoots": [str(p) for p in self.save_roots],
+                     "destinationRoot": self.save_root_var.get(), "rom": self.rom_var.get(),
+                     "selectedSha256": self.selected_group["sha256"] if self.selected_group else (self.settings or {}).get("selectedSha256", "")}
+            # Keep the previous ROM while its startup load is queued.
+            if not value["rom"] and self.settings:
+                value["rom"] = self.settings.get("rom", "")
+            try:
+                write_json(settings_path, value)
+                self.settings = value
+            except OSError as error:
+                self._show_error("Could not remember your choices", error)
+
+        def _destination_changed(self) -> None:
+            self._update_target()
+            if self.settings_timer is not None:
+                self.root.after_cancel(self.settings_timer)
+            self.settings_timer = self.root.after(400, self._save_settings)
+
+        def close(self) -> None:
+            if self.busy:
+                self.close_requested = True
+                self.status_var.set("Finishing the save operation before closing...")
+                return
+            self._save_settings()
+            self.root.destroy()
+
+        def _poll_events(self) -> None:
+            while not self.events.empty():
+                callback, values = self.events.get_nowait()
+                callback(*values)
+            self.root.after(50, self._poll_events)
 
         def _build_styles(self) -> None:
             style = ttk.Style(self.root)
@@ -1057,11 +1180,12 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 command=self.scan_library,
             )
             self.scan_button.pack(side="left", padx=(6, 0))
-            ttk.Button(
+            self.remove_folder_button = ttk.Button(
                 buttons,
                 text="Remove Folder",
                 command=self.remove_selected_root,
-            ).pack(side="left", padx=(6, 0))
+            )
+            self.remove_folder_button.pack(side="left", padx=(6, 0))
             self.export_button = ttk.Button(
                 buttons,
                 text="Export Index...",
@@ -1257,25 +1381,25 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 style="Path.TLabel",
             ).grid(row=4, column=0, sticky="ew", columnspan=2)
 
-            actions = ttk.LabelFrame(panel, text="5. Create or Assign", padding=10)
+            actions = ttk.LabelFrame(panel, text="5. Copy Save to ROM", padding=10)
             actions.grid(row=3, column=0, sticky="ew", pady=(10, 0))
             actions.columnconfigure(0, weight=1)
             actions.columnconfigure(1, weight=1)
             self.prepare_button = ttk.Button(
                 actions,
-                text="Create ROM Save Directory",
+                text="Create Folder Only",
                 command=self.create_directory,
                 state="disabled",
             )
-            self.prepare_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+            self.prepare_button.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
             self.assign_button = ttk.Button(
                 actions,
-                text="Assign Selected Save",
+                text="Copy Selected Save to ROM",
                 command=self.assign_selected_save,
                 state="disabled",
                 style="Primary.TButton",
             )
-            self.assign_button.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+            self.assign_button.grid(row=0, column=0, columnspan=2, sticky="ew")
             self._wrapped_label(
                 actions,
                 text=(
@@ -1285,11 +1409,11 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 ),
                 style="Subtle.TLabel",
             ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            self._wrapped_label(actions, textvariable=self.result_var).grid(
+                row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         def _append_root(self, path: Path) -> bool:
             resolved = path.expanduser().resolve()
-            if not resolved.is_dir():
-                return False
             key = os.path.normcase(str(resolved))
             if any(os.path.normcase(str(existing)) == key for existing in self.save_roots):
                 return False
@@ -1306,21 +1430,29 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             if not selected:
                 return
             if self._append_root(Path(selected)):
+                self._save_settings()
                 self.status_var.set(f"Added library tree: {Path(selected).resolve()}")
                 self.scan_library()
             else:
                 self.status_var.set("That library folder is already listed.")
 
         def remove_selected_root(self) -> None:
+            if self.busy or self.scanning:
+                return
             selected = list(self.root_list.curselection())
             if not selected:
                 return
             for index in reversed(selected):
                 del self.save_roots[index]
                 self.root_list.delete(index)
-            self.status_var.set("Removed the selected library folder. Scan to refresh results.")
+            self._save_settings()
+            self.selected_group = None
+            self.selected_source = None
+            self.scan_library()
 
         def choose_source_file(self) -> None:
+            if self.busy:
+                return
             selected = filedialog.askopenfilename(
                 parent=self.root,
                 title="Choose an Ogre Battle 64 Project64 battery save",
@@ -1350,21 +1482,20 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             self.status_var.set(f"Selected battery save: {Path(selected).resolve()}")
 
         def scan_library(self) -> None:
-            if self.busy:
+            if self.busy or self.scanning:
                 return
             roots = list(self.save_roots)
             if not roots:
-                messagebox.showinfo(
-                    "No library folders",
-                    "Add a folder to scan, or choose an individual .sra file.",
-                    parent=self.root,
-                )
+                self._scan_finished(build_index([]))
                 return
-            self._set_busy(True, f"Scanning {len(roots)} library tree(s)...")
+            self.scanning = True
+            self._update_buttons()
+            self.status_var.set(f"Checking {len(roots)} library tree(s)...")
+            previous = self.index
 
             def worker() -> None:
                 try:
-                    index = build_index(roots)
+                    index = build_index(roots, previous=previous)
                 except Exception as error:  # forwarded to the UI thread
                     self._post_to_ui(self._scan_failed, error)
                     return
@@ -1373,19 +1504,22 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             threading.Thread(target=worker, daemon=True).start()
 
         def _post_to_ui(self, callback: Any, *values: Any) -> None:
-            try:
-                self.root.after(0, callback, *values)
-            except (RuntimeError, tk.TclError):
-                pass
+            self.events.put((callback, values))
 
         def _scan_failed(self, error: Exception) -> None:
-            self._set_busy(False)
+            self.scanning = False
+            self._update_buttons()
             self._show_error("Save library scan failed", error)
 
         def _scan_finished(self, index: dict[str, Any]) -> None:
             self.index = index
             self._populate_index(index)
-            self._set_busy(False)
+            self.scanning = False
+            self._update_buttons()
+            try:
+                write_json(index_path, index)
+            except OSError as error:
+                self._show_error("Could not cache the save library", error)
             self.export_button.configure(state="normal")
             self.status_var.set(
                 f"Indexed {index['locationCount']} locations as "
@@ -1393,6 +1527,7 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             )
 
         def _populate_index(self, index: dict[str, Any]) -> None:
+            preferred = self.selected_group["sha256"] if self.selected_group else (self.settings or {}).get("selectedSha256")
             existing_items = self.save_tree.get_children()
             if existing_items:
                 self.save_tree.delete(*existing_items)
@@ -1404,18 +1539,23 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 "Select a checksum-valid row, or choose an individual .sra file."
             )
             first_valid: str | None = None
+            preferred_item: str | None = None
             for number, group in enumerate(index["saves"]):
                 item = f"index-{number}"
                 self.groups_by_item[item] = group
                 self._insert_group(item, group)
                 if first_valid is None and group["validOb64BatterySave"]:
                     first_valid = item
+                if group["sha256"] == preferred:
+                    preferred_item = item
+            first_valid = preferred_item or first_valid
             if first_valid:
                 self.save_tree.selection_set(first_valid)
                 self.save_tree.focus(first_valid)
                 self.save_tree.see(first_valid)
                 self.on_save_selected()
             self._update_actions()
+            self._save_settings()
 
         def _insert_group(
             self,
@@ -1458,7 +1598,9 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 source = source_from_group(group)
             except (BatterySaveError, OSError) as error:
                 self.selected_source = None
-                self._show_error("Selected source is unavailable", error)
+                self.source_var.set("This library entry changed or is no longer available.")
+                self.source_details_var.set("The background refresh will update it. Use Scan Library to check again.")
+                self.status_var.set(str(error))
                 self._update_actions()
                 return
             self.selected_source = source
@@ -1469,6 +1611,7 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                 f"Physical copies indexed: {group['copyCount']}"
             )
             self._update_actions()
+            self._save_settings()
 
         def export_index(self) -> None:
             if not self.index:
@@ -1490,6 +1633,8 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             self.status_var.set(f"Index exported: {Path(selected).resolve()}")
 
         def choose_rom(self) -> None:
+            if self.busy:
+                return
             selected = filedialog.askopenfilename(
                 parent=self.root,
                 title="Choose the patched Ogre Battle 64 ROM",
@@ -1500,16 +1645,39 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             )
             if not selected:
                 return
-            try:
-                metadata = rom_identity(Path(selected))
-            except (BatterySaveError, OSError) as error:
-                self._show_error("Cannot use ROM", error)
+            self._load_rom(Path(selected))
+
+        def _load_rom(self, path: Path) -> None:
+            self.rom_generation += 1
+            generation = self.rom_generation
+            self.rom_meta = None
+            self.rom_var.set(str(path))
+            self.rom_hash_var.set("Reading ROM in the background...")
+            self._update_target()
+            def worker() -> None:
+                try:
+                    metadata = rom_identity(path)
+                except Exception as error:
+                    self._post_to_ui(self._rom_failed, generation, error)
+                    return
+                self._post_to_ui(self._rom_loaded, generation, metadata)
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _rom_failed(self, generation: int, error: Exception) -> None:
+            if generation != self.rom_generation:
+                return
+            self.rom_hash_var.set("Choose an available ROM.")
+            self._show_error("Cannot use ROM", error)
+
+        def _rom_loaded(self, generation: int, metadata: dict[str, Any]) -> None:
+            if generation != self.rom_generation:
                 return
             self.rom_meta = metadata
             self.rom_var.set(metadata["path"])
             self.rom_hash_var.set(f"Project64 save hash: {metadata['pj64SaveHash']}")
             self.status_var.set(f"Selected ROM: {metadata['path']}")
             self._update_target()
+            self._save_settings()
 
         def choose_save_root(self) -> None:
             selected = filedialog.askdirectory(
@@ -1562,67 +1730,59 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             self.assign_button.configure(state="normal" if assign_ready else "disabled")
 
         def create_directory(self) -> None:
-            if not self.rom_meta:
+            if not self.rom_meta or self.busy:
                 return
             try:
                 save_root = self._current_save_root()
-                preview = prepare_save_directory(
-                    rom=Path(self.rom_meta["path"]),
-                    save_root=save_root,
-                    apply=False,
-                )
             except (BatterySaveError, OSError) as error:
                 self._show_error("Cannot prepare save directory", error)
                 return
-            if preview["action"] == "already-exists":
-                messagebox.showinfo(
-                    "Save directory already exists",
-                    preview["directory"],
-                    parent=self.root,
-                )
-                self.status_var.set(f"Directory already exists: {preview['directory']}")
-                return
-            if not messagebox.askyesno(
-                "Create ROM save directory",
-                f"Create this directory?\n\n{preview['directory']}",
-                parent=self.root,
-            ):
-                return
-            try:
-                result = prepare_save_directory(
-                    rom=Path(self.rom_meta["path"]),
-                    save_root=save_root,
-                    apply=True,
-                )
-            except (BatterySaveError, OSError) as error:
-                self._show_error("Could not create save directory", error)
-                return
-            messagebox.showinfo(
-                "Save directory ready",
-                result["directory"],
-                parent=self.root,
-            )
-            self.status_var.set(f"Save directory ready: {result['directory']}")
+            rom = Path(self.rom_meta["path"])
+            self._set_busy(True, "Creating save folder...")
+            def worker() -> None:
+                try:
+                    result = prepare_save_directory(rom=rom, save_root=save_root, apply=True)
+                except Exception as error:
+                    self._post_to_ui(self._action_failed, error)
+                    return
+                self._post_to_ui(self._directory_finished, result)
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _directory_finished(self, result: dict[str, Any]) -> None:
+            self._set_busy(False)
+            self.result_var.set(f"Save folder ready: {result['directory']}")
+            self.status_var.set("Save folder ready.")
 
         def assign_selected_save(self) -> None:
-            if not self.selected_source or not self.rom_meta:
+            if not self.selected_source or not self.rom_meta or self.busy:
                 return
             try:
                 save_root = self._current_save_root()
-                preview = assign_save(
-                    source=self.selected_source,
-                    rom=Path(self.rom_meta["path"]),
-                    save_root=save_root,
-                    apply=False,
-                    replace=True,
-                    allow_invalid=False,
-                    allow_running=False,
-                    command_line=[str(Path(__file__).resolve()), "gui"],
-                )
             except (BatterySaveError, OSError) as error:
                 self._show_error("Cannot preview assignment", error)
                 return
+            request = dict(source=self.selected_source, rom=Path(self.rom_meta["path"]),
+                           save_root=save_root, allow_invalid=False, allow_running=False,
+                           expected_source_sha256=self.selected_group["sha256"],
+                           command_line=[str(Path(__file__).resolve()), "gui"])
+            self._set_busy(True, "Checking selected save and destination...")
+            def worker() -> None:
+                try:
+                    preview = assign_save(**request, apply=False, replace=True)
+                except Exception as error:
+                    self._post_to_ui(self._action_failed, error)
+                    return
+                self._post_to_ui(self._assignment_preview_ready, preview, request)
+            threading.Thread(target=worker, daemon=True).start()
 
+        def _assignment_preview_ready(self, preview: dict[str, Any], request: dict[str, Any]) -> None:
+            if self.close_requested:
+                self._set_busy(False)
+                return
+            # The worker rehashed the actual ROM; show that exact destination.
+            self.rom_meta = preview["rom"]
+            self.rom_hash_var.set(f"Project64 save hash: {self.rom_meta['pj64SaveHash']}")
+            self._update_target()
             action = preview["action"]
             if action == "replace":
                 prompt = (
@@ -1637,75 +1797,59 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
                     icon="warning",
                     parent=self.root,
                 ):
+                    self._set_busy(False, "Replacement cancelled.")
                     return
                 replace = True
+                request["expected_destination_sha256"] = preview["destination"]["before"]["sha256"]
             elif action == "already-identical":
-                if not messagebox.askyesno(
-                    "Battery save already assigned",
-                    (
-                        "The destination already contains identical bytes. "
-                        "Verify it and write an assignment manifest anyway?"
-                    ),
-                    parent=self.root,
-                ):
-                    return
-                replace = False
-            else:
-                prompt = (
-                    f"Copy this battery save?\n\nSource:\n{preview['source']['path']}\n\n"
-                    f"Destination:\n{preview['destination']['path']}\n\n"
-                    f"Slots:\n{_slot_summary(preview['source']['slots'])}"
-                )
-                if not messagebox.askyesno(
-                    "Assign battery save",
-                    prompt,
-                    parent=self.root,
-                ):
-                    return
-                replace = False
-
-            self._set_busy(True, "Assigning and verifying battery save...")
-            try:
-                result = assign_save(
-                    source=self.selected_source,
-                    rom=Path(self.rom_meta["path"]),
-                    save_root=save_root,
-                    apply=True,
-                    replace=replace,
-                    allow_invalid=False,
-                    allow_running=False,
-                    command_line=[str(Path(__file__).resolve()), "gui"],
-                )
-            except (BatterySaveError, OSError) as error:
-                self._set_busy(False)
-                self._show_error("Battery-save assignment failed", error)
+                self._set_busy(False, "This save is already assigned; no changes needed.")
+                self.result_var.set(f"Already assigned: {preview['destination']['path']}")
                 return
+            else:
+                replace = False
+            request["expected_rom_sha256"] = preview["rom"]["sha256"]
+            self._set_busy(True, "Assigning and verifying battery save...")
+            def worker() -> None:
+                try:
+                    result = assign_save(**request, apply=True, replace=replace)
+                except Exception as error:
+                    self._post_to_ui(self._action_failed, error)
+                    return
+                self._post_to_ui(self._assignment_finished, result)
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _action_failed(self, error: Exception) -> None:
+            self.close_requested = False
             self._set_busy(False)
-            lines = [
-                "Battery save assigned and verified.",
-                "",
-                result["destination"]["path"],
-            ]
+            self._show_error("Save operation failed", error)
+
+        def _assignment_finished(self, result: dict[str, Any]) -> None:
+            self._set_busy(False)
+            lines = ["Battery save assigned and verified.", result["destination"]["path"]]
             if result.get("backup"):
                 lines.extend(["", f"Backup: {result['backup']['path']}"])
             if result.get("manifestPath"):
                 lines.extend(["", f"Manifest: {result['manifestPath']}"])
-            messagebox.showinfo(
-                "Assignment complete",
-                "\n".join(lines),
-                parent=self.root,
-            )
+            self.result_var.set("\n".join(lines))
             self.status_var.set(f"Assigned and verified: {result['destination']['path']}")
+            self._save_settings()
+
+        def _update_buttons(self) -> None:
+            state = "disabled" if self.busy or self.scanning else "normal"
+            self.scan_button.configure(state=state)
+            self.add_folder_button.configure(state=state)
+            self.remove_folder_button.configure(state=state)
+            self._update_actions()
 
         def _set_busy(self, busy: bool, message: str | None = None) -> None:
             self.busy = busy
             self.root.configure(cursor="wait" if busy else "")
-            self.scan_button.configure(state="disabled" if busy else "normal")
-            self.add_folder_button.configure(state="disabled" if busy else "normal")
+            self._update_buttons()
             if message:
                 self.status_var.set(message)
             self._update_actions()
-            self.root.update_idletasks()
+            if not busy and self.close_requested:
+                self.root.after_idle(self.close)
 
         def _show_error(self, title: str, error: Exception) -> None:
             message = str(error)
@@ -1717,7 +1861,19 @@ def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
             self.status_var.set(message)
             messagebox.showerror(title, message, parent=self.root)
 
-    BatterySaveManagerGui(window)
+    return BatterySaveManagerGui(window)
+
+
+def launch_gui(initial_roots: Sequence[Path] = ()) -> int:
+    try:
+        import tkinter as tk
+    except ImportError as error:
+        raise BatterySaveError("the desktop GUI requires Python's standard tkinter package") from error
+    try:
+        window = tk.Tk()
+    except tk.TclError as error:
+        raise BatterySaveError(f"could not open the desktop GUI: {error}") from error
+    create_gui(window, initial_roots)
     window.mainloop()
     return 0
 
