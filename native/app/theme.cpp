@@ -92,6 +92,15 @@ QToolBar#projectActions QToolButton:focus { border-color: #e0b35a; }
 QToolBar#projectActions QToolButton:disabled { color: #806c50; }
 QStatusBar { background: #dcc286; color: #2a1a08; border-top: 1px solid #7a5a24; }
 QStatusBar::item { border: none; }
+QLabel#terrainMapContext {
+    font-size: 16pt;
+    font-weight: 600;
+    color: #fff2d1;
+    background: #3d2914;
+    border: 1px solid #9a7a3e;
+    border-left: 4px solid #c8a566;
+    padding: 10px 12px;
+}
 QTabWidget::pane { border: 1px solid #9a7a3e; background: #ecd8a8; }
 QTabBar { background: #3d2914; }
 QTabBar::tab {
