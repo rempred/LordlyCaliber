@@ -11,6 +11,9 @@ with existing wiki location and meaningful branch annotations. Its generated
 are omitted for verified titles; keys 62–66 retain existing labels or numeric
 fallback. These are display labels only and do not alter scenario identities,
 resources, project data or ROM title artwork.
+Encounter navigation displays the runtime key or keys selected by the loaded
+ROM's scenario table. The shared encounter-row number remains an internal edit
+identity; copy/restore and project data continue to use that same row.
 
 ## Class artwork identity and combat animation authoring
 

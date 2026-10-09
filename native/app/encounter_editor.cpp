@@ -47,7 +47,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     auto poolLayout = new QVBoxLayout(poolPage);
     search_ = new QLineEdit;
     search_->setObjectName("encounterSearch");
-    search_->setPlaceholderText("Find a pool by mission, scenario key, or class…");
+    search_->setPlaceholderText("Find a pool by mission, runtime key, or class…");
     search_->setClearButtonEnabled(true);
     poolLayout->addWidget(search_);
     auto split = new QSplitter;
@@ -74,11 +74,11 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     pairTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     detail->addWidget(pairTable_, 1);
     auto actions = new QHBoxLayout;
-    auto copy = new QPushButton("Copy scenario group from…");
+    auto copy = new QPushButton("Copy encounters from…");
     copy->setObjectName("encounterCopy");
     copyFrom_ = new QComboBox;
     copyFrom_->setObjectName("encounterCopySource");
-    auto restore = new QPushButton("Restore loaded scenario group");
+    auto restore = new QPushButton("Restore loaded encounters");
     restore->setObjectName("encounterRestore");
     actions->addWidget(copy);
     actions->addWidget(copyFrom_, 1);
@@ -95,7 +95,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     auto rateExplanation = new QLabel(
         "Game-wide terrain assignments. Drag a Pool tile onto a terrain row to snap it into place. "
         "Dragging between rows moves or swaps assignments; dragging from Available pools shares a pool. "
-        "Chance belongs to the terrain. Each scenario group supplies that pool's creatures.");
+        "Chance belongs to the terrain. The scenario's runtime key selects each pool's creatures.");
     rateExplanation->setWordWrap(true);
     rateLayout->addWidget(rateExplanation);
     auto rateSplit = new QSplitter;
@@ -301,12 +301,10 @@ void EncounterEditor::refresh() {
     refreshPoolRows();
     const int pool = selected();
     if (pool >= 1) {
-        QStringList keys;
-        for (const int key : encounters.scenarioKeys(pool))
-            keys << QString::number(key);
         heading_->setText(encounters.label(pool) +
-                          (keys.isEmpty() ? "\nNo scenario references in the loaded metadata."
-                                          : "\nShared by scenario keys: " + keys.join(", ")));
+                          (encounters.scenarioKeys(pool).isEmpty()
+                               ? "\nNo scenario references in the loaded metadata."
+                               : QString()));
         for (int slot = 0; slot < project_->encounters()->slotsPerPool(); ++slot)
             for (int side = 0; side < 2; ++side) {
                 auto combo = pairs_[slot * 2 + side];

@@ -113,15 +113,18 @@ QVector<int> Encounters::scenarioKeys(int pool) const {
     return keys_.value(pool);
 }
 QString Encounters::label(int pool) const {
-    QStringList names;
+    QStringList keys, names;
     for (const auto key : scenarioKeys(pool)) {
-        const auto name = names_.value(key, QString("Scenario key %1").arg(key));
-        if (!names.contains(name))
+        keys << QString::number(key);
+        const auto name = names_.value(key);
+        if (!name.isEmpty() && !names.contains(name))
             names << name;
     }
-    return QString("Scenario group %1%2")
-        .arg(pool)
-        .arg(names.isEmpty() ? QString() : " · " + names.join(" / "));
+    if (keys.isEmpty())
+        return QString("Unassigned encounter set %1").arg(pool);
+    const auto identity = keys.size() == 1 ? "Runtime key %1" : "Runtime keys %1";
+    return QString(identity).arg(keys.join(", ")) +
+           (names.isEmpty() ? QString() : " · " + names.join(" / "));
 }
 void Encounters::setPair(int pool, int slot, int first, int second, int classCount) {
     const auto at = pairOffset(pool, slot);
@@ -216,7 +219,7 @@ void Encounters::apply(const QJsonObject &object, int classCount) {
                slotValues = object["terrainSlots"].toArray();
     for (int p = 0; p < poolCount; ++p) {
         if (!pools[p].isArray() || pools[p].toArray().size() != count * 2)
-            throw Error("Each scenario group requires a pair for every pool");
+            throw Error("Each encounter set requires a pair for every pool");
         const auto row = pools[p].toArray();
         for (int s = 0; s < count; ++s)
             next.setPair(p + 1, s, number(row[s * 2], 255), number(row[s * 2 + 1], 255),
