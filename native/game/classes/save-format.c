@@ -1,4 +1,5 @@
 #include "save_format.h"
+#include "save_checksums.h"
 typedef unsigned char u8;
 typedef unsigned int u32;
 
@@ -26,17 +27,13 @@ u32 lc_save_record_size(u32 slot, u32 expanded)
     if (slot < 2) return expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES;
     return 0;
 }
-/* Sum and popcount are independent 16-bit accumulators seeded with the record's
- * physical SRAM offset, as in the original 80075A84/80075B00 functions.
+/* Accepted func_00005D9C signs the payload after the twelve-byte header.
+ * Sizes and seeds remain configurable for the editor's expanded discovery data.
  */
 static u32 checksums(const u8 *p, u32 length, u32 offset)
 {
-    u32 sum = offset, count = offset, i, value, bit;
-    for (i = 12; i < length; ++i) {
-        value = p[i]; sum += value;
-        for (bit = 0; bit < 8; ++bit) { count += value & 1U; value >>= 1; }
-    }
-    return (sum << 16) | (count & 65535U);
+    return (lc_save_byte_sum(p + 12, length - 12, offset) << 16) |
+           lc_save_bit_sum(p + 12, length - 12, offset);
 }
 int lc_save_record_seal(u8 *record, u32 capacity, u32 slot, u32 expanded)
 {
@@ -49,6 +46,9 @@ int lc_save_record_seal(u8 *record, u32 capacity, u32 slot, u32 expanded)
 }
 int lc_save_record_valid(const u8 *record, u32 capacity, u32 slot, u32 expanded)
 {
+    /* Accepted 0000581C/00005978/00005A88: check the signature before the two
+     * checksum lanes. SRAM cache/DMA is caller-owned; PC fields are big-endian.
+     */
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
     if (get32(record + 4) != (expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||

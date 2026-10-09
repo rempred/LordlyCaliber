@@ -3064,7 +3064,7 @@ class SaveDocumentTests : public QObject {
                                          doc.planEdit(SaveTable::Characters, 1, "hpCur", 1000));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planEdit(SaveTable::Characters, 1, "hpMax", 1));
                 QVERIFY_THROWS_EXCEPTION(Error,
-                                         doc.planEdit(SaveTable::Characters, 1, "weapon", 278));
+                                         doc.planEdit(SaveTable::Characters, 1, "weapon", 511));
                 QVERIFY_THROWS_EXCEPTION(
                     Error, doc.planEdit(SaveTable::Characters, 1, "name", "ThirteenChars"));
                 QCOMPARE(doc.serialize(), snapshot);

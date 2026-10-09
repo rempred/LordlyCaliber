@@ -5,6 +5,41 @@ For current upstream adoption priorities and a symbol/source-file lookup, see
 [function interest list](decomp-interest.json). Matching status comes from
 Decomp's existing reports; the list tracks editor uses and intentional extensions.
 
+## Accepted save and pursuit batch — 2026-10-09
+
+`accepted/2026-10-09/` retains the complete accepted Squad W4 and save-record
+checksum chain: 29 original owners containing 33 functions, including earlier
+accepted companions. The original relative source/include paths are preserved.
+`accepted/gameplay-imports.json` records the source revisions, the October 9
+verification time, and identities of every source and included dependency.
+These are source files, with no ROM data or precompiled N64 code.
+
+The active save implementation shares `classes/save_checksums.h` between PC save
+editing and the C compiled during user export. Its two kernels adapt accepted
+`00005E84`/`00005EC4` (byte sum) and `00005F00`/`00005F60` (bit count), including
+halfword narrowing and seeded/zero-seed variants. `save-format.c` supplies the
+signature/validation policy from `00005D9C`, `0000581C`, `00005978`, and `00005A88`.
+The existing `save-runtime.c` read/copy/check services implement the chain around
+those shared functions. Explicit big-endian storage, bounded buffers, expanded
+record sizes and signatures, and Controller Pak resealing remain intentional
+adaptations. The empty suspend header still skips checksums only after its
+signature is recognized. Save caching, SRAM I/O, allocation and slot repair are
+supplied by the existing host/game services.
+
+All 21 Squad W4 functions are **imported**, available for future use. They are not
+compiled into the PC engine or executed by Routes yet. This includes the complete
+pursuit producer, `00127D30` target selection, `001284C4` movement-cell evaluation,
+and their target/reset/eligibility companions. Current Routes edits and explains
+authored orders; it does not simulate live flags, dynamic candidate lists,
+terrain costs or N64 object lifetime. Keep the accepted source intact when
+introducing portable consumers with those inputs. Importing source and adapting
+an executing consumer are separate statuses in `decomp-interest.json`.
+
+Existing save checks compare source-built results with original ROM instructions,
+including signatures, corruption rejection, cleared suspend records, expanded
+SRAM/Pak conversion, and runtime dispatch. Save editing/Undo and ROM export/reopen
+checks cover the consumers; Decomp's matching verification is reused upstream.
+
 ## Accepted stock and character initialization
 
 `accepted/gameplay-imports.json` identifies the unchanged matching originals for

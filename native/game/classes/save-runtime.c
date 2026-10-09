@@ -1,4 +1,8 @@
-/* Expanded save services. The linker binds existing game services and globals;
+/* Expanded adaptations of the accepted boot_resource_checksum_chain producer
+ * (gameplay-imports.json). read_save_record follows 0000581C/00005978/00005A88;
+ * write_save_record follows its three copy/dirty-flag services; check_slot
+ * follows 00005760. Sizes, signatures and discovery migration are extended.
+ * The linker binds existing game services and globals;
  * no desktop path, external Decomp tree, or Expansion Pak address is required.
  */
 #include "save_format.h"

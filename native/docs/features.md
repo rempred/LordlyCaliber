@@ -28,6 +28,17 @@ and restoring the original, and commit one Undo step. New class IDs use their
 expanded description indices. The Descriptions library remains available for
 shared help text and standalone slots; both views edit the same project data.
 
+## Accepted C integration — 2026-10-09
+
+The complete accepted pursuit/save batch is bundled as maintained original source:
+33 functions in 29 owners, with required headers and included sources. Save-file
+editing and ROM-side save exports now use the accepted-derived checksum kernels,
+retaining expanded records, Controller Pak conversion, Undo and unknown data.
+The pursuit source is imported for future behavior features; Routes currently
+continues to edit/summarize authored orders. The function list distinguishes
+those imported functions from active adaptations and detects included-source
+updates in later acceptances.
+
 ## Accepted C integration — 2026-10-08
 
 Save's Add reserve character and Recruit squad dialogs now accept levels 1–99,

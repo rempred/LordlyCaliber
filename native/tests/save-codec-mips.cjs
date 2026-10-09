@@ -85,7 +85,7 @@ for (const [file,expected] of Object.entries(pins.tools))
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(tools,file))).digest('hex'),expected);
 fs.mkdirSync(path.join(native,'build'),{recursive:true});
 const work = fs.mkdtempSync(path.join(native,'build/save-format-'));
-for (const file of ['save-format.c','save_format.h'])
+for (const file of ['save-format.c','save_format.h','save_checksums.h'])
   fs.copyFileSync(path.join(native,'game/classes',file),path.join(work,file));
 fs.appendFileSync(path.join(work,'save-format.c'),'\n'+fs.readFileSync(path.join(native,'game/classes/save-runtime.c'),'utf8'));
 const run = (tool,args) => cp.execFileSync(path.join(tools,tool),args,{cwd:work,encoding:'utf8'});

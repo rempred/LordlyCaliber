@@ -55,6 +55,11 @@ function main(args) {
       if (linked?.source === target.source && linked.linkEvidence?.fullOwnerExact === true)
         evidence.set(key(target.symbol), target);
     }
+    // Some accepted owners contain several functions. Use their recorded body
+    // names, not guessed addresses or merely registered compilation groups.
+    for (const target of [...evidence.values()])
+      for (const body of target.textContract?.compilerTextFunctions || [])
+        if (!evidence.has(key(body.symbol))) evidence.set(key(body.symbol), target);
     verifiedAt = state.verifiedAt;
     if (hash(verificationPath) !== verificationHash || hash(freshPath) !== freshHash)
       throw Error('Decomp reports changed during this read; retry');
@@ -84,16 +89,21 @@ function main(args) {
       // "Ready" means available for an integration review, not a drop-in port.
       const editorUse = group.symbolUses?.[symbol] || group.editorUse;
       const baseline = imported.get(key(symbol));
+      const dependencyIdentity = entries => JSON.stringify((entries || [])
+        .map(d => [d.path, d.sha256]).sort((a, b) => a[0].localeCompare(b[0])));
       const upstreamUpdate = Boolean(target && baseline &&
-        (target.source !== baseline.source || target.sourceSha256 !== baseline.sourceSha256));
+        (target.source !== baseline.source || target.sourceSha256 !== baseline.sourceSha256 ||
+         (baseline.dependencies && dependencyIdentity(target.dependencies) !== dependencyIdentity(baseline.dependencies))));
       const needsIntegration = !['adapted', 'original', 'companion'].includes(editorUse);
       if (ready && !(available && (needsIntegration || (upstreamUpdate && editorUse !== 'companion')))) continue;
-      const searchable = [symbol, source || '', group.id, group.behavior].map(key);
+      const searchable = [symbol, source || '', group.id, group.behavior,
+        ...(target?.dependencies || []).map(d => d.path)].map(key);
       const symbolQuery = path.posix.basename(query).replace(/\.c$/, '');
       if (query && key(symbol) !== symbolQuery && !searchable.some(s => s.includes(query) || (source && query.endsWith('/' + key(source))))) continue;
       rows.push({ priority: group.priority, group: group.id, behavior: group.behavior,
         symbol, source, matching, available, editorUse, groupUse: group.editorUse,
         upstreamUpdate, importedSourceSha256: baseline?.sourceSha256 || null,
+        importedFile: baseline?.file || null, acceptedOwner: target?.symbol || null,
         editorFiles: group.editorFiles, benefit: group.benefit, preserve: group.preserve,
         verifiedSourceSha256: target?.sourceSha256 || null });
     }

@@ -5,6 +5,9 @@ to concrete editor consumers, benefits, priorities and extensions to preserve.
 It includes reconstructed behavior to replace, partial adaptations to finish,
 already used source to keep current, and a smaller set of optional future uses.
 It is a targeted starting list, not a requirement to port every game subsystem.
+Complete accepted batches may also be retained as `imported` for future use.
+That status means the original source and dependencies are bundled, with no
+current executing consumer. It remains visible in `--ready` for later adaptation.
 
 ## Look up a new function or source file
 
@@ -25,6 +28,10 @@ It means ready to assess for integration, not safe to copy directly into PC code
 recorded in `game/accepted/animation-imports.json` or `gameplay-imports.json`, a newer verified source identity
 is marked **upstream changed** and returns to `--ready`. `companion` marks an empty
 helper retained with its coupled source, rather than a missing editor feature.
+Imports with recorded dependencies also detect changes to included C and headers,
+even when the producer's own file is unchanged. Functions inside a shared owner
+are resolved through its verified compiler-function list. The JSON report names
+the accepted owner and the bundled source file explicitly.
 
 Matching status is read from Decomp's existing `build/current/state.json`,
 `verification.json` and `fresh-compilation.json`. The active target registry

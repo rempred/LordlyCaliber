@@ -279,6 +279,84 @@
       "symbolUses": {"func_0019BE40": "adapted"},
       "benefit": "The full stock producer uses accepted-derived C during export. Assess the remaining price/classification helpers when they improve an editor workflow.",
       "preserve": "Current expanded shop IDs, stronghold assignments and native Qt interaction. Porting the game's complete menu renderer is not required."
+    },
+    {
+      "id": "save-record-chain",
+      "priority": 2,
+      "behavior": "Save record validation, signatures, checksums and copy services",
+      "symbols": [
+        "func_00005760",
+        "func_0000581C",
+        "func_00005978",
+        "func_00005A88",
+        "boot_resource_probe_indexed_record_copy_flag",
+        "boot_resource_probe_large_record_copy_flag",
+        "boot_resource_probe_small_record_copy_flag",
+        "func_00005D9C",
+        "func_00005E84",
+        "func_00005EC4",
+        "func_00005F00",
+        "func_00005F60"
+      ],
+      "editorFiles": [
+        "game/classes/save_checksums.h",
+        "game/classes/save-format.c",
+        "game/classes/save-runtime.c",
+        "engine/save_document.cpp",
+        "rebuild/save_runtime.cpp"
+      ],
+      "editorUse": "partial",
+      "symbolUses": {
+        "func_00005760": "adapted",
+        "func_0000581C": "adapted",
+        "func_00005978": "adapted",
+        "func_00005A88": "adapted",
+        "func_00005D9C": "adapted",
+        "func_00005E84": "adapted",
+        "func_00005EC4": "adapted",
+        "func_00005F00": "adapted",
+        "func_00005F60": "adapted",
+        "boot_resource_probe_indexed_record_copy_flag": "adapted",
+        "boot_resource_probe_large_record_copy_flag": "adapted",
+        "boot_resource_probe_small_record_copy_flag": "adapted"
+      },
+      "benefit": "Accepted-derived byte-sum and bit-count routines run in PC save editing and source-built ROM exports. Existing read, validation, copy and slot-check services follow the accepted chain with explicit host storage and expanded layouts.",
+      "preserve": "Retain both checksum lanes, physical-offset seeds, zero-seed Pak records, signature-first validation and cleared suspend semantics. Keep expanded records, capacity checks, unknown bytes and atomic Undo. Original DMA/allocation is supplied by the ROM runtime or host, not executed directly on the PC."
+    },
+    {
+      "id": "squad-pursuit",
+      "priority": 3,
+      "behavior": "Squad pursuit, targeting, turning and movement-cell evaluation",
+      "symbols": [
+        "func_00128AD0",
+        "func_00128BF4",
+        "func_00127D30",
+        "func_00127EAC",
+        "func_00128050",
+        "func_001284C4",
+        "func_00128980",
+        "func_001289BC",
+        "func_00128D50",
+        "func_00128DDC",
+        "func_0010766C",
+        "func_00106CE0",
+        "func_00106E48",
+        "func_00106F34",
+        "func_001070F4",
+        "func_001072B8",
+        "func_0010738C",
+        "func_0010746C",
+        "func_0010756C",
+        "func_0012A050",
+        "func_0012FB64"
+      ],
+      "editorFiles": [
+        "game/accepted/2026-10-09/src/lib/squad_pursuit_producer.c",
+        "engine/scenario_routes.cpp"
+      ],
+      "editorUse": "imported",
+      "benefit": "Complete accepted Squad W4 source is bundled for future movement and behavior previews. Source availability does not mean the editor simulates this runtime.",
+      "preserve": "All 21 owners are retained together, including target reset/eligibility, turning, cell correction and cleanup. The current Routes editor edits and summarizes orders; it does not provide live squad flags, dynamic target lists, terrain cost tables or N64 object lifetimes. Adapt those inputs explicitly when adding a consumer."
     }
   ]
 }
