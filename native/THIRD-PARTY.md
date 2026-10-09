@@ -33,3 +33,9 @@ The application source is available in the Lordly Caliber repository under its
 existing MIT license: https://github.com/rempred/LordlyCaliber . This development
 branch has not been published or released. Recovered game source provenance is
 recorded in `game/README.md`; no original ROM or game-art archive is included.
+
+The accepted source library includes game adaptations of LHa for UNIX 1.14c.
+Their original author credits, complete reference distribution, distribution
+terms and adaptation ledger are preserved under
+`game/accepted/library/third_party/lha/`. This retained source is not linked into
+the desktop application's existing decoder by the library import.

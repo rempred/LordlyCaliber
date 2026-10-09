@@ -5,6 +5,15 @@ For current upstream adoption priorities and a symbol/source-file lookup, see
 [function interest list](decomp-interest.json). Matching status comes from
 Decomp's existing reports; the list tracks editor uses and intentional extensions.
 
+## Complete accepted library
+
+`accepted/library/` contains the full accepted pure-C set, with its companion
+sources and headers. `accepted/library-imports.json` identifies the version,
+original owners and function bodies. It is separate from the smaller historical
+imports used by active adaptations: updating available source does not silently
+change those implementations. The interest report supports `--all` and searches
+the full library by symbol or source name. See the library README for scope.
+
 ## Accepted save and pursuit batch — 2026-10-09
 
 `accepted/2026-10-09/` retains the complete accepted Squad W4 and save-record

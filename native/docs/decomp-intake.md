@@ -5,6 +5,11 @@ to concrete editor consumers, benefits, priorities and extensions to preserve.
 It includes reconstructed behavior to replace, partial adaptations to finish,
 already used source to keep current, and a smaller set of optional future uses.
 It is a targeted starting list, not a requirement to port every game subsystem.
+The complete accepted pure-C library is under `game/accepted/library/`, with
+source/owner/dependency provenance in `game/accepted/library-imports.json`.
+`--all` includes that library in the report; `--match` also searches functions
+outside the targeted interest list. Unclassified consumers are explicitly named
+as such. Library refreshes retain the older animation/gameplay adaptation baselines.
 Complete accepted batches may also be retained as `imported` for future use.
 That status means the original source and dependencies are bundled, with no
 current executing consumer. It remains visible in `--ready` for later adaptation.
@@ -17,6 +22,7 @@ From the editor repository root, use the read-only report command:
 node native/tools/decomp-interest.cjs --decomp 'C:/Users/Joe/Projects/OgreBattlel64/OB64 Decomp' --match combat_pose_metadata.c
 node native/tools/decomp-interest.cjs --decomp 'C:/Users/Joe/Projects/OgreBattlel64/OB64 Decomp' --match func_00201798
 node native/tools/decomp-interest.cjs --decomp 'C:/Users/Joe/Projects/OgreBattlel64/OB64 Decomp' --ready
+node native/tools/decomp-interest.cjs --all --match func_00040f88
 ```
 
 Omit `--match` for the full list. `--json` gives structured output; without
@@ -85,3 +91,15 @@ The function list's evidence comes from the named editor source comments and
 consumers. Squad W3 and Shop entries additionally use their accepted wave records
 in Decomp (`5490bb78` and `46525af8`). Candidate benefit is a proposed editor use,
 not proof that an entire game function is already implemented or needed.
+
+## Refresh the complete library
+
+Use the passing `build/current/state.json`, `verification.json` and
+`fresh-compilation.json` together. Select every exact `PURE_C` owner, join its
+compiler-recorded function names, and retain each complete producer source plus
+all recorded included C/header dependencies. Verify current file identities
+against that report before copying; an unfinished newer source is not a replacement
+for the accepted version. Preserve relative paths, original bytes, and required
+third-party source/notices. Record the source revision and acceptance identity in
+`library-imports.json`; inspect and commit the resulting source changes. Do not
+replace active adaptation baselines merely because a library file is newer.

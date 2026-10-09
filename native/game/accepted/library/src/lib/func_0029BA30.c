@@ -1,0 +1,3 @@
+int func_0029BA30(int arg0) {
+    return ((arg0 & 0xF800) << 0x10) | ((arg0 & 0x7C0) << 0xD) | ((arg0 & 0x3E) << 0xA) | 0xFF;
+}

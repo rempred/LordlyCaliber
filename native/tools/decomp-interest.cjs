@@ -9,7 +9,7 @@ const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').toUpperCase();
 
 function main(args) {
-  let decomp, query = '', ready = false, json = false;
+  let decomp, query = '', ready = false, json = false, all = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--decomp' || arg === '--match') {
@@ -17,21 +17,35 @@ function main(args) {
       if (arg === '--decomp') decomp = path.resolve(args[++i]);
       else query = key(args[++i]).replaceAll('\\', '/');
     } else if (arg === '--ready') ready = true;
+    else if (arg === '--all') all = true;
     else if (arg === '--json') json = true;
     else if (arg === '--help') {
-      console.log('node native/tools/decomp-interest.cjs [--decomp <checkout>] [--match <symbol-or-file>] [--ready] [--json]');
+      console.log('node native/tools/decomp-interest.cjs [--decomp <checkout>] [--match <symbol-or-file>] [--all] [--ready] [--json]');
       return;
     } else throw Error(`Unknown argument: ${arg}`);
   }
   if (ready && !decomp) throw Error('--ready needs --decomp to read existing matching records');
   const catalog = read(path.join(native, 'game/decomp-interest.json'));
   if (catalog.schemaVersion !== 1) throw Error('Unsupported interest catalog schema');
-  const imported = new Map();
-  for (const manifest of ['animation-imports.json', 'gameplay-imports.json']) {
+  const imported = new Map(), library = new Map();
+  // A full source refresh must not replace the baseline of an active adaptation.
+  for (const manifest of ['library-imports.json', 'animation-imports.json', 'gameplay-imports.json']) {
     const importsFile = path.join(native, 'game/accepted', manifest);
     if (fs.existsSync(importsFile))
       for (const entry of read(importsFile).imports)
-        for (const symbol of entry.symbols) imported.set(key(symbol), entry);
+        for (const symbol of entry.symbols) {
+          imported.set(key(symbol), entry);
+          if (manifest === 'library-imports.json') library.set(key(symbol), entry);
+        }
+  }
+  const groups = [...catalog.groups];
+  if (all || query) {
+    const listed = new Set(groups.flatMap(g => g.symbols.map(key)));
+    const symbols = [...library.keys()].filter(symbol => !listed.has(symbol));
+    groups.push({ id: 'accepted-library', priority: 4, behavior: 'Complete accepted source library',
+      symbols, editorUse: 'imported', editorFiles: ['game/accepted/library-imports.json'],
+      benefit: 'Original sources are bundled for future consumers. Active usage outside the interest list has not been classified.',
+      preserve: 'Keep original sources and dependencies intact. Importing a library version does not update existing portable adaptations.' });
   }
   const sources = new Map(), evidence = new Map();
   let verifiedAt = null;
@@ -73,10 +87,11 @@ function main(args) {
     return checked.get(relative) === expected;
   }
   const rows = [];
-  for (const group of catalog.groups) {
+  for (const group of groups) {
     for (const symbol of group.symbols) {
       const target = evidence.get(key(symbol));
-      const source = target?.source || sources.get(key(symbol)) || null;
+      const baseline = imported.get(key(symbol));
+      const source = target?.source || sources.get(key(symbol)) || baseline?.source || null;
       let matching = decomp ? 'Not in verified matching records' : 'Not checked';
       let available = false;
       if (target) {
@@ -88,7 +103,6 @@ function main(args) {
       }
       // "Ready" means available for an integration review, not a drop-in port.
       const editorUse = group.symbolUses?.[symbol] || group.editorUse;
-      const baseline = imported.get(key(symbol));
       const dependencyIdentity = entries => JSON.stringify((entries || [])
         .map(d => [d.path, d.sha256]).sort((a, b) => a[0].localeCompare(b[0])));
       const upstreamUpdate = Boolean(target && baseline &&
@@ -97,13 +111,14 @@ function main(args) {
       const needsIntegration = !['adapted', 'original', 'companion'].includes(editorUse);
       if (ready && !(available && (needsIntegration || (upstreamUpdate && editorUse !== 'companion')))) continue;
       const searchable = [symbol, source || '', group.id, group.behavior,
-        ...(target?.dependencies || []).map(d => d.path)].map(key);
+        ...(target?.dependencies || baseline?.dependencies || []).map(d => d.path)].map(key);
       const symbolQuery = path.posix.basename(query).replace(/\.c$/, '');
       if (query && key(symbol) !== symbolQuery && !searchable.some(s => s.includes(query) || (source && query.endsWith('/' + key(source))))) continue;
       rows.push({ priority: group.priority, group: group.id, behavior: group.behavior,
         symbol, source, matching, available, editorUse, groupUse: group.editorUse,
         upstreamUpdate, importedSourceSha256: baseline?.sourceSha256 || null,
         importedFile: baseline?.file || null, acceptedOwner: target?.symbol || null,
+        libraryFile: library.get(key(symbol))?.file || null,
         editorFiles: group.editorFiles, benefit: group.benefit, preserve: group.preserve,
         verifiedSourceSha256: target?.sourceSha256 || null });
     }

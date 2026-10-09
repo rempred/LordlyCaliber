@@ -1,0 +1,193 @@
+{
+  "version": "LHa for UNIX 1.14c (1996-03-07)",
+  "archiveUrl": "https://ftp.st.ryukoku.ac.jp/pub/utils/archiver/lha-114c.tar.gz",
+  "archiveBytes": 56493,
+  "archiveSha256": "D88AAE866980AF28B1789683E738852561CA489C98AC584B0E6580D9E73C1FB4",
+  "archiveMd5": "B626A5AF259773DFB2B12C3876BDFD46",
+  "upstreamFiles": [
+    {
+      "path": "upstream/CHANGES.euc",
+      "bytes": 6749,
+      "sha256": "308A768C0A5AAE08472FA06E7007BE7487C2832447E5161D6C3055482B148317"
+    },
+    {
+      "path": "upstream/MACHINES.euc",
+      "bytes": 14014,
+      "sha256": "BBD9A4FCF77993D37B3F655CEF28798B58C7AC6AB48102D1912D2D30359AB4D3"
+    },
+    {
+      "path": "upstream/Makefile",
+      "bytes": 1929,
+      "sha256": "4A834A7995B29FDAF49B529FD330B25137D5BB9FC7A8BF36666ECCD6063E40D1"
+    },
+    {
+      "path": "upstream/PROBLEMS.euc",
+      "bytes": 1411,
+      "sha256": "530E7AB74E09BC04B64E830A55A79FAC501CD47E806A4ED3AB4241624BB1A59E"
+    },
+    {
+      "path": "upstream/README.euc",
+      "bytes": 3558,
+      "sha256": "C63D4422E5F48DAAA0B521D19FA197792EF1799BD5BDDCAEC89A97CAB7D567CB"
+    },
+    {
+      "path": "upstream/config.eng",
+      "bytes": 1776,
+      "sha256": "40B0899DC45B51BCBED64E299D3D733F2E91B9F361277DA2F922BDA5BBE07049"
+    },
+    {
+      "path": "upstream/config.jpn.euc",
+      "bytes": 1953,
+      "sha256": "3F3CFFEC5B71FC3D83B324343D1BAF5F19A23DDC18CAAD4E96BEB6D4E996CFD6"
+    },
+    {
+      "path": "upstream/header.doc.euc",
+      "bytes": 5308,
+      "sha256": "18FDD34D73471BCD3283478F723FDAD7B6B616330BB1032ED35513D851A0CDFC"
+    },
+    {
+      "path": "upstream/man/Makefile",
+      "bytes": 362,
+      "sha256": "1510EC8E960790750939E69C065E21D19803D17480AA067392E0FCE91A4CC0AE"
+    },
+    {
+      "path": "upstream/man/lha.man",
+      "bytes": 9493,
+      "sha256": "C8639C87846AA23A391946D07923088838993ACEFF9D9142C8687ADA5905316F"
+    },
+    {
+      "path": "upstream/man/lha.n",
+      "bytes": 7594,
+      "sha256": "16CF66154C931D38F95EE0216DEAE934D589A04085D47B0D9F1A5FF5FF667FFD"
+    },
+    {
+      "path": "upstream/src/Makefile",
+      "bytes": 1541,
+      "sha256": "8E1BD3AEA0DECE279C81AD153535A5471F75C8ECEEFF3AA602361D7E32D6AE62"
+    },
+    {
+      "path": "upstream/src/append.c",
+      "bytes": 3255,
+      "sha256": "1B67F73636F46439282F7CFD3227EC7718B8B0F824B949137C69FA48C1030A27"
+    },
+    {
+      "path": "upstream/src/crcio.c",
+      "bytes": 7179,
+      "sha256": "45FAC4BC1A45209C20392833BA0F3179B3D73D307A169C53F652CFBB8BF833C9"
+    },
+    {
+      "path": "upstream/src/dhuf.c",
+      "bytes": 6846,
+      "sha256": "B7E67A2F4B870E057CBDBB3A1BF66E156C6A1C1BBFEE1CA1BAA1D9A79826C296"
+    },
+    {
+      "path": "upstream/src/extract.c",
+      "bytes": 1896,
+      "sha256": "7774DD00494C1086F096DD55F1C6171C9BCFF61ABC91841B9A481B44561896AB"
+    },
+    {
+      "path": "upstream/src/header.c",
+      "bytes": 21308,
+      "sha256": "B284F713770DD95F993144D9E974D4091E7E1F88F5A0FC9902207487E9F61407"
+    },
+    {
+      "path": "upstream/src/huf.c",
+      "bytes": 9320,
+      "sha256": "FC35AAECC5C40500D3BF7A5D0B06F4E86CA066B19A1FDA6641188CD1E08EEFA5"
+    },
+    {
+      "path": "upstream/src/larc.c",
+      "bytes": 2066,
+      "sha256": "0676EB77CE6ABFE744204A03D5B9D3E4AB6EE4AB9042795D9EC37F4A2F46F663"
+    },
+    {
+      "path": "upstream/src/lha.h",
+      "bytes": 8614,
+      "sha256": "1B3EF3B7422056CBCF5CB7D474679875B73E1DCA1C1A39B00B6200A1F65EB2D4"
+    },
+    {
+      "path": "upstream/src/lha_macro.h",
+      "bytes": 10673,
+      "sha256": "D279D941CB1909791F07DFCDA7432E4F2827BC39733D70FDA847193A72F155C6"
+    },
+    {
+      "path": "upstream/src/lhadd.c",
+      "bytes": 15013,
+      "sha256": "74FC6AD9A2A039AD32AB7D14C172762C9C97D5D2AE2715CEAE50CB5017505772"
+    },
+    {
+      "path": "upstream/src/lharc.c",
+      "bytes": 24601,
+      "sha256": "3CDE852E9A6A4690E3C201343D46676487EFBC0156E952DE9D71A96510416A74"
+    },
+    {
+      "path": "upstream/src/lhdir.c",
+      "bytes": 2384,
+      "sha256": "9ACF6FB16F1917C998DE7DAFF728EB442532FF5D92C2EA0B3AFBF8F45BB6E7A2"
+    },
+    {
+      "path": "upstream/src/lhdir.h",
+      "bytes": 1213,
+      "sha256": "FCADDA04A0553CDF79F76BC98F6425B34BEE47AEDF4CD13FEB4C3C4044F31015"
+    },
+    {
+      "path": "upstream/src/lhext.c",
+      "bytes": 9331,
+      "sha256": "15DAD1CCE239B06B191CD5BDD10C734FFB5CBD9CCE55A65B1D45824711579F13"
+    },
+    {
+      "path": "upstream/src/lhlist.c",
+      "bytes": 8406,
+      "sha256": "E4CFFFF05789014C40C55370A2DE1B6A1E0339721C9EB6938CBB8DD04F6D607C"
+    },
+    {
+      "path": "upstream/src/makefile.dj",
+      "bytes": 979,
+      "sha256": "F99746F0721ECB6008F7BD36FA3950500A81F434923977EEA176240DDAF4B5D4"
+    },
+    {
+      "path": "upstream/src/maketbl.c",
+      "bytes": 2069,
+      "sha256": "99A7FCD2434A7DDDD6426B958C214F0553C3762A0ECAEB871638E18BE7C9E254"
+    },
+    {
+      "path": "upstream/src/maketree.c",
+      "bytes": 3822,
+      "sha256": "7C5FAFDB46C523699727616FC60FCEF755229688BDE1E771592C717DB4275819"
+    },
+    {
+      "path": "upstream/src/patmatch.c",
+      "bytes": 1164,
+      "sha256": "EE2C8C5C1AEA5053F76E3100CE56F547D95C5045922C0FEC45A07F7AA50358F3"
+    },
+    {
+      "path": "upstream/src/shuf.c",
+      "bytes": 4273,
+      "sha256": "E339C48AEC99F20D01F6B0E341B007E890BF31140E9452F946873B4FD1F055C0"
+    },
+    {
+      "path": "upstream/src/slide.c",
+      "bytes": 10666,
+      "sha256": "9B89FFC5E7C2A89DB469B368B32E07CAD3A02AD937DFD13340D0499A7E0B1601"
+    },
+    {
+      "path": "upstream/src/util.c",
+      "bytes": 8258,
+      "sha256": "DD52A78780709F3D13459CF0254548C9811386C799AE4BF51DA57E78896B5A56"
+    }
+  ],
+  "copyrightAndDistributionFiles": [
+    "upstream/README.euc",
+    "upstream/man/lha.n",
+    "upstream/man/lha.man",
+    "upstream/src/lharc.c",
+    "upstream/src/Makefile",
+    "upstream/src/makefile.dj"
+  ],
+  "notes": [
+    "All distribution files are retained byte-for-byte, including EUC-JP notices.",
+    "There is no separate LICENSE or COPYING file in this distribution.",
+    "This is 1.14c, not the unlocated original January 1995 1.14 distribution.",
+    "A selected comparison baseline does not establish the game fork ancestor."
+  ]
+}

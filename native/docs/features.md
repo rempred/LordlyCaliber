@@ -28,6 +28,11 @@ and restoring the original, and commit one Undo step. New class IDs use their
 expanded description indices. The Descriptions library remains available for
 shared help text and standalone slots; both views edit the same project data.
 
+The editor now also bundles the complete accepted pure-C source library, with
+per-source provenance and dependencies. Imported source availability is distinct
+from active use; existing animation and gameplay adaptation baselines remain
+independent. This source import introduces no automatic ROM patches.
+
 ## Accepted C integration — 2026-10-09
 
 The complete accepted pursuit/save batch is bundled as maintained original source:
