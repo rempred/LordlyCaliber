@@ -338,6 +338,21 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
+    auto description = new DescriptionPanel(project_.get(), undo_, [this] { updateStatus(); });
+    description->setObjectName(tableKey(table) + "DescriptionPanel");
+    inspectorLayout->addWidget(description);
+    auto actionDescriptions = std::make_shared<QMap<int, QPushButton *>>();
+    auto actionId = [this, table, selected](int field) {
+        if (*selected < 0 || *selected >= project_->records(table).size())
+            return -1;
+        int id = project_->value(table, *selected, field);
+        if (table == Table::Classes && id == 255) {
+            const int owner = u8(project_->record(table, *selected).bytes, 69);
+            if (owner > 0 && owner < project_->records(table).size())
+                id = project_->value(table, owner, field);
+        }
+        return id;
+    };
     QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr, *newItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         addClass = new QPushButton("Copy Class");
@@ -458,6 +473,16 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             editor->setToolTip("When a character's secondary class matches this link, the game uses this class's own data. Otherwise it uses the secondary class. This is not a promotion requirement.");
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
+        if (f.choices == "ACTION_NAMES") {
+            auto edit = new QPushButton("Description…");
+            edit->setObjectName(f.key + "Description");
+            editor->layout()->addWidget(edit);
+            actionDescriptions->insert(n, edit);
+            connect(edit, &QPushButton::clicked, page, [this, page, actionId, n] {
+                editDescription(page, project_.get(), undo_, "actions", actionId(n),
+                                [this] { updateStatus(); });
+            });
+        }
     }
     PromotionEditor *promotion = nullptr;
     ConsumableEditor *effects = nullptr;
@@ -473,11 +498,13 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem, newItem] {
+                    addItem, newItem, description, actionDescriptions, actionId] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
+        description->selectDescription(tableKey(table), *selected < 0 ? -1 :
+            table == Table::Classes ? Project::classDescriptionIndex(*selected) : *selected);
         if (addItem)
             addItem->setEnabled(*selected >= 1 && model->rowCount() < ItemData::maximumCount);
         if (newClass)
@@ -496,6 +523,16 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             editor->setChoices(project_->catalog());
             if (*selected >= 0)
                 editor->setValue(project_->value(table, *selected, n));
+        }
+        for (auto it = actionDescriptions->cbegin(); it != actionDescriptions->cend(); ++it) {
+            const int id = actionId(it.key());
+            const bool valid = project_->textBanks().contains("actions") && id >= 0 &&
+                id < project_->textBanks()["actions"].entries.size();
+            it.value()->setEnabled(valid);
+            it.value()->setToolTip(valid
+                ? QString("Edit action %1 · %2. Shared by every class using this action.")
+                    .arg(id).arg(project_->catalog()["ACTION_NAMES"].toObject()[QString::number(id)].toString())
+                : "This action has no description record.");
         }
     };
     connect(grid->selectionModel(), &QItemSelectionModel::currentRowChanged, page,

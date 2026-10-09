@@ -6,6 +6,14 @@ compatibility while redesigning implementation and interaction for native use.
 An entry is complete only after its editing, persistence, export, and relevant
 preview behavior work; a visible tab alone does not count.
 
+Description editing starts with the selected record: Classes, Items and
+Consumables show a preview and Edit description button in their inspector.
+Class attack fields and combat/advanced action selectors open the selected
+action's shared description. Dialogs validate drafts before Save, support Cancel
+and restoring the original, and commit one Undo step. New class IDs use their
+expanded description indices. The Descriptions library remains available for
+shared help text and standalone slots; both views edit the same project data.
+
 ## Accepted C integration — 2026-10-08
 
 Save's Add reserve character and Recruit squad dialogs now accept levels 1–99,

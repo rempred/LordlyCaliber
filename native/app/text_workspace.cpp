@@ -3,6 +3,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -45,10 +47,10 @@ static QString descriptionLabel(const Project &project, const QString &kind, int
 class TextCommand final : public QUndoCommand {
   public:
     TextCommand(Project *p, QString kind, int record, QByteArray before, QByteArray after,
-                std::function<void()> changed)
+                std::function<void()> changed, bool merge = true)
         : QUndoCommand("Edit description"), project_(p), kind_(std::move(kind)), record_(record),
           before_(std::move(before)), after_(std::move(after)), changed_(std::move(changed)),
-          time_(QDateTime::currentMSecsSinceEpoch()) {}
+          time_(QDateTime::currentMSecsSinceEpoch()), merge_(merge) {}
     void undo() override {
         project_->replaceTextBytes(kind_, record_, before_);
         changed_();
@@ -58,7 +60,7 @@ class TextCommand final : public QUndoCommand {
         changed_();
     }
     int id() const override {
-        return 0x4c4301;
+        return merge_ ? 0x4c4301 : -1;
     }
     bool mergeWith(const QUndoCommand *command) override {
         auto next = dynamic_cast<const TextCommand *>(command);
@@ -77,7 +79,120 @@ class TextCommand final : public QUndoCommand {
     QByteArray before_, after_;
     std::function<void()> changed_;
     qint64 time_;
+    bool merge_;
 };
+void editDescription(QWidget *parent, Project *project, QUndoStack *undo, const QString &kind,
+                     int entry, std::function<void()> changed) {
+    if (!project->textBanks().contains(kind) || entry < 0 ||
+        entry >= project->textBanks()[kind].entries.size())
+        return;
+    auto draft = project->textBanks()[kind];
+    const auto before = draft.entries[entry].bytes;
+    QDialog dialog(parent);
+    dialog.setObjectName("recordDescriptionDialog");
+    dialog.setWindowTitle("Edit description — " + descriptionLabel(*project, kind, entry));
+    dialog.resize(580, 320);
+    auto layout = new QVBoxLayout(&dialog);
+    auto heading = new QLabel(descriptionLabel(*project, kind, entry));
+    heading->setTextFormat(Qt::PlainText);
+    heading->setWordWrap(true);
+    layout->addWidget(heading);
+    if (kind == "actions") {
+        auto shared = new QLabel("This action's description is shared by every class that uses it.");
+        shared->setWordWrap(true);
+        layout->addWidget(shared);
+    }
+    auto editor = new QPlainTextEdit(draft.text(entry));
+    editor->setObjectName("recordDescriptionText");
+    editor->setPlaceholderText("No description is stored. Type here to add one.");
+    layout->addWidget(editor, 1);
+    auto notice = new QLabel("Up to four game text lines. Existing hidden help references are preserved.");
+    notice->setObjectName("recordDescriptionNotice");
+    notice->setWordWrap(true);
+    layout->addWidget(notice);
+    auto restore = new QPushButton("Restore original description");
+    restore->setObjectName("recordDescriptionRestore");
+    layout->addWidget(restore, 0, Qt::AlignLeft);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    QObject::connect(editor, &QPlainTextEdit::textChanged, &dialog, [&] {
+        try {
+            draft.setText(entry, editor->toPlainText());
+            notice->setText("Ready to save. Existing hidden help references are preserved.");
+            buttons->button(QDialogButtonBox::Save)->setEnabled(true);
+        } catch (const std::exception &error) {
+            notice->setText(QString::fromUtf8(error.what()));
+            buttons->button(QDialogButtonBox::Save)->setEnabled(false);
+        }
+    });
+    QObject::connect(restore, &QPushButton::clicked, &dialog, [&] {
+        draft.entries[entry].bytes = draft.entries[entry].original;
+        QSignalBlocker block(editor);
+        editor->setPlainText(draft.text(entry));
+        notice->setText("Original description restored in this draft. Save to apply it.");
+        buttons->button(QDialogButtonBox::Save)->setEnabled(true);
+    });
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() == QDialog::Accepted && draft.entries[entry].bytes != before)
+        undo->push(new TextCommand(project, kind, entry, before, draft.entries[entry].bytes,
+                                   std::move(changed), false));
+}
+QPushButton *createActionDescriptionButton(QComboBox *actions, Project *project, QUndoStack *undo,
+                                         std::function<void()> changed) {
+    auto button = new QPushButton("Edit action description…", actions->parentWidget());
+    button->setObjectName(actions->objectName() + "Description");
+    auto refresh = [=] {
+        const int id = actions->currentIndex() < 0 ? -1 : actions->currentData().toInt();
+        const bool valid = actions->currentText() == actions->itemText(actions->currentIndex()) &&
+            project->textBanks().contains("actions") && id >= 0 &&
+            id < project->textBanks()["actions"].entries.size();
+        button->setEnabled(valid);
+        button->setToolTip(valid ? descriptionLabel(*project, "actions", id)
+                                : "This selection has no action description record.");
+    };
+    QObject::connect(actions, &QComboBox::currentIndexChanged, button, refresh);
+    QObject::connect(actions, &QComboBox::editTextChanged, button, refresh);
+    QObject::connect(undo, &QUndoStack::indexChanged, button, refresh);
+    QObject::connect(button, &QPushButton::clicked, button, [=] {
+        editDescription(button, project, undo, "actions", actions->currentData().toInt(), changed);
+    });
+    refresh();
+    return button;
+}
+DescriptionPanel::DescriptionPanel(Project *project, QUndoStack *undo,
+                                   std::function<void()> changed, QWidget *parent)
+    : QWidget(parent), project_(project) {
+    auto layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(new QLabel("Description"));
+    preview_ = new QLabel;
+    preview_->setObjectName("recordDescriptionPreview");
+    preview_->setTextFormat(Qt::PlainText);
+    preview_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    preview_->setWordWrap(true);
+    layout->addWidget(preview_);
+    edit_ = new QPushButton("Edit description…");
+    edit_->setObjectName("editRecordDescription");
+    layout->addWidget(edit_, 0, Qt::AlignLeft);
+    connect(edit_, &QPushButton::clicked, this, [=, this] {
+        editDescription(this, project_, undo, kind_, entry_, changed);
+    });
+    connect(undo, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    refresh();
+}
+void DescriptionPanel::selectDescription(const QString &kind, int entry) {
+    kind_ = kind;
+    entry_ = entry;
+    refresh();
+}
+void DescriptionPanel::refresh() {
+    const bool valid = project_->textBanks().contains(kind_) && entry_ >= 0 &&
+        entry_ < project_->textBanks()[kind_].entries.size();
+    edit_->setEnabled(valid);
+    const auto text = valid ? project_->textBanks()[kind_].text(entry_) : QString();
+    preview_->setText(valid ? (text.isEmpty() ? "No description yet." : text) : "Select a record.");
+}
 QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<void()> changed) {
     auto page = new QWidget;
     page->setObjectName("descriptionsWorkspace");

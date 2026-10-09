@@ -9474,6 +9474,83 @@ class UiTests : public QObject {
         QCOMPARE(consumables->model()->rowCount(), 45);
         QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
         QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 64);
+        auto textBaseline = baseline;
+        textBaseline.loadTexts();
+        auto recordUndo = window.findChild<QUndoStack *>();
+        auto library = window.findChild<QWidget *>("descriptionsWorkspace");
+        auto libraryBank = library->findChild<QComboBox *>("descriptionBank");
+        auto libraryEntries = library->findChild<QListWidget *>("descriptionEntries");
+        auto libraryText = library->findChild<QPlainTextEdit *>("descriptionEditor");
+        auto editDescriptionFrom = [&](QPushButton *button, const QString &expected,
+                                       const QString &text, bool save, bool invalid = false) {
+            QVERIFY(button && button->isEnabled());
+            QTimer::singleShot(0, &window, [&, expected, text, save, invalid] {
+                auto dialog = window.findChild<QDialog *>("recordDescriptionDialog");
+                QVERIFY(dialog);
+                const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
+                auto draft = dialog->findChild<QPlainTextEdit *>("recordDescriptionText");
+                auto buttons = dialog->findChild<QDialogButtonBox *>();
+                QCOMPARE(draft->toPlainText(), expected);
+                if (invalid) {
+                    draft->setPlainText("One\nTwo\nThree\nFour\nFive");
+                    QVERIFY(!buttons->button(QDialogButtonBox::Save)->isEnabled());
+                }
+                draft->setPlainText(text);
+                QVERIFY(buttons->button(QDialogButtonBox::Save)->isEnabled());
+                buttons->button(save ? QDialogButtonBox::Save : QDialogButtonBox::Cancel)->click();
+            });
+            button->click();
+        };
+        // Follow the selected record's identity through sorted tables, not its visible row.
+        for (const auto table : {Table::Classes, Table::Items, Table::Consumables}) {
+            auto grid = table == Table::Classes ? classes : table == Table::Items ? items : consumables;
+            const int id = table == Table::Classes ? 5 : 1;
+            const auto kind = tableKey(table);
+            grid->sortByColumn(1, Qt::DescendingOrder);
+            for (int row = 0; row < grid->model()->rowCount(); ++row)
+                if (grid->model()->index(row, 0).data(Qt::EditRole).toInt() == id)
+                    grid->setCurrentIndex(grid->model()->index(row, 1));
+            auto panel = window.findChild<QWidget *>(kind + "DescriptionPanel");
+            auto preview = panel->findChild<QLabel *>("recordDescriptionPreview");
+            auto button = panel->findChild<QPushButton *>("editRecordDescription");
+            const auto original = textBaseline.textBanks()[kind].text(id);
+            QCOMPARE(preview->text(), original);
+            const int index = recordUndo->index();
+            editDescriptionFrom(button, original, "Cancelled draft", false);
+            QCOMPARE(recordUndo->index(), index);
+            QCOMPARE(preview->text(), original);
+            editDescriptionFrom(button, original, "Edited from " + kind, true, true);
+            QCOMPARE(recordUndo->index(), index + 1);
+            QCOMPARE(preview->text(), "Edited from " + kind);
+            libraryBank->setCurrentIndex(libraryBank->findData(kind));
+            libraryEntries->setCurrentRow(id);
+            QCOMPARE(libraryText->toPlainText(), preview->text());
+            recordUndo->undo();
+            QCOMPARE(preview->text(), original);
+            QCOMPARE(libraryText->toPlainText(), original);
+            recordUndo->redo();
+            QCOMPARE(preview->text(), "Edited from " + kind);
+            recordUndo->undo();
+            grid->sortByColumn(0, Qt::AscendingOrder);
+        }
+        const int frontAction = u8(textBaseline.record(Table::Classes, 5).bytes, 55);
+        editDescriptionFrom(window.findChild<QPushButton *>("attack0Description"),
+                            textBaseline.textBanks()["actions"].text(frontAction), "Action from class", true);
+        libraryBank->setCurrentIndex(libraryBank->findData("actions"));
+        libraryEntries->setCurrentRow(frontAction);
+        QCOMPARE(libraryText->toPlainText(), QString("Action from class"));
+        recordUndo->undo();
+        auto combatAction = window.findChild<QComboBox *>("combatAnimationAction");
+        auto combatDescription = window.findChild<QPushButton *>("combatAnimationActionDescription");
+        QVERIFY(combatAction && combatDescription);
+        const int combatId = combatAction->currentData().toInt();
+        editDescriptionFrom(combatDescription, textBaseline.textBanks()["actions"].text(combatId),
+                            "Action from animation", true);
+        libraryEntries->setCurrentRow(combatId);
+        QCOMPARE(libraryText->toPlainText(), QString("Action from animation"));
+        recordUndo->undo();
+        combatAction->setCurrentIndex(combatAction->findData(-1)); // Idle is a motion, not an action.
+        QVERIFY(!combatDescription->isEnabled());
         auto addItem = window.findChild<QPushButton *>("addItem");
         QVERIFY(addItem);
         items->setCurrentIndex(items->model()->index(1, 1));
@@ -9488,6 +9565,12 @@ class UiTests : public QObject {
         QCOMPARE(items->model()->rowCount(), itemCount + 1);
         QCOMPARE(items->currentIndex().siblingAtColumn(1).data().toString(),
                  QString("Created item"));
+        auto itemDescription = window.findChild<QWidget *>("itemsDescriptionPanel");
+        editDescriptionFrom(itemDescription->findChild<QPushButton *>("editRecordDescription"),
+                            textBaseline.textBanks()["items"].text(1), "New item description", true);
+        QCOMPARE(itemDescription->findChild<QLabel *>("recordDescriptionPreview")->text(),
+                 QString("New item description"));
+        recordUndo->undo(); // Undo only the description, keeping the newly added item selected.
         for (const auto name : {"scenarioDrop", "rewardItem_0"}) {
             const auto box = window.findChild<QComboBox *>(name);
             QVERIFY(box);
@@ -9528,6 +9611,13 @@ class UiTests : public QObject {
         fresh->click();
         QCOMPARE(classes->model()->rowCount(), classCount + 1);
         QCOMPARE(classes->currentIndex().siblingAtColumn(1).data().toString(), QString("Fresh class"));
+        auto classDescription = window.findChild<QWidget *>("classesDescriptionPanel");
+        editDescriptionFrom(classDescription->findChild<QPushButton *>("editRecordDescription"),
+                            {}, "New class description", true);
+        libraryBank->setCurrentIndex(libraryBank->findData("classes"));
+        libraryEntries->setCurrentRow(Project::classDescriptionIndex(classCount));
+        QCOMPARE(libraryText->toPlainText(), QString("New class description"));
+        recordUndo->undo();
         auto undo = window.findChild<QUndoStack *>();
         QVERIFY(undo);
         undo->undo();

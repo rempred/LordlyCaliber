@@ -1,4 +1,5 @@
 #include "app/view_position.h"
+#include "app/text_workspace.h"
 #include "app/animation_override_editor.h"
 #include <QComboBox>
 #include <QCompleter>
@@ -98,7 +99,10 @@ AnimationOverrideEditor::AnimationOverrideEditor(Project *project, QUndoStack *u
     actions_ = new QComboBox;
     actions_->setObjectName("overrideAction");
     searchable(actions_);
-    fields->addRow("Action", actions_);
+    auto actionRow = new QHBoxLayout;
+    actionRow->addWidget(actions_, 1);
+    actionRow->addWidget(createActionDescriptionButton(actions_, project_, undo_, changed_));
+    fields->addRow("Action", actionRow);
     routes_ = new QComboBox;
     routes_->setObjectName("overrideRoute");
     routes_->addItem("All four body routes", -1);

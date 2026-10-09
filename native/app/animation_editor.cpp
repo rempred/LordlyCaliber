@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/animation_editor.h"
+#include "app/text_workspace.h"
 #include <QComboBox>
 #include <QCheckBox>
 #include <QCompleter>
@@ -221,6 +222,7 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
     }
     auto buttons = new QHBoxLayout;
     defaultsLayout->addLayout(buttons);
+    buttons->addWidget(createActionDescriptionButton(action_, project_, undo_, changed_));
     auto add = new QPushButton("Add action");
     add->setObjectName("animationAddAction");
     buttons->addWidget(add);

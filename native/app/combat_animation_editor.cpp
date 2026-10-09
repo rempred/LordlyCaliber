@@ -1,5 +1,6 @@
 #include "app/combat_animation_editor.h"
 #include "app/animation_sequence_editor.h"
+#include "app/text_workspace.h"
 #include "engine/actor_art.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -53,6 +54,7 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     variant_->addItems({"Base", "Alternate"});
     variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
     layout->addLayout(filters);
+    filters->addWidget(createActionDescriptionButton(actions_, project_, undo, changed), 2, 1);
     auto selection = new QHBoxLayout;
     selection->addWidget(new QLabel("Animation"));
     animations_ = new QComboBox; animations_->setObjectName("combatAnimationChoice");
