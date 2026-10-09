@@ -17,6 +17,24 @@ Observed from US Rev 0 and checked with the original instructions:
   envelope `0x27429D4`. The collection contains one `enemydat.bin` member and
   its terminator. Records are 35 bytes; ESET IDs are one-based.
 
+### Why key 54 is excluded
+
+The 2026-10-08 parent investigation identified an explicit game-code bypass,
+not a different ESET format or unknown resource. Keys 52/53/54 all request
+collection index 56 (`eset4_14.bin`). On fresh setup, z64 `0x10358C` marks key54
+initialized before `0x103670` checks that marker, bypassing the normal constructor
+call at `0x103704` (RAM `0x80215C18`, z64 `0x1960A8`). Depending on a map-object
+flag, it instead copies code `0x1A2C20..0x1A4C10` to RAM `0x80214F80` and sets
+mode46. Its observed base-one writer is the ordinary reset at z64 `0x102090`.
+Parent `tools/inspect_key54_scenario_path.cjs` executes these original branches
+with controlled inputs for keys52/53/54; callees and DMA are trapped.
+See parent `docs/enemy-deployment-system.md` for evidence and limits. Standard
+base-level and squad editing remain unsupported because their normal consumer
+is skipped. Enabling normal squads requires an explicit behavior change in game
+code. Special scripted creation and natural story reachability remain unverified.
+
+### Rebuild layout
+
 Rebuild leaves original members and ordinals available, and appends changed
 versions keyed by their original member plus desired contents. It regenerates
 the collection, length words, link pointers and selector bytes together. Each
