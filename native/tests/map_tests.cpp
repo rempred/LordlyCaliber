@@ -1,4 +1,5 @@
 #include "engine/archive.h"
+#include "engine/battlefield.h"
 #include "engine/scenario_map.h"
 #include "engine/scenario_world.h"
 #include "game/scenarios/site-count.h"
@@ -13,6 +14,49 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void battlefieldRendering() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QStringList errors;
+        for (int key = 1; key <= 64; ++key) {
+            if (key == 54) continue; // Its alternate scenario loader is unsupported.
+            try {
+                const auto field = Battlefield::load(rom, key);
+                QVERIFY(field.triangleCount() > 0);
+                const auto map = ScenarioMap::load(rom, key);
+                const auto image = field.render(map.bounds, 512);
+                QVERIFY(!image.isNull());
+                QSet<QRgb> colors;
+                for (int y = 0; y < image.height(); y += 8)
+                    for (int x = 0; x < image.width(); x += 8) colors.insert(image.pixel(x, y));
+                QVERIFY2(colors.size() > 50, qPrintable(QString("Empty or flat map %1").arg(key)));
+                const auto output = qEnvironmentVariable("LORDLY_MAP_CAPTURE");
+                if (!output.isEmpty()) {
+                    QDir().mkpath(output);
+                    image.save(output + QString("/field-%1.png").arg(key));
+                }
+                qInfo() << key << field.triangleCount() << field.buildingCount() << field.notices();
+            } catch (const Error &e) {
+                errors << QString("Key %1: %2").arg(key).arg(e.what());
+            }
+        }
+        QVERIFY2(errors.isEmpty(), qPrintable(errors.join('\n')));
+        const auto bounds = ScenarioMap::load(rom, 1).bounds;
+        QCOMPARE(Battlefield::load(rom, 1).buildingCount(), 8);
+        const auto ally = Battlefield::load(rom, 1, QVector<quint16>(16, 2)).render(bounds, 768);
+        const auto enemy = Battlefield::load(rom, 1, QVector<quint16>(16, 4)).render(bounds, 768);
+        QVERIFY(ally != enemy);
+        auto changed = rom.bytes();
+        // Swap the field-model selection for Tenne with Volmus. This changes the
+        // actual map resource, without touching the independent briefing image.
+        put32(changed, 0x65710 + 9 * 12, u32(changed, 0x65710 + 7 * 12));
+        const auto modified = Rom::fromBytes(changed);
+        QVERIFY(Battlefield::load(modified, 1).resourceKey() != Battlefield::load(rom, 1).resourceKey());
+        QCOMPARE(ScenarioMap::load(modified, 1).image->rgba, ScenarioMap::load(rom, 1).image->rgba);
+        put32(changed, 0x65710 + 9 * 12, 0xffffffff);
+        QVERIFY_THROWS_EXCEPTION(Error, Battlefield::load(Rom::fromBytes(changed), 1));
+    }
     void initialSiteCounts() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

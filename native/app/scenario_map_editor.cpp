@@ -1,4 +1,5 @@
 #include "app/scenario_map_editor.h"
+#include "engine/battlefield.h"
 #include "app/scenario_world_editor.h"
 #include "app/view_position.h"
 #include "engine/squad_members.h"
@@ -74,7 +75,7 @@ class MapCanvas : public QWidget {
     std::function<void(QPointF)> place;
     bool placing = false;
     int current = -1;
-    bool grid = true, labels = true, showTerrain = true;
+    bool grid = false, labels = true, showTerrain = true;
     QImage terrain;
     QRectF terrainBounds;
     void cancelDrag() {
@@ -156,9 +157,11 @@ class MapCanvas : public QWidget {
                     p.setPen(QPen(QColor("#fff2a8"), 3));
                     p.drawEllipse(center, 18., 18.);
                 }
-            } else if (m.kind == MapObject::Site)
+            } else if (m.kind == MapObject::Site) {
+                p.setBrush(Qt::NoBrush);
+                p.setPen(QPen(i == current ? QColor("#fff2a8") : m.color, i == current ? 3 : 1));
                 p.drawRect(QRectF(center - QPointF(6, 6), QSizeF(12, 12)));
-            else if (m.kind == MapObject::Treasure) {
+            } else if (m.kind == MapObject::Treasure) {
                 QPolygonF diamond;
                 diamond << center + QPointF(0, -7) << center + QPointF(7, 0)
                         << center + QPointF(0, 7) << center + QPointF(-7, 0);
@@ -295,13 +298,13 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     addTreasure->setCheckable(true);
     toolbar->addWidget(addTreasure);
     auto grid = new QCheckBox("Grid"), labels = new QCheckBox("Labels");
-    grid->setChecked(true);
+    grid->setChecked(false);
     labels->setChecked(true);
     toolbar->addWidget(grid);
     toolbar->addWidget(labels);
-    terrain_ = new QCheckBox("Terrain");
+    terrain_ = new QCheckBox("Battlefield");
     terrain_->setObjectName("mapTerrain");
-    terrain_->setToolTip("Show the calibrated terrain reference. Alignment is approximate.");
+    terrain_->setToolTip("Show the in-scenario terrain, roads and buildings from your ROM.");
     terrain_->setChecked(true);
     toolbar->addWidget(terrain_);
     toolbar->addStretch();
@@ -557,11 +560,14 @@ void ScenarioMapEditor::refresh(int key) {
         for (int i = 0; i < s.layout.deployments.size(); ++i)
             if (nodeMarkers.contains(u8(s.layout.deployments[i], 6)))
                 canvas_->edges << qMakePair(i, nodeMarkers[u8(s.layout.deployments[i], 6)]);
+        QVector<quint16> siteFlags;
         if (project_->world()) {
             const auto &world = *project_->world();
             const auto &scene = world.scenario(key);
             for (int i = 0; i < world.siteCount(key); ++i) {
                 const int id = u16(scene.sites, 1 + i * 4);
+                const auto town = world.town(id);
+                siteFlags << quint16(u16(town, 25) + u16(scene.sites, 3 + i * 4));
                 add(MapObject::Site, i, world.townName(id), map.placement(i + 1, 0),
                     QColor("#c9b4eb"));
             }
@@ -583,17 +589,28 @@ void ScenarioMapEditor::refresh(int key) {
                          r.width * 4, QImage::Format_RGBA8888);
             reference_->setPixmap(QPixmap::fromImage(image).scaled(260, 170, Qt::KeepAspectRatio,
                                                                    Qt::FastTransformation));
-            if (const auto bounds = map.imageGridBounds()) {
-                canvas_->terrain = image.copy();
-                canvas_->terrainBounds = *bounds;
-                terrain_->setEnabled(true);
+        }
+        QString cacheKey = QString::number(key);
+        for (auto flag : siteFlags) cacheKey += ':' + QString::number(flag);
+        try {
+            if (!battlefieldImages_.contains(cacheKey)) {
+                const auto field = Battlefield::load(project_->rom(), key, siteFlags);
+                auto image = new QImage(field.render(map.bounds));
+                battlefieldNotices_[cacheKey] = field.notices();
+                battlefieldImages_.insert(cacheKey, image, int(image->sizeInBytes() / 1024));
             }
-            referenceName_->setText("ROM terrain · " + map.imageName +
-                                    (map.imageBounds
-                                         ? "\nCalibrated alignment (approximate)."
-                                         : "\nNo calibrated alignment for this image."));
-        } else
-            referenceName_->setText("This scenario has no ROM map image.");
+            canvas_->terrain = *battlefieldImages_.object(cacheKey);
+            canvas_->terrainBounds = QRectF(0, 0, 256, 256);
+            terrain_->setEnabled(true);
+            referenceName_->setText("In-scenario battlefield · Terrain, roads and buildings\n"
+                                    "Top-down view with approximate daylight lighting. "
+                                    "Briefing artwork is stored separately.");
+            if (!battlefieldNotices_[cacheKey].isEmpty())
+                referenceName_->setText(referenceName_->text() + '\n' + battlefieldNotices_[cacheKey].join(' '));
+        } catch (const Error &e) {
+            referenceName_->setText("Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
+                                    (map.image ? "\nSeparate briefing overview shown below." : ""));
+        }
         notice_->setText("Initial placements · Drag squads, waypoints or treasure to set "
                          "coordinates. Selecting a point-based object "
                          "and moving it changes its placement to map coordinates. " +

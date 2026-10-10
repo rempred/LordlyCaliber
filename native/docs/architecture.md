@@ -1,5 +1,8 @@
 # Native Lordly Caliber
 
+The Scenario Map renderer and the distinction between field resources and
+briefing artwork are documented in [battlefield maps](battlefield-maps.md).
+
 ## Scenario navigation titles
 
 `game/encounters/entry-titles.json` maintains the visually verified US Rev 0

@@ -8115,7 +8115,7 @@ class UiTests : public QObject {
             QVERIFY(terrain);
             QVERIFY(terrain->isEnabled());
             QVERIFY(terrain->isChecked());
-            QVERIFY(editor.findChild<QLabel *>("mapTerrainStatus")->text().contains("approximate"));
+            QVERIFY(editor.findChild<QLabel *>("mapTerrainStatus")->text().contains("In-scenario battlefield"));
             const auto terrainImage = canvas->grab().toImage();
             const auto dataBeforeToggle = project.scenarios()->json();
             const auto undoBeforeToggle = undo.count();
@@ -8126,6 +8126,17 @@ class UiTests : public QObject {
             QCOMPARE(canvas->grab().toImage(), terrainImage);
             QCOMPARE(project.scenarios()->json(), dataBeforeToggle);
             QCOMPARE(undo.count(), undoBeforeToggle);
+            // Applying allegiance must repaint the actual building texture;
+            // undo must also restore it, rather than leave a stale cached map.
+            QVERIFY(selectMapObject(editor, MapObject::Site, 0));
+            const auto beforeAllegiance = canvas->grab().toImage();
+            auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
+            allegiance->setCurrentIndex(allegiance->findData(2));
+            editor.findChild<QPushButton *>("worldSiteApply")->click();
+            QVERIFY(beforeAllegiance != canvas->grab().toImage());
+            undo.undo();
+            QCOMPARE(canvas->grab().toImage(), beforeAllegiance);
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-battlefield.png"));
             const auto beforeTreasure = project.world()->json();
             const int treasuresBefore = ScenarioWorld::treasureCount(project.world()->scenario(1).treasures);
             editor.findChild<QPushButton *>("mapTreasureAdd")->click();

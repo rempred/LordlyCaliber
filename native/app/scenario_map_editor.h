@@ -2,6 +2,7 @@
 #include "engine/project.h"
 #include "engine/scenario_map.h"
 #include <QWidget>
+#include <QCache>
 #include <functional>
 class QLabel;
 class QCheckBox;
@@ -28,6 +29,8 @@ class ScenarioMapEditor : public QWidget {
     std::function<void(const Scenarios &, const QString &)> commit_;
     std::function<void(MapObject, int)> editFields_;
     QMap<int, ScenarioMap> maps_;
+    QCache<QString, QImage> battlefieldImages_{128 * 1024};
+    QMap<QString, QStringList> battlefieldNotices_;
     MapCanvas *canvas_;
     QListWidget *objects_;
     QLabel *notice_, *reference_, *referenceName_, *selection_, *summary_;

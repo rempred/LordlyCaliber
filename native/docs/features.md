@@ -5,6 +5,11 @@ Encounters and Art. Its shared scenario picker includes the search field and
 retains selection across Map, Squads and Routes. Map opens first. Base-level controls live
 inside Squads; map-to-field navigation also updates the selected section tab.
 
+Map renders the ROM's actual battlefield geometry, textures, roads and buildings
+in a top-down daylight overview. Town allegiance edits and Undo refresh building
+colours. Briefing images remain separate pre-baked artwork. Terrain/road mesh
+authoring is not yet implemented; see [battlefield maps](battlefield-maps.md).
+
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board
 with compatible gear choices and large-unit checks. Scenario squads support one
