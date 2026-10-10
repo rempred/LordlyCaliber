@@ -3,7 +3,6 @@
 #include <QWidget>
 #include <functional>
 class QUndoStack;
-class QListWidget;
 class QLineEdit;
 class QSpinBox;
 class QComboBox;
@@ -21,13 +20,14 @@ class ScenarioWorldEditor : public QWidget {
     void showSite();
     void showTreasure();
     void fillItems();
+    int siteId() const;
     void change(const QString &label, const std::function<void(ScenarioWorld &)> &edit);
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
     int key_ = -1;
     bool loading_ = false;
-    QListWidget *sites_, *treasures_;
+    int siteRow_ = -1, treasureRow_ = -1;
     QWidget *siteFields_, *treasureFields_;
     QLineEdit *name_;
     QSpinBox *population_, *morale_, *shop_, *x_, *z_;

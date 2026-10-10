@@ -14,7 +14,6 @@ class QPushButton;
 namespace lordly {
 class SquadMembersEditor;
 class ScenarioRouteEditor;
-class ScenarioWorldEditor;
 class ScenarioMapEditor;
 class ScenarioEditor : public QWidget {
   public:
@@ -44,7 +43,6 @@ class ScenarioEditor : public QWidget {
     QLabel *notice_, *placementHelp_;
     QPushButton *remove_;
     ScenarioRouteEditor *routes_ = nullptr;
-    ScenarioWorldEditor *world_ = nullptr;
     ScenarioMapEditor *map_ = nullptr;
     int editingKey_ = -1, editingRow_ = -1;
     bool loading_ = true;

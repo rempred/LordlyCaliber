@@ -2,7 +2,7 @@
 
 Scenario section navigation sits directly below the main workspaces, matching
 Encounters and Art. Its shared scenario picker includes the search field and
-retains selection across Squads, Routes, Sites and Map. Base-level controls live
+retains selection across Squads, Routes and Map. Base-level controls live
 inside Squads; map-to-field navigation also updates the selected section tab.
 
 Scenario squads and custom Encounter squads share the same member editor:
@@ -25,6 +25,12 @@ the current ROM/artwork edits. Enemy/allied portrait selection falls back to the
 other portrait slot when absent. Colored rings retain allegiance and selection;
 icons draw above sites/waypoints. Icons also identify entries in the object list,
 refresh with record edits and Undo, and preserve the grab offset during dragging.
+Selecting a site or treasure opens its editor in the scrolling Map sidebar;
+there is no separate Sites and treasure page or second object picker. Site
+metadata/facilities/shops/allegiance and treasure items/coordinates/removal retain
+their Apply, Restore and Undo paths. Squad selections show members and levels;
+waypoints show route context, with links to their full editors. Add treasure on
+map opens the new treasure's inspector immediately.
 
 Map encounters combines terrain names, per-terrain chances and the selected
 map's two creature choices. Terrains sharing a pool occupy one row; pool IDs are

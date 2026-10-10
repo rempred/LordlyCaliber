@@ -1,17 +1,14 @@
 #include "app/scenario_world_editor.h"
 #include "app/shop_editor.h"
-#include "app/view_position.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
+#include <QGridLayout>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
-#include <QSplitter>
-#include <QTabWidget>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -53,22 +50,19 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     project_->loadWorld();
     project_->loadShops();
+    setObjectName("mapWorldInspector");
     auto layout = new QVBoxLayout(this);
-    auto pages = new QTabWidget;
-    pages->setObjectName("worldPages");
-    layout->addWidget(pages, 1);
-    auto siteSplit = new QSplitter;
-    pages->addTab(siteSplit, "Sites");
-    sites_ = new QListWidget;
-    sites_->setObjectName("worldSites");
-    siteSplit->addWidget(sites_);
+    layout->setContentsMargins(0, 0, 0, 0);
     siteFields_ = new QWidget;
-    siteSplit->addWidget(siteFields_);
+    siteFields_->setObjectName("worldSiteFields");
+    layout->addWidget(siteFields_);
     auto siteLayout = new QVBoxLayout(siteFields_);
+    siteLayout->setContentsMargins(0, 0, 0, 0);
     siteHelp_ = new QLabel;
     siteHelp_->setWordWrap(true);
     siteLayout->addWidget(siteHelp_);
     auto form = new QFormLayout;
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     siteLayout->addLayout(form);
     name_ = new QLineEdit;
     name_->setObjectName("worldSiteName");
@@ -94,7 +88,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
         "The game's stronghold category: town, fort, boss fort or castle. This changes site "
         "metadata; it does not change the map terrain or create a victory event.");
     form->addRow("Stronghold type", type_);
-    auto facilityRow = new QHBoxLayout;
+    auto facilityRow = new QGridLayout;
     for (const auto &label : {"Shop", "Witch’s den", "Treasure", "Mine"}) {
         auto check = new QCheckBox(label);
         check->setObjectName(QString("worldFacility%1").arg(facilities_.size()));
@@ -104,19 +98,20 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
                 "Check to add a witch’s den, or clear to remove it. "
                 "Apply site changes saves this facility for every scenario using the stronghold.");
         if (facilities_.size() > 2) {
-            check->setText(facilities_.size() == 3 ? "Treasure flag (advanced)"
-                                                   : "Mine flag (advanced)");
+            check->setText(facilities_.size() == 3 ? "Treasure flag"
+                                                   : "Mine flag");
             check->setToolTip(
                 "Original site capability flag. Its complete gameplay effect is not verified. This "
                 "does not add a hidden treasure; use Add treasure on the Map tab for that.");
         }
-        facilityRow->addWidget(check);
+        const int i = facilities_.size() - 1;
+        facilityRow->addWidget(check, i / 2, i % 2);
     }
     form->addRow("Facilities", facilityRow);
     shop_ = spin("worldShop", project_->shops()->size() - 1);
     shop_->setSpecialValueText("None");
     form->addRow("Shop ID", shop_);
-    auto shops = new QHBoxLayout;
+    auto shops = new QVBoxLayout;
     auto createShop = new QPushButton("Create new shop here");
     createShop->setObjectName("worldShopAdd");
     auto removeShop = new QPushButton("Remove shop from site");
@@ -125,19 +120,19 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     shops->addWidget(removeShop);
     form->addRow(shops);
     connect(createShop, &QPushButton::clicked, this, [this] {
-        if (!sites_->currentItem())
+        if (siteId() < 0)
             return;
         try {
-            addShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt());
+            addShop(project_, undo_, siteId());
         } catch (const Error &e) {
             notice_->setText(QString::fromUtf8(e.what()));
         }
     });
     connect(removeShop, &QPushButton::clicked, this, [this] {
-        if (!sites_->currentItem())
+        if (siteId() < 0)
             return;
         try {
-            assignShop(project_, undo_, sites_->currentItem()->data(Qt::UserRole).toInt(), 0);
+            assignShop(project_, undo_, siteId(), 0);
         } catch (const Error &e) {
             notice_->setText(QString::fromUtf8(e.what()));
         }
@@ -156,24 +151,11 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     restoreSite->setObjectName("worldSiteRestore");
     siteLayout->addWidget(restoreSite);
     siteLayout->addStretch();
-    siteSplit->setStretchFactor(1, 2);
-    auto treasureSplit = new QSplitter;
-    pages->addTab(treasureSplit, "Treasure");
-    auto roster = new QWidget;
-    auto rosterLayout = new QVBoxLayout(roster);
-    treasures_ = new QListWidget;
-    treasures_->setObjectName("worldTreasures");
-    rosterLayout->addWidget(treasures_);
-    auto add = new QPushButton("Add treasure");
-    add->setObjectName("worldTreasureAdd");
-    rosterLayout->addWidget(add);
-    auto remove = new QPushButton("Remove treasure");
-    remove->setObjectName("worldTreasureRemove");
-    rosterLayout->addWidget(remove);
-    treasureSplit->addWidget(roster);
     treasureFields_ = new QWidget;
-    treasureSplit->addWidget(treasureFields_);
+    treasureFields_->setObjectName("worldTreasureFields");
+    layout->addWidget(treasureFields_);
     auto treasureLayout = new QVBoxLayout(treasureFields_);
+    treasureLayout->setContentsMargins(0, 0, 0, 0);
     auto help = new QLabel(
         "Coordinates use the game's 0–255 map scale. Collection flags are shared across scenarios; "
         "editing an existing treasure retains its flag. New treasures receive an unused flag.");
@@ -182,6 +164,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     flag_ = new QLabel;
     treasureLayout->addWidget(flag_);
     auto treasureForm = new QFormLayout;
+    treasureForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
     treasureLayout->addLayout(treasureForm);
     x_ = spin("worldTreasureX", 255);
     z_ = spin("worldTreasureZ", 255);
@@ -193,22 +176,25 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     table_->addItem("Consumable", 2);
     item_ = new QComboBox;
     item_->setObjectName("worldTreasureItem");
+    item_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    item_->setMinimumContentsLength(16);
     treasureForm->addRow("Item table", table_);
     treasureForm->addRow("Item", item_);
     auto applyTreasure = new QPushButton("Apply treasure changes");
     applyTreasure->setObjectName("worldTreasureApply");
     treasureLayout->addWidget(applyTreasure);
+    auto remove = new QPushButton("Remove treasure");
+    remove->setObjectName("worldTreasureRemove");
+    treasureLayout->addWidget(remove);
     treasureLayout->addStretch();
-    treasureSplit->setStretchFactor(1, 2);
-    auto restore = new QPushButton("Restore loaded treasure and allegiance for this scenario");
+    auto restore = new QPushButton("Restore scenario treasure and allegiance");
     restore->setObjectName("worldScenarioRestore");
+    restore->setToolTip("Restore all loaded treasure and initial site allegiances in this scenario.");
     layout->addWidget(restore);
     notice_ = new QLabel;
     notice_->setWordWrap(true);
     notice_->setObjectName("worldNotice");
     layout->addWidget(notice_);
-    connect(sites_, &QListWidget::currentRowChanged, this, [this] { showSite(); });
-    connect(treasures_, &QListWidget::currentRowChanged, this, [this] { showTreasure(); });
     connect(table_, &QComboBox::currentIndexChanged, this, [this] {
         if (!loading_)
             fillItems();
@@ -216,10 +202,10 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     connect(objective_, &QCheckBox::toggled, this,
             [this](bool value) { morale_->setEnabled(!value); });
     connect(applySite, &QPushButton::clicked, this, [this] {
-        if (!sites_->currentItem())
+        if (siteId() < 0)
             return;
         change("Edit scenario site", [this](ScenarioWorld &next) {
-            const int id = sites_->currentItem()->data(Qt::UserRole).toInt();
+            const int id = siteId();
             auto record = next.town(id);
             if (name_->text() != next.townName(id)) {
                 const auto bytes = name_->text().toLatin1();
@@ -238,38 +224,32 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
             put8(record, 27, quint8(shop_->value()));
             next.setTown(id, record);
             if (allegiance_->currentData().toInt() >= 0)
-                next.setSiteAllegiance(key_, sites_->currentRow(),
+                next.setSiteAllegiance(key_, siteRow_,
                                        allegiance_->currentData().toInt());
         });
     });
     connect(restoreSite, &QPushButton::clicked, this, [this] {
-        if (sites_->currentItem())
+        if (siteId() >= 0)
             change("Restore site metadata", [this](ScenarioWorld &next) {
-                next.restoreTown(sites_->currentItem()->data(Qt::UserRole).toInt());
+                next.restoreTown(siteId());
             });
     });
     connect(applyTreasure, &QPushButton::clicked, this, [this] {
-        if (treasures_->currentRow() < 0)
+        if (treasureRow_ < 0)
             return;
         change("Edit scenario treasure", [this](ScenarioWorld &next) {
             auto record = ScenarioWorld::treasureRecord(next.scenario(key_).treasures,
-                                                        treasures_->currentRow());
+                                                        treasureRow_);
             put8(record, 1, quint8(x_->value()));
             put8(record, 2, quint8(z_->value()));
             put8(record, 3, quint8(table_->currentData().toInt()));
             put16(record, 4, quint16(item_->currentData().toInt()));
-            next.setTreasure(key_, treasures_->currentRow(), record);
+            next.setTreasure(key_, treasureRow_, record);
         });
-    });
-    connect(add, &QPushButton::clicked, this, [this] {
-        int row = -1;
-        change("Add scenario treasure", [&](ScenarioWorld &next) { row = next.addTreasure(key_); });
-        if (row >= 0)
-            treasures_->setCurrentRow(row);
     });
     connect(remove, &QPushButton::clicked, this, [this] {
         change("Remove scenario treasure", [this](ScenarioWorld &next) {
-            next.removeTreasure(key_, treasures_->currentRow());
+            next.removeTreasure(key_, treasureRow_);
         });
     });
     connect(restore, &QPushButton::clicked, this, [this] {
@@ -282,51 +262,29 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     });
 }
 void ScenarioWorldEditor::refresh(int key) {
-    const ViewPosition keepView(this, key_ == key);
-    const int sr = key == key_ ? sites_->currentRow() : 0,
-              tr = key == key_ ? treasures_->currentRow() : 0;
+    if (key != key_) siteRow_ = treasureRow_ = -1;
     key_ = key;
     setEnabled(key_ > 0);
-    loading_ = true;
-    sites_->clear();
-    treasures_->clear();
     if (key_ > 0) {
-        const auto &s = project_->world()->scenario(key_);
-        for (int i = 0; i < project_->world()->siteCount(key_); ++i) {
-            const int id = u16(s.sites, 1 + i * 4);
-            auto item = new QListWidgetItem(
-                QString("%1 · %2").arg(id).arg(project_->world()->townName(id)), sites_);
-            item->setData(Qt::UserRole, id);
-        }
-        for (int i = 0; i < ScenarioWorld::treasureCount(s.treasures); ++i) {
-            const auto r = ScenarioWorld::treasureRecord(s.treasures, i);
-            const auto &records =
-                project_->records(u8(r, 3) == 1 ? Table::Items : Table::Consumables);
-            const int id = u16(r, 4);
-            const auto name = id < records.size() ? records[id].name : QString("Item %1").arg(id);
-            treasures_->addItem(QString("%1 · %2\nX %3, Z %4 · flag %5")
-                                    .arg(i + 1)
-                                    .arg(name)
-                                    .arg(u8(r, 1))
-                                    .arg(u8(r, 2))
-                                    .arg(u8(r, 0)));
-        }
+        if (siteRow_ >= project_->world()->siteCount(key_)) siteRow_ = -1;
+        if (treasureRow_ >= ScenarioWorld::treasureCount(project_->world()->scenario(key_).treasures))
+            treasureRow_ = -1;
     }
-    sites_->setCurrentRow(sites_->count() ? std::clamp(sr, 0, sites_->count() - 1) : -1);
-    treasures_->setCurrentRow(treasures_->count() ? std::clamp(tr, 0, treasures_->count() - 1)
-                                                  : -1);
-    loading_ = false;
     showSite();
     showTreasure();
+}
+int ScenarioWorldEditor::siteId() const {
+    if (key_ <= 0 || siteRow_ < 0 || siteRow_ >= project_->world()->siteCount(key_)) return -1;
+    return u16(project_->world()->scenario(key_).sites, 1 + siteRow_ * 4);
 }
 void ScenarioWorldEditor::showSite() {
     if (loading_)
         return;
-    siteFields_->setEnabled(sites_->currentItem());
-    if (!sites_->currentItem())
+    siteFields_->setEnabled(siteId() >= 0);
+    if (siteId() < 0)
         return;
     loading_ = true;
-    const int id = sites_->currentItem()->data(Qt::UserRole).toInt();
+    const int id = siteId();
     const auto record = project_->world()->town(id);
     name_->setText(project_->world()->townName(id));
     population_->setValue(u16(record, 22));
@@ -338,7 +296,7 @@ void ScenarioWorldEditor::showSite() {
     shop_->setValue(u8(record, 27));
     for (int i = 0; i < 4; ++i)
         facilities_[i]->setChecked(u8(record, 25) & (1 << i));
-    const int raw = u16(project_->world()->scenario(key_).sites, 3 + sites_->currentRow() * 4);
+    const int raw = u16(project_->world()->scenario(key_).sites, 3 + siteRow_ * 4);
     const auto label = raw == 0                                     ? "Neutral"
                        : raw == 4                                   ? "Enemy"
                        : raw == 0x2012 || raw == 0x2002 || raw == 2 ? "Allied"
@@ -349,8 +307,7 @@ void ScenarioWorldEditor::showSite() {
             .arg(raw, 4, 16, QChar('0')));
     allegiance_->setCurrentIndex(0);
     siteHelp_->setText(
-        QString("Metadata belongs to site %1 and affects every scenario using it. Initial "
-                "allegiance changes only this scenario. Site membership follows mission geometry.")
+        QString("Site %1 metadata is shared across scenarios. Initial allegiance applies only to this scenario.")
             .arg(id));
     loading_ = false;
 }
@@ -363,18 +320,26 @@ void ScenarioWorldEditor::fillItems() {
         item_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
 }
 void ScenarioWorldEditor::selectObject(bool treasure, int row) {
-    (treasure ? treasures_ : sites_)->setCurrentRow(row);
-    findChild<QTabWidget *>("worldPages")->setCurrentIndex(treasure ? 1 : 0);
+    if (treasure) {
+        treasureRow_ = row;
+        showTreasure();
+    } else {
+        siteRow_ = row;
+        showSite();
+    }
+    siteFields_->setVisible(!treasure);
+    treasureFields_->setVisible(treasure);
+    notice_->clear();
 }
 void ScenarioWorldEditor::showTreasure() {
     if (loading_)
         return;
-    treasureFields_->setEnabled(treasures_->currentRow() >= 0);
-    if (treasures_->currentRow() < 0)
+    treasureFields_->setEnabled(key_ > 0 && treasureRow_ >= 0);
+    if (key_ <= 0 || treasureRow_ < 0)
         return;
     loading_ = true;
     const auto r = ScenarioWorld::treasureRecord(project_->world()->scenario(key_).treasures,
-                                                 treasures_->currentRow());
+                                                 treasureRow_);
     x_->setValue(u8(r, 1));
     z_->setValue(u8(r, 2));
     select(table_, u8(r, 3));
@@ -382,7 +347,7 @@ void ScenarioWorldEditor::showTreasure() {
     select(item_, u16(r, 4));
     flag_->setText(QString("Collection flag %1 · %2 of 16 scene slots used")
                        .arg(u8(r, 0))
-                       .arg(treasures_->count()));
+                       .arg(ScenarioWorld::treasureCount(project_->world()->scenario(key_).treasures)));
     loading_ = false;
 }
 void ScenarioWorldEditor::change(const QString &label,

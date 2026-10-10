@@ -1,5 +1,7 @@
 #include "app/scenario_map_editor.h"
+#include "app/scenario_world_editor.h"
 #include "app/view_position.h"
+#include "engine/squad_members.h"
 #include <QCheckBox>
 #include <QFormLayout>
 #include <QImage>
@@ -9,6 +11,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -311,11 +314,36 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     objects_ = new QListWidget;
     objects_->setObjectName("mapObjects");
     objects_->setIconSize(QSize(32, 32));
-    side->addWidget(objects_, 1);
+    objects_->setMinimumHeight(90);
+    objects_->setMaximumHeight(150);
+    side->addWidget(objects_);
+    auto inspector = new QWidget;
+    auto fields = new QVBoxLayout(inspector);
+    fields->setContentsMargins(0, 0, 0, 0);
+    fields->setSizeConstraint(QLayout::SetMinimumSize);
+    auto scroll = new QScrollArea;
+    scroll->setObjectName("mapInspectorScroll");
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(inspector);
+    side->addWidget(scroll, 1);
     selection_ = new QLabel;
+    selection_->setObjectName("mapSelectionTitle");
+    selection_->setTextFormat(Qt::PlainText);
     selection_->setWordWrap(true);
-    side->addWidget(selection_);
-    auto coords = new QHBoxLayout;
+    auto headingFont = selection_->font();
+    headingFont.setBold(true);
+    headingFont.setPointSize(12);
+    selection_->setFont(headingFont);
+    fields->addWidget(selection_);
+    summary_ = new QLabel;
+    summary_->setObjectName("mapSelectionSummary");
+    summary_->setTextFormat(Qt::PlainText);
+    summary_->setWordWrap(true);
+    fields->addWidget(summary_);
+    coordinates_ = new QWidget;
+    auto coords = new QHBoxLayout(coordinates_);
+    coords->setContentsMargins(0, 0, 0, 0);
     x_ = new QSpinBox;
     z_ = new QSpinBox;
     x_->setRange(0, 255);
@@ -326,24 +354,28 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     coords->addWidget(x_);
     coords->addWidget(new QLabel("Z"));
     coords->addWidget(z_);
-    side->addLayout(coords);
+    fields->addWidget(coordinates_);
     apply_ = new QPushButton("Set map coordinates");
     apply_->setObjectName("mapApply");
-    side->addWidget(apply_);
+    fields->addWidget(apply_);
     fields_ = new QPushButton("Edit selected fields");
     fields_->setObjectName("mapEditFields");
-    side->addWidget(fields_);
+    fields->addWidget(fields_);
+    // The shared object list owns selection; site/treasure forms need no second picker.
+    world_ = new ScenarioWorldEditor(project_, undo_, [] {});
+    fields->addWidget(world_);
+    world_->hide();
     referenceName_ = new QLabel;
     referenceName_->setWordWrap(true);
     referenceName_->setObjectName("mapTerrainStatus");
-    side->addWidget(referenceName_);
+    fields->addWidget(referenceName_);
     reference_ = new QLabel;
     reference_->setAlignment(Qt::AlignCenter);
-    side->addWidget(reference_);
-    sidebar->setMinimumWidth(260);
-    sidebar->setMaximumWidth(360);
+    fields->addWidget(reference_);
+    fields->addStretch();
+    sidebar->setMinimumWidth(330);
     split->addWidget(sidebar);
-    split->setSizes({700, 300});
+    split->setSizes({700, 370});
     layout->addWidget(split, 1);
     notice_ = new QLabel;
     notice_->setObjectName("mapNotice");
@@ -362,7 +394,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         canvas_->placing = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
         notice_->setText(on ? "Click the map to place a new treasure. Click Add treasure again to "
-                              "cancel. Then use Edit selected fields to choose its item."
+                              "cancel. Choose its item in the sidebar."
                             : "");
     });
     canvas_->place = [this, addTreasure](QPointF position) {
@@ -389,7 +421,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                     objects_->setCurrentRow(i);
                     break;
                 }
-            notice_->setText("Treasure placed. Use Edit selected fields to choose its item, or "
+            notice_->setText("Treasure placed. Choose its item in the sidebar, or "
                              "drag to move it.");
         } catch (const Error &e) {
             notice_->setText(QString::fromUtf8(e.what()));
@@ -421,8 +453,15 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
 }
 void ScenarioMapEditor::refresh(int key) {
     const ViewPosition keepView(this, key_ == key);
-    if (key < 1)
+    world_->refresh(key);
+    if (key < 1) {
+        key_ = key;
+        objects_->clear();
+        canvas_->markers.clear();
+        canvas_->edges.clear();
+        select(-1);
         return;
+    }
     const int previous = key_ == key ? objects_->currentRow() : -1;
     if (key_ != key) {
         canvas_->resetView();
@@ -482,6 +521,8 @@ void ScenarioMapEditor::refresh(int key) {
             canvas_->markers << MapMarker{kind, row, label, normalize(position), color, icon};
             auto item =
                 new QListWidgetItem(label + (position ? "" : " · unresolved placement"), objects_);
+            item->setData(Qt::UserRole, int(kind));
+            item->setData(Qt::UserRole + 1, row);
             item->setForeground(color.darker(140));
             if (!icon.isNull()) item->setIcon(QPixmap::fromImage(icon));
             item->setToolTip(item->text());
@@ -577,16 +618,44 @@ void ScenarioMapEditor::select(int row) {
     canvas_->update();
     const bool valid = row >= 0 && row < canvas_->markers.size();
     const bool movable = valid && canvas_->markers[row].movable();
+    const bool worldObject = valid && (canvas_->markers[row].kind == MapObject::Site ||
+                                      canvas_->markers[row].kind == MapObject::Treasure);
+    world_->setVisible(worldObject);
+    coordinates_->setVisible(valid && !worldObject);
+    apply_->setVisible(valid && !worldObject);
+    fields_->setVisible(valid && !worldObject);
+    summary_->setVisible(valid && !worldObject);
+    reference_->setVisible(!worldObject && canvas_->terrain.isNull());
+    referenceName_->setVisible(!worldObject);
     x_->setEnabled(movable);
     z_->setEnabled(movable);
     apply_->setEnabled(movable);
     fields_->setEnabled(valid);
     selection_->clear();
-    if (!valid)
+    summary_->clear();
+    if (!valid) {
+        selection_->setText("Select a squad, waypoint, site or treasure on the map.");
         return;
+    }
     const auto &m = canvas_->markers[row];
-    selection_->setText(m.label +
-                        (m.movable() ? "" : "\nSite position comes from the scenario geometry."));
+    selection_->setText(m.label.section(" · flag ", 0, 0));
+    if (worldObject) {
+        world_->selectObject(m.kind == MapObject::Treasure, m.row);
+    } else if (m.kind == MapObject::Squad) {
+        const auto &scenario = project_->scenarios()->scenario(key_);
+        const auto members = squadMembers(scenario.squads[m.row]);
+        const auto &deployment = scenario.layout.deployments[m.row];
+        QStringList lines{u8(deployment, 0) & 128 ? "Allied squad" : "Enemy squad"};
+        for (const auto &member : members)
+            lines << QString("%1 · Level %2")
+                .arg(QString(project_->record(Table::Classes, member.classId).name).replace('\n', ' '))
+                .arg(scenario.layout.baseLevel() + member.levelOffset);
+        summary_->setText(lines.join('\n'));
+        fields_->setText("Edit squad members and deployment…");
+    } else {
+        summary_->setText("Route waypoint · connected paths are shown on the map.");
+        fields_->setText("Edit route and conditions…");
+    }
     z_->setMinimum(m.kind == MapObject::Treasure ? 0 : 1);
     if (m.position) {
         x_->setValue(int(std::round(m.position->x())));

@@ -19,6 +19,7 @@
 #include "app/record_model.h"
 #include "app/save_editor.h"
 #include "app/scenario_editor.h"
+#include "app/scenario_map_editor.h"
 #include "engine/squad_members.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_action_editor.h"
@@ -78,6 +79,18 @@
 #include <QtTest>
 #include <bit>
 using namespace lordly;
+static bool selectMapObject(QWidget &editor, MapObject kind, int row) {
+    auto objects = editor.findChild<QListWidget *>("mapObjects");
+    for (int i = 0; objects && i < objects->count(); ++i) {
+        auto item = objects->item(i);
+        if (item->data(Qt::UserRole).toInt() == int(kind) &&
+            item->data(Qt::UserRole + 1).toInt() == row) {
+            objects->setCurrentItem(item);
+            return true;
+        }
+    }
+    return false;
+}
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
@@ -8045,7 +8058,7 @@ class UiTests : public QObject {
             editor.resize(1450, 950);
             editor.show();
             auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
-            pages->setCurrentIndex(3);
+            pages->setCurrentIndex(2);
             QTest::qWait(20);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
             auto apply = editor.findChild<QPushButton *>("mapApply");
@@ -8083,8 +8096,10 @@ class UiTests : public QObject {
             const auto treasureIcon = objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage();
             const auto beforeItem = project.world()->json();
             const auto firstTreasure = ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(treasureIconRow);
-            fields->click();
+            QCOMPARE(pages->currentIndex(), 2);
+            QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             auto itemTable = editor.findChild<QComboBox *>("worldTreasureTable");
             itemTable->setCurrentIndex(itemTable->findData(u8(firstTreasure, 3) == 1 ? 2 : 1));
             auto treasureChoice = editor.findChild<QComboBox *>("worldTreasureItem");
@@ -8094,7 +8109,7 @@ class UiTests : public QObject {
             undo.undo();
             QCOMPARE(project.world()->json(), beforeItem);
             QCOMPARE(objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage(), treasureIcon);
-            pages->setCurrentIndex(3);
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(0);
             auto terrain = editor.findChild<QCheckBox *>("mapTerrain");
             QVERIFY(terrain);
@@ -8130,7 +8145,7 @@ class UiTests : public QObject {
             fields->click();
             QCOMPARE(pages->currentIndex(), 0);
             QCOMPARE(editor.findChild<QListWidget *>("scenarioSquads")->currentRow(), 0);
-            pages->setCurrentIndex(3);
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(0);
             x->setValue(128);
             z->setValue(128);
@@ -8185,11 +8200,11 @@ class UiTests : public QObject {
             fields->click();
             QCOMPARE(pages->currentIndex(), 1);
             QCOMPARE(editor.findChild<QListWidget *>("scenarioNodes")->currentRow(), waypoint);
-            pages->setCurrentIndex(3);
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(treasureItem);
-            x->setValue(255);
-            z->setValue(0);
-            apply->click();
+            editor.findChild<QSpinBox *>("worldTreasureX")->setValue(255);
+            editor.findChild<QSpinBox *>("worldTreasureZ")->setValue(0);
+            editor.findChild<QPushButton *>("worldTreasureApply")->click();
             auto treasure =
                 ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
             QCOMPARE(u8(treasure, 1), quint8(255));
@@ -8197,17 +8212,31 @@ class UiTests : public QObject {
             undo.undo();
             QCOMPARE(project.world()->json(), originalWorld);
             undo.redo();
-            fields->click();
             QCOMPARE(pages->currentIndex(), 2);
-            QCOMPARE(editor.findChild<QTabWidget *>("worldPages")->currentIndex(), 1);
-            QCOMPARE(editor.findChild<QListWidget *>("worldTreasures")->currentRow(), 0);
-            pages->setCurrentIndex(3);
+            QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
+            QCOMPARE(editor.findChild<QSpinBox *>("worldTreasureX")->value(), 255);
+            // A real map click clears the old inspector, then opens the hit treasure.
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, QPoint(5, 5));
+            QVERIFY(!editor.findChild<QWidget *>("mapWorldInspector")->isVisible());
+            QTest::qWait(20);
+            const qreal gridSize = std::min(canvas->width(), canvas->height()) - 72;
+            const QPointF treasurePixel = QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                QPointF(127, -128) * gridSize / 256.;
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, treasurePixel.toPoint());
+            QCOMPARE(objects->currentRow(), treasureItem);
+            QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(siteItem);
             QVERIFY(!apply->isEnabled());
-            fields->click();
-            QCOMPARE(editor.findChild<QTabWidget *>("worldPages")->currentIndex(), 0);
-            pages->setCurrentIndex(3);
+            QCOMPARE(pages->currentIndex(), 2);
+            QVERIFY(editor.findChild<QWidget *>("worldSiteFields")->isVisible());
+            QCOMPARE(editor.findChild<QLineEdit *>("worldSiteName")->text(), townName);
+            pages->setCurrentIndex(2);
             objects->setCurrentRow(0);
+            QTest::qWait(20);
+            const auto squadSummary = editor.findChild<QLabel *>("mapSelectionSummary");
+            QVERIFY(squadSummary->isVisible());
+            QVERIFY(squadSummary->text().contains("Level"));
             QVERIFY(editor.grab().save("scenario-map.png"));
             QTemporaryDir work;
             project.saveFolder(work.filePath("project"));
@@ -8261,16 +8290,16 @@ class UiTests : public QObject {
                     missions->setCurrentRow(i);
             auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
             pages->setCurrentIndex(2);
-            auto sites = editor.findChild<QListWidget *>("worldSites");
+
             auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
             auto apply = editor.findChild<QPushButton *>("worldSiteApply");
-            QCOMPARE(sites->count(), 6);
+            QCOMPARE(project.world()->siteCount(64), 6);
             const auto original = project.world()->scenario(64).sites;
             QCOMPARE(original,
                      QByteArray::fromHex("010118200201190000011a2012011b0004011c0004011d0004"));
             auto expected = original;
             for (int row = 1; row < 6; ++row) {
-                sites->setCurrentRow(row);
+                QVERIFY(selectMapObject(editor, MapObject::Site, row));
                 const int target = row == 2 ? 2 : 1;
                 allegiance->setCurrentIndex(allegiance->findData(target));
                 apply->click();
@@ -8284,16 +8313,16 @@ class UiTests : public QObject {
             while (undo.canRedo())
                 undo.redo();
             QCOMPARE(project.world()->scenario(64).sites, expected);
-            pages->setCurrentIndex(3);
+            pages->setCurrentIndex(2);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
             for (int row = 0; row < 6; ++row) {
                 const auto name = project.world()->townName(u16(expected, 1 + row * 4));
                 const auto matches = objects->findItems(name, Qt::MatchExactly);
                 QCOMPARE(matches.size(), 1);
                 objects->setCurrentItem(matches.first());
-                editor.findChild<QPushButton *>("mapEditFields")->click();
-                QCOMPARE(sites->currentRow(), row);
-                pages->setCurrentIndex(3);
+                QCOMPARE(editor.findChild<QLineEdit *>("worldSiteName")->text(), name);
+                QVERIFY(editor.findChild<QWidget *>("worldSiteFields")->isVisible());
+                pages->setCurrentIndex(2);
             }
             QVERIFY(editor.grab().save("scenario-64-sites.png"));
             QTemporaryDir work;
@@ -8344,18 +8373,20 @@ class UiTests : public QObject {
         auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
         auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
         auto missions = editor.findChild<QListWidget *>("scenarioList");
-        auto sites = editor.findChild<QListWidget *>("worldSites");
-        auto treasures = editor.findChild<QListWidget *>("worldTreasures");
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        auto treasureCount = [&] { return ScenarioWorld::treasureCount(project.world()->scenario(52).treasures); };
         const auto base = project.world()->json();
         for (int i = 0; i < missions->count(); ++i) {
+            if (!(missions->item(i)->flags() & Qt::ItemIsEnabled)) continue;
             missions->setCurrentRow(i);
-            for (int row = 0; row < sites->count(); ++row) {
-                sites->setCurrentRow(row);
+            const int key = missions->currentItem()->data(Qt::UserRole).toInt();
+            for (int row = 0; row < project.world()->siteCount(key); ++row) {
+                QVERIFY(selectMapObject(editor, MapObject::Site, row));
                 button("worldSiteApply")->click();
                 QCOMPARE(project.world()->json(), base);
             }
-            for (int row = 0; row < treasures->count(); ++row) {
-                treasures->setCurrentRow(row);
+            for (int row = 0; row < ScenarioWorld::treasureCount(project.world()->scenario(key).treasures); ++row) {
+                QVERIFY(selectMapObject(editor, MapObject::Treasure, row));
                 button("worldTreasureApply")->click();
                 QCOMPARE(project.world()->json(), base);
             }
@@ -8364,8 +8395,8 @@ class UiTests : public QObject {
         for (int i = 0; i < missions->count(); ++i)
             if (missions->item(i)->data(Qt::UserRole).toInt() == 52)
                 missions->setCurrentRow(i);
-        sites->setCurrentRow(0);
-        const int id = sites->currentItem()->data(Qt::UserRole).toInt();
+        QVERIFY(selectMapObject(editor, MapObject::Site, 0));
+        const int id = u16(project.world()->scenario(52).sites, 1);
         const auto beforeShop = project.manifest();
         const int shopCount = project.shops()->size();
         button("worldShopAdd")->click();
@@ -8399,11 +8430,19 @@ class UiTests : public QObject {
         QCOMPARE(u8(project.world()->town(id), 24), quint8(255));
         QVERIFY(!spin("worldMorale")->isEnabled());
         editor.grab().save("scenario-sites.png");
-        editor.findChild<QTabWidget *>("worldPages")->setCurrentIndex(1);
-        const int count = treasures->count();
-        button("worldTreasureAdd")->click();
-        QCOMPARE(treasures->count(), count + 1);
-        const int row = treasures->currentRow();
+        editor.resize(1100, 800);
+        QTest::qWait(20);
+        QVERIFY(editor.grab().save("map-inspector-site-1100.png"));
+        editor.resize(1450, 950);
+        QTest::qWait(20);
+        const int count = treasureCount();
+        auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+        button("mapTreasureAdd")->click();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, canvas->rect().center());
+        QCOMPARE(treasureCount(), count + 1);
+        const int row = objects->currentItem()->data(Qt::UserRole + 1).toInt();
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(), int(MapObject::Treasure));
+        QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
         spin("worldTreasureX")->setValue(255);
         spin("worldTreasureZ")->setValue(0);
         auto table = editor.findChild<QComboBox *>("worldTreasureTable");
@@ -8417,9 +8456,9 @@ class UiTests : public QObject {
         QCOMPARE(u8(record, 1), quint8(255));
         editor.grab().save("scenario-treasure.png");
         button("worldTreasureRemove")->click();
-        QCOMPARE(treasures->count(), count);
+        QCOMPARE(treasureCount(), count);
         undo.undo();
-        QCOMPARE(treasures->count(), count + 1);
+        QCOMPARE(treasureCount(), count + 1);
         while (undo.canUndo())
             undo.undo();
         QCOMPARE(project.world()->json(), base);
@@ -8543,7 +8582,7 @@ class UiTests : public QObject {
         auto scenarioPages = editor.findChild<QStackedWidget *>("scenarioPages");
         QVERIFY(navigation && scenarioPages);
         const int selectedKey = list->currentItem()->data(Qt::UserRole).toInt();
-        for (int page = 0; page < 4; ++page) {
+        for (int page = 0; page < 3; ++page) {
             QTest::mouseClick(navigation, Qt::LeftButton, Qt::NoModifier, navigation->tabRect(page).center());
             QCOMPARE(scenarioPages->currentIndex(), page);
             QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), selectedKey);

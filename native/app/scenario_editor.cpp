@@ -3,7 +3,6 @@
 #include "app/squad_members_editor.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
-#include "app/scenario_world_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -136,8 +135,6 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     routes_ = new ScenarioRouteEditor(
         project_, [this](const Scenarios &next, const QString &label) { commit(next, label); });
     addPage(routes_, "Routes and conditions");
-    world_ = new ScenarioWorldEditor(project_, undo_, changed_);
-    addPage(world_, "Sites and treasure");
     map_ = new ScenarioMapEditor(
         project_, undo_,
         [this](const Scenarios &next, const QString &label) { commit(next, label); },
@@ -148,9 +145,6 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
             } else if (kind == MapObject::Waypoint) {
                 routes_->selectNode(row);
                 pages->setCurrentIndex(1);
-            } else {
-                world_->selectObject(kind == MapObject::Treasure, row);
-                pages->setCurrentIndex(2);
             }
         });
     addPage(map_, "Map");
@@ -421,7 +415,7 @@ void ScenarioEditor::showScenario() {
         editingKey_ = -1;
         editingRow_ = -1;
         routes_->refresh(-1);
-        world_->refresh(-1);
+        map_->refresh(-1);
         return;
     }
     QSignalBlocker block(squads_);
@@ -446,7 +440,6 @@ void ScenarioEditor::showScenario() {
         s.squads.isEmpty() ? -1 : std::clamp(editingRow_, 0, int(s.squads.size()) - 1));
     showSquad();
     routes_->refresh(key());
-    world_->refresh(key());
     map_->refresh(key());
 }
 void ScenarioEditor::showSquad() {
