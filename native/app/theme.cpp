@@ -92,17 +92,20 @@ QLabel#terrainMapContext {
     border: 1px solid #a07b2a; border-left: 4px solid #982018;
     padding: 10px 14px;
 }
-/* Keep secondary navigation light, so the workspace row owns the wood frame. */
+/* Gold section tabs sit below the dark workspace row. */
 QTabWidget::pane { border: 1px solid #b69a64; background: #ecdcb8; }
-QTabBar { background: #e4cfa1; }
+QTabBar { background: #dcc286; font-weight: 600; }
 QTabBar::tab {
-    background: transparent; color: #55391a;
-    border: none; border-bottom: 3px solid transparent;
-    padding: 7px 11px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ecd8a8, stop:1 #dcc286);
+    color: #55391a;
+    border: none; border-right: 1px solid #b69a64;
+    border-top: 1px solid #f9eac7; border-bottom: 3px solid #b69a64;
+    padding: 8px 13px;
 }
-QTabBar::tab:hover { background: #f4e6c3; color: #982018; }
+QTabBar::tab:hover { background: #f3cc78; color: #70221c; }
 QTabBar::tab:selected {
-    background: #fbf2dc; color: #852c24; border-bottom-color: #982018;
+    background: #5a3a1c; color: #fff1cb;
+    border-top-color: #e0b35a; border-bottom-color: #982018;
 }
 QTabBar::tab:disabled { color: #806c50; }
 QTabBar#workspaceNavigation {

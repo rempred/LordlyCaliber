@@ -66,6 +66,8 @@
 #include <QScrollBar>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTabBar>
+#include <QStackedWidget>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
@@ -8042,7 +8044,7 @@ class UiTests : public QObject {
             ScenarioEditor editor(&project, &undo, [] {});
             editor.resize(1450, 950);
             editor.show();
-            auto pages = editor.findChild<QTabWidget *>("scenarioPages");
+            auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
             pages->setCurrentIndex(3);
             QTest::qWait(20);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
@@ -8257,7 +8259,7 @@ class UiTests : public QObject {
             for (int i = 0; i < missions->count(); ++i)
                 if (missions->item(i)->data(Qt::UserRole).toInt() == 64)
                     missions->setCurrentRow(i);
-            auto pages = editor.findChild<QTabWidget *>("scenarioPages");
+            auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
             pages->setCurrentIndex(2);
             auto sites = editor.findChild<QListWidget *>("worldSites");
             auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
@@ -8338,7 +8340,7 @@ class UiTests : public QObject {
         ScenarioEditor editor(&project, &undo, [] {});
         editor.resize(1450, 950);
         editor.show();
-        editor.findChild<QTabWidget *>("scenarioPages")->setCurrentIndex(2);
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);
         auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
         auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
         auto missions = editor.findChild<QListWidget *>("scenarioList");
@@ -8432,7 +8434,7 @@ class UiTests : public QObject {
         ScenarioEditor editor(&project, &undo, [] {});
         editor.resize(1500, 950);
         editor.show();
-        editor.findChild<QTabWidget *>("scenarioPages")->setCurrentIndex(1);
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(1);
         auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
         auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
         auto select = [&](const char *name, int id) {
@@ -8537,6 +8539,29 @@ class UiTests : public QObject {
         };
         auto list = editor.findChild<QListWidget *>("scenarioList");
         QCOMPARE(list->count(), 64);
+        auto navigation = editor.findChild<QTabBar *>("scenarioNavigation");
+        auto scenarioPages = editor.findChild<QStackedWidget *>("scenarioPages");
+        QVERIFY(navigation && scenarioPages);
+        const int selectedKey = list->currentItem()->data(Qt::UserRole).toInt();
+        for (int page = 0; page < 4; ++page) {
+            QTest::mouseClick(navigation, Qt::LeftButton, Qt::NoModifier, navigation->tabRect(page).center());
+            QCOMPARE(scenarioPages->currentIndex(), page);
+            QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), selectedKey);
+            QVERIFY(list->isVisible());
+            QVERIFY(editor.findChild<QLineEdit *>("scenarioSearch")->isVisible());
+            QCOMPARE(spin("scenarioBase")->isVisible(), page == 0);
+        }
+        // Map's Edit fields action also changes pages programmatically.
+        scenarioPages->setCurrentIndex(0);
+        QCOMPARE(navigation->currentIndex(), 0);
+        const auto beforeBase = project.scenarios()->json();
+        const int originalBase = spin("scenarioBase")->value();
+        spin("scenarioBase")->setValue(originalBase + 1);
+        button("scenarioBaseApply")->click();
+        QCOMPARE(project.scenarios()->scenario(selectedKey).layout.baseLevel(), originalBase + 1);
+        undo.undo();
+        QCOMPARE(project.scenarios()->json(), beforeBase);
+        QCOMPARE(spin("scenarioBase")->value(), originalBase);
         const QList<int> devKeys{10, 22, 35, 54, 62, 63, 64};
         for (int i = 0; i < devKeys.size(); ++i) {
             const auto item = list->item(list->count() - devKeys.size() + i);
@@ -9613,10 +9638,6 @@ class UiTests : public QObject {
         auto textBaseline = baseline;
         textBaseline.loadTexts();
         auto recordUndo = window.findChild<QUndoStack *>();
-        auto library = window.findChild<QWidget *>("descriptionsWorkspace");
-        auto libraryBank = library->findChild<QComboBox *>("descriptionBank");
-        auto libraryEntries = library->findChild<QListWidget *>("descriptionEntries");
-        auto libraryText = library->findChild<QPlainTextEdit *>("descriptionEditor");
         auto editDescriptionFrom = [&](QPushButton *button, const QString &expected,
                                        const QString &text, bool save, bool invalid = false) {
             QVERIFY(button && button->isEnabled());
@@ -9658,12 +9679,9 @@ class UiTests : public QObject {
             editDescriptionFrom(button, original, "Edited from " + kind, true, true);
             QCOMPARE(recordUndo->index(), index + 1);
             QCOMPARE(preview->text(), "Edited from " + kind);
-            libraryBank->setCurrentIndex(libraryBank->findData(kind));
-            libraryEntries->setCurrentRow(id);
-            QCOMPARE(libraryText->toPlainText(), preview->text());
+            editDescriptionFrom(button, "Edited from " + kind, "Cancelled draft", false);
             recordUndo->undo();
             QCOMPARE(preview->text(), original);
-            QCOMPARE(libraryText->toPlainText(), original);
             recordUndo->redo();
             QCOMPARE(preview->text(), "Edited from " + kind);
             recordUndo->undo();
@@ -9672,9 +9690,8 @@ class UiTests : public QObject {
         const int frontAction = u8(textBaseline.record(Table::Classes, 5).bytes, 55);
         editDescriptionFrom(window.findChild<QPushButton *>("attack0Description"),
                             textBaseline.textBanks()["actions"].text(frontAction), "Action from class", true);
-        libraryBank->setCurrentIndex(libraryBank->findData("actions"));
-        libraryEntries->setCurrentRow(frontAction);
-        QCOMPARE(libraryText->toPlainText(), QString("Action from class"));
+        editDescriptionFrom(window.findChild<QPushButton *>("attack0Description"),
+                            "Action from class", "Cancelled draft", false);
         recordUndo->undo();
         auto combatAction = window.findChild<QComboBox *>("combatAnimationAction");
         auto combatDescription = window.findChild<QPushButton *>("combatAnimationActionDescription");
@@ -9682,9 +9699,10 @@ class UiTests : public QObject {
         const int combatId = combatAction->currentData().toInt();
         editDescriptionFrom(combatDescription, textBaseline.textBanks()["actions"].text(combatId),
                             "Action from animation", true);
-        libraryEntries->setCurrentRow(combatId);
-        QCOMPARE(libraryText->toPlainText(), QString("Action from animation"));
+        editDescriptionFrom(combatDescription, "Action from animation", "Cancelled draft", false);
         recordUndo->undo();
+        editDescriptionFrom(combatDescription, textBaseline.textBanks()["actions"].text(combatId),
+                            "Cancelled draft", false);
         combatAction->setCurrentIndex(combatAction->findData(-1)); // Idle is a motion, not an action.
         QVERIFY(!combatDescription->isEnabled());
         auto addItem = window.findChild<QPushButton *>("addItem");
@@ -9750,9 +9768,8 @@ class UiTests : public QObject {
         auto classDescription = window.findChild<QWidget *>("classesDescriptionPanel");
         editDescriptionFrom(classDescription->findChild<QPushButton *>("editRecordDescription"),
                             {}, "New class description", true);
-        libraryBank->setCurrentIndex(libraryBank->findData("classes"));
-        libraryEntries->setCurrentRow(Project::classDescriptionIndex(classCount));
-        QCOMPARE(libraryText->toPlainText(), QString("New class description"));
+        editDescriptionFrom(classDescription->findChild<QPushButton *>("editRecordDescription"),
+                            "New class description", "Cancelled draft", false);
         recordUndo->undo();
         auto undo = window.findChild<QUndoStack *>();
         QVERIFY(undo);
@@ -9765,6 +9782,16 @@ class UiTests : public QObject {
         if (!screenshot.isEmpty()) {
             QTest::qWait(100);
             QVERIFY(window.grab().save(screenshot));
+            const auto capturePrefix = QFileInfo(screenshot).absolutePath() + "/" + QFileInfo(screenshot).completeBaseName();
+            auto workspaceTabs = qobject_cast<QTabWidget *>(window.centralWidget());
+            for (const auto name : {"encounterEditor", "scenarioEditor"}) {
+                workspaceTabs->setCurrentWidget(window.findChild<QWidget *>(name));
+                for (int width : {1440, 1100}) {
+                    window.resize(width, 900);
+                    QTest::qWait(50);
+                    QVERIFY(window.grab().save(capturePrefix + QString("-%1-%2.png").arg(name).arg(width)));
+                }
+            }
             // Optional visual captures use the same loaded desktop, including its
             // advanced-tool navigation. No extra ROM or export fixture is needed.
             auto artwork = window.findChild<QTabWidget *>("artWorkspace");

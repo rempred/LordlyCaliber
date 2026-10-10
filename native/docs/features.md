@@ -1,5 +1,10 @@
 # Feature inventory and completion tracking
 
+Scenario section navigation sits directly below the main workspaces, matching
+Encounters and Art. Its shared scenario picker includes the search field and
+retains selection across Squads, Routes, Sites and Map. Base-level controls live
+inside Squads; map-to-field navigation also updates the selected section tab.
+
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board
 with compatible gear choices and large-unit checks. Scenario squads support one
@@ -34,8 +39,8 @@ Consumables show a preview and Edit description button in their inspector.
 Class attack fields and combat/advanced action selectors open the selected
 action's shared description. Dialogs validate drafts before Save, support Cancel
 and restoring the original, and commit one Undo step. New class IDs use their
-expanded description indices. The Descriptions library remains available for
-shared help text and standalone slots; both views edit the same project data.
+expanded description indices. There is no standalone Descriptions tab;
+description changes still use the same project text banks and Undo history.
 
 The editor now also bundles the complete accepted pure-C source library, with
 per-source provenance and dependencies. Imported source availability is distinct

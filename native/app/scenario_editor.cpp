@@ -22,6 +22,8 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStackedWidget>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QUndoStack>
@@ -73,19 +75,47 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("scenarioEditor");
     auto layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    auto navigation = new QTabBar;
+    navigation->setObjectName("scenarioNavigation");
+    navigation->setExpanding(false);
+    navigation->setDrawBase(false);
+    layout->addWidget(navigation);
+    auto content = new QWidget;
+    auto contentLayout = new QVBoxLayout(content);
+    layout->addWidget(content, 1);
+    auto split = new QSplitter;
+    contentLayout->addWidget(split);
+    auto picker = new QWidget;
+    auto pickerLayout = new QVBoxLayout(picker);
+    pickerLayout->setContentsMargins(0, 0, 0, 0);
     search_ = new QLineEdit;
     search_->setObjectName("scenarioSearch");
-    search_->setPlaceholderText("Find a scenario by map, title, branch, or runtime key…");
+    search_->setPlaceholderText("Find a scenario…");
+    search_->setToolTip("Search by map, title, branch, or runtime key");
     search_->setClearButtonEnabled(true);
-    layout->addWidget(search_);
-    auto split = new QSplitter;
-    layout->addWidget(split, 1);
+    pickerLayout->addWidget(search_);
     scenarios_ = new QListWidget;
     scenarios_->setObjectName("scenarioList");
     scenarios_->setMinimumWidth(190);
-    split->addWidget(scenarios_);
+    pickerLayout->addWidget(scenarios_, 1);
+    split->addWidget(picker);
     details_ = new QWidget;
     auto detail = new QVBoxLayout(details_);
+    detail->setContentsMargins(0, 0, 0, 0);
+    auto pages = new QStackedWidget;
+    pages->setObjectName("scenarioPages");
+    detail->addWidget(pages, 1);
+    connect(navigation, &QTabBar::currentChanged, pages, &QStackedWidget::setCurrentIndex);
+    connect(pages, &QStackedWidget::currentChanged, navigation, &QTabBar::setCurrentIndex);
+    auto addPage = [&](QWidget *page, const QString &title) {
+        pages->addWidget(page);
+        navigation->addTab(title);
+    };
+    auto squadPage = new QWidget;
+    auto squadLayout = new QVBoxLayout(squadPage);
+    squadLayout->setContentsMargins(0, 0, 0, 0);
     auto top = new QHBoxLayout;
     top->addWidget(new QLabel("Base level"));
     base_ = new QSpinBox;
@@ -99,17 +129,15 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     restore->setObjectName("scenarioRestoreLoaded");
     top->addWidget(restore);
     top->addStretch();
-    detail->addLayout(top);
+    squadLayout->addLayout(top);
     auto body = new QSplitter;
-    auto pages = new QTabWidget;
-    pages->setObjectName("scenarioPages");
-    detail->addWidget(pages, 1);
-    pages->addTab(body, "Squads");
+    squadLayout->addWidget(body, 1);
+    addPage(squadPage, "Squads");
     routes_ = new ScenarioRouteEditor(
         project_, [this](const Scenarios &next, const QString &label) { commit(next, label); });
-    pages->addTab(routes_, "Routes and conditions");
+    addPage(routes_, "Routes and conditions");
     world_ = new ScenarioWorldEditor(project_, undo_, changed_);
-    pages->addTab(world_, "Sites and treasure");
+    addPage(world_, "Sites and treasure");
     map_ = new ScenarioMapEditor(
         project_, undo_,
         [this](const Scenarios &next, const QString &label) { commit(next, label); },
@@ -125,7 +153,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
                 pages->setCurrentIndex(2);
             }
         });
-    pages->addTab(map_, "Map");
+    addPage(map_, "Map");
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);
@@ -250,7 +278,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     notice_->setWordWrap(true);
     detail->addWidget(notice_);
     split->addWidget(details_);
-    split->setSizes({230, 1200});
+    split->setSizes({300, 1130});
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
     connect(scenarios_, &QListWidget::currentRowChanged, this, [this] { showScenario(); });
     connect(squads_, &QListWidget::currentRowChanged, this, [this] { showSquad(); });

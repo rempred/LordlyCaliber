@@ -238,9 +238,6 @@ void MainWindow::installProject(Project project) {
     if (project_->scenarios())
         workspaces_->addTab(new ScenarioEditor(project_.get(), undo_, [this] { updateStatus(); }),
                             "Scenarios");
-    if (!project_->textBanks().isEmpty())
-        workspaces_->addTab(createTextWorkspace(project_.get(), undo_, [this] { updateStatus(); }),
-                            "Descriptions");
     if (project_->rom().revision() == 0)
         workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
                                                [this] { updateStatus(); }),

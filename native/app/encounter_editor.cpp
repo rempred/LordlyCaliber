@@ -42,6 +42,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("encounterEditor");
     auto layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
     auto tabs = new QTabWidget;
     tabs->setObjectName("encounterTabs");
     layout->addWidget(tabs);
