@@ -22,6 +22,9 @@ the edited battlefield's briefing image, including moved buildings. The minimap
 reads the edited terrain grid directly. Road textures follow bends and repeat the
 continuous strip body; brushes prefer the current map's materials and preserve its fog. See
 [battlefield maps](battlefield-maps.md) for remaining rendering approximations.
+Brush radius supports half steps, including 1.5. Bridges form straight spans from
+the ROM's bridge mesh, retaining deck, rails, support faces and atlas mapping;
+the movement-height grid follows the deck.
 
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board

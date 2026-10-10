@@ -162,19 +162,20 @@ void MapEdits::moveSite(int key, int row, QPointF point) {
     edits_[s.modelId] = next;
     prune(s.modelId);
 }
-void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, int radius) {
+void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, double radius) {
     const auto &s = source(key);
-    if (stroke.isEmpty() || stroke.size() > 10000 || radius < 1 || radius > 32 ||
-        (terrain != 255 && (terrain < 1 || terrain > 14)))
+    if (stroke.isEmpty() || stroke.size() > 10000 || !std::isfinite(radius) || radius < 1 ||
+        radius > 32 || (terrain != 255 && (terrain < 1 || terrain > 14)))
         throw Error("Invalid terrain brush");
     auto next = edits_.value(s.modelId);
     auto stamp = [&](QPointF p) {
         if (!std::isfinite(p.x()) || !std::isfinite(p.y()) || std::abs(p.x()) > 4096 ||
             std::abs(p.y()) > 4096)
             throw Error("Invalid brush position");
-        const int cx = int(std::round(p.x())), cy = int(std::round(p.y()));
-        for (int y = std::max(0, cy - radius); y <= std::min(255, cy + radius); ++y)
-            for (int x = std::max(0, cx - radius); x <= std::min(255, cx + radius); ++x) {
+        for (int y = std::max(0, int(std::ceil(p.y() - radius)));
+             y <= std::min(255, int(std::floor(p.y() + radius))); ++y)
+            for (int x = std::max(0, int(std::ceil(p.x() - radius)));
+                 x <= std::min(255, int(std::floor(p.x() + radius))); ++x) {
                 if ((x - p.x()) * (x - p.x()) + (y - p.y()) * (y - p.y()) > radius * radius)
                     continue;
                 if (u8(s.terrain[0].data, y * 256 + x) >= 15)
@@ -262,7 +263,7 @@ FieldBrush MapEdits::texture(int code) const {
         if (!s.terrain[0].data.contains(char(sampledType)))
             continue;
         auto image = s.field.terrainBrush(sampledType, s.terrain[0].data, s.map.bounds);
-        if (!image.texture.isNull()) {
+        if (!image.texture.isNull() && ((code != 2 && code != 10) || !image.bridge.isEmpty())) {
             textures_[code] = image;
             return image;
         }
@@ -279,7 +280,10 @@ QByteArray MapEdits::model(int key) const {
     for (unsigned char type : borders.change.paint)
         if (type != 255 && !tiles.contains(type)) {
             auto brush = s.field.terrainBrush(type, s.terrain[0].data, s.map.bounds);
-            tiles[type] = brush.texture.isNull() ? texture(type) : brush;
+            tiles[type] =
+                brush.texture.isNull() || ((type == 2 || type == 10) && brush.bridge.isEmpty())
+                    ? texture(type)
+                    : brush;
         }
     return editFieldModel(s, c, tiles);
 }

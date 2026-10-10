@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QImage>
 #include <QJsonDocument>
@@ -84,7 +85,9 @@ class MapCanvas : public QWidget {
     std::function<void(int, QPointF)> moved;
     std::function<void(QPointF)> place;
     bool placing = false;
-    int brushMode = 0, brushRadius = 3;
+    int brushMode = 0;
+    double brushRadius = 3;
+    bool straightBrush = false;
     QVector<QPointF> stroke;
     std::function<void(const QVector<QPointF> &)> painted;
     int current = -1;
@@ -236,13 +239,17 @@ class MapCanvas : public QWidget {
             const auto radius = QLineF(toPixel({0, 0}), toPixel({qreal(brushRadius), 0})).length();
             p.save();
             p.setClipRect(area);
-            p.setPen(QPen(QColor(250, 220, 130, 150), radius * 2, Qt::SolidLine, Qt::RoundCap,
-                          Qt::RoundJoin));
+            p.setPen(QPen(QColor(250, 220, 130, 150), radius * 2, Qt::SolidLine,
+                          straightBrush ? Qt::SquareCap : Qt::RoundCap, Qt::RoundJoin));
             for (int i = 1; i < stroke.size(); ++i)
                 p.drawLine(toPixel(stroke[i - 1]), toPixel(stroke[i]));
             p.setPen(QPen(QColor("#fff2a8"), 1.5));
             p.setBrush(QColor(250, 220, 130, 50));
-            p.drawEllipse(mouse_, radius, radius);
+            if (!straightBrush)
+                p.drawEllipse(mouse_, radius, radius);
+            else if (stroke.size() < 2)
+                p.drawRect(
+                    QRectF(mouse_ - QPointF(radius, radius), QSizeF(radius * 2, radius * 2)));
             p.restore();
         }
         p.setPen(QColor("#bdd0dc"));
@@ -319,7 +326,7 @@ class MapCanvas : public QWidget {
                 boundaryDrag.setBottom(std::clamp(p.y(), boundaryDrag.top() + 8, 254.));
         }
         if (!stroke.isEmpty() && !panning_)
-            stroke << fromPixel(mouse_);
+            extendStroke(fromPixel(mouse_));
         if (drag_ >= 0 && QLineF(press_, mouse_).length() > 3)
             dragging_ = true;
         update();
@@ -339,7 +346,7 @@ class MapCanvas : public QWidget {
             return;
         }
         if (!stroke.isEmpty()) {
-            stroke << fromPixel(e->position());
+            extendStroke(fromPixel(e->position()));
             const auto completed = stroke;
             stroke.clear();
             if (painted)
@@ -364,6 +371,12 @@ class MapCanvas : public QWidget {
     }
 
   private:
+    void extendStroke(QPointF p) {
+        if (straightBrush && stroke.size() > 1)
+            stroke.last() = p;
+        else
+            stroke << p;
+    }
     qreal zoom_ = 1;
     QPointF pan_, mouse_, press_, dragOffset_;
     int drag_ = -1;
@@ -440,11 +453,15 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     for (int type = 1; type <= 14; ++type)
         paintType_->addItem(Encounters::mapTerrainName(type), type);
     paintType_->setCurrentIndex(2);
+    paintType_->setToolTip("Drag from one bridge end to the other for a straight span. Leave a gap "
+                           "between separate bridges.");
     painting->addWidget(paintType_);
     painting->addWidget(new QLabel("Brush radius"));
-    brushSize_ = new QSpinBox;
+    brushSize_ = new QDoubleSpinBox;
     brushSize_->setObjectName("mapBrushSize");
     brushSize_->setRange(1, 16);
+    brushSize_->setDecimals(1);
+    brushSize_->setSingleStep(.5);
     brushSize_->setValue(3);
     painting->addWidget(brushSize_);
     auto restore = new QPushButton("Restore map edits");
@@ -572,6 +589,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
             [this, addTreasure, boundaryToggle](int mode) {
                 canvas_->cancelDrag();
                 canvas_->brushMode = mode < 4 ? mode : 0;
+                const int terrain = paintType_->currentData().toInt();
+                canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
                 canvas_->editBoundary = mode == 4 && key_ != 39;
                 boundaryTools_->setVisible(mode == 4);
                 boundaryTools_->setEnabled(key_ != 39);
@@ -585,8 +604,14 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                 canvas_->update();
             });
     paintType_->setEnabled(false);
+    connect(paintType_, &QComboBox::currentIndexChanged, this, [this] {
+        canvas_->cancelDrag();
+        const int terrain = paintType_->currentData().toInt();
+        canvas_->straightBrush = tool_->currentIndex() == 1 && (terrain == 2 || terrain == 10);
+        canvas_->update();
+    });
     brushSize_->setEnabled(false);
-    connect(brushSize_, &QSpinBox::valueChanged, this, [this](int n) {
+    connect(brushSize_, &QDoubleSpinBox::valueChanged, this, [this](double n) {
         canvas_->brushRadius = n;
         canvas_->update();
     });

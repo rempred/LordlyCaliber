@@ -1,6 +1,7 @@
 #include "engine/battlefield.h"
 #include "engine/archive.h"
 #include "engine/color_combiner.h"
+#include "engine/field_span.h"
 #include "engine/image.h"
 #include <QFile>
 #include <QJsonArray>
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <tuple>
 
 namespace lordly {
 namespace {
@@ -1132,6 +1134,89 @@ FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF
     };
     FieldBrush out;
     out.texture = image(m);
+    if (terrain == 2 || terrain == 10) {
+        out.bridgeFiltered = m.filter;
+        // The small bridge image is an atlas for separate deck/rail/support
+        // faces, not a road strip. Keep those faces and their original UVs.
+        QMap<int, double> candidates;
+        QSet<int> mixed;
+        for (const auto &t : data_->triangles) {
+            if (t.group < 0 || sites.contains(t.group))
+                continue;
+            if (t.material != selected) {
+                mixed.insert(t.group);
+                continue;
+            }
+            candidates[t.group] += std::max(
+                0.f, QVector3D::crossProduct(t.vertices[1].position - t.vertices[0].position,
+                                             t.vertices[2].position - t.vertices[0].position)
+                         .y());
+        }
+        int group = -1;
+        double area = 0;
+        for (auto it = candidates.begin(); it != candidates.end(); ++it)
+            if (!mixed.contains(it.key()) && it.value() > area) {
+                group = it.key();
+                area = it.value();
+            }
+        // Some maps batch several separate bridges into one draw group. Select
+        // one connected mesh, preserving its rails and supports at shared points.
+        QVector<const Triangle *> faces;
+        QMap<std::tuple<float, float, float>, QVector<int>> adjacency;
+        auto pointKey = [](QVector3D p) { return std::tuple{p.x(), p.y(), p.z()}; };
+        int seed = -1;
+        double deck = 0, largest = 0;
+        for (const auto &t : data_->triangles)
+            if (group >= 0 && t.group == group) {
+                const auto a = t.vertices[0].position, b = t.vertices[1].position,
+                           c = t.vertices[2].position;
+                const double topArea = QVector3D::crossProduct(b - a, c - a).y();
+                if (topArea > largest) {
+                    largest = topArea;
+                    deck = (a.y() + b.y() + c.y()) / 3;
+                    seed = int(faces.size());
+                }
+                for (const auto &v : t.vertices)
+                    adjacency[pointKey(v.position)] << int(faces.size());
+                faces << &t;
+            }
+        QVector<int> connected;
+        QSet<int> visited;
+        if (seed >= 0) {
+            connected << seed;
+            visited.insert(seed);
+        }
+        QVector<QPointF> points;
+        for (int n = 0; n < connected.size(); ++n)
+            for (const auto &v : faces[connected[n]]->vertices) {
+                for (int next : adjacency.value(pointKey(v.position)))
+                    if (!visited.contains(next)) {
+                        visited.insert(next);
+                        connected << next;
+                    }
+                const QPointF p(v.position.x(), v.position.z());
+                if (!points.contains(p))
+                    points << p;
+            }
+        const FieldSpan span(points);
+        if (span.length > .0001 && span.width > .0001)
+            for (int i : connected) {
+                const auto &t = *faces[i];
+                std::array<FieldBrush::Vertex, 3> face;
+                for (int n = 0; n < 3; ++n) {
+                    const auto &v = t.vertices[n];
+                    const auto p = span.normalized({v.position.x(), v.position.z()});
+                    const auto &tile = m.first->tile;
+                    face[n] = {
+                        {float(p.x()), float((v.position.y() - deck) / span.width), float(p.y())},
+                        {std::ldexp(v.uv.x() * m.scaleS, tile.ss <= 10 ? -tile.ss : 16 - tile.ss) -
+                             tile.left / 4.,
+                         std::ldexp(v.uv.y() * m.scaleT, tile.st <= 10 ? -tile.st : 16 - tile.st) -
+                             tile.top / 4.}};
+                }
+                out.bridge << face;
+            }
+    }
     if ((terrain == 1 || terrain == 9) && out.texture.height() >= 32 &&
         out.texture.height() >= out.texture.width() * 2) {
         // Native road artwork includes tapered segment ends. Only its central

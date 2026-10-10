@@ -8265,6 +8265,11 @@ class UiTests : public QObject {
             auto mapTool = editor.findChild<QComboBox *>("mapTool");
             QVERIFY(mapTool);
             mapTool->setCurrentIndex(2);
+            auto brushSize = editor.findChild<QDoubleSpinBox *>("mapBrushSize");
+            QVERIFY(brushSize);
+            QCOMPARE(brushSize->singleStep(), .5);
+            brushSize->setValue(1.5);
+            QCOMPARE(brushSize->value(), 1.5);
             const auto beforeRoad = canvas->grab().toImage();
             QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, pixel({105, 120}));
             QTest::mouseMove(canvas, pixel({125, 130}), 20);
@@ -8279,13 +8284,22 @@ class UiTests : public QObject {
             mapTool->setCurrentIndex(1);
             auto paintType = editor.findChild<QComboBox *>("mapPaintType");
             paintType->setCurrentIndex(paintType->findData(7));
-            editor.findChild<QSpinBox *>("mapBrushSize")->setValue(12);
+            brushSize->setValue(12);
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
             QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110), quint8(7));
             // A second landform exercises the separate forest-border texture.
             paintType->setCurrentIndex(paintType->findData(5));
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({145, 160}));
             QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 160 * 256 + 145), quint8(5));
+            paintType->setCurrentIndex(paintType->findData(2));
+            brushSize->setValue(1.5);
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, pixel({175, 68}));
+            QTest::mouseMove(canvas, pixel({193, 55}), 20);
+            QTest::mouseMove(canvas, pixel({211, 68}), 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, pixel({211, 68}));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 68 * 256 + 193), quint8(2));
+            QCOMPARE(u8(project.mapEdits()->changes(1).paint, 55 * 256 + 193), quint8(255));
+            brushSize->setValue(12);
             const auto terrainPaint = project.mapEdits()->json();
             mapTool->setCurrentIndex(3);
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));

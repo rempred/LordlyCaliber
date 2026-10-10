@@ -31,7 +31,7 @@ class MapEdits {
     QVector<QPointF> points(int key) const;
     bool canMoveSite(int key, int row) const;
     void moveSite(int key, int row, QPointF destination);
-    void paint(int key, const QVector<QPointF> &stroke, int terrain, int radius);
+    void paint(int key, const QVector<QPointF> &stroke, int terrain, double radius);
     QRectF boundary(int key) const;
     void setBoundary(int key, QRectF boundary);
     void restore(int key);

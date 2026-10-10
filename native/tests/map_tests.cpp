@@ -57,6 +57,78 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void bridgePainting() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edits = MapEdits::load(rom);
+            const auto &source = edits.source(1);
+            const auto brush =
+                source.field.terrainBrush(2, source.terrain[0].data, source.map.bounds);
+            qInfo() << "Native bridge template" << brush.bridge.size() << "faces"
+                    << brush.texture.size() << "filtered" << brush.bridgeFiltered;
+            QCOMPARE(brush.bridge.size(), 116);
+            for (const auto &[radius, count] :
+                 std::array<std::pair<double, int>, 3>{{{1., 5}, {1.5, 9}, {2., 13}}}) {
+                edits.paint(1, {{100, 110}}, 1, radius);
+                QCOMPARE(edits.changes(1).paint.count(char(1)), count);
+                edits.restore(1);
+            }
+            for (int type : {2, 10}) {
+                edits.paint(1, {{175, 68}, {211, 68}}, type, 1.5);
+                edits.paint(1, {{180, 83}, {215, 83}}, type, 3);
+                const auto model = edits.model(1);
+                const auto field = Battlefield::load(rom, 1, {}, model);
+                const auto &b = source.map.bounds;
+                const QRectF crop(b.left() + b.width() * 150 / 256.,
+                                  b.top() + b.height() * 55 / 256., b.width() * 78 / 256.,
+                                  b.height() * 60 / 256.);
+                QVERIFY(field.render(crop, 800).save(QCoreApplication::applicationDirPath() +
+                                                     QString("/bridge-painted-%1.png").arg(type)));
+                const FieldBorders cut(source, edits.changes(1));
+                int kept = 0;
+                for (const auto &t : source.field.triangles())
+                    kept += !cut.removes(t);
+                const auto triangles = field.triangles();
+                double lo = 1e9, hi = -1e9;
+                for (int i = kept; i < triangles.size(); ++i)
+                    for (auto p : triangles[i].points) {
+                        lo = std::min(lo, double(p.y()));
+                        hi = std::max(hi, double(p.y()));
+                    }
+                QVERIFY(hi - lo > .05);
+                auto copy = MapEdits::load(rom);
+                copy.apply(edits.json());
+                QCOMPARE(copy.model(1), model);
+                const auto exported = Rom::fromBytes(edits.rebuild(rom));
+                const auto reopened = MapEdits::load(exported);
+                QCOMPARE(reopened.source(1).geometry[0].data, model);
+                QCOMPARE(reopened.source(1).geometry[1].data,
+                         editFieldHeight(source, edits.changes(1)));
+                const auto world = source.map.world(193, 68);
+                const auto &hd = reopened.source(1).geometry[1].data;
+                auto f = [&](int at) { return double(std::bit_cast<float>(u32(hd, at))); };
+                const int hx = int(
+                              std::round((world.x() - f(4)) / (f(8) - f(4)) * (u16(hd, 0) - 1))),
+                          hz = int(
+                              std::round((world.y() - f(20)) / (f(24) - f(20)) * (u16(hd, 2) - 1)));
+                qInfo() << "Bridge deck height" << surfaceHeight(field.surface(), world)
+                        << "movement" << movementHeight(hd, hx, hz);
+                QVERIFY2(std::abs(movementHeight(hd, hx, hz) -
+                                  surfaceHeight(field.surface(), world)) < .02,
+                         "Bridge movement height must match its visible deck");
+                QCOMPARE(reopened.fineTerrain(1), edits.fineTerrain(1));
+                QCOMPARE(reopened.source(1).field.render(crop, 800), field.render(crop, 800));
+                QCOMPARE(reopened.source(2).geometry[0].data, edits.source(2).geometry[0].data);
+                edits.restore(1);
+            }
+            QCOMPARE(edits.rebuild(rom), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void terrainBorderReplacement() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

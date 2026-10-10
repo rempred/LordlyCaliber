@@ -1,5 +1,6 @@
 #include "engine/field_borders.h"
 #include "engine/field_brush.h"
+#include "engine/field_span.h"
 #include "engine/map_edits.h"
 #include <QSet>
 #include <algorithm>
@@ -278,6 +279,70 @@ struct PaintVertex {
     quint8 alpha;
 };
 using PaintTriangle = std::array<PaintVertex, 3>;
+struct BridgeSpan {
+    FieldSpan span;
+    double deck;
+    QVector<int> cells;
+};
+QVector<BridgeSpan> bridgeSpans(const FieldMapSource &source, const FieldChanges &change,
+                                const Surface &surface, int type) {
+    QVector<BridgeSpan> result;
+    QByteArray visited(65536, 0);
+    const QSizeF cell(source.map.bounds.width() / 256, source.map.bounds.height() / 256);
+    for (int start = 0; start < 65536; ++start) {
+        if (visited[start] || u8(change.paint, start) != type)
+            continue;
+        QVector<int> cells{start};
+        QVector<QPointF> points;
+        bool changed = false;
+        double deck = -1e9;
+        visited[start] = 1;
+        for (int i = 0; i < cells.size(); ++i) {
+            const int at = cells[i];
+            const auto p = source.map.bounds.topLeft() +
+                           QPointF((at % 256 + .5) * cell.width(), (at / 256 + .5) * cell.height());
+            points << p;
+            deck = std::max(deck, surface.height(p));
+            changed |= u8(source.visualTerrain, at) != type;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const int x = at % 256 + dx, y = at / 256 + dy;
+                    if (x < 0 || x >= 256 || y < 0 || y >= 256)
+                        continue;
+                    const int next = y * 256 + x;
+                    if (!visited[next] && u8(change.paint, next) == type) {
+                        visited[next] = 1;
+                        cells << next;
+                    }
+                }
+        }
+        if (changed)
+            result << BridgeSpan{FieldSpan(points, cell), deck + .03125, cells};
+    }
+    return result;
+}
+QVector<PaintTriangle> bridgeMesh(const QVector<BridgeSpan> &spans, const FieldBrush &brush) {
+    QVector<PaintTriangle> result;
+    for (const auto &span : spans)
+        for (const auto &face : brush.bridge) {
+            PaintTriangle out;
+            for (int n = 0; n < 3; ++n) {
+                const auto &v = face[n];
+                const auto p = span.span.world({v.point.x(), v.point.z()});
+                out[n] = {
+                    {float(p.x()), float(span.deck + v.point.y() * span.span.width), float(p.y())},
+                    {},
+                    v.uv,
+                    255};
+            }
+            const auto normal =
+                QVector3D::crossProduct(out[1].p - out[0].p, out[2].p - out[0].p).normalized();
+            for (auto &v : out)
+                v.normal = normal;
+            result << out;
+        }
+    return result;
+}
 QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brush,
                             const Surface &surface, bool border) {
     QVector<PaintTriangle> result;
@@ -373,12 +438,19 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
         if (borders.change.paint.contains(char(type)))
             shapes[type] = std::make_shared<FieldBrushShape>(borders.change.paint, type,
                                                              source.map.bounds, borders.native);
-    if (shapes.isEmpty() && borders.removed.isEmpty())
+    const bool bridges = change.paint.contains(char(2)) || change.paint.contains(char(10));
+    if (shapes.isEmpty() && borders.removed.isEmpty() && !bridges)
         return original;
     const int w = u16(original, 0), h = u16(original, 2);
     if (w < 2 || h < 2 || w > 256 || h > 256 || original.size() < 28 + h * 2)
         throw Error("Unsupported field height grid");
     const Surface surface(source, &borders);
+    QVector<BridgeSpan> spans;
+    if (bridges)
+        for (int type : {2, 10})
+            spans += bridgeSpans(source, change, surface, type);
+    const double stepX = (real(original, 8) - real(original, 4)) / (w - 1),
+                 stepZ = (real(original, 24) - real(original, 20)) / (h - 1);
     const double minY = real(original, 12), oldMax = real(original, 16);
     if (oldMax < minY || real(original, 8) <= real(original, 4) ||
         real(original, 24) <= real(original, 20))
@@ -401,6 +473,21 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
                 changed = true;
             }
             double value = base;
+            // Narrow bridges may fall entirely between movement-height samples.
+            // Include their surrounding interpolation corners, not just sample
+            // centres that happen to land in a painted gameplay cell.
+            for (const auto &bridge : spans) {
+                const auto &span = bridge.span;
+                const double a = std::abs(FieldSpan::dot(p - span.center, span.along)),
+                             b = std::abs(FieldSpan::dot(p - span.center, span.across));
+                if (a <= span.length / 2 + std::abs(span.along.x()) * stepX +
+                             std::abs(span.along.y()) * stepZ &&
+                    b <= span.width / 2 + std::abs(span.across.x()) * stepX +
+                             std::abs(span.across.y()) * stepZ) {
+                    value = std::max(value, bridge.deck);
+                    changed = true;
+                }
+            }
             for (const auto &shape : shapes) {
                 // Native foliage is above its walk surface; its movement grid
                 // follows roughly half of the canopy rise. Rock uses the visible
@@ -563,15 +650,21 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
                 const auto &image = border ? type->border : type->texture;
-                const auto painted = mesh(shape, type.value(), surface, border);
+                const bool bridge = type.key() == 2 || type.key() == 10;
+                command(dl, 0xe3001201, !bridge || type->bridgeFiltered ? 0x00002000 : 0);
+                const auto painted =
+                    bridge
+                        ? bridgeMesh(bridgeSpans(source, change, surface, type.key()), type.value())
+                        : mesh(shape, type.value(), surface, border);
                 const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
                           ms = int(std::log2(w)), mt = int(std::log2(h));
                 const bool highway = type.key() == 1 || type.key() == 9;
                 // Mirroring the continuous road body makes both ends of every
                 // repeat meet at the same texels, including filtered samples.
-                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border ? 2
-                                                              : highway                  ? 1
-                                                                                         : 0;
+                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border || bridge
+                                                                  ? 2
+                                                              : highway ? 1
+                                                                        : 0;
                 const auto tex = out.add(textureBytes(image), 8);
                 command(dl, 0xe7000000, 0);
                 command(dl, 0xfd100000, tex);

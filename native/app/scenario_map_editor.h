@@ -9,6 +9,7 @@ class QComboBox;
 class QCheckBox;
 class QListWidget;
 class QSpinBox;
+class QDoubleSpinBox;
 class QPushButton;
 class QUndoStack;
 namespace lordly {
@@ -44,7 +45,7 @@ class ScenarioMapEditor : public QWidget {
     std::array<QSpinBox *, 4> boundaryFields_;
     void changeBoundary(QRectF);
     QComboBox *tool_, *paintType_;
-    QSpinBox *brushSize_;
+    QDoubleSpinBox *brushSize_;
     QLabel *mapScope_;
     void paint(const QVector<QPointF> &stroke);
     int key_ = -1;

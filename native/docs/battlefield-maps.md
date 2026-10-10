@@ -53,6 +53,8 @@ from town metadata bytes 25–26 plus the scenario's site addend. Apply and Undo
 change the preview's cache key so building colours refresh.
 
 The Map tab provides Select / move, Paint terrain, Draw road, and Erase painting.
+Brush radius accepts half steps, including 1.5; preview and raster coverage use
+the fractional value without rounding to an integer.
 Drag a brush stroke; each stroke is one Undo operation. Paint Plain over a road
 to remove it. Erase painting restores the source ROM's terrain in the brushed
 area. Restore map edits resets painting and building positions for this shared
@@ -217,6 +219,33 @@ strokes. Local projections are blended with a continuous three-cell kernel;
 choosing one nearest centerline sample previously caused visible jumps at bends.
 Branches and closed loops can still distort the texture flow. Brush width controls
 the road width; native baked-in edge colours remain part of its material.
+
+Bridges use a separate path. Their small atlas (8x16 on Tenne) supplies separate
+deck, rail and support faces, so treating it as a repeating road texture caused
+blurred bands and rounded ends. The editor extracts one complete connected native
+bridge mesh from a single-material group, retains its UVs and texture filtering,
+and fits it to each connected painted bridge region. Tenne batches three bridges
+in one draw group; vertex connectivity isolates one 116-face bridge. Matching
+local artwork is preferred, with loaded-ROM fallback for absent/unsupported local
+bridge templates and snowy variants. No fixed external bridge asset is bundled.
+
+Bridge dragging previews and places only the straight start-to-cursor line;
+intermediate mouse detours do not paint terrain. Each connected bridge stroke
+becomes a straight, level span; separate bridges
+need a gap. Length and width follow the painted footprint and height follows the
+exposed ground. The source mesh's height proportions scale with width. Branched
+or curved masks are fitted to one straight span. The coarse movement-height grid
+also updates surrounding interpolation corners so narrow bridges do not fall
+between samples. This can slightly raise the immediate approach around a span.
+Existing project masks regenerate with the new geometry on export.
+
+`bridgePainting` checks distinct 1/1.5/2 dab coverage (5/9/13 cells), one connected
+native bridge, ordinary/snowy spans, deck versus decoded movement height,
+project/ROM reopening, matching rendered pixels and unaffected maps. The
+`scenarioMapEditing` UI workflow selects 1.5, paints a road and bridge, and checks
+that a mouse detour leaves no off-line painting, Undo/restore, full export/reopening
+and CIC checksum. Render comparisons are offline;
+this does not establish an in-game movement or weather-lighting comparison.
 
 `map_tests curvedRoadContinuity` reproduces a broad curved road crossing Tenne's
 forest and an existing road. It checks local UV continuity, 495 road-center pixels,

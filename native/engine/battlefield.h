@@ -15,7 +15,13 @@ struct FieldTriangle {
     int owner = -1, face = -1, terrain = 0;
 };
 struct FieldBrush {
+    struct Vertex {
+        QVector3D point;
+        QPointF uv;
+    };
     QImage texture, border;
+    QVector<std::array<Vertex, 3>> bridge;
+    bool bridgeFiltered = false;
     double densityS = 16, densityT = 16;
 };
 // Actual field geometry and materials. Rendering is an orthographic daylight
