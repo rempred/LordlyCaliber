@@ -48,6 +48,7 @@
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -81,6 +82,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle("Lordly Caliber · Native Editor");
     resize(1440, 900);
     setMinimumSize(900, 600);
+    workspaces_->tabBar()->setObjectName("workspaceNavigation");
     setCentralWidget(workspaces_);
     undoGroup_ = new QUndoGroup(this);
     undoGroup_->addStack(undo_);
