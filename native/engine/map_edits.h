@@ -9,11 +9,13 @@ struct FieldMapSource {
     ScenarioMap map;
     Battlefield field;
     QVector<FieldMember> geometry, terrain;
-    QByteArray points;
+    QByteArray points, visualTerrain;
+    QRectF boundary;
 };
 struct FieldChanges {
     QByteArray paint = QByteArray(65536, char(-1));
     QMap<int, QPointF> sites;
+    std::optional<QRectF> boundary;
 };
 struct FieldPlan {
     int geometryIndex = 0, terrainIndex = 0, pointIndex = 0;
@@ -29,6 +31,8 @@ class MapEdits {
     bool canMoveSite(int key, int row) const;
     void moveSite(int key, int row, QPointF destination);
     void paint(int key, const QVector<QPointF> &stroke, int terrain, int radius);
+    QRectF boundary(int key) const;
+    void setBoundary(int key, QRectF boundary);
     void restore(int key);
     QByteArray model(int key) const;
     QByteArray fineTerrain(int key) const;

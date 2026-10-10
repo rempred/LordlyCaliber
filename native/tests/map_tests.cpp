@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/battlefield.h"
+#include "engine/field_brush.h"
 #include "engine/map_edits.h"
 #include "engine/project.h"
 #include "engine/scenario_map.h"
@@ -28,8 +29,8 @@ class MapTests : public QObject {
             const auto &source = edit.source(1);
             QVERIFY(edit.canMoveSite(1, 0));
             const auto originalPoints = source.map.points;
-            source.field.terrainBrush(1, source.terrain[0].data, source.map.bounds).texture
-                .scaled(256, 256)
+            source.field.terrainBrush(1, source.terrain[0].data, source.map.bounds)
+                .texture.scaled(256, 256)
                 .save(QCoreApplication::applicationDirPath() + "/road-tile.png");
             edit.paint(1, {{105, 120}, {125, 130}}, 1, 2);
             QCOMPARE(u8(edit.fineTerrain(1), 120 * 256 + 105), quint8(1));
@@ -150,7 +151,20 @@ class MapTests : public QObject {
             }
             QVERIFY(movedSites > 200);
             for (int type = 1; type <= 14; ++type) {
-                edits.paint(1, {{120, 140}, {130, 140}}, type, 3);
+                // Matching native terrain is deliberately a geometry no-op.
+                // Exercise each material on a different, paintable native type.
+                QPoint target(-1, -1);
+                const auto &source = edits.source(1);
+                for (int y = 32; y < 224 && target.x() < 0; y += 8)
+                    for (int x = 32; x < 224 && target.x() < 0; x += 8) {
+                        const int at = y * 256 + x;
+                        if (u8(source.visualTerrain, at) != type &&
+                            u8(source.terrain[0].data, at) > 0 &&
+                            u8(source.terrain[0].data, at) < 15)
+                            target = {x, y};
+                    }
+                QVERIFY(target.x() >= 0);
+                edits.paint(1, {target}, type, 3);
                 const auto field = Battlefield::load(rom, 1, {}, edits.model(1));
                 QVERIFY(field.triangleCount() > edits.source(1).field.triangleCount());
                 edits.restore(1);
@@ -184,6 +198,133 @@ class MapTests : public QObject {
             QVERIFY(!edits.modified());
             qInfo() << "Verified complete independent movement for" << movedSites << "sites,"
                     << visited.size() << "maps, 14 brush materials, and shared map edits.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void battlefieldJoiningAndBoundary() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            const auto &s = edit.source(1);
+            QPoint interior(-1, -1), edge(-1, -1);
+            for (int y = 25; y < 230; ++y)
+                for (int x = 25; x < 230; ++x) {
+                    if (u8(s.visualTerrain, y * 256 + x) != 5)
+                        continue;
+                    bool full = true;
+                    for (int dy = -4; dy <= 4; ++dy)
+                        for (int dx = -4; dx <= 4; ++dx)
+                            full &= u8(s.visualTerrain, (y + dy) * 256 + x + dx) == 5;
+                    if (full && interior.x() < 0)
+                        interior = {x, y};
+                    if (u8(s.visualTerrain, y * 256 + x + 3) == 3 && edge.x() < 0)
+                        edge = {x, y};
+                }
+            QVERIFY(interior.x() >= 0);
+            QVERIFY(edge.x() >= 0);
+            edit.paint(1, {interior}, 5, 3);
+            auto noOp = Battlefield::load(rom, 1, {}, edit.model(1));
+            QCOMPARE(noOp.triangleCount(), s.field.triangleCount());
+            QCOMPARE(noOp.render(s.map.bounds, 512), s.field.render(s.map.bounds, 512));
+            QCOMPARE(editFieldHeight(s, edit.changes(1)), s.geometry[1].data);
+            edit.restore(1);
+            edit.paint(1, {edge + QPoint(4, 0)}, 5, 9);
+            FieldBrushShape join(edit.changes(1).paint, 5, s.map.bounds, s.visualTerrain);
+            FieldBrushShape separate(edit.changes(1).paint, 5, s.map.bounds);
+            QVERIFY(join.rise(edge) < separate.rise(edge));
+            const auto field = Battlefield::load(rom, 1, {}, edit.model(1));
+            QVERIFY(field.triangleCount() > s.field.triangleCount());
+            const auto world = s.map.world(edge.x(), edge.y());
+            const auto folder = QCoreApplication::applicationDirPath();
+            const QRectF crop(world.x() - 2.5, world.y() - 2.5, 5, 5);
+            QVERIFY(s.field.render(crop, 600).save(folder + "/join-before.png"));
+            QVERIFY(field.render(crop, 600).save(folder + "/join-after.png"));
+            qInfo() << "Forest join at" << edge << "added rise" << join.rise(edge)
+                    << "separate brush rise" << separate.rise(edge);
+            edit.restore(1);
+            // More than the former 5,000 triangles, using repeated real edits.
+            for (int y = 40; y <= 200; y += 32)
+                for (int x = 40; x <= 200; x += 32)
+                    edit.paint(1, {{double(x), double(y)}}, 4, 11);
+            const auto compact = edit.model(1);
+            const auto many = Battlefield::load(rom, 1, {}, compact);
+            const int added = many.triangleCount() - s.field.triangleCount();
+            qInfo() << "36 dabs:" << added << "added triangles," << compact.size() << "model bytes";
+            QVERIFY(added > 5000);
+            QVERIFY(compact.size() < 512 * 1024);
+            QVERIFY(!many.render(s.map.bounds, 512).isNull());
+            edit.restore(1);
+            // Scenery painting must not silently expand movement or the cursor.
+            constexpr int cell = 8 * 256 + 128;
+            QCOMPARE(u8(s.terrain[0].data, cell), quint8(0));
+            const int type = u8(s.visualTerrain, cell) == 4 ? 3 : 4;
+            edit.paint(1, {{128, 8}}, type, 5);
+            QCOMPARE(u8(edit.changes(1).paint, cell), quint8(type));
+            QCOMPARE(u8(edit.fineTerrain(1), cell), quint8(0));
+            const auto terrain = fieldMembers(edit.plan().first().terrain);
+            QCOMPARE(terrain[1].data, s.terrain[1].data);
+            QCOMPARE(edit.boundary(1), s.boundary);
+            QVERIFY(Battlefield::load(rom, 1, {}, edit.model(1)).triangleCount() >
+                    s.field.triangleCount());
+            const QRectF expanded(QPointF(2, 2), QPointF(253, 253));
+            edit.setBoundary(1, expanded);
+            QCOMPARE(u8(edit.fineTerrain(1), cell), quint8(type));
+            QCOMPARE(u8(edit.fineTerrain(1), 128), quint8(0));
+            auto copy = MapEdits::load(rom);
+            copy.apply(edit.json());
+            QCOMPARE(copy.json(), edit.json());
+            QCOMPARE(copy.boundary(1), expanded);
+            const auto image = edit.rebuild(rom);
+            QCOMPARE(image.mid(0x13c878, 4), QByteArray::fromHex("0202fdfd"));
+            QCOMPARE(image.mid(0x13c87c, 4), rom.bytes().mid(0x13c87c, 4));
+            const auto reopened = MapEdits::load(Rom::fromBytes(image));
+            QCOMPARE(reopened.boundary(1), expanded);
+            QCOMPARE(reopened.source(1).map.bounds, s.map.bounds);
+            QCOMPARE(reopened.points(1), s.map.points);
+            QCOMPARE(reopened.fineTerrain(1), edit.fineTerrain(1));
+            QCOMPARE(reopened.source(1).geometry[1].data, s.geometry[1].data);
+            QCOMPARE(u8(reopened.source(1).terrain[1].data, 2 * 64 + 32), quint8(type));
+            QCOMPARE(reopened.source(2).terrain[0].data, edit.source(2).terrain[0].data);
+            edit.setBoundary(1, QRectF(QPointF(32, 32), QPointF(220, 220)));
+            QCOMPARE(u8(edit.fineTerrain(1), cell), quint8(0));
+            const auto shrunk = fieldMembers(edit.plan().first().terrain);
+            QCOMPARE(u8(shrunk[1].data, 2 * 64 + 32), quint8(0));
+            QVERIFY_THROWS_EXCEPTION(Error, edit.setBoundary(1, QRectF(0, 0, 255, 255)));
+            QVERIFY_THROWS_EXCEPTION(Error, edit.setBoundary(39, expanded));
+            edit.restore(1);
+            QCOMPARE(edit.rebuild(rom), rom.bytes());
+            // Shared missions use one physical map and must export matching cursor edges.
+            edit.setBoundary(3, expanded);
+            QCOMPARE(edit.boundary(11), expanded);
+            const auto shared = edit.rebuild(rom);
+            QCOMPARE(shared.mid(0x13c874 + 3 * 4, 4), QByteArray::fromHex("0202fdfd"));
+            QCOMPARE(shared.mid(0x13c874 + 11 * 4, 4), QByteArray::fromHex("0202fdfd"));
+            edit.restore(3);
+            const auto &fort = edit.source(47);
+            edit.setBoundary(47, QRectF(QPointF(1, 1), QPointF(254, 254)));
+            const auto fortFine = edit.fineTerrain(47);
+            const auto fortTerrain = fieldMembers(edit.plan().first().terrain);
+            int protectedCells = 0;
+            for (int y = 0; y < 64; ++y)
+                for (int x = 0; x < 64; ++x) {
+                    if (u8(fort.terrain[1].data, y * 64 + x) < 15)
+                        continue;
+                    bool excluded = true;
+                    for (int dz = 0; dz < 4; ++dz)
+                        for (int dx = 0; dx < 4; ++dx)
+                            excluded &= !u8(fortFine, (y * 4 + dz) * 256 + x * 4 + dx);
+                    if (!excluded) {
+                        QCOMPARE(fortTerrain[1].data[y * 64 + x], fort.terrain[1].data[y * 64 + x]);
+                        ++protectedCells;
+                    }
+                }
+            QVERIFY(protectedCells > 0);
+            qInfo() << "Matching forest, compact geometry, scenery paint and boundary ROM/project "
+                       "roundtrips verified.";
         } catch (const Error &e) {
             QFAIL(e.what());
         }

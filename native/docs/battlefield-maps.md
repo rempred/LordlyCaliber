@@ -84,10 +84,13 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   (64×64 coarse encounter/battle terrain). Fine indexing from a coarse cell at
   `0x149168..0x149180` multiplies both axes by four. Both grids use the placement
   rectangle (the second four floats in the bounds member).
-* A brush paints the fine grid. Each touched coarse cell uses the dominant
-  authored type among its 4×4 fine cells. Untouched coarse cells retain their
-  original classifications. Fixed wall/gate codes 15 and above are protected in
-  both grids, including alternate fine grids. Untouched bytes remain intact.
+* A brush paints the fine grid inside playable terrain. Type-zero scenery can
+  also be painted visually; it stays type zero until a boundary edit opens it.
+  Each touched coarse cell uses the dominant authored type among its 4×4 fine
+  cells. Untouched coarse cells retain their original classifications. Fixed
+  wall/gate codes 15 and above are protected in both grids, including alternate
+  fine grids. A boundary cut clears wholly excluded cells but preserves partially
+  included coarse structures. Untouched bytes remain intact.
 * Brush masks generate contoured native meshes over the original land surface.
   Highlands form raised ridges, with their full 32x64 native texture mapped from
   dark foot to light summit using clamped T. Forests form a raised canopy and use
@@ -100,10 +103,16 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
 * The previous 32x32 repeating material crop was wrong for these assets. It
   repeated mountain base/peak bands and discarded forest edge textures. Saved
   project masks are still compatible and regenerate using the corrected brushes.
+* Matching native terrain is included when computing brush contours. A visible
+  terrain raster derives from material/group coverage, using the original gameplay
+  grid to identify native materials. Painting wholly inside matching terrain leaves
+  its mesh and height unchanged. Extensions use the merged outline and the
+  difference between merged/original height profiles, with a short feather onto
+  the native surface. Original geometry stays intact underneath.
 * Generated shapes are approximations of native authored landforms, not copied
-  artist meshes. Painting remains additive over existing elevation: it does not
-  flatten/remove original mountains. Contours follow the brush shape; arbitrary
-  terrain-border artwork is not synthesized. Water uses a static material phase.
+  artist meshes. Other terrain still follows existing elevation: painting does not
+  flatten/remove original mountains. Arbitrary terrain-border artwork is not
+  synthesized. Water uses a static material phase.
   Stock maps have no type-10 cells; Snowy Bridge borrows bridge artwork from a
   snowy map and writes the separate type-10 gameplay classification.
 * Site point collection `0x02092506` has stored members with a 28-byte header and
@@ -121,9 +130,33 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   resource members preserve their original bytes when unchanged; edited model
   and terrain collections relocate into bounded cartridge space and update
   their original directory entries. Unknown members remain intact. The export
-  ceiling is 64 MiB, with 512 KiB per edited model and 5,000 brush triangles.
-* Project `mapEdits` stores brush masks and site overrides; previews, review,
+  ceiling is 64 MiB, with 512 KiB per edited model. Vertices are shared within
+  32-entry RSP batches and TRI2 commands encode pairs of faces. There is no separate
+  stroke count or 5,000-triangle cap. The Map view displays encoded detail usage.
+* Project `mapEdits` stores brush masks, site overrides and an optional playable
+  boundary; previews, review,
   Undo, project reopening and ROM export all use the same edit component.
+
+## Playable boundary
+
+The Boundary checkbox displays a gold outline. Edit boundary exposes draggable
+corners and four numeric edges; Apply, Undo/Redo, Restore and project reopening
+use the same edit. Edges range from 1 to 254, with a minimum span of eight cells.
+The world-coordinate sampling rectangle is unchanged, so objects do not rescale.
+
+The per-runtime-key byte rectangle is at z64 ROM `0x13C874 + key*4`, ordered
+left/top/right/bottom. Scenario-loader ROM `0x103244` onward converts it through
+the world-coordinate rectangle into RAM `0x801F0DB8..0x801F0DC4`; ROM `0x113168`
+onward clamps the cursor with those limits. These are scenario-overlay addresses,
+not early-boot mappings. Export writes the rectangle for every shared-map alias,
+clips movement grids outside it, and fills newly opened zero cells from their
+painted or visible terrain (plain when no native material is identified).
+Fine/coarse and alternate movement grids update together. The bounds resource's
+first four floats remain intact: their separate consumer is not qualified.
+
+Key 39, Fort Romulus, bypasses the normal rectangle at ROM `0x10323C`; its outline
+and resize controls are unavailable rather than showing an inapplicable rectangle.
+Key 54 retains its existing unsupported alternate scenario loader.
 
 ## Briefing is independent artwork
 
@@ -166,3 +199,13 @@ movement-height sample, and preview identity after ROM reopening. The editor
 workflow check now exports both a mountain and forest, with height-member readback
 and checksum verification. New brush shapes remain approximations; these checks
 do not establish exact game-camera, weather, or microcode lighting equivalence.
+
+`map_tests battlefieldJoiningAndBoundary` checks that matching forest does not
+add mesh/height, renders an adjoining extension, and encodes 36 dabs / 8,975 added
+triangles in a 312,564-byte model. It checks scenery painting without movement
+changes, expanded/shrunk fine and coarse grids, cursor-table export/reopening,
+shared-key limits, protected fortress cells and unchanged object/world coordinates.
+`ui_tests scenarioMapEditing` additionally drives boundary visibility, numeric
+Apply, corner dragging, Undo/Redo, project persistence, full ROM export and CIC
+checksum verification. These are offline checks; expanded boundaries have not
+had a new in-game movement playthrough.

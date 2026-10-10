@@ -78,7 +78,7 @@ struct Append {
             bytes += char(0);
         const auto at = bytes.size();
         if (at + data.size() > 512 * 1024)
-            throw Error("The painted map exceeds the 512 KiB geometry budget; simplify or erase "
+            throw Error("This map has reached its detail capacity (512 KiB); simplify or erase "
                         "some strokes");
         bytes += data;
         return 0x02000000u + quint32(at - geometry);
@@ -136,20 +136,23 @@ class BuildingClone {
 };
 struct BrushPoint {
     QPointF grid;
-    double distance;
+    double distance, influence;
 };
 using BrushPolygon = QVector<BrushPoint>;
-BrushPolygon clip(BrushPolygon points, double boundary, bool above) {
+BrushPolygon clip(BrushPolygon points, double boundary, bool above, bool influence = false) {
     BrushPolygon out;
     if (points.isEmpty())
         return out;
+    auto coordinate = [&](const BrushPoint &p) { return influence ? p.influence : p.distance; };
     auto prior = points.last();
-    bool was = above ? prior.distance >= boundary : prior.distance <= boundary;
+    bool was = above ? coordinate(prior) >= boundary : coordinate(prior) <= boundary;
     for (const auto &p : points) {
-        const bool inside = above ? p.distance >= boundary : p.distance <= boundary;
+        const bool inside = above ? coordinate(p) >= boundary : coordinate(p) <= boundary;
         if (inside != was) {
-            const double f = (boundary - prior.distance) / (p.distance - prior.distance);
-            out << BrushPoint{prior.grid + (p.grid - prior.grid) * f, boundary};
+            const double f = (boundary - coordinate(prior)) / (coordinate(p) - coordinate(prior));
+            out << BrushPoint{prior.grid + (p.grid - prior.grid) * f,
+                              prior.distance + (p.distance - prior.distance) * f,
+                              prior.influence + (p.influence - prior.influence) * f};
         }
         if (inside)
             out << p;
@@ -224,11 +227,14 @@ QByteArray textureBytes(const QImage &image) {
 struct PaintVertex {
     QVector3D p, normal;
     QPointF uv;
+    quint8 alpha;
 };
 using PaintTriangle = std::array<PaintVertex, 3>;
 QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brush,
                             const Surface &surface, bool border) {
     QVector<PaintTriangle> result;
+    if (shape.cells.isEmpty())
+        return result;
     const int step = shape.road() ? 1 : 2;
     const bool hasBorder = !brush.border.isNull() && shape.forest();
     const auto &texture = border ? brush.border : brush.texture;
@@ -255,9 +261,11 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
         return PaintVertex{
             {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
             normal,
-            uv};
+            uv,
+            quint8(std::round(shape.opacity(p.grid) * 255))};
     };
     auto polygon = [&](BrushPolygon poly) {
+        poly = clip(poly, 0, true, true);
         poly = clip(poly, 0, true);
         if (hasBorder)
             poly = clip(poly, shape.edgeWidth(), !border);
@@ -265,13 +273,17 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
             const auto a = poly[n].grid - poly[0].grid, b = poly[n + 1].grid - poly[0].grid;
             if (std::abs(a.x() * b.y() - a.y() * b.x()) < 1e-7)
                 continue;
-            result << PaintTriangle{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+            const PaintTriangle t{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+            if (t[0].alpha || t[1].alpha || t[2].alpha)
+                result << t;
         }
     };
     auto patch = [&](int x, int z, int width) {
         const QPointF a(x, z), b(x, z + width), c(x + width, z + width), d(x + width, z);
-        const BrushPoint pa{a, shape.distance(a)}, pb{b, shape.distance(b)},
-            pc{c, shape.distance(c)}, pd{d, shape.distance(d)};
+        const BrushPoint pa{a, shape.distance(a), shape.influence(a)},
+            pb{b, shape.distance(b), shape.influence(b)},
+            pc{c, shape.distance(c), shape.influence(c)},
+            pd{d, shape.distance(d), shape.influence(d)};
         polygon({pa, pb, pc});
         polygon({pa, pc, pd});
     };
@@ -300,7 +312,8 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
     QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
     for (int type : {5, 7, 13, 14})
         if (change.paint.contains(char(type)))
-            shapes[type] = std::make_shared<FieldBrushShape>(change.paint, type, source.map.bounds);
+            shapes[type] = std::make_shared<FieldBrushShape>(change.paint, type, source.map.bounds,
+                                                             source.visualTerrain);
     if (shapes.isEmpty())
         return original;
     const int w = u16(original, 0), h = u16(original, 2);
@@ -470,17 +483,13 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         command(dl, 0xe200001c, 0x00552078);
         command(dl, 0xfc127e24, 0xfffff9fc);
         command(dl, 0xd7000002, 0xffffffff);
-        int count = 0;
         for (auto type = tiles.begin(); type != tiles.end(); ++type) {
-            const FieldBrushShape shape(change.paint, type.key(), source.map.bounds);
+            const FieldBrushShape shape(change.paint, type.key(), source.map.bounds,
+                                        source.visualTerrain);
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
                 const auto &image = border ? type->border : type->texture;
                 const auto painted = mesh(shape, type.value(), surface, border);
-                count += int(painted.size());
-                if (count > 5000)
-                    throw Error("This painting requires too many map triangles; simplify or erase "
-                                "some strokes");
                 const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
                           ms = int(std::log2(w)), mt = int(std::log2(h));
                 const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border ? 2 : 0;
@@ -495,40 +504,75 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 command(dl, 0xf5100000 | (quint32(line) << 9),
                         (ct << 18) | (quint32(mt) << 14) | (cs << 8) | (quint32(ms) << 4));
                 command(dl, 0xf2000000, (quint32((w - 1) * 4) << 12) | quint32((h - 1) * 4));
-                for (int start = 0; start < painted.size(); start += 10) {
-                    const int n = std::min(10, int(painted.size()) - start), vertices = n * 3;
-                    QByteArray data(vertices * 16, 0);
-                    for (int tri = 0; tri < n; ++tri) {
-                        const auto &points = painted[start + tri];
+                // Reuse vertices within the RSP's 32-entry cache, and emit
+                // two triangles per command. Storage, not stroke count, is the limit.
+                for (bool translucent : {false, true}) {
+                    command(dl, 0xe7000000, 0);
+                    // Standard AA_ZB_XLU_SURF / OPA_SURF (both cycles).
+                    command(dl, 0xe200001c, translucent ? 0x005049d8 : 0x00552078);
+                    QByteArray vertices;
+                    QMap<QByteArray, int> cache;
+                    QVector<std::array<int, 3>> faces;
+                    auto indices = [](const std::array<int, 3> &f) {
+                        return (quint32(f[0] * 2) << 16) | (quint32(f[1] * 2) << 8) |
+                               quint32(f[2] * 2);
+                    };
+                    auto flush = [&] {
+                        if (faces.isEmpty())
+                            return;
+                        const auto n = quint32(vertices.size() / 16);
+                        command(dl, 0x01000000 | (n << 12) | (n << 1), out.add(vertices, 16));
+                        for (int i = 0; i < faces.size(); i += 2) {
+                            if (i + 1 < faces.size())
+                                command(dl, 0x06000000 | indices(faces[i]), indices(faces[i + 1]));
+                            else
+                                command(dl, 0x05000000 | indices(faces[i]), 0);
+                        }
+                        vertices.clear();
+                        faces.clear();
+                        cache.clear();
+                    };
+                    for (const auto &points : painted) {
+                        const bool blend =
+                            points[0].alpha < 255 || points[1].alpha < 255 || points[2].alpha < 255;
+                        if (blend != translucent)
+                            continue;
                         const auto mid = (points[0].uv + points[1].uv + points[2].uv) / 3;
-                        const double os = cs ? 0 : std::floor(mid.x() / w) * w,
-                                     ot = ct ? 0 : std::floor(mid.y() / h) * h;
+                        const double os = cs ? 0 : std::floor(mid.x() / (w * 8)) * (w * 8),
+                                     ot = ct ? 0 : std::floor(mid.y() / (h * 8)) * (h * 8);
+                        std::array<QByteArray, 3> packed;
+                        int missing = 0;
                         for (int v = 0; v < 3; ++v) {
-                            const int at = (tri * 3 + v) * 16;
+                            auto &data = packed[v];
+                            data = QByteArray(16, 0);
                             for (int axis = 0; axis < 3; ++axis) {
                                 const double p = points[v].p[axis] * 64;
                                 if (!std::isfinite(p) || std::abs(p) > 32767)
                                     throw Error("Paint geometry exceeds vertex range");
-                                put16(data, at + axis * 2, quint16(qint16(std::round(p))));
-                                put8(data, at + 12 + axis,
+                                put16(data, axis * 2, quint16(qint16(std::round(p))));
+                                put8(data, 12 + axis,
                                      quint8(qint8(std::round(points[v].normal[axis] * 127))));
                             }
-                            put16(data, at + 8,
+                            put16(data, 8,
                                   quint16(qint16(std::round((points[v].uv.x() - os) * 32))));
-                            put16(data, at + 10,
+                            put16(data, 10,
                                   quint16(qint16(std::round((points[v].uv.y() - ot) * 32))));
-                            put8(data, at + 15, 255);
+                            put8(data, 15, points[v].alpha);
+                            missing += !cache.contains(data);
                         }
+                        if (cache.size() + missing > 32)
+                            flush();
+                        std::array<int, 3> face;
+                        for (int v = 0; v < 3; ++v) {
+                            if (!cache.contains(packed[v])) {
+                                cache[packed[v]] = int(vertices.size() / 16);
+                                vertices += packed[v];
+                            }
+                            face[v] = cache[packed[v]];
+                        }
+                        faces << face;
                     }
-                    command(dl, 0x01000000u | (quint32(vertices) << 12) | (quint32(vertices) << 1),
-                            out.add(data, 16));
-                    for (int tri = 0; tri < n; ++tri) {
-                        const int v = tri * 3;
-                        command(dl,
-                                0x05000000u | (quint32(v * 2) << 16) | (quint32((v + 1) * 2) << 8) |
-                                    quint32((v + 2) * 2),
-                                0);
-                    }
+                    flush();
                 }
             }
         }

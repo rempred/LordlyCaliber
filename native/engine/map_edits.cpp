@@ -58,6 +58,10 @@ const FieldMapSource &MapEdits::source(int key) const {
         throw Error("Map gameplay grids have an unsupported layout");
     s.points = places[s.pointIndex].data;
     s.field = Battlefield::load(rom_, key);
+    s.visualTerrain = s.field.terrainGrid(s.terrain[0].data, s.map.bounds);
+    const int edge = 0x13c874 + key * 4;
+    s.boundary = QRectF(QPointF(u8(rom_.bytes(), edge), u8(rom_.bytes(), edge + 1)),
+                        QPointF(u8(rom_.bytes(), edge + 2), u8(rom_.bytes(), edge + 3)));
     sources_[id] = s;
     return sources_[id];
 }
@@ -116,7 +120,7 @@ void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, int r
             for (int x = std::max(0, cx - radius); x <= std::min(255, cx + radius); ++x) {
                 if ((x - p.x()) * (x - p.x()) + (y - p.y()) * (y - p.y()) > radius * radius)
                     continue;
-                if (!u8(s.terrain[0].data, y * 256 + x) || u8(s.terrain[0].data, y * 256 + x) >= 15)
+                if (u8(s.terrain[0].data, y * 256 + x) >= 15)
                     continue;
                 next.paint[y * 256 + x] = char(terrain);
             }
@@ -134,18 +138,51 @@ void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, int r
 }
 void MapEdits::prune(int id) {
     const auto &s = edits_[id];
-    if (s.sites.isEmpty() && s.paint == QByteArray(65536, char(-1)))
+    if (!s.boundary && s.sites.isEmpty() && s.paint == QByteArray(65536, char(-1)))
         edits_.remove(id);
 }
 void MapEdits::restore(int key) {
     edits_.remove(modelId(key));
 }
+QRectF MapEdits::boundary(int key) const {
+    return changes(key).boundary.value_or(source(key).boundary);
+}
+void MapEdits::setBoundary(int key, QRectF edge) {
+    if (key == 39)
+        throw Error(
+            "Fort Romulus uses a separate scripted boundary; it cannot be resized here yet");
+    const auto &s = source(key);
+    edge = QRectF(QPointF(std::round(edge.left()), std::round(edge.top())),
+                  QPointF(std::round(edge.right()), std::round(edge.bottom())));
+    if (!std::isfinite(edge.left()) || !std::isfinite(edge.top()) || !std::isfinite(edge.right()) ||
+        !std::isfinite(edge.bottom()) || edge.left() < 1 || edge.top() < 1 || edge.right() > 254 ||
+        edge.bottom() > 254 || edge.width() < 8 || edge.height() < 8)
+        throw Error("Keep the boundary between 1 and 254, and at least 8 cells wide and tall");
+    auto &change = edits_[s.modelId];
+    if (edge == s.boundary)
+        change.boundary.reset();
+    else
+        change.boundary = edge;
+    prune(s.modelId);
+}
 QByteArray MapEdits::fineTerrain(int key) const {
-    auto out = source(key).terrain[0].data;
-    const auto &p = changes(key).paint;
-    for (int i = 0; i < 65536; ++i)
-        if (u8(p, i) != 255)
-            out[i] = p[i];
+    const auto &s = source(key);
+    auto out = s.terrain[0].data;
+    const auto &c = changes(key);
+    for (int i = 0; i < 65536; ++i) {
+        const int old = u8(out, i), painted = u8(c.paint, i);
+        if (old > 0 && old < 15 && painted != 255)
+            out[i] = char(painted);
+        if (c.boundary) {
+            const QPointF p(i % 256, i / 256);
+            if (!c.boundary->contains(p))
+                out[i] = 0;
+            else if (!old) {
+                const int visual = u8(s.visualTerrain, i);
+                out[i] = char(painted != 255 ? painted : visual > 0 && visual < 15 ? visual : 3);
+            }
+        }
+    }
     return out;
 }
 FieldBrush MapEdits::texture(int code) const {
@@ -205,20 +242,36 @@ QVector<FieldPlan> MapEdits::plan() const {
         // keep the original hand-authored battle/encounter classification.
         for (int y = 0; y < 64; ++y)
             for (int x = 0; x < 64; ++x) {
-                if (u8(s.terrain[1].data, y * 64 + x) >= 15)
+                if (!e->boundary && u8(s.terrain[1].data, y * 64 + x) >= 15)
                     continue;
-                int votes[15]{};
+                if (e->boundary) {
+                    bool changed = false;
+                    for (int dz = 0; dz < 4; ++dz)
+                        for (int dx = 0; dx < 4; ++dx) {
+                            const int at = (y * 4 + dz) * 256 + x * 4 + dx;
+                            changed |= terrain[0].data[at] != s.terrain[0].data[at];
+                        }
+                    if (!changed)
+                        continue;
+                }
+                int votes[32]{};
                 for (int dy = 0; dy < 4; ++dy)
                     for (int dx = 0; dx < 4; ++dx) {
-                        int t = u8(e->paint, (y * 4 + dy) * 256 + x * 4 + dx);
-                        if (t < 15)
+                        int t = u8(e->boundary ? terrain[0].data : e->paint,
+                                   (y * 4 + dy) * 256 + x * 4 + dx);
+                        if (t < 32 &&
+                            (e->boundary || u8(s.terrain[0].data, (y * 4 + dy) * 256 + x * 4 + dx)))
                             ++votes[t];
                     }
+                // A partial boundary cut must not turn a fixed wall/gate into
+                // ordinary terrain. Only wholly excluded coarse cells become void.
+                if (u8(s.terrain[1].data, y * 64 + x) >= 15 && votes[0] != 16)
+                    continue;
                 int best = 0;
-                for (int t = 1; t < 15; ++t)
+                for (int t = 1; t < 32; ++t)
                     if (votes[t] > votes[best])
                         best = t;
-                if (best)
+                if (best || e->boundary)
                     put8(terrain[1].data, y * 64 + x, quint8(best));
             }
         // Alternate movement grids on the fortified maps use the same raster
@@ -226,8 +279,12 @@ QVector<FieldPlan> MapEdits::plan() const {
         for (int n = 2; n < terrain.size(); ++n)
             if (terrain[n].data.size() == 65536)
                 for (int i = 0; i < 65536; ++i)
-                    if (u8(e->paint, i) != 255 && u8(s.terrain[n].data, i) > 0 &&
-                        u8(s.terrain[n].data, i) < 15)
+                    if (e->boundary && !e->boundary->contains(QPointF(i % 256, i / 256)))
+                        terrain[n].data[i] = 0;
+                    else if (e->boundary && !u8(s.terrain[n].data, i))
+                        terrain[n].data[i] = terrain[0].data[i];
+                    else if (u8(e->paint, i) != 255 && u8(s.terrain[n].data, i) > 0 &&
+                             u8(s.terrain[n].data, i) < 15)
                         terrain[n].data[i] = e->paint[i];
         for (auto p = e->sites.begin(); p != e->sites.end(); ++p) {
             real(ps, 28 + p.key() * 8, p->x());
@@ -250,6 +307,17 @@ QByteArray MapEdits::rebuild(const Rom &rom) const {
         replaceFieldChild(image, terrainRoot, p.terrainIndex, p.terrain);
         replaceFieldMemberInPlace(image, pointsKey, p.pointIndex, p.points);
     }
+    for (auto it = edits_.begin(); it != edits_.end(); ++it)
+        if (it->boundary)
+            for (int key = 1; key <= 64; ++key)
+                if (u8(rom_.bytes(), 0x654a0 + key * 9 + 3) == it.key()) {
+                    const auto b = *it->boundary;
+                    const int at = 0x13c874 + key * 4;
+                    put8(image, at, quint8(b.left()));
+                    put8(image, at + 1, quint8(b.top()));
+                    put8(image, at + 2, quint8(b.right()));
+                    put8(image, at + 3, quint8(b.bottom()));
+                }
     const auto reopened = Rom::fromBytes(image);
     for (const auto &p : plans) {
         if (fieldResource(reopened, fieldChild(reopened, geometryRoot, p.geometryIndex)) !=
@@ -269,6 +337,12 @@ QJsonObject MapEdits::json() const {
             sites[QString::number(p.key())] = QJsonArray{p->x(), p->y()};
         maps[QString::number(i.key())] =
             QJsonObject{{"paint", QString::fromLatin1(i->paint.toBase64())}, {"sites", sites}};
+        if (i->boundary) {
+            auto row = maps[QString::number(i.key())].toObject();
+            const auto b = *i->boundary;
+            row["boundary"] = QJsonArray{b.left(), b.top(), b.right(), b.bottom()};
+            maps[QString::number(i.key())] = row;
+        }
     }
     return {{"schema", 1}, {"maps", maps}};
 }
@@ -313,6 +387,14 @@ void MapEdits::apply(const QJsonObject &o) {
             change.sites[n] = {xy[0].toDouble(), xy[1].toDouble()};
         }
         next.edits_[id] = change;
+        if (row.contains("boundary")) {
+            const auto b = row["boundary"].toArray();
+            if (b.size() != 4 || !b[0].isDouble() || !b[1].isDouble() || !b[2].isDouble() ||
+                !b[3].isDouble())
+                throw Error("Invalid saved map boundary");
+            next.setBoundary(key, QRectF(QPointF(b[0].toDouble(), b[1].toDouble()),
+                                         QPointF(b[2].toDouble(), b[3].toDouble())));
+        }
         next.prune(id);
     }
     *this = std::move(next);

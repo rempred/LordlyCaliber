@@ -8,7 +8,11 @@ inside Squads; map-to-field navigation also updates the selected section tab.
 Map renders the ROM's actual battlefield geometry, textures, roads and buildings
 in a top-down daylight overview. Town allegiance edits and Undo refresh building
 colours. Terrain and road brushes update native surface geometry plus movement
-and encounter terrain; elevation remains unchanged. Ordinary towns and standalone
+and encounter terrain; highlands and forest raise the surface. Matching terrain
+joins the native terrain outline instead of adding a second landform. Painting
+outside the playable edge changes scenery; expanding the visible, draggable
+boundary opens its movement cells and cursor limits. Fort Romulus uses a separate
+scripted boundary and cannot yet be resized. Ordinary towns and standalone
 strongholds can be dragged with their complete geometry and gameplay position.
 Undo/Redo, restore, project persistence and ROM export share these edits. Fixed
 fortified interiors remain outside independent building movement. Briefing images

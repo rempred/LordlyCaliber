@@ -8297,6 +8297,40 @@ class UiTests : public QObject {
             QCOMPARE(project.mapEdits()->json(), originalMaps);
             undo.undo();
             QCOMPARE(project.mapEdits()->json(), terrainPaint);
+            // Visibility alone is not an edit; numeric edges and corner dragging are undoable.
+            auto boundaryToggle = editor.findChild<QCheckBox *>("mapBoundary");
+            QVERIFY(boundaryToggle && boundaryToggle->isChecked());
+            const auto withBoundary = canvas->grab().toImage();
+            const int beforeBoundaryUndo = undo.index();
+            boundaryToggle->setChecked(false);
+            QVERIFY(canvas->grab().toImage() != withBoundary);
+            boundaryToggle->setChecked(true);
+            QCOMPARE(undo.index(), beforeBoundaryUndo);
+            const auto originalBoundary = project.mapEdits()->boundary(1);
+            mapTool->setCurrentIndex(4);
+            auto topBoundary = editor.findChild<QSpinBox *>("mapBoundaryTop");
+            QVERIFY(topBoundary && topBoundary->isVisible());
+            topBoundary->setValue(4);
+            editor.findChild<QPushButton *>("mapBoundaryApply")->click();
+            QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
+            undo.undo();
+            QCOMPARE(project.mapEdits()->boundary(1), originalBoundary);
+            undo.redo();
+            QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
+            const auto numericBoundary = project.mapEdits()->boundary(1);
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier,
+                              pixel(numericBoundary.bottomRight()));
+            QTest::mouseMove(canvas, pixel({248, 249}), 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, pixel({248, 249}));
+            QVERIFY(std::abs(project.mapEdits()->boundary(1).right() - 248) <= 1);
+            QVERIFY(std::abs(project.mapEdits()->boundary(1).bottom() - 249) <= 1);
+            const auto resizedBoundary = project.mapEdits()->boundary(1);
+            undo.undo();
+            QCOMPARE(project.mapEdits()->boundary(1), numericBoundary);
+            undo.redo();
+            QCOMPARE(project.mapEdits()->boundary(1), resizedBoundary);
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
+                                       "/scenario-map-boundary.png"));
             mapTool->setCurrentIndex(0);
             QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/scenario-map-painting.png"));
             QCOMPARE(pages->currentIndex(), 0);
@@ -8334,6 +8368,7 @@ class UiTests : public QObject {
             QCOMPARE(ScenarioWorld::treasureRecord(reopened.world()->scenario(1).treasures, 0),
                      treasure);
             auto reopenedMaps=MapEdits::load(reopened.rom());
+            QCOMPARE(reopenedMaps.boundary(1), resizedBoundary);
             QCOMPARE(reopenedMaps.fineTerrain(1),project.mapEdits()->fineTerrain(1));
             QCOMPARE(reopenedMaps.model(1),project.mapEdits()->model(1));
             QCOMPARE(reopenedMaps.source(1).geometry[1].data,

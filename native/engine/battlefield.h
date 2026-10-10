@@ -35,6 +35,7 @@ class Battlefield {
     QMap<int, int> siteGroups() const; // one-based site -> verified native culling group
     QMap<int, QRectF> groups() const;
     FieldBrush terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const;
+    QByteArray terrainGrid(const QByteArray &gameplay, QRectF bounds) const;
 
   private:
     struct Data;

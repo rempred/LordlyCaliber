@@ -40,7 +40,9 @@ class ScenarioMapEditor : public QWidget {
     QSpinBox *x_, *z_;
     QPushButton *apply_, *fields_;
     QCheckBox *terrain_;
-    QWidget *paintTools_;
+    QWidget *paintTools_, *boundaryTools_;
+    std::array<QSpinBox *, 4> boundaryFields_;
+    void changeBoundary(QRectF);
     QComboBox *tool_, *paintType_;
     QSpinBox *brushSize_;
     QLabel *mapScope_;

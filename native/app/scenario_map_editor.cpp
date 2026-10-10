@@ -90,12 +90,17 @@ class MapCanvas : public QWidget {
     int current = -1;
     bool grid = false, labels = true, showTerrain = true;
     QImage terrain;
-    QRectF terrainBounds;
+    QRectF terrainBounds, boundary;
+    bool showBoundary = true, editBoundary = false;
+    int boundaryCorner = -1;
+    QRectF boundaryDrag;
+    std::function<void(QRectF)> resizedBoundary;
     void cancelDrag() {
         drag_ = -1;
         dragging_ = false;
         panning_ = false;
         stroke.clear();
+        boundaryCorner = -1;
     }
     void resetView() {
         zoom_ = 1;
@@ -128,6 +133,24 @@ class MapCanvas : public QWidget {
         }
         p.setPen(QColor("#526678"));
         p.drawRect(area);
+        if (showBoundary && boundary.isValid()) {
+            const auto edge = boundaryCorner >= 0 ? boundaryDrag : boundary;
+            const QRectF outline(toPixel(edge.topLeft()), toPixel(edge.bottomRight()));
+            QPainterPath outside;
+            outside.addRect(area);
+            outside.addRect(outline);
+            p.fillPath(outside, QColor(8, 14, 20, 32));
+            p.setPen(QPen(QColor("#ffcf67"), editBoundary ? 2.5 : 1.5, Qt::DashLine));
+            p.setBrush(Qt::NoBrush);
+            p.drawRect(outline);
+            p.drawText(outline.topLeft() + QPointF(6, 16), "Playable boundary");
+            if (editBoundary) {
+                p.setBrush(QColor("#fff2a8"));
+                for (auto point : {outline.topLeft(), outline.topRight(), outline.bottomRight(),
+                                   outline.bottomLeft()})
+                    p.drawRect(QRectF(point - QPointF(5, 5), QSizeF(10, 10)));
+            }
+        }
         if (grid)
             for (int n = 0; n <= 256; n += 32) {
                 p.setPen(QColor("#344856"));
@@ -238,6 +261,18 @@ class MapCanvas : public QWidget {
             place(fromPixel(e->position()));
             return;
         }
+        if (editBoundary) {
+            const QPointF corners[] = {boundary.topLeft(), boundary.topRight(),
+                                       boundary.bottomRight(), boundary.bottomLeft()};
+            for (int i = 0; i < 4; ++i)
+                if (QLineF(toPixel(corners[i]), press_).length() < 14) {
+                    boundaryCorner = i;
+                    boundaryDrag = boundary;
+                    break;
+                }
+            update();
+            return;
+        }
         if (brushMode) {
             stroke = {fromPixel(e->position())};
             update();
@@ -272,6 +307,17 @@ class MapCanvas : public QWidget {
         if (panning_)
             pan_ += e->position() - mouse_;
         mouse_ = e->position();
+        if (boundaryCorner >= 0) {
+            const auto p = fromPixel(mouse_);
+            if (boundaryCorner == 0 || boundaryCorner == 3)
+                boundaryDrag.setLeft(std::clamp(p.x(), 1., boundaryDrag.right() - 8));
+            else
+                boundaryDrag.setRight(std::clamp(p.x(), boundaryDrag.left() + 8, 254.));
+            if (boundaryCorner < 2)
+                boundaryDrag.setTop(std::clamp(p.y(), 1., boundaryDrag.bottom() - 8));
+            else
+                boundaryDrag.setBottom(std::clamp(p.y(), boundaryDrag.top() + 8, 254.));
+        }
         if (!stroke.isEmpty() && !panning_)
             stroke << fromPixel(mouse_);
         if (drag_ >= 0 && QLineF(press_, mouse_).length() > 3)
@@ -285,6 +331,13 @@ class MapCanvas : public QWidget {
         }
         if (e->button() != Qt::LeftButton)
             return;
+        if (boundaryCorner >= 0) {
+            boundaryCorner = -1;
+            if (resizedBoundary)
+                resizedBoundary(boundaryDrag);
+            update();
+            return;
+        }
         if (!stroke.isEmpty()) {
             stroke << fromPixel(e->position());
             const auto completed = stroke;
@@ -379,7 +432,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     painting->setContentsMargins(0, 0, 0, 0);
     tool_ = new QComboBox;
     tool_->setObjectName("mapTool");
-    tool_->addItems({"Select / move", "Paint terrain", "Draw road", "Erase painting"});
+    tool_->addItems(
+        {"Select / move", "Paint terrain", "Draw road", "Erase painting", "Edit boundary"});
     painting->addWidget(tool_);
     paintType_ = new QComboBox;
     paintType_->setObjectName("mapPaintType");
@@ -398,6 +452,28 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     painting->addWidget(restore);
     painting->addStretch();
     layout->addWidget(paintTools_);
+    auto boundaryToggle = new QCheckBox("Boundary");
+    boundaryToggle->setObjectName("mapBoundary");
+    boundaryToggle->setChecked(true);
+    toolbar->addWidget(boundaryToggle);
+    boundaryTools_ = new QWidget;
+    auto boundaryLayout = new QHBoxLayout(boundaryTools_);
+    boundaryLayout->setContentsMargins(0, 0, 0, 0);
+    const QStringList edgeNames{"Left", "Top", "Right", "Bottom"};
+    for (int i = 0; i < 4; ++i) {
+        boundaryLayout->addWidget(new QLabel(edgeNames[i]));
+        auto box = new QSpinBox;
+        box->setRange(1, 254);
+        box->setObjectName("mapBoundary" + edgeNames[i]);
+        boundaryFields_[i] = box;
+        boundaryLayout->addWidget(box);
+    }
+    auto applyBoundary = new QPushButton("Apply boundary");
+    applyBoundary->setObjectName("mapBoundaryApply");
+    boundaryLayout->addWidget(applyBoundary);
+    boundaryLayout->addStretch();
+    layout->addWidget(boundaryTools_);
+    boundaryTools_->hide();
     mapScope_ = new QLabel;
     mapScope_->setObjectName("mapEditScope");
     mapScope_->setWordWrap(true);
@@ -482,17 +558,32 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     notice_->setObjectName("mapNotice");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
-    canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
-    connect(tool_, &QComboBox::currentIndexChanged, this, [this, addTreasure](int mode) {
-        canvas_->cancelDrag();
-        canvas_->brushMode = mode;
-        if (mode)
-            addTreasure->setChecked(false);
-        paintType_->setEnabled(mode == 1);
-        brushSize_->setEnabled(mode != 0);
-        canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
+    canvas_->resizedBoundary = [this](QRectF b) { changeBoundary(b); };
+    connect(applyBoundary, &QPushButton::clicked, this, [this] {
+        changeBoundary(QRectF(QPointF(boundaryFields_[0]->value(), boundaryFields_[1]->value()),
+                              QPointF(boundaryFields_[2]->value(), boundaryFields_[3]->value())));
+    });
+    connect(boundaryToggle, &QCheckBox::toggled, this, [this](bool value) {
+        canvas_->showBoundary = value;
         canvas_->update();
     });
+    canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
+    connect(tool_, &QComboBox::currentIndexChanged, this,
+            [this, addTreasure, boundaryToggle](int mode) {
+                canvas_->cancelDrag();
+                canvas_->brushMode = mode < 4 ? mode : 0;
+                canvas_->editBoundary = mode == 4 && key_ != 39;
+                boundaryTools_->setVisible(mode == 4);
+                boundaryTools_->setEnabled(key_ != 39);
+                if (mode == 4)
+                    boundaryToggle->setChecked(true);
+                if (mode)
+                    addTreasure->setChecked(false);
+                paintType_->setEnabled(mode == 1);
+                brushSize_->setEnabled(mode > 0 && mode < 4);
+                canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
+                canvas_->update();
+            });
     paintType_->setEnabled(false);
     brushSize_->setEnabled(false);
     connect(brushSize_, &QSpinBox::valueChanged, this, [this](int n) {
@@ -617,6 +708,9 @@ void ScenarioMapEditor::refresh(int key) {
     reference_->clear();
     canvas_->terrain = {};
     canvas_->terrainBounds = {};
+    canvas_->boundary = {};
+    canvas_->editBoundary = false;
+    boundaryTools_->setEnabled(false);
     terrain_->setEnabled(false);
     paintTools_->setEnabled(false);
     referenceName_->clear();
@@ -665,11 +759,28 @@ void ScenarioMapEditor::refresh(int key) {
             project_->loadMapEdits();
             map.points = project_->mapEdits()->points(key);
             editable = true;
+            canvas_->boundary = project_->mapEdits()->boundary(key);
+            canvas_->editBoundary = tool_->currentIndex() == 4 && key != 39;
+            boundaryTools_->setEnabled(key != 39);
+            boundaryTools_->setToolTip(key == 39
+                                           ? "Fort Romulus uses a separate scripted boundary; "
+                                             "resizing is not supported yet."
+                                           : "Drag the boundary corners, or enter its edges here.");
+            const auto edge = canvas_->boundary;
+            const double values[] = {edge.left(), edge.top(), edge.right(), edge.bottom()};
+            for (int i = 0; i < 4; ++i)
+                boundaryFields_[i]->setValue(int(values[i]));
             QStringList keys;
             for (int k : project_->mapEdits()->sharedScenarios(key))
                 keys << QString::number(k);
             mapScope_->setText("Map edits affect runtime keys " + keys.join(", ") +
                                ". Highlands raise the ground; briefing artwork is separate.");
+            if (key == 39) {
+                canvas_->boundary = {};
+                mapScope_->setText(mapScope_->text() +
+                                   " Fort Romulus has a scripted boundary; its outline and "
+                                   "resizing are not supported yet.");
+            }
         } catch (const Error &e) {
             mapScope_->setText(QString::fromUtf8(e.what()));
         }
@@ -782,6 +893,12 @@ void ScenarioMapEditor::refresh(int key) {
             canvas_->terrain = *battlefieldImages_.object(cacheKey);
             canvas_->terrainBounds = QRectF(0, 0, 256, 256);
             terrain_->setEnabled(true);
+            if (editable) {
+                const int size = project_->mapEdits()->model(key).size();
+                mapScope_->setText(
+                    mapScope_->text() +
+                    QString("  Map detail: %1% used.").arg((size * 100 + 524287) / 524288));
+            }
             referenceName_->setText("In-scenario battlefield · Terrain, roads and buildings\n"
                                     "Top-down view with approximate daylight lighting. "
                                     "Briefing artwork is stored separately.");
@@ -915,6 +1032,22 @@ void ScenarioMapEditor::move(int row, QPoint bytes) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
     canvas_->update();
+}
+void ScenarioMapEditor::changeBoundary(QRectF b) {
+    if (loading_ || key_ < 1 || !project_->mapEdits())
+        return;
+    try {
+        auto next = *project_->mapEdits();
+        const auto before = next.json();
+        next.setBoundary(key_, b);
+        if (before != next.json()) {
+            undo_->push(
+                new FieldEditCommand(project_, before, next.json(), "Resize playable boundary"));
+            refresh(key_);
+        }
+    } catch (const Error &e) {
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
 }
 void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
     if (key_ < 1 || !project_->mapEdits())

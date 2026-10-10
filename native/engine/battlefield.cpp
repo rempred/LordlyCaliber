@@ -943,6 +943,86 @@ QVector<FieldTriangle> Battlefield::surface() const {
     }
     return out;
 }
+QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) const {
+    if (!data_ || gameplay.size() != 65536 || !bounds.isValid())
+        throw Error("Invalid terrain sampling grid");
+    const auto sites = data_->siteGroups.values();
+    QMap<int, QMap<int, double>> votes, groups;
+    auto area = [](const Triangle &t) {
+        return QVector3D::crossProduct(t.vertices[1].position - t.vertices[0].position,
+                                       t.vertices[2].position - t.vertices[0].position)
+            .y();
+    };
+    for (const auto &t : data_->triangles) {
+        if (sites.contains(t.group) || area(t) <= 0)
+            continue;
+        const auto p =
+            (t.vertices[0].position + t.vertices[1].position + t.vertices[2].position) / 3;
+        const int x = int((p.x() - bounds.left()) / bounds.width() * 256),
+                  z = int((p.z() - bounds.top()) / bounds.height() * 256);
+        if (x < 0 || x >= 256 || z < 0 || z >= 256)
+            continue;
+        const int type = u8(gameplay, z * 256 + x);
+        if (type > 0 && type < 15)
+            votes[t.material][type] += area(t);
+    }
+    auto winner = [](const QMap<int, double> &v) {
+        int type = 0;
+        double best = 0;
+        for (auto it = v.begin(); it != v.end(); ++it)
+            if (it.value() > best) {
+                best = it.value();
+                type = it.key();
+            }
+        return type;
+    };
+    QMap<int, int> types;
+    for (auto it = votes.begin(); it != votes.end(); ++it)
+        types[it.key()] = winner(it.value());
+    for (const auto &t : data_->triangles)
+        if (t.group >= 0 && !sites.contains(t.group) && area(t) > 0)
+            groups[t.group][types.value(t.material)] += area(t);
+    QByteArray result(65536, 0);
+    QVector<float> depth(65536, -1e9f);
+    for (const auto &t : data_->triangles) {
+        if (sites.contains(t.group) || area(t) <= 0)
+            continue;
+        int type = types.value(t.material), groupType = winner(groups.value(t.group));
+        // Side strips belong to the forest/mountain that owns their draw group.
+        if (groupType == 5 || groupType == 7 || groupType == 13 || groupType == 14)
+            type = groupType;
+        if (!type)
+            continue;
+        QPointF p[3];
+        for (int n = 0; n < 3; ++n)
+            p[n] = {(t.vertices[n].position.x() - bounds.left()) / bounds.width() * 256,
+                    (t.vertices[n].position.z() - bounds.top()) / bounds.height() * 256};
+        const auto a = p[1] - p[0], b = p[2] - p[0];
+        const double det = a.x() * b.y() - a.y() * b.x();
+        if (std::abs(det) < 1e-8)
+            continue;
+        const int x0 = std::max(0, int(std::floor(std::min({p[0].x(), p[1].x(), p[2].x()})))),
+                  x1 = std::min(255, int(std::ceil(std::max({p[0].x(), p[1].x(), p[2].x()})))),
+                  z0 = std::max(0, int(std::floor(std::min({p[0].y(), p[1].y(), p[2].y()})))),
+                  z1 = std::min(255, int(std::ceil(std::max({p[0].y(), p[1].y(), p[2].y()}))));
+        for (int z = z0; z <= z1; ++z)
+            for (int x = x0; x <= x1; ++x) {
+                const auto q = QPointF(x + .5, z + .5) - p[0];
+                const double u = (q.x() * b.y() - q.y() * b.x()) / det,
+                             v = (a.x() * q.y() - a.y() * q.x()) / det;
+                if (u < 0 || v < 0 || u + v > 1)
+                    continue;
+                const double h = t.vertices[0].position.y() * (1 - u - v) +
+                                 t.vertices[1].position.y() * u + t.vertices[2].position.y() * v;
+                const int i = z * 256 + x;
+                if (h >= depth[i]) {
+                    depth[i] = float(h);
+                    result[i] = char(type);
+                }
+            }
+    }
+    return result;
+}
 FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const {
     if (!data_ || grid.size() != 65536 || !bounds.isValid())
         throw Error("Invalid terrain texture selection");

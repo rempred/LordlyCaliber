@@ -345,7 +345,19 @@ ChangeReport Project::changeReport() const {
         const auto maps=mapEdits_->json()["maps"].toObject();
         for(auto it=maps.begin();it!=maps.end();++it){
             const auto row=it->toObject();const auto paint=QByteArray::fromBase64(row["paint"].toString().toLatin1());int cells=0;for(unsigned char c:paint)cells+=c!=255;
-            add("Maps", "Battlefield " + it.key(), {QString("Painted %1 terrain cells; moved %2 towns or strongholds. Shared missions use the same map.").arg(cells).arg(row["sites"].toObject().size())});
+            QStringList lines{QString("Painted %1 terrain cells; moved %2 towns or strongholds. "
+                                      "Shared missions use the same map.")
+                                  .arg(cells)
+                                  .arg(row["sites"].toObject().size())};
+            if (row.contains("boundary")) {
+                const auto edge = row["boundary"].toArray();
+                lines << QString("Playable boundary: left %1, top %2, right %3, bottom %4.")
+                             .arg(edge[0].toInt())
+                             .arg(edge[1].toInt())
+                             .arg(edge[2].toInt())
+                             .arg(edge[3].toInt());
+            }
+            add("Maps", "Battlefield " + it.key(), lines);
         }
     }
     if (scenePrograms_ && scenePrograms_->modified()) {
