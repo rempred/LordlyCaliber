@@ -1,4 +1,5 @@
 #include "engine/class_data.h"
+#include "engine/scenario_member_runtime.h"
 #include "engine/class_text.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/promotion.h"
@@ -203,7 +204,9 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
 QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &bytes,
                                 const QMap<QString, quint32> &bases,
                                 const QJsonObject &originalBases) {
-    for (const auto &value : promotionOwners()["owners"].toArray()) {
+    auto variants = promotionOwners()["owners"].toArray();
+    variants.append(scenarioMemberOwner());
+    for (const auto &value : variants) {
         const auto source = value.toObject();
         if (source["start"] != owner["start"] || source["size"] != owner["size"] ||
             !source.contains("cReferences"))

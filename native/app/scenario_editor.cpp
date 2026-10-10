@@ -1,6 +1,6 @@
 #include "app/view_position.h"
 #include "app/scenario_editor.h"
-#include "app/formation_board.h"
+#include "app/squad_members_editor.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include "app/scenario_world_editor.h"
@@ -132,99 +132,44 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     squads_ = new QListWidget;
     squads_->setObjectName("scenarioSquads");
     rosterLayout->addWidget(squads_);
-    auto add = new QPushButton("Duplicate as new squad");
+    auto create = new QPushButton("New squad");
+    create->setObjectName("scenarioNewSquad");
+    rosterLayout->addWidget(create);
+    auto add = new QPushButton("Duplicate");
     add->setObjectName("scenarioAddSquad");
     rosterLayout->addWidget(add);
     remove_ = new QPushButton("Remove added squad");
     remove_->setObjectName("scenarioRemoveSquad");
     rosterLayout->addWidget(remove_);
     body->addWidget(roster);
-    auto scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
     squadDetails_ = new QWidget;
     auto squad = new QVBoxLayout(squadDetails_);
-    auto explanation = new QLabel("Each cohort shares a class, level offset and equipment. "
-                                  "A is the leader; B and C can each place up to three members. "
-                                  "Apply changes to this deployment only.");
-    explanation->setWordWrap(true);
-    squad->addWidget(explanation);
-    cohorts_ = new QTableWidget(3, 7);
-    cohorts_->setObjectName("scenarioCohorts");
-    cohorts_->setHorizontalHeaderLabels({"Class", "Level ±", "Equipment 1", "Equipment 2",
-                                         "Position 1", "Position 2", "Position 3"});
-    cohorts_->setVerticalHeaderLabels({"A · Leader", "B", "C"});
-    cohorts_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    cohorts_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    cohorts_->setMinimumHeight(160);
-    cohorts_->setMaximumHeight(180);
-    squad->addWidget(cohorts_);
-    for (int cohort = 0; cohort < 3; ++cohort) {
-        cohorts_->setRowHeight(cohort, 36);
-        auto cls = choice(QString("scenarioClass_%1").arg(cohort));
-        classes_ << cls;
-        cohorts_->setCellWidget(cohort, 0, cls);
-        auto level = new QSpinBox;
-        level->setObjectName(QString("scenarioLevel_%1").arg(cohort));
-        level->setRange(-128, 127);
-        levels_ << level;
-        cohorts_->setCellWidget(cohort, 1, level);
-        for (int e = 0; e < 2; ++e) {
-            auto box = choice(QString("scenarioGear_%1_%2").arg(cohort).arg(e));
-            for (const auto &item : project_->records(Table::Items))
-                box->addItem(QString("%1 · %2").arg(item.id).arg(item.name), item.id);
-            gear_ << box;
-            cohorts_->setCellWidget(cohort, e + 2, box);
-        }
-        for (int p = 0; p < 3; ++p) {
-            auto box = new QComboBox;
-            box->setObjectName(QString("scenarioPosition_%1_%2").arg(cohort).arg(p));
-            if (cohort || p)
-                box->addItem("Absent", 0);
-            for (int cell = 1; cell <= 9; ++cell)
-                box->addItem(QString::number(cell), cell);
-            positions_ << box;
-            box->setEnabled(cohort || !p);
-            cohorts_->setCellWidget(cohort, p + 4, box);
-            connect(box, &QComboBox::currentIndexChanged, this, [this] { preview(); });
-        }
-        connect(cls, &QComboBox::currentIndexChanged, this, [this] { preview(); });
-        connect(level, &QSpinBox::valueChanged, this, [this] { preview(); });
-    }
-    auto formationRow = new QHBoxLayout;
-    board_ = new FormationBoard(project_, "scenarioCell_", false, nullptr, 1);
-    for (int i = 0; i < 9; ++i) {
-        const int cell = 9 - i;
-        auto button = board_->cell(cell - 1);
-        cells_ << button;
-        connect(button, &QPushButton::clicked, this, [this, cell] {
-            const int cohort = std::max(0, cohorts_->currentRow());
-            const int position = cohort ? std::clamp(cohorts_->currentColumn() - 4, 0, 2) : 0;
-            selectValue(positions_[cohort * 3 + position], cell);
-        });
-    }
-    connect(board_, &FormationBoard::cellDragStarted, this, [this](int cell) {
-        for (int c = 0; c < 3; ++c)
-            for (int p = 0; p < (c ? 3 : 1); ++p)
-                if (positions_[c*3+p]->currentData().toInt() == cell+1) {
-                    cohorts_->setCurrentCell(c, p+4); return;
-                }
-    });
-    connect(board_, &FormationBoard::cellMoved, this, [this](int from, int to) {
-        for (int c = 0; c < 3; ++c)
-            for (int p = 0; p < (c ? 3 : 1); ++p) {
-                auto box = positions_[c*3+p];
-                const int value = box->currentData().toInt();
-                const QSignalBlocker block(box);
-                if (value == from+1) selectValue(box, to+1);
-                else if (value == to+1) selectValue(box, from+1);
-            }
-        preview();
-    });
-    formationRow->addWidget(board_);
-    formation_ = new QLabel;
-    formation_->setWordWrap(true);
-    formationRow->addWidget(formation_, 1);
-    squad->addLayout(formationRow);
+    auto squadTabs = new QTabWidget;
+    squadTabs->setObjectName("scenarioSquadTabs");
+    squad->addWidget(squadTabs, 1);
+    auto memberPage = new QWidget;
+    auto memberLayout = new QVBoxLayout(memberPage);
+    memberEditor_ = new SquadMembersEditor(project_, "scenario", 1, 1);
+    memberLayout->addWidget(memberEditor_);
+    auto levelHelp = new QLabel("Level offsets are added to the scenario base level. Each member must be level 1–99.");
+    levelHelp->setWordWrap(true);
+    memberLayout->addWidget(levelHelp);
+    memberLayout->addStretch();
+    auto memberScroll = new QScrollArea;
+    memberScroll->setWidgetResizable(true);
+    memberScroll->setFrameShape(QFrame::NoFrame);
+    memberLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    memberScroll->setWidget(memberPage);
+    squadTabs->addTab(memberScroll, "Members and formation");
+    auto deploymentPage = new QWidget;
+    auto deploymentLayout = new QVBoxLayout(deploymentPage);
+    auto deploymentScroll = new QScrollArea;
+    deploymentScroll->setWidgetResizable(true);
+    deploymentScroll->setFrameShape(QFrame::NoFrame);
+    deploymentLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    deploymentScroll->setWidget(deploymentPage);
+    squadTabs->addTab(deploymentScroll, "Deployment and supplies");
+    connect(memberEditor_, &SquadMembersEditor::edited, this, [this] { preview(); });
     auto form = new QFormLayout;
     allied_ = new QCheckBox("Allied deployment");
     allied_->setObjectName("scenarioAllied");
@@ -281,19 +226,24 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
                                .arg(r.name),
                            r.id | (table == Table::Items ? 0x8000 : 0));
     form->addRow("Defeat drop", drop_);
-    squad->addLayout(form);
+    deploymentLayout->addLayout(form);
     placementHelp_ =
         new QLabel("Coordinates use 1/256 of the map's bounds. A zero Z byte "
                    "selects a scenario placement point instead. Facing phase 1–8 "
                    "uses the game's eight directions; other original values are preserved.");
     placementHelp_->setWordWrap(true);
-    squad->addWidget(placementHelp_);
-    auto apply = new QPushButton("Apply squad changes");
+    deploymentLayout->addWidget(placementHelp_);
+    deploymentLayout->addStretch();
+    auto restoreSquad = new QPushButton("Restore loaded squad");
+    restoreSquad->setObjectName("scenarioRestoreSquad");
+    auto apply = new QPushButton("Apply squad");
     apply->setObjectName("scenarioSquadApply");
-    squad->addWidget(apply);
-    squad->addStretch();
-    scroll->setWidget(squadDetails_);
-    body->addWidget(scroll);
+    auto squadActions = new QHBoxLayout;
+    squadActions->addWidget(apply);
+    squadActions->addWidget(restoreSquad);
+    squadActions->addStretch();
+    squad->addLayout(squadActions);
+    body->addWidget(squadDetails_);
     body->setSizes({220, 960});
     notice_ = new QLabel;
     notice_->setObjectName("scenarioEditNotice");
@@ -314,6 +264,33 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     });
     connect(restore, &QPushButton::clicked, this, [this] {
         change("Restore loaded scenario", [this](Scenarios &next) { next.restore(key()); });
+    });
+    connect(create, &QPushButton::clicked, this, [this] {
+        change("New scenario squad", [this](Scenarios &next) {
+            editingRow_ = next.addSquad(key(), -1, project_->classData());
+        });
+    });
+    connect(restoreSquad, &QPushButton::clicked, this, [this] {
+        bool restored = false;
+        change("Restore loaded scenario squad", [this, &restored](Scenarios &next) {
+            if (editingRow_ < 0) throw Error("Choose a squad first");
+            auto d = next.scenario(key()).layout.deployments[editingRow_];
+            const auto &base = next.original(key());
+            for (int row = 0; row < base.squads.size(); ++row) {
+                if ((u8(d,0)&127) != (u8(base.layout.deployments[row],0)&127)) continue;
+                const auto identity = d.mid(1,2), routeTail = d.right(2);
+                d = base.layout.deployments[row];
+                d.replace(1,2,identity); d.replace(16,2,routeTail);
+                next.editSquad(key(), editingRow_, base.squads[row], d, project_->classData());
+                restored = true;
+                return;
+            }
+            throw Error("This squad was added to the project and has no loaded version");
+        });
+        if (restored) {
+            showSquad();
+            notice_->setText("Loaded squad restored.");
+        }
     });
     connect(add, &QPushButton::clicked, this, [this] {
         change("Add scenario squad", [this](Scenarios &next) {
@@ -381,12 +358,6 @@ void ScenarioEditor::refresh() {
         if (editable && id == previous)
             scenarios_->setCurrentItem(item);
     }
-    for (auto box : gear_) {
-        const QSignalBlocker blocker(box);
-        box->clear();
-        for (const auto &r : project_->records(Table::Items))
-            box->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
-    }
     {
         const QSignalBlocker blocker(drop_);
         drop_->clear();
@@ -397,12 +368,6 @@ void ScenarioEditor::refresh() {
                                    .arg(r.id)
                                    .arg(r.name),
                                r.id | (kind == Table::Items ? 0x8000 : 0));
-    }
-    for (auto box : classes_) {
-        box->clear();
-        for (const auto &r : project_->records(Table::Classes))
-            box->addItem(QString("%1 · %2").arg(r.id).arg(QString(r.name).replace('\n', ' ')),
-                         r.id);
     }
     loading_ = false;
     filter();
@@ -466,18 +431,17 @@ void ScenarioEditor::showSquad() {
     loading_ = true;
     const auto &s = project_->scenarios()->scenario(key());
     const auto &r = s.squads[editingRow_], &d = s.layout.deployments[editingRow_];
-    const std::array<int, 3> offsets{0, 7, 16};
-    for (int c = 0; c < 3; ++c) {
-        const int at = offsets[c];
-        selectValue(classes_[c], u8(r, at));
-        const int level = u8(r, at + 1);
-        levels_[c]->setValue(level >= 128 ? level - 256 : level);
-        levels_[c]->setEnabled(!(key() == 25 && (u8(d, 0) & 127) == 40 && c));
-        for (int e = 0; e < 2; ++e)
-            selectValue(gear_[c * 2 + e], u16(r, at + 2 + e * 2));
-        for (int p = 0; p < 3; ++p)
-            selectValue(positions_[c * 3 + p], c || !p ? u8(r, at + 6 + p) : 0);
+    const auto members = squadMembers(r);
+    if (members.size() > 5) {
+        squadDetails_->setEnabled(false);
+        loading_ = false;
+        notice_->setText("This loaded squad has more than five members. Its original data is preserved; "
+                         "the member editor supports up to five.");
+        return;
     }
+    memberEditor_->setMembers(members);
+    if (key() == 25 && (u8(d, 0) & 127) == 40)
+        for (int i = 1; i < members.size(); ++i) memberEditor_->setLevelEditable(i, false);
     allied_->setChecked(u8(d, 0) & 128);
     placement_->setCurrentIndex(u8(d, 4) ? 1 : 0);
     x_->setValue(u8(d, 3));
@@ -499,38 +463,9 @@ void ScenarioEditor::showSquad() {
     remove_->setEnabled(!original);
     notice_->clear();
     loading_ = false;
-    preview();
 }
 void ScenarioEditor::preview() {
-    if (loading_ || key() < 0)
-        return;
-    QStringList info;
-    int count = 0;
-    board_->clearUnits();
-    for (int i = 0; i < 9; ++i) {
-        QStringList names;
-        int classId = -1;
-        for (int c = 0; c < 3; ++c)
-            for (int p = 0; p < (c ? 3 : 1); ++p)
-                if (positions_[c * 3 + p]->currentData().toInt() == 9 - i) {
-                    names << QString(QChar('A' + c));
-                    classId = classes_[c]->currentData().toInt();
-                    ++count;
-                }
-        cells_[i]->setText(QString("%1\n%2").arg(9 - i).arg(names.join(" + ")));
-        if (!names.isEmpty())
-            board_->setUnit(8-i, classId, cells_[i]->text(), false, names.size()>1);
-    }
-    for (int c = 0; c < 3; ++c)
-        info << QString("%1: level %2")
-                    .arg(QChar('A' + c))
-                    .arg(project_->scenarios()->scenario(key()).layout.baseLevel() +
-                         levels_[c]->value());
-    formation_->setText(QString("Front row nearest you · rear row farther away\n%1 members\n%2\nSelect a cohort "
-                                "position, then click a cell; drag a unit to move or swap it.")
-                            .arg(count)
-                            .arg(info.join(" · ")));
-    board_->finishUpdate();
+    if (!loading_ && key() >= 0) notice_->setText("Unapplied changes — Apply squad updates the project.");
 }
 void ScenarioEditor::applySquad() {
     if (key() < 0 || editingRow_ < 0)
@@ -538,16 +473,7 @@ void ScenarioEditor::applySquad() {
     change("Edit scenario squad", [this](Scenarios &next) {
         auto r = next.scenario(key()).squads[editingRow_];
         auto d = next.scenario(key()).layout.deployments[editingRow_];
-        const std::array<int, 3> offsets{0, 7, 16};
-        for (int c = 0; c < 3; ++c) {
-            const int at = offsets[c];
-            put8(r, at, quint8(selected(classes_[c])));
-            put8(r, at + 1, quint8(levels_[c]->value()));
-            for (int e = 0; e < 2; ++e)
-                put16(r, at + 2 + e * 2, quint16(selected(gear_[c * 2 + e])));
-            for (int p = 0; p < (c ? 3 : 1); ++p)
-                put8(r, at + 6 + p, quint8(selected(positions_[c * 3 + p])));
-        }
+        r = editSquadMembers(r, memberEditor_->members());
         put8(d, 0, quint8((u8(d, 0) & 127) | (allied_->isChecked() ? 128 : 0)));
         put8(d, 3, quint8(x_->value()));
         put8(d, 4, quint8(placement_->currentIndex() ? z_->value() : 0));

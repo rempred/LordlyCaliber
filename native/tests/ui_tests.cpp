@@ -19,6 +19,7 @@
 #include "app/record_model.h"
 #include "app/save_editor.h"
 #include "app/scenario_editor.h"
+#include "engine/squad_members.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_action_editor.h"
 #include "app/scene_event_editor.h"
@@ -8547,6 +8548,10 @@ class UiTests : public QObject {
         for (int i = 0; i < list->count(); ++i) {
             if (!(list->item(i)->flags() & Qt::ItemIsEnabled))
                 continue;
+            // Full record preservation is covered in the model check. Exercise
+            // the controls on normal, shared, special-level and Dev deployments.
+            if (!QList<int>{1, 10, 25, 64}.contains(list->item(i)->data(Qt::UserRole).toInt()))
+                continue;
             list->setCurrentRow(i);
             auto squads = editor.findChild<QListWidget *>("scenarioSquads");
             for (int row = 0; row < squads->count(); ++row) {
@@ -8563,13 +8568,14 @@ class UiTests : public QObject {
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), before);
         select("scenarioClass_0", 165);
-        for (int c = 1; c < 3; ++c)
-            for (int p = 0; p < 3; ++p)
-                select(QString("scenarioPosition_%1_%2").arg(c).arg(p), 0);
+        button("scenarioRestoreSquad")->click();
+        QCOMPARE(combo("scenarioClass_0")->currentData().toInt(), int(u8(project.scenarios()->original(10).squads[0],0)));
+        QCOMPARE(project.scenarios()->json(), before);
+        select("scenarioClass_0", 165);
+        spin("scenarioMemberCount")->setValue(1);
         auto armyBoard = editor.findChild<FormationBoard *>("scenarioCell_Board");
         QVERIFY(armyBoard);
-        auto leaderCell = combo("scenarioPosition_0_0");
-        const int originalCell = leaderCell->currentData().toInt()-1;
+        const int originalCell = squadMembers(project.scenarios()->scenario(10).squads[0])[0].cell;
         const int destinationCell = (originalCell+1)%9;
         auto dragScenarioMember = [&](int from, int to) {
             auto source = armyBoard->cell(from);
@@ -8582,11 +8588,11 @@ class UiTests : public QObject {
             QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, end);
         };
         dragScenarioMember(originalCell, destinationCell);
-        QCOMPARE(leaderCell->currentData().toInt(), destinationCell+1);
+        QVERIFY(!armyBoard->cell(destinationCell)->icon().isNull());
         dragScenarioMember(destinationCell, originalCell);
-        QCOMPARE(leaderCell->currentData().toInt(), originalCell+1);
+        QVERIFY(!armyBoard->cell(originalCell)->icon().isNull());
         QCOMPARE(project.scenarios()->json(), before);
-        select("scenarioGear_0_0", 277);
+        select("scenarioEquipment_0_0", 0);
         for (const auto field : {"scenarioHealing", "scenarioFruit", "scenarioRevival"})
             select(field, 0);
         select("scenarioDrop", 0x8115);
@@ -8597,7 +8603,7 @@ class UiTests : public QObject {
         const auto after = project.scenarios()->json();
         QVERIFY(after != before);
         QCOMPARE(u8(project.scenarios()->scenario(10).squads[0], 0), 165);
-        QCOMPARE(u16(project.scenarios()->scenario(10).squads[0], 2), 277);
+        QCOMPARE(u16(project.scenarios()->scenario(10).squads[0], 2), 0);
         QCOMPARE(u8(project.scenarios()->scenario(10).layout.deployments[0], 4), 160);
         QCOMPARE(project.scenarios()->scenario(22).json(),
                  project.scenarios()->original(22).json());
@@ -8606,6 +8612,26 @@ class UiTests : public QObject {
         undo.redo();
         QCOMPARE(project.scenarios()->json(), after);
         QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), 10);
+        // Five independent class/level rows, including followers formerly sharing a cohort.
+        spin("scenarioMemberCount")->setValue(5);
+        for (int i=0;i<5;++i) {
+            select(QString("scenarioClass_%1").arg(i),5+i);
+            editor.findChild<QSpinBox *>(QString("scenarioLevel_%1").arg(i))->setValue(i);
+        }
+        button("scenarioSquadApply")->click();
+        const auto five=project.scenarios()->scenario(10).squads[0];
+        QVERIFY(independentSquad(five));
+        for(int i=0;i<5;++i) QCOMPARE(squadMembers(five)[i].classId,5+i);
+        QApplication::processEvents();
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/scenario-independent-squad.png"));
+        select("scenarioClass_2",10);
+        button("scenarioSquadApply")->click();
+        const auto independent=project.scenarios()->scenario(10).squads[0];
+        QCOMPARE(squadMembers(independent)[2].classId,10);
+        QCOMPARE(squadMembers(independent)[1].classId,6);
+        QCOMPARE(squadMembers(independent)[3].classId,8);
+        undo.undo(); QCOMPARE(project.scenarios()->scenario(10).squads[0],five);
+        undo.undo(); QCOMPARE(project.scenarios()->json(),after);
         spin("scenarioLevel_0")->setValue(127);
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), after);
@@ -8621,6 +8647,16 @@ class UiTests : public QObject {
         auto squads = editor.findChild<QListWidget *>("scenarioSquads");
         squads->setCurrentRow(squads->count() - 1);
         QVERIFY(button("scenarioRemoveSquad")->isEnabled());
+        const auto beforeNew = project.scenarios()->json();
+        button("scenarioNewSquad")->click();
+        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads.last()).size(), 1);
+        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads.last())[0].classId, 5);
+        undo.undo(); QCOMPARE(project.scenarios()->json(), beforeNew);
+        squads->setCurrentRow(0);
+        button("scenarioRestoreSquad")->click();
+        QCOMPARE(project.scenarios()->scenario(10).squads[0], project.scenarios()->original(10).squads[0]);
+        undo.undo(); QCOMPARE(project.scenarios()->json(), beforeNew);
+        squads->setCurrentRow(squads->count() - 1);
         QTest::qWait(50);
         QVERIFY(
             editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-squads.png"));
@@ -8739,7 +8775,7 @@ class UiTests : public QObject {
         QVERIFY(button("customCell_8")->toolTip().startsWith("3 ·"));
         drag(8, 0);
         drag(0, 4); // Adjacent to a large member: refuse without altering the draft.
-        QVERIFY(!editor.findChild<QLabel *>("customNotice")->text().isEmpty());
+        QVERIFY(editor.findChild<QLabel *>("customFormationNotice")->text().contains("adjacent"));
         button("customApply")->click();
         QCOMPARE(project.manifest(), before);
         undo.undo();

@@ -18,6 +18,8 @@
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
+#include "rebuild/scenario_members.h"
+#include "engine/squad_members.h"
 #include "rebuild/shop_runtime.h"
 #include <QDir>
 #include <QFile>
@@ -822,6 +824,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             it.value() =
                 compiler.compileData(it.value(), directory, QString("scenario_%1").arg(it.key()));
         result.image = resources.rebuild(Rom::fromBytes(result.image), plan.enemies, plan.esets);
+        bool independent = false;
+        for (const auto &row : p.scenarios()->entries())
+            for (const auto &squad : row.squads) independent |= independentSquad(squad);
+        if (independent) {
+            result.image = rebuildScenarioMembers(Rom::fromBytes(result.image), compiler, directory);
+            result.report << "Compiled independent scenario members into the original constructor allocation";
+        }
         result.report << QString("Rebuilt %1 scenarios and %2 squad templates through original "
                                  "resource links; shared scenarios retain independent edits")
                              .arg(plan.esets.size())

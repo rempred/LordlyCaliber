@@ -12,7 +12,7 @@ class QLabel;
 class QTableWidget;
 class QPushButton;
 namespace lordly {
-class FormationBoard;
+class SquadMembersEditor;
 class ScenarioRouteEditor;
 class ScenarioWorldEditor;
 class ScenarioMapEditor;
@@ -31,7 +31,7 @@ class ScenarioEditor : public QWidget {
     void commit(const Scenarios &next, const QString &label);
     void change(const QString &label, const std::function<void(Scenarios &)> &edit);
     int key() const;
-    FormationBoard *board_;
+    SquadMembersEditor *memberEditor_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
@@ -41,11 +41,7 @@ class ScenarioEditor : public QWidget {
     QSpinBox *base_, *x_, *z_, *phase_;
     QComboBox *placement_, *start_, *healing_, *fruit_, *revival_, *drop_;
     QCheckBox *allied_;
-    QVector<QComboBox *> classes_, gear_, positions_;
-    QVector<QSpinBox *> levels_;
-    QVector<QPushButton *> cells_;
-    QTableWidget *cohorts_;
-    QLabel *notice_, *formation_, *placementHelp_;
+    QLabel *notice_, *placementHelp_;
     QPushButton *remove_;
     ScenarioRouteEditor *routes_ = nullptr;
     ScenarioWorldEditor *world_ = nullptr;

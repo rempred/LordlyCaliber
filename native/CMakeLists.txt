@@ -145,7 +145,7 @@ target_sources(lordly_engine PRIVATE engine/encounters.cpp engine/encounter_rate
 target_sources(lordly_engine PRIVATE engine/creature_rewards.cpp rebuild/creature_rewards.cpp)
 target_sources(lordly_engine PRIVATE engine/scenario_rates.cpp rebuild/scenario_rates.cpp)
 qt_add_resources(lordly_engine reward_sources PREFIX "/" BASE . FILES game/encounters/rewards.s game/encounters/rewards.json)
-target_sources(lordly_engine PRIVATE engine/custom_runtime.cpp engine/custom_squads.cpp rebuild/custom_encounters.cpp)
+target_sources(lordly_engine PRIVATE engine/squad_members.cpp engine/custom_runtime.cpp engine/custom_squads.cpp rebuild/custom_encounters.cpp)
 qt_add_resources(lordly_engine custom_sources PREFIX "/" BASE . FILES game/encounters/custom.c game/encounters/custom.h game/encounters/custom-sites.s)
 qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
   game/encounters/custom-owners/catalog.json game/encounters/custom-owners/card_text.s
@@ -172,7 +172,7 @@ if(MSVC)
   target_compile_options(lordly_engine PUBLIC /W4 /permissive- /utf-8 /fp:strict)
 endif()
 qt_add_executable(LordlyCaliber app/main.cpp app/main_window.cpp app/record_model.cpp app/text_workspace.cpp app/promotion_editor.cpp)
-target_sources(LordlyCaliber PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h)
+target_sources(LordlyCaliber PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h app/squad_members_editor.cpp app/squad_members_editor.h)
 target_sources(LordlyCaliber PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp)
 target_sources(LordlyCaliber PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp)
 target_sources(LordlyCaliber PRIVATE app/scenario_world_editor.cpp app/scenario_map_editor.cpp)
@@ -352,7 +352,7 @@ if(BUILD_TESTING)
   target_link_libraries(engine_tests PRIVATE lordly_engine Qt6::Test)
   add_test(NAME engine_contracts COMMAND engine_tests -o engine-test-report.txt,txt)
   qt_add_executable(ui_tests tests/ui_tests.cpp app/record_model.cpp app/main_window.cpp app/text_workspace.cpp app/promotion_editor.cpp)
-  target_sources(ui_tests PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h)
+  target_sources(ui_tests PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h app/squad_members_editor.cpp app/squad_members_editor.h)
   target_sources(ui_tests PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp)
   target_sources(ui_tests PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp)
   target_sources(ui_tests PRIVATE app/scenario_world_editor.cpp app/scenario_map_editor.cpp)
@@ -393,3 +393,8 @@ if(BUILD_TESTING)
 endif()
 
 qt_add_resources(lordly_engine event_catalog PREFIX "/" BASE . FILES game/director/events.json)
+
+# Shared squad authoring and the in-place scenario member constructor.
+target_sources(lordly_engine PRIVATE engine/scenario_member_runtime.cpp rebuild/scenario_members.cpp)
+qt_add_resources(lordly_engine scenario_member_sources PREFIX "/" BASE . FILES
+  game/scenarios/squad-member.c game/scenarios/squad-member.json)

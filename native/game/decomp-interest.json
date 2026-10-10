@@ -3,6 +3,15 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "scenario-squad-members", "priority": 1,
+      "behavior": "Independent scenario squad member construction",
+      "symbols": ["func_0019554C"],
+      "editorFiles": ["game/scenarios/squad-member.c", "engine/squad_members.cpp", "rebuild/scenario_members.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Scenario squads can have five independently configured members while retaining the original constructor and its allocation/finalization path.",
+      "preserve": "Original pool selection, class-copy behavior, level initialization, equipment precedence, leader flags and special naming. Soldier groups retain the original cohort path. The imported original source remains unchanged in the accepted library."
+    },
+    {
       "id": "combat-pose-metadata", "priority": 1,
       "behavior": "Combat animation directory and instruction lookup",
       "symbols": ["func_00204EE0", "func_00204F24", "func_00204F2C", "func_00204F34", "func_002050AC"],

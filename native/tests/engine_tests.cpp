@@ -9,6 +9,8 @@
 #include "engine/project.h"
 #include "engine/resource.h"
 #include "engine/scenario_resources.h"
+#include "engine/squad_members.h"
+#include "engine/scenario_member_runtime.h"
 #include "engine/shop_runtime.h"
 #include "engine/world_resources.h"
 #include "rebuild/class_menu_layout.h"
@@ -57,6 +59,83 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioIndependentMembers() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            auto model = *project.scenarios();
+            for (const auto &scenario : model.entries())
+                for (const auto &squad : scenario.squads)
+                    QCOMPARE(editSquadMembers(squad,squadMembers(squad)),squad);
+            const auto original = model.scenario(10).squads[0];
+            QVector<CustomMember> members{{5,0,8,{0,0}}, {6,1,7,{1,2}}, {7,2,6,{3,4}}, {8,3,5,{5,6}}, {9,4,4,{7,8}}};
+            auto record = editSquadMembers(original,members);
+            QVERIFY(independentSquad(record));
+            QCOMPARE(record.size(),175);
+            const auto decoded = squadMembers(record);
+            for (int i=0;i<5;++i) {
+                QCOMPARE(decoded[i].classId,members[i].classId);
+                QCOMPARE(decoded[i].levelOffset,members[i].levelOffset);
+                QCOMPARE(decoded[i].equipment,members[i].equipment);
+                QCOMPARE(decoded[i].cell,members[i].cell);
+            }
+            QCOMPARE(editSquadMembers(record,decoded),record);
+            auto changed = members;
+            changed[2].classId = 10; changed[2].equipment[1] = 9;
+            const auto edited = squadMembers(editSquadMembers(record,changed));
+            QCOMPARE(edited[1].classId,members[1].classId);
+            QCOMPARE(edited[3].equipment,members[3].equipment);
+            QCOMPARE(edited[2].classId,10);
+            auto invalid = record; put16(invalid,27,500);
+            QVERIFY_THROWS_EXCEPTION(Error,squadMembers(invalid));
+            invalid = record; put8(invalid,7,1);
+            QVERIFY_THROWS_EXCEPTION(Error,squadMembers(invalid));
+            auto deployment = model.scenario(10).layout.deployments[0];
+            for(int at=13;at<=15;++at) put8(deployment,at,0);
+            model.editSquad(10,0,record,deployment,project.classData());
+            QCOMPARE(model.scenario(22).json(),model.original(22).json());
+            project.setScenarios(model.json());
+            QTemporaryDir saved,work;
+            project.saveFolder(saved.path());
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(saved.path()));
+            QCOMPARE(restored.scenarios()->json(),model.json());
+            const auto build = rebuild(project,tools,work.path());
+            QVERIFY(scenarioMemberRuntimeInstalled(Rom::fromBytes(build.image)));
+            QCOMPARE(ScenarioResources::load(Rom::fromBytes(build.image)).enemyData().first(556*35),ScenarioResources::load(rom).enemyData());
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-independent-squads-XXXXXX");
+            output.setAutoRemove(false);
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project,build,candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios();
+            QCOMPARE(reopened.scenarios()->json(),model.json());
+            auto next = *reopened.scenarios();
+            next.setSquad(10,0,editSquadMembers(record,changed),reopened.classData());
+            reopened.setScenarios(next.json());
+            const auto repeated = rebuild(reopened,tools,work.path());
+            auto again = Project::fromRom(Rom::fromBytes(repeated.image));
+            again.loadScenarios();
+            QCOMPARE(again.scenarios()->json(),next.json());
+            // Relocating/growing classes after reopening must recognize the adapted owner.
+            const int added = again.appendClass(5,"Independent test");
+            auto more = squadMembers(again.scenarios()->scenario(10).squads[0]);
+            more[4].classId=added;
+            auto expanded=*again.scenarios();
+            expanded.setSquad(10,0,editSquadMembers(expanded.scenario(10).squads[0],more),again.classData());
+            again.setScenarios(expanded.json());
+            const auto grown = rebuild(again,tools,work.path());
+            auto final = Project::fromRom(Rom::fromBytes(grown.image)); final.loadScenarios();
+            QCOMPARE(final.scenarios()->json(),expanded.json());
+            QVERIFY(scenarioMemberRuntimeInstalled(final.rom()));
+            atomicWrite(output.filePath("fixture.json"),QJsonDocument(QJsonObject{{"rom",candidate},{"source",path},{"record",QString::fromLatin1(record.toHex())}}).toJson());
+            qInfo().noquote()<<"Independent squad fixture:"<<output.filePath("fixture.json");
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void browserScenarioImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -331,7 +410,7 @@ class EngineTests : public QObject {
                      QByteArray::fromHex("022d")); // Appended one-based ID 557.
             const auto before = model.json();
             auto invalid = record;
-            put16(invalid, 2, 278);
+            put16(invalid, 2, 511);
             QVERIFY_THROWS_EXCEPTION(Error, model.setSquad(10, 0, invalid, classes));
             QCOMPARE(model.json(), before);
             QVERIFY_THROWS_EXCEPTION(Error, model.setBaseLevel(10, 0, classes));

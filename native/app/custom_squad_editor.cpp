@@ -1,5 +1,5 @@
 #include "app/custom_squad_editor.h"
-#include "app/formation_board.h"
+#include "app/squad_members_editor.h"
 #include "app/encounter_labels.h"
 #include "app/view_position.h"
 #include <QApplication>
@@ -121,94 +121,9 @@ CustomSquadEditor::CustomSquadEditor(
     detail->addWidget(tabs, 1);
     auto memberPage = new QWidget;
     auto memberLayout = new QVBoxLayout(memberPage);
-    auto countRow = new QHBoxLayout;
-    count_ = spin("customMemberCount", 2, 5);
-    countRow->addWidget(new QLabel("Members"));
-    countRow->addWidget(count_);
-    countRow->addStretch();
-    memberLayout->addLayout(countRow);
-    members_ = new QTableWidget(5, 4);
-    members_->setObjectName("customMembers");
-    members_->setHorizontalHeaderLabels(
-        {"Class", "Level offset", "Equipment choice 1", "Equipment choice 2"});
-    members_->setVerticalHeaderLabels({"Leader", "2", "3", "4", "5"});
-    members_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    members_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    members_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    members_->setMaximumHeight(220);
-    memberLayout->addWidget(members_);
-    for (int i = 0; i < 5; ++i) {
-        members_->setRowHeight(i, 36);
-        auto cl = choice(QString("customClass_%1").arg(i));
-        classes_ << cl;
-        members_->setCellWidget(i, 0, cl);
-        auto level = spin(QString("customLevel_%1").arg(i), -128, 127);
-        levels_ << level;
-        members_->setCellWidget(i, 1, level);
-        positions_ << 8 - i * 2;
-        for (int e = 0; e < 2; ++e) {
-            auto item = choice(QString("customEquipment_%1_%2").arg(i).arg(e));
-            item->addItem("None", 0);
-            for (int id = 1; id < project_->records(Table::Items).size(); ++id)
-                item->addItem(
-                    QString("%1 · %2").arg(id).arg(
-                        QString(project_->record(Table::Items, id).name).replace('\n', ' ')),
-                    id);
-            equipment_ << item;
-            members_->setCellWidget(i, e + 2, item);
-            connect(item, &QComboBox::currentIndexChanged, this, [this, i] {
-                if (!loading_)
-                    members_->setCurrentCell(i, 0);
-                preview();
-            });
-        }
-        connect(cl, &QComboBox::currentIndexChanged, this, [this, i] {
-            if (!loading_)
-                members_->setCurrentCell(i, 0);
-            if (!loading_) refreshEquipment(i);
-            preview();
-        });
-        connect(level, &QSpinBox::valueChanged, this, [this, i] {
-            if (!loading_)
-                members_->setCurrentCell(i, 0);
-            preview();
-        });
-    }
-    auto hint = new QLabel(
-        "Drag a unit to move a member or swap two members. You can also select a member and "
-        "click an empty cell. Large members use two of five "
-        "slots "
-        "and need adjacent cells clear. Equipment choices follow the game's compatibility rules; "
-        "the second choice takes precedence when both fit the same slot.");
-    hint->setWordWrap(true);
-    memberLayout->addWidget(hint);
-    board_ = new FormationBoard(project_, "customCell_");
-    cells_.resize(9);
-    for (int cell = 0; cell < 9; ++cell) {
-        cells_[cell] = board_->cell(cell);
-        connect(cells_[cell], &QPushButton::clicked, this, [this, cell] {
-            moveMember(qBound(0, members_->currentRow(), count_->value() - 1), cell);
-        });
-    }
-    connect(board_, &FormationBoard::cellPressed, this, [this](int cell) {
-        for (int i = 0; i < count_->value(); ++i)
-            if (positions_[i] == cell) { members_->setCurrentCell(i, 0); break; }
-    });
-    connect(board_, &FormationBoard::cellMoved, this, [this](int from, int to) {
-        for (int i = 0; i < count_->value(); ++i)
-            if (positions_[i] == from) { moveMember(i, to); break; }
-    });
-    memberLayout->addWidget(board_, 0, Qt::AlignLeft);
-    formation_ = new QLabel;
-    formation_->setObjectName("customFormationNotice");
-    formation_->setWordWrap(true);
-    memberLayout->addWidget(formation_);
-    auto memberRules =
-        new QLabel("Custom neutral squads support up to five individually configured members. "
-                   "Member 1 is the leader. Ordinary scenario enemy templates instead use a leader "
-                   "and two shared follower types. Large classes still require a valid formation.");
-    memberRules->setWordWrap(true);
-    memberLayout->addWidget(memberRules);
+    memberEditor_ = new SquadMembersEditor(project_, "custom", 2, 2);
+    memberLayout->addWidget(memberEditor_);
+    connect(memberEditor_, &SquadMembersEditor::edited, this, [this] { preview(); });
     auto levels = new QLabel("Level offsets are added to the encounter level. Results outside "
                              "0–255 wrap, matching the game.");
     levels->setWordWrap(true);
@@ -330,7 +245,6 @@ CustomSquadEditor::CustomSquadEditor(
     connect(restore_, &QPushButton::clicked, this, [this] { remove(true); });
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
     connect(list_, &QListWidget::currentRowChanged, this, [this] { showSelected(); });
-    connect(count_, &QSpinBox::valueChanged, this, [this] { changeMemberCount(); });
     connect(label_, &QLineEdit::textChanged, this, [this] { preview(); });
     connect(scenario_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
     connect(terrain_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
@@ -338,7 +252,6 @@ CustomSquadEditor::CustomSquadEditor(
     connect(persuasion_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
     connect(chance_, &QSpinBox::valueChanged, this, [this] { preview(); });
     connect(retreat_, &QSpinBox::valueChanged, this, [this] { preview(); });
-    connect(members_, &QTableWidget::currentCellChanged, this, [this] { preview(); });
     connect(undo, &QUndoStack::indexChanged, this, [this] { refresh(); });
     loading_ = false;
     refresh();
@@ -371,12 +284,6 @@ void CustomSquadEditor::refresh() {
         if (it.key() == editing_)
             selectedRow = list_->count() - 1;
     }
-    for (auto box : equipment_) {
-        const QSignalBlocker blocker(box);
-        box->clear();
-        for (const auto &r : project_->records(Table::Items))
-            box->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
-    }
     for (auto box : rewards_) {
         const QSignalBlocker blocker(box);
         box->clear();
@@ -389,7 +296,7 @@ void CustomSquadEditor::refresh() {
                                  .arg(project_->record(kind, id).name),
                              (kind == Table::Items ? 0x8000 : 0) | id);
     }
-    for (auto box : classes_ + bonusClasses_) {
+    for (auto box : bonusClasses_) {
         box->clear();
         if (bonusClasses_.contains(box))
             box->addItem("None", 0);
@@ -438,24 +345,7 @@ void CustomSquadEditor::display(const CustomSquad &s) {
     terrain_->setCurrentIndex(terrain_->findData(s.terrainSlot));
     label_->setText(s.label);
     enabled_->setChecked(s.enabled);
-    count_->setValue(int(s.members.size()));
-    shownCount_ = count_->value();
-    for (int i = 0; i < 5; ++i) {
-        const auto member =
-            i < s.members.size() ? s.members[i] : CustomMember{5, 0, 8 - i * 2, {0, 0}};
-        classes_[i]->setCurrentIndex(classes_[i]->findData(member.classId));
-        levels_[i]->setValue(member.levelOffset);
-        positions_[i] = member.cell;
-        refreshEquipment(i);
-        for (int e = 0; e < 2; ++e) {
-            auto box = equipment_[i * 2 + e];
-            if (box->findData(member.equipment[e]) < 0) {
-                box->addItem(QString("%1 · existing incompatible choice").arg(member.equipment[e]), member.equipment[e]);
-                qobject_cast<QStandardItemModel *>(box->model())->item(box->count() - 1)->setEnabled(false);
-            }
-            box->setCurrentIndex(box->findData(member.equipment[e]));
-        }
-    }
+    memberEditor_->setMembers(s.members);
     persuasion_->setCurrentIndex(persuasion_->findData(s.fixedPersuasion ? 1 : 0));
     chance_->setValue(s.chance);
     retreat_->setValue(s.retreatHp);
@@ -466,7 +356,6 @@ void CustomSquadEditor::display(const CustomSquad &s) {
         rewards_[i]->setCurrentIndex(rewards_[i]->findData(s.rewards.outcomes[i]));
         weights_[i]->setValue(s.rewards.weights[i]);
     }
-    members_->setCurrentCell(0, 0);
     notice_->clear();
     loading_ = false;
     preview();
@@ -477,12 +366,7 @@ CustomSquad CustomSquadEditor::collect() const {
     s.terrainSlot = selected(terrain_);
     s.label = label_->text();
     s.enabled = enabled_->isChecked();
-    s.members.clear();
-    for (int i = 0; i < count_->value(); ++i)
-        s.members << CustomMember{selected(classes_[i]),
-                                  levels_[i]->value(),
-                                  positions_[i],
-                                  {selected(equipment_[i * 2]), selected(equipment_[i * 2 + 1])}};
+    s.members = memberEditor_->members();
     s.fixedPersuasion = selected(persuasion_) == 1;
     s.chance = chance_->value();
     s.retreatHp = retreat_->value();
@@ -565,87 +449,6 @@ void CustomSquadEditor::remove(bool restore) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
-void CustomSquadEditor::moveMember(int member, int cell) {
-    if (member < 0 || member >= count_->value() || cell < 0 || cell >= 9)
-        return;
-    auto before = positions_;
-    for (int i = 0; i < count_->value(); ++i)
-        if (i != member && positions_[i] == cell)
-            positions_[i] = before[member];
-    positions_[member] = cell;
-    try {
-        CustomSquads check;
-        check.set(collect(), int(project_->records(Table::Classes).size()));
-        check.validateFormations(project_->classData());
-        members_->setCurrentCell(member, 0);
-        preview();
-    } catch (const Error &e) {
-        positions_ = before;
-        preview();
-        notice_->setText(QString::fromUtf8(e.what()));
-    }
-}
-void CustomSquadEditor::refreshEquipment(int member) {
-    const int cl = classes_[member]->currentData().toInt();
-    if (cl < 2 || cl >= project_->records(Table::Classes).size()) return;
-    const int copy = u8(project_->record(Table::Classes, cl).bytes, 69);
-    const int effective = copy ? copy : cl;
-    QSet<int> types;
-    if (effective < project_->records(Table::Classes).size()) {
-        const auto row = project_->record(Table::Classes, effective).bytes;
-        for (int slot = 0; slot < 4; ++slot) {
-            const int id = u16(row, 46 + slot * 2);
-            if (id > 0 && id < project_->records(Table::Items).size())
-                types.insert(u8(project_->record(Table::Items, id).bytes, 4));
-        }
-    }
-    for (int side = 0; side < 2; ++side) {
-        auto box = equipment_[member * 2 + side];
-        const int previous = box->currentData().toInt();
-        const QSignalBlocker block(box);
-        box->clear();
-        box->addItem("None — keep class default", 0);
-        for (const auto &item : project_->records(Table::Items))
-            if (item.id && types.contains(u8(item.bytes, 4)))
-                box->addItem(QString("%1 · %2").arg(item.id).arg(item.name), item.id);
-        if (previous && box->findData(previous) < 0) {
-            box->addItem(QString("%1 · existing incompatible choice (not applied by game)").arg(previous), previous);
-            qobject_cast<QStandardItemModel *>(box->model())->item(box->count() - 1)->setEnabled(false);
-        }
-        box->setCurrentIndex(qMax(0, box->findData(previous)));
-    }
-}
-void CustomSquadEditor::changeMemberCount() {
-    if (loading_) return;
-    const auto before = positions_;
-    const int requested = count_->value();
-    try {
-        for (int member = shownCount_; member < requested; ++member) {
-            bool placed = false;
-            for (int cell = 8; cell >= 0; --cell) {
-                positions_[member] = cell;
-                auto squad = collect();
-                squad.members.resize(member + 1);
-                try {
-                    CustomSquads check;
-                    check.set(squad, int(project_->records(Table::Classes).size()));
-                    check.validateFormations(project_->classData());
-                    placed = true;
-                    break;
-                } catch (const Error &) {}
-            }
-            if (!placed) throw Error("No valid free formation cell. Move members or use fewer large classes first.");
-        }
-        shownCount_ = requested;
-        preview();
-    } catch (const Error &e) {
-        positions_ = before;
-        const QSignalBlocker block(count_);
-        count_->setValue(shownCount_);
-        preview();
-        notice_->setText(QString::fromUtf8(e.what()));
-    }
-}
 void CustomSquadEditor::preview() {
     if (loading_)
         return;
@@ -656,47 +459,17 @@ void CustomSquadEditor::preview() {
         bonusClasses_[i]->setEnabled(fixed);
         bonuses_[i]->setEnabled(fixed && bonusClasses_[i]->currentData().toInt() != 0);
     }
-    for (int i = 0; i < 5; ++i)
-        members_->setRowHidden(i, i >= count_->value());
-    members_->setFixedHeight(members_->horizontalHeader()->height() + count_->value() * 36 +
-                             2 * members_->frameWidth());
     const auto total = weights_[0]->value() + weights_[1]->value() + weights_[2]->value();
     for (int i = 0; i < 3; ++i)
         odds_[i]->setText(
             total ? QString::number(100.0 * weights_[i]->value() / total, 'f', 1) + "%" : "—");
-    board_->clearUnits();
     try {
         const auto s = collect();
-        int cost = 0;
-        for (int i = 0; i < s.members.size(); ++i) {
-            const auto &m = s.members[i];
-            const auto name =
-                QString(project_->record(Table::Classes, m.classId).name).replace('\n', ' ');
-            board_->setUnit(m.cell, m.classId,
-                            QString("%1 · %2%3").arg(i + 1).arg(name).arg(i ? "" : " (Leader)"),
-                            members_->currentRow() == i);
-            cost += u8(project_->record(Table::Classes, m.classId).bytes, 4) == 2 ? 2 : 1;
-        }
-        for (int i = 0; i < s.members.size(); ++i) {
-            const auto &m = s.members[i];
-            if (u8(project_->record(Table::Classes, m.classId).bytes, 4) != 2)
-                continue;
-            for (int cell = 0; cell < 9; ++cell)
-                if (cells_[cell]->icon().isNull() && std::abs(cell / 3 - m.cell / 3) <= 1 &&
-                    std::abs(cell % 3 - m.cell % 3) <= 1)
-                    board_->setCellHint(cell, "Keep clear for the adjacent large member");
-        }
-        CustomSquads check;
-        check.set(s, int(project_->records(Table::Classes).size()));
-        check.validateFormations(project_->classData());
-        formation_->setText(
-            QString("%1 of 5 formation slots used. Front row is nearest you on the board.").arg(cost));
         if (editing_ < 0 ||
             project_->encounters()->customSquads().profiles().value(editing_).json() != s.json())
             notice_->setText("Unapplied changes — Apply squad updates the project.");
     } catch (const std::exception &e) {
-        formation_->setText(QString::fromUtf8(e.what()));
+        notice_->setText(QString::fromUtf8(e.what()));
     }
-    board_->finishUpdate();
 }
 } // namespace lordly

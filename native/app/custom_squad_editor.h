@@ -12,7 +12,7 @@ class QLabel;
 class QPushButton;
 class QTableWidget;
 namespace lordly {
-class FormationBoard;
+class SquadMembersEditor;
 class CustomSquadEditor : public QWidget {
   public:
     CustomSquadEditor(Project *project, QUndoStack *undo,
@@ -28,11 +28,8 @@ class CustomSquadEditor : public QWidget {
     void apply();
     void remove(bool restore);
     void preview();
-    void refreshEquipment(int member);
-    void changeMemberCount();
-    void moveMember(int member, int cell);
     CustomSquad collect() const;
-    FormationBoard *board_;
+    SquadMembersEditor *memberEditor_;
     Project *project_;
     std::function<void(const Encounters &, const QString &)> commit_;
     QListWidget *list_;
@@ -40,16 +37,12 @@ class CustomSquadEditor : public QWidget {
     QWidget *details_;
     QComboBox *scenario_, *terrain_, *persuasion_;
     QCheckBox *enabled_;
-    QSpinBox *count_, *chance_, *retreat_;
-    QTableWidget *members_;
-    QVector<QComboBox *> classes_, equipment_, bonusClasses_, rewards_;
-    QVector<QSpinBox *> levels_, bonuses_, weights_;
+    QSpinBox *chance_, *retreat_;
+    QVector<QComboBox *> bonusClasses_, rewards_;
+    QVector<QSpinBox *> bonuses_, weights_;
     QVector<QLabel *> odds_;
-    QVector<QPushButton *> cells_;
-    QLabel *notice_, *formation_;
+    QLabel *notice_;
     QPushButton *copy_, *remove_, *restore_;
-    QVector<int> positions_;
-    int shownCount_ = 2;
     int editing_ = -1;
     bool loading_ = true;
 };

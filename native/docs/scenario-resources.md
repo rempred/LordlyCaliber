@@ -1,5 +1,48 @@
 # Scenario resource rebuild
 
+## Independent squad members
+
+`SquadMembersEditor` supplies the common member table and formation controls for
+Scenarios and Encounters. The Scenario model preserves each original 35-byte
+template exactly when controls are unchanged, including inactive cohorts and
+unknown padding. Compatible edits retain its original framing. When a squad needs
+more follower specifications, its main template uses `LS` at bytes25–26 and four
+big-endian relative record offsets at27–34. Each active follower's offset equals
+its one-based member index; inactive offsets are zero. The complete main record
+and its immediately appended 35-byte follower records form one project value.
+The main record retains the leader and original position bytes (B:13–15, C:22).
+Each appended record begins with its own class, raw level offset and two equipment
+choices. Original resource links, one-based ESET IDs and 35-byte library stride
+remain; allocation checks include the whole member block. No stock record changes.
+
+`game/scenarios/squad-member.c` adapts accepted `func_0019554C.c` into the original
+644-byte owner at z64 `0x19554C` / scenario RAM `0x802150BC`. The original squad
+constructor still allocates members and stores formation positions. Before each
+follower call it has published earlier member IDs in the source record, letting
+the helper select that member's appended specification. Pool selection, class
+copy, level initialization, equipment precedence, leader flags, special naming,
+record finalization and persistent-player tail behavior remain. Soldier groups
+use a different original constructor branch; they retain stock cohort encoding
+and cannot be mixed into an extended individual specification.
+
+The generated `squad-member.json` authenticates the complete adapted owner and
+its class references. The normal class relocation pass recognizes and relocates
+it, including later class growth. Generate with
+`python native/tools/generate-squad-member-runtime.py` using the pinned toolchain.
+Export compiles the maintained C within the original allocation; reopening rejects
+extended member data without that recognized constructor. No separate hook or
+resident-memory allocation is added.
+
+`engine_tests scenarioIndependentMembers` covers all original record round trips,
+five distinct member specifications, independent edits, project persistence,
+export/reopen, repeated edits and subsequent class growth. The original-MIPS
+check `tests/scenario-members-mips.cjs <fixture.json>` compares 144 stock helper
+cases, then runs 24 original-constructor cases with two through five distinct
+members across both record pools and allied flags. Initialization/equipment/finalizer services are
+controlled doubles; these checks do not establish a natural game load.
+
+## Original resource layout
+
 Observed from US Rev 0 and checked with the original instructions:
 
 - The table at z64 `0x654A0` / resident RAM `0x8018F5A0` has nine-byte rows.

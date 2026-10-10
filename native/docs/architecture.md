@@ -4010,12 +4010,15 @@ checks original readers and rejects unrecognized archive redirects. Original
 MIPS dispatcher, framing and LH5 code load all 65 selected resources plus the
 grown enemy library in guarded 4 MiB test memory. Allocation and lower transfer
 services are simulated; full-game loading and peak heap use remain unverified.
-The scenario model stores a local 35-byte squad record for each deployment. Its
+The scenario model stores a local squad template for each deployment: an original
+35-byte record or a main record with appended individual follower specifications
+(see `scenario-resources.md`). Its
 project representation omits allocated EDAT IDs; export deduplicates or appends
 records while retaining the complete loaded enemy library. Separate ESET members
 allow independent edits to scenario keys that originally shared a resource.
 The original automatic-alliance cases become explicit deployment flags when
-records move. The desktop page edits cohorts, formation, equipment, base levels,
+records move. The desktop page shares individual member/formation/equipment
+controls with Encounters and retains base levels,
 placement, initial orders, supplies and drops, and supports adding/removing authored
 squads with undo. Formations and carrying capacity are checked when their inputs
 change, including class-size and capacity edits in the Classes page. Unrelated

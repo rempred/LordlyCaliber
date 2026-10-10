@@ -1,0 +1,32 @@
+{
+  "generator": "native/tools/generate-squad-member-runtime.py",
+  "toolchain": "rebuild/toolchain.json",
+  "acceptedSource": "game/accepted/library/src/lib/func_0019554C.c",
+  "sourceSha256": "95d805086839857881869f29c2f745e95d08f356af680ec893fb1457d33668d3",
+  "start": 1660236,
+  "size": 644,
+  "address": 2149667004,
+  "cSourceSha256": "743e2c38dce24437af35dfda62174f52dd19f0c04db4c971c9794d10b8b17259",
+  "cReferences": [
+    {
+      "high": 332,
+      "low": 340,
+      "group": "classes",
+      "addend": 141
+    }
+  ],
+  "symbols": {
+    "lc_player_records": 2149137344,
+    "lc_enemy_records": 2149143904,
+    "lc_classes": 2149088276,
+    "lc_sources": 2149151216,
+    "lc_scenario_level": 2149519413,
+    "lc_special_name": 2149675696,
+    "lc_initialize": 2148987164,
+    "lc_equipment": 2149666688,
+    "lc_finish_character": 2148973856,
+    "lc_special_scenario": 2149433428,
+    "lc_clear": 2148086656,
+    "lc_copy_name": 2148123984
+  }
+}

@@ -1,3 +1,4 @@
+#include "engine/scenario_member_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "engine/class_text.h"
 #include "engine/art_resource_links.h"
@@ -152,7 +153,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             throw Error("Class relocation conflicts at z64 " + QString::number(site, 16));
         patches[site] = value;
     };
-    const auto promotion = promotionOwners()["owners"].toArray();
+    auto promotion = promotionOwners()["owners"].toArray();
+    promotion.append(scenarioMemberOwner());
     for (const auto entry : catalog["owners"].toArray()) {
         const auto owner = entry.toObject();
         const qsizetype start = owner["start"].toInt(), size = owner["size"].toInt();

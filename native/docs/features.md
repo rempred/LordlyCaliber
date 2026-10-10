@@ -1,5 +1,14 @@
 # Feature inventory and completion tracking
 
+Scenario squads and custom Encounter squads share the same member editor:
+individual class/level/equipment rows, member count, and drag/swap formation board
+with compatible gear choices and large-unit checks. Scenario squads support one
+through five members, including five distinct classes. New, Duplicate and Restore
+loaded squad accompany Apply and Undo; deployment/orders/supplies/drops remain in
+their own details tab. The source-built scenario member constructor reads appended
+individual specifications when a composition exceeds the stock follower cohorts.
+Original Soldier groups retain their cohort format.
+
 Source reference: the browser Editor preserved at `559b231`, including its
 README, interface, parsers, exports, and tests. Preserve behavior and data
 compatibility while redesigning implementation and interaction for native use.
@@ -117,9 +126,9 @@ as well as copy. Shop stock filters use the first ROM icon in each type; the
 stronghold picker lists every stronghold by scenario and follows the selected
 shop. Refreshing lists retains view positions; unfocused numeric/choice controls
 ignore wheel edits. Custom rewards are edited independently under leader-based
-squad names, with numbering for repeated leaders. Custom formation supports five
-individual members; the ordinary scenario template's two follower cohorts do not
-apply to that constructor. Talk affinity has an explicit heading.
+squad names, with numbering for repeated leaders. Both squad editors support five
+individual members; Scenario export extends the original follower-cohort format
+when needed. Talk affinity has an explicit heading for neutral encounters.
 
 The Map tab places new treasure with one click and one Undo step. Routes has a
 squad/start selector and clickable behavior summary above the detailed node,

@@ -1,4 +1,6 @@
 #include "engine/scenarios.h"
+#include "engine/squad_members.h"
+#include "engine/scenario_member_runtime.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -56,13 +58,18 @@ Scenarios Scenarios::load(const Rom &rom) {
             const int id = u16(row, 1);
             if (id < 1 || id > result.enemies_.size() / 35)
                 throw Error(QString("Scenario %1 references a missing squad template").arg(key));
-            s.squads << result.enemies_.mid((id - 1) * 35, 35);
+            s.squads << readSquadRecord(result.enemies_, id);
             // Preserve the effective deployment allegiance across a template remap.
             if (automaticAlly(key, id))
                 row[0] = char(u8(row, 0) | 128);
         }
         result.rows_[key] = s;
     }
+    bool extended = false;
+    for (const auto &row : result.rows_)
+        for (const auto &record : row.squads) extended |= independentSquad(record);
+    if (extended && !scenarioMemberRuntimeInstalled(rom))
+        throw Error("Independent squad data needs its matching member constructor");
     result.originals_ = result.rows_;
     return result;
 }
@@ -77,80 +84,30 @@ const Scenario &Scenarios::original(int key) const {
     return originals_.constFind(key).value();
 }
 int Scenarios::memberCount(const QByteArray &record) {
-    if (record.size() != 35)
-        throw Error("A squad template must contain 35 bytes");
-    int count = 1;
-    for (const int at : {13, 14, 15, 22, 23, 24})
-        count += u8(record, at) != 0;
-    return count;
-}
-static int signedByte(const QByteArray &bytes, int at) {
-    const int raw = u8(bytes, at);
-    return raw >= 128 ? raw - 256 : raw;
+    return int(squadMembers(record).size());
 }
 static void levels(const QByteArray &record, int base) {
-    for (const int at : {0, 7, 16}) {
-        if (at && !u8(record, at + 6) && !u8(record, at + 7) && !u8(record, at + 8))
-            continue;
-        const int level = base + signedByte(record, at + 1);
-        if (level < 1 || level > 99 || ((base + u8(record, at + 1)) & 255) != level)
-            throw Error("Base level and each active cohort offset must produce level 1–99");
+    for (const auto &member : squadMembers(record)) {
+        const int level = base + member.levelOffset;
+        if (level < 1 || level > 99)
+            throw Error("Base level and each member offset must produce level 1–99");
     }
 }
 static QByteArray composition(const QByteArray &record) {
-    if (record.isEmpty())
-        return {};
     QByteArray value;
-    for (const int at : {0, 6, 7, 13, 14, 15, 16, 22, 23, 24})
-        value += record[at];
+    if (!record.isEmpty())
+        for (const auto &member : squadMembers(record)) {
+            value += char(member.classId);
+            value += char(member.cell);
+        }
     return value;
 }
-static void formation(const QByteArray &record, const ClassData &classes) {
-    QSet<int> cells;
-    QVector<QPair<int, int>> occupants;
-    int cost = 0;
-    for (const int at : {0, 7, 16}) {
-        const int first = at == 0 ? 6 : at + 6, last = at == 0 ? 6 : at + 8;
-        for (int p = first; p <= last; ++p) {
-            const int cell = u8(record, p);
-            if (!cell && at != 0)
-                continue;
-            if (cell < 1 || cell > 9 || cells.contains(cell))
-                throw Error("Every squad member needs a different formation cell from 1 through 9");
-            cells.insert(cell);
-            const int id = u8(record, at);
-            if (id < 1 || id >= classes.entries().size())
-                throw Error("Squad member refers to an unavailable class");
-            const int size = u8(classes.entries()[id].record, ClassData::unitSizeOffset);
-            if (size > 2)
-                throw Error("Squad uses a class with an unknown unit size");
-            cost += size == 2 ? 2 : 1;
-            occupants << qMakePair(cell - 1, size);
-        }
-    }
-    if (occupants.size() > 5 || cost > 5)
-        throw Error("Squad exceeds its five formation slots");
-    for (const auto &a : occupants)
-        if (a.second == 2)
-            for (const auto &b : occupants)
-                if (a.first != b.first && std::abs(a.first / 3 - b.first / 3) <= 1 &&
-                    std::abs(a.first % 3 - b.first % 3) <= 1)
-                    throw Error("A large squad member needs adjacent formation cells clear");
-}
 int Scenarios::carryingCapacity(const QByteArray &record, const ClassData &classes) {
-    if (record.size() != 35)
-        throw Error("Squad template must contain 35 bytes");
     int result = 0;
-    for (const int at : {0, 7, 16}) {
-        const int first = at == 0 ? 6 : at + 6, last = at == 0 ? 6 : at + 8;
-        for (int p = first; p <= last; ++p) {
-            if (at && !u8(record, p))
-                continue;
-            const int id = u8(record, at);
-            if (id < 1 || id >= classes.entries().size())
-                throw Error("Squad supplies refer to an unavailable class");
-            result += u8(classes.entries()[id].record, ClassData::itemCapacityOffset);
-        }
+    for (const auto &member : squadMembers(record)) {
+        if (member.classId < 1 || member.classId >= classes.entries().size())
+            throw Error("Squad supplies refer to an unavailable class");
+        result += u8(classes.entries()[member.classId].record, ClassData::itemCapacityOffset);
     }
     return result;
 }
@@ -179,10 +136,10 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
         // Preserve unrelated unusual source values when changing equipment or levels.
         const bool changedComposition = composition(record) != composition(before);
         bool changedSize = false, changedCapacity = false;
-        for (const int at : {0, 7, 16}) {
-            if (at && !u8(record, at + 6) && !u8(record, at + 7) && !u8(record, at + 8))
-                continue;
-            const int id = u8(record, at);
+        const auto members = squadMembers(record);
+        const auto previous = before.isEmpty() ? QVector<CustomMember>{} : squadMembers(before);
+        for (const auto &member : members) {
+            const int id = member.classId;
             if (id >= classes.entries().size())
                 throw Error("Squad member refers to an unavailable class");
             if (id >= originalClassLimits_.size()) {
@@ -196,20 +153,22 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
             }
         }
         if (changedComposition || changedSize)
-            formation(record, classes);
-        if (changedComposition || before.isEmpty() || record[1] != before[1] ||
-            record[8] != before[8] || record[17] != before[17] ||
-            e.baseLevel() != base.layout.baseLevel())
+            validateSquadFormation(members, classes);
+        bool changedLevels = members.size() != previous.size();
+        for (int m = 0; m < members.size(); ++m) {
+            changedLevels |= m >= previous.size() || members[m].levelOffset != previous[m].levelOffset;
+            for (int side = 0; side < 2; ++side)
+                if (members[m].equipment[side] > 510 &&
+                    (m >= previous.size() || members[m].equipment[side] != previous[m].equipment[side]))
+                    throw Error("Choose equipment 0–510; unknown original equipment can only be preserved");
+        }
+        if (changedComposition || changedLevels || e.baseLevel() != base.layout.baseLevel())
             levels(record, e.baseLevel());
-        for (const int at : {2, 4, 9, 11, 18, 20})
-            if (u16(record, at) > 510 && (before.isEmpty() || u16(record, at) != u16(before, at)))
-                throw Error(
-                    "Choose equipment 0–510; unknown original equipment can only be preserved");
-        // The accepted ambiguous join is zero-based EDAT 199: key 25, source 40.
-        if (s.key == 25 && source == 40 && !before.isEmpty() &&
-            (record[8] != before[8] || record[17] != before[17]))
-            throw Error(
-                "This deployment's B/C level join is unresolved; its base level remains editable");
+        // Preserve the unresolved original level join while retaining ordinary edits.
+        if (s.key == 25 && source == 40 && !before.isEmpty() && changedLevels)
+            for (int m = 1; m < std::min(members.size(), previous.size()); ++m)
+                if (members[m].levelOffset != previous[m].levelOffset)
+                    throw Error("This deployment's follower level join is unresolved; its base level remains editable");
         if (changedComposition || changedCapacity || beforeRow.isEmpty() ||
             row.mid(13, 3) != beforeRow.mid(13, 3)) {
             const int cap = carryingCapacity(record, classes);
@@ -247,8 +206,7 @@ void Scenarios::setBaseLevel(int key, int level, const ClassData &classes) {
 void Scenarios::setSquad(int key, int row, const QByteArray &record, const ClassData &classes) {
     auto next = scenario(key);
     rowIndex(next, row);
-    if (record.size() != 35)
-        throw Error("Squad template must contain 35 bytes");
+    squadMembers(record);
     next.squads[row] = record;
     replace(std::move(next), classes);
 }
@@ -264,14 +222,13 @@ void Scenarios::editSquad(int key, int row, const QByteArray &squad, const QByte
         record.mid(1, 2) != next.layout.deployments[row].mid(1, 2))
         throw Error("Deployment identity and allocated template IDs are managed by the editor");
     next.layout.deployments[row] = record;
-    if (squad.size() != 35)
-        throw Error("Squad template must contain 35 bytes");
+    squadMembers(squad);
     next.squads[row] = squad;
     replace(std::move(next), classes);
 }
 int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
     auto next = scenario(key);
-    rowIndex(next, templateRow);
+    if (templateRow >= 0) rowIndex(next, templateRow);
     if (next.squads.size() >= 20)
         throw Error("This scenario already has 20 squads");
     QSet<int> used;
@@ -282,7 +239,7 @@ int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
         ++source;
     if (source == 50)
         throw Error("This scenario has no free enemy source ID");
-    QByteArray row = next.layout.deployments[templateRow];
+    QByteArray row = templateRow >= 0 ? next.layout.deployments[templateRow] : QByteArray(18, 0);
     put8(row, 0, quint8(source));
     put16(row, 1, 0);
     put8(row, 6, 1); // Original built-in hold-position node.
@@ -290,7 +247,12 @@ int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
     if (!next.layout.deployments.isEmpty())
         next.layout.deployments.last().replace(16, 2, QByteArray(2, 0));
     next.layout.deployments << row;
-    next.squads << next.squads[templateRow];
+    if (templateRow >= 0) next.squads << next.squads[templateRow];
+    else {
+        QByteArray record(35, 0);
+        put8(record, 0, 5); put8(record, 6, 9);
+        next.squads << record;
+    }
     const int result = int(next.squads.size()) - 1;
     replace(std::move(next), classes);
     return result;
@@ -373,8 +335,8 @@ ScenarioPlan Scenarios::plan(const ClassData &classes) const {
     ScenarioPlan result{enemies_, {}};
     QMap<QByteArray, int> indices;
     for (int i = 0; i < enemies_.size() / 35; ++i)
-        if (!indices.contains(enemies_.mid(i * 35, 35)))
-            indices[enemies_.mid(i * 35, 35)] = i + 1;
+        if (!indices.contains(readSquadRecord(enemies_, i + 1)))
+            indices[readSquadRecord(enemies_, i + 1)] = i + 1;
     validateForExport(classes);
     for (const auto &s : rows_) {
         const auto &base = original(s.key);
@@ -390,7 +352,7 @@ ScenarioPlan Scenarios::plan(const ClassData &classes) const {
                          : indices.value(record);
             if (!id) {
                 id = int(result.enemies.size() / 35) + 1;
-                if (id > 65535)
+                if (id - 1 + record.size() / 35 > 65535)
                     throw Error("Enemy squad library exceeds the template ID width");
                 indices[record] = id;
                 result.enemies += record;
@@ -399,7 +361,7 @@ ScenarioPlan Scenarios::plan(const ClassData &classes) const {
             // of the original key/ID pairs that the game promotes to an ally.
             if (!(u8(row, 0) & 128) && automaticAlly(s.key, id)) {
                 id = int(result.enemies.size() / 35) + 1;
-                if (id > 65535)
+                if (id - 1 + record.size() / 35 > 65535)
                     throw Error("Enemy squad library exceeds the template ID width");
                 result.enemies += record;
             }
