@@ -20,6 +20,95 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void curvedRoadContinuity() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            const auto &source = edit.source(1);
+            const QVector<QPointF> stroke{{35, 20}, {31, 43},  {35, 63},
+                                          {52, 90}, {75, 110}, {82, 137}};
+            edit.paint(1, stroke, 1, 4);
+            const auto field = Battlefield::load(rom, 1, {}, edit.model(1));
+            const auto bounds = source.map.bounds;
+            const QRectF crop(bounds.left() + bounds.width() * .06,
+                              bounds.top() + bounds.height() * .04, bounds.width() * .4,
+                              bounds.height() * .55);
+            const auto folder = QCoreApplication::applicationDirPath();
+            const auto picture = field.render(crop, 900);
+            QVERIFY(picture.save(folder + "/road-continuity-after.png"));
+            const FieldBrushShape shape(edit.changes(1).paint, 1, bounds, source.visualTerrain);
+            double largestJump = 0;
+            for (int y = 15; y < 145; ++y)
+                for (int x = 20; x < 90; ++x) {
+                    const QPointF p(x, y);
+                    if (shape.distance(p) < .1)
+                        continue;
+                    for (const QPointF axis : {QPointF(.0001, 0), QPointF(0, .0001)})
+                        largestJump = std::max(
+                            largestJump,
+                            QLineF(shape.roadUv(p - axis), shape.roadUv(p + axis)).length());
+                }
+            qInfo() << "Largest curved-road UV discontinuity" << largestJump;
+            auto brokenCentre = [&](const QImage &rendered) {
+                int broken = 0;
+                for (int i = 1; i < stroke.size(); ++i)
+                    for (int n = 1; n < 100; ++n) {
+                        const auto p = QPointF(stroke[i - 1]) +
+                                       QPointF(stroke[i] - stroke[i - 1]) * (n / 100.);
+                        const auto world = shape.world(p);
+                        const int x = int((world.x() - crop.left()) * 900 / crop.width()),
+                                  y = int((world.y() - crop.top()) * 900 / crop.height());
+                        const auto c = rendered.pixelColor(x, y);
+                        broken += c.blue() < c.green() * .35 || c.red() < c.green() * .9;
+                    }
+                return broken;
+            };
+            const int broken = brokenCentre(picture);
+            qInfo() << "Broken road centre samples:" << broken << "/ 495";
+            // Independently sample the generated triangles against the original
+            // surface to catch roads disappearing into raised foliage.
+            const auto original = source.field.surface();
+            const auto triangles = field.triangles();
+            double minimumClearance = 1e9;
+            for (int i = source.field.triangleCount(); i < triangles.size(); ++i) {
+                const auto &t = triangles[i].points;
+                const auto p = (t[0] + t[1] + t[2]) / 3;
+                for (const auto &base : original) {
+                    const auto &q = base.points;
+                    const double x = q[1].x() - q[0].x(), z = q[1].z() - q[0].z(),
+                                 xx = q[2].x() - q[0].x(), zz = q[2].z() - q[0].z(),
+                                 px = p.x() - q[0].x(), pz = p.z() - q[0].z(),
+                                 det = x * zz - xx * z;
+                    if (std::abs(det) < 1e-8)
+                        continue;
+                    const double a = (px * zz - xx * pz) / det, b = (x * pz - px * z) / det;
+                    if (a < 0 || b < 0 || a + b > 1)
+                        continue;
+                    const double height =
+                        q[0].y() + a * (q[1].y() - q[0].y()) + b * (q[2].y() - q[0].y());
+                    minimumClearance = std::min(minimumClearance, p.y() - height);
+                }
+            }
+            qInfo() << "Minimum road-to-surface clearance" << minimumClearance;
+            QVERIFY2(largestJump < .005,
+                     "Road UVs must not jump across nearest-centerline boundaries");
+            QVERIFY2(broken < 5, "A curved forest crossing must have a continuous road centre");
+            QVERIFY2(minimumClearance > -.02,
+                     "Road mesh must not sink below the surface beyond vertex quantization");
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            QCOMPARE(Battlefield::load(exported, 1).render(crop, 900), picture);
+            const auto reopened = MapEdits::load(exported);
+            const auto &again = reopened.source(1);
+            QCOMPARE(
+                again.field.terrainBrush(1, again.terrain[0].data, again.map.bounds).texture.size(),
+                source.field.terrainBrush(1, source.terrain[0].data, bounds).texture.size());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void paintedTerrainFog() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

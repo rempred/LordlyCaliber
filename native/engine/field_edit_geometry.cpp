@@ -495,7 +495,12 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 const auto painted = mesh(shape, type.value(), surface, border);
                 const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
                           ms = int(std::log2(w)), mt = int(std::log2(h));
-                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border ? 2 : 0;
+                const bool highway = type.key() == 1 || type.key() == 9;
+                // Mirroring the continuous road body makes both ends of every
+                // repeat meet at the same texels, including filtered samples.
+                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border ? 2
+                                                              : highway                  ? 1
+                                                                                         : 0;
                 const auto tex = out.add(textureBytes(image), 8);
                 command(dl, 0xe7000000, 0);
                 command(dl, 0xfd100000, tex);
@@ -560,8 +565,8 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                             }
                         }
                         const auto mid = (points[0].uv + points[1].uv + points[2].uv) / 3;
-                        const double os = cs ? 0 : std::floor(mid.x() / (w * 8)) * (w * 8),
-                                     ot = ct ? 0 : std::floor(mid.y() / (h * 8)) * (h * 8);
+                        const double os = cs & 2 ? 0 : std::floor(mid.x() / (w * 8)) * (w * 8),
+                                     ot = ct & 2 ? 0 : std::floor(mid.y() / (h * 8)) * (h * 8);
                         std::array<QByteArray, 3> packed;
                         int missing = 0;
                         for (int v = 0; v < 3; ++v) {

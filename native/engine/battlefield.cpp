@@ -1108,6 +1108,14 @@ FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF
     };
     FieldBrush out;
     out.texture = image(m);
+    if ((terrain == 1 || terrain == 9) && out.texture.height() >= 32 &&
+        out.texture.height() >= out.texture.width() * 2) {
+        // Native road artwork includes tapered segment ends. Only its central
+        // body belongs in a repeating brush; otherwise every repeat looks cut.
+        // Exported square body tiles must not be cropped again on ROM reimport.
+        out.texture = out.texture.copy(0, out.texture.height() / 4, out.texture.width(),
+                                       out.texture.height() / 2);
+    }
     QSet<int> groups;
     QVector<double> densities[2];
     for (const auto &t : data_->triangles) {

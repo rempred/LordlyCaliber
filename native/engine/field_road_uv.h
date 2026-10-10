@@ -112,9 +112,27 @@ class FieldRoadUv {
         }
         if (!nearest)
             return {.5, 0};
-        const auto d = p - nearest->point, t = nearest->tangent;
-        return {std::clamp(.5 + (d.x() * t.y() - d.y() * t.x()) / (2 * nearest->radius), 0., 1.),
-                nearest->length + d.x() * t.x() + d.y() * t.y()};
+        // A nearest-sample lookup creates a discontinuity at every Voronoi
+        // boundary, especially where thinning produces a small spur at a bend.
+        // Blend local projections with a compact, continuous kernel instead.
+        QPointF uv;
+        double total = 0;
+        constexpr double support = 9.; // Three grid cells along the centerline.
+        for (const auto &s : samples_) {
+            const auto d = p - s.point;
+            const double distance = d.x() * d.x() + d.y() * d.y();
+            const double weight = std::max(0., 1 - (distance - best) / support);
+            if (!weight)
+                continue;
+            const auto t = s.tangent;
+            uv += QPointF(.5 + (d.x() * t.y() - d.y() * t.x()) / (2 * s.radius),
+                          s.length + d.x() * t.x() + d.y() * t.y()) *
+                  (weight * weight);
+            total += weight * weight;
+        }
+        uv /= total;
+        uv.setX(std::clamp(uv.x(), 0., 1.));
+        return uv;
     }
 };
 } // namespace lordly

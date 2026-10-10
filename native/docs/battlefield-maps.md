@@ -197,12 +197,23 @@ marker animation, or a full game load.
 Brush material selection first samples the current battlefield and falls back to
 another loaded-ROM map only when that terrain has no usable local material. The
 former global first-map cache could apply Tenne materials to other maps.
-Road selection prefers the long clamped strips over small end caps. A thinned
-centerline of the combined native/painted road mask supplies full-width S and
-accumulated lengthwise T coordinates, replacing the mirrored half-width S and
-world-X-plus-Z T which collapsed on diagonal strokes. Branches and closed loops
-can still show texture joins. Brush width controls the resulting road width;
-native baked-in edge colours remain part of its material.
+Road selection prefers the long clamped strips over small end caps. Even the long
+native strip contains a tapered end, so highway brushes use its middle half and
+mirror successive T repeats to avoid crosswise cuts. S still covers the full width.
+A thinned centerline of the combined native/painted road mask supplies accumulated
+lengthwise T coordinates, replacing world-X-plus-Z T which collapsed on diagonal
+strokes. Local projections are blended with a continuous three-cell kernel;
+choosing one nearest centerline sample previously caused visible jumps at bends.
+Branches and closed loops can still distort the texture flow. Brush width controls
+the road width; native baked-in edge colours remain part of its material.
+
+`map_tests curvedRoadContinuity` reproduces a broad curved road crossing Tenne's
+forest and an existing road. It checks local UV continuity, 495 road-center pixels,
+mesh clearance within vertex quantization, ROM export/reopen image identity, and
+that reimported body tiles are not cropped a second time. The original nearest
+sample mapping jumped by 0.892 at a 0.0002-cell step; the blended mapping changes
+by at most 0.000161. The reproduced centerline's 34 visible breaks became zero.
+The before/after render was inspected. This is an offline rendering/export check.
 
 Generated mountains retain procedural distance-based heights, UVs and normals.
 They are not the original artist-authored landforms. The top-down editor uses
