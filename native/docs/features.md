@@ -15,8 +15,11 @@ boundary opens its movement cells and cursor limits. Fort Romulus uses a separat
 scripted boundary and cannot yet be resized. Ordinary towns and standalone
 strongholds can be dragged with their complete geometry and gameplay position.
 Undo/Redo, restore, project persistence and ROM export share these edits. Fixed
-fortified interiors remain outside independent building movement. Briefing images
-remain separate pre-baked artwork; see [battlefield maps](battlefield-maps.md).
+fortified interiors remain outside independent building movement. Export regenerates
+the edited battlefield's briefing image, including moved buildings. The minimap
+reads the edited terrain grid directly. Road textures follow bends and use the
+full strip; brushes prefer the current map's materials and preserve its fog. See
+[battlefield maps](battlefield-maps.md) for remaining rendering approximations.
 
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board

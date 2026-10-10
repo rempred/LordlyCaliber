@@ -1,4 +1,5 @@
 #include "engine/map_edits.h"
+#include <QImage>
 #include <QJsonArray>
 #include <QLineF>
 #include <QSet>
@@ -12,6 +13,60 @@ void real(QByteArray &b, int at, double v) {
     if (!std::isfinite(v) || std::abs(v) > 10000)
         throw Error("Invalid site position");
     put32(b, at, std::bit_cast<quint32>(float(v)));
+}
+// Keep the native image dimensions and CI8 storage layout. Rendering is
+// downsampled before palette matching, so narrow roads and small buildings survive.
+QByteArray briefing(const FieldMapSource &s, const Battlefield &field, const Rom &rom) {
+    const auto imageKey = fieldChild(rom, 0x18bd022, s.modelId - 4);
+    const auto member = LhaMember::read(rom.bytes(), imageKey + 0x594284);
+    auto data = member.decode(rom);
+    const int w = u16(data, 4), h = u16(data, 6);
+    if (data.first(4) != QByteArray::fromHex("36340201"))
+        throw Error("This briefing image needs a supported CI8 encoder");
+    const int stride = (w + 7) & ~7, end = 8 + stride * h;
+    if (data.size() < end + 512)
+        throw Error("Briefing palette is truncated");
+    const auto bounds = s.map.imageBounds.value_or(s.map.bounds);
+    const auto rendered = field.render(bounds, std::min(2048, std::max(w, h) * 3))
+                              .scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    // Preserve the game's established map palette and native image format.
+    std::array<QColor, 256> palette;
+    for (int i = 0; i < 256; ++i) {
+        const auto color = u16(data, end + i * 2);
+        palette[i] = QColor(((color >> 11) & 31) * 255 / 31, ((color >> 6) & 31) * 255 / 31,
+                            ((color >> 1) & 31) * 255 / 31, color & 1 ? 255 : 0);
+    }
+    QMap<QRgb, quint8> cache;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const auto c = rendered.pixelColor(x, y);
+            if (!cache.contains(c.rgb())) {
+                int best = 0, error = INT_MAX;
+                for (int i = 0; i < 256; ++i) {
+                    if (!palette[i].alpha())
+                        continue;
+                    const int r = c.red() - palette[i].red(), g = c.green() - palette[i].green(),
+                              b = c.blue() - palette[i].blue();
+                    const int difference = r * r + g * g * 2 + b * b;
+                    if (difference < error) {
+                        best = i;
+                        error = difference;
+                    }
+                }
+                cache[c.rgb()] = quint8(best);
+            }
+            put8(data, 8 + y * stride + x, cache[c.rgb()]);
+        }
+    // Native readers stop at pixels/palette. A small editor footer preserves the
+    // same framing when a generated ROM is reopened and edited again.
+    data.truncate(end + 512);
+    const int at = int(data.size());
+    data += QByteArray("LCMAP001", 8) + QByteArray(16, 0);
+    real(data, at + 8, bounds.left());
+    real(data, at + 12, bounds.top());
+    real(data, at + 16, bounds.right());
+    real(data, at + 20, bounds.bottom());
+    return member.rebuild(rom, data) + char(0);
 }
 } // namespace
 MapEdits MapEdits::load(const Rom &rom) {
@@ -219,8 +274,10 @@ QByteArray MapEdits::model(int key) const {
         return s.geometry[0].data;
     QMap<int, FieldBrush> tiles;
     for (unsigned char type : c.paint)
-        if (type != 255 && !tiles.contains(type))
-            tiles[type] = texture(type);
+        if (type != 255 && !tiles.contains(type)) {
+            auto brush = s.field.terrainBrush(type, s.terrain[0].data, s.map.bounds);
+            tiles[type] = brush.texture.isNull() ? texture(type) : brush;
+        }
     return editFieldModel(s, c, tiles);
 }
 QVector<FieldPlan> MapEdits::plan() const {
@@ -306,6 +363,20 @@ QByteArray MapEdits::rebuild(const Rom &rom) const {
         replaceFieldChild(image, geometryRoot, p.geometryIndex, p.geometry);
         replaceFieldChild(image, terrainRoot, p.terrainIndex, p.terrain);
         replaceFieldMemberInPlace(image, pointsKey, p.pointIndex, p.points);
+    }
+    for (auto it = edits_.begin(); it != edits_.end(); ++it) {
+        int key = 0;
+        for (int k = 1; k <= 64; ++k)
+            if (u8(rom_.bytes(), 0x654a0 + k * 9 + 3) == it.key()) {
+                key = k;
+                break;
+            }
+        const auto &s = source(key);
+        if (s.map.image && (!it->sites.isEmpty() || it->paint != QByteArray(65536, char(-1)))) {
+            const auto current = Rom::fromBytes(image);
+            const auto field = Battlefield::load(current, key);
+            replaceFieldChild(image, 0x18bd022, s.modelId - 4, briefing(s, field, current));
+        }
     }
     for (auto it = edits_.begin(); it != edits_.end(); ++it)
         if (it->boundary)

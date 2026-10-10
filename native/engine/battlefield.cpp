@@ -1023,6 +1023,15 @@ QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) c
     }
     return result;
 }
+bool Battlefield::terrainFog() const {
+    if (!data_)
+        return false;
+    const auto sites = data_->siteGroups.values();
+    for (const auto &t : data_->triangles)
+        if (!sites.contains(t.group) && (data_->materials[t.material].geometry & 0x10000))
+            return true;
+    return false;
+}
 FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const {
     if (!data_ || grid.size() != 65536 || !bounds.isValid())
         throw Error("Invalid terrain texture selection");
@@ -1051,7 +1060,14 @@ FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF
     int selected = -1;
     double best = 0;
     for (auto i = score.begin(); i != score.end(); ++i) {
-        const double weight = i.value() / total[i.key()] * std::min(1., i.value());
+        double weight = i.value() / total[i.key()] * std::min(1., i.value());
+        if (terrain == 1 || terrain == 9) {
+            // Prefer the long road strips over small, perfectly classified end
+            // caps. Ground underneath a road also overlaps its gameplay cells,
+            // but lacks the road strip's clamped cross-section.
+            const auto &tile = data_->materials[i.key()].first->tile;
+            weight *= (tile.cs & 2) ? std::sqrt(i.value()) : .01;
+        }
         if (weight > best) {
             best = weight;
             selected = i.key();

@@ -158,7 +158,7 @@ Key 39, Fort Romulus, bypasses the normal rectangle at ROM `0x10323C`; its outli
 and resize controls are unavailable rather than showing an inapplicable rectangle.
 Key 54 retains its existing unsupported alternate scenario loader.
 
-## Briefing is independent artwork
+## Briefing artwork and minimap updates
 
 The small named `s_map*.n64` images are separate resources. The former Tenne
 backdrop was `s_map06.n64`, 224 by 160 pixels. Their collection is `0x018BD022`
@@ -167,10 +167,54 @@ image/briefing path loads and pans/zooms these images; it does not render the
 battlefield into them. The corresponding scene-overlay loader is ROM `0x2B506C`,
 RAM `0x8024026C`.
 
-Battlefield edits therefore do not automatically appear in briefing art. A
-future map export flow needs a separate regenerate/replace briefing option,
-with framing and annotation decisions. The regression test changes Tenne's
-field resource selection and verifies that its briefing pixels remain identical.
+Map export now regenerates this image when terrain is painted or a building is
+moved. It renders the exported battlefield, downsamples to the original image
+dimensions, and quantizes to its existing CI8 palette. Original framing is retained
+where calibrated; otherwise the map's world rectangle is used. This is a rendered
+overview, not a recreation of the original artist's painted image. Boundary-only
+edits keep the original artwork because no scenery changed.
+
+The LHA archive retains its name and framing, is appended through the bounded field
+resource allocator, and replaces the matching directory entry. Other maps stay
+untouched. A 24-byte `LCMAP001` footer after the native pixels/palette records four
+big-endian floats (left, top, right, bottom) so reopening a generated ROM retains
+its framing. Image data readers consume the header-sized pixels/palette; the footer
+is editor metadata. Scene image lookup follows the current directory by archive
+name, including after relocation. A no-edit export does not regenerate images.
+
+The minimap is different: original z64 `0x115DE4..0x116004` (scenario overlay delta
+`0x800AB8C0`) reads the fine-terrain slot at RAM `0x800E7AC2`, resolves its pointer
+through RAM `0x800E7A90`, and submits the entire 256 by 256 grid as 32 CI8 strips,
+each 256 by 8. It is a palette view of the terrain grid, not another stored picture.
+Terrain exports therefore update it directly; moving sites updates the separate
+world-coordinate placements used by map markers. The parent tool
+`tools/verify_minimap_terrain.cjs` executes the original texture loop against an
+exported grid. Matrix helpers are stubbed; it does not verify onscreen projection,
+marker animation, or a full game load.
+
+## Road flow and map-specific brushes
+
+Brush material selection first samples the current battlefield and falls back to
+another loaded-ROM map only when that terrain has no usable local material. The
+former global first-map cache could apply Tenne materials to other maps.
+Road selection prefers the long clamped strips over small end caps. A thinned
+centerline of the combined native/painted road mask supplies full-width S and
+accumulated lengthwise T coordinates, replacing the mirrored half-width S and
+world-X-plus-Z T which collapsed on diagonal strokes. Branches and closed loops
+can still show texture joins. Brush width controls the resulting road width;
+native baked-in edge colours remain part of its material.
+
+Generated mountains retain procedural distance-based heights, UVs and normals.
+They are not the original artist-authored landforms. The top-down editor uses
+approximate daylight; it does not reproduce runtime weather or lighting.
+The supplied Zenobian export exposed a concrete runtime difference: native terrain
+uses geometry `0x230405`, two cycles and fog blender `0xC8112078`; the painted
+mesh forced geometry `0x220405` and the non-fog blender `0x00552078`. Export now
+retains the current map's fog and its opaque/translucent blend path. Because fog
+uses vertex SHADE alpha, feathered joins use 16-level per-face primitive alpha on
+fog maps. Non-fog maps retain per-vertex coverage. Fog parameters and lighting
+remain under the game's control. This addresses a confirmed rendering-state
+mismatch; the final appearance still needs an in-game comparison.
 
 ## Checks and limits
 
@@ -209,3 +253,13 @@ shared-key limits, protected fortress cells and unchanged object/world coordinat
 Apply, corner dragging, Undo/Redo, project persistence, full ROM export and CIC
 checksum verification. These are offline checks; expanded boundaries have not
 had a new in-game movement playthrough.
+
+`paintedTerrainFog`, `roadTextureFlow`, `briefingArtworkExport`, and the opt-in `suppliedMapProject`
+check diagonal road coordinates, regenerated image dimensions/framing, relocated
+scene lookup, unaffected map artwork, ROM reimport, and the supplied Mylesia/
+Zenobian project. Fog checks compare the native Tenne/Zenobian drawing modes,
+the appended mesh's modes, and combiner opacity independence from fog alpha.
+The full project export and the original minimap texture loop
+pass for its edited terrain. `ui_tests scenarioMapEditing scenarioWorldEditing`
+also pass complete editing/export/reopen and checksum checks. Updated map and
+briefing previews were inspected. These remain offline checks.

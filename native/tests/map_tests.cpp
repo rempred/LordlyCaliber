@@ -1,10 +1,12 @@
 #include "engine/archive.h"
 #include "engine/battlefield.h"
+#include "engine/color_combiner.h"
 #include "engine/field_brush.h"
 #include "engine/map_edits.h"
 #include "engine/project.h"
 #include "engine/scenario_map.h"
 #include "engine/scenario_world.h"
+#include "engine/scene_images.h"
 #include "game/scenarios/site-count.h"
 #include <QFile>
 #include <QJsonArray>
@@ -18,6 +20,170 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void paintedTerrainFog() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            for (int key : {1, 5}) {
+                auto edit = MapEdits::load(rom);
+                QCOMPARE(edit.source(key).field.terrainFog(), key == 5);
+                edit.paint(key, {{110, 140}}, 7, 4);
+                const auto model = edit.model(key);
+                const int geometry = int((u32(model, 48) + 15) & ~15u);
+                constexpr int widths[] = {0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 3, 3, 1,
+                                          1, 0, 1, 1, 1, 2, 2, 3, 1, 2, 2, 3, 2};
+                quint32 last = 0;
+                for (int at = int(u32(model, 0)); u32(model, at);) {
+                    const int op = int(u32(model, at));
+                    QVERIFY(op <= 25);
+                    if (op == 1)
+                        last = u32(model, at + 4);
+                    at += (1 + widths[op]) * 4;
+                }
+                QVERIFY(last);
+                quint32 mode = 0, cycle = 0, high = 0, low = 0;
+                QSet<quint32> blenders;
+                for (int at = geometry + int(last & 0xffffff); u32(model, at) != 0xdf000000;
+                     at += 8) {
+                    const auto a = u32(model, at), b = u32(model, at + 4);
+                    if (a == 0xd9000000)
+                        mode = b;
+                    if (a == 0xe3000a01)
+                        cycle = b;
+                    if (a >> 24 == 0xfc) {
+                        high = a;
+                        low = b;
+                    }
+                    if (a == 0xe200001c)
+                        blenders.insert(b);
+                }
+                QCOMPARE(bool(mode & 0x10000), key == 5);
+                QCOMPARE(cycle, key == 5 ? 0x100000u : 0u);
+                QVERIFY(blenders.contains(key == 5 ? 0xc8112078u : 0x00552078u));
+                QVERIFY(blenders.contains(key == 5 ? 0xc81049d8u : 0x005049d8u));
+                if (key == 5) {
+                    CombineInputs in;
+                    in.texel0 = {200, 160, 120, 255};
+                    in.primitive = {255, 255, 255, 102};
+                    in.shade = {128, 128, 128, 0};
+                    const ColorCombiner combiner(high, low, true);
+                    const auto color = combiner.evaluate(in);
+                    QCOMPARE(color[0], quint8(100));
+                    QCOMPARE(color[3], quint8(102));
+                    in.shade[3] = 255; // Fog must not change brush coverage.
+                    QCOMPARE(combiner.evaluate(in), color);
+                }
+                const auto rebuilt = Rom::fromBytes(edit.rebuild(rom));
+                QCOMPARE(MapEdits::load(rebuilt).source(key).geometry[0].data, model);
+            }
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void roadTextureFlow() {
+        QByteArray mask(65536, char(-1)), native(65536, char(3));
+        // A diagonal whose X+Z is constant exposed the old texture-coordinate bug.
+        for (int x = 40; x <= 200; ++x)
+            for (int d = -5; d <= 5; ++d)
+                mask[(240 - x + d) * 256 + x] = 1;
+        FieldBrushShape shape(mask, 1, QRectF(0, 0, 256, 256), native);
+        const auto a = shape.roadUv({60.5, 180.5}), b = shape.roadUv({100.5, 140.5});
+        QVERIFY(std::abs(a.y() - b.y()) > 50);
+        const double left = shape.roadUv({100.5 - 2, 140.5 - 2}).x();
+        const double right = shape.roadUv({100.5 + 2, 140.5 + 2}).x();
+        QVERIFY(std::min(left, right) < .2);
+        QVERIFY(std::max(left, right) > .8);
+        QVERIFY(std::abs(shape.roadUv({100.5, 140.5}).x() - .5) < .15);
+    }
+    void briefingArtworkExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            edit.moveSite(1, 0, edit.source(1).map.points[0] + QPointF(1, 1));
+            edit.paint(1, {{110, 140}, {145, 170}}, 1, 3);
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            const auto before = ScenarioMap::load(rom, 1), after = ScenarioMap::load(exported, 1);
+            QVERIFY(after.image->rgba != before.image->rgba);
+            QCOMPARE(after.imageName, before.imageName);
+            QCOMPARE(after.image->width, before.image->width);
+            QCOMPARE(after.image->height, before.image->height);
+            QVERIFY(after.imageBounds);
+            QVERIFY(QLineF(after.imageBounds->topLeft(), before.imageBounds->topLeft()).length() <
+                    .00001);
+            QCOMPARE(ScenarioMap::load(exported, 2).image->rgba,
+                     ScenarioMap::load(rom, 2).image->rgba);
+            const auto id = SceneImages::presentationImage(exported, 1);
+            QCOMPARE(id, SceneImages::presentationImage(rom, 1));
+            QCOMPARE(SceneImages::decode(exported, id).composite.rgba, after.image->rgba);
+            const auto &r = *after.image;
+            QImage(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width, r.height,
+                   QImage::Format_RGBA8888)
+                .save(QCoreApplication::applicationDirPath() + "/briefing-edited.png");
+            auto reimported = MapEdits::load(exported);
+            QCOMPARE(reimported.rebuild(exported), exported.bytes());
+            reimported.moveSite(1, 0, reimported.source(1).map.points[0] + QPointF(.25, .25));
+            const auto second = ScenarioMap::load(Rom::fromBytes(reimported.rebuild(exported)), 1);
+            QCOMPARE(second.imageBounds, after.imageBounds);
+            qInfo() << "Briefing image, scene lookup, same framing, unedited maps and reimport "
+                       "verified.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void suppliedMapProject() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   file = qEnvironmentVariable("LORDLY_MAP_PROJECT");
+        if (path.isEmpty() || file.isEmpty())
+            QSKIP("Private user project required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.applyManifest(Project::readProject(file));
+            const auto &edit = *project.mapEdits();
+            const auto oldPath = qEnvironmentVariable("LORDLY_MAP_OLD_ROM");
+            const auto old = Rom::open(oldPath);
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            for (int key : {4, 5}) {
+                const auto &source = edit.source(key);
+                const auto field = Battlefield::load(rom, key, {}, edit.model(key));
+                const auto stem =
+                    QCoreApplication::applicationDirPath() + QString("/user-map-%1").arg(key);
+                field.render(source.map.bounds, 1024).save(stem + "-corrected.png");
+                Battlefield::load(old, key)
+                    .render(source.map.bounds, 1024)
+                    .save(stem + "-before.png");
+                const auto expected =
+                    source.field.terrainBrush(7, source.terrain[0].data, source.map.bounds).texture;
+                QByteArray texels;
+                for (int y = 0; y < expected.height(); ++y)
+                    for (int x = 0; x < expected.width(); ++x) {
+                        const auto c = expected.pixelColor(x, y);
+                        const int at = int(texels.size());
+                        texels += QByteArray(2, 0);
+                        put16(texels, at,
+                              quint16(((c.red() * 31 + 127) / 255 << 11) |
+                                      ((c.green() * 31 + 127) / 255 << 6) |
+                                      ((c.blue() * 31 + 127) / 255 << 1) | (c.alpha() >= 128)));
+                    }
+                QVERIFY(!texels.isEmpty());
+                QVERIFY(edit.model(key).contains(texels));
+                QCOMPARE(Battlefield::load(exported, key).render(source.map.bounds, 512),
+                         field.render(source.map.bounds, 512));
+                QVERIFY(ScenarioMap::load(exported, key).image->rgba != source.map.image->rgba);
+                QFile grid(stem + "-fine.bin");
+                QVERIFY(grid.open(QIODevice::WriteOnly));
+                grid.write(MapEdits::load(exported).fineTerrain(key));
+                qInfo() << "User map" << key << "model bytes" << edit.model(key).size();
+            }
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void battlefieldEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -74,7 +240,9 @@ class MapTests : public QObject {
             QVERIFY(QLineF(newSource.map.points[0], destination).length() < .00001);
             QCOMPARE(newSource.geometry[1].data, source.geometry[1].data);
             QCOMPARE(newSource.geometry[0].data, model);
-            QCOMPARE(newSource.map.image->rgba, source.map.image->rgba);
+            QVERIFY(newSource.map.image->rgba != source.map.image->rgba);
+            QCOMPARE(newSource.map.image->width, source.map.image->width);
+            QCOMPARE(newSource.map.image->height, source.map.image->height);
             QCOMPARE(loaded.source(2).geometry[0].data, edit.source(2).geometry[0].data);
             QCOMPARE(loaded.source(2).terrain[0].data, edit.source(2).terrain[0].data);
             QCOMPARE(loaded.rebuild(exported), exported.bytes());
@@ -415,7 +583,9 @@ class MapTests : public QObject {
             QVERIFY(rebuilt.geometry[1].data != source.geometry[1].data);
             QCOMPARE(rebuilt.geometry[0].data, edit.model(1));
             QCOMPARE(rebuilt.field.render(crop, 512), rendered);
-            QCOMPARE(rebuilt.map.image->rgba, source.map.image->rgba);
+            QVERIFY(rebuilt.map.image->rgba != source.map.image->rgba);
+            QCOMPARE(rebuilt.map.image->width, source.map.image->width);
+            QCOMPARE(rebuilt.map.image->height, source.map.image->height);
             QCOMPARE(reopened.source(2).geometry[1].data, edit.source(2).geometry[1].data);
             // Independent RLE readback: verify a raised central movement sample,
             // not merely a changed compressed member or renderer-only hill.
@@ -451,7 +621,7 @@ class MapTests : public QObject {
                         .render(crop, 512)
                         .save(folder + "/brush-barrens.png"));
             qInfo() << "Verified full forest/rock textures, raised native mesh, light summit, "
-                       "movement-height readback, export/reopen and unchanged briefing/other maps; "
+                       "movement-height readback, export/reopen, updated briefing and other maps; "
                        "centre"
                     << center << "radius" << radius;
         } catch (const Error &e) {

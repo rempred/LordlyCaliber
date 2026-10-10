@@ -158,6 +158,14 @@ ScenarioMap ScenarioMap::load(const Rom &rom, int key) {
             found->size == QSize(result.image->width, result.image->height) &&
             found->sourceHash == sha256(decoded).toUpper())
             result.imageBounds = found->bounds;
+        if (decoded.size() >= 24 && decoded.mid(decoded.size() - 24, 8) == "LCMAP001") {
+            const int at = int(decoded.size()) - 16;
+            const QRectF bounds(QPointF(real(decoded, at), real(decoded, at + 4)),
+                                QPointF(real(decoded, at + 8), real(decoded, at + 12)));
+            if (!bounds.isValid())
+                throw Error("Generated briefing has invalid framing");
+            result.imageBounds = bounds;
+        }
     }
     return result;
 }

@@ -774,7 +774,8 @@ void ScenarioMapEditor::refresh(int key) {
             for (int k : project_->mapEdits()->sharedScenarios(key))
                 keys << QString::number(k);
             mapScope_->setText("Map edits affect runtime keys " + keys.join(", ") +
-                               ". Highlands raise the ground; briefing artwork is separate.");
+                               ". Highlands raise the ground. Export also updates the briefing "
+                               "image and minimap.");
             if (key == 39) {
                 canvas_->boundary = {};
                 mapScope_->setText(mapScope_->text() +
@@ -901,7 +902,7 @@ void ScenarioMapEditor::refresh(int key) {
             }
             referenceName_->setText("In-scenario battlefield · Terrain, roads and buildings\n"
                                     "Top-down view with approximate daylight lighting. "
-                                    "Briefing artwork is stored separately.");
+                                    "Export refreshes the briefing image and minimap.");
             if (!battlefieldNotices_[cacheKey].isEmpty())
                 referenceName_->setText(referenceName_->text() + '\n' +
                                         battlefieldNotices_[cacheKey].join(' '));

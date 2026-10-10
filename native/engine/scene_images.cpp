@@ -1,6 +1,6 @@
 #include "engine/scene_images.h"
-#include "engine/scene_background_edit.h"
 #include "engine/archive.h"
+#include "engine/scene_background_edit.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -27,7 +27,20 @@ QByteArray resource(const Rom &rom, quint32 key) {
 }
 QByteArray source(const Rom &rom, const SceneImage &asset) {
     if (asset.kind == "lha") {
-        const auto member = LhaMember::read(rom.bytes(), base + asset.key + 4);
+        auto key = asset.key;
+        if (asset.name.startsWith("s_map")) {
+            // Map exports relocate briefing archives through their original directory.
+            const auto directory = resource(rom, 0x18bd022);
+            for (int at = 0; at < directory.size(); at += 4) {
+                const auto candidate = u32(directory, at);
+                if (candidate &&
+                    LhaMember::read(rom.bytes(), base + candidate + 4).name == asset.name) {
+                    key = candidate;
+                    break;
+                }
+            }
+        }
+        const auto member = LhaMember::read(rom.bytes(), base + key + 4);
         if (member.decodedSize > 64 * 1024 * 1024)
             throw Error("Image archive exceeds the decode budget");
         return member.decode(rom);
@@ -163,7 +176,14 @@ QString SceneImages::presentationImage(const Rom &rom, int row) {
         throw Error("Image launch row exceeds the evolution table");
     const int media = qint8(u8(rom.bytes(), 0x654a0 + row * 9 + 3));
     const auto key = selectedKey(rom, 0x018bd022, media - 4);
-    const auto images = knownKey(key, true);
+    auto images = knownKey(key, false);
+    if (images.isEmpty() && key) {
+        const auto member = LhaMember::read(rom.bytes(), base + key + 4);
+        if (member.name.startsWith("s_map"))
+            for (const auto &asset : catalog())
+                if (asset.name == member.name)
+                    images << asset.id;
+    }
     if (images.size() != 1)
         throw Error("Image launch row does not select one available image");
     return images.first();

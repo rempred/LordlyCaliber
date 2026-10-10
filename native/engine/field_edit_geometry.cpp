@@ -255,9 +255,10 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
         else if (border)
             uv = {(world.x() + world.y()) * 48,
                   -.5 + texture.height() * std::clamp(p.distance / shape.edgeWidth(), 0., 1.)};
-        else if (shape.road())
-            uv = {-.5 + texture.width() * .5 * std::clamp(p.distance / shape.peak(p.grid), 0., 1.),
-                  (world.x() + world.y()) * brush.densityT};
+        else if (shape.road()) {
+            const auto road = shape.roadUv(p.grid);
+            uv = {-.5 + texture.width() * road.x(), road.y() * brush.densityT};
+        }
         return PaintVertex{
             {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
             normal,
@@ -467,6 +468,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
     }
     if (!tiles.isEmpty()) {
         const Surface surface(source);
+        const bool fog = source.field.terrainFog();
         QByteArray matrix(64, 0);
         for (int n = 0; n < 3; ++n)
             putFixed(matrix, n * 5, 1. / 64);
@@ -476,12 +478,13 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         command(dl, 0xda380003, out.add(matrix, 16));
         // Native land uses lighting and vertex normals. Full-white vertex
         // colours bypassed that lighting and washed out the forest in game.
-        command(dl, 0xd9000000, 0x00220405);
-        command(dl, 0xe3000a01, 0);
+        command(dl, 0xd9000000, fog ? 0x00230405 : 0x00220405);
+        command(dl, 0xe3000a01, fog ? 0x00100000 : 0);
         command(dl, 0xe3001001, 0);
         command(dl, 0xe3001201, 0x00002000); // Filter enlarged terrain texels.
-        command(dl, 0xe200001c, 0x00552078);
-        command(dl, 0xfc127e24, 0xfffff9fc);
+        // Fog consumes SHADE alpha. Keep brush coverage in primitive alpha;
+        // cycle 1 modulates texel RGB by lighting, cycle 2 passes it through.
+        command(dl, fog ? 0xfc1217ff : 0xfc127e24, fog ? 0xfffffe38 : 0xfffff9fc);
         command(dl, 0xd7000002, 0xffffffff);
         for (auto type = tiles.begin(); type != tiles.end(); ++type) {
             const FieldBrushShape shape(change.paint, type.key(), source.map.bounds,
@@ -508,8 +511,11 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 // two triangles per command. Storage, not stroke count, is the limit.
                 for (bool translucent : {false, true}) {
                     command(dl, 0xe7000000, 0);
-                    // Standard AA_ZB_XLU_SURF / OPA_SURF (both cycles).
-                    command(dl, 0xe200001c, translucent ? 0x005049d8 : 0x00552078);
+                    // Fog maps retain their original FOG_SHADE_A first blender;
+                    // ordinary maps use AA_ZB_XLU_SURF / OPA_SURF in both cycles.
+                    command(dl, 0xe200001c,
+                            fog ? (translucent ? 0xc81049d8 : 0xc8112078)
+                                : (translucent ? 0x005049d8 : 0x00552078));
                     QByteArray vertices;
                     QMap<QByteArray, int> cache;
                     QVector<std::array<int, 3>> faces;
@@ -532,11 +538,27 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                         faces.clear();
                         cache.clear();
                     };
+                    int priorAlpha = -1;
                     for (const auto &points : painted) {
                         const bool blend =
                             points[0].alpha < 255 || points[1].alpha < 255 || points[2].alpha < 255;
                         if (blend != translucent)
                             continue;
+                        if (fog) {
+                            // Quantized per-face coverage keeps narrow feathered
+                            // joins while allowing the RSP to write per-vertex fog.
+                            const int alpha = std::clamp(
+                                int(std::round(
+                                    (points[0].alpha + points[1].alpha + points[2].alpha) / 51.)) *
+                                    17,
+                                0, 255);
+                            if (alpha != priorAlpha) {
+                                flush();
+                                command(dl, 0xe7000000, 0);
+                                command(dl, 0xfa000000, 0xffffff00u | quint32(alpha));
+                                priorAlpha = alpha;
+                            }
+                        }
                         const auto mid = (points[0].uv + points[1].uv + points[2].uv) / 3;
                         const double os = cs ? 0 : std::floor(mid.x() / (w * 8)) * (w * 8),
                                      ot = ct ? 0 : std::floor(mid.y() / (h * 8)) * (h * 8);

@@ -26,6 +26,7 @@ class Battlefield {
     QImage render(QRectF worldBounds, int pixels = 1536) const;
     int triangleCount() const;
     int buildingCount() const;
+    bool terrainFog() const;
     QStringList notices() const;
     quint32 resourceKey() const;
     QByteArray modelData() const;

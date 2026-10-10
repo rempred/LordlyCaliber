@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/field_road_uv.h"
 #include "engine/map_edits.h"
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,7 @@ class FieldBrushShape {
     int type_;
     double cell_;
     std::shared_ptr<FieldBrushShape> original_, coverage_;
+    std::shared_ptr<FieldRoadUv> road_;
     static void transform(QVector<float> &d) {
         constexpr float diagonal = 1.41421356f;
         for (int y = 1; y < size - 1; ++y)
@@ -88,6 +90,8 @@ class FieldBrushShape {
                 for (int i : queue)
                     peaks_[i] = peak;
             }
+        if (coverage_ && road())
+            road_ = std::make_shared<FieldRoadUv>(region, type, distance_);
         if (coverage_) {
             const int band = int(std::ceil(.65 / cell_)) + 1;
             cells = coverage_->cells.isEmpty() ? QRect()
@@ -126,6 +130,11 @@ class FieldBrushShape {
     }
     bool road() const {
         return type_ == 1 || type_ == 9 || type_ == 2 || type_ == 10;
+    }
+    QPointF roadUv(QPointF p) const {
+        auto uv = road_ ? road_->at(p) : QPointF(.5, p.y());
+        uv.setY(uv.y() * cell_);
+        return uv;
     }
     double edgeWidth() const {
         return .5;
