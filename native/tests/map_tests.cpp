@@ -1,6 +1,7 @@
 #include "engine/archive.h"
 #include "engine/battlefield.h"
 #include "engine/color_combiner.h"
+#include "engine/field_borders.h"
 #include "engine/field_brush.h"
 #include "engine/map_edits.h"
 #include "engine/project.h"
@@ -17,9 +18,156 @@
 #include <bit>
 #include <cmath>
 using namespace lordly;
+namespace {
+double surfaceHeight(const QVector<FieldTriangle> &triangles, QPointF p) {
+    double result = -1e9;
+    for (const auto &t : triangles) {
+        const auto &q = t.points;
+        const double x = q[1].x() - q[0].x(), z = q[1].z() - q[0].z(), xx = q[2].x() - q[0].x(),
+                     zz = q[2].z() - q[0].z(), px = p.x() - q[0].x(), pz = p.y() - q[0].z(),
+                     det = x * zz - xx * z;
+        if (std::abs(det) < 1e-8)
+            continue;
+        const double a = (px * zz - xx * pz) / det, b = (x * pz - px * z) / det;
+        if (a >= 0 && b >= 0 && a + b <= 1)
+            result =
+                std::max(result, q[0].y() + a * (q[1].y() - q[0].y()) + b * (q[2].y() - q[0].y()));
+    }
+    return result;
+}
+double movementHeight(const QByteArray &data, int x, int z) {
+    int at = 28 + u16(data, 28 + z * 2) * 2;
+    for (int cell = 0; cell < u16(data, 0);) {
+        const int value = u16(data, at);
+        at += 2;
+        const int count = value >> 8 == 255 ? value & 255 : 1;
+        const int h = value >> 8 == 255 ? u16(data, at) : value;
+        if (value >> 8 == 255)
+            at += 2;
+        if (x < cell + count) {
+            const double lo = std::bit_cast<float>(u32(data, 12)),
+                         hi = std::bit_cast<float>(u32(data, 16));
+            return lo + (hi - lo) * h / 65279.;
+        }
+        cell += count;
+    }
+    return -1e9;
+}
+} // namespace
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void terrainBorderReplacement() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            const auto &source = edit.source(1);
+            QCOMPARE(u8(source.visualTerrain, 65 * 256 + 35), quint8(5));
+            edit.paint(1, {{35, 20}, {31, 43}, {35, 63}, {52, 90}, {75, 110}, {82, 137}}, 1, 4);
+            const FieldBorders plan(source, edit.changes(1));
+            int faces = 0;
+            for (const auto &s : plan.removed)
+                faces += s.size();
+            qInfo() << "Border regeneration" << faces << "removed native faces,"
+                    << plan.removed.size() << "draws";
+            QVERIFY(faces > 0);
+            const auto roadModel = edit.model(1);
+            qInfo() << "Rebuilt border model" << roadModel.size();
+            const auto field = Battlefield::load(rom, 1, {}, roadModel);
+            QVERIFY(field.render(source.map.bounds, 1024)
+                        .save(QCoreApplication::applicationDirPath() + "/terrain-border-road.png"));
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            const auto reopened = MapEdits::load(exported);
+            QVERIFY(reopened.source(1).geometry[1].data != source.geometry[1].data);
+            QCOMPARE(reopened.source(1).field.render(source.map.bounds, 512),
+                     field.render(source.map.bounds, 512));
+
+            // Exercise every replacement material inside both native raised types.
+            // Unremoved native faces must survive, and flat replacements must lower
+            // both the drawn surface and the game's independent movement grid.
+            for (int old : {5, 7}) {
+                QPoint centre(-1, -1);
+                for (int y = 25; y < 230 && centre.x() < 0; ++y)
+                    for (int x = 25; x < 230 && centre.x() < 0; ++x) {
+                        bool full = true;
+                        for (int dy = -9; dy <= 9 && full; ++dy)
+                            for (int dx = -9; dx <= 9; ++dx) {
+                                const int at = (y + dy) * 256 + x + dx;
+                                full &= u8(source.visualTerrain, at) == old &&
+                                        u8(source.terrain[0].data, at) > 0 &&
+                                        u8(source.terrain[0].data, at) < 15;
+                            }
+                        if (full)
+                            centre = {x, y};
+                    }
+                QVERIFY(centre.x() >= 0);
+                const auto world = source.map.world(centre.x(), centre.y());
+                const auto &height = source.geometry[1].data;
+                auto real = [&](int at) { return std::bit_cast<float>(u32(height, at)); };
+                const int hx = int(std::round((world.x() - real(4)) / (real(8) - real(4)) *
+                                              (u16(height, 0) - 1))),
+                          hz = int(std::round((world.y() - real(20)) / (real(24) - real(20)) *
+                                              (u16(height, 2) - 1)));
+                for (int type = 1; type <= 14; ++type) {
+                    if (type == old)
+                        continue;
+                    edit.restore(1);
+                    edit.paint(1, {centre}, type, 4);
+                    const FieldBorders cut(source, edit.changes(1));
+                    QVERIFY(!cut.removed.isEmpty());
+                    const auto model = edit.model(1);
+                    const auto drawn = Battlefield::load(rom, 1, {}, model);
+                    const auto before = source.field.triangles(), after = drawn.triangles();
+                    int kept = 0;
+                    const auto sites = source.field.siteGroups().values();
+                    for (const auto &triangle : before) {
+                        if (cut.removes(triangle))
+                            continue;
+                        QVERIFY(kept < after.size());
+                        for (int v = 0; v < 3; ++v) {
+                            const auto shift = after[kept].points[v] - triangle.points[v];
+                            QVERIFY(std::abs(shift.x()) < .0001);
+                            QVERIFY(std::abs(shift.z()) < .0001);
+                            if (!sites.contains(triangle.group))
+                                QVERIFY(std::abs(shift.y()) < .0001);
+                        }
+                        ++kept;
+                    }
+                    QVERIFY(kept < before.size());
+                    QVERIFY(after.size() > kept);
+                    const auto newHeight = editFieldHeight(source, edit.changes(1));
+                    if (!FieldBorders::raised(type)) {
+                        QVERIFY2(surfaceHeight(drawn.surface(), world) <
+                                     surfaceHeight(source.field.surface(), world) - .1,
+                                 qPrintable(
+                                     QString("Terrain %1 did not cut type %2").arg(type).arg(old)));
+                        QVERIFY(movementHeight(newHeight, hx, hz) <
+                                movementHeight(height, hx, hz) - .05);
+                    }
+                    // The cut's surrounding native terrain remains elevated.
+                    const auto rim = source.map.world(centre.x() + 6, centre.y());
+                    if (!FieldBorders::raised(type))
+                        QVERIFY(surfaceHeight(drawn.surface(), rim) >
+                                surfaceHeight(drawn.surface(), world) + .05);
+                    const auto romAgain = Rom::fromBytes(edit.rebuild(rom));
+                    const auto again = MapEdits::load(romAgain);
+                    QCOMPARE(again.source(1).geometry[0].data, model);
+                    QCOMPARE(again.source(1).geometry[1].data, newHeight);
+                    QCOMPARE(u8(again.fineTerrain(1), centre.y() * 256 + centre.x()), quint8(type));
+                    QCOMPARE(again.source(2).geometry[0].data, edit.source(2).geometry[0].data);
+                }
+            }
+            edit.restore(1);
+            QCOMPARE(edit.rebuild(rom), rom.bytes());
+            qInfo() << "Every brush replaces forest/highlands, rebuilds edges, preserves other "
+                       "faces and maps, and exports geometry, movement heights and terrain.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void curvedRoadContinuity() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -68,12 +216,16 @@ class MapTests : public QObject {
             };
             const int broken = brokenCentre(picture);
             qInfo() << "Broken road centre samples:" << broken << "/ 495";
-            // Independently sample the generated triangles against the original
-            // surface to catch roads disappearing into raised foliage.
-            const auto original = source.field.surface();
+            // Compare against the exposed base after clearing the crossed terrain.
+            auto original = source.field.surface();
+            const FieldBorders cut(source, edit.changes(1));
+            original.removeIf([&](const FieldTriangle &t) { return cut.removes(t); });
             const auto triangles = field.triangles();
+            int kept = 0;
+            for (const auto &t : source.field.triangles())
+                kept += !cut.removes(t);
             double minimumClearance = 1e9;
-            for (int i = source.field.triangleCount(); i < triangles.size(); ++i) {
+            for (int i = kept; i < triangles.size(); ++i) {
                 const auto &t = triangles[i].points;
                 const auto p = (t[0] + t[1] + t[2]) / 3;
                 for (const auto &base : original) {
@@ -297,10 +449,14 @@ class MapTests : public QObject {
             const auto beforeTriangles = source.field.triangles(),
                        afterTriangles = rebuiltField.triangles();
             const int movedGroup = source.field.siteGroups()[1];
-            int movedVertices = 0;
-            for (int t = 0; t < beforeTriangles.size(); ++t)
+            const FieldBorders borders(source, edit.changes(1));
+            int movedVertices = 0, kept = 0;
+            for (int t = 0; t < beforeTriangles.size(); ++t) {
+                if (borders.removes(beforeTriangles[t]))
+                    continue;
                 for (int v = 0; v < 3; ++v) {
-                    const auto delta = afterTriangles[t].points[v] - beforeTriangles[t].points[v];
+                    const auto delta =
+                        afterTriangles[kept].points[v] - beforeTriangles[t].points[v];
                     if (beforeTriangles[t].group == movedGroup) {
                         QVERIFY(std::abs(delta.x() - 2) < .0001);
                         QVERIFY(std::abs(delta.z() - 1) < .0001);
@@ -308,6 +464,8 @@ class MapTests : public QObject {
                     } else
                         QVERIFY(delta.length() < .0001);
                 }
+                ++kept;
+            }
             QVERIFY(movedVertices > 100);
             const auto rendered = rebuiltField.render(source.map.bounds, 768);
             QVERIFY(rendered != source.field.render(source.map.bounds, 768));
@@ -327,7 +485,7 @@ class MapTests : public QObject {
             QCOMPARE(newSource.terrain[0].data, edit.fineTerrain(1));
             QCOMPARE(u8(newSource.terrain[1].data, (120 / 4) * 64 + 105 / 4), quint8(1));
             QVERIFY(QLineF(newSource.map.points[0], destination).length() < .00001);
-            QCOMPARE(newSource.geometry[1].data, source.geometry[1].data);
+            QCOMPARE(newSource.geometry[1].data, editFieldHeight(source, edit.changes(1)));
             QCOMPARE(newSource.geometry[0].data, model);
             QVERIFY(newSource.map.image->rgba != source.map.image->rgba);
             QCOMPARE(newSource.map.image->width, source.map.image->width);
@@ -361,7 +519,7 @@ class MapTests : public QObject {
             auto edits = MapEdits::load(rom);
             const auto world = ScenarioWorld::load(rom);
             QSet<int> visited;
-            int movedSites = 0;
+            int movedSites = 0, cutMaps = 0;
             for (int key = 1; key <= 64; ++key) {
                 if (key == 54)
                     continue;
@@ -405,8 +563,39 @@ class MapTests : public QObject {
                     ++movedSites;
                     edits.restore(key);
                 }
+                // Native display lists differ by map; exercise the new face
+                // filtering wherever the map contains an editable raised region.
+                for (int cell = 16 * 256; cell < 240 * 256; ++cell) {
+                    const int terrain = u8(source.terrain[0].data, cell);
+                    if (!FieldBorders::raised(u8(source.visualTerrain, cell)) || !terrain ||
+                        terrain >= 15)
+                        continue;
+                    edits.paint(key, {{double(cell % 256), double(cell / 256)}}, 3, 3);
+                    const FieldBorders cut(source, edits.changes(key));
+                    QVERIFY(!cut.removed.isEmpty());
+                    const auto bytes = edits.model(key);
+                    QVERIFY(bytes.size() < 512 * 1024);
+                    const auto after = Battlefield::load(rom, key, {}, bytes).triangles();
+                    int kept = 0;
+                    for (const auto &triangle : before)
+                        if (!cut.removes(triangle)) {
+                            QVERIFY(kept < after.size());
+                            for (int v = 0; v < 3; ++v) {
+                                const auto shift = after[kept].points[v] - triangle.points[v];
+                                QVERIFY(std::abs(shift.x()) < .0001);
+                                QVERIFY(std::abs(shift.z()) < .0001);
+                            }
+                            ++kept;
+                        }
+                    QVERIFY(after.size() > kept);
+                    qInfo() << "Native terrain cut: key" << key << "bytes" << bytes.size();
+                    ++cutMaps;
+                    edits.restore(key);
+                    break;
+                }
             }
             QVERIFY(movedSites > 200);
+            QVERIFY(cutMaps > 20);
             for (int type = 1; type <= 14; ++type) {
                 // Matching native terrain is deliberately a geometry no-op.
                 // Exercise each material on a different, paintable native type.
@@ -543,7 +732,7 @@ class MapTests : public QObject {
             QCOMPARE(reopened.source(1).map.bounds, s.map.bounds);
             QCOMPARE(reopened.points(1), s.map.points);
             QCOMPARE(reopened.fineTerrain(1), edit.fineTerrain(1));
-            QCOMPARE(reopened.source(1).geometry[1].data, s.geometry[1].data);
+            QCOMPARE(reopened.source(1).geometry[1].data, editFieldHeight(s, edit.changes(1)));
             QCOMPARE(u8(reopened.source(1).terrain[1].data, 2 * 64 + 32), quint8(type));
             QCOMPARE(reopened.source(2).terrain[0].data, edit.source(2).terrain[0].data);
             edit.setBoundary(1, QRectF(QPointF(32, 32), QPointF(220, 220)));

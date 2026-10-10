@@ -1,3 +1,4 @@
+#include "engine/field_borders.h"
 #include "engine/field_brush.h"
 #include "engine/map_edits.h"
 #include <QSet>
@@ -82,6 +83,51 @@ struct Append {
                         "some strokes");
         bytes += data;
         return 0x02000000u + quint32(at - geometry);
+    }
+};
+class TerrainClone {
+    const QByteArray &original_;
+    Append &out_;
+    const QSet<int> &removed_;
+    QSet<quint32> active_;
+    int face_ = 0, commands_ = 0;
+
+  public:
+    TerrainClone(const QByteArray &original, Append &out, const QSet<int> &removed)
+        : original_(original), out_(out), removed_(removed) {}
+    quint32 clone(quint32 address, int depth = 0) {
+        if (depth > 24 || active_.contains(address) || address >> 24 != 2)
+            throw Error("Unsupported terrain drawing-list reference");
+        active_.insert(address);
+        QByteArray code;
+        bool changed = false;
+        for (quint32 p = address & 0xffffff;; p += 8) {
+            if (++commands_ > 100000)
+                throw Error("Terrain drawing-list budget exceeded");
+            const int at = out_.geometry + int(p);
+            const auto a = u32(original_, at), b = u32(original_, at + 4), op = a >> 24;
+            if (op == 5 || op == 6 || op == 7) {
+                const bool first = !removed_.contains(face_++);
+                const bool second = op != 5 && !removed_.contains(face_++);
+                if (first && (second || op == 5))
+                    command(code, a, b);
+                else {
+                    changed = true;
+                    if (first)
+                        command(code, 0x05000000u | (a & 0xffffff), 0);
+                    if (second)
+                        command(code, 0x05000000u | (b & 0xffffff), 0);
+                }
+            } else {
+                const auto next = op == 0xde ? clone(b, depth + 1) : b;
+                changed |= next != b;
+                command(code, a, next);
+            }
+            if (op == 0xdf || (op == 0xde && (a & 0x10000)))
+                break;
+        }
+        active_.remove(address);
+        return changed ? out_.add(code) : address;
     }
 };
 class BuildingClone {
@@ -173,8 +219,10 @@ class Surface {
     }
 
   public:
-    Surface(const FieldMapSource &s)
+    Surface(const FieldMapSource &s, const FieldBorders *borders = nullptr)
         : triangles_(s.field.surface()), bounds_(s.map.bounds), source_(s) {
+        if (borders)
+            triangles_.removeIf([&](const FieldTriangle &t) { return borders->removes(t); });
         for (int i = 0; i < triangles_.size(); ++i) {
             const auto &t = triangles_[i].points;
             const int x0 = cell(std::min({t[0].x(), t[1].x(), t[2].x()}), bounds_.left(),
@@ -263,7 +311,7 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
             {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
             normal,
             uv,
-            quint8(std::round(shape.opacity(p.grid) * 255))};
+            quint8(std::round(shape.opacity(p.grid) * shape.edgeOpacity(p.grid) * 255))};
     };
     auto polygon = [&](BrushPolygon poly) {
         poly = clip(poly, 0, true, true);
@@ -288,39 +336,49 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
         polygon({pa, pb, pc});
         polygon({pa, pc, pd});
     };
-    for (int z = std::max(0, shape.cells.top() / step * step);
-         z <= std::min(255, shape.cells.bottom() + 1); z += step)
-        for (int x = std::max(0, shape.cells.left() / step * step);
-             x <= std::min(255, shape.cells.right() + 1); x += step) {
-            // Retain a single-cell dab even when all coarse corners miss it.
-            if (step == 2 && shape.distance({double(x + 1), double(z + 1)}) > 0 &&
-                shape.distance({double(x), double(z)}) <= 0 &&
-                shape.distance({double(x + 2), double(z)}) <= 0 &&
-                shape.distance({double(x), double(z + 2)}) <= 0 &&
-                shape.distance({double(x + 2), double(z + 2)}) <= 0) {
-                patch(x, z, 1);
-                patch(x + 1, z, 1);
-                patch(x, z + 1, 1);
-                patch(x + 1, z + 1, 1);
-            } else
-                patch(x, z, step);
-        }
+    // Small spatial blocks keep neighbouring rows in the 32-vertex RSP cache.
+    // This retains the full contour resolution without storing each shared
+    // vertex again on every scanline of a rebuilt native region.
+    const int block = step * 4;
+    for (int bz = std::max(0, shape.cells.top() / step * step);
+         bz <= std::min(255, shape.cells.bottom() + 1); bz += block)
+        for (int bx = std::max(0, shape.cells.left() / step * step);
+             bx <= std::min(255, shape.cells.right() + 1); bx += block)
+            for (int z = bz; z < bz + block && z <= std::min(255, shape.cells.bottom() + 1);
+                 z += step)
+                for (int x = bx; x < bx + block && x <= std::min(255, shape.cells.right() + 1);
+                     x += step) {
+                    // Retain tiny islands and cuts even when the coarse corners
+                    // all lie on the other side of their outline.
+                    const bool middle = shape.distance({double(x + 1), double(z + 1)}) > 0;
+                    if (step == 2 && (shape.distance({double(x), double(z)}) > 0) != middle &&
+                        (shape.distance({double(x + 2), double(z)}) > 0) != middle &&
+                        (shape.distance({double(x), double(z + 2)}) > 0) != middle &&
+                        (shape.distance({double(x + 2), double(z + 2)}) > 0) != middle) {
+                        patch(x, z, 1);
+                        patch(x + 1, z, 1);
+                        patch(x, z + 1, 1);
+                        patch(x + 1, z + 1, 1);
+                    } else
+                        patch(x, z, step);
+                }
     return result;
 }
 } // namespace
 QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
     const auto &original = source.geometry[1].data;
+    const FieldBorders borders(source, change);
     QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
     for (int type : {5, 7, 13, 14})
-        if (change.paint.contains(char(type)))
-            shapes[type] = std::make_shared<FieldBrushShape>(change.paint, type, source.map.bounds,
-                                                             source.visualTerrain);
-    if (shapes.isEmpty())
+        if (borders.change.paint.contains(char(type)))
+            shapes[type] = std::make_shared<FieldBrushShape>(borders.change.paint, type,
+                                                             source.map.bounds, borders.native);
+    if (shapes.isEmpty() && borders.removed.isEmpty())
         return original;
     const int w = u16(original, 0), h = u16(original, 2);
     if (w < 2 || h < 2 || w > 256 || h > 256 || original.size() < 28 + h * 2)
         throw Error("Unsupported field height grid");
-    const Surface surface(source);
+    const Surface surface(source, &borders);
     const double minY = real(original, 12), oldMax = real(original, 16);
     if (oldMax < minY || real(original, 8) <= real(original, 4) ||
         real(original, 24) <= real(original, 20))
@@ -333,7 +391,15 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
             const QPointF p(
                 real(original, 4) + x * (real(original, 8) - real(original, 4)) / (w - 1),
                 real(original, 20) + z * (real(original, 24) - real(original, 20)) / (h - 1));
-            const double base = minY + (oldMax - minY) * heightSample(original, x, z) / 65279.;
+            double base = minY + (oldMax - minY) * heightSample(original, x, z) / 65279.;
+            const int gx =
+                          int((p.x() - source.map.bounds.left()) * 256 / source.map.bounds.width()),
+                      gz =
+                          int((p.y() - source.map.bounds.top()) * 256 / source.map.bounds.height());
+            if (gx >= 0 && gx < 256 && gz >= 0 && gz < 256 && borders.replaced[gz * 256 + gx]) {
+                base = surface.height(p);
+                changed = true;
+            }
             double value = base;
             for (const auto &shape : shapes) {
                 // Native foliage is above its walk surface; its movement grid
@@ -390,6 +456,7 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
 QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &change,
                           const QMap<int, FieldBrush> &tiles) {
     const auto &original = source.geometry[0].data;
+    const FieldBorders borders(source, change);
     Append out{original, int((u32(original, 48) + 15) & ~15u)};
     const auto groups = source.field.siteGroups();
     QMap<int, QVector3D> movement;
@@ -431,6 +498,10 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
             args[n] = u32(original, at);
             at += 4;
         }
+        if (borders.removed.contains(instructionAt)) {
+            TerrainClone clone(original, out, *borders.removed.constFind(instructionAt));
+            args[0] = clone.clone(args[0]);
+        }
         if (op == 18 || op == 20 || op == 22 || op == 24) {
             const int group = int(args[1]);
             if (movement.contains(group)) {
@@ -467,7 +538,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                         real(original, at + p * 12 + axis * 4) + i.value()[axis]);
     }
     if (!tiles.isEmpty()) {
-        const Surface surface(source);
+        const Surface surface(source, &borders);
         const bool fog = source.field.terrainFog();
         QByteArray matrix(64, 0);
         for (int n = 0; n < 3; ++n)
@@ -487,8 +558,8 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         command(dl, fog ? 0xfc1217ff : 0xfc127e24, fog ? 0xfffffe38 : 0xfffff9fc);
         command(dl, 0xd7000002, 0xffffffff);
         for (auto type = tiles.begin(); type != tiles.end(); ++type) {
-            const FieldBrushShape shape(change.paint, type.key(), source.map.bounds,
-                                        source.visualTerrain);
+            const FieldBrushShape shape(borders.change.paint, type.key(), source.map.bounds,
+                                        borders.native);
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
                 const auto &image = border ? type->border : type->texture;

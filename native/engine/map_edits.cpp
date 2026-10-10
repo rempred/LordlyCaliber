@@ -1,4 +1,5 @@
 #include "engine/map_edits.h"
+#include "engine/field_borders.h"
 #include <QImage>
 #include <QJsonArray>
 #include <QLineF>
@@ -114,6 +115,7 @@ const FieldMapSource &MapEdits::source(int key) const {
     s.points = places[s.pointIndex].data;
     s.field = Battlefield::load(rom_, key);
     s.visualTerrain = s.field.terrainGrid(s.terrain[0].data, s.map.bounds);
+    s.terrainFaces = s.field.terrainFaces(s.terrain[0].data, s.map.bounds);
     const int edge = 0x13c874 + key * 4;
     s.boundary = QRectF(QPointF(u8(rom_.bytes(), edge), u8(rom_.bytes(), edge + 1)),
                         QPointF(u8(rom_.bytes(), edge + 2), u8(rom_.bytes(), edge + 3)));
@@ -273,7 +275,8 @@ QByteArray MapEdits::model(int key) const {
     if (!edits_.contains(s.modelId))
         return s.geometry[0].data;
     QMap<int, FieldBrush> tiles;
-    for (unsigned char type : c.paint)
+    const FieldBorders borders(s, c);
+    for (unsigned char type : borders.change.paint)
         if (type != 255 && !tiles.contains(type)) {
             auto brush = s.field.terrainBrush(type, s.terrain[0].data, s.map.bounds);
             tiles[type] = brush.texture.isNull() ? texture(type) : brush;

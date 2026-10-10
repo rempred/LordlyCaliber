@@ -103,16 +103,23 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
 * The previous 32x32 repeating material crop was wrong for these assets. It
   repeated mountain base/peak bands and discarded forest edge textures. Saved
   project masks are still compatible and regenerate using the corrected brushes.
-* Matching native terrain is included when computing brush contours. A visible
+* Every brush recomputes its contour from the final terrain mask. A visible
   terrain raster derives from material/group coverage, using the original gameplay
   grid to identify native materials. Painting wholly inside matching terrain leaves
-  its mesh and height unchanged. Extensions use the merged outline and the
-  difference between merged/original height profiles, with a short feather onto
-  the native surface. Original geometry stays intact underneath.
+  its mesh and height unchanged. A changed cell inside or adjoining an original
+  forest/highland region rebuilds that connected region with its new outline:
+  replacement terrain cuts away the old surface, and matching extensions share
+  one border. Both plain and snowy variants use this path. All brush edges receive
+  a narrow coverage feather; forest borders retain their separate side texture.
+* Original faces are identified by wordcode draw and face ordinal, including
+  ungrouped mountains. Changed display lists are cloned with only affected terrain
+  triangles omitted; state, matrix, vertex, unknown commands, site geometry and
+  unrelated faces are retained. The remaining forest/ridge is generated over the
+  exposed base surface. Erase and Undo recompute from the source and current mask.
 * Generated shapes are approximations of native authored landforms, not copied
-  artist meshes. Other terrain still follows existing elevation: painting does not
-  flatten/remove original mountains. Arbitrary terrain-border artwork is not
-  synthesized. Water uses a static material phase.
+  artist meshes. Rebuilding an affected connected region can change its slope and
+  texture mapping beyond the immediate stroke. Arbitrary terrain-border artwork
+  is not synthesized. Water uses a static material phase.
   Stock maps have no type-10 cells; Snowy Bridge borrows bridge artwork from a
   snowy map and writes the separate type-10 gameplay classification.
 * Site point collection `0x02092506` has stored members with a 28-byte header and
@@ -122,6 +129,9 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   `FFnn` repeats the following u16 value `nn` times. Highland painting updates
   this movement surface with the visible rise. Forest movement follows half the
   canopy rise, an approximation based on stock canopy/height-grid comparisons.
+  Replaced native regions first lower to the exposed base before the new terrain's
+  rise is applied, so roads through forests and mountains have matching movement
+  heights. Buildings follow the updated movement surface.
   If a summit exceeds the original height range, the grid is requantized;
   otherwise untouched sample values retain their original encoding values.
   The original reader is
@@ -131,7 +141,8 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   and terrain collections relocate into bounded cartridge space and update
   their original directory entries. Unknown members remain intact. The export
   ceiling is 64 MiB, with 512 KiB per edited model. Vertices are shared within
-  32-entry RSP batches and TRI2 commands encode pairs of faces. There is no separate
+  32-entry RSP batches; small spatial blocks reuse neighbouring rows without
+  reducing mesh resolution. TRI2 commands encode pairs of faces. There is no separate
   stroke count or 5,000-triangle cap. The Map view displays encoded detail usage.
 * Project `mapEdits` stores brush masks, site overrides and an optional playable
   boundary; previews, review,
@@ -256,14 +267,26 @@ and checksum verification. New brush shapes remain approximations; these checks
 do not establish exact game-camera, weather, or microcode lighting equivalence.
 
 `map_tests battlefieldJoiningAndBoundary` checks that matching forest does not
-add mesh/height, renders an adjoining extension, and encodes 36 dabs / 8,975 added
-triangles in a 312,564-byte model. It checks scenery painting without movement
+add mesh/height, renders an adjoining extension, and encodes 36 dabs including
+the rebuilt native borders within the 512 KiB model limit. It checks scenery painting without movement
 changes, expanded/shrunk fine and coarse grids, cursor-table export/reopening,
 shared-key limits, protected fortress cells and unchanged object/world coordinates.
 `ui_tests scenarioMapEditing` additionally drives boundary visibility, numeric
 Apply, corner dragging, Undo/Redo, project persistence, full ROM export and CIC
 checksum verification. These are offline checks; expanded boundaries have not
 had a new in-game movement playthrough.
+
+`terrainBorderReplacement` cuts a curved road through native forest, then replaces
+native forest and highlands with each of the other 13 brush types. It checks
+preserved native faces, removal of the overwritten faces, the exposed flat surface
+and raised rim, independently decoded lower movement heights, native model/height
+export and reopening, unaffected maps and full restoration. The curved-road and
+matching-extension renders were inspected. This is offline validation; the new
+terrain shapes have not had an in-game movement/lighting comparison.
+`battlefieldEditingCoverage` also cuts a native raised region on all 38 distinct
+supported maps, decodes the filtered drawing lists and checks retained vertex
+positions and model capacity. Final focused map checks: 12 Qt passes including
+setup/cleanup; the map editing UI workflow: 3 passes including setup/cleanup.
 
 `paintedTerrainFog`, `roadTextureFlow`, `briefingArtworkExport`, and the opt-in `suppliedMapProject`
 check diagonal road coordinates, regenerated image dimensions/framing, relocated

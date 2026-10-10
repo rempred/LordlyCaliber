@@ -159,6 +159,7 @@ struct Triangle {
     std::array<Vertex, 3> vertices;
     int material;
     int group = -1;
+    int owner = -1, face = -1;
 };
 RenderColor rgba(quint32 word) {
     return {quint8(word >> 24), quint8(word >> 16), quint8(word >> 8), quint8(word)};
@@ -190,6 +191,7 @@ struct Builder {
     Matrix matrix = identity();
     QVector<Matrix> stack;
     int instructions = 0, activeMaterial = -1;
+    int currentOwner = -1, currentFace = 0;
     quint32 bindNext = 0x04000000;
     Builder(const Rom &r, QVector<quint16> s) : rom(r), sites(std::move(s)) {}
     QByteArray bytes(quint32 address, int size) const {
@@ -391,6 +393,8 @@ struct Builder {
     void triangle(quint32 word) {
         Triangle t;
         t.group = currentGroup;
+        t.owner = currentOwner;
+        t.face = currentFace++;
         t.material = material();
         for (int i = 0; i < 3; ++i) {
             const int index = int(word >> (16 - i * 8) & 255) / 2;
@@ -703,7 +707,10 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
                 put16(transform, 32 + n * 2, quint16(v));
             }
             b.drawTransforms[instructionAt] = transform;
+            b.currentOwner = instructionAt;
+            b.currentFace = 0;
             b.walk(args[0]);
+            b.currentOwner = -1;
             for (int n = 0; n < 16; ++n) {
                 const auto v = qint32(std::round(b.matrix[n] * 65536));
                 put16(transform, n * 2, quint16(quint32(v) >> 16));
@@ -924,7 +931,10 @@ QVector<FieldTriangle> Battlefield::triangles() const {
     if (data_)
         for (const auto &t : data_->triangles)
             out << FieldTriangle{
-                {t.vertices[0].position, t.vertices[1].position, t.vertices[2].position}, t.group};
+                {t.vertices[0].position, t.vertices[1].position, t.vertices[2].position},
+                t.group,
+                t.owner,
+                t.face};
     return out;
 }
 QVector<FieldTriangle> Battlefield::surface() const {
@@ -939,11 +949,11 @@ QVector<FieldTriangle> Battlefield::surface() const {
                    c = t.vertices[2].position;
         if (QVector3D::crossProduct(b - a, c - a).y() <= .00001)
             continue;
-        out << FieldTriangle{{a, b, c}, t.group};
+        out << FieldTriangle{{a, b, c}, t.group, t.owner, t.face};
     }
     return out;
 }
-QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) const {
+QVector<FieldTriangle> Battlefield::terrainFaces(const QByteArray &gameplay, QRectF bounds) const {
     if (!data_ || gameplay.size() != 65536 || !bounds.isValid())
         throw Error("Invalid terrain sampling grid");
     const auto sites = data_->siteGroups.values();
@@ -982,21 +992,35 @@ QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) c
     for (const auto &t : data_->triangles)
         if (t.group >= 0 && !sites.contains(t.group) && area(t) > 0)
             groups[t.group][types.value(t.material)] += area(t);
-    QByteArray result(65536, 0);
-    QVector<float> depth(65536, -1e9f);
+    QVector<FieldTriangle> result;
     for (const auto &t : data_->triangles) {
-        if (sites.contains(t.group) || area(t) <= 0)
+        if (sites.contains(t.group))
             continue;
         int type = types.value(t.material), groupType = winner(groups.value(t.group));
         // Side strips belong to the forest/mountain that owns their draw group.
         if (groupType == 5 || groupType == 7 || groupType == 13 || groupType == 14)
             type = groupType;
-        if (!type)
+        result << FieldTriangle{
+            {t.vertices[0].position, t.vertices[1].position, t.vertices[2].position},
+            t.group,
+            t.owner,
+            t.face,
+            type};
+    }
+    return result;
+}
+QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) const {
+    QByteArray result(65536, 0);
+    QVector<float> depth(65536, -1e9f);
+    for (const auto &t : terrainFaces(gameplay, bounds)) {
+        const auto &vertices = t.points;
+        if (!t.terrain ||
+            QVector3D::crossProduct(vertices[1] - vertices[0], vertices[2] - vertices[0]).y() <= 0)
             continue;
         QPointF p[3];
         for (int n = 0; n < 3; ++n)
-            p[n] = {(t.vertices[n].position.x() - bounds.left()) / bounds.width() * 256,
-                    (t.vertices[n].position.z() - bounds.top()) / bounds.height() * 256};
+            p[n] = {(vertices[n].x() - bounds.left()) / bounds.width() * 256,
+                    (vertices[n].z() - bounds.top()) / bounds.height() * 256};
         const auto a = p[1] - p[0], b = p[2] - p[0];
         const double det = a.x() * b.y() - a.y() * b.x();
         if (std::abs(det) < 1e-8)
@@ -1012,12 +1036,12 @@ QByteArray Battlefield::terrainGrid(const QByteArray &gameplay, QRectF bounds) c
                              v = (a.x() * q.y() - a.y() * q.x()) / det;
                 if (u < 0 || v < 0 || u + v > 1)
                     continue;
-                const double h = t.vertices[0].position.y() * (1 - u - v) +
-                                 t.vertices[1].position.y() * u + t.vertices[2].position.y() * v;
+                const double h =
+                    vertices[0].y() * (1 - u - v) + vertices[1].y() * u + vertices[2].y() * v;
                 const int i = z * 256 + x;
                 if (h >= depth[i]) {
                     depth[i] = float(h);
-                    result[i] = char(type);
+                    result[i] = char(t.terrain);
                 }
             }
     }

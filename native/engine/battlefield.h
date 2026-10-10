@@ -12,6 +12,7 @@ namespace lordly {
 struct FieldTriangle {
     std::array<QVector3D, 3> points;
     int group = -1;
+    int owner = -1, face = -1, terrain = 0;
 };
 struct FieldBrush {
     QImage texture, border;
@@ -31,6 +32,7 @@ class Battlefield {
     quint32 resourceKey() const;
     QByteArray modelData() const;
     QVector<FieldTriangle> surface() const;
+    QVector<FieldTriangle> terrainFaces(const QByteArray &grid, QRectF bounds) const;
     QVector<FieldTriangle> triangles() const;
     QMap<int, QByteArray> drawTransforms() const;
     QMap<int, int> siteGroups() const; // one-based site -> verified native culling group

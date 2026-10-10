@@ -139,6 +139,9 @@ class FieldBrushShape {
     double edgeWidth() const {
         return .5;
     }
+    double edgeOpacity(QPointF p) const {
+        return std::clamp(distance(p) / (cell_ * .75), 0., 1.);
+    }
     double profile(QPointF p) const {
         const double d = std::max(0., distance(p));
         if (mountain()) {

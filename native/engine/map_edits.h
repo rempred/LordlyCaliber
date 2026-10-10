@@ -10,6 +10,7 @@ struct FieldMapSource {
     Battlefield field;
     QVector<FieldMember> geometry, terrain;
     QByteArray points, visualTerrain;
+    QVector<FieldTriangle> terrainFaces;
     QRectF boundary;
 };
 struct FieldChanges {
