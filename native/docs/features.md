@@ -2,7 +2,7 @@
 
 Scenario section navigation sits directly below the main workspaces, matching
 Encounters and Art. Its shared scenario picker includes the search field and
-retains selection across Squads, Routes and Map. Base-level controls live
+retains selection across Map, Squads and Routes. Map opens first. Base-level controls live
 inside Squads; map-to-field navigation also updates the selected section tab.
 
 Scenario squads and custom Encounter squads share the same member editor:

@@ -131,23 +131,23 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     squadLayout->addLayout(top);
     auto body = new QSplitter;
     squadLayout->addWidget(body, 1);
-    addPage(squadPage, "Squads");
     routes_ = new ScenarioRouteEditor(
         project_, [this](const Scenarios &next, const QString &label) { commit(next, label); });
-    addPage(routes_, "Routes and conditions");
     map_ = new ScenarioMapEditor(
         project_, undo_,
         [this](const Scenarios &next, const QString &label) { commit(next, label); },
-        [this, pages](MapObject kind, int row) {
+        [this, pages, squadPage](MapObject kind, int row) {
             if (kind == MapObject::Squad) {
                 squads_->setCurrentRow(row);
-                pages->setCurrentIndex(0);
+                pages->setCurrentWidget(squadPage);
             } else if (kind == MapObject::Waypoint) {
                 routes_->selectNode(row);
-                pages->setCurrentIndex(1);
+                pages->setCurrentWidget(routes_);
             }
         });
     addPage(map_, "Map");
+    addPage(squadPage, "Squads");
+    addPage(routes_, "Routes and conditions");
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);

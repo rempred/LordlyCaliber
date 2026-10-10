@@ -8058,7 +8058,7 @@ class UiTests : public QObject {
             editor.resize(1450, 950);
             editor.show();
             auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             QTest::qWait(20);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
             auto apply = editor.findChild<QPushButton *>("mapApply");
@@ -8096,9 +8096,9 @@ class UiTests : public QObject {
             const auto treasureIcon = objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage();
             const auto beforeItem = project.world()->json();
             const auto firstTreasure = ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(treasureIconRow);
-            QCOMPARE(pages->currentIndex(), 2);
+            QCOMPARE(pages->currentIndex(), 0);
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             auto itemTable = editor.findChild<QComboBox *>("worldTreasureTable");
             itemTable->setCurrentIndex(itemTable->findData(u8(firstTreasure, 3) == 1 ? 2 : 1));
@@ -8109,7 +8109,7 @@ class UiTests : public QObject {
             undo.undo();
             QCOMPARE(project.world()->json(), beforeItem);
             QCOMPARE(objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage(), treasureIcon);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(0);
             auto terrain = editor.findChild<QCheckBox *>("mapTerrain");
             QVERIFY(terrain);
@@ -8143,9 +8143,9 @@ class UiTests : public QObject {
                        originalWorld = project.world()->json();
             objects->setCurrentRow(0);
             fields->click();
-            QCOMPARE(pages->currentIndex(), 0);
+            QCOMPARE(pages->currentIndex(), 1);
             QCOMPARE(editor.findChild<QListWidget *>("scenarioSquads")->currentRow(), 0);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(0);
             x->setValue(128);
             z->setValue(128);
@@ -8198,9 +8198,9 @@ class UiTests : public QObject {
             z->setValue(66);
             apply->click();
             fields->click();
-            QCOMPARE(pages->currentIndex(), 1);
+            QCOMPARE(pages->currentIndex(), 2);
             QCOMPARE(editor.findChild<QListWidget *>("scenarioNodes")->currentRow(), waypoint);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(treasureItem);
             editor.findChild<QSpinBox *>("worldTreasureX")->setValue(255);
             editor.findChild<QSpinBox *>("worldTreasureZ")->setValue(0);
@@ -8212,7 +8212,7 @@ class UiTests : public QObject {
             undo.undo();
             QCOMPARE(project.world()->json(), originalWorld);
             undo.redo();
-            QCOMPARE(pages->currentIndex(), 2);
+            QCOMPARE(pages->currentIndex(), 0);
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             QCOMPARE(editor.findChild<QSpinBox *>("worldTreasureX")->value(), 255);
             // A real map click clears the old inspector, then opens the hit treasure.
@@ -8225,13 +8225,13 @@ class UiTests : public QObject {
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, treasurePixel.toPoint());
             QCOMPARE(objects->currentRow(), treasureItem);
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(siteItem);
             QVERIFY(!apply->isEnabled());
-            QCOMPARE(pages->currentIndex(), 2);
+            QCOMPARE(pages->currentIndex(), 0);
             QVERIFY(editor.findChild<QWidget *>("worldSiteFields")->isVisible());
             QCOMPARE(editor.findChild<QLineEdit *>("worldSiteName")->text(), townName);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             objects->setCurrentRow(0);
             QTest::qWait(20);
             const auto squadSummary = editor.findChild<QLabel *>("mapSelectionSummary");
@@ -8289,7 +8289,7 @@ class UiTests : public QObject {
                 if (missions->item(i)->data(Qt::UserRole).toInt() == 64)
                     missions->setCurrentRow(i);
             auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
 
             auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
             auto apply = editor.findChild<QPushButton *>("worldSiteApply");
@@ -8313,7 +8313,7 @@ class UiTests : public QObject {
             while (undo.canRedo())
                 undo.redo();
             QCOMPARE(project.world()->scenario(64).sites, expected);
-            pages->setCurrentIndex(2);
+            pages->setCurrentIndex(0);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
             for (int row = 0; row < 6; ++row) {
                 const auto name = project.world()->townName(u16(expected, 1 + row * 4));
@@ -8322,7 +8322,7 @@ class UiTests : public QObject {
                 objects->setCurrentItem(matches.first());
                 QCOMPARE(editor.findChild<QLineEdit *>("worldSiteName")->text(), name);
                 QVERIFY(editor.findChild<QWidget *>("worldSiteFields")->isVisible());
-                pages->setCurrentIndex(2);
+                pages->setCurrentIndex(0);
             }
             QVERIFY(editor.grab().save("scenario-64-sites.png"));
             QTemporaryDir work;
@@ -8369,7 +8369,7 @@ class UiTests : public QObject {
         ScenarioEditor editor(&project, &undo, [] {});
         editor.resize(1450, 950);
         editor.show();
-        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(0);
         auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
         auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
         auto missions = editor.findChild<QListWidget *>("scenarioList");
@@ -8473,7 +8473,7 @@ class UiTests : public QObject {
         ScenarioEditor editor(&project, &undo, [] {});
         editor.resize(1500, 950);
         editor.show();
-        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(1);
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);
         auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
         auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
         auto select = [&](const char *name, int id) {
@@ -8588,11 +8588,11 @@ class UiTests : public QObject {
             QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), selectedKey);
             QVERIFY(list->isVisible());
             QVERIFY(editor.findChild<QLineEdit *>("scenarioSearch")->isVisible());
-            QCOMPARE(spin("scenarioBase")->isVisible(), page == 0);
+            QCOMPARE(spin("scenarioBase")->isVisible(), page == 1);
         }
         // Map's Edit fields action also changes pages programmatically.
-        scenarioPages->setCurrentIndex(0);
-        QCOMPARE(navigation->currentIndex(), 0);
+        scenarioPages->setCurrentIndex(1);
+        QCOMPARE(navigation->currentIndex(), 1);
         const auto beforeBase = project.scenarios()->json();
         const int originalBase = spin("scenarioBase")->value();
         spin("scenarioBase")->setValue(originalBase + 1);
