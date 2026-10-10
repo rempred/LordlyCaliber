@@ -326,6 +326,7 @@ int Project::changedRecords() const {
         count += scenarios_->changedScenarios();
     if (world_)
         count += world_->changedEntries();
+    if (mapEdits_) count += mapEdits_->changedMaps();
     if (dialogues_)
         count += dialogues_->changedEntries();
     if (scenePrograms_)
@@ -778,6 +779,8 @@ void Project::loadWorld() {
     if (!world_)
         world_ = ScenarioWorld::load(rom_);
 }
+void Project::loadMapEdits() {if(!mapEdits_)mapEdits_=MapEdits::load(rom_);}
+void Project::setMapEdits(const QJsonObject &value){loadMapEdits();mapEdits_->apply(value);}
 void Project::setWorld(const QJsonObject &value) {
     loadWorld();
     world_->apply(value);
@@ -1102,6 +1105,8 @@ QJsonObject Project::manifest() const {
         result["world"] = world_->json();
     else
         result.remove("world");
+    if(mapEdits_ && mapEdits_->modified())result["mapEdits"]=mapEdits_->json();
+    else result.remove("mapEdits");
     if (dialogues_ && (dialogues_->modified() || oldPatches["cutscenes"].isObject()))
         result["dialogues"] = dialogues_->json();
     else
@@ -1181,6 +1186,7 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadScenarios();
     if (world_)
         candidate.loadWorld();
+    if(mapEdits_)candidate.loadMapEdits();
     if (dialogues_)
         candidate.loadDialogues();
     if (scenePrograms_)
@@ -1401,6 +1407,10 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setWorld(object["world"].toObject());
     } else
         candidate.importLegacyWorld(candidate.legacy_);
+    if(object.contains("mapEdits")){
+        if(!object["mapEdits"].isObject())throw Error("Invalid saved map edits");
+        candidate.setMapEdits(object["mapEdits"].toObject());
+    }
     if (object.contains("scenePrograms")) {
         if (!object["scenePrograms"].isObject())
             throw Error("Invalid saved scene programs");

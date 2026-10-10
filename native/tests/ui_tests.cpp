@@ -8232,13 +8232,68 @@ class UiTests : public QObject {
             QTest::qWait(20);
             const qreal gridSize = std::min(canvas->width(), canvas->height()) - 72;
             const QPointF treasurePixel = QPointF(canvas->width() / 2., canvas->height() / 2.) +
-                QPointF(127, -128) * gridSize / 256.;
+                                          QPointF(127, -128) * gridSize / 256.;
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, treasurePixel.toPoint());
             QCOMPARE(objects->currentRow(), treasureItem);
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             pages->setCurrentIndex(0);
             objects->setCurrentRow(siteItem);
-            QVERIFY(!apply->isEnabled());
+            QVERIFY(apply->isEnabled());
+            const auto originalMaps = project.mapEdits()->json();
+            const auto sourceMap = ScenarioMap::load(rom, 1);
+            const auto oldSite = sourceMap.points[0];
+            const auto startGrid =
+                QPointF((oldSite.x() - sourceMap.bounds.left()) / sourceMap.bounds.width() * 256.,
+                        (oldSite.y() - sourceMap.bounds.top()) / sourceMap.bounds.height() * 256.);
+            auto pixel = [&](QPointF grid) {
+                const double side = std::min(canvas->width(), canvas->height()) - 72;
+                return (QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                        (grid - QPointF(128, 128)) * side / 256.)
+                    .toPoint();
+            };
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, pixel(startGrid));
+            QTest::mouseMove(canvas, pixel(startGrid + QPointF(15, 8)), 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier,
+                                pixel(startGrid + QPointF(15, 8)));
+            QVERIFY2(project.mapEdits()->json() != originalMaps,
+                     qPrintable(editor.findChild<QLabel *>("mapNotice")->text()));
+            const auto movedMap = project.mapEdits()->json();
+            undo.undo();
+            QCOMPARE(project.mapEdits()->json(), originalMaps);
+            undo.redo();
+            QCOMPARE(project.mapEdits()->json(), movedMap);
+            auto mapTool = editor.findChild<QComboBox *>("mapTool");
+            QVERIFY(mapTool);
+            mapTool->setCurrentIndex(2);
+            const auto beforeRoad = canvas->grab().toImage();
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, pixel({105, 120}));
+            QTest::mouseMove(canvas, pixel({125, 130}), 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, pixel({125, 130}));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 125 * 256 + 115), quint8(1));
+            QVERIFY(beforeRoad != canvas->grab().toImage());
+            const auto painted = project.mapEdits()->json();
+            undo.undo();
+            QCOMPARE(project.mapEdits()->json(), movedMap);
+            undo.redo();
+            QCOMPARE(project.mapEdits()->json(), painted);
+            mapTool->setCurrentIndex(1);
+            auto paintType = editor.findChild<QComboBox *>("mapPaintType");
+            paintType->setCurrentIndex(paintType->findData(4));
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110), quint8(4));
+            const auto terrainPaint = project.mapEdits()->json();
+            mapTool->setCurrentIndex(3);
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110),
+                     u8(project.mapEdits()->source(1).terrain[0].data, 155 * 256 + 110));
+            undo.undo();
+            QCOMPARE(project.mapEdits()->json(), terrainPaint);
+            editor.findChild<QPushButton *>("mapRestore")->click();
+            QCOMPARE(project.mapEdits()->json(), originalMaps);
+            undo.undo();
+            QCOMPARE(project.mapEdits()->json(), terrainPaint);
+            mapTool->setCurrentIndex(0);
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/scenario-map-painting.png"));
             QCOMPARE(pages->currentIndex(), 0);
             QVERIFY(editor.findChild<QWidget *>("worldSiteFields")->isVisible());
             QCOMPARE(editor.findChild<QLineEdit *>("worldSiteName")->text(), townName);
@@ -8255,6 +8310,7 @@ class UiTests : public QObject {
             restored.applyManifest(Project::readProject(work.filePath("project")));
             QCOMPARE(restored.scenarios()->json(), project.scenarios()->json());
             QCOMPARE(restored.world()->json(), project.world()->json());
+            QCOMPARE(restored.mapEdits()->json(),project.mapEdits()->json());
             const auto result = rebuild(restored, tools, work.path());
             const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
             QVERIFY(QDir().mkpath(root));
@@ -8272,6 +8328,10 @@ class UiTests : public QObject {
             QCOMPARE(reopened.world()->scenario(1).treasures, project.world()->scenario(1).treasures);
             QCOMPARE(ScenarioWorld::treasureRecord(reopened.world()->scenario(1).treasures, 0),
                      treasure);
+            auto reopenedMaps=MapEdits::load(reopened.rom());
+            QCOMPARE(reopenedMaps.fineTerrain(1),project.mapEdits()->fineTerrain(1));
+            QCOMPARE(reopenedMaps.model(1),project.mapEdits()->model(1));
+            QVERIFY(QLineF(reopenedMaps.points(1)[0],project.mapEdits()->points(1)[0]).length()<.00001);
             auto checksum = result.image;
             Rom::updateChecksum(checksum);
             QCOMPARE(checksum, result.image);

@@ -1,11 +1,14 @@
 #include "app/scenario_map_editor.h"
-#include "engine/battlefield.h"
 #include "app/scenario_world_editor.h"
 #include "app/view_position.h"
+#include "engine/battlefield.h"
 #include "engine/squad_members.h"
 #include <QCheckBox>
+#include <QComboBox>
+#include <QCryptographicHash>
 #include <QFormLayout>
 #include <QImage>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QListWidget>
 #include <QMouseEvent>
@@ -25,7 +28,8 @@
 
 namespace lordly {
 static QImage mapIcon(const QImage &source, bool portrait) {
-    if (source.isNull()) return {};
+    if (source.isNull())
+        return {};
     QImage result(32, 32, QImage::Format_ARGB32_Premultiplied);
     result.fill(Qt::transparent);
     QPainter painter(&result);
@@ -36,11 +40,13 @@ static QImage mapIcon(const QImage &source, bool portrait) {
     painter.fillRect(result.rect(), QColor("#1d1a16"));
     if (portrait) {
         const int side = std::min(source.width(), source.height());
-        painter.drawImage(QRectF(1, 1, 30, 30), source,
+        painter.drawImage(
+            QRectF(1, 1, 30, 30), source,
             QRectF((source.width() - side) / 2., (source.height() - side) / 2., side, side));
     } else {
         const QSize size = source.size().scaled(24, 24, Qt::KeepAspectRatio);
-        painter.drawImage(QRectF(QPointF((32 - size.width()) / 2., (32 - size.height()) / 2.), size), source);
+        painter.drawImage(
+            QRectF(QPointF((32 - size.width()) / 2., (32 - size.height()) / 2.), size), source);
     }
     return result;
 }
@@ -51,13 +57,17 @@ struct MapMarker {
     std::optional<QPointF> position;
     QColor color;
     QImage icon;
+    bool locked = false;
     qreal radius() const {
-        return kind == MapObject::Squad || kind == MapObject::Treasure ? 16. :
-               kind == MapObject::Waypoint ? 4. : 6.;
+        return kind == MapObject::Squad || kind == MapObject::Treasure ? 16.
+               : kind == MapObject::Waypoint                           ? 4.
+                                                                       : 6.;
     }
-    int layer() const { return kind == MapObject::Site ? 0 : kind == MapObject::Waypoint ? 1 : 2; }
+    int layer() const {
+        return kind == MapObject::Site ? 0 : kind == MapObject::Waypoint ? 1 : 2;
+    }
     bool movable() const {
-        return kind != MapObject::Site;
+        return !locked;
     }
 };
 class MapCanvas : public QWidget {
@@ -74,6 +84,9 @@ class MapCanvas : public QWidget {
     std::function<void(int, QPointF)> moved;
     std::function<void(QPointF)> place;
     bool placing = false;
+    int brushMode = 0, brushRadius = 3;
+    QVector<QPointF> stroke;
+    std::function<void(const QVector<QPointF> &)> painted;
     int current = -1;
     bool grid = false, labels = true, showTerrain = true;
     QImage terrain;
@@ -82,6 +95,7 @@ class MapCanvas : public QWidget {
         drag_ = -1;
         dragging_ = false;
         panning_ = false;
+        stroke.clear();
     }
     void resetView() {
         zoom_ = 1;
@@ -137,16 +151,20 @@ class MapCanvas : public QWidget {
         // Draw the selected marker last, then reserve icon bounds while placing labels.
         auto paintOrder = drawOrder;
         std::stable_sort(paintOrder.begin(), paintOrder.end(), [&](int a, int b) {
-            return (a == current ? 3 : markers[a].layer()) < (b == current ? 3 : markers[b].layer());
+            return (a == current ? 3 : markers[a].layer()) <
+                   (b == current ? 3 : markers[b].layer());
         });
         for (int i : paintOrder) {
             const auto &m = markers[i];
             if (!m.position)
                 continue;
-            const QPointF center = i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
+            const QPointF center =
+                i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
             const qreal radius = m.radius();
-            labelAreas << QRectF(center - QPointF(radius + 3, radius + 3), QSizeF((radius + 3) * 2, (radius + 3) * 2));
-            p.setPen(QPen(i == current ? QColor("#fff2a8") : QColor("#0d131a"), i == current ? 3 : 1.5));
+            labelAreas << QRectF(center - QPointF(radius + 3, radius + 3),
+                                 QSizeF((radius + 3) * 2, (radius + 3) * 2));
+            p.setPen(
+                QPen(i == current ? QColor("#fff2a8") : QColor("#0d131a"), i == current ? 3 : 1.5));
             p.setBrush(m.color);
             if (!m.icon.isNull()) {
                 p.drawImage(QRectF(center - QPointF(16, 16), QSizeF(32, 32)), m.icon);
@@ -171,8 +189,10 @@ class MapCanvas : public QWidget {
         }
         for (int i : drawOrder) {
             const auto &m = markers[i];
-            if (!m.position) continue;
-            const QPointF center = i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
+            if (!m.position)
+                continue;
+            const QPointF center =
+                i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
             if (labels || i == current) {
                 const QString text = m.label.section(" · ", 0, 0);
                 QRectF label(center + QPointF(m.radius() + 6, -10),
@@ -188,6 +208,19 @@ class MapCanvas : public QWidget {
                 p.setPen(Qt::white);
                 p.drawText(label.adjusted(4, 0, 0, 0), Qt::AlignVCenter, text);
             }
+        }
+        if (brushMode && underMouse()) {
+            const auto radius = QLineF(toPixel({0, 0}), toPixel({qreal(brushRadius), 0})).length();
+            p.save();
+            p.setClipRect(area);
+            p.setPen(QPen(QColor(250, 220, 130, 150), radius * 2, Qt::SolidLine, Qt::RoundCap,
+                          Qt::RoundJoin));
+            for (int i = 1; i < stroke.size(); ++i)
+                p.drawLine(toPixel(stroke[i - 1]), toPixel(stroke[i]));
+            p.setPen(QPen(QColor("#fff2a8"), 1.5));
+            p.setBrush(QColor(250, 220, 130, 50));
+            p.drawEllipse(mouse_, radius, radius);
+            p.restore();
         }
         p.setPen(QColor("#bdd0dc"));
         p.drawText(QRect(10, height() - 25, width() - 20, 20),
@@ -205,11 +238,17 @@ class MapCanvas : public QWidget {
             place(fromPixel(e->position()));
             return;
         }
+        if (brushMode) {
+            stroke = {fromPixel(e->position())};
+            update();
+            return;
+        }
         int hit = -1;
         qreal distance = std::numeric_limits<qreal>::max();
         // Keep a list-selected marker reachable when several share a position.
         if (current >= 0 && current < markers.size() && markers[current].position &&
-            QLineF(toPixel(*markers[current].position), press_).length() <= std::max(12., markers[current].radius() + 2))
+            QLineF(toPixel(*markers[current].position), press_).length() <=
+                std::max(12., markers[current].radius() + 2))
             hit = current;
         else
             for (int i = 0; i < markers.size(); ++i)
@@ -233,6 +272,8 @@ class MapCanvas : public QWidget {
         if (panning_)
             pan_ += e->position() - mouse_;
         mouse_ = e->position();
+        if (!stroke.isEmpty() && !panning_)
+            stroke << fromPixel(mouse_);
         if (drag_ >= 0 && QLineF(press_, mouse_).length() > 3)
             dragging_ = true;
         update();
@@ -244,6 +285,15 @@ class MapCanvas : public QWidget {
         }
         if (e->button() != Qt::LeftButton)
             return;
+        if (!stroke.isEmpty()) {
+            stroke << fromPixel(e->position());
+            const auto completed = stroke;
+            stroke.clear();
+            if (painted)
+                painted(completed);
+            update();
+            return;
+        }
         const int index = drag_;
         const bool changed = dragging_;
         drag_ = -1;
@@ -282,6 +332,21 @@ class MapWorldCommand final : public QUndoCommand {
     Project *project_;
     QJsonObject before_, after_;
 };
+class FieldEditCommand final : public QUndoCommand {
+  public:
+    FieldEditCommand(Project *p, QJsonObject before, QJsonObject after, const QString &label)
+        : QUndoCommand(label), project_(p), before_(std::move(before)), after_(std::move(after)) {}
+    void undo() override {
+        project_->setMapEdits(before_);
+    }
+    void redo() override {
+        project_->setMapEdits(after_);
+    }
+
+  private:
+    Project *project_;
+    QJsonObject before_, after_;
+};
 ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                                      std::function<void(const Scenarios &, const QString &)> commit,
                                      std::function<void(MapObject, int)> editFields,
@@ -309,6 +374,38 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     toolbar->addWidget(terrain_);
     toolbar->addStretch();
     layout->addLayout(toolbar);
+    paintTools_ = new QWidget;
+    auto painting = new QHBoxLayout(paintTools_);
+    painting->setContentsMargins(0, 0, 0, 0);
+    tool_ = new QComboBox;
+    tool_->setObjectName("mapTool");
+    tool_->addItems({"Select / move", "Paint terrain", "Draw road", "Erase painting"});
+    painting->addWidget(tool_);
+    paintType_ = new QComboBox;
+    paintType_->setObjectName("mapPaintType");
+    for (int type = 1; type <= 14; ++type)
+        paintType_->addItem(Encounters::mapTerrainName(type), type);
+    paintType_->setCurrentIndex(2);
+    painting->addWidget(paintType_);
+    painting->addWidget(new QLabel("Brush radius"));
+    brushSize_ = new QSpinBox;
+    brushSize_->setObjectName("mapBrushSize");
+    brushSize_->setRange(1, 16);
+    brushSize_->setValue(3);
+    painting->addWidget(brushSize_);
+    auto restore = new QPushButton("Restore map edits");
+    restore->setObjectName("mapRestore");
+    painting->addWidget(restore);
+    painting->addStretch();
+    layout->addWidget(paintTools_);
+    mapScope_ = new QLabel;
+    mapScope_->setObjectName("mapEditScope");
+    mapScope_->setWordWrap(true);
+    layout->addWidget(mapScope_);
+    paintType_->setToolTip("Paint over existing roads with Plain or another terrain to remove "
+                           "them. Elevation stays unchanged. Fortress walls and gates stay fixed.");
+    tool_->setToolTip("Drag to paint. Erase painting restores the loaded ROM in that area. Each "
+                      "stroke can be undone.");
     auto split = new QSplitter;
     canvas_ = new MapCanvas;
     split->addWidget(canvas_);
@@ -384,6 +481,37 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     notice_->setObjectName("mapNotice");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
+    canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
+    connect(tool_, &QComboBox::currentIndexChanged, this, [this, addTreasure](int mode) {
+        canvas_->cancelDrag();
+        canvas_->brushMode = mode;
+        if (mode)
+            addTreasure->setChecked(false);
+        paintType_->setEnabled(mode == 1);
+        brushSize_->setEnabled(mode != 0);
+        canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
+        canvas_->update();
+    });
+    paintType_->setEnabled(false);
+    brushSize_->setEnabled(false);
+    connect(brushSize_, &QSpinBox::valueChanged, this, [this](int n) {
+        canvas_->brushRadius = n;
+        canvas_->update();
+    });
+    connect(restore, &QPushButton::clicked, this, [this] {
+        try {
+            auto next = *project_->mapEdits();
+            const auto before = next.json();
+            next.restore(key_);
+            if (next.json() != before) {
+                undo_->push(new FieldEditCommand(project_, before, next.json(),
+                                                 "Restore map terrain and buildings"));
+                refresh(key_);
+            }
+        } catch (const Error &e) {
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
+    });
     canvas_->selected = [this](int row) { objects_->setCurrentRow(row); };
     canvas_->moved = [this](int row, QPointF position) {
         if (row < 0 || row >= canvas_->markers.size() || !maps_.contains(key_))
@@ -391,9 +519,12 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         const auto &m = maps_[key_];
         const QPointF world(m.bounds.left() + m.bounds.width() * position.x() / 256.,
                             m.bounds.top() + m.bounds.height() * position.y() / 256.);
-        move(row, m.bytes(world, canvas_->markers[row].kind != MapObject::Treasure));
+        const auto kind = canvas_->markers[row].kind;
+        move(row, m.bytes(world, kind == MapObject::Squad || kind == MapObject::Waypoint));
     };
     connect(addTreasure, &QPushButton::toggled, this, [this](bool on) {
+        if (on)
+            tool_->setCurrentIndex(0);
         canvas_->placing = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
         notice_->setText(on ? "Click the map to place a new treasure. Click Add treasure again to "
@@ -458,6 +589,10 @@ void ScenarioMapEditor::refresh(int key) {
     const ViewPosition keepView(this, key_ == key);
     world_->refresh(key);
     if (key < 1) {
+        paintTools_->setEnabled(false);
+        tool_->setCurrentIndex(0);
+        canvas_->cancelDrag();
+        mapScope_->setText("Choose a scenario to edit its map.");
         key_ = key;
         objects_->clear();
         canvas_->markers.clear();
@@ -482,14 +617,21 @@ void ScenarioMapEditor::refresh(int key) {
     canvas_->terrain = {};
     canvas_->terrainBounds = {};
     terrain_->setEnabled(false);
+    paintTools_->setEnabled(false);
     referenceName_->clear();
     notice_->clear();
     try {
         QStringList artworkWarnings;
-        try { project_->loadAvatarArtwork(); }
-        catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
-        try { project_->loadIconArtwork(); }
-        catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
+        try {
+            project_->loadAvatarArtwork();
+        } catch (const Error &e) {
+            artworkWarnings << QString::fromUtf8(e.what());
+        }
+        try {
+            project_->loadIconArtwork();
+        } catch (const Error &e) {
+            artworkWarnings << QString::fromUtf8(e.what());
+        }
         QMap<int, QImage> portraits, itemIcons;
         const auto classes = project_->classData();
         auto artwork = [&](int id, bool portrait, int selector = 0) -> QImage {
@@ -500,19 +642,39 @@ void ScenarioMapEditor::refresh(int key) {
                 try {
                     if (portrait && project_->avatarArtwork()) {
                         auto words = project_->avatarArtwork()->words(classes, id, selector);
-                        if (words.isEmpty()) words = project_->avatarArtwork()->words(classes, id, 1 - selector);
-                        if (!words.isEmpty()) image = AvatarArtwork::render(words);
+                        if (words.isEmpty())
+                            words = project_->avatarArtwork()->words(classes, id, 1 - selector);
+                        if (!words.isEmpty())
+                            image = AvatarArtwork::render(words);
                     }
                     if (!portrait && project_->iconArtwork())
                         image = project_->iconArtwork()->image(quint16(id));
-                } catch (const Error &e) { artworkWarnings << QString::fromUtf8(e.what()); }
+                } catch (const Error &e) {
+                    artworkWarnings << QString::fromUtf8(e.what());
+                }
                 cache[cacheKey] = mapIcon(image, portrait);
             }
             return cache[cacheKey];
         };
         if (!maps_.contains(key))
             maps_[key] = ScenarioMap::load(project_->rom(), key);
-        const auto &map = maps_[key];
+        auto map = maps_[key];
+        bool editable = false;
+        try {
+            project_->loadMapEdits();
+            map.points = project_->mapEdits()->points(key);
+            editable = true;
+            QStringList keys;
+            for (int k : project_->mapEdits()->sharedScenarios(key))
+                keys << QString::number(k);
+            mapScope_->setText("Map edits affect runtime keys " + keys.join(", ") +
+                               ". Elevation stays unchanged; briefing artwork is separate.");
+        } catch (const Error &e) {
+            mapScope_->setText(QString::fromUtf8(e.what()));
+        }
+        paintTools_->setEnabled(editable);
+        if (!editable)
+            tool_->setCurrentIndex(0);
         auto normalize = [&](std::optional<QPointF> point) -> std::optional<QPointF> {
             if (!point)
                 return {};
@@ -521,13 +683,17 @@ void ScenarioMapEditor::refresh(int key) {
         };
         auto add = [&](MapObject kind, int row, QString label, std::optional<QPointF> position,
                        QColor color, QImage icon = {}) {
-            canvas_->markers << MapMarker{kind, row, label, normalize(position), color, icon};
+            const bool locked = kind == MapObject::Site &&
+                                (!editable || !project_->mapEdits()->canMoveSite(key, row));
+            canvas_->markers << MapMarker{kind,  row,  label, normalize(position),
+                                          color, icon, locked};
             auto item =
                 new QListWidgetItem(label + (position ? "" : " · unresolved placement"), objects_);
             item->setData(Qt::UserRole, int(kind));
             item->setData(Qt::UserRole + 1, row);
             item->setForeground(color.darker(140));
-            if (!icon.isNull()) item->setIcon(QPixmap::fromImage(icon));
+            if (!icon.isNull())
+                item->setIcon(QPixmap::fromImage(icon));
             item->setToolTip(item->text());
         };
         const auto &s = project_->scenarios()->scenario(key);
@@ -575,8 +741,10 @@ void ScenarioMapEditor::refresh(int key) {
                 const auto r = ScenarioWorld::treasureRecord(scene.treasures, i);
                 const int itemId = u16(r, 4);
                 const bool equipment = u8(r, 3) == 1;
-                const auto &records = project_->records(equipment ? Table::Items : Table::Consumables);
-                const QString name = itemId < records.size() ? records[itemId].name : QString("Item %1").arg(itemId);
+                const auto &records =
+                    project_->records(equipment ? Table::Items : Table::Consumables);
+                const QString name =
+                    itemId < records.size() ? records[itemId].name : QString("Item %1").arg(itemId);
                 add(MapObject::Treasure, i,
                     QString("Treasure %1 · %2 · flag %3").arg(i + 1).arg(name).arg(u8(r, 0)),
                     map.world(u8(r, 1), u8(r, 2)), QColor("#f4cc6c"),
@@ -591,10 +759,21 @@ void ScenarioMapEditor::refresh(int key) {
                                                                    Qt::FastTransformation));
         }
         QString cacheKey = QString::number(key);
-        for (auto flag : siteFlags) cacheKey += ':' + QString::number(flag);
+        if (editable)
+            cacheKey +=
+                ':' +
+                QString::fromLatin1(
+                    QCryptographicHash::hash(
+                        QJsonDocument(project_->mapEdits()->json()).toJson(QJsonDocument::Compact),
+                        QCryptographicHash::Sha256)
+                        .toHex());
+        for (auto flag : siteFlags)
+            cacheKey += ':' + QString::number(flag);
         try {
             if (!battlefieldImages_.contains(cacheKey)) {
-                const auto field = Battlefield::load(project_->rom(), key, siteFlags);
+                const auto field =
+                    Battlefield::load(project_->rom(), key, siteFlags,
+                                      editable ? project_->mapEdits()->model(key) : QByteArray());
                 auto image = new QImage(field.render(map.bounds));
                 battlefieldNotices_[cacheKey] = field.notices();
                 battlefieldImages_.insert(cacheKey, image, int(image->sizeInBytes() / 1024));
@@ -606,18 +785,21 @@ void ScenarioMapEditor::refresh(int key) {
                                     "Top-down view with approximate daylight lighting. "
                                     "Briefing artwork is stored separately.");
             if (!battlefieldNotices_[cacheKey].isEmpty())
-                referenceName_->setText(referenceName_->text() + '\n' + battlefieldNotices_[cacheKey].join(' '));
+                referenceName_->setText(referenceName_->text() + '\n' +
+                                        battlefieldNotices_[cacheKey].join(' '));
         } catch (const Error &e) {
-            referenceName_->setText("Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
-                                    (map.image ? "\nSeparate briefing overview shown below." : ""));
+            referenceName_->setText(
+                "Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
+                (map.image ? "\nSeparate briefing overview shown below." : ""));
         }
-        notice_->setText("Initial placements · Drag squads, waypoints or treasure to set "
-                         "coordinates. Selecting a point-based object "
+        notice_->setText("Drag towns, strongholds, squads, waypoints or treasure to set "
+                         "positions. Selecting a point-based squad or waypoint "
                          "and moving it changes its placement to map coordinates. " +
                          map.placementNotice);
         artworkWarnings.removeDuplicates();
         if (!artworkWarnings.isEmpty())
-            notice_->setText(notice_->text() + "\nSome marker artwork could not be decoded: " + artworkWarnings.join("; "));
+            notice_->setText(notice_->text() + "\nSome marker artwork could not be decoded: " +
+                             artworkWarnings.join("; "));
         objects_->setCurrentRow(canvas_->markers.isEmpty()
                                     ? -1
                                     : std::clamp(previous, 0, int(canvas_->markers.size()) - 1));
@@ -636,12 +818,14 @@ void ScenarioMapEditor::select(int row) {
     const bool valid = row >= 0 && row < canvas_->markers.size();
     const bool movable = valid && canvas_->markers[row].movable();
     const bool worldObject = valid && (canvas_->markers[row].kind == MapObject::Site ||
-                                      canvas_->markers[row].kind == MapObject::Treasure);
+                                       canvas_->markers[row].kind == MapObject::Treasure);
     world_->setVisible(worldObject);
-    coordinates_->setVisible(valid && !worldObject);
-    apply_->setVisible(valid && !worldObject);
+    coordinates_->setVisible(
+        valid && (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
+    apply_->setVisible(
+        valid && (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
     fields_->setVisible(valid && !worldObject);
-    summary_->setVisible(valid && !worldObject);
+    summary_->setVisible(valid && (!worldObject || canvas_->markers[row].kind == MapObject::Site));
     reference_->setVisible(!worldObject && canvas_->terrain.isNull());
     referenceName_->setVisible(!worldObject);
     x_->setEnabled(movable);
@@ -658,6 +842,11 @@ void ScenarioMapEditor::select(int row) {
     selection_->setText(m.label.section(" · flag ", 0, 0));
     if (worldObject) {
         world_->selectObject(m.kind == MapObject::Treasure, m.row);
+        if (m.kind == MapObject::Site)
+            summary_->setText(movable ? "Drag this building on the map to move its appearance and "
+                                        "gameplay location together."
+                                      : "This site has no separate building group yet. "
+                                        "Its position is not editable.");
     } else if (m.kind == MapObject::Squad) {
         const auto &scenario = project_->scenarios()->scenario(key_);
         const auto members = squadMembers(scenario.squads[m.row]);
@@ -665,15 +854,16 @@ void ScenarioMapEditor::select(int row) {
         QStringList lines{u8(deployment, 0) & 128 ? "Allied squad" : "Enemy squad"};
         for (const auto &member : members)
             lines << QString("%1 · Level %2")
-                .arg(QString(project_->record(Table::Classes, member.classId).name).replace('\n', ' '))
-                .arg(scenario.layout.baseLevel() + member.levelOffset);
+                         .arg(QString(project_->record(Table::Classes, member.classId).name)
+                                  .replace('\n', ' '))
+                         .arg(scenario.layout.baseLevel() + member.levelOffset);
         summary_->setText(lines.join('\n'));
         fields_->setText("Edit squad members and deployment…");
     } else {
         summary_->setText("Route waypoint · connected paths are shown on the map.");
         fields_->setText("Edit route and conditions…");
     }
-    z_->setMinimum(m.kind == MapObject::Treasure ? 0 : 1);
+    z_->setMinimum(m.kind == MapObject::Treasure || m.kind == MapObject::Site ? 0 : 1);
     if (m.position) {
         x_->setValue(int(std::round(m.position->x())));
         z_->setValue(int(std::round(m.position->y())));
@@ -689,7 +879,16 @@ void ScenarioMapEditor::move(int row, QPoint bytes) {
     if (!marker.movable())
         return;
     try {
-        if (marker.kind == MapObject::Treasure) {
+        if (marker.kind == MapObject::Site) {
+            auto next = *project_->mapEdits();
+            const auto before = next.json();
+            next.moveSite(key_, marker.row, maps_[key_].world(bytes.x(), bytes.y()));
+            if (before != next.json()) {
+                undo_->push(
+                    new FieldEditCommand(project_, before, next.json(), "Move town or stronghold"));
+                refresh(key_);
+            }
+        } else if (marker.kind == MapObject::Treasure) {
             auto next = *project_->world();
             auto r = ScenarioWorld::treasureRecord(next.scenario(key_).treasures, marker.row);
             put8(r, 1, quint8(bytes.x()));
@@ -715,5 +914,27 @@ void ScenarioMapEditor::move(int row, QPoint bytes) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
     canvas_->update();
+}
+void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
+    if (key_ < 1 || !project_->mapEdits())
+        return;
+    try {
+        auto next = *project_->mapEdits();
+        const auto before = next.json();
+        const int type = tool_->currentIndex() == 3   ? 255
+                         : tool_->currentIndex() == 2 ? 1
+                                                      : paintType_->currentData().toInt();
+        next.paint(key_, stroke, type, brushSize_->value());
+        if (before == next.json())
+            return;
+        next.model(key_); // Check geometry and texture budgets before committing.
+        undo_->push(new FieldEditCommand(project_, before, next.json(),
+                                         type == 255 ? "Erase map painting"
+                                         : type == 1 ? "Paint road"
+                                                     : "Paint terrain"));
+        refresh(key_);
+    } catch (const Error &e) {
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
 }
 } // namespace lordly

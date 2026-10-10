@@ -52,15 +52,60 @@ site record; allegiance selects texture children 170, 171 or 172 from
 from town metadata bytes 25–26 plus the scenario's site addend. Apply and Undo
 change the preview's cache key so building colours refresh.
 
-Site and treasure inspectors, squad/waypoint/treasure dragging, and their project
-and ROM export paths remain available. Site outlines are unfilled so buildings
-remain visible. Grid lines are off initially.
+The Map tab provides Select / move, Paint terrain, Draw road, and Erase painting.
+Drag a brush stroke; each stroke is one Undo operation. Paint Plain over a road
+to remove it. Erase painting restores the source ROM's terrain in the brushed
+area. Restore map edits resets painting and building positions for this shared
+map, and is undoable. The affected runtime keys are shown above the canvas.
 
-This change does **not** author the mesh, height grid, terrain classifications,
-roads or building transforms. Future terrain/road drawing must keep these data
-consistent; moving a stronghold must also update its gameplay placement.
-Changing site-type metadata alone does not replace embedded geometry. Do not
-implement map painting as replacement of the rendered preview bitmap.
+Ordinary towns and standalone strongholds move as complete native drawing groups
+and gameplay placement points. Flagless buildings are associated only when a
+unique culling-box centre matches a site point within 0.00002 world units (the
+source's stored coordinate precision). This is an anchor-based association,
+not a nearest-building guess. Every drawing list starts with its original
+incoming matrix translated to the new location; this includes flag lists that
+inherit a matrix from an earlier material list. Cloned local matrices and culling
+boxes also move. The original outgoing transform is restored after each moved
+draw. Building height follows the existing height field at the new location.
+Point-based deployments referring to the site follow its new placement.
+
+Fort Romulus, Latium and Talpaea have connected walls/gates and lack the normal
+site callback association. Their independent building movement remains disabled
+with an explanation in the site inspector. Do not infer a site-to-building link
+from the nearest culling box: several sites are gates or plaza/entrance points
+whose connected geometry spans multiple groups. Two additional special anchors
+remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
+
+### Terrain and exported data
+
+* Terrain directory key `0x020712EA` uses scenario byte `+5`. The loader at z64
+  `0xEBF88..0xEC024` loads member 0 (256×256 fine movement terrain) and member 1
+  (64×64 coarse encounter/battle terrain). Fine indexing from a coarse cell at
+  `0x149168..0x149180` multiplies both axes by four. Both grids use the placement
+  rectangle (the second four floats in the bounds member).
+* A brush paints the fine grid. Each touched coarse cell uses the dominant
+  authored type among its 4×4 fine cells. Untouched coarse cells retain their
+  original classifications. Fixed wall/gate codes 15 and above are protected in
+  both grids, including alternate fine grids. Untouched bytes remain intact.
+* Surface triangles are clipped to painted cell runs; native textured triangles
+  follow the existing elevation. This is surface painting, not height sculpting.
+  Brush textures are sampled from the loaded ROM's terrain materials, selected
+  by the proportion of their surface associated with the requested terrain.
+  Stock maps have no type-10 cells; Snowy Bridge borrows bridge artwork from a
+  snowy map and writes the separate type-10 gameplay classification.
+* Site point collection `0x02092506` has stored members with a 28-byte header and
+  float X/Z pairs; scenario byte `+7` selects its member. Moving a site changes
+  those floats without resizing the member or altering other sites.
+* Field member 1 is an RLE height grid. Row offsets are halfwords from byte 28;
+  `FFnn` repeats the following u16 value `nn` times. The original reader is
+  `0xF3704..0xF37D4`; triangle interpolation scales by 65279 (`0xF33C8`).
+* New display lists, textures and matrices append inside the model. Compact
+  resource members preserve their original bytes when unchanged; edited model
+  and terrain collections relocate into bounded cartridge space and update
+  their original directory entries. Unknown members remain intact. The export
+  ceiling is 64 MiB, with 512 KiB per edited model and 5,000 brush triangles.
+* Project `mapEdits` stores brush masks and site overrides; previews, review,
+  Undo, project reopening and ROM export all use the same edit component.
 
 ## Briefing is independent artwork
 
@@ -87,3 +132,11 @@ positions. `ui_tests scenarioMapEditing scenarioWorldEditing` covers selection,
 allegiance repaint and Undo, marker moves, project reopening, ROM export and
 reopening, and checksum preservation. These are offline checks, not a new
 emulator run or a claim of pixel-exact game lighting.
+
+`map_tests battlefieldEditing battlefieldEditingCoverage battlefieldRendering`
+checks project/ROM round trips, unchanged resources, every vertex of 284 moved
+buildings across 38 distinct maps, all 14 brush types, shared map aliases and
+protected fortress terrain. `ui_tests scenarioMapEditing` drives the brush and
+building drag controls, Undo/Redo, erase/restore, saving, complete ROM rebuilding,
+reopening and checksum verification. `scenarioWorldEditing` remains passing.
+These are offline checks; this update has not had an emulator playthrough.

@@ -7,8 +7,12 @@ inside Squads; map-to-field navigation also updates the selected section tab.
 
 Map renders the ROM's actual battlefield geometry, textures, roads and buildings
 in a top-down daylight overview. Town allegiance edits and Undo refresh building
-colours. Briefing images remain separate pre-baked artwork. Terrain/road mesh
-authoring is not yet implemented; see [battlefield maps](battlefield-maps.md).
+colours. Terrain and road brushes update native surface geometry plus movement
+and encounter terrain; elevation remains unchanged. Ordinary towns and standalone
+strongholds can be dragged with their complete geometry and gameplay position.
+Undo/Redo, restore, project persistence and ROM export share these edits. Fixed
+fortified interiors remain outside independent building movement. Briefing images
+remain separate pre-baked artwork; see [battlefield maps](battlefield-maps.md).
 
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board

@@ -13,6 +13,7 @@
 #include "engine/encounters.h"
 #include "engine/icon_artwork.h"
 #include "engine/item_data.h"
+#include "engine/map_edits.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/scenario_world.h"
@@ -144,6 +145,9 @@ class Project {
         return world_;
     }
     void setWorld(const QJsonObject &value);
+    void loadMapEdits();
+    const std::optional<MapEdits> &mapEdits() const {return mapEdits_;}
+    void setMapEdits(const QJsonObject &);
     void loadScenePrograms();
     const std::optional<ScenePrograms> &scenePrograms() const {
         return scenePrograms_;
@@ -243,6 +247,7 @@ class Project {
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;
+    std::optional<MapEdits> mapEdits_;
     std::optional<Dialogues> dialogues_;
     std::optional<ScenePrograms> scenePrograms_;
     std::optional<SceneEvents> sceneEvents_;

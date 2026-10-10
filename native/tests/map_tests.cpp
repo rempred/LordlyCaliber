@@ -1,5 +1,7 @@
 #include "engine/archive.h"
 #include "engine/battlefield.h"
+#include "engine/map_edits.h"
+#include "engine/project.h"
 #include "engine/scenario_map.h"
 #include "engine/scenario_world.h"
 #include "game/scenarios/site-count.h"
@@ -14,13 +16,186 @@ using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void battlefieldEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            QCOMPARE(edit.rebuild(rom), rom.bytes());
+            const auto &source = edit.source(1);
+            QVERIFY(edit.canMoveSite(1, 0));
+            const auto originalPoints = source.map.points;
+            source.field.terrainTexture(1, source.terrain[0].data, source.map.bounds)
+                .scaled(256, 256)
+                .save(QCoreApplication::applicationDirPath() + "/road-tile.png");
+            edit.paint(1, {{105, 120}, {125, 130}}, 1, 2);
+            QCOMPARE(u8(edit.fineTerrain(1), 120 * 256 + 105), quint8(1));
+            const auto destination = originalPoints[0] + QPointF(2, 1);
+            edit.moveSite(1, 0, destination);
+            QCOMPARE(edit.points(1)[0], destination);
+            const auto model = edit.model(1);
+            const auto rebuiltField = Battlefield::load(rom, 1, {}, model);
+            const auto beforeTriangles = source.field.triangles(),
+                       afterTriangles = rebuiltField.triangles();
+            const int movedGroup = source.field.siteGroups()[1];
+            int movedVertices = 0;
+            for (int t = 0; t < beforeTriangles.size(); ++t)
+                for (int v = 0; v < 3; ++v) {
+                    const auto delta = afterTriangles[t].points[v] - beforeTriangles[t].points[v];
+                    if (beforeTriangles[t].group == movedGroup) {
+                        QVERIFY(std::abs(delta.x() - 2) < .0001);
+                        QVERIFY(std::abs(delta.z() - 1) < .0001);
+                        ++movedVertices;
+                    } else
+                        QVERIFY(delta.length() < .0001);
+                }
+            QVERIFY(movedVertices > 100);
+            const auto rendered = rebuiltField.render(source.map.bounds, 768);
+            QVERIFY(rendered != source.field.render(source.map.bounds, 768));
+            QVERIFY(
+                rendered.save(QCoreApplication::applicationDirPath() + "/painted-battlefield.png"));
+            auto project = Project::fromRom(rom);
+            project.setMapEdits(edit.json());
+            QTemporaryDir folder;
+            project.saveFolder(folder.filePath("project"));
+            auto reopened = Project::fromRom(rom);
+            reopened.applyManifest(Project::readProject(folder.filePath("project")));
+            QVERIFY(reopened.mapEdits());
+            QCOMPARE(reopened.mapEdits()->json(), edit.json());
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            auto loaded = MapEdits::load(exported);
+            const auto &newSource = loaded.source(1);
+            QCOMPARE(newSource.terrain[0].data, edit.fineTerrain(1));
+            QCOMPARE(u8(newSource.terrain[1].data, (120 / 4) * 64 + 105 / 4), quint8(1));
+            QVERIFY(QLineF(newSource.map.points[0], destination).length() < .00001);
+            QCOMPARE(newSource.geometry[1].data, source.geometry[1].data);
+            QCOMPARE(newSource.geometry[0].data, model);
+            QCOMPARE(newSource.map.image->rgba, source.map.image->rgba);
+            QCOMPARE(loaded.source(2).geometry[0].data, edit.source(2).geometry[0].data);
+            QCOMPARE(loaded.source(2).terrain[0].data, edit.source(2).terrain[0].data);
+            QCOMPARE(loaded.rebuild(exported), exported.bytes());
+            edit.restore(1);
+            QVERIFY(!edit.modified());
+            QCOMPARE(edit.rebuild(rom), rom.bytes());
+            auto invalid = project.mapEdits()->json();
+            auto maps = invalid["maps"].toObject();
+            auto row = maps["9"].toObject();
+            row["paint"] = "broken";
+            maps["9"] = row;
+            invalid["maps"] = maps;
+            QVERIFY_THROWS_EXCEPTION(Error, edit.apply(invalid));
+            QVERIFY(!edit.modified());
+            qInfo() << "Road geometry, fine/coarse terrain, town geometry and placement, project "
+                       "persistence, untouched resources and no-edit export verified.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void battlefieldEditingCoverage() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edits = MapEdits::load(rom);
+            const auto world = ScenarioWorld::load(rom);
+            QSet<int> visited;
+            int movedSites = 0;
+            for (int key = 1; key <= 64; ++key) {
+                if (key == 54)
+                    continue;
+                const int model = u8(rom.bytes(), 0x654a0 + key * 9 + 3);
+                if (model < 4 || visited.contains(model))
+                    continue;
+                visited.insert(model);
+                const auto &source = edits.source(key);
+                const auto before = source.field.triangles();
+                for (int row = 0; row < world.siteCount(key); ++row) {
+                    if (!edits.canMoveSite(key, row)) {
+                        qInfo() << "Connected/special site" << key << row + 1;
+                        continue;
+                    }
+                    const auto delta = QPointF(.25, .125);
+                    edits.moveSite(key, row, source.map.points[row] + delta);
+                    const auto after =
+                        Battlefield::load(rom, key, {}, edits.model(key)).triangles();
+                    QCOMPARE(after.size(), before.size());
+                    const int group = source.field.siteGroups()[row + 1];
+                    int count = 0;
+                    for (int t = 0; t < before.size(); ++t)
+                        for (int v = 0; v < 3; ++v) {
+                            const auto shift = after[t].points[v] - before[t].points[v];
+                            if (before[t].group == group) {
+                                QVERIFY2(
+                                    std::abs(shift.x() - .25) < .0001 &&
+                                        std::abs(shift.z() - .125) < .0001,
+                                    qPrintable(QString("Incomplete building move: key %1 site %2")
+                                                   .arg(key)
+                                                   .arg(row + 1)));
+                                ++count;
+                            } else
+                                QVERIFY2(
+                                    shift.length() < .0001,
+                                    qPrintable(QString("Unrelated geometry moved: key %1 site %2")
+                                                   .arg(key)
+                                                   .arg(row + 1)));
+                        }
+                    QVERIFY(count > 0);
+                    ++movedSites;
+                    edits.restore(key);
+                }
+            }
+            QVERIFY(movedSites > 200);
+            for (int type = 1; type <= 14; ++type) {
+                edits.paint(1, {{120, 140}, {130, 140}}, type, 3);
+                const auto field = Battlefield::load(rom, 1, {}, edits.model(1));
+                QVERIFY(field.triangleCount() > edits.source(1).field.triangleCount());
+                edits.restore(1);
+            }
+            edits.paint(3, {{120, 140}}, 1, 3);
+            QCOMPARE(edits.fineTerrain(3), edits.fineTerrain(11));
+            QCOMPARE(edits.model(3), edits.model(11));
+            const auto moved = edits.source(3).map.points[0] + QPointF(.25, .125);
+            edits.moveSite(11, 0, moved);
+            QCOMPARE(edits.points(3)[0], moved);
+            edits.restore(3);
+            QVERIFY(!edits.modified());
+            const auto &fort = edits.source(47);
+            int gate = -1;
+            for (int cell = 0; cell < 65536; ++cell)
+                if (u8(fort.terrain[0].data, cell) >= 15) {
+                    gate = cell;
+                    break;
+                }
+            QVERIFY(gate >= 0);
+            edits.paint(47, {{double(gate % 256), double(gate / 256)}}, 3, 32);
+            const auto plans = edits.plan();
+            QCOMPARE(plans.size(), 1);
+            const auto terrain = fieldMembers(plans[0].terrain);
+            for (int n = 0; n < terrain.size(); ++n)
+                for (int i = 0; i < terrain[n].data.size(); ++i)
+                    if (u8(fort.terrain[n].data, i) >= 15)
+                        QCOMPARE(terrain[n].data[i], fort.terrain[n].data[i]);
+            QCOMPARE(edits.points(47), fort.map.points);
+            edits.restore(47);
+            QVERIFY(!edits.modified());
+            qInfo() << "Verified complete independent movement for" << movedSites << "sites,"
+                    << visited.size() << "maps, 14 brush materials, and shared map edits.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void battlefieldRendering() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
         QStringList errors;
         for (int key = 1; key <= 64; ++key) {
-            if (key == 54) continue; // Its alternate scenario loader is unsupported.
+            if (key == 54)
+                continue; // Its alternate scenario loader is unsupported.
             try {
                 const auto field = Battlefield::load(rom, key);
                 QVERIFY(field.triangleCount() > 0);
@@ -29,7 +204,8 @@ class MapTests : public QObject {
                 QVERIFY(!image.isNull());
                 QSet<QRgb> colors;
                 for (int y = 0; y < image.height(); y += 8)
-                    for (int x = 0; x < image.width(); x += 8) colors.insert(image.pixel(x, y));
+                    for (int x = 0; x < image.width(); x += 8)
+                        colors.insert(image.pixel(x, y));
                 QVERIFY2(colors.size() > 50, qPrintable(QString("Empty or flat map %1").arg(key)));
                 const auto output = qEnvironmentVariable("LORDLY_MAP_CAPTURE");
                 if (!output.isEmpty()) {
@@ -52,7 +228,8 @@ class MapTests : public QObject {
         // actual map resource, without touching the independent briefing image.
         put32(changed, 0x65710 + 9 * 12, u32(changed, 0x65710 + 7 * 12));
         const auto modified = Rom::fromBytes(changed);
-        QVERIFY(Battlefield::load(modified, 1).resourceKey() != Battlefield::load(rom, 1).resourceKey());
+        QVERIFY(Battlefield::load(modified, 1).resourceKey() !=
+                Battlefield::load(rom, 1).resourceKey());
         QCOMPARE(ScenarioMap::load(modified, 1).image->rgba, ScenarioMap::load(rom, 1).image->rgba);
         put32(changed, 0x65710 + 9 * 12, 0xffffffff);
         QVERIFY_THROWS_EXCEPTION(Error, Battlefield::load(Rom::fromBytes(changed), 1));

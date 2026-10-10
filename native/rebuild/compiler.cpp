@@ -858,6 +858,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(plan.treasures.size())
                              .arg(plan.sites.size());
     }
+    if(p.mapEdits() && p.mapEdits()->modified()){
+        result.image=p.mapEdits()->rebuild(Rom::fromBytes(result.image));
+        result.report << QString("Rebuilt %1 shared battlefield maps: geometry, terrain grids and site placements").arg(p.mapEdits()->changedMaps());
+    }
     if ((p.scenePrograms() && p.scenePrograms()->modified()) ||
         (p.sceneEvents() && p.sceneEvents()->modified())) {
         p.scenePrograms()->validateReferences(Rom::fromBytes(result.image),

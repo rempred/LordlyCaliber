@@ -1,10 +1,11 @@
 #pragma once
 #include "engine/project.h"
 #include "engine/scenario_map.h"
-#include <QWidget>
 #include <QCache>
+#include <QWidget>
 #include <functional>
 class QLabel;
+class QComboBox;
 class QCheckBox;
 class QListWidget;
 class QSpinBox;
@@ -39,6 +40,11 @@ class ScenarioMapEditor : public QWidget {
     QSpinBox *x_, *z_;
     QPushButton *apply_, *fields_;
     QCheckBox *terrain_;
+    QWidget *paintTools_;
+    QComboBox *tool_, *paintType_;
+    QSpinBox *brushSize_;
+    QLabel *mapScope_;
+    void paint(const QVector<QPointF> &stroke);
     int key_ = -1;
     bool loading_ = false;
 };

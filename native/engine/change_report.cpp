@@ -341,6 +341,13 @@ ChangeReport Project::changeReport() const {
             add("Sites and treasures", "Scenario key " + it.key(), lines);
         }
     }
+    if(mapEdits_ && mapEdits_->modified()){
+        const auto maps=mapEdits_->json()["maps"].toObject();
+        for(auto it=maps.begin();it!=maps.end();++it){
+            const auto row=it->toObject();const auto paint=QByteArray::fromBase64(row["paint"].toString().toLatin1());int cells=0;for(unsigned char c:paint)cells+=c!=255;
+            add("Maps", "Battlefield " + it.key(), {QString("Painted %1 terrain cells; moved %2 towns or strongholds. Shared missions use the same map.").arg(cells).arg(row["sites"].toObject().size())});
+        }
+    }
     if (scenePrograms_ && scenePrograms_->modified()) {
         for (auto it = scenePrograms_->plan().begin(); it != scenePrograms_->plan().end(); ++it) {
             const auto before = scenePrograms_->resource(it.key()).program.commands.size();

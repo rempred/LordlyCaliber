@@ -137,6 +137,7 @@ struct Vertex {
 struct Triangle {
     std::array<Vertex, 3> vertices;
     int material;
+    int group = -1;
 };
 RenderColor rgba(quint32 word) {
     return {quint8(word >> 24), quint8(word >> 16), quint8(word >> 8), quint8(word)};
@@ -151,6 +152,10 @@ struct Builder {
     QVector<Material> materials;
     QMap<QString, std::shared_ptr<Texture>> textureCache;
     QSet<int> buildingSites;
+    QMap<int, int> siteGroups;
+    QMap<int, QRectF> groupBounds;
+    int currentGroup = -1;
+    QMap<int, QByteArray> drawTransforms;
     QStringList warnings;
     std::array<Tile, 8> tiles;
     QMap<int, Load> loads, palettes;
@@ -363,6 +368,7 @@ struct Builder {
     }
     void triangle(quint32 word) {
         Triangle t;
+        t.group = currentGroup;
         t.material = material();
         for (int i = 0; i < 3; ++i) {
             const int index = int(word >> (16 - i * 8) & 255) / 2;
@@ -554,8 +560,13 @@ struct Battlefield::Data {
     QStringList notices;
     int buildings = 0;
     quint32 key = 0;
+    QByteArray model;
+    QMap<int, QByteArray> drawTransforms;
+    QMap<int, int> siteGroups;
+    QMap<int, QRectF> groups;
 };
-Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint16> &siteFlags) {
+Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint16> &siteFlags,
+                              const QByteArray &overrideModel) {
     rom.requireSupported();
     if (rom.revision() || scenario < 1 || scenario > 64)
         throw Error("Battlefield preview requires a revision-0 scenario");
@@ -569,7 +580,7 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
         throw Error("Battlefield model exceeds its collection");
     Builder b(rom, siteFlags);
     const quint32 key = u32(root, selection * 4);
-    b.model = member(rom, key, 0);
+    b.model = overrideModel.isEmpty() ? member(rom, key, 0) : overrideModel;
     if (b.model.size() < 52)
         throw Error("Truncated battlefield header");
     const quint32 geo = (u32(b.model, 48) + 15) & ~15u;
@@ -617,9 +628,11 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
     Matrix current = identity();
     double alpha = 1;
     int commands = 0;
+    int pendingSite = -1;
     for (quint32 at = u32(b.model, 0);;) {
         if (++commands > 20000)
             throw Error("Battlefield wordcode budget exhausted");
+        const int instructionAt = int(at);
         const quint32 op = u32(b.model, at);
         at += 4;
         if (!op)
@@ -632,6 +645,26 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
             at += 4;
         }
         if (op == 1 || op == 18 || op == 19 || op == 20 || op == 22 || op == 23 || op == 24) {
+            b.currentGroup = (op == 18 || op == 20 || op == 22 || op == 24) ? int(args[1]) : -1;
+            if (b.currentGroup >= 0) {
+                const quint64 box = quint64(u32(b.model, 8)) + quint64(b.currentGroup) * 96;
+                if (box + 96 > quint64(b.model.size()))
+                    throw Error("Field culling box exceeds its model");
+                double x0 = 1e20, z0 = 1e20, x1 = -1e20, z1 = -1e20;
+                for (int i = 0; i < 8; ++i) {
+                    const double x = real(b.model, int(box) + i * 12),
+                                 z = real(b.model, int(box) + i * 12 + 8);
+                    x0 = std::min(x0, x);
+                    x1 = std::max(x1, x);
+                    z0 = std::min(z0, z);
+                    z1 = std::max(z1, z);
+                }
+                b.groupBounds[b.currentGroup] = QRectF(QPointF(x0, z0), QPointF(x1, z1));
+                if (pendingSite > 0) {
+                    b.siteGroups[pendingSite] = b.currentGroup;
+                    pendingSite = -1;
+                }
+            }
             const int bit = op == 19 || op == 23   ? int(args[1])
                             : op == 20 || op == 24 ? int(args[2])
                                                    : -1;
@@ -641,12 +674,26 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
                 continue;
             if (op >= 22 && alpha == 0)
                 continue;
+            QByteArray transform(64, 0);
+            for (int n = 0; n < 16; ++n) {
+                const auto v = qint32(std::round(b.matrix[n] * 65536));
+                put16(transform, n * 2, quint16(quint32(v) >> 16));
+                put16(transform, 32 + n * 2, quint16(v));
+            }
+            b.drawTransforms[instructionAt] = transform;
             b.walk(args[0]);
+            for (int n = 0; n < 16; ++n) {
+                const auto v = qint32(std::round(b.matrix[n] * 65536));
+                put16(transform, n * 2, quint16(quint32(v) >> 16));
+                put16(transform, 32 + n * 2, quint16(v));
+            }
+            b.drawTransforms[instructionAt] += transform;
         } else if (op == 2)
             b.recipe(QString("preset%1").arg(args[0]));
         else if (op == 25) {
             if (args[0] == 0) {
                 const int site = int(args[1]);
+                pendingSite = site;
                 b.buildingSites.insert(site);
                 const int side = site > 0 && site <= siteFlags.size() ? siteFlags[site - 1] & 6 : 0;
                 b.recipe(side == 2 ? "ally" : side == 4 ? "enemy" : "neutral");
@@ -700,16 +747,49 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
             b.warnings << "An additional animated map effect is not drawn.";
         // 10..17 are visibility/culling storage; host overview has no frustum.
     }
+    // Flagless sites (mines, dens and some temples) have no allegiance callback.
+    // Their independent culling box is authored around the site point. Accept a
+    // unique co-located anchor only, within the source's decimal/float precision;
+    // never choose a merely nearby chunk or a connected fortress wall.
+    if (modelId >= 4 && modelId < 42) {
+        const auto points = member(rom, 0x2092506, u8(rom.bytes(), 0x654a0 + scenario * 9 + 7));
+        const int count = int(u32(points, 24));
+        if (count > 255 || points.size() != 28 + count * 8)
+            throw Error("Invalid battlefield site anchors");
+        QSet<int> used;
+        for (int group : b.siteGroups)
+            used.insert(group);
+        for (int site = 1; site <= count; ++site) {
+            if (b.siteGroups.contains(site))
+                continue;
+            const QPointF p(real(points, 28 + (site - 1) * 8), real(points, 32 + (site - 1) * 8));
+            QVector<int> matches;
+            for (auto g = b.groupBounds.begin(); g != b.groupBounds.end(); ++g) {
+                const auto delta = g->center() - p;
+                if (!used.contains(g.key()) && std::abs(delta.x()) <= .00002 &&
+                    std::abs(delta.y()) <= .00002)
+                    matches << g.key();
+            }
+            if (matches.size() == 1) {
+                b.siteGroups[site] = matches.first();
+                used.insert(matches.first());
+            }
+        }
+    }
     if (b.triangles.isEmpty())
         throw Error("Battlefield contains no drawable geometry");
     Battlefield result;
     result.data_ = std::make_shared<Data>();
     result.data_->triangles = std::move(b.triangles);
     result.data_->materials = std::move(b.materials);
+    result.data_->drawTransforms = std::move(b.drawTransforms);
     b.warnings.removeDuplicates();
     result.data_->notices = b.warnings;
     result.data_->buildings = b.buildingSites.size();
     result.data_->key = key;
+    result.data_->model = b.model;
+    result.data_->siteGroups = b.siteGroups;
+    result.data_->groups = b.groupBounds;
     return result;
 }
 QImage Battlefield::render(QRectF bounds, int pixels) const {
@@ -803,5 +883,93 @@ QStringList Battlefield::notices() const {
 }
 quint32 Battlefield::resourceKey() const {
     return data_ ? data_->key : 0;
+}
+QByteArray Battlefield::modelData() const {
+    return data_ ? data_->model : QByteArray();
+}
+QMap<int, int> Battlefield::siteGroups() const {
+    return data_ ? data_->siteGroups : QMap<int, int>();
+}
+QMap<int, QRectF> Battlefield::groups() const {
+    return data_ ? data_->groups : QMap<int, QRectF>();
+}
+QMap<int, QByteArray> Battlefield::drawTransforms() const {
+    return data_ ? data_->drawTransforms : QMap<int, QByteArray>();
+}
+QVector<FieldTriangle> Battlefield::triangles() const {
+    QVector<FieldTriangle> out;
+    if (data_)
+        for (const auto &t : data_->triangles)
+            out << FieldTriangle{
+                {t.vertices[0].position, t.vertices[1].position, t.vertices[2].position}, t.group};
+    return out;
+}
+QVector<FieldTriangle> Battlefield::surface() const {
+    QVector<FieldTriangle> out;
+    if (!data_)
+        return out;
+    const auto sites = data_->siteGroups.values();
+    for (const auto &t : data_->triangles) {
+        if (sites.contains(t.group))
+            continue;
+        const auto a = t.vertices[0].position, b = t.vertices[1].position,
+                   c = t.vertices[2].position;
+        if (QVector3D::crossProduct(b - a, c - a).y() <= .00001)
+            continue;
+        out << FieldTriangle{{a, b, c}, t.group};
+    }
+    return out;
+}
+QImage Battlefield::terrainTexture(int terrain, const QByteArray &grid, QRectF bounds) const {
+    if (!data_ || grid.size() != 65536 || !bounds.isValid())
+        throw Error("Invalid terrain texture selection");
+    QMap<int, double> score, total;
+    const auto sites = data_->siteGroups.values();
+    for (const auto &t : data_->triangles) {
+        if (sites.contains(t.group))
+            continue;
+        const auto &m = data_->materials[t.material];
+        if (!m.first)
+            continue;
+
+        const auto a = t.vertices[0].position, b = t.vertices[1].position,
+                   c = t.vertices[2].position;
+        const double area = QVector3D::crossProduct(b - a, c - a).y();
+        if (area <= 0)
+            continue;
+        const auto p = (a + b + c) / 3;
+        const int x = int((p.x() - bounds.left()) / bounds.width() * 256),
+                  y = int((p.z() - bounds.top()) / bounds.height() * 256);
+        total[t.material] += area;
+        if (x < 0 || x > 255 || y < 0 || y > 255 || u8(grid, y * 256 + x) != terrain)
+            continue;
+        score[t.material] += area;
+    }
+    int selected = -1;
+    double best = 0;
+    for (auto i = score.begin(); i != score.end(); ++i) {
+        const double weight = i.value() / total[i.key()] * std::min(1., i.value());
+        if (weight > best) {
+            best = weight;
+            selected = i.key();
+        }
+    }
+    if (selected < 0)
+        return {};
+    const auto &m = data_->materials[selected];
+    const ColorCombiner combine(m.high, m.low, m.two);
+    QImage out(32, 32, QImage::Format_RGBA8888);
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 32; ++x) {
+            CombineInputs in;
+            in.shade = {255, 255, 255, 255};
+            in.primitive = m.primitive;
+            in.environment = m.environment;
+            in.texel0 = m.first->sample(x, y);
+            in.texel1 = m.second ? m.second->sample(x, y) : in.texel0;
+            const auto c = combine.evaluate(in);
+            out.setPixelColor(x, y, QColor(c[0], c[1], c[2]));
+        }
+    return out;
 }
 } // namespace lordly
