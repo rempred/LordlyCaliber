@@ -66,7 +66,8 @@ not a nearest-building guess. Every drawing list starts with its original
 incoming matrix translated to the new location; this includes flag lists that
 inherit a matrix from an earlier material list. Cloned local matrices and culling
 boxes also move. The original outgoing transform is restored after each moved
-draw. Building height follows the existing height field at the new location.
+draw. Building height follows the edited height field at the new location; an independent
+building on newly raised ground rises with it.
 Point-based deployments referring to the site follow its new placement.
 
 Fort Romulus, Latium and Talpaea have connected walls/gates and lack the normal
@@ -87,17 +88,34 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   authored type among its 4×4 fine cells. Untouched coarse cells retain their
   original classifications. Fixed wall/gate codes 15 and above are protected in
   both grids, including alternate fine grids. Untouched bytes remain intact.
-* Surface triangles are clipped to painted cell runs; native textured triangles
-  follow the existing elevation. This is surface painting, not height sculpting.
-  Brush textures are sampled from the loaded ROM's terrain materials, selected
-  by the proportion of their surface associated with the requested terrain.
+* Brush masks generate contoured native meshes over the original land surface.
+  Highlands form raised ridges, with their full 32x64 native texture mapped from
+  dark foot to light summit using clamped T. Forests form a raised canopy and use
+  the original 64x32 side-strip material when the source canopy group has one.
+  Other terrain uses the full source image at a scale derived from native UV
+  gradients. Roads map their edge-to-centre texture across the painted width.
+  Normal lighting replaces the first brush's full-white vertex colours. Explicit
+  filtered sampling is emitted, and the preview supports the RDP's three-point
+  footprint when the material requests filtering.
+* The previous 32x32 repeating material crop was wrong for these assets. It
+  repeated mountain base/peak bands and discarded forest edge textures. Saved
+  project masks are still compatible and regenerate using the corrected brushes.
+* Generated shapes are approximations of native authored landforms, not copied
+  artist meshes. Painting remains additive over existing elevation: it does not
+  flatten/remove original mountains. Contours follow the brush shape; arbitrary
+  terrain-border artwork is not synthesized. Water uses a static material phase.
   Stock maps have no type-10 cells; Snowy Bridge borrows bridge artwork from a
   snowy map and writes the separate type-10 gameplay classification.
 * Site point collection `0x02092506` has stored members with a 28-byte header and
   float X/Z pairs; scenario byte `+7` selects its member. Moving a site changes
   those floats without resizing the member or altering other sites.
 * Field member 1 is an RLE height grid. Row offsets are halfwords from byte 28;
-  `FFnn` repeats the following u16 value `nn` times. The original reader is
+  `FFnn` repeats the following u16 value `nn` times. Highland painting updates
+  this movement surface with the visible rise. Forest movement follows half the
+  canopy rise, an approximation based on stock canopy/height-grid comparisons.
+  If a summit exceeds the original height range, the grid is requantized;
+  otherwise untouched sample values retain their original encoding values.
+  The original reader is
   `0xF3704..0xF37D4`; triangle interpolation scales by 65279 (`0xF33C8`).
 * New display lists, textures and matrices append inside the model. Compact
   resource members preserve their original bytes when unchanged; edited model
@@ -140,3 +158,11 @@ protected fortress terrain. `ui_tests scenarioMapEditing` drives the brush and
 building drag controls, Undo/Redo, erase/restore, saving, complete ROM rebuilding,
 reopening and checksum verification. `scenarioWorldEditing` remains passing.
 These are offline checks; this update has not had an emulator playthrough.
+
+
+`map_tests battlefieldBrushProfiles` checks full 32x64 rock/forest and 64x32 forest
+edge textures, actual raised geometry, summit/foot brightness, a decoded exported
+movement-height sample, and preview identity after ROM reopening. The editor
+workflow check now exports both a mountain and forest, with height-member readback
+and checksum verification. New brush shapes remain approximations; these checks
+do not establish exact game-camera, weather, or microcode lighting equivalence.

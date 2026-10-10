@@ -403,7 +403,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     mapScope_->setWordWrap(true);
     layout->addWidget(mapScope_);
     paintType_->setToolTip("Paint over existing roads with Plain or another terrain to remove "
-                           "them. Elevation stays unchanged. Fortress walls and gates stay fixed.");
+                           "them. Highlands raise the ground; forests add a canopy and edge. "
+                           "Existing landforms and fixed fortress walls remain.");
     tool_->setToolTip("Drag to paint. Erase painting restores the loaded ROM in that area. Each "
                       "stroke can be undone.");
     auto split = new QSplitter;
@@ -668,7 +669,7 @@ void ScenarioMapEditor::refresh(int key) {
             for (int k : project_->mapEdits()->sharedScenarios(key))
                 keys << QString::number(k);
             mapScope_->setText("Map edits affect runtime keys " + keys.join(", ") +
-                               ". Elevation stays unchanged; briefing artwork is separate.");
+                               ". Highlands raise the ground; briefing artwork is separate.");
         } catch (const Error &e) {
             mapScope_->setText(QString::fromUtf8(e.what()));
         }

@@ -95,15 +95,17 @@ struct Load {
 struct Texture {
     RasterImage image;
     Tile tile;
-    RenderColor sample(double s, double t) const {
+    RenderColor sample(double s, double t, bool filter = false) const {
         if (image.rgba.isEmpty())
             return {255, 255, 255, 255};
-        auto coordinate = [](double value, int shift, int origin, int mask, int flags, int extent) {
-            value = shift <= 10 ? std::ldexp(value, -shift) : std::ldexp(value, 16 - shift);
-            value -= origin / 4.;
+        auto shifted = [](double value, int shift, int origin) {
+            value = std::ldexp(value, shift <= 10 ? -shift : 16 - shift) - origin / 4.;
             if (!std::isfinite(value) || std::abs(value) > 1e9)
                 throw Error("Battlefield texture coordinate exceeds bounds");
-            int p = int(std::floor(value));
+            return value;
+        };
+        const double u = shifted(s, tile.ss, tile.left), v = shifted(t, tile.st, tile.top);
+        auto coordinate = [](int p, int mask, int flags, int extent) {
             if (flags & 2)
                 p = std::clamp(p, 0, extent - 1);
             else if (mask) {
@@ -115,17 +117,36 @@ struct Texture {
             }
             return (p % extent + extent) % extent;
         };
-        const int x = coordinate(s, tile.ss, tile.left, tile.ms, tile.cs, image.width);
-        const int y = coordinate(t, tile.st, tile.top, tile.mt, tile.ct, image.height);
-        const auto *p = reinterpret_cast<const unsigned char *>(image.rgba.constData()) +
-                        (y * image.width + x) * 4;
-        return {p[0], p[1], p[2], p[3]};
+        auto pixel = [&](int x, int y) -> RenderColor {
+            x = coordinate(x, tile.ms, tile.cs, image.width);
+            y = coordinate(y, tile.mt, tile.ct, image.height);
+            const auto *p =
+                reinterpret_cast<const uchar *>(image.rgba.constData()) + (y * image.width + x) * 4;
+            return {p[0], p[1], p[2], p[3]};
+        };
+        const int x = int(std::floor(u)), y = int(std::floor(v));
+        if (!filter)
+            return pixel(x, y);
+        const double fx = u - x, fy = v - y;
+        const auto a = pixel(x, y), b = pixel(x + 1, y), c = pixel(x, y + 1),
+                   d = pixel(x + 1, y + 1);
+        RenderColor out;
+        for (int channel = 0; channel < 4; ++channel) {
+            // RDP's filtered footprint is two triangles, not a four-corner
+            // bilinear blend. Wrap/clamp applies separately to every tap.
+            const double value = fx + fy <= 1 ? a[channel] + fx * (b[channel] - a[channel]) +
+                                                    fy * (c[channel] - a[channel])
+                                              : d[channel] + (1 - fx) * (c[channel] - d[channel]) +
+                                                    (1 - fy) * (b[channel] - d[channel]);
+            out[channel] = quint8(std::clamp(std::round(value), 0., 255.));
+        }
+        return out;
     }
 };
 struct Material {
     std::shared_ptr<Texture> first, second;
     quint32 high = 0xfc127e24, low = 0xfffff9fc, geometry = 0, other = 0;
-    bool two = false, texture = false;
+    bool two = false, texture = false, filter = false;
     double scaleS = 1, scaleT = 1;
     RenderColor primitive{255, 255, 255, 255}, environment{255, 255, 255, 255};
 };
@@ -348,6 +369,7 @@ struct Builder {
         m.high = combineHigh;
         m.low = combineLow;
         m.two = ((otherHigh >> 20) & 3) == 1;
+        m.filter = ((otherHigh >> 12) & 3) != 0;
         m.texture = textureOn;
         m.geometry = geometryMode;
         m.other = otherLow;
@@ -851,8 +873,9 @@ QImage Battlefield::render(QRectF bounds, int pixels) const {
                              v = (a * t.vertices[0].uv.y() + b * t.vertices[1].uv.y() +
                                   c * t.vertices[2].uv.y()) *
                                  m.scaleT;
-                in.texel0 = m.first ? m.first->sample(s, v) : RenderColor{255, 255, 255, 255};
-                in.texel1 = m.second ? m.second->sample(s, v) : in.texel0;
+                in.texel0 =
+                    m.first ? m.first->sample(s, v, m.filter) : RenderColor{255, 255, 255, 255};
+                in.texel1 = m.second ? m.second->sample(s, v, m.filter) : in.texel0;
                 const auto color = combiners[t.material].evaluate(in);
                 const int alpha = color[3];
                 if (!alpha)
@@ -920,7 +943,7 @@ QVector<FieldTriangle> Battlefield::surface() const {
     }
     return out;
 }
-QImage Battlefield::terrainTexture(int terrain, const QByteArray &grid, QRectF bounds) const {
+FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const {
     if (!data_ || grid.size() != 65536 || !bounds.isValid())
         throw Error("Invalid terrain texture selection");
     QMap<int, double> score, total;
@@ -957,19 +980,91 @@ QImage Battlefield::terrainTexture(int terrain, const QByteArray &grid, QRectF b
     if (selected < 0)
         return {};
     const auto &m = data_->materials[selected];
-    const ColorCombiner combine(m.high, m.low, m.two);
-    QImage out(32, 32, QImage::Format_RGBA8888);
-    for (int y = 0; y < 32; ++y)
-        for (int x = 0; x < 32; ++x) {
-            CombineInputs in;
-            in.shade = {255, 255, 255, 255};
-            in.primitive = m.primitive;
-            in.environment = m.environment;
-            in.texel0 = m.first->sample(x, y);
-            in.texel1 = m.second ? m.second->sample(x, y) : in.texel0;
-            const auto c = combine.evaluate(in);
-            out.setPixelColor(x, y, QColor(c[0], c[1], c[2]));
+    // Keep the whole native image. In particular, mountain T is a clamped
+    // foot-to-peak profile, not a repeating 32-pixel patch.
+    auto image = [](const Material &mat) {
+        const auto &im = mat.first->image;
+        QImage out(im.width, im.height, QImage::Format_RGBA8888);
+        const ColorCombiner combine(mat.high, mat.low, mat.two);
+        for (int y = 0; y < im.height; ++y)
+            for (int x = 0; x < im.width; ++x) {
+                const auto *p =
+                    reinterpret_cast<const uchar *>(im.rgba.constData()) + (y * im.width + x) * 4;
+                CombineInputs in;
+                in.shade = {255, 255, 255, 255};
+                in.primitive = mat.primitive;
+                in.environment = mat.environment;
+                in.texel0 = {p[0], p[1], p[2], p[3]};
+                // Water's two-texture combiner is captured at its static preview
+                // phase. Ordinary land uses its original decoded texels.
+                if (mat.second) {
+                    const auto &t = mat.second->tile;
+                    auto unshift = [](double n, int shift) {
+                        return std::ldexp(n, shift <= 10 ? shift : shift - 16);
+                    };
+                    in.texel1 = mat.second->sample(unshift(x, t.ss), unshift(y, t.st));
+                } else
+                    in.texel1 = in.texel0;
+                const auto c = combine.evaluate(in);
+                out.setPixelColor(x, y, QColor(c[0], c[1], c[2], c[3]));
+            }
+        return out;
+    };
+    FieldBrush out;
+    out.texture = image(m);
+    QSet<int> groups;
+    QVector<double> densities[2];
+    for (const auto &t : data_->triangles) {
+        if (t.material != selected)
+            continue;
+        groups.insert(t.group);
+        const auto &a = t.vertices[0], &b = t.vertices[1], &c = t.vertices[2];
+        const double x = b.position.x() - a.position.x(), z = b.position.z() - a.position.z(),
+                     xx = c.position.x() - a.position.x(), zz = c.position.z() - a.position.z(),
+                     det = x * zz - xx * z;
+        if (std::abs(det) < .01)
+            continue;
+        for (int axis = 0; axis < 2; ++axis) {
+            const double ds = axis ? b.uv.y() - a.uv.y() : b.uv.x() - a.uv.x(),
+                         dt = axis ? c.uv.y() - a.uv.y() : c.uv.x() - a.uv.x();
+            const int shift = axis ? m.first->tile.st : m.first->tile.ss;
+            const double scale =
+                std::ldexp(axis ? m.scaleT : m.scaleS, shift <= 10 ? -shift : 16 - shift);
+            densities[axis] << std::hypot((ds * zz - dt * z) / det, (dt * x - ds * xx) / det) *
+                                   scale;
         }
+    }
+    for (int axis = 0; axis < 2; ++axis)
+        if (!densities[axis].isEmpty()) {
+            auto &d = densities[axis];
+            std::sort(d.begin(), d.end());
+            (axis ? out.densityT : out.densityS) = std::clamp(d[d.size() / 2], 1., 128.);
+        }
+    if (terrain == 5 || terrain == 13) {
+        // Forest side strips share the canopy's native object group. Do not
+        // borrow an unrelated ground or town material merely by proximity.
+        QMap<int, double> borders;
+        for (const auto &t : data_->triangles) {
+            const auto &candidate = data_->materials[t.material];
+            if (t.material == selected || t.group < 0 || !groups.contains(t.group) ||
+                !candidate.first || candidate.first->image.width != 64 ||
+                candidate.first->image.height != 32)
+                continue;
+            borders[t.material] +=
+                QVector3D::crossProduct(t.vertices[1].position - t.vertices[0].position,
+                                        t.vertices[2].position - t.vertices[0].position)
+                    .length();
+        }
+        int border = -1;
+        double area = 0;
+        for (auto it = borders.begin(); it != borders.end(); ++it)
+            if (it.value() > area) {
+                border = it.key();
+                area = it.value();
+            }
+        if (border >= 0)
+            out.border = image(data_->materials[border]);
+    }
     return out;
 }
 } // namespace lordly

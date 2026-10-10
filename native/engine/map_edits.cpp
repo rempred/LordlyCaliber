@@ -148,7 +148,7 @@ QByteArray MapEdits::fineTerrain(int key) const {
             out[i] = p[i];
     return out;
 }
-QImage MapEdits::texture(int code) const {
+FieldBrush MapEdits::texture(int code) const {
     if (textures_.contains(code))
         return textures_[code];
     QSet<int> visited;
@@ -167,8 +167,8 @@ QImage MapEdits::texture(int code) const {
             continue;
         if (!s.terrain[0].data.contains(char(sampledType)))
             continue;
-        auto image = s.field.terrainTexture(sampledType, s.terrain[0].data, s.map.bounds);
-        if (!image.isNull()) {
+        auto image = s.field.terrainBrush(sampledType, s.terrain[0].data, s.map.bounds);
+        if (!image.texture.isNull()) {
             textures_[code] = image;
             return image;
         }
@@ -180,7 +180,7 @@ QByteArray MapEdits::model(int key) const {
     const auto &c = changes(key);
     if (!edits_.contains(s.modelId))
         return s.geometry[0].data;
-    QMap<int, QImage> tiles;
+    QMap<int, FieldBrush> tiles;
     for (unsigned char type : c.paint)
         if (type != 255 && !tiles.contains(type))
             tiles[type] = texture(type);
@@ -199,6 +199,7 @@ QVector<FieldPlan> MapEdits::plan() const {
         auto geometry = s.geometry, terrain = s.terrain;
         auto ps = s.points;
         geometry[0].data = model(key);
+        geometry[1].data = editFieldHeight(s, e.value());
         terrain[0].data = fineTerrain(key);
         // Each coarse 4x4 area uses its dominant authored type; unpainted areas
         // keep the original hand-authored battle/encounter classification.

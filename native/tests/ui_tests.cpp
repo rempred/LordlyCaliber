@@ -8278,9 +8278,14 @@ class UiTests : public QObject {
             QCOMPARE(project.mapEdits()->json(), painted);
             mapTool->setCurrentIndex(1);
             auto paintType = editor.findChild<QComboBox *>("mapPaintType");
-            paintType->setCurrentIndex(paintType->findData(4));
+            paintType->setCurrentIndex(paintType->findData(7));
+            editor.findChild<QSpinBox *>("mapBrushSize")->setValue(12);
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
-            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110), quint8(4));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110), quint8(7));
+            // A second landform exercises the separate forest-border texture.
+            paintType->setCurrentIndex(paintType->findData(5));
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({145, 160}));
+            QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 160 * 256 + 145), quint8(5));
             const auto terrainPaint = project.mapEdits()->json();
             mapTool->setCurrentIndex(3);
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
@@ -8331,6 +8336,9 @@ class UiTests : public QObject {
             auto reopenedMaps=MapEdits::load(reopened.rom());
             QCOMPARE(reopenedMaps.fineTerrain(1),project.mapEdits()->fineTerrain(1));
             QCOMPARE(reopenedMaps.model(1),project.mapEdits()->model(1));
+            QCOMPARE(reopenedMaps.source(1).geometry[1].data,
+                     editFieldHeight(project.mapEdits()->source(1), project.mapEdits()->changes(1)));
+            QVERIFY(reopenedMaps.source(1).geometry[1].data != project.mapEdits()->source(1).geometry[1].data);
             QVERIFY(QLineF(reopenedMaps.points(1)[0],project.mapEdits()->points(1)[0]).length()<.00001);
             auto checksum = result.image;
             Rom::updateChecksum(checksum);

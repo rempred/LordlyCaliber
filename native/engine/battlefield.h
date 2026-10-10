@@ -13,6 +13,10 @@ struct FieldTriangle {
     std::array<QVector3D, 3> points;
     int group = -1;
 };
+struct FieldBrush {
+    QImage texture, border;
+    double densityS = 16, densityT = 16;
+};
 // Actual field geometry and materials. Rendering is an orthographic daylight
 // editing view, not an emulation of the game's camera, weather or RDP coverage.
 class Battlefield {
@@ -30,7 +34,7 @@ class Battlefield {
     QMap<int, QByteArray> drawTransforms() const;
     QMap<int, int> siteGroups() const; // one-based site -> verified native culling group
     QMap<int, QRectF> groups() const;
-    QImage terrainTexture(int terrain, const QByteArray &grid, QRectF bounds) const;
+    FieldBrush terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const;
 
   private:
     struct Data;

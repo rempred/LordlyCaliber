@@ -1,3 +1,4 @@
+#include "engine/field_brush.h"
 #include "engine/map_edits.h"
 #include <QSet>
 #include <algorithm>
@@ -133,49 +134,22 @@ class BuildingClone {
         return result;
     }
 };
-struct Region {
-    QRect cells;
-    int type;
+struct BrushPoint {
+    QPointF grid;
+    double distance;
 };
-QVector<Region> regions(const QByteArray &paint) {
-    QVector<Region> out;
-    QMap<QPair<int, int>, int> previous;
-    for (int y = 0; y < 256; ++y) {
-        QMap<QPair<int, int>, int> row;
-        for (int x = 0; x < 256;) {
-            const int type = u8(paint, y * 256 + x);
-            if (type == 255) {
-                ++x;
-                continue;
-            }
-            const int left = x;
-            while (x < 256 && u8(paint, y * 256 + x) == type)
-                ++x;
-            const auto span = qMakePair(left, x);
-            int index = previous.value(span, -1);
-            if (index >= 0 && out[index].type == type)
-                out[index].cells.setBottom(y);
-            else {
-                index = int(out.size());
-                out << Region{QRect(left, y, x - left, 1), type};
-            }
-            row[span] = index;
-        }
-        previous = row;
-    }
-    return out;
-}
-QVector<QVector3D> clip(QVector<QVector3D> points, int axis, double edge, bool greater) {
-    QVector<QVector3D> out;
+using BrushPolygon = QVector<BrushPoint>;
+BrushPolygon clip(BrushPolygon points, double boundary, bool above) {
+    BrushPolygon out;
     if (points.isEmpty())
         return out;
     auto prior = points.last();
-    bool was = greater ? prior[axis] >= edge : prior[axis] <= edge;
+    bool was = above ? prior.distance >= boundary : prior.distance <= boundary;
     for (const auto &p : points) {
-        const bool inside = greater ? p[axis] >= edge : p[axis] <= edge;
+        const bool inside = above ? p.distance >= boundary : p.distance <= boundary;
         if (inside != was) {
-            const double f = (edge - prior[axis]) / (p[axis] - prior[axis]);
-            out << prior + (p - prior) * float(f);
+            const double f = (boundary - prior.distance) / (p.distance - prior.distance);
+            out << BrushPoint{prior.grid + (p.grid - prior.grid) * f, boundary};
         }
         if (inside)
             out << p;
@@ -184,35 +158,246 @@ QVector<QVector3D> clip(QVector<QVector3D> points, int axis, double edge, bool g
     }
     return out;
 }
+// Use the original rendered land surface, including its authored slopes. A
+// coarse spatial index avoids testing every map triangle for every brush vertex.
+class Surface {
+    QVector<FieldTriangle> triangles_;
+    QVector<QVector<int>> bins_ = QVector<QVector<int>>(1024);
+    QRectF bounds_;
+    const FieldMapSource &source_;
+    int cell(double p, double start, double size) const {
+        return std::clamp(int((p - start) / size * 32), 0, 31);
+    }
+
+  public:
+    Surface(const FieldMapSource &s)
+        : triangles_(s.field.surface()), bounds_(s.map.bounds), source_(s) {
+        for (int i = 0; i < triangles_.size(); ++i) {
+            const auto &t = triangles_[i].points;
+            const int x0 = cell(std::min({t[0].x(), t[1].x(), t[2].x()}), bounds_.left(),
+                                bounds_.width()),
+                      x1 = cell(std::max({t[0].x(), t[1].x(), t[2].x()}), bounds_.left(),
+                                bounds_.width()),
+                      z0 = cell(std::min({t[0].z(), t[1].z(), t[2].z()}), bounds_.top(),
+                                bounds_.height()),
+                      z1 = cell(std::max({t[0].z(), t[1].z(), t[2].z()}), bounds_.top(),
+                                bounds_.height());
+            for (int z = z0; z <= z1; ++z)
+                for (int x = x0; x <= x1; ++x)
+                    bins_[z * 32 + x] << i;
+        }
+    }
+    double height(QPointF p) const {
+        double result = -1e9;
+        const int x = cell(p.x(), bounds_.left(), bounds_.width()),
+                  z = cell(p.y(), bounds_.top(), bounds_.height());
+        for (int i : bins_[z * 32 + x]) {
+            const auto &t = triangles_[i].points;
+            const double ax = t[1].x() - t[0].x(), az = t[1].z() - t[0].z(),
+                         bx = t[2].x() - t[0].x(), bz = t[2].z() - t[0].z(), px = p.x() - t[0].x(),
+                         pz = p.y() - t[0].z(), det = ax * bz - bx * az;
+            if (std::abs(det) < 1e-9)
+                continue;
+            const double a = (px * bz - bx * pz) / det, b = (ax * pz - px * az) / det;
+            if (a >= -1e-5 && b >= -1e-5 && a + b <= 1.00001)
+                result = std::max(result,
+                                  t[0].y() + a * (t[1].y() - t[0].y()) + b * (t[2].y() - t[0].y()));
+        }
+        return result == -1e9 ? heightAt(source_, p) : result;
+    }
+};
 QByteArray textureBytes(const QImage &image) {
-    if (image.size() != QSize(32, 32))
-        throw Error("Invalid map brush texture");
-    QByteArray out(2048, 0);
-    for (int y = 0; y < 32; ++y)
-        for (int x = 0; x < 32; ++x) {
+    const int w = image.width(), h = image.height();
+    if (w < 1 || h < 1 || (w & (w - 1)) || (h & (h - 1)) || w * h > 2048)
+        throw Error("Invalid map brush texture dimensions");
+    QByteArray out(w * h * 2, 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
             const auto c = image.pixelColor(x, y);
-            put16(out, (y * 32 + x) * 2,
-                  quint16((c.red() * 31 / 255 << 11) | (c.green() * 31 / 255 << 6) |
-                          (c.blue() * 31 / 255 << 1) | 1));
+            // Decode/re-encode an RGBA16 texel without losing a level to truncation.
+            put16(out, (y * w + x) * 2,
+                  quint16(((c.red() * 31 + 127) / 255 << 11) | ((c.green() * 31 + 127) / 255 << 6) |
+                          ((c.blue() * 31 + 127) / 255 << 1) | (c.alpha() >= 128)));
         }
     return out;
 }
+struct PaintVertex {
+    QVector3D p, normal;
+    QPointF uv;
+};
+using PaintTriangle = std::array<PaintVertex, 3>;
+QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brush,
+                            const Surface &surface, bool border) {
+    QVector<PaintTriangle> result;
+    const int step = shape.road() ? 1 : 2;
+    const bool hasBorder = !brush.border.isNull() && shape.forest();
+    const auto &texture = border ? brush.border : brush.texture;
+    auto vertex = [&](const BrushPoint &p) {
+        const auto world = shape.world(p.grid);
+        const double lift = shape.rise(p.grid);
+        auto height = [&](QPointF xy) { return surface.height(xy) + shape.rise(shape.grid(xy)); };
+        constexpr double offset = .12;
+        QVector3D normal(
+            float(height(world - QPointF(offset, 0)) - height(world + QPointF(offset, 0))),
+            float(2 * offset),
+            float(height(world - QPointF(0, offset)) - height(world + QPointF(0, offset))));
+        normal.normalize();
+        QPointF uv(world.x() * brush.densityS, world.y() * brush.densityT);
+        if (shape.mountain())
+            uv = {(world.x() + world.y()) * 8,
+                  -.5 + texture.height() * std::clamp(p.distance / shape.peak(p.grid), 0., 1.)};
+        else if (border)
+            uv = {(world.x() + world.y()) * 48,
+                  -.5 + texture.height() * std::clamp(p.distance / shape.edgeWidth(), 0., 1.)};
+        else if (shape.road())
+            uv = {-.5 + texture.width() * .5 * std::clamp(p.distance / shape.peak(p.grid), 0., 1.),
+                  (world.x() + world.y()) * brush.densityT};
+        return PaintVertex{
+            {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
+            normal,
+            uv};
+    };
+    auto polygon = [&](BrushPolygon poly) {
+        poly = clip(poly, 0, true);
+        if (hasBorder)
+            poly = clip(poly, shape.edgeWidth(), !border);
+        for (int n = 1; n + 1 < poly.size(); ++n) {
+            const auto a = poly[n].grid - poly[0].grid, b = poly[n + 1].grid - poly[0].grid;
+            if (std::abs(a.x() * b.y() - a.y() * b.x()) < 1e-7)
+                continue;
+            result << PaintTriangle{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+        }
+    };
+    auto patch = [&](int x, int z, int width) {
+        const QPointF a(x, z), b(x, z + width), c(x + width, z + width), d(x + width, z);
+        const BrushPoint pa{a, shape.distance(a)}, pb{b, shape.distance(b)},
+            pc{c, shape.distance(c)}, pd{d, shape.distance(d)};
+        polygon({pa, pb, pc});
+        polygon({pa, pc, pd});
+    };
+    for (int z = std::max(0, shape.cells.top() / step * step);
+         z <= std::min(255, shape.cells.bottom() + 1); z += step)
+        for (int x = std::max(0, shape.cells.left() / step * step);
+             x <= std::min(255, shape.cells.right() + 1); x += step) {
+            // Retain a single-cell dab even when all coarse corners miss it.
+            if (step == 2 && shape.distance({double(x + 1), double(z + 1)}) > 0 &&
+                shape.distance({double(x), double(z)}) <= 0 &&
+                shape.distance({double(x + 2), double(z)}) <= 0 &&
+                shape.distance({double(x), double(z + 2)}) <= 0 &&
+                shape.distance({double(x + 2), double(z + 2)}) <= 0) {
+                patch(x, z, 1);
+                patch(x + 1, z, 1);
+                patch(x, z + 1, 1);
+                patch(x + 1, z + 1, 1);
+            } else
+                patch(x, z, step);
+        }
+    return result;
+}
 } // namespace
+QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
+    const auto &original = source.geometry[1].data;
+    QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
+    for (int type : {5, 7, 13, 14})
+        if (change.paint.contains(char(type)))
+            shapes[type] = std::make_shared<FieldBrushShape>(change.paint, type, source.map.bounds);
+    if (shapes.isEmpty())
+        return original;
+    const int w = u16(original, 0), h = u16(original, 2);
+    if (w < 2 || h < 2 || w > 256 || h > 256 || original.size() < 28 + h * 2)
+        throw Error("Unsupported field height grid");
+    const Surface surface(source);
+    const double minY = real(original, 12), oldMax = real(original, 16);
+    if (oldMax < minY || real(original, 8) <= real(original, 4) ||
+        real(original, 24) <= real(original, 20))
+        throw Error("Invalid field height bounds");
+    double maxY = oldMax;
+    QVector<double> values(w * h);
+    bool changed = false;
+    for (int z = 0; z < h; ++z)
+        for (int x = 0; x < w; ++x) {
+            const QPointF p(
+                real(original, 4) + x * (real(original, 8) - real(original, 4)) / (w - 1),
+                real(original, 20) + z * (real(original, 24) - real(original, 20)) / (h - 1));
+            const double base = minY + (oldMax - minY) * heightSample(original, x, z) / 65279.;
+            double value = base;
+            for (const auto &shape : shapes) {
+                // Native foliage is above its walk surface; its movement grid
+                // follows roughly half of the canopy rise. Rock uses the visible
+                // surface, including when it is painted over existing foliage.
+                const double rise = shape->rise(shape->grid(p));
+                if (rise > 0) {
+                    value =
+                        std::max(value, shape->forest() ? base + rise * .5
+                                                        : std::max(base, surface.height(p)) + rise);
+                    changed = true;
+                }
+            }
+            values[z * w + x] = value;
+            maxY = std::max(maxY, value);
+        }
+    if (!changed)
+        return original;
+    // Keep the existing scale whenever possible, preserving untouched samples
+    // exactly. When a new summit exceeds it, the complete grid is requantized.
+    QByteArray out = original.left(28);
+    putReal(out, 16, maxY);
+    maxY = real(out, 16);
+    out.resize(28 + h * 2);
+    for (int z = 0; z < h; ++z) {
+        const int offset = (int(out.size()) - 28) / 2;
+        if (offset > 65535)
+            throw Error("Edited height grid exceeds row offset range");
+        put16(out, 28 + z * 2, quint16(offset));
+        QVector<quint16> row;
+        for (int x = 0; x < w; ++x)
+            row << quint16(std::clamp(
+                std::round((values[z * w + x] - minY) / (maxY - minY) * 65279.), 0., 65279.));
+        for (int x = 0; x < w;) {
+            int n = 1;
+            while (x + n < w && n < 255 && row[x + n] == row[x])
+                ++n;
+            auto half = [&](quint16 v) {
+                const int at = int(out.size());
+                out.resize(at + 2);
+                put16(out, at, v);
+            };
+            if (n >= 3) {
+                half(quint16(0xff00 | n));
+                half(row[x]);
+            } else
+                for (int i = 0; i < n; ++i)
+                    half(row[x]);
+            x += n;
+        }
+    }
+    return out;
+}
 QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &change,
-                          const QMap<int, QImage> &tiles) {
+                          const QMap<int, FieldBrush> &tiles) {
     const auto &original = source.geometry[0].data;
     Append out{original, int((u32(original, 48) + 15) & ~15u)};
     const auto groups = source.field.siteGroups();
     QMap<int, QVector3D> movement;
-    for (auto it = change.sites.begin(); it != change.sites.end(); ++it) {
+    auto elevated = source;
+    elevated.geometry[1].data = editFieldHeight(source, change);
+    // A building on newly raised ground must rise too, even if its X/Z marker
+    // was not dragged during this stroke.
+    for (auto it = groups.begin(); it != groups.end(); ++it) {
+        const int row = it.key() - 1;
+        if (row < 0 || row >= source.map.points.size())
+            continue;
+        const auto from = source.map.points[row], to = change.sites.value(row, from);
+        const auto delta = to - from;
+        const QVector3D shift(float(delta.x()),
+                              float(heightAt(elevated, to) - heightAt(source, from)),
+                              float(delta.y()));
+        if (shift.length() > .00001)
+            movement[it.value()] = shift;
+    }
+    for (auto it = change.sites.begin(); it != change.sites.end(); ++it)
         if (!groups.contains(it.key() + 1))
             throw Error("Town has no verified drawing group");
-        const auto from = source.map.points[it.key()];
-        const auto delta = it.value() - from;
-        movement[groups[it.key() + 1]] = {
-            float(delta.x()), float(heightAt(source, it.value()) - heightAt(source, from)),
-            float(delta.y())};
-    }
     constexpr int widths[] = {0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 3, 3, 1,
                               1, 0, 1, 1, 1, 2, 2, 3, 1, 2, 2, 3, 2};
     QByteArray program;
@@ -268,99 +453,88 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                         real(original, at + p * 12 + axis * 4) + i.value()[axis]);
     }
     if (!tiles.isEmpty()) {
-        const auto surfaces = source.field.surface();
-        const auto areas = regions(change.paint);
-        QMap<int, QVector<std::array<QVector3D, 3>>> painted;
-        int count = 0;
-        for (const auto &area : areas) {
-            const auto &b = source.map.bounds;
-            const double x0 = b.left() + area.cells.left() * b.width() / 256,
-                         x1 = b.left() + (area.cells.right() + 1) * b.width() / 256,
-                         z0 = b.top() + area.cells.top() * b.height() / 256,
-                         z1 = b.top() + (area.cells.bottom() + 1) * b.height() / 256;
-            for (const auto &t : surfaces) {
-                QVector<QVector3D> poly{t.points[0], t.points[1], t.points[2]};
-                poly = clip(poly, 0, x0, true);
-                poly = clip(poly, 0, x1, false);
-                poly = clip(poly, 2, z0, true);
-                poly = clip(poly, 2, z1, false);
-                for (int n = 1; n + 1 < poly.size(); ++n) {
-                    const auto cross =
-                        QVector3D::crossProduct(poly[n] - poly[0], poly[n + 1] - poly[0]);
-                    if (cross.y() < .000001)
-                        continue;
-                    if (++count > 5000)
-                        throw Error("This painting requires too many map triangles; simplify or "
-                                    "erase some strokes");
-                    painted[area.type] << std::array<QVector3D, 3>{poly[0], poly[n], poly[n + 1]};
-                }
-            }
-        }
+        const Surface surface(source);
         QByteArray matrix(64, 0);
         for (int n = 0; n < 3; ++n)
             putFixed(matrix, n * 5, 1. / 64);
         putFixed(matrix, 15, 1);
-        const auto matrixAddress = out.add(matrix, 16);
         QByteArray dl;
         command(dl, 0xe7000000, 0);
-        command(dl, 0xda380003, matrixAddress);
-        command(dl, 0xd9000000, 0x00200405);
+        command(dl, 0xda380003, out.add(matrix, 16));
+        // Native land uses lighting and vertex normals. Full-white vertex
+        // colours bypassed that lighting and washed out the forest in game.
+        command(dl, 0xd9000000, 0x00220405);
         command(dl, 0xe3000a01, 0);
         command(dl, 0xe3001001, 0);
+        command(dl, 0xe3001201, 0x00002000); // Filter enlarged terrain texels.
         command(dl, 0xe200001c, 0x00552078);
         command(dl, 0xfc127e24, 0xfffff9fc);
         command(dl, 0xd7000002, 0xffffffff);
-        for (auto type = painted.begin(); type != painted.end(); ++type) {
-            if (!tiles.contains(type.key()))
-                throw Error("Missing map brush texture");
-            const auto tex = out.add(textureBytes(tiles[type.key()]), 8);
-            command(dl, 0xe7000000, 0);
-            command(dl, 0xfd100000, tex);
-            command(dl, 0xf5100000, 0x07000000);
-            command(dl, 0xe6000000, 0);
-            command(dl, 0xf3000000, 0x073ff100);
-            command(dl, 0xe7000000, 0);
-            command(dl, 0xf5101000, 0x00014050);
-            command(dl, 0xf2000000, 0x0007c07c);
-            for (int start = 0; start < type->size(); start += 10) {
-                const int n = std::min(10, int(type->size()) - start), vertices = n * 3;
-                QByteArray data(vertices * 16, 0);
-                for (int tri = 0; tri < n; ++tri) {
-                    const auto &points = (*type)[start + tri];
-                    const auto mid = (points[0] + points[1] + points[2]) / 3;
-                    const double ox = std::floor(mid.x() / 4) * 4, oz = std::floor(mid.z() / 4) * 4;
-                    for (int v = 0; v < 3; ++v) {
-                        const int at = (tri * 3 + v) * 16;
-                        for (int axis = 0; axis < 3; ++axis) {
-                            const double p = (points[v][axis] + (axis == 1 ? .03125 : 0)) * 64;
-                            if (!std::isfinite(p) || std::abs(p) > 32767)
-                                throw Error("Paint geometry exceeds vertex range");
-                            put16(data, at + axis * 2, quint16(qint16(std::round(p))));
+        int count = 0;
+        for (auto type = tiles.begin(); type != tiles.end(); ++type) {
+            const FieldBrushShape shape(change.paint, type.key(), source.map.bounds);
+            for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
+                const bool border = pass == 1;
+                const auto &image = border ? type->border : type->texture;
+                const auto painted = mesh(shape, type.value(), surface, border);
+                count += int(painted.size());
+                if (count > 5000)
+                    throw Error("This painting requires too many map triangles; simplify or erase "
+                                "some strokes");
+                const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
+                          ms = int(std::log2(w)), mt = int(std::log2(h));
+                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border ? 2 : 0;
+                const auto tex = out.add(textureBytes(image), 8);
+                command(dl, 0xe7000000, 0);
+                command(dl, 0xfd100000, tex);
+                command(dl, 0xf5100000, 0x07000000);
+                command(dl, 0xe6000000, 0);
+                const int dxt = (2048 + line - 1) / line;
+                command(dl, 0xf3000000, 0x07000000 | (quint32(w * h - 1) << 12) | quint32(dxt));
+                command(dl, 0xe7000000, 0);
+                command(dl, 0xf5100000 | (quint32(line) << 9),
+                        (ct << 18) | (quint32(mt) << 14) | (cs << 8) | (quint32(ms) << 4));
+                command(dl, 0xf2000000, (quint32((w - 1) * 4) << 12) | quint32((h - 1) * 4));
+                for (int start = 0; start < painted.size(); start += 10) {
+                    const int n = std::min(10, int(painted.size()) - start), vertices = n * 3;
+                    QByteArray data(vertices * 16, 0);
+                    for (int tri = 0; tri < n; ++tri) {
+                        const auto &points = painted[start + tri];
+                        const auto mid = (points[0].uv + points[1].uv + points[2].uv) / 3;
+                        const double os = cs ? 0 : std::floor(mid.x() / w) * w,
+                                     ot = ct ? 0 : std::floor(mid.y() / h) * h;
+                        for (int v = 0; v < 3; ++v) {
+                            const int at = (tri * 3 + v) * 16;
+                            for (int axis = 0; axis < 3; ++axis) {
+                                const double p = points[v].p[axis] * 64;
+                                if (!std::isfinite(p) || std::abs(p) > 32767)
+                                    throw Error("Paint geometry exceeds vertex range");
+                                put16(data, at + axis * 2, quint16(qint16(std::round(p))));
+                                put8(data, at + 12 + axis,
+                                     quint8(qint8(std::round(points[v].normal[axis] * 127))));
+                            }
+                            put16(data, at + 8,
+                                  quint16(qint16(std::round((points[v].uv.x() - os) * 32))));
+                            put16(data, at + 10,
+                                  quint16(qint16(std::round((points[v].uv.y() - ot) * 32))));
+                            put8(data, at + 15, 255);
                         }
-                        put16(data, at + 8,
-                              quint16(qint16(std::round((points[v].x() - ox) * 256))));
-                        put16(data, at + 10,
-                              quint16(qint16(std::round((points[v].z() - oz) * 256))));
-                        for (int c = 0; c < 4; ++c)
-                            put8(data, at + 12 + c, 255);
                     }
-                }
-                const auto vertexAddress = out.add(data, 16);
-                command(dl, 0x01000000u | (quint32(vertices) << 12) | (quint32(vertices) << 1),
-                        vertexAddress);
-                for (int tri = 0; tri < n; ++tri) {
-                    const int v = tri * 3;
-                    command(dl,
-                            0x05000000u | (quint32(v * 2) << 16) | (quint32((v + 1) * 2) << 8) |
-                                quint32((v + 2) * 2),
-                            0);
+                    command(dl, 0x01000000u | (quint32(vertices) << 12) | (quint32(vertices) << 1),
+                            out.add(data, 16));
+                    for (int tri = 0; tri < n; ++tri) {
+                        const int v = tri * 3;
+                        command(dl,
+                                0x05000000u | (quint32(v * 2) << 16) | (quint32((v + 1) * 2) << 8) |
+                                    quint32((v + 2) * 2),
+                                0);
+                    }
                 }
             }
         }
         command(dl, 0xdf000000, 0);
-        const auto list = out.add(dl);
         word(program, 1);
-        word(program, list);
+        word(program, out.add(dl));
     }
     word(program, 0);
     const auto programAddress = out.add(program, 4);

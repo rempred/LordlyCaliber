@@ -46,13 +46,15 @@ class MapEdits {
   private:
     Rom rom_;
     mutable QMap<int, FieldMapSource> sources_;
-    mutable QMap<int, QImage> textures_;
+    mutable QMap<int, FieldBrush> textures_;
     QMap<int, FieldChanges> edits_;
     int modelId(int key) const;
-    QImage texture(int code) const;
+    FieldBrush texture(int code) const;
     void prune(int model);
 };
 // Original packed model is retained; edits append native display lists and
 // translate a town's verified culling group. No bitmap replaces the battlefield.
-QByteArray editFieldModel(const FieldMapSource &, const FieldChanges &, const QMap<int, QImage> &);
+QByteArray editFieldModel(const FieldMapSource &, const FieldChanges &,
+                          const QMap<int, FieldBrush> &);
+QByteArray editFieldHeight(const FieldMapSource &, const FieldChanges &);
 } // namespace lordly

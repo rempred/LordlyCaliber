@@ -12,6 +12,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 #include <bit>
+#include <cmath>
 using namespace lordly;
 class MapTests : public QObject {
     Q_OBJECT
@@ -27,7 +28,7 @@ class MapTests : public QObject {
             const auto &source = edit.source(1);
             QVERIFY(edit.canMoveSite(1, 0));
             const auto originalPoints = source.map.points;
-            source.field.terrainTexture(1, source.terrain[0].data, source.map.bounds)
+            source.field.terrainBrush(1, source.terrain[0].data, source.map.bounds).texture
                 .scaled(256, 256)
                 .save(QCoreApplication::applicationDirPath() + "/road-tile.png");
             edit.paint(1, {{105, 120}, {125, 130}}, 1, 2);
@@ -183,6 +184,135 @@ class MapTests : public QObject {
             QVERIFY(!edits.modified());
             qInfo() << "Verified complete independent movement for" << movedSites << "sites,"
                     << visited.size() << "maps, 14 brush materials, and shared map edits.";
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void battlefieldBrushProfiles() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edit = MapEdits::load(rom);
+            const auto &source = edit.source(1);
+            const auto mountain =
+                source.field.terrainBrush(7, source.terrain[0].data, source.map.bounds);
+            const auto forest =
+                source.field.terrainBrush(5, source.terrain[0].data, source.map.bounds);
+            QCOMPARE(mountain.texture.size(), QSize(32, 64));
+            QCOMPARE(forest.texture.size(), QSize(32, 64));
+            QCOMPARE(forest.border.size(), QSize(64, 32));
+            // Choose the largest clear patch of plains,
+            // so original hills cannot masquerade as our generated elevation.
+            QPoint center;
+            int best = -1;
+            for (int y = 24; y < 232; y += 4)
+                for (int x = 24; x < 232; x += 4) {
+                    int radius = 0;
+                    for (int r = 1; r <= 22; ++r) {
+                        bool plain = true;
+                        for (int z = -r; z <= r && plain; ++z)
+                            for (int xx = -r; xx <= r; ++xx)
+                                if (xx * xx + z * z <= r * r &&
+                                    u8(source.terrain[0].data, (y + z) * 256 + x + xx) != 3) {
+                                    plain = false;
+                                    break;
+                                }
+                        if (!plain)
+                            break;
+                        radius = r;
+                    }
+                    if (radius > best) {
+                        center = {x, y};
+                        best = radius;
+                    }
+                }
+            QVERIFY(best >= 10);
+            const int radius = std::min(best, 20);
+            const auto b = source.map.bounds;
+            const QPointF world(b.left() + (center.x() + .5) * b.width() / 256,
+                                b.top() + (center.y() + .5) * b.height() / 256);
+            const double extent = (radius + 5) * b.width() / 256;
+            const QRectF crop(world.x() - extent, world.y() - extent, extent * 2, extent * 2);
+            const auto folder = QCoreApplication::applicationDirPath();
+            source.field.render(crop, 512).save(folder + "/brush-before.png");
+            edit.paint(1, {center}, 7, radius);
+            const auto field = Battlefield::load(rom, 1, {}, edit.model(1));
+            const auto tris = field.triangles();
+            double bottom = 1e6, top = -1e6;
+            for (int t = source.field.triangleCount(); t < tris.size(); ++t)
+                for (const auto &v : tris[t].points) {
+                    bottom = std::min(bottom, double(v.y()));
+                    top = std::max(top, double(v.y()));
+                }
+            qInfo() << "Brush profile" << center << radius << b << bottom << top;
+            QVERIFY2(top - bottom > .5, "Mountain painting must produce an actual raised surface");
+            const auto rendered = field.render(crop, 512);
+            QVERIFY(rendered.save(folder + "/brush-mountain.png"));
+            double foot = 0, summit = 0;
+            int nf = 0, ns = 0;
+            const double pixelRadius = radius / double(radius + 5) * 256;
+            for (int y = 0; y < 512; ++y)
+                for (int x = 0; x < 512; ++x) {
+                    const double d = std::hypot(x - 256., y - 256.) / pixelRadius;
+                    const double light = qGray(rendered.pixel(x, y));
+                    if (d < .15) {
+                        summit += light;
+                        ++ns;
+                    }
+                    if (d > .85 && d < .95) {
+                        foot += light;
+                        ++nf;
+                    }
+                }
+            QVERIFY2(summit / ns > foot / nf * 1.4, "Mountain profile must rise from dark foot to "
+                                                    "light summit without repeating bands");
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            const auto reopened = MapEdits::load(exported);
+            const auto &rebuilt = reopened.source(1);
+            QVERIFY(rebuilt.geometry[1].data != source.geometry[1].data);
+            QCOMPARE(rebuilt.geometry[0].data, edit.model(1));
+            QCOMPARE(rebuilt.field.render(crop, 512), rendered);
+            QCOMPARE(rebuilt.map.image->rgba, source.map.image->rgba);
+            QCOMPARE(reopened.source(2).geometry[1].data, edit.source(2).geometry[1].data);
+            // Independent RLE readback: verify a raised central movement sample,
+            // not merely a changed compressed member or renderer-only hill.
+            auto height = [](const QByteArray &data, int x, int z) {
+                auto f = [&](int at) { return double(std::bit_cast<float>(u32(data, at))); };
+                int at = 28 + u16(data, 28 + z * 2) * 2, cell = 0;
+                while (cell < u16(data, 0)) {
+                    const int token = u16(data, at);
+                    at += 2;
+                    const int n = token >= 0xff00 ? token & 255 : 1;
+                    const int value = token >= 0xff00 ? u16(data, at) : token;
+                    if (token >= 0xff00)
+                        at += 2;
+                    if (x < cell + n)
+                        return f(12) + (f(16) - f(12)) * value / 65279.;
+                    cell += n;
+                }
+                return -1000.;
+            };
+            const auto &hd = source.geometry[1].data;
+            auto f = [&](int at) { return double(std::bit_cast<float>(u32(hd, at))); };
+            const int hx = int(std::round((world.x() - f(4)) / (f(8) - f(4)) * (u16(hd, 0) - 1))),
+                      hz =
+                          int(std::round((world.y() - f(20)) / (f(24) - f(20)) * (u16(hd, 2) - 1)));
+            QVERIFY(height(rebuilt.geometry[1].data, hx, hz) > height(hd, hx, hz) + .5);
+            edit.restore(1);
+            edit.paint(1, {center}, 5, radius);
+            const auto trees = Battlefield::load(rom, 1, {}, edit.model(1));
+            QVERIFY(trees.render(crop, 512).save(folder + "/brush-forest.png"));
+            edit.restore(1);
+            edit.paint(1, {center}, 4, radius);
+            QVERIFY(Battlefield::load(rom, 1, {}, edit.model(1))
+                        .render(crop, 512)
+                        .save(folder + "/brush-barrens.png"));
+            qInfo() << "Verified full forest/rock textures, raised native mesh, light summit, "
+                       "movement-height readback, export/reopen and unchanged briefing/other maps; "
+                       "centre"
+                    << center << "radius" << radius;
         } catch (const Error &e) {
             QFAIL(e.what());
         }
