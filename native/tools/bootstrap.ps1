@@ -17,13 +17,19 @@ if (!(Test-Path -LiteralPath (Join-Path $ToolsRoot "cmake-$($pins.cmake.version)
 }
 $qtRoot = Join-Path $ToolsRoot "Qt\$($pins.qt.version)\msvc2022_64"
 New-Item -ItemType Directory -Path $qtRoot -Force | Out-Null
+$sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
+if (!$sevenZip -and (Test-Path -LiteralPath "$env:ProgramFiles/7-Zip/7z.exe")) {
+    $sevenZip = "$env:ProgramFiles/7-Zip/7z.exe"
+}
 foreach ($record in $pins.qt.archives) {
     $name = ([Uri]$record.url).Segments[-1]
     $archive = Get-PinnedArchive $record.url $name $record.sha256
     $stamp = Join-Path $qtRoot ('.installed-' + $record.sha256)
     if (!(Test-Path -LiteralPath $stamp)) {
-        & tar.exe -xf $archive -C $qtRoot
-        if ($LASTEXITCODE -ne 0) { throw "Could not extract $name" }
+        # Server 2022's system tar cannot decode Qt's LZMA-compressed 7z files.
+        if ($sevenZip) { & $sevenZip x -y "-o$qtRoot" $archive }
+        else { & tar.exe -xf $archive -C $qtRoot }
+        if ($LASTEXITCODE -ne 0) { throw "Could not extract $name. Install 7-Zip and retry." }
         Set-Content -LiteralPath $stamp -Value $record.sha256
     }
 }
