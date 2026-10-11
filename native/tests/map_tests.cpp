@@ -57,6 +57,44 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void terrainGroundPreservation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto edits = MapEdits::load(rom);
+        const auto &s = edits.source(6);
+        const QPoint center(40, 55);
+        QCOMPARE(u8(s.terrain[0].data, center.y() * 256 + center.x()), 3);
+        QCOMPARE(u8(s.visualTerrain, center.y() * 256 + center.x()), 3);
+        const auto before = s.field.render(s.map.bounds, 1024);
+        edits.paint(6, {center}, 5, 7);
+        const FieldBorders borders(s, edits.changes(6));
+        QVERIFY(borders.removed.isEmpty()); // New forest on open plain removes no native ground.
+        const auto field = Battlefield::load(rom, 6, {}, edits.model(6));
+        const auto after = field.render(s.map.bounds, 1024);
+        QVERIFY(before != after);
+        const QRect changed((center.x() - 10) * 4, (center.y() - 10) * 4, 80, 80);
+        int changedOutside = 0;
+        for (int y = 0; y < before.height(); ++y)
+            for (int x = 0; x < before.width(); ++x)
+                if (!changed.contains(x, y) && before.pixel(x, y) != after.pixel(x, y)) ++changedOutside;
+        QCOMPARE(changedOutside, 0);
+        const auto out = QCoreApplication::applicationDirPath();
+        QVERIFY(before.save(out + "/forest-ground-before.png"));
+        QVERIFY(after.save(out + "/forest-ground-after.png"));
+        const auto rebuilt = Rom::fromBytes(edits.rebuild(rom));
+        QCOMPARE(Battlefield::load(rebuilt, 6).render(s.map.bounds, 1024), after);
+        edits.restore(6); QCOMPARE(edits.model(6), s.geometry[0].data);
+        // The supplied mountain report is on key 5. Keep a close rendered/export
+        // comparison of an authored ridge alongside the unchanged native terrain.
+        const auto &mountain = edits.source(5);
+        edits.paint(5, {{30, 70}, {38, 45}}, 7, 7);
+        const auto painted = Battlefield::load(rom, 5, {}, edits.model(5));
+        QVERIFY(painted.render(mountain.map.bounds, 1536).save(out + "/mountain-rim-after.png"));
+        const auto ridgeRom = Rom::fromBytes(edits.rebuild(rom));
+        QCOMPARE(Battlefield::load(ridgeRom, 5).render(mountain.map.bounds, 1024),
+                 painted.render(mountain.map.bounds, 1024));
+    }
     void cityPalette() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -527,7 +565,13 @@ class MapTests : public QObject {
             const auto oldPath = qEnvironmentVariable("LORDLY_MAP_OLD_ROM");
             const auto old = Rom::open(oldPath);
             const auto exported = Rom::fromBytes(edit.rebuild(rom));
-            for (int key : {4, 5}) {
+            QSet<int> visited;
+            const auto changed = edit.json()["maps"].toObject();
+            for (int key = 1; key <= 64; ++key) {
+                const int model = u8(rom.bytes(), 0x654a0 + key * 9 + 3);
+                if (key == 54 || visited.contains(model) || !changed.contains(QString::number(model)))
+                    continue;
+                visited.insert(model);
                 const auto &source = edit.source(key);
                 const auto field = Battlefield::load(rom, key, {}, edit.model(key));
                 const auto stem =
@@ -536,21 +580,23 @@ class MapTests : public QObject {
                 Battlefield::load(old, key)
                     .render(source.map.bounds, 1024)
                     .save(stem + "-before.png");
-                const auto expected =
-                    source.field.terrainBrush(7, source.terrain[0].data, source.map.bounds).texture;
-                QByteArray texels;
-                for (int y = 0; y < expected.height(); ++y)
-                    for (int x = 0; x < expected.width(); ++x) {
-                        const auto c = expected.pixelColor(x, y);
-                        const int at = int(texels.size());
-                        texels += QByteArray(2, 0);
-                        put16(texels, at,
-                              quint16(((c.red() * 31 + 127) / 255 << 11) |
-                                      ((c.green() * 31 + 127) / 255 << 6) |
-                                      ((c.blue() * 31 + 127) / 255 << 1) | (c.alpha() >= 128)));
-                    }
-                QVERIFY(!texels.isEmpty());
-                QVERIFY(edit.model(key).contains(texels));
+                if (edit.changes(key).paint.contains(char(7))) {
+                    const auto expected =
+                        source.field.terrainBrush(7, source.terrain[0].data, source.map.bounds).texture;
+                    QByteArray texels;
+                    for (int y = 0; y < expected.height(); ++y)
+                        for (int x = 0; x < expected.width(); ++x) {
+                            const auto c = expected.pixelColor(x, y);
+                            const int at = int(texels.size());
+                            texels += QByteArray(2, 0);
+                            put16(texels, at,
+                                  quint16(((c.red() * 31 + 127) / 255 << 11) |
+                                          ((c.green() * 31 + 127) / 255 << 6) |
+                                          ((c.blue() * 31 + 127) / 255 << 1) | (c.alpha() >= 128)));
+                        }
+                    QVERIFY(!texels.isEmpty());
+                    QVERIFY(edit.model(key).contains(texels));
+                }
                 QCOMPARE(Battlefield::load(exported, key).render(source.map.bounds, 512),
                          field.render(source.map.bounds, 512));
                 QVERIFY(ScenarioMap::load(exported, key).image->rgba != source.map.image->rgba);
@@ -559,6 +605,7 @@ class MapTests : public QObject {
                 grid.write(MapEdits::load(exported).fineTerrain(key));
                 qInfo() << "User map" << key << "model bytes" << edit.model(key).size();
             }
+            QCOMPARE(visited.size(), changed.size());
         } catch (const Error &e) {
             QFAIL(e.what());
         }

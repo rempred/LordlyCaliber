@@ -8628,6 +8628,45 @@ class UiTests : public QObject {
         canvas->repaint();
         QVERIFY(editor.grab().save("map-label-selection.png"));
     }
+    void treasureAutoApply() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path)); project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950); editor.show();
+        QVERIFY(selectMapObject(editor, MapObject::Treasure, 0));
+        QTest::qWait(30);
+        const auto before = project.manifest();
+        const auto original = ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
+        auto record = [&] { return ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0); };
+        auto table = editor.findChild<QComboBox *>("worldTreasureTable");
+        auto item = editor.findChild<QComboBox *>("worldTreasureItem");
+        table->setCurrentIndex(table->findData(1));
+        item->setCurrentIndex(item->findData(277));
+        QCOMPARE(u16(record(), 4), 277);
+        const auto equipment = record();
+        table->setCurrentIndex(table->findData(2));
+        QCOMPARE(u8(record(), 3), 2); QCOMPARE(u16(record(), 4), 1);
+        undo.undo(); QCOMPARE(record(), equipment);
+        undo.redo();
+        item->setCurrentIndex(item->findData(44));
+        QCOMPARE(u16(record(), 4), 44);
+        auto x = editor.findChild<QSpinBox *>("worldTreasureX");
+        auto z = editor.findChild<QSpinBox *>("worldTreasureZ");
+        x->setFocus(); x->selectAll(); QTest::keyClicks(x, "123");
+        QCOMPARE(u8(record(), 1), u8(original, 1));
+        z->setFocus(); QCOMPARE(u8(record(), 1), 123);
+        z->setValue(234); QCOMPARE(u8(record(), 2), 234);
+        QCOMPARE(u8(record(), 0), u8(original, 0));
+        const auto after = project.manifest(); const int count = undo.count();
+        QVERIFY(selectMapObject(editor, MapObject::Site, 0));
+        QVERIFY(selectMapObject(editor, MapObject::Treasure, 0));
+        QCOMPARE(project.manifest(), after); QCOMPARE(undo.count(), count);
+        QVERIFY(!editor.findChild<QPushButton *>("worldTreasureApply"));
+        undo.setIndex(0); QCOMPARE(project.manifest(), before);
+        undo.setIndex(undo.count()); QCOMPARE(project.manifest(), after);
+    }
     void scenarioSiteAutoApply() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -8992,7 +9031,6 @@ class UiTests : public QObject {
             itemTable->setCurrentIndex(itemTable->findData(u8(firstTreasure, 3) == 1 ? 2 : 1));
             auto treasureChoice = editor.findChild<QComboBox *>("worldTreasureItem");
             treasureChoice->setCurrentIndex(treasureChoice->findData(1));
-            editor.findChild<QPushButton *>("worldTreasureApply")->click();
             QVERIFY(objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage() != treasureIcon);
             undo.undo();
             QCOMPARE(project.world()->json(), beforeItem);
@@ -9100,16 +9138,17 @@ class UiTests : public QObject {
             QCOMPARE(editor.findChild<QListWidget *>("scenarioNodes")->currentRow(), waypoint);
             pages->setCurrentIndex(0);
             objects->setCurrentRow(treasureItem);
+            const int beforeTreasureMove = undo.index();
             editor.findChild<QSpinBox *>("worldTreasureX")->setValue(255);
             editor.findChild<QSpinBox *>("worldTreasureZ")->setValue(0);
-            editor.findChild<QPushButton *>("worldTreasureApply")->click();
             auto treasure =
                 ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
             QCOMPARE(u8(treasure, 1), quint8(255));
             QCOMPARE(u8(treasure, 2), quint8(0));
-            undo.undo();
+            const int afterTreasureMove = undo.index();
+            undo.setIndex(beforeTreasureMove);
             QCOMPARE(project.world()->json(), originalWorld);
-            undo.redo();
+            undo.setIndex(afterTreasureMove);
             QCOMPARE(pages->currentIndex(), 0);
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             QCOMPARE(editor.findChild<QSpinBox *>("worldTreasureX")->value(), 255);
@@ -9471,7 +9510,6 @@ class UiTests : public QObject {
             }
             for (int row = 0; row < ScenarioWorld::treasureCount(project.world()->scenario(key).treasures); ++row) {
                 QVERIFY(selectMapObject(editor, MapObject::Treasure, row));
-                button("worldTreasureApply")->click();
                 QCOMPARE(project.world()->json(), base);
             }
         }
@@ -9533,7 +9571,6 @@ class UiTests : public QObject {
         table->setCurrentIndex(table->findData(1));
         auto item = editor.findChild<QComboBox *>("worldTreasureItem");
         item->setCurrentIndex(item->findData(277));
-        button("worldTreasureApply")->click();
         const auto record =
             ScenarioWorld::treasureRecord(project.world()->scenario(52).treasures, row);
         QCOMPARE(u16(record, 4), quint16(277));

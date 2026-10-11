@@ -68,6 +68,20 @@ class FieldBrushShape {
         transform(outside);
         for (int i = 0; i < distance_.size(); ++i)
             distance_[i] = distance_[i] > 0 ? distance_[i] - .5f : .5f - outside[i];
+        if (mountain() || forest()) {
+            // Round the raster mask's cell corners before tracing the mesh.
+            // Half-strength smoothing retains even a one-cell island; the
+            // outline moves less than a cell, within the movement grid's scale.
+            const auto raw = distance_;
+            for (int y = 1; y <= 256; ++y)
+                for (int x = 1; x <= 256; ++x) {
+                    const int i = y * size + x;
+                    const float blurred =
+                        (raw[i] * 4 + (raw[i - 1] + raw[i + 1] + raw[i - size] + raw[i + size]) * 2 +
+                         raw[i - size - 1] + raw[i - size + 1] + raw[i + size - 1] + raw[i + size + 1]) / 16;
+                    distance_[i] = (raw[i] + blurred) * .5f;
+                }
+        }
         // Each separate mountain gets its own peak. A narrow island must not
         // lose its light summit because another brush stroke is much wider.
         for (int y = 1; y <= 256; ++y)

@@ -1,11 +1,17 @@
 .set noreorder
 .set noat
-/* a0: pressed-button mask; s0: category. Empty categories cannot be bought.
+/* a0: masked purchase button; s0: category. Empty categories cannot be bought.
  * This helper fits in the replaced producer's unused tail, at ROM 19BF60.
  */
 selection_guard:
     addu $v0, $a0, $zero
-    beq $a0, $zero, valid_selection
+    /* The patched call delay slot masks a0. Retail's cancel path still needs
+     * the complete pressed-button word there (including B), even on no buy.
+     */
+    lui $a0, 0x800c
+    lw $a0, 0x4bdc($a0)
+    lhu $a0, 0($a0)
+    beq $v0, $zero, valid_selection
     sltiu $t0, $s0, 7
     beq $t0, $zero, invalid_selection
     sll $t0, $s0, 2

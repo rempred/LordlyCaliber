@@ -164,6 +164,39 @@ struct Triangle {
     int group = -1;
     int owner = -1, face = -1;
 };
+// Ground triangles can span most of a map, with forests and hills drawn above
+// them. One centroid can land on a hill and misclassify the entire ground draw.
+// Sample the covered gameplay cells instead of assigning all its area there.
+QMap<int, double> terrainSamples(const Triangle &t, const QByteArray &grid, QRectF bounds) {
+    QPointF p[3];
+    for (int n = 0; n < 3; ++n)
+        p[n] = {(t.vertices[n].position.x() - bounds.left()) * 256 / bounds.width(),
+                (t.vertices[n].position.z() - bounds.top()) * 256 / bounds.height()};
+    const auto a = p[1] - p[0], b = p[2] - p[0];
+    const double det = a.x() * b.y() - a.y() * b.x();
+    QMap<int, double> result;
+    if (std::abs(det) < 1e-8) return result;
+    const int x0 = std::max(0, int(std::floor(std::min({p[0].x(), p[1].x(), p[2].x()})))),
+              x1 = std::min(255, int(std::floor(std::max({p[0].x(), p[1].x(), p[2].x()})))),
+              y0 = std::max(0, int(std::floor(std::min({p[0].y(), p[1].y(), p[2].y()})))),
+              y1 = std::min(255, int(std::floor(std::max({p[0].y(), p[1].y(), p[2].y()}))));
+    const double cellArea = bounds.width() * bounds.height() * 2 / 65536;
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x) {
+            const auto q = QPointF(x + .5, y + .5) - p[0];
+            const double u = (q.x() * b.y() - q.y() * b.x()) / det,
+                         v = (a.x() * q.y() - a.y() * q.x()) / det;
+            if (u >= 0 && v >= 0 && u + v <= 1)
+                result[u8(grid, y * 256 + x)] += cellArea;
+        }
+    if (result.isEmpty()) {
+        const auto center = (p[0] + p[1] + p[2]) / 3;
+        const int x = int(std::floor(center.x())), y = int(std::floor(center.y()));
+        if (x >= 0 && x < 256 && y >= 0 && y < 256)
+            result[u8(grid, y * 256 + x)] = std::abs(det) * cellArea * .5;
+    }
+    return result;
+}
 RenderColor rgba(quint32 word) {
     return {quint8(word >> 24), quint8(word >> 16), quint8(word >> 8), quint8(word)};
 }
@@ -970,15 +1003,10 @@ QVector<FieldTriangle> Battlefield::terrainFaces(const QByteArray &gameplay, QRe
     for (const auto &t : data_->triangles) {
         if (sites.contains(t.group) || area(t) <= 0)
             continue;
-        const auto p =
-            (t.vertices[0].position + t.vertices[1].position + t.vertices[2].position) / 3;
-        const int x = int((p.x() - bounds.left()) / bounds.width() * 256),
-                  z = int((p.z() - bounds.top()) / bounds.height() * 256);
-        if (x < 0 || x >= 256 || z < 0 || z >= 256)
-            continue;
-        const int type = u8(gameplay, z * 256 + x);
-        if (type > 0 && type < 15)
-            votes[t.material][type] += area(t);
+        const auto samples = terrainSamples(t, gameplay, bounds);
+        for (auto i = samples.cbegin(); i != samples.cend(); ++i)
+            if (i.key() > 0 && i.key() < 15)
+                votes[t.material][i.key()] += i.value();
     }
     auto winner = [](const QMap<int, double> &v) {
         int type = 0;
@@ -1187,13 +1215,10 @@ FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF
         const double area = QVector3D::crossProduct(b - a, c - a).y();
         if (area <= 0)
             continue;
-        const auto p = (a + b + c) / 3;
-        const int x = int((p.x() - bounds.left()) / bounds.width() * 256),
-                  y = int((p.z() - bounds.top()) / bounds.height() * 256);
         total[t.material] += area;
-        if (x < 0 || x > 255 || y < 0 || y > 255 || u8(grid, y * 256 + x) != terrain)
-            continue;
-        score[t.material] += area;
+        const auto samples = terrainSamples(t, grid, bounds);
+        const auto matched = samples.value(terrain);
+        if (matched > 0) score[t.material] += matched;
     }
     int selected = -1;
     double best = 0;

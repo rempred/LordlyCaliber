@@ -702,7 +702,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                          "within the original resident allocation";
     }
     if (p.shops() &&
-        (p.shops()->modified() || (priorShopPlacement && priorShopPlacement->version < 4))) {
+        (p.shops()->modified() || priorShopPlacement)) {
+        // Recompile owned shop code even when stock is unchanged. Reopening an
+        // older export must receive current runtime fixes without a dummy edit.
         result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
         result.report << "Compiled shop stock, producer and halfword readers; retained original "
                          "RAM allocations";

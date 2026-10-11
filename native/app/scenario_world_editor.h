@@ -22,6 +22,7 @@ class ScenarioWorldEditor : public QWidget {
     void fillItems();
     int siteId() const;
     void editSite(const QString &, const std::function<void(QByteArray &)> &);
+    void editTreasure(const QString &, const std::function<void(QByteArray &)> &);
     void setFacility(int bit, bool enabled);
     void setShop(int id);
     void change(const QString &label, const std::function<void(ScenarioWorld &)> &edit);

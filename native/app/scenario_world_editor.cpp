@@ -135,7 +135,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     auto treasureLayout = new QVBoxLayout(treasureFields_);
     treasureLayout->setContentsMargins(0, 0, 0, 0);
     auto help = new QLabel(
-        "Coordinates use the game's 0–255 map scale. Collection flags are shared across scenarios; "
+        "Changes apply automatically and can be undone. Coordinates use the game's 0–255 map scale. Collection flags are shared across scenarios; "
         "editing an existing treasure retains its flag. New treasures receive an unused flag.");
     help->setWordWrap(true);
     treasureLayout->addWidget(help);
@@ -158,9 +158,6 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     item_->setMinimumContentsLength(16);
     treasureForm->addRow("Item table", table_);
     treasureForm->addRow("Item", item_);
-    auto applyTreasure = new QPushButton("Apply treasure changes");
-    applyTreasure->setObjectName("worldTreasureApply");
-    treasureLayout->addWidget(applyTreasure);
     auto remove = new QPushButton("Remove treasure");
     remove->setObjectName("worldTreasureRemove");
     treasureLayout->addWidget(remove);
@@ -212,27 +209,30 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
         showSite();
     });
     connect(table_, &QComboBox::currentIndexChanged, this, [this] {
-        if (!loading_)
-            fillItems();
+        if (loading_) return;
+        const int table = table_->currentData().toInt();
+        editTreasure("Change treasure item type", [table](QByteArray &r) {
+            put8(r, 3, quint8(table));
+            put16(r, 4, 1); // A valid item in either table; table and item undo together.
+        });
+    });
+    connect(item_, &QComboBox::currentIndexChanged, this, [this] {
+        if (loading_ || item_->currentIndex() < 0) return;
+        const int item = item_->currentData().toInt();
+        editTreasure("Change treasure item", [item](QByteArray &r) { put16(r, 4, quint16(item)); });
+    });
+    for (auto input : {x_, z_}) input->setKeyboardTracking(false);
+    connect(x_, &QSpinBox::valueChanged, this, [this](int value) {
+        editTreasure("Move treasure X", [value](QByteArray &r) { put8(r, 1, quint8(value)); });
+    });
+    connect(z_, &QSpinBox::valueChanged, this, [this](int value) {
+        editTreasure("Move treasure Z", [value](QByteArray &r) { put8(r, 2, quint8(value)); });
     });
     connect(restoreSite, &QPushButton::clicked, this, [this] {
         if (siteId() >= 0)
             change("Restore site metadata", [this](ScenarioWorld &next) {
                 next.restoreTown(siteId());
             });
-    });
-    connect(applyTreasure, &QPushButton::clicked, this, [this] {
-        if (treasureRow_ < 0)
-            return;
-        change("Edit scenario treasure", [this](ScenarioWorld &next) {
-            auto record = ScenarioWorld::treasureRecord(next.scenario(key_).treasures,
-                                                        treasureRow_);
-            put8(record, 1, quint8(x_->value()));
-            put8(record, 2, quint8(z_->value()));
-            put8(record, 3, quint8(table_->currentData().toInt()));
-            put16(record, 4, quint16(item_->currentData().toInt()));
-            next.setTreasure(key_, treasureRow_, record);
-        });
     });
     connect(remove, &QPushButton::clicked, this, [this] {
         change("Remove scenario treasure", [this](ScenarioWorld &next) {
@@ -361,6 +361,17 @@ void ScenarioWorldEditor::fillItems() {
         return;
     for (const auto &r : project_->records(table == 1 ? Table::Items : Table::Consumables))
         item_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
+}
+void ScenarioWorldEditor::editTreasure(const QString &label,
+                                      const std::function<void(QByteArray &)> &edit) {
+    if (loading_ || key_ <= 0 || treasureRow_ < 0) return;
+    const int key = key_, row = treasureRow_;
+    change(label, [key, row, &edit](ScenarioWorld &next) {
+        auto record = ScenarioWorld::treasureRecord(next.scenario(key).treasures, row);
+        edit(record);
+        next.setTreasure(key, row, record);
+    });
+    showTreasure();
 }
 void ScenarioWorldEditor::selectObject(bool treasure, int row) {
     if (treasure) {

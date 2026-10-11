@@ -146,13 +146,20 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   its mesh and height unchanged. A changed cell inside or adjoining an original
   forest/highland region rebuilds that connected region with its new outline:
   replacement terrain cuts away the old surface, and matching extensions share
-  one border. Both plain and snowy variants use this path. All brush edges receive
-  a narrow coverage feather; forest borders retain their separate side texture.
+  one border. Both plain and snowy variants use this path. Flat brush edges receive
+  a narrow coverage feather; raised forest/highlands retain opaque feet, avoiding
+  the sawtooth of per-face fog alpha. Forest borders retain their separate side
+  texture. Raised distance fields receive half-strength 3-by-3 smoothing before
+  tracing, retaining one-cell islands without increasing mesh density.
 * Original faces are identified by wordcode draw and face ordinal, including
   ungrouped mountains. Changed display lists are cloned with only affected terrain
   triangles omitted; state, matrix, vertex, unknown commands, site geometry and
   unrelated faces are retained. The remaining forest/ridge is generated over the
   exposed base surface. Erase and Undo recompute from the source and current mask.
+* Terrain and brush-material classification samples all covered gameplay cells.
+  The previous single-centroid vote could classify a large plain triangle as a
+  hill lying above it, then rebuild the plains when a nearby forest was painted.
+  Sub-cell triangles retain a centroid fallback weighted by their actual area.
 * Generated shapes are approximations of native authored landforms, not copied
   artist meshes. Rebuilding an affected connected region can change its slope and
   texture mapping beyond the immediate stroke. Arbitrary terrain-border artwork

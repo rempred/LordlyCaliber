@@ -21,9 +21,10 @@ function cpu(){
   m.load(temp-16,Buffer.alloc(544,0xa6));m.load(temp,Buffer.alloc(512));
   m.load(equipment-16,Buffer.alloc(298,0xa6));
   m.w32(0x80219f20,temp);m.set('sp',0x80060000);
+  m.w32(0x800c4bdc,0x80320000);
   return m;
 }
-let producers=0,splitters=0,readers=0,categories=0,guards=0;
+let producers=0,splitters=0,readers=0,categories=0,guards=0,cancels=0;
 const shopCount = fixture.shops.records.length;
 for(const id of [...Array(shopCount).keys(),...([shopCount,255,0xffffffff].filter(x=>version<4||x<256))]){
   const m=cpu(), expected=fixture.shops.records[id<shopCount?id:0];
@@ -100,11 +101,20 @@ for(const id of [...Array(shopCount).keys(),...([shopCount,255,0xffffffff].filte
     expectedCategories.forEach((kind,category)=>{
       const count=kind===6?expected.consumables.length:counts[kind];
       assert.equal(m.r16(menus+category*10+6),(count-1)&65535);
-      for(const selection of [-1,0,count-1,count])for(const buttons of [0,0x8000]){
+      for(const selection of [-1,0,count-1,count])for(const buttons of [0,0x8000,0x4000,0xc000]){
         m.w16(menus+category*10,selection);m.set('s0',category);
-        m.set('v0',0xffff);m.set('a0',buttons);
-        const allowed=!!buttons&&selection>=0&&selection<count;
+        m.w16(0x80320000,buttons);
+        m.set('v0',0x8000);m.set('a0',buttons);
+        const allowed=!!(buttons&0x8000)&&selection>=0&&selection<count;
         m.call(ram(0x197d6c),ram(allowed?0x197d7c:0x197f18));
+        assert.equal(m.get('a0'),buttons,'guard must preserve the full pressed-button word for Cancel');
+        if(!allowed&&(buttons&0x4000)){
+          m.set('v1',0x80320010);m.w16(0x80320012,0x4000);
+          m.w8(0x80219d24,3);
+          m.call(ram(0x197f18),ram(0x198470));
+          assert.equal(m.r8(0x80219d24),14,'B must enter the original shop exit state');
+          cancels++;
+        }
         guards++;
       }
     });
@@ -124,4 +134,4 @@ for(const id of [...Array(shopCount).keys(),...([shopCount,255,0xffffffff].filte
     }
   }
 }
-console.log(JSON.stringify({producers,splitters,readers,categories,guards,ramBytes:0x400000,result:'PASS'}));
+console.log(JSON.stringify({producers,splitters,readers,categories,guards,cancels,ramBytes:0x400000,result:'PASS'}));

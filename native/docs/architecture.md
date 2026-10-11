@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Treasure edits, ground preservation and shop Cancel (2026-10-10)
+
+Treasure coordinates and item choices now commit independently through the
+world Undo command, using the same refresh guard as sites. Item-type changes
+select item 1 atomically so switching from high equipment IDs cannot create an
+invalid consumable. Coordinate typing commits on Enter/focus loss. Collection
+flags stay intact; the Apply treasure button is removed.
+
+Terrain classification and brush selection now vote across covered gameplay
+cells instead of a single triangle centroid. On key 6, the old approach could
+identify whole plain triangles as raised terrain. A forest edit then removed and
+regenerated unrelated ground. Raised brush masks now smooth their distance field
+and use opaque feet rather than per-face coverage alpha, improving mountain
+outlines without spending more of the 512 KiB model allocation. These remain
+procedural shapes, not copies of retail artist meshes.
+
+The added-shop Cancel failure was reproduced in Joe's exported ROM. At z64 ROM
+197D6C, our guard call's delay slot masks a0 to the purchase button. Native Cancel
+at 197F18..197F24 still intersects a0 with the second controller binding, so B
+was always absent. The guard now restores the full pressed word through the
+original pointer at RAM 800C4BDC before returning. Existing version-4 imports
+remain valid. Export recompiles owned shop code even with unchanged stock, so an
+older edited ROM receives fixes without a dummy stock edit.
+
+`shops-mips.cjs` now executes the original Cancel branch through the write of
+shop state 14, covering B, A+B, invalid rows and empty categories. Three shop
+exports passed 4442 Cancel cases; Joe's original ROM fails the full-button-word
+assertion and its rebuilt copy passes 1308 cases. Service/UI calls remain doubles;
+this is not a new emulator playthrough. The shop-only repair changes 83 bytes,
+all within its owned function/descriptor, preserving all maps/sites/inventory.
+
 ## Automatic site edits (2026-10-10)
 
 `ScenarioWorldEditor` commits each site field independently through the existing

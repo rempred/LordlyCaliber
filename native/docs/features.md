@@ -11,7 +11,9 @@ field. Checking Shop creates stocked inventory when needed, or reuses that site'
 inventory after toggling it off. Unchecking Shop or choosing Shop ID None removes
 the facility; another Shop ID attaches existing inventory. Shop and Witch's den
 replace each other. The separate Apply, create-shop and remove-shop buttons are
-gone. ROM export is still explicit; treasure retains its Apply action.
+gone. Treasure item/type and coordinate fields also apply automatically, retain
+their collection flag, and support Undo; changing item type selects its first
+usable item in the same Undo action. ROM export is still explicit.
 
 Map renders the ROM's actual battlefield geometry, textures, roads and buildings
 in a top-down daylight overview. Town allegiance edits and Undo refresh building
@@ -66,8 +68,9 @@ Selecting a site or treasure opens its editor in the scrolling Map sidebar;
 clicking its visible map label also selects it, including labels shifted around
 nearby objects. Labels select without dragging; marker drags still move objects.
 There is no separate Sites and treasure page or second object picker. Site
-metadata/facilities/shops/allegiance and treasure items/coordinates/removal retain
-their Apply, Restore and Undo paths. Squad selections show members and levels;
+metadata/facilities/shops/allegiance and treasure items/coordinates apply
+automatically with Undo; Restore and treasure removal remain explicit actions.
+Squad selections show members and levels;
 waypoints show route context, with links to their full editors. Add treasure on
 map opens the new treasure's inspector immediately.
 
