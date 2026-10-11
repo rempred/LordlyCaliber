@@ -114,6 +114,9 @@ remain under Advanced animations. Normal assignments retain the existing modes0/
 patch semantics; Blocked is mode2. Linked fixed motions copy both component
 programs. Preview selection does not modify the project, and incomplete class
 searches disable editing instead of leaving the prior class active.
+The animation choices contain combat selector targets and the fixed combat
+motions, including private attack assignments; unrelated bank poses are excluded.
+Action descriptions are edited from Classes rather than this animation page.
 
 Army artwork shows copied/new classes individually and separates both facings on
 first edit. Legacy boss labels are restored without changing ROM names. Save's
@@ -596,10 +599,13 @@ standalone tool's game-testing limits; this port adds file/readback qualificatio
 in per-user app data and returns to Testing. Imported and edited army stats are
 not boosted again. Settings and edited defaults are not shipped with packages.
 
-Save Editor supports dragging squad member icons or formation sprites to Reserve,
-and reserve characters onto an empty formation cell or a squad overview. Dropping
-on an overview uses the first compatible empty cell. These moves use the existing
-atomic transfers and Undo; leader, capacity, legion and pending-draft checks apply.
+Save Editor supports dragging members directly between the left squad boards,
+the selected formation, and Reserve. The left boards use the same geometry and
+sprite silhouettes for hit detection. Empty-cell drops move members; occupied
+member drops swap between squads. A nameplate drop uses the first compatible
+empty cell. These changes use the existing atomic save operations and Undo;
+five-place size limits, large-unit spacing, carried items, leaders, legions and
+pending drafts remain validated for both squads.
 
 Main tabs now include **Art and Animation** and a final **Art Library**. Distinct
 outlined buttons enclose the Cutscenes inline red W.I.P label. **Import from ROM**

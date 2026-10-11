@@ -22,6 +22,8 @@ class FormationBoard final : public QWidget {
     void setCellHint(int cell, const QString &label);
     void finishUpdate();
     QImage overviewImage();
+    QImage overviewHitMap() const;
+    QPolygonF overviewCellPolygon(int cell) const;
     void setPixelScale(int scale);
     void setExternalDragEnabled(bool enabled) { externalDragEnabled_ = enabled; }
     void setDropCell(int cell) { target_ = cell; update(); }

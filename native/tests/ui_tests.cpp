@@ -4024,8 +4024,10 @@ class UiTests : public QObject {
         const QPoint reserveTarget = reserves->viewport()->rect().center();
         auto startAndCancel = [&](QWidget *source, QPoint from, QPoint to, int unit, int id) {
             bool started = false;
+            const auto previousDrags = panel->findChildren<QDrag *>();
             QTimer::singleShot(0, &editor, [&] {
                 for (auto drag : panel->findChildren<QDrag *>()) {
+                    if (previousDrags.contains(drag)) continue;
                     const auto data = dynamic_cast<const SaveArmyDrag *>(drag->mimeData());
                     if (data && data->unit == unit && data->id == id && data->owner == panel)
                         started = true;
@@ -4093,7 +4095,11 @@ class UiTests : public QObject {
         const auto destination = units->item(4);
         units->scrollToItem(destination);
         QCoreApplication::processEvents();
-        QVERIFY(drop(units->viewport(), units->visualItemRect(destination).center(), reserve));
+        auto nameplate = [&](QListWidgetItem *item) {
+            const auto rect = units->visualItemRect(item);
+            return QPoint(rect.center().x(), rect.bottom() - 16);
+        };
+        QVERIFY(drop(units->viewport(), nameplate(destination), reserve));
         bool found = false;
         for (const auto &unit : editor.document()->units())
             if (unit.index == 5) found = unit.members.contains(2);
@@ -4115,13 +4121,93 @@ class UiTests : public QObject {
         const auto fullSquad = units->item(4);
         units->scrollToItem(fullSquad);
         QCoreApplication::processEvents();
-        QVERIFY(!drop(units->viewport(), units->visualItemRect(fullSquad).center(), extra));
+        QVERIFY(!drop(units->viewport(), nameplate(fullSquad), extra));
         QCOMPARE(editor.document()->serialize(), full);
         // Existing carrying limits also apply when dragging out of a squad.
         editor.loadBytes(fixture("unit-capacity-payload.bin"));
         const auto overloaded = editor.document()->serialize();
         QVERIFY(!drop(reserves->viewport(), reserveTarget, member));
         QCOMPARE(editor.document()->serialize(), overloaded);
+        // Overview gestures pick the actual member under the mouse, including sprites
+        // above the tile, and place or exchange them in the hovered destination cell.
+        auto overviewPoint = [&](int unit, int cell) {
+            for (int row = 0; row < units->count(); ++row) {
+                const auto item = units->item(row);
+                if (item->data(Qt::UserRole).toInt() != unit) continue;
+                units->scrollToItem(item);
+                QCoreApplication::processEvents();
+                const auto hits = item->data(ArmyOverviewHits).value<QImage>();
+                for (int y = 0; y < hits.height(); ++y)
+                    for (int x = 0; x < hits.width(); ++x)
+                        if (qAlpha(hits.pixel(x, y)) && qRed(hits.pixel(x, y)) == cell + 1)
+                            return units->visualItemRect(item).topLeft() + QPoint(6 + x, y);
+            }
+            return QPoint(-1, -1);
+        };
+        editor.loadBytes(input);
+        const auto overviewSource = overviewPoint(0, 4);
+        QVERIFY(overviewSource.x() >= 0);
+        QVERIFY(startAndCancel(units->viewport(), overviewSource, overviewSource + QPoint(25, 0), 0, 2));
+        QCOMPARE(editor.document()->serialize(), input);
+        expected = *editor.document();
+        expected.apply(expected.planUnitTransfer(0, 1, 5, 2, project.classData()), true);
+        QVERIFY(drop(units->viewport(), overviewPoint(5, 2), member));
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        QCOMPARE(editor.undoStack()->count(), 1);
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->serialize(), input);
+        editor.undoStack()->redo();
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        editor.exportFile(work.filePath("overview-move.sra"));
+        QFile overviewSave(work.filePath("overview-move.sra"));
+        QVERIFY(overviewSave.open(QIODevice::ReadOnly));
+        QCOMPARE(SaveDocument::open(project.rom(), overviewSave.readAll()).memory(), expected.memory());
+        editor.undoStack()->undo();
+        expected = *editor.document();
+        expected.apply(expected.planUnitSwap(0, 1, 5, 1, project.classData()), true);
+        QVERIFY(drop(units->viewport(), overviewPoint(5, 4), member));
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        QCOMPARE(editor.document()->units()[0].unity, 23);
+        QCOMPARE(editor.document()->units().last().unity, 23);
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->serialize(), input);
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 0), member)); // Protected target leader.
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), leader));
+        QCOMPARE(editor.document()->serialize(), input);
+        unity->setValue(unity->value() + 1);
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member));
+        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
+        QCOMPARE(editor.document()->serialize(), input);
+        editor.loadBytes(fixture("unit-full-payload.bin"));
+        SaveArmyDrag tenth(panel, 2, 2, 10);
+        const auto fullBefore = editor.document()->serialize();
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 6), tenth));
+        QCOMPARE(editor.document()->serialize(), fullBefore);
+        editor.loadBytes(fixture("unit-capacity-payload.bin"));
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member));
+        QCOMPARE(editor.document()->serialize(), overloaded);
+        // A large member uses two places and needs its neighbouring cells clear.
+        const auto classData = project.classData();
+        int largeClass = -1;
+        for (int id = 1; id < classData.entries().size(); ++id)
+            if (classData.unitSize(id, id) == 2) { largeClass = id; break; }
+        QVERIFY(largeClass >= 0);
+        auto large = SaveDocument::open(project.rom(), input);
+        large.apply(large.planToReserve(0, 2, classData), true);
+        large.apply(large.planUnitEdit(0, {0, 8, 0, 0, 0}, 23, 2, classData), true);
+        large.apply(large.planEdit(SaveTable::Characters, 2, "class", largeClass), true);
+        large.apply(large.planEdit(SaveTable::Characters, 2, "secondaryClass", largeClass), true);
+        editor.loadBytes(large.serialize());
+        const auto largeBefore = editor.document()->serialize();
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member)); // Adjacent to the middle cell.
+        QCOMPARE(editor.document()->serialize(), largeBefore);
+        large.apply(large.planFromReserve(3, 5, 2, classData), true);
+        editor.loadBytes(large.serialize());
+        const auto sixPlaces = editor.document()->serialize();
+        QVERIFY(!drop(units->viewport(), overviewPoint(5, 6), member)); // Four small + one large = six.
+        QCOMPARE(editor.document()->serialize(), sixPlaces);
+        editor.loadBytes(input);
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/save-overview-drag.png"));
     }
     void saveSquadEditing() {
         try {
@@ -10198,18 +10284,6 @@ class UiTests : public QObject {
         editDescriptionFrom(window.findChild<QPushButton *>("attack0Description"),
                             "Action from class", "Cancelled draft", false);
         recordUndo->undo();
-        auto combatAction = window.findChild<QComboBox *>("combatAnimationAction");
-        auto combatDescription = window.findChild<QPushButton *>("combatAnimationActionDescription");
-        QVERIFY(combatAction && combatDescription);
-        const int combatId = combatAction->currentData().toInt();
-        editDescriptionFrom(combatDescription, textBaseline.textBanks()["actions"].text(combatId),
-                            "Action from animation", true);
-        editDescriptionFrom(combatDescription, "Action from animation", "Cancelled draft", false);
-        recordUndo->undo();
-        editDescriptionFrom(combatDescription, textBaseline.textBanks()["actions"].text(combatId),
-                            "Cancelled draft", false);
-        combatAction->setCurrentIndex(combatAction->findData(-1)); // Idle is a motion, not an action.
-        QVERIFY(!combatDescription->isEnabled());
         auto addItem = window.findChild<QPushButton *>("addItem");
         QVERIFY(addItem);
         items->setCurrentIndex(items->model()->index(1, 1));

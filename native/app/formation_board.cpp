@@ -135,6 +135,36 @@ QImage FormationBoard::overviewImage() {
     overview_ = false;
     return result.copy(0, 3 * zoom_, width(), height()-9 * zoom_).scaledToWidth(208, Qt::FastTransformation);
 }
+QPolygonF FormationBoard::overviewCellPolygon(int cell) const {
+    auto polygon = cellPolygon(cell);
+    const qreal scale = 208.0 / width();
+    for (auto &point : polygon)
+        point = (point - QPointF(0, 3 * zoom_)) * scale;
+    return polygon;
+}
+QImage FormationBoard::overviewHitMap() const {
+    QImage result(size(), QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::transparent);
+    QPainter painter(&result);
+    painter.setPen(Qt::NoPen);
+    for (int cell = 0; cell < 9; ++cell) {
+        painter.setBrush(QColor(cell + 1, 0, 0));
+        painter.drawPolygon(cellPolygon(cell));
+    }
+    std::array<int, 9> order{0, 1, 2, 3, 4, 5, 6, 7, 8};
+    std::sort(order.begin(), order.end(), [this](int a, int b) { return foot(a).y() < foot(b).y(); });
+    for (int cell : order) {
+        if (sprites_[cell].isNull()) continue;
+        auto mask = sprites_[cell].convertToFormat(QImage::Format_ARGB32);
+        for (int y = 0; y < mask.height(); ++y)
+            for (int x = 0; x < mask.width(); ++x)
+                mask.setPixel(x, y, qAlpha(mask.pixel(x, y)) ? qRgb(cell + 1, 0, 0) : 0);
+        painter.drawImage(spriteRect(cell), mask);
+    }
+    painter.end();
+    return result.copy(0, 3 * zoom_, width(), height() - 9 * zoom_)
+        .scaledToWidth(208, Qt::FastTransformation);
+}
 void FormationBoard::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::SmoothPixmapTransform, false);

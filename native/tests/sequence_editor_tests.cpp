@@ -35,6 +35,79 @@ class SequenceEditorTests : public QObject {
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
     }
+    void combatAnimationChoices() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            auto side = editor.findChild<QComboBox *>("combatAnimationSide");
+            auto variant = editor.findChild<QComboBox *>("combatAnimationVariant");
+            auto choices = editor.findChild<QComboBox *>("combatAnimationChoice");
+            QVERIFY(classes && side && variant && choices);
+            const auto baseline = project.manifest();
+            for (int id : {2, 10, 15, 30, 123}) {
+                classes->setCurrentIndex(classes->findData(id));
+                const auto record = project.record(Table::Classes, id).bytes;
+                const int copy = u8(record, 69), owner = copy ? copy : id;
+                auto selectors = project.animationRoutes()->entry(id).selectors;
+                if (copy != owner || selectors.isEmpty())
+                    selectors = project.animationRoutes()->entry(owner).selectors;
+                QSet<int> combat{0, 5, 11, 17};
+                for (int at = 0; at + 3 < selectors.size(); at += 4)
+                    for (int mode = 1; mode <= 3; ++mode)
+                        combat.insert(u8(selectors, at + mode));
+                for (int route = 0; route < 4; ++route) {
+                    side->setCurrentIndex(route & 1);
+                    variant->setCurrentIndex(route >> 1);
+                    for (int row = 0; row < 3; ++row) {
+                        int action = u8(record, 55 + row * 2);
+                        if (action == 255)
+                            action = u8(project.record(Table::Classes, owner).bytes, 55 + row * 2);
+                        if (action != 255)
+                            for (int mode = 0; mode < 3; ++mode)
+                                combat.insert(project.bodyAnimationData()->selector(
+                                    id, owner, action, mode, route));
+                    }
+                    QVERIFY(choices->count() > 0);
+                    for (int row = 0; row < choices->count(); ++row)
+                        QVERIFY2(combat.contains(choices->itemData(row).toInt()),
+                                 qPrintable(choices->itemText(row)));
+                    QCOMPARE(choices->findData(38), -1);
+                    QCOMPARE(choices->findData(88), -1);
+                }
+            }
+            QCOMPARE(project.manifest(),
+                     baseline); // Filtering and previewing never rewrite programs.
+            classes->setCurrentIndex(classes->findData(2));
+            const auto art =
+                ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto bank = AnimationDescriptor::load(project.rom(), art.descriptorKey()).poses();
+            QVERIFY(choices->count() < bank.programs().size());
+            // Newly assigned private attack sequences remain combat choices.
+            const int action = u8(project.record(Table::Classes, 2).bytes, 55);
+            auto sequences = *project.animationSequences();
+            sequences.create(2, 0, *project.animationRoutes(),
+                             project.combatArtwork()->previewEdits());
+            project.setAnimationSequences(sequences.json());
+            const int assigned = project.assignPrivateAttack(2, 0, action, false, 5);
+            CombatAnimationEditor edited(&project, &undo, [] {});
+            auto editedClasses = edited.findChild<QComboBox *>("combatAnimationClass");
+            editedClasses->setCurrentIndex(editedClasses->findData(2));
+            QVERIFY(edited.findChild<QComboBox *>("combatAnimationChoice")->findData(assigned) >=
+                    0);
+            edited.resize(1440, 950);
+            edited.show();
+            QTest::qWait(30);
+            QVERIFY(edited.grab().save(QCoreApplication::applicationDirPath() +
+                                       "/combat-only-choices.png"));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void guidedCombatWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");

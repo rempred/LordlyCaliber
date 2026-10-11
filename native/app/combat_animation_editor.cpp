@@ -1,6 +1,5 @@
 #include "app/combat_animation_editor.h"
 #include "app/animation_sequence_editor.h"
-#include "app/text_workspace.h"
 #include "engine/actor_art.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,6 +9,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScopedValueRollback>
+#include <QSet>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -54,7 +54,6 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     variant_->addItems({"Base", "Alternate"});
     variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
     layout->addLayout(filters);
-    filters->addWidget(createActionDescriptionButton(actions_, project_, undo, changed), 2, 1);
     auto selection = new QHBoxLayout;
     selection->addWidget(new QLabel("Animation"));
     animations_ = new QComboBox; animations_->setObjectName("combatAnimationChoice");
@@ -156,8 +155,26 @@ void CombatAnimationEditor::refresh(bool assigned) {
         auto selectors = project_->animationRoutes()->entry(classId()).selectors;
         if (u8(record, 69) != owner() || selectors.isEmpty()) selectors = project_->animationRoutes()->entry(owner()).selectors;
         const auto body = project_->bodyAnimationData();
+        QSet<int> combatActions;
+        for (auto it = used.cbegin(); it != used.cend(); ++it)
+            combatActions.insert(it.key());
         for (int at = 0; at + 3 < selectors.size(); at += 4) {
             const int key = u8(selectors, at);
+            combatActions.insert(key);
+            // Keep the ROM's combat choices available after an assignment is overridden.
+            for (int mode = 0; mode < 3; ++mode) {
+                const int pose = u8(selectors, at + 1 + mode);
+                const auto label = names.value(key, QString("Action %1").arg(key)) +
+                                   (mode == 2 ? " (blocked)" : "");
+                if (!labels[pose].contains(label)) labels[pose] << label;
+            }
+        }
+        for (const auto &entry : project_->animationOverrides()->entries()) {
+            const auto row = entry.toObject();
+            if (row["classId"].toInt() == classId())
+                combatActions.insert(row["actionId"].toInt());
+        }
+        for (int key : combatActions) {
             for (int mode = 0; mode < 3; ++mode) {
                 const int pose = body->selector(classId(), owner(), key, mode, route);
                 const auto label = names.value(key, QString("Action %1").arg(key)) + (mode == 2 ? " (blocked)" : "");
@@ -166,10 +183,11 @@ void CombatAnimationEditor::refresh(bool assigned) {
         }
         animations_->clear();
         for (int pose = 0; pose < bank.programs().size(); ++pose) {
+            if (!labels.contains(pose)) continue;
             if (pose == 38 || pose == 88) continue; // Frame substitution tables, not playable actions.
             try { bank.validateEntry(pose); } catch (const Error &) { continue; }
             auto label = QString("Animation %1").arg(pose);
-            if (!labels[pose].isEmpty()) label += " · " + labels[pose].join(", ");
+            label += " · " + labels[pose].join(", ");
             if (pose == active) label += " — assigned";
             animations_->addItem(label, pose);
         }

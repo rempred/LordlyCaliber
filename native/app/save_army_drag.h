@@ -3,6 +3,7 @@
 #include <QPointer>
 
 namespace lordly {
+enum ArmyOverviewRole { ArmyOverviewImage = Qt::UserRole + 1, ArmyOverviewHits, ArmyOverviewCells };
 // Keep transfers inside the originating save editor and retain the source identity
 // so a refresh cannot turn an old drag into a move of a different character.
 class SaveArmyDrag final : public QMimeData {

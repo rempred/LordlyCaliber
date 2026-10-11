@@ -5,6 +5,7 @@
 #include "app/save_army_drag.h"
 #include <QDrag>
 #include <QDragEnterEvent>
+#include <QMouseEvent>
 #include <QComboBox>
 #include <QPainter>
 #include <QStyledItemDelegate>
@@ -28,12 +29,25 @@ namespace {
 class ArmyMemberList : public QListWidget {
   public:
     std::function<void(QListWidgetItem *)> dragMember;
+    QPoint dragPosition() const { return pressPosition_; }
   protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        pressPosition_ = event->position().toPoint();
+        QListWidget::mousePressEvent(event);
+    }
     void startDrag(Qt::DropActions) override {
         if (currentItem() && dragMember)
             dragMember(currentItem());
     }
+  private:
+    QPoint pressPosition_;
 };
+int overviewCell(const QListWidget *list, const QListWidgetItem *item, QPoint position) {
+    const auto hits = item->data(ArmyOverviewHits).value<QImage>();
+    const auto local = position - list->visualItemRect(item).topLeft() - QPoint(6, 0);
+    if (!hits.rect().contains(local) || !qAlpha(hits.pixel(local))) return -1;
+    return qRed(hits.pixel(local)) - 1;
+}
 class ArmyList final : public ArmyMemberList {
   public:
     explicit ArmyList(const QImage &floor) : floor_(floor.isNull() ? QPixmap{} : QPixmap::fromImage(floor.scaled(128,128,Qt::IgnoreAspectRatio,Qt::FastTransformation))) {
@@ -63,8 +77,19 @@ class ArmyUnitDelegate final : public QStyledItemDelegate {
     QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override {return {220,206};}
     void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
         p->save();
-        const auto image = index.data(Qt::UserRole+1).value<QImage>();
+        const auto image = index.data(ArmyOverviewImage).value<QImage>();
         p->drawImage(option.rect.topLeft()+QPoint(6,0), image);
+        const auto list = qobject_cast<QListWidget *>(parent());
+        if (list && list->property("armyDropUnit").toInt() == index.data(Qt::UserRole).toInt()) {
+            const int cell = list->property("armyDropCell").toInt();
+            const auto polygons = index.data(ArmyOverviewCells).toList();
+            p->setPen(QPen(QColor("#fff291"), 3));
+            p->setBrush(QColor(255, 242, 145, 60));
+            if (cell >= 0 && cell < polygons.size())
+                p->drawPolygon(polygons[cell].value<QPolygonF>().translated(option.rect.topLeft() + QPoint(6, 0)));
+            else
+                p->drawRoundedRect(option.rect.adjusted(2, 2, -2, -2), 4, 4);
+        }
         const bool selected = option.state & QStyle::State_Selected;
         const QRect name(option.rect.left()+9,option.rect.bottom()-37,202,34);
         p->setPen(QPen(selected ? QColor("#fff291") : QColor("#a88d45"),selected ? 2 : 1));
@@ -150,6 +175,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     rosterLayout->setContentsMargins(0,0,0,0);
     units_ = new ArmyList(floor);
     units_->setObjectName("saveUnitList");
+    units_->setProperty("armyDropUnit", -1);
     units_->setItemDelegate(new ArmyUnitDelegate(units_));
     units_->setGridSize({220,206}); units_->setMinimumWidth(250);
     rosterLayout->addWidget(units_,1);
@@ -263,8 +289,21 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
         list->viewport()->setAcceptDrops(true);
         list->viewport()->installEventFilter(this);
     }
-    for (auto list : {members_, reserves_})
+    for (auto list : {units_, members_, reserves_})
         list->setDragEnabled(true);
+    static_cast<ArmyMemberList *>(units_)->dragMember = [this](QListWidgetItem *item) {
+        if (!editor_->document()) return;
+        const int cell = overviewCell(units_, item, static_cast<ArmyMemberList *>(units_)->dragPosition());
+        if (cell < 0) return;
+        for (const auto &unit : editor_->document()->units())
+            if (unit.index == item->data(Qt::UserRole).toInt())
+                for (int member = 0; member < unit.members.size(); ++member)
+                    if (unit.members[member] && unit.cells[member] == cell) {
+                        members_->setCurrentRow(member);
+                        startMemberDrag(unit.index, member, unit.members[member]);
+                        return;
+                    }
+    };
     static_cast<ArmyMemberList *>(members_)->dragMember = [this](QListWidgetItem *item) {
         const int member = members_->row(item);
         if (member >= 0 && member < ids_.size())
@@ -480,6 +519,8 @@ void SaveUnitEditor::startMemberDrag(int unit, int member, int id) {
     drag->setHotSpot({80, 32});
     drag->exec(Qt::MoveAction);
     board_->setDropCell(-1);
+    units_->setProperty("armyDropUnit", -1);
+    units_->viewport()->update();
     drag->deleteLater();
 }
 bool SaveUnitEditor::dropMember(const SaveArmyDrag *drag, QObject *target, QPoint position,
@@ -525,17 +566,32 @@ bool SaveUnitEditor::dropMember(const SaveArmyDrag *drag, QObject *target, QPoin
             if (!item)
                 return false;
             destination = item->data(Qt::UserRole).toInt();
-            if (drag->unit == destination)
-                return false;
-            for (int cell = 0; cell < 9; ++cell)
-                cells.append(cell);
+            const int cell = overviewCell(units_, item, position);
+            if (cell >= 0) cells.append(cell);
+            else for (int candidate = 0; candidate < 9; ++candidate) cells.append(candidate);
         } else {
             return false;
         }
         QString rejection;
         for (int cell : cells) {
+            const auto to = std::find_if(all.begin(), all.end(),
+                [&](const auto &unit) { return unit.index == destination; });
+            if (to == all.end()) return false;
+            int occupant = -1;
+            for (int member = 0; member < to->members.size(); ++member)
+                if (to->members[member] && to->cells[member] == cell) occupant = member;
+            // A nameplate drop chooses a free cell; only an explicit member drop swaps.
+            const bool swap = drag->unit >= 0 && occupant >= 0 && cells.size() == 1;
+            auto formation = to->cells;
             try {
-                if (drag->unit < 0)
+                if (drag->unit == destination) {
+                    if (cells.size() != 1) return false;
+                    if (occupant >= 0) formation[occupant] = formation[drag->member];
+                    formation[drag->member] = cell;
+                    doc.planUnitEdit(destination, formation, to->unity, to->tactic, editor_->project()->classData());
+                } else if (swap)
+                    doc.planUnitSwap(drag->unit, drag->member, destination, occupant, editor_->project()->classData());
+                else if (drag->unit < 0)
                     doc.planFromReserve(drag->id, destination, cell, editor_->project()->classData());
                 else
                     doc.planUnitTransfer(drag->unit, drag->member, destination, cell,
@@ -546,7 +602,10 @@ bool SaveUnitEditor::dropMember(const SaveArmyDrag *drag, QObject *target, QPoin
             }
             if (!apply)
                 return true;
-            const bool moved = drag->unit < 0
+            const bool moved = drag->unit == destination
+                ? editor_->editUnit(destination, formation, to->unity, to->tactic)
+                : swap ? editor_->swapUnitMembers(drag->unit, drag->member, destination, occupant)
+                : drag->unit < 0
                 ? editor_->addFromReserve(drag->id, destination, cell)
                 : editor_->transferUnitMember(drag->unit, drag->member, destination, cell);
             if (moved)
@@ -568,6 +627,8 @@ bool SaveUnitEditor::dropMember(const SaveArmyDrag *drag, QObject *target, QPoin
 bool SaveUnitEditor::eventFilter(QObject *target, QEvent *event) {
     if (event->type() == QEvent::DragLeave) {
         board_->setDropCell(-1);
+        units_->setProperty("armyDropUnit", -1);
+        units_->viewport()->update();
         event->accept();
         return true;
     }
@@ -588,6 +649,15 @@ bool SaveUnitEditor::eventFilter(QObject *target, QEvent *event) {
         }
         board_->setDropCell(valid && target == board_ && event->type() == QEvent::DragMove
                                 ? board_->cellAt(drop->position().toPoint()) : -1);
+        int overview = -1, cell = -1;
+        if (valid && target == units_->viewport() && event->type() == QEvent::DragMove)
+            if (const auto item = units_->itemAt(drop->position().toPoint())) {
+                overview = item->data(Qt::UserRole).toInt();
+                cell = overviewCell(units_, item, drop->position().toPoint());
+            }
+        units_->setProperty("armyDropUnit", overview);
+        units_->setProperty("armyDropCell", cell);
+        units_->viewport()->update();
         return true;
     }
     return QWidget::eventFilter(target, event);
@@ -657,7 +727,12 @@ void SaveUnitEditor::refresh() {
             }
             auto item=new QListWidgetItem(QString("Squad %1 · %2").arg(unit.label).arg(memberName(unit.members[0])),units_);
             item->setData(Qt::UserRole,unit.index);
-            item->setData(Qt::UserRole+1,thumbnail.overviewImage());
+            item->setData(ArmyOverviewImage,thumbnail.overviewImage());
+            item->setData(ArmyOverviewHits,thumbnail.overviewHitMap());
+            QVariantList polygons;
+            for (int cell = 0; cell < 9; ++cell)
+                polygons.append(QVariant::fromValue(thumbnail.overviewCellPolygon(cell)));
+            item->setData(ArmyOverviewCells, polygons);
             item->setToolTip(item->text()+QString("\nUnity %1 · double-click a member to edit their character").arg(unit.unity));
             if (unit.index==prior) units_->setCurrentItem(item);
         }
@@ -717,7 +792,7 @@ void SaveUnitEditor::showUnit() {
         }
     }
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
-    note_->setText(editable ? "Drag a member icon or formation sprite to Reserve. Drag a reserve character onto a formation cell or squad. Double-click a member to edit stats and equipment."
+    note_->setText(editable ? "Drag members between squad boards or Reserve. Drop on an empty cell to move, or on another member to swap. Squad limits apply. Double-click a member to edit stats and equipment."
                             : editor_->document() ? "Viewing a runtime/suspend save. Use a regular battery-save slot to create or reorganize squads."
                                                   : "Open a save to view and manage your army.");
     apply_->setEnabled(editable && !ids_.isEmpty());
