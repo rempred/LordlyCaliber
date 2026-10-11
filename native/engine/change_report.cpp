@@ -423,6 +423,9 @@ ChangeReport Project::changeReport() const {
                     {"Added dialogue entry."});
         }
     }
+    if (categoryIcons_ && categoryIcons_->modified())
+        add("UI and Icons", "Class category icons",
+            {"Edited icon artwork, custom icons or family tab assignments."});
     if (icons_ && icons_->modified())
         for (const auto &id : icons_->json()["icons"].toObject().keys())
             add("Item icons", itemName(id.toInt() & 0x1ff, (id.toInt() & 0x200) != 0),

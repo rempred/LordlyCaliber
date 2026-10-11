@@ -14,5 +14,5 @@ struct PromotionRuntimeBuild {
 // class data, description routing and save support.
 PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLayout &classes,
                                             const Promotion &promotion, const Compiler &compiler,
-                                            const QString &directory);
+                                            const QString &directory, bool familyTabs = false);
 } // namespace lordly

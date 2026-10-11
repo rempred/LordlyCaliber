@@ -1,6 +1,10 @@
+#include "engine/category_icons.h"
+#include "engine/expanded_promotion_resource.h"
 #include "engine/icon_artwork.h"
 #include "engine/item_icons.h"
 #include "engine/project.h"
+#include "engine/tool_artwork.h"
+#include "rebuild/class_menu_layout.h"
 #include "rebuild/compiler.h"
 #include <QFile>
 #include <QJsonArray>
@@ -20,6 +24,156 @@ QByteArray rgba(const QImage &image) {
 class IconArtworkTests : public QObject {
     Q_OBJECT
   private slots:
+    void categoryIconsAndFamilyTabs() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            auto p = Project::fromRom(rom);
+            p.loadCategoryIcons();
+            p.loadPromotion();
+            const auto original = *p.categoryIcons();
+            QCOMPARE(original.iconIds().size(), 8);
+            QVERIFY(!original.modified());
+            auto art = original;
+            auto pixels = art.indices(1);
+            pixels[0] ^= 1;
+            art.setIndices(1, pixels);
+            QCOMPARE(art.indices(2), original.indices(2));
+            QVERIFY_THROWS_EXCEPTION(Error, art.setIndices(1, QByteArray(195, 0)));
+            QCOMPARE(art.indices(1), pixels);
+            auto settings = *p.promotion();
+            QList<int> families;
+            for (int i = 0; i < 12; ++i) {
+                const auto family = settings.createFamily(QString("Icon family %1").arg(i));
+                families << family;
+                settings.assign(i + 1, family);
+                const auto icon = art.create(QString("Family crest %1").arg(i), i % 8 + 1);
+                QCOMPARE(icon, i + 9);
+                art.assignFamily(family, icon);
+            }
+            settings.setFamilyLinks(families[0],
+                                    {families[1]}); // Linked families retain separate tabs.
+            p.setPromotion(settings.json());
+            p.setCategoryIcons(art.json());
+            QVERIFY(p.changeReport().text().contains("Class category icons"));
+            QTemporaryDir work;
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-category-icons-XXXXXX");
+            QVERIFY(work.isValid());
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            for (const auto &location :
+                 {work.filePath("project"), work.filePath("project.lcproject")}) {
+                if (location.endsWith(".lcproject"))
+                    p.saveArchive(location);
+                else
+                    p.saveFolder(location);
+                auto reopened = Project::fromRom(rom);
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.categoryIcons()->json(), art.json());
+                QCOMPARE(reopened.promotion()->json(), p.promotion()->json());
+            }
+            auto libraryOnly = Project::fromRom(rom);
+            auto unused = original;
+            unused.create("Unused crest", 1);
+            libraryOnly.setCategoryIcons(unused.json());
+            const auto libraryBuild = rebuild(libraryOnly, tools, work.path());
+            QCOMPARE(libraryBuild.image.mid(0x9bc80, 0xd00), rom.bytes().mid(0x9bc80, 0xd00));
+            auto libraryReopen = Project::fromRom(Rom::fromBytes(libraryBuild.image));
+            libraryReopen.loadCategoryIcons();
+            QVERIFY(!libraryReopen.categoryIcons()->hasTabRuntime());
+            QCOMPARE(rebuild(libraryReopen, tools, work.path()).image, libraryBuild.image);
+            const auto built = rebuild(p, tools, work.path());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(p, built, candidate);
+            const auto loaded = Rom::open(candidate);
+            const auto after = CategoryIcons::load(loaded);
+            for (int icon : art.iconIds())
+                QCOMPARE(after.indices(icon), art.indices(icon));
+            for (int i = 0; i < 12; ++i)
+                QCOMPARE(after.familyIcon(families[i]), i + 9);
+            QVERIFY(!after.modified());
+            QVERIFY(after.hasTabRuntime());
+            auto beforePack = original.decodedPack(), afterPack = after.decodedPack().first(23496);
+            for (int y = 0; y < 14; ++y)
+                beforePack.replace(CategoryIcons::pixelOffset + y * 112, 14,
+                                   afterPack.mid(CategoryIcons::pixelOffset + y * 112, 14));
+            QCOMPARE(afterPack, beforePack); // Every unrelated menu texture remains intact.
+            QCOMPARE(chaosFrameTitle(loaded), chaosFrameTitle(rom));
+            QCOMPARE(after.palette(), original.palette());
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, built.image);
+            const auto placement = ClassPlacement::read(loaded);
+            QVERIFY(placement.has_value());
+            const auto expanded =
+                ExpandedPromotionResource::decode(loaded.bytes().mid(0x27d0000, 65536));
+            const auto layout = ClassMenuLayout::build(placement->layout, expanded.data, true);
+            QJsonObject context{{"classes", double(placement->layout.records)},
+                                {"aliases", double(placement->layout.aliases)},
+                                {"discovery", double(placement->layout.discovery)},
+                                {"classCount", layout.count},
+                                {"tabs", double(layout.categoryTabs)},
+                                {"entries", double(layout.categoryClasses)},
+                                {"current", double(layout.currentCounts)},
+                                {"eligible", double(layout.eligibleCounts)},
+                                {"ownerBytes", double(layout.ownerBytes)}};
+            const auto contextPath = work.filePath("tabs.json");
+            QFile contextFile(contextPath);
+            QVERIFY(contextFile.open(QIODevice::WriteOnly));
+            contextFile.write(QJsonDocument(context).toJson());
+            contextFile.close();
+            QProcess cpu;
+            cpu.start("node", {QFINDTESTDATA("category-tabs-mips.cjs"), candidate, contextPath});
+            QVERIFY(cpu.waitForFinished(60000));
+            QVERIFY2(cpu.exitCode() == 0,
+                     (cpu.readAllStandardOutput() + cpu.readAllStandardError()).constData());
+            auto reopened = Project::fromRom(loaded);
+            reopened.loadCategoryIcons();
+            reopened.loadPromotion();
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            // A second build changes both class table placement and tab assignment.
+            const int added = reopened.appendClass(1, "Family tab recruit");
+            auto next = *reopened.promotion();
+            next.assign(added, families[11]);
+            reopened.setPromotion(next.json());
+            auto nextArt = *reopened.categoryIcons();
+            nextArt.assignFamily(families[0], 2);
+            reopened.setCategoryIcons(nextArt.json());
+            const auto twice = rebuild(reopened, tools, work.path());
+            const auto twiceRom = Rom::fromBytes(twice.image);
+            auto twiceProject = Project::fromRom(twiceRom);
+            twiceProject.loadPromotion();
+            twiceProject.loadCategoryIcons();
+            QCOMPARE(twiceProject.categoryIcons()->familyIcon(families[0]), 2);
+            QCOMPARE(twiceProject.promotion()->families["assignments"].toArray()[added].toInt(),
+                     families[11]);
+            const auto raw = twiceProject.categoryIcons()->decodedPack();
+            QCOMPARE(u8(raw, 23496 + 8 + added), 20);
+            auto cleared = *twiceProject.categoryIcons();
+            for (int family : families)
+                cleared.assignFamily(family, 0);
+            twiceProject.setCategoryIcons(cleared.json());
+            const auto clearedBuild = rebuild(twiceProject, tools, work.path());
+            auto clearedProject = Project::fromRom(Rom::fromBytes(clearedBuild.image));
+            clearedProject.loadCategoryIcons();
+            QVERIFY(clearedProject.categoryIcons()->hasTabRuntime());
+            QVERIFY(!clearedProject.categoryIcons()->hasFamilyTabs());
+            QCOMPARE(clearedProject.categoryIcons()->decodedPack().mid(23496 + 8, 256),
+                     QByteArray(256, 0));
+            QCOMPARE(rebuild(clearedProject, tools, work.path()).image, clearedBuild.image);
+            auto corrupt = built.image;
+            put32(corrupt, CategoryIcons::descriptorOffset + 20, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, CategoryIcons::load(Rom::fromBytes(corrupt)));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            qInfo().noquote() << "Family icon export and MIPS checks:" << candidate;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void readEditExportReopen() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

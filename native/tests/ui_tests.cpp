@@ -87,6 +87,7 @@
 #include <QWheelEvent>
 #include <QtTest>
 #include <bit>
+#include "app/category_icon_editor.h"
 using namespace lordly;
 static bool selectMapObject(QWidget &editor, MapObject kind, int row) {
     auto objects = editor.findChild<QListWidget *>("mapObjects");
@@ -11242,6 +11243,97 @@ class UiTests : public QObject {
                     QVERIFY(window.grab().save(prefix + QString("-advanced-%1.png").arg(width)));
                 }
             }
+        }
+    }
+    void categoryIconEditingAndNavigation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadPromotion();
+            project.loadCategoryIcons();
+            auto promotion = *project.promotion();
+            const int family = promotion.createFamily("Test crest family");
+            promotion.assign(1, family);
+            project.setPromotion(promotion.json());
+            QUndoStack undo;
+            PromotionEditor families(&project, &undo, [] {});
+            families.selectClass(1);
+            CategoryIconEditor editor(&project, &undo, [] {});
+            editor.resize(1000, 650);
+            editor.show();
+            QTest::qWait(20);
+            QCOMPARE(editor.findChild<QListWidget *>("categoryIcons")->count(), 8);
+            const auto before = *project.categoryIcons();
+            auto canvas = editor.findChild<SpriteCanvas *>("categoryIconCanvas");
+            QVERIFY(canvas);
+            const int point = 5 * 14 + 5;
+            const auto color = quint8(before.indices(1)[point]) ^ 1;
+            canvas->setIndexColor(color);
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, {110, 110});
+            QCOMPARE(quint8(project.categoryIcons()->indices(1)[point]), color);
+            QCOMPARE(project.categoryIcons()->indices(2), before.indices(2));
+            undo.undo();
+            QCOMPARE(project.categoryIcons()->json(), before.json());
+            undo.redo();
+            QTimer::singleShot(0, [] {
+                for (auto widget : QApplication::topLevelWidgets())
+                    if (auto dialog = qobject_cast<QInputDialog *>(widget)) {
+                        dialog->setTextValue("New crest");
+                        dialog->accept();
+                    }
+            });
+            editor.createIcon(family, true);
+            const auto newIcon = editor.selectedCategory();
+            QCOMPARE(newIcon, 9);
+            QCOMPARE(project.categoryIcons()->familyIcon(family), 9);
+            const auto beforeInvalid = project.categoryIcons()->json();
+            QTimer::singleShot(0, [] {
+                for (auto widget : QApplication::topLevelWidgets())
+                    if (auto dialog = qobject_cast<QInputDialog *>(widget)) {
+                        dialog->setTextValue("   ");
+                        dialog->accept();
+                    }
+            });
+            editor.createIcon(family);
+            QCOMPARE(project.categoryIcons()->json(), beforeInvalid);
+            QVERIFY(!editor.findChild<QLabel *>("categoryIconNotice")->text().isEmpty());
+            QCOMPARE(families.findChild<QComboBox *>("familyTabIcon")->currentData().toInt(), 9);
+            undo.undo();
+            QCOMPARE(project.categoryIcons()->iconIds().size(), 8);
+            undo.redo();
+            editor.selectCategory(9);
+            QImage replacement(14, 14, QImage::Format_RGBA8888);
+            replacement.fill(project.categoryIcons()->palette()[0]);
+            editor.assignImage(replacement);
+            QCOMPARE(project.categoryIcons()->image(9), replacement);
+            auto picker = families.findChild<QComboBox *>("familyTabIcon");
+            picker->setCurrentIndex(picker->findData(2));
+            QCOMPARE(project.categoryIcons()->familyIcon(family), 2);
+            undo.undo();
+            QCOMPARE(project.categoryIcons()->familyIcon(family), 9);
+            const auto capture = qEnvironmentVariable("LORDLY_TEST_SCREENSHOT");
+            if (!capture.isEmpty())
+                QVERIFY(editor.grab().save(capture + "-category-icons.png"));
+            MainWindow window;
+            window.resize(1100, 780);
+            window.show();
+            window.loadRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<CategoryIconEditor *>() != nullptr, 30000);
+            auto familyEditor = window.findChild<PromotionEditor *>();
+            QVERIFY(familyEditor);
+            familyEditor->findChild<QPushButton *>("editFamilyIcon")->click();
+            auto workspaces = qobject_cast<QTabWidget *>(window.centralWidget());
+            auto art = window.findChild<QTabWidget *>("artWorkspace");
+            auto icons = window.findChild<QTabWidget *>("uiAndIcons");
+            QCOMPARE(workspaces->currentWidget(), art);
+            QCOMPARE(art->currentWidget(), icons);
+            QCOMPARE(icons->currentWidget(), window.findChild<CategoryIconEditor *>());
+            if (!capture.isEmpty())
+                QVERIFY(window.grab().save(capture + "-category-workspace.png"));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
         }
     }
     void promotionControlsAndUndo() {

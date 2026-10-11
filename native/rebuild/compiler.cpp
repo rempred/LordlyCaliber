@@ -536,6 +536,18 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = removeCustomInstallation(p.rom(), *priorCustom, compiler, directory);
     if (priorShopPlacement && priorShopPlacement->version < 4)
         p.loadShops();
+    if (p.rom().revision() == 0 &&
+        p.rom().bytes().mid(CategoryIcons::descriptorOffset, 8) == "LC05CATS")
+        p.loadCategoryIcons();
+    const bool familyTabs = p.categoryIcons() && (p.categoryIcons()->hasFamilyTabs() ||
+                                                  p.categoryIcons()->hasTabRuntime());
+    if (familyTabs) {
+        p.loadPromotion();
+        auto promotion = *p.promotion();
+        promotion.growToClassCount(p.records(Table::Classes).size());
+        p.setPromotion(promotion.json());
+        p.categoryIcons()->validateFamilies(*p.promotion());
+    }
     const bool expandedClasses =
         p.records(Table::Classes).size() > 165 ||
         (p.promotion() && p.promotion()->classCount() != 81) ||
@@ -768,11 +780,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr);
         classes.removeResident = priorCustom.has_value() && !customSquads;
-        const auto menus =
-            expandedClasses
-                ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
-                      p.rom(), classes.data.layout, *p.promotion(), compiler, directory))
-                : std::nullopt;
+        const auto menus = expandedClasses
+                               ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
+                                     p.rom(), classes.data.layout, *p.promotion(), compiler,
+                                     directory, familyTabs))
+                               : std::nullopt;
         result.image =
             linkClassRuntime(Rom::fromBytes(result.image), classes, menus ? &*menus : nullptr);
         if (custom) {
@@ -898,6 +910,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report
             << QString("Compiled and rebuilt %1 dialogue archives through original resource links")
                    .arg(plan.size());
+    }
+    if (p.categoryIcons() && (p.categoryIcons()->modified() || familyTabs)) {
+        auto pack = p.categoryIcons()->decodedPack(p.promotion() ? &*p.promotion() : nullptr);
+        pack = compiler.compileData(pack, directory, "class_category_icons");
+        result.image = p.categoryIcons()->rebuild(Rom::fromBytes(result.image), pack);
+        result.report << "Compiled class category icons and family tab assignments";
     }
     if(p.iconArtwork() && p.iconArtwork()->modified()) {
         auto packs=p.iconArtwork()->decodedPacks();

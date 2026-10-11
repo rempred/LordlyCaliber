@@ -59,6 +59,7 @@
 #include <QWheelEvent>
 #include <QtConcurrent>
 #include <optional>
+#include "app/category_icon_editor.h"
 
 namespace lordly {
 bool MainWindow::eventFilter(QObject *object, QEvent *event) {
@@ -259,8 +260,13 @@ void MainWindow::installProject(Project project) {
     if (project_->rom().revision() == 0) {
         auto artwork = new QTabWidget;
         artwork->setObjectName("artWorkspace");
-        artwork->addTab(new ArtEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Item icons");
+        auto icons = new QTabWidget;
+        icons->setObjectName("uiAndIcons");
+        icons->addTab(new ArtEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                      "Item icons");
+        icons->addTab(new CategoryIconEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                      "Class category icons");
+        artwork->addTab(icons, "UI and Icons");
         artwork->addTab(new PortraitEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Portraits");
         artwork->addTab(new ArmyEditor(project_.get(), undo_, [this] { updateStatus(); }),
@@ -534,6 +540,22 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     if (table == Table::Classes) {
         promotion = new PromotionEditor(project_.get(), undo_, [this] { updateStatus(); });
+        connect(promotion, &PromotionEditor::editFamilyIconRequested, this,
+                [this](int family, int icon, bool create) {
+                    auto artwork = workspaces_->findChild<QTabWidget *>("artWorkspace");
+                    auto icons = workspaces_->findChild<QTabWidget *>("uiAndIcons");
+                    auto editor = workspaces_->findChild<CategoryIconEditor *>();
+                    if (!artwork || !icons || !editor)
+                        return;
+                    workspaces_->setCurrentWidget(artwork);
+                    artwork->setCurrentWidget(icons);
+                    icons->setCurrentWidget(editor);
+                    editor->selectFamily(family);
+                    if (icon)
+                        editor->selectCategory(icon);
+                    if (create)
+                        editor->createIcon(family);
+                });
         auto scroll = new QScrollArea;
         scroll->setWidgetResizable(true);
         scroll->setWidget(promotion);

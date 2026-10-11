@@ -1,12 +1,14 @@
 #include "engine/art_resource_links.h"
-#include "engine/direct_descriptors.h"
-#include "engine/animation_routes.h"
 #include "engine/animation_override_image.h"
+#include "engine/animation_routes.h"
 #include "engine/army_artwork.h"
 #include "engine/avatar_library.h"
+#include "engine/category_icons.h"
+#include "engine/direct_descriptors.h"
 #include "engine/icon_artwork.h"
 namespace lordly {
 QByteArray canonicalArtOwner(QByteArray code, qsizetype start) {
+    code = CategoryIcons::canonicalOwner(std::move(code), start);
     code = DirectDescriptors::canonicalOwner(std::move(code),start);
     code = AnimationOverrideImage::canonicalOwner(std::move(code),start);
     code = AnimationRoutes::canonicalOwner(std::move(code), start);
@@ -31,6 +33,7 @@ void validateArtResourceLinks(const Rom &rom) {
     AnimationOverrideImage::validateOwner(rom,0,rom.bytes().size());
     DirectDescriptors::validateRelocations(rom);
     IconArtwork::validateRelocations(rom);
+    CategoryIcons::validateRelocations(rom);
     AvatarLibrary::validateRelocations(rom);
     ArmyArtwork::validateRelocations(rom);
     AnimationRoutes::validateRelocations(rom);
@@ -48,6 +51,8 @@ void validateArtOwnerLinks(const Rom &rom, qsizetype start, qsizetype size) {
         animations |= contained(site);
     if (animations)
         AnimationRoutes::validateRelocations(rom);
+    if (contained({CategoryIcons::ownerHigh, CategoryIcons::ownerLow}))
+        CategoryIcons::validateRelocations(rom);
     bool icons = false;
     for (const auto &spec : IconArtwork::specs())
         for (const auto &site : spec.sites)

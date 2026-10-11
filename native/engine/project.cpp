@@ -946,6 +946,14 @@ void Project::importLegacyAvatarArtwork(const QJsonObject &object) {
         loadAvatarArtwork();avatars_->importLegacy(classData(),art.toObject());
     }
 }
+void Project::loadCategoryIcons() {
+    if (!categoryIcons_)
+        categoryIcons_ = CategoryIcons::load(rom_);
+}
+void Project::setCategoryIcons(const QJsonObject &value) {
+    loadCategoryIcons();
+    categoryIcons_->apply(value);
+}
 void Project::loadIconArtwork() {
     if(!icons_)icons_=IconArtwork::load(rom_);
 }
@@ -976,6 +984,10 @@ QJsonObject Project::manifest() const {
     }
     result["records"] = edits;
     result["spriteLibrary"] = sprites_.json();
+    if (categoryIcons_ && categoryIcons_->modified())
+        result["categoryIcons"] = categoryIcons_->json();
+    else
+        result.remove("categoryIcons");
     if(icons_ && (icons_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("icons")))
         result["iconArtwork"]=icons_->json();
     else result.remove("iconArtwork");
@@ -1178,6 +1190,8 @@ void Project::applyManifest(const QJsonObject &object) {
     if (tools_)
         candidate.loadTools();
     if(icons_)candidate.loadIconArtwork();
+    if (categoryIcons_)
+        candidate.loadCategoryIcons();
     if(avatars_)candidate.loadAvatarArtwork();
     if(army_)candidate.loadArmyArtwork();
     if (encounters_)
@@ -1290,6 +1304,11 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
+    if (object.contains("categoryIcons")) {
+        if (!object["categoryIcons"].isObject())
+            throw Error("Invalid saved category icons");
+        candidate.setCategoryIcons(object["categoryIcons"].toObject());
+    }
     if(object.contains("iconArtwork")) {
         if(!object["iconArtwork"].isObject())throw Error("Invalid saved icon artwork");
         candidate.setIconArtwork(object["iconArtwork"].toObject());

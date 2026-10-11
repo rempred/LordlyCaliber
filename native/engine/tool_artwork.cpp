@@ -1,5 +1,6 @@
 #include "engine/tool_artwork.h"
 #include "engine/archive.h"
+#include "engine/category_icons.h"
 #include "engine/resource.h"
 #include <QMap>
 #include <QPoint>
@@ -120,7 +121,9 @@ QByteArray armyTexturePack(const Rom &rom) {
         throw Error("Invalid Army UI texture resource key");
     const qsizetype at = 0x594280 + key;
     const auto stored = u32(rom.bytes(), at), decoded = u32(rom.bytes(), at + 4);
-    if (stored > 1024 * 1024 || decoded != 23496)
+    if (decoded != 23496)
+        CategoryIcons::load(rom);
+    if (stored > 1024 * 1024 || decoded < 23496 || decoded > 262144)
         throw Error("Army UI texture pack has an unsupported size");
     return Resource::load(rom, at, qsizetype(stored) + 4).decoded;
 }

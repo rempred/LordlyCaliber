@@ -5,6 +5,7 @@
 #include "engine/army_artwork.h"
 #include "engine/avatar_artwork.h"
 #include "engine/body_animation_data.h"
+#include "engine/category_icons.h"
 #include "engine/change_report.h"
 #include "engine/class_data.h"
 #include "engine/combat_artwork.h"
@@ -100,6 +101,11 @@ class Project {
     void loadAvatarArtwork();
     const std::optional<AvatarArtwork> &avatarArtwork() const { return avatars_; }
     void setAvatarArtwork(const QJsonObject &);
+    void loadCategoryIcons();
+    const std::optional<CategoryIcons> &categoryIcons() const {
+        return categoryIcons_;
+    }
+    void setCategoryIcons(const QJsonObject &);
     void loadIconArtwork();
     const std::optional<IconArtwork> &iconArtwork() const { return icons_; }
     void setIconArtwork(const QJsonObject &);
@@ -238,6 +244,7 @@ class Project {
     std::optional<ToolSettings> tools_;
     SpriteLibrary sprites_;
     std::optional<IconArtwork> icons_;
+    std::optional<CategoryIcons> categoryIcons_;
     std::optional<AvatarArtwork> avatars_;
     std::optional<ArmyArtwork> army_;
     std::optional<CombatArtwork> combat_;

@@ -1,14 +1,16 @@
-#include "app/view_position.h"
 #include "app/promotion_editor.h"
+#include "app/view_position.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QVBoxLayout>
 namespace lordly {
@@ -32,6 +34,22 @@ class PromotionCommand final : public QUndoCommand {
     QJsonObject before_, after_;
     std::function<void()> changed_;
 };
+class FamilyIconCommand final : public QUndoCommand {
+  public:
+    FamilyIconCommand(Project *p, QJsonObject after)
+        : QUndoCommand("Assign family tab icon"), p_(p), before_(p->categoryIcons()->json()),
+          after_(after) {}
+    void undo() override {
+        p_->setCategoryIcons(before_);
+    }
+    void redo() override {
+        p_->setCategoryIcons(after_);
+    }
+
+  private:
+    Project *p_;
+    QJsonObject before_, after_;
+};
 PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                                  QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
@@ -45,6 +63,56 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     families_ = new QComboBox;
     families_->setObjectName("classFamily");
     form->addRow("Class family", families_);
+    auto iconRow = new QWidget;
+    auto iconLayout = new QHBoxLayout(iconRow);
+    iconLayout->setContentsMargins(0, 0, 0, 0);
+    familyIconPreview_ = new QLabel;
+    familyIconPreview_->setFixedSize(42, 42);
+    iconLayout->addWidget(familyIconPreview_);
+    familyIcon_ = new QComboBox;
+    familyIcon_->setObjectName("familyTabIcon");
+    familyIcon_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    familyIcon_->setMinimumContentsLength(10);
+    iconLayout->addWidget(familyIcon_, 1);
+    form->addRow("List Classes icon", iconRow);
+    auto iconActions = new QHBoxLayout;
+    auto editIcon = new QPushButton("Edit icon…");
+    editIcon->setObjectName("editFamilyIcon");
+    iconActions->addWidget(editIcon);
+    auto createIcon = new QPushButton("Create icon…");
+    createIcon->setObjectName("createFamilyIcon");
+    iconActions->addWidget(createIcon);
+    form->addRow(iconActions);
+    auto iconHelp = new QLabel(
+        "Choose an icon to give this family its own List Classes tab. Classes still follow the "
+        "game's discovery rules. Shared icons change for every family using them.");
+    iconHelp->setWordWrap(true);
+    form->addRow(iconHelp);
+    connect(editIcon, &QPushButton::clicked, this, [this] {
+        emit editFamilyIconRequested(families_->currentData().toInt(),
+                                     familyIcon_->currentData().toInt(), false);
+    });
+    connect(createIcon, &QPushButton::clicked, this, [this] {
+        emit editFamilyIconRequested(families_->currentData().toInt(),
+                                     familyIcon_->currentData().toInt(), true);
+    });
+    connect(familyIcon_, &QComboBox::currentIndexChanged, this, [this] {
+        if (refreshing_ || !project_->categoryIcons() || families_->currentData().toInt() < 1)
+            return;
+        auto edited = *project_->categoryIcons();
+        try {
+            edited.assignFamily(families_->currentData().toInt(),
+                                familyIcon_->currentData().toInt());
+            if (edited.json() != project_->categoryIcons()->json())
+                undo_->push(new FamilyIconCommand(project_, edited.json()));
+            refresh();
+            changed_();
+        } catch (const std::exception &e) {
+            refresh();
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
+    });
+    connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
     const QStringList labels = {"Strength", "Vitality",  "Intelligence",      "Mentality",
                                 "Agility",  "Dexterity", "Alignment minimum", "Alignment maximum"};
     for (int n = 0; n < labels.size(); ++n) {
@@ -203,6 +271,29 @@ void PromotionEditor::refresh() {
         }
     }
     const int family = families_->currentData().toInt();
+    try {
+        project_->loadCategoryIcons();
+    } catch (const std::exception &) {
+    }
+    familyIcon_->clear();
+    familyIcon_->addItem("Use existing categories", 0);
+    if (project_->categoryIcons())
+        for (int icon : project_->categoryIcons()->iconIds())
+            familyIcon_->addItem(QPixmap::fromImage(project_->categoryIcons()->image(icon).scaled(
+                                     28, 28, Qt::IgnoreAspectRatio, Qt::FastTransformation)),
+                                 project_->categoryIcons()->label(icon), icon);
+    const int selectedIcon =
+        project_->categoryIcons() ? project_->categoryIcons()->familyIcon(family) : 0;
+    familyIcon_->setCurrentIndex(familyIcon_->findData(selectedIcon));
+    familyIconPreview_->setPixmap(
+        selectedIcon
+            ? QPixmap::fromImage(project_->categoryIcons()
+                                     ->image(selectedIcon)
+                                     .scaled(42, 42, Qt::IgnoreAspectRatio, Qt::FastTransformation))
+            : QPixmap{});
+    familyIcon_->setEnabled(editable && family > 0 && project_->categoryIcons().has_value());
+    findChild<QPushButton *>("createFamilyIcon")->setEnabled(familyIcon_->isEnabled());
+    findChild<QPushButton *>("editFamilyIcon")->setEnabled(project_->categoryIcons().has_value());
     linksTitle_->setText(QString("Link Family %1 to other families — shares manual class-change destinations. The current family is omitted.").arg(family));
     links_->setEnabled(editable && family != 0);
     findChild<QPushButton *>("applyFamilyLinks")->setEnabled(editable && family != 0);

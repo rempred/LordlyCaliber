@@ -11,10 +11,14 @@ class QCheckBox;
 class QListWidget;
 namespace lordly {
 class PromotionEditor : public QWidget {
+    Q_OBJECT
   public:
     PromotionEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                     QWidget *parent = nullptr);
     void selectClass(int id);
+
+  signals:
+    void editFamilyIconRequested(int family, int icon, bool create);
 
   private:
     void refresh();
@@ -27,7 +31,8 @@ class PromotionEditor : public QWidget {
     QVector<QSpinBox *> gates_;
     QSpinBox *mask_;
     QCheckBox *equipmentSets_;
-    QComboBox *families_, *rules_;
+    QComboBox *families_, *rules_, *familyIcon_;
+    QLabel *familyIconPreview_;
     QLineEdit *name_;
     QLabel *notice_, *linksTitle_;
     QListWidget *links_;

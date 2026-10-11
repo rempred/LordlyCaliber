@@ -4,7 +4,7 @@
 
 namespace lordly {
 ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
-                                       const PromotionData &promotion) {
+                                       const PromotionData &promotion, bool familyTabs) {
     const auto count = classes.count;
     auto inRam = [](quint32 address, quint64 length) {
         return address >= 0x80000000U && address < 0x80400000U && length <= 0x80400000ULL - address;
@@ -32,6 +32,10 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
     result.categoryClasses = allocate();
     result.currentCounts = allocate();
     result.eligibleCounts = allocate();
+    if (familyTabs) {
+        result.categoryTabs = cursor;
+        cursor += 256;
+    }
     result.ownerBytes = cursor;
     // All these fields are encoded as signed 16-bit owner-relative operands.
     if (cursor > 0x7fff)
@@ -53,7 +57,9 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
         {"LC_CATEGORY_CLASSES_OFFSET", result.categoryClasses},
         {"LC_CATEGORY_CURRENT_OFFSET", result.currentCounts},
         {"LC_CATEGORY_ELIGIBLE_OFFSET", result.eligibleCounts},
-        {"LC_CATEGORY_CAPACITY", quint32(result.capacity)}};
+        {"LC_CATEGORY_CAPACITY", quint32(result.capacity)},
+        {"LC_FAMILY_TABS", familyTabs ? 1U : 0U},
+        {"LC_CATEGORY_TABS_OFFSET", result.categoryTabs}};
     QFile file(":/game/promotion/class_menu_config.h");
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing class menu source configuration");
@@ -80,7 +86,8 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
                                              {"CATEGORY_CLASSES_OFFSET", result.categoryClasses},
                                              {"CATEGORY_CURRENT_OFFSET", result.currentCounts},
                                              {"CATEGORY_ELIGIBLE_OFFSET", result.eligibleCounts},
-                                             {"ARMY_OWNER_BYTES", result.ownerBytes}};
+                                             {"ARMY_OWNER_BYTES", result.ownerBytes},
+                                             {"CATEGORY_TABS_OFFSET", result.categoryTabs}};
     for (auto it = assembly.begin(); it != assembly.end(); ++it)
         result.assemblyConstants +=
             it.key().toLatin1() + " = " + QByteArray::number(it.value()) + '\n';

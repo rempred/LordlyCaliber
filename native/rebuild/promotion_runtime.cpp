@@ -13,14 +13,14 @@ static QByteArray read(const QString &path) {
 }
 PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLayout &classes,
                                             const Promotion &promotion, const Compiler &compiler,
-                                            const QString &directory) {
+                                            const QString &directory, bool familyTabs) {
     source.requireSupported();
     validateArtResourceLinks(source);
     if (source.revision() != 0)
         throw Error("Expanded class menus require US Rev 0");
     PromotionRuntimeBuild result;
     const auto data = promotion.buildExpandedData();
-    result.layout = ClassMenuLayout::build(classes, data);
+    result.layout = ClassMenuLayout::build(classes, data, familyTabs);
     result.inventory.classCount = classes.count;
     const auto placement = ClassPlacement::read(source);
     const auto previous = placement && !placement->runtimeInventory.isEmpty()
@@ -56,6 +56,8 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
         for (auto it = fixedSymbols.begin(); it != fixedSymbols.end(); ++it)
             symbols[it.key()] = quint32(it.value().toDouble());
         symbols.insert(result.layout.dataSymbols);
+        if (familyTabs)
+            symbols["lc_family_roster_class"] = 0xbc1f8U + 0x801135a0U;
         QVector<RuntimeDataReference> references;
         if (previous)
             for (const auto &record : previous->owners)
@@ -126,7 +128,21 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
                     throw Error("C replacement splits a retained data reference");
             references.removeIf([&](const auto &ref) { return ref.high < quint32(extent); });
             const auto module = compile(owner["cSource"].toString(), "_expanded", start);
-            built = module.fitOwner(extent) + original.sliced(extent);
+            if (familyTabs && start == 0xbc0bc) {
+                // The list needs 284 bytes; its unused tail holds the shared
+                // roster lookup so the adjacent count owner keeps its allocation.
+                const auto helper = compiler.compileModule(
+                    read(":/game/promotion/category-class-counts.c"), directory,
+                    "family_roster_class", 0xbc1f8U + 0x801135a0U,
+                    {{"class_menu_config.h",
+                      result.layout.cHeader + "\n#define LC_FAMILY_ROSTER_ONLY 1\n"}},
+                    {{"lc_named_class_map", classes.aliases},
+                     {"lc_class_records", classes.records}});
+                built =
+                    module.fitOwner(extent - 96) + helper.fitOwner(96) + original.sliced(extent);
+                addModuleReferences(helper, extent - 96);
+            } else
+                built = module.fitOwner(extent) + original.sliced(extent);
             addModuleReferences(module, 0);
         } else if (owner.contains("cFragment")) {
             const quint32 begin = owner["fragmentStart"].toInt(),
@@ -197,6 +213,34 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
                 throw Error("Expanded assembly fragment exceeds its allocation");
             built.replace(offset, length, code);
             fragmentEnd = offset + length;
+        }
+        if (start == 0xcc828) {
+            // All category-list reads in this controller retain byte IDs. Only
+            // their owner-relative array moves to the expanded allocation.
+            for (const quint32 site : {0xcc924U, 0xccce4U, 0xcd2bcU}) {
+                const auto at = site - start, word = u32(built, at);
+                if ((word >> 26) != 0x24)
+                    throw Error("Unexpected category selection reader");
+                put32(built, at, (word & 0xffff0000) | result.layout.categoryTabs);
+            }
+        }
+        if (familyTabs && start == 0x9bc80) {
+            constexpr quint32 begin = 0x9c02c, end = 0x9c358;
+            auto bindings = result.layout.dataSymbols;
+            bindings["lc_army_owner"] = 0x80196af8;
+            bindings["lc_gfx"] = 0x800e9ba0;
+            bindings["lc_load_tab"] = 0x8019b38c;
+            const auto body =
+                compiler.compileModule(read(":/game/promotion/category-tabs.c"), directory,
+                                       "family_category_tabs", begin + 28 + 0x801135a0U,
+                                       {{"class_menu_config.h", result.layout.cHeader}}, bindings);
+            auto tabEntry = assemble(
+                "move $a0,$s5\nmove $a1,$s8\nmove $a2,$s3\njal TAB_BODY\nnop\nj TAB_END\nnop\n",
+                "_tab_entry", begin,
+                {{"TAB_BODY", begin + 28 + 0x801135a0U}, {"TAB_END", end + 0x801135a0U}});
+            if (tabEntry.size() != 28)
+                throw Error("Unexpected family tab entry size");
+            built.replace(begin - start, end - begin, tabEntry + body.fitOwner(end - begin - 28));
         }
         if (built.size() != size)
             throw Error("Expanded class code exceeds its owner");

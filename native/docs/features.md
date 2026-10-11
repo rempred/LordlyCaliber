@@ -1,5 +1,16 @@
 # Feature inventory and completion tracking
 
+Art and Animation → UI and Icons groups Item icons and Class category icons.
+The category editor reads all eight original List Classes symbols from the ROM.
+Create or copy an icon, paint pixels, replace it from an image, or export a PNG;
+colors use the game's existing palette. Class family editing shows an icon
+picker and Edit/Create shortcuts. Assigning an icon gives that family its own
+in-game List Classes tab, including linked families. Unassigned families keep
+the original category rules. Tabs appear when their classes are discovered and
+page eight at a time with the game's left/right navigation. Undo/Redo, projects
+and ROM export preserve the art and assignments. See
+[class category icons](class-category-icons.md) for the export contract and limits.
+
 Selecting a squad on the Map shows a gold terrain-aware planned route and its
 movement type in the sidebar. It uses the accepted game pathfinder, current class
 movement settings, movement groups and the same terrain grid used by export.

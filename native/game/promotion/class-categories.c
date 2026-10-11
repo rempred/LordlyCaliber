@@ -21,6 +21,26 @@ u16 lc_class_categories(void)
 #else
     masks = (const u8 *)LC_MASK_ADDRESS;
 #endif
+#if LC_FAMILY_TABS
+    {
+        const u8 *tabs = *(u8 **)(owner + 4) + 23496 + 8;
+        u32 category;
+        for (category = 1; category <= 255; ++category) {
+            for (id = 1; id < LC_CLASS_COUNT; ++id) {
+                u32 mask;
+                if (!(discovered[id >> 3] & bits[id & 7])) continue;
+                mask = masks[id];
+                if (tabs[id] ? tabs[id] == category :
+                    category <= 8 && ((mask == 3 ? 3 : mask & (0U-mask)) & (1U << (category-1)))) {
+                    owner[LC_CATEGORY_TABS_OFFSET + count++] = category;
+                    break;
+                }
+            }
+        }
+        owner[LC_CATEGORY_TABS_OFFSET + count] = 0;
+        return count;
+    }
+#else
     for (id = 1; id < LC_CLASS_COUNT; ++id) {
         u32 mask;
         if (!(discovered[id >> 3] & bits[id & 7]))
@@ -41,4 +61,5 @@ u16 lc_class_categories(void)
      */
     owner[0x1E00 + count] = 9;
     return count;
+#endif
 }
