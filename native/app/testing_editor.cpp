@@ -1,4 +1,5 @@
 #include "app/testing_editor.h"
+#include "engine/project64_session.h"
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -42,7 +43,8 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
     auto heading = new QLabel("<b>Scenario Seeder</b> · Create a battery save for a mission");
     layout->addWidget(heading);
     auto note = new QLabel(
-        "Choose a ROM and Project64 folder, close Project64, then click a mission. Load slot 1 and "
+        "Choose a ROM and Project64 folder, then use a mission's Cold boot button. It restarts "
+        "Project64 with that save installed. Load slot 1 and "
         "travel to the marked destination. Export your edited ROM first to test its changes.");
     note->setWordWrap(true);
     layout->addWidget(note);
@@ -88,8 +90,6 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
         });
     });
     actions->addStretch();
-    connect(add("Open ROM in Project64", "seederLaunch"), &QPushButton::clicked, this,
-            &TestingEditor::launch);
     armyLabel_ = new QLabel;
     controls->addWidget(armyLabel_);
     search_ = new QLineEdit;
@@ -99,13 +99,15 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
     controls->addWidget(search_);
     missions_ = new QTreeWidget;
     missions_->setObjectName("seederMissions");
-    missions_->setHeaderLabels({"World map", "Mission / story entry"});
+    missions_->setHeaderLabels({"World map", "Mission / story entry", "Launch"});
     missions_->setRootIsDecorated(false);
     missions_->setAlternatingRowColors(true);
     missions_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    missions_->header()->setStretchLastSection(true);
+    missions_->header()->setStretchLastSection(false);
+    missions_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    missions_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     layout->addWidget(missions_, 1);
-    status_ = new QLabel("Choose a mission to prepare its save.");
+    status_ = new QLabel("Use Cold boot beside the mission you want to test.");
     status_->setObjectName("seederStatus");
     status_->setWordWrap(true);
     layout->addWidget(status_);
@@ -135,8 +137,6 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
         });
     });
     connect(search_, &QLineEdit::textChanged, this, &TestingEditor::filter);
-    connect(missions_, &QTreeWidget::itemClicked, this, [this] { installSelected(); });
-    connect(missions_, &QTreeWidget::itemActivated, this, [this] { installSelected(); });
 }
 void TestingEditor::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
@@ -160,6 +160,7 @@ void TestingEditor::loadRom(const QString &path) {
     controls_->setEnabled(false);
     missions_->setEnabled(false);
     missions_->clear();
+    savePath_.clear();
     seeder_.reset();
     status_->setText("Reading ROM story routes…");
     struct Result {
@@ -189,11 +190,12 @@ void TestingEditor::loadRom(const QString &path) {
             const auto &c = seeder_->choices()[i];
             auto item = new QTreeWidgetItem(missions_, {c.location, c.mission});
             item->setData(0, Qt::UserRole, i);
+            addLaunchButton(item);
         }
         armyLabel_->setText(armyPath_.isEmpty() ? "Army: default army"
                                                 : "Army: " + QFileInfo(armyPath_).fileName());
         filter();
-        status_->setText("Click a mission to create and install its battery save.");
+        status_->setText("Use Cold boot beside a mission to install its save and restart Project64.");
     });
     watcher->setFuture(QtConcurrent::run([path] {
         try {
@@ -240,19 +242,74 @@ std::optional<SaveDocument> TestingEditor::army() const {
     doc.selectSlot(armyPath_.isEmpty() ? 0 : armySlot_);
     return doc;
 }
-void TestingEditor::installSelected() {
-    if (busy_ || !missions_->currentItem() || missions_->currentItem()->isHidden())
+void TestingEditor::addLaunchButton(QTreeWidgetItem *item) {
+    auto button = new QPushButton("Cold boot");
+    button->setObjectName("seederColdBoot");
+    button->setToolTip("Close Project64, install this row's battery save, and start the selected ROM fresh.");
+    missions_->setItemWidget(item, 2, button);
+    connect(button, &QPushButton::clicked, this, [this, item] { coldBoot(item); });
+}
+void TestingEditor::coldBoot(QTreeWidgetItem *item) {
+    if (busy_ || !item || item->isHidden())
         return;
     guarded([&] {
         const auto dest = destination();
-        auto donor = army();
-        const int i = missions_->currentItem()->data(0, Qt::UserRole).toInt();
-        auto raw = seeder_->seed(i, donor ? &*donor : nullptr);
-        const auto backup = ScenarioSeeder::install(seeder_->rom(), raw, dest, true);
-        status_->setText("Ready: " + seeder_->choices()[i].location +
-                         ". Open the ROM, load slot 1, and travel to the marked destination.");
-        detail_->setText("Saved: " + dest +
-                         (backup.isEmpty() ? QString() : "\nPrevious save: " + backup));
+        const int i = item->data(0, Qt::UserRole).toInt();
+        const bool merge = i >= 0;
+        QByteArray raw;
+        if (merge) {
+            auto donor = army();
+            raw = seeder_->seed(i, donor ? &*donor : nullptr);
+        } else {
+            raw = readSave(savePath_);
+            if (!SaveDocument::open(seeder_->rom(), raw).battery())
+                throw Error("Choose a battery save");
+        }
+        const auto title = item->text(0) + " · " + item->text(1);
+        missions_->setCurrentItem(item);
+        busy_ = true;
+        controls_->setEnabled(false);
+        missions_->setEnabled(false);
+        detail_->clear();
+        status_->setText("Closing Project64 and preparing " + title + "…");
+        struct Result { QString error, backup; bool installed = false; };
+        auto watcher = new QFutureWatcher<Result>(this);
+        connect(watcher, &QFutureWatcher<Result>::finished, this,
+                [this, watcher, dest, title, merge] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            busy_ = false;
+            controls_->setEnabled(true);
+            missions_->setEnabled(true);
+            status_->setText(result.error.isEmpty()
+                ? "Started: " + title + (merge ? ". Load slot 1 and travel to the marked destination."
+                                              : ". Load your saved game.")
+                : result.error);
+            if (result.installed)
+                detail_->setText("Saved: " + dest + (result.backup.isEmpty() ? QString()
+                                                           : "\nPrevious save: " + result.backup));
+        });
+        watcher->setFuture(QtConcurrent::run([seeder = seeder_, exe = project64_, romPath = romPath_,
+                                               size = romSize_, time = romTime_, raw, dest, merge] {
+            Result result;
+            try {
+                closeProject64(exe);
+                const auto check = [&] {
+                    const QFileInfo rom(romPath);
+                    if (!rom.isFile() || rom.size() != size || rom.lastModified().toMSecsSinceEpoch() != time)
+                        throw Error("The ROM changed on disk. Choose it again before seeding.");
+                };
+                check();
+                result.backup = ScenarioSeeder::install(seeder->rom(), raw, dest, merge);
+                result.installed = true;
+                check();
+                if (ScenarioSeeder::project64Running())
+                    throw Error("Project64 opened during installation. Close it and try Cold boot again.");
+                if (!QProcess::startDetached(exe, {romPath}, QFileInfo(exe).absolutePath()))
+                    throw Error("Save installed, but Project64 could not start. Check the selected Project64 folder.");
+            } catch (const std::exception &e) { result.error = QString::fromUtf8(e.what()); }
+            return result;
+        }));
     });
 }
 void TestingEditor::chooseArmy() {
@@ -289,7 +346,7 @@ void TestingEditor::chooseArmy() {
         settings.setValue("testing/army", path);
         settings.setValue("testing/armySlot", slot);
         armyLabel_->setText("Army: " + QFileInfo(path).fileName());
-        status_->setText("Army selected. Click a mission to install it with this army.");
+        status_->setText("Army selected. Use a mission's Cold boot button to test it with this army.");
     });
 }
 void TestingEditor::setDefaultArmy(const QByteArray &bytes) {
@@ -306,33 +363,36 @@ void TestingEditor::setDefaultArmy(const QByteArray &bytes) {
     armyPath_.clear();
     QSettings().remove("testing/army");
     armyLabel_->setText("Army: edited default army");
-    status_->setText("Default army saved. Click a mission to use it.");
+    status_->setText("Tester army saved. Use a mission's Cold boot button to use it.");
 }
 void TestingEditor::useSave() {
     guarded([&] {
-        const auto dest = destination();
-        const auto path = QFileDialog::getOpenFileName(this, "Install your complete battery save",
+        checkRom();
+        const auto path = QFileDialog::getOpenFileName(this, "Choose your complete battery save",
                                                        {}, "Project64 battery save (*.sra)");
         if (path.isEmpty())
             return;
-        if (QFileInfo(path).absoluteFilePath() == QFileInfo(dest).absoluteFilePath())
-            throw Error("This save is already installed");
-        const auto backup = ScenarioSeeder::install(seeder_->rom(), readSave(path), dest, false);
-        missions_->clearSelection();
-        missions_->setCurrentItem(nullptr);
-        status_->setText(
-            "Your full save is installed unchanged. Open the ROM and load your saved game.");
-        detail_->setText("Saved: " + dest +
-                         (backup.isEmpty() ? QString() : "\nPrevious save: " + backup));
+        loadSave(path);
     });
 }
-void TestingEditor::launch() {
+void TestingEditor::loadSave(const QString &path) {
+    if (busy_) return;
     guarded([&] {
-        destination();
-        if (ScenarioSeeder::project64Running())
-            throw Error("Project64 is already open");
-        if (!QProcess::startDetached(project64_, {romPath_}, QFileInfo(project64_).absolutePath()))
-            throw Error("Could not open Project64");
+        checkRom();
+        if (!SaveDocument::open(seeder_->rom(), readSave(path)).battery())
+            throw Error("Choose a battery save");
+        if (!savePath_.isEmpty())
+            delete missions_->takeTopLevelItem(0);
+        savePath_ = path;
+        auto item = new QTreeWidgetItem({"My save game", QFileInfo(path).fileName()});
+        item->setData(0, Qt::UserRole, -1);
+        item->setToolTip(1, path);
+        missions_->insertTopLevelItem(0, item);
+        addLaunchButton(item);
+        search_->clear();
+        missions_->setCurrentItem(item);
+        missions_->scrollToItem(item);
+        status_->setText("Use Cold boot beside My save game to install the complete save unchanged.");
     });
 }
 } // namespace lordly

@@ -6,6 +6,7 @@
 class QLabel;
 class QLineEdit;
 class QTreeWidget;
+class QTreeWidgetItem;
 class QPushButton;
 namespace lordly {
 class TestingEditor : public QWidget {
@@ -14,7 +15,7 @@ class TestingEditor : public QWidget {
     explicit TestingEditor(const QString &romPath, QWidget *parent = nullptr);
     void loadRom(const QString &);
     void setDefaultArmy(const QByteArray &);
-    void installSelected();
+    void loadSave(const QString &);
     bool ready() const {
         return bool(seeder_);
     }
@@ -30,12 +31,13 @@ class TestingEditor : public QWidget {
     void guarded(const std::function<void()> &);
     void chooseArmy();
     void useSave();
-    void launch();
+    void coldBoot(QTreeWidgetItem *);
+    void addLaunchButton(QTreeWidgetItem *);
     void checkRom() const;
     QString destination() const;
     std::optional<SaveDocument> army() const;
     std::shared_ptr<ScenarioSeeder> seeder_;
-    QString initialRom_, romPath_, project64_, armyPath_;
+    QString initialRom_, romPath_, project64_, armyPath_, savePath_;
     int armySlot_ = 0;
     qint64 romSize_ = 0, romTime_ = 0;
     bool initialized_ = false, busy_ = false;

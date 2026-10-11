@@ -1,4 +1,5 @@
 #include "app/scenario_map_editor.h"
+#include "app/squad_order_editor.h"
 #include "app/scenario_world_editor.h"
 #include "app/view_position.h"
 #include "engine/battlefield.h"
@@ -11,6 +12,7 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
@@ -86,6 +88,9 @@ class MapCanvas : public QWidget {
     std::function<void(int, QPointF)> moved;
     std::function<void(QPointF)> place;
     bool placing = false;
+    bool pickingDestination = false;
+    std::function<void(QPointF)> destinationPicked;
+    std::function<void()> cancelDestination;
     int brushMode = 0;
     double brushRadius = 3;
     bool straightBrush = false;
@@ -284,6 +289,10 @@ class MapCanvas : public QWidget {
         }
         if (e->button() != Qt::LeftButton)
             return;
+        if (pickingDestination && destinationPicked) {
+            destinationPicked(fromPixel(e->position()));
+            return;
+        }
         if (placing && place) {
             place(fromPixel(e->position()));
             return;
@@ -389,6 +398,13 @@ class MapCanvas : public QWidget {
         pan_ += e->position() - toPixel(before);
         update();
         e->accept();
+    }
+    void keyPressEvent(QKeyEvent *e) override {
+        if (e->key() == Qt::Key_Escape && pickingDestination && cancelDestination) {
+            cancelDestination();
+            return;
+        }
+        QWidget::keyPressEvent(e);
     }
 
   private:
@@ -585,6 +601,29 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     summary_->setTextFormat(Qt::PlainText);
     summary_->setWordWrap(true);
     fields->addWidget(summary_);
+    orders_ = new SquadOrderEditor(project_, commit_);
+    orders_->setObjectName("mapSquadOrders");
+    fields->addWidget(orders_);
+    orders_->hide();
+    orders_->enableMapPicking([this, addTreasure](bool on) {
+        if (on) {
+            addTreasure->setChecked(false);
+            tool_->setCurrentIndex(0);
+            canvas_->cancelDrag();
+            canvas_->setFocus();
+        }
+        canvas_->pickingDestination = on;
+        canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+        notice_->setText(on ? "Click a destination for this squad. Escape cancels. The squad stays selected." : "");
+    });
+    canvas_->cancelDestination = [this] { orders_->cancelPick(); };
+    canvas_->destinationPicked = [this](QPointF point) {
+        if (point.x() < 1 || point.x() > 255 || point.y() < 1 || point.y() > 255) {
+            notice_->setText("Choose a destination inside the mission map.");
+            return;
+        }
+        orders_->setDestination(QPoint(qRound(point.x()), qRound(point.y())));
+    };
     cityInspector_ = new QWidget;
     auto cityFields = new QHBoxLayout(cityInspector_);
     cityFields->setContentsMargins(0, 0, 0, 0);
@@ -678,6 +717,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
     connect(tool_, &QComboBox::currentIndexChanged, this,
             [this, addTreasure, boundaryToggle](int mode) {
+                if (mode)
+                    orders_->cancelPick();
                 canvas_->cancelDrag();
                 canvas_->brushMode = mode < 4 ? mode : 0;
                 cityTools_->setVisible(mode == 5);
@@ -746,8 +787,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         move(row, m.bytes(world, kind == MapObject::Squad || kind == MapObject::Waypoint));
     };
     connect(addTreasure, &QPushButton::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
+            orders_->cancelPick();
             tool_->setCurrentIndex(0);
+        }
         canvas_->placing = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
         notice_->setText(on ? "Click the map to place a new treasure. Click Add treasure again to "
@@ -809,6 +852,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     });
 }
 void ScenarioMapEditor::refresh(int key) {
+    orders_->cancelPick();
     const ViewPosition keepView(this, key_ == key);
     world_->refresh(key);
     if (key < 1) {
@@ -1085,6 +1129,9 @@ void ScenarioMapEditor::select(int row) {
     const bool valid = row >= 0 && row < canvas_->markers.size();
     const bool movable = valid && canvas_->markers[row].movable();
     const bool city = valid && canvas_->markers[row].kind == MapObject::City;
+    const bool squad = valid && canvas_->markers[row].kind == MapObject::Squad;
+    orders_->setVisible(squad);
+    orders_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
     cityInspector_->setVisible(city);
     const bool worldObject = valid && (canvas_->markers[row].kind == MapObject::Site ||
                                        canvas_->markers[row].kind == MapObject::Treasure);
@@ -1100,6 +1147,7 @@ void ScenarioMapEditor::select(int row) {
     x_->setEnabled(movable);
     z_->setEnabled(movable);
     apply_->setEnabled(movable);
+    apply_->setText(squad ? "Set squad starting position" : "Set map coordinates");
     fields_->setEnabled(valid);
     selection_->clear();
     summary_->clear();

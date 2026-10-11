@@ -16,6 +16,7 @@ namespace lordly {
 enum class MapObject { Squad, Waypoint, Site, Treasure, City };
 class MapCanvas;
 class ScenarioWorldEditor;
+class SquadOrderEditor;
 class ScenarioMapEditor : public QWidget {
   public:
     ScenarioMapEditor(Project *project, QUndoStack *undo,
@@ -38,6 +39,7 @@ class ScenarioMapEditor : public QWidget {
     QLabel *notice_, *reference_, *referenceName_, *selection_, *summary_;
     QWidget *coordinates_;
     ScenarioWorldEditor *world_;
+    SquadOrderEditor *orders_;
     QSpinBox *x_, *z_;
     QPushButton *apply_, *fields_;
     QCheckBox *terrain_;

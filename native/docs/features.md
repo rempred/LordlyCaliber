@@ -588,8 +588,11 @@ sample formations are stated approximations. Event predecessors remain separate 
 
 The native **Testing** tab incorporates the standalone Scenario Seeder without
 Python or a Project64 debugger dependency. It keeps the ROM and emulator-folder
-pickers, wiki-ordered mission list, Use my army, Use my save game, and emulator
-launch. Generated world-entry saves retain normal story roads and use the game's
+pickers, wiki-ordered mission list, Use my army, and Use my save game. Each row's
+**Cold boot** button closes the selected Project64 installation, waits for its save
+to flush, installs that row's save, then starts the selected ROM. Selecting a row
+alone does not write a save. Imported full saves get their own launch row.
+Generated world-entry saves retain normal story roads and use the game's
 normal entry initialization. Existing saves are backed up before atomic replacement;
 slot 2 survives generated seeds and stale suspend data is disabled. Full-save
 installation preserves the supplied file unchanged. Later routes retain the
@@ -616,6 +619,10 @@ in its side panel.
 Scenario **Orders** now starts with commands: Guard, Intercept nearby enemies,
 Move, Move and attack, Hit and run, Evade, and Retreat. Destinations can be named
 towns/strongholds or map positions, with waypoints movable on Map after Apply.
+These same commands appear in the Map sidebar when a squad is selected. Choose
+destination on map picks a draft target without moving the squad's start or
+changing selection; Apply saves it. Escape or switching objects/tools cancels
+picking. Advanced route controls scroll at smaller window sizes.
 Applying replaces only the selected squad's starting behavior. Shared and gated
 routes are retained, and a private simple order is reused for subsequent edits.
 New orders respect the native 16-step capacity; group followers must be made

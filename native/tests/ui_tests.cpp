@@ -30,6 +30,7 @@
 #include "app/sprite_editor.h"
 #include "app/rom_art_import.h"
 #include "app/testing_editor.h"
+#include "engine/project64_session.h"
 #include "app/text_workspace.h"
 #include "app/tools_editor.h"
 #include "app/transform_preview.h"
@@ -66,8 +67,10 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QProcess>
 #include <QScopeGuard>
 #include <QScrollBar>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTabBar>
@@ -151,6 +154,122 @@ class UiTests : public QObject {
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
+    }
+    void testingColdBoot() {
+#ifndef Q_OS_WIN
+        QSKIP("Project64 is Windows-only");
+#endif
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (ScenarioSeeder::project64Running()) QSKIP("Do not disturb a real Project64 session");
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto exe = temp.filePath("Project64.exe"), log = temp.filePath("boots.jsonl");
+        QVERIFY(QFile::copy(QCoreApplication::applicationDirPath() + "/project64_fixture.exe", exe));
+        const auto oldName = QCoreApplication::applicationName();
+        const auto oldOrganization = QCoreApplication::organizationName();
+        QCoreApplication::setOrganizationName("LordlyCaliber-Tests");
+        QCoreApplication::setApplicationName("Cold-boot-ui-" + QUuid::createUuid().toString(QUuid::Id128));
+        const QList<QByteArray> envs{"LORDLY_P64_FIXTURE_SAVE", "LORDLY_P64_FIXTURE_FLUSH", "LORDLY_P64_FIXTURE_LOG"};
+        QList<QByteArray> previous;
+        for (const auto &name : envs) previous << qgetenv(name.constData());
+        const auto cleanup = qScopeGuard([&] {
+            QFile::remove(temp.filePath("flush.sra"));
+            try { closeProject64(exe); } catch (...) {}
+            for (int i = 0; i < envs.size(); ++i) {
+                if (previous[i].isNull()) qunsetenv(envs[i].constData());
+                else qputenv(envs[i].constData(), previous[i]);
+            }
+            QSettings().clear();
+            QCoreApplication::setApplicationName(oldName);
+            QCoreApplication::setOrganizationName(oldOrganization);
+        });
+        const auto read = [](const QString &p) { QFile f(p); return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray(); };
+        const auto write = [](const QString &p, const QByteArray &bytes) {
+            QDir().mkpath(QFileInfo(p).absolutePath()); QFile f(p);
+            return f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size();
+        };
+        try {
+            const auto rom = Rom::open(path);
+            ScenarioSeeder model(rom);
+            const auto dest = ScenarioSeeder::batteryPath(rom, exe);
+            const auto flushed = model.seed(4);
+            QVERIFY(write(dest, model.seed(0)));
+            QVERIFY(write(temp.filePath("flush.sra"), flushed));
+            qputenv(envs[0].constData(), dest.toUtf8());
+            qputenv(envs[1].constData(), temp.filePath("flush.sra").toUtf8());
+            qputenv(envs[2].constData(), log.toUtf8());
+            QSettings().setValue("testing/project64", exe);
+            QSettings().setValue("testing/rom", path);
+            QCOMPARE(QSettings().value("testing/project64").toString(), exe);
+            TestingEditor editor(path);
+            editor.resize(1150, 740); editor.show();
+            QTRY_VERIFY_WITH_TIMEOUT(editor.ready(), 30000);
+            auto list = editor.findChild<QTreeWidget *>("seederMissions");
+            auto status = editor.findChild<QLabel *>("seederStatus");
+            QVERIFY(!editor.findChild<QPushButton *>("seederLaunch"));
+            QCOMPARE(list->topLevelItemCount(), model.choices().size());
+            for (int i = 0; i < list->topLevelItemCount(); ++i)
+                QVERIFY(qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(i), 2)));
+            // Selecting a row no longer writes the save or restarts the emulator.
+            list->setCurrentItem(list->topLevelItem(1));
+            QCOMPARE(read(dest), model.seed(0));
+            QProcess old;
+            old.start(exe, {path});
+            QVERIFY(old.waitForStarted());
+            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 1, 10000);
+            const int choice = 8;
+            auto target = list->topLevelItem(choice);
+            qobject_cast<QPushButton *>(list->itemWidget(target, 2))->click();
+            QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("Started:") || list->isEnabled(), 30000);
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
+            QTRY_COMPARE_WITH_TIMEOUT(old.state(), QProcess::NotRunning, 10000);
+            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 2, 10000);
+            const auto installed = read(log + ".sra");
+            QCOMPARE(SaveDocument::open(rom, installed).memory(), SaveDocument::open(rom, model.seed(choice)).memory());
+            QCOMPARE(read(dest), installed);
+            const auto backups = QDir(QFileInfo(dest).absolutePath()).entryList({"*.bak"}, QDir::Files);
+            QCOMPARE(backups.size(), 1);
+            QCOMPARE(read(QFileInfo(dest).dir().filePath(backups[0])), flushed);
+            const auto boot = QJsonDocument::fromJson(read(log).trimmed().split('\n').last()).object();
+            QCOMPARE(boot["args"].toArray()[1].toString(), path);
+            QVERIFY(status->text().contains(model.choices()[choice].location));
+            QVERIFY(editor.grab().save("testing-cold-boot.png"));
+            // Imported saves get their own row and keep the entire battery unchanged.
+            const auto imported = temp.filePath("my-save.sra");
+            const auto full = model.seed(12);
+            QVERIFY(write(imported, full));
+            editor.loadSave(imported);
+            QCOMPARE(list->topLevelItemCount(), model.choices().size() + 1);
+            auto mine = list->topLevelItem(0);
+            list->setCurrentItem(list->topLevelItem(5));
+            qobject_cast<QPushButton *>(list->itemWidget(mine, 2))->click();
+            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
+            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 3, 10000);
+            QCOMPARE(read(log + ".sra"), full);
+            QCOMPARE(read(dest), full);
+            // A different installation must be left running, with no save replacement.
+            QFile::remove(temp.filePath("flush.sra"));
+            closeProject64(exe);
+            const auto otherDir = temp.filePath("other");
+            QVERIFY(QDir().mkpath(otherDir));
+            const auto otherExe = QDir(otherDir).filePath("Project64.exe");
+            QVERIFY(QFile::copy(exe, otherExe));
+            QProcess other;
+            const auto stopOther = qScopeGuard([&] {
+                try { closeProject64(otherExe); } catch (...) {}
+                other.waitForFinished(3000);
+            });
+            other.start(otherExe, {path});
+            QVERIFY(other.waitForStarted());
+            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 4, 10000);
+            qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(3), 2))->click();
+            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
+            QVERIFY2(status->text().contains("Another Project64 installation"), qPrintable(status->text()));
+            QCOMPARE(other.state(), QProcess::Running);
+            QCOMPARE(read(dest), full);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void testingDefaultArmy() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -8461,6 +8580,98 @@ class UiTests : public QObject {
         QCOMPARE(visible, 1);
         QCOMPARE(sha256(rom.bytes()), before);
     }
+    void scenarioMapOrders() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950); editor.show();
+        auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
+        pages->setCurrentIndex(0);
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
+        QTest::qWait(50);
+        auto orders = editor.findChild<QWidget *>("mapSquadOrders");
+        QVERIFY(orders && orders->isVisible());
+        auto command = orders->findChild<QComboBox *>("squadCommand");
+        auto pick = orders->findChild<QPushButton *>("squadCommandPick");
+        auto apply = orders->findChild<QPushButton *>("squadCommandApply");
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+        const auto before = project.scenarios()->json();
+        const auto deployment = project.scenarios()->scenario(1).layout.deployments[0];
+        const int row = objects->currentRow();
+        command->setCurrentIndex(command->findData(int(SquadBehavior::MoveAndAttack)));
+        pick->click(); QVERIFY(pick->isChecked());
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, canvas->rect().center());
+        QVERIFY(!pick->isChecked());
+        QCOMPARE(objects->currentRow(), row);
+        QCOMPARE(orders->findChild<QSpinBox *>("squadCommandX")->value(), 128);
+        QCOMPARE(orders->findChild<QSpinBox *>("squadCommandZ")->value(), 128);
+        QCOMPARE(project.scenarios()->json(), before);
+        apply->click();
+        const auto result = project.scenarios()->squadCommand(1, 0);
+        QVERIFY(result);
+        QCOMPARE(result->behavior, SquadBehavior::MoveAndAttack);
+        QCOMPARE(result->x, 128); QCOMPARE(result->z, 128);
+        QCOMPARE(project.scenarios()->scenario(1).layout.deployments[0].mid(3, 2), deployment.mid(3, 2));
+        undo.undo(); QCOMPARE(project.scenarios()->json(), before);
+        undo.redo();
+        const auto applied = project.scenarios()->json();
+        pick->click(); QVERIFY(pick->isChecked());
+        QTest::keyClick(canvas, Qt::Key_Escape);
+        QVERIFY(!pick->isChecked()); QCOMPARE(project.scenarios()->json(), applied);
+        pick->click();
+        editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(1);
+        QVERIFY(!pick->isChecked()); QCOMPARE(project.scenarios()->json(), applied);
+        editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(0);
+        pick->click();
+        QVERIFY(selectMapObject(editor, MapObject::Site, 0));
+        QVERIFY(!pick->isChecked()); QVERIFY(!orders->isVisible());
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 1));
+        command->setCurrentIndex(command->findData(int(SquadBehavior::Guard)));
+        apply->click();
+        QCOMPARE(project.scenarios()->squadCommand(1, 0)->behavior, SquadBehavior::MoveAndAttack);
+        QVERIFY(project.scenarios()->squadCommand(1, 1));
+        QCOMPARE(project.scenarios()->squadCommand(1, 1)->behavior, SquadBehavior::Guard);
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
+        QVERIFY(editor.grab().save("scenario-map-orders.png"));
+    }
+    void scenarioAdvancedSmallWindow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1080, 720); editor.show();
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);
+        editor.findChild<QCheckBox *>("scenarioRouteAdvanced")->setChecked(true);
+        auto scroll = editor.findChild<QScrollArea *>("scenarioOrdersScroll");
+        auto tabs = editor.findChild<QTabWidget *>("scenarioRouteTabs");
+        QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
+        QCOMPARE(editor.size(), QSize(1080, 720));
+        for (int page = 0; page < 3; ++page) {
+            tabs->setCurrentIndex(page);
+            QTest::qWait(30);
+            for (auto field : tabs->currentWidget()->findChildren<QComboBox *>()) {
+                if (!field->isVisible()) continue;
+                QVERIFY2(field->height() >= field->sizeHint().height(), qPrintable(field->objectName()));
+            }
+            for (auto field : tabs->currentWidget()->findChildren<QSpinBox *>()) {
+                if (!field->isVisible()) continue;
+                QVERIFY2(field->height() >= field->sizeHint().height(), qPrintable(field->objectName()));
+            }
+        }
+        tabs->setCurrentIndex(0);
+        auto apply = editor.findChild<QPushButton *>("routeNodeApply");
+        scroll->ensureWidgetVisible(apply);
+        QTest::qWait(50);
+        QVERIFY(scroll->viewport()->rect().contains(apply->mapTo(scroll->viewport(), apply->rect().center())));
+        QVERIFY(editor.grab().save("scenario-advanced-small.png"));
+    }
     void scenarioMapEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -9095,10 +9306,12 @@ class UiTests : public QObject {
         editor.resize(1500, 950);
         editor.show();
         editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);
-        auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
-        auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
+        auto routes = editor.findChild<QWidget *>("scenarioRoutesEditor");
+        QVERIFY(routes);
+        auto button = [&](const char *name) { return routes->findChild<QPushButton *>(name); };
+        auto spin = [&](const char *name) { return routes->findChild<QSpinBox *>(name); };
         auto select = [&](const char *name, int id) {
-            auto box = editor.findChild<QComboBox *>(name);
+            auto box = routes->findChild<QComboBox *>(name);
             QVERIFY(box);
             const int at = box->findData(id);
             QVERIFY(at >= 0);
@@ -9199,7 +9412,7 @@ class UiTests : public QObject {
         select("behaviorSquad", 0);
         select("squadCommand", int(SquadBehavior::MoveAndAttack));
         select("squadCommandDestination", 1);
-        const auto destination = editor.findChild<QComboBox *>("squadCommandDestination");
+        const auto destination = routes->findChild<QComboBox *>("squadCommandDestination");
         const int town = u16(project.world()->scenario(1).sites, 1);
         QCOMPARE(destination->currentText(), project.world()->townName(town));
         button("squadCommandApply")->click();

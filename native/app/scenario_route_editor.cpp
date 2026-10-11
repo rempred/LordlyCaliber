@@ -1,4 +1,5 @@
 #include "app/scenario_route_editor.h"
+#include "app/squad_order_editor.h"
 #include "app/view_position.h"
 #include <QComboBox>
 #include <QCheckBox>
@@ -8,6 +9,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QSet>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -60,7 +62,17 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     QWidget *parent)
     : QWidget(parent), project_(project), commit_(std::move(commit)) {
     setObjectName("scenarioRoutesEditor");
-    auto layout = new QVBoxLayout(this);
+    auto outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    auto scroll = new QScrollArea;
+    scroll->setObjectName("scenarioOrdersScroll");
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto content = new QWidget;
+    auto layout = new QVBoxLayout(content);
+    layout->setSizeConstraint(QLayout::SetMinAndMaxSize);
+    scroll->setWidget(content);
+    outer->addWidget(scroll);
     auto route = new QGroupBox("Squad orders");
     auto routeLayout = new QVBoxLayout(route);
     auto routeChoices = new QHBoxLayout;
@@ -79,43 +91,9 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     routeSummary_->setObjectName("behaviorSummary");
     routeSummary_->setOpenLinks(false);
     routeSummary_->setMaximumHeight(135);
-    currentOrder_ = new QLabel;
-    currentOrder_->setWordWrap(true);
-    routeLayout->addWidget(currentOrder_);
-    auto commandForm = new QFormLayout;
-    command_ = box("squadCommand");
-    command_->addItem("Keep current scripted orders", -1);
-    for (const auto &label : {"Guard this position", "Intercept nearby enemies", "Move",
-                              "Move and attack", "Hit and run", "Evade", "Retreat"})
-        command_->addItem(label, command_->count() - 1);
-    commandForm->addRow("Command", command_);
-    destinationFields_ = new QWidget;
-    auto destinations = new QFormLayout(destinationFields_);
-    destinations->setContentsMargins(0, 0, 0, 0);
-    destination_ = box("squadCommandDestination");
-    destinations->addRow("Destination", destination_);
-    commandCoordinates_ = new QWidget;
-    auto coordinates = new QHBoxLayout(commandCoordinates_);
-    coordinates->setContentsMargins(0, 0, 0, 0);
-    commandX_ = byte("squadCommandX");
-    commandZ_ = byte("squadCommandZ");
-    commandX_->setMinimum(1);
-    commandZ_->setMinimum(1);
-    coordinates->addWidget(new QLabel("X"));
-    coordinates->addWidget(commandX_);
-    coordinates->addWidget(new QLabel("Z"));
-    coordinates->addWidget(commandZ_);
-    coordinates->addStretch();
-    destinations->addRow("Map position", commandCoordinates_);
-    commandForm->addRow(destinationFields_);
-    routeLayout->addLayout(commandForm);
-    commandHelp_ = new QLabel;
-    commandHelp_->setObjectName("squadCommandHelp");
-    commandHelp_->setWordWrap(true);
-    routeLayout->addWidget(commandHelp_);
-    commandApply_ = new QPushButton("Apply command to squad");
-    commandApply_->setObjectName("squadCommandApply");
-    routeLayout->addWidget(commandApply_);
+    orders_ = new SquadOrderEditor(project_, commit_);
+    orders_->setObjectName("routeSquadOrders");
+    routeLayout->addWidget(orders_);
     layout->addWidget(route);
     advancedToggle_ = new QCheckBox("Advanced routes and conditions");
     advancedToggle_->setObjectName("scenarioRouteAdvanced");
@@ -128,18 +106,6 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     layout->addWidget(advanced_, 1);
     advanced_->hide();
     connect(advancedToggle_, &QCheckBox::toggled, advanced_, &QWidget::setVisible);
-    connect(command_, &QComboBox::currentIndexChanged, this, [this] { commandControls(); });
-    connect(destination_, &QComboBox::currentIndexChanged, this, [this] { commandControls(); });
-    connect(commandApply_, &QPushButton::clicked, this, [this] {
-        if (command_->currentData().toInt() < 0 || routeSquad_->currentIndex() < 0) return;
-        change("Change squad command", [this](Scenarios &s) {
-            const int point = destination_->currentData().toInt();
-            s.setSquadCommand(key_, routeSquad_->currentData().toInt(),
-                              {SquadBehavior(command_->currentData().toInt()),
-                               point ? point : commandX_->value(), point ? 0 : commandZ_->value()},
-                              project_->classData());
-        });
-    });
     connect(routeSquad_, &QComboBox::currentIndexChanged, this, [this] {
         if (loading_ || key_ < 0)
             return;
@@ -185,6 +151,8 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     split->addWidget(nodes_);
     nodeDetails_ = new QWidget;
     auto nodeForm = new QFormLayout(nodeDetails_);
+    nodeForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    nodeForm->setSizeConstraint(QLayout::SetMinimumSize);
     nodeKind_ = box("routeKind", {"Direct order", "Waypoint", "Dormant gate"});
     nodeForm->addRow("Kind", nodeKind_);
     move_ = box("routeMove", {"Direct", "Hit and Run", "Evasion"});
@@ -235,6 +203,8 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     conditionSplit->addWidget(conditions_);
     conditionDetails_ = new QWidget;
     auto conditionForm = new QFormLayout(conditionDetails_);
+    conditionForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    conditionForm->setSizeConstraint(QLayout::SetMinimumSize);
     conditionKind_ = box("routeConditionKind");
     for (const int kind : {1, 4, 8, 9, 12})
         conditionKind_->addItem(kindName(kind), kind);
@@ -268,6 +238,8 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     tabs->addTab(conditionPage, "Conditions");
     auto groupPage = new QWidget;
     auto groupForm = new QFormLayout(groupPage);
+    groupForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    groupForm->setSizeConstraint(QLayout::SetMinimumSize);
     groupSquad_ = box("routeGroupSquad");
     group_ = byte("routeGroup");
     group_->setSpecialValueText("Independent");
@@ -407,66 +379,7 @@ void ScenarioRouteEditor::refresh(int key) {
     showCommand();
 }
 void ScenarioRouteEditor::showCommand() {
-    if (key_ < 0 || routeSquad_->currentIndex() < 0) {
-        commandApply_->setEnabled(false);
-        return;
-    }
-    const QSignalBlocker a(command_), b(destination_);
-    destination_->clear();
-    destination_->addItem("Map position", 0);
-    if (project_->world()) {
-        const auto &world = *project_->world();
-        const auto &sites = world.scenario(key_).sites;
-        for (int i = 0; i < world.siteCount(key_); ++i)
-            destination_->addItem(world.townName(u16(sites, 1 + i * 4)), i + 1);
-    }
-    const int row = routeSquad_->currentData().toInt();
-    const auto command = project_->scenarios()->squadCommand(key_, row);
-    select(command_, command ? int(command->behavior) : -1);
-    const auto &deployment = project_->scenarios()->scenario(key_).layout.deployments[row];
-    const int x = command ? command->x : u8(deployment, 3);
-    const int z = command ? command->z : u8(deployment, 4);
-    if (!z && x) {
-        if (destination_->findData(x) < 0)
-            destination_->addItem(QString("Scenario point %1").arg(x), x);
-        select(destination_, x);
-    } else select(destination_, 0);
-    commandX_->setValue(z ? x : 128);
-    commandZ_->setValue(z ? z : 128);
-    currentOrder_->setText(command
-        ? "Current order: " + command_->currentText() +
-              (int(command->behavior) >= int(SquadBehavior::Move)
-                   ? " → " + (z ? QString("X %1, Z %2").arg(x).arg(z) : destination_->currentText()) : "")
-        : "Current orders: scripted route. Its steps and conditions are preserved until you apply a new command.");
-    commandControls();
-}
-void ScenarioRouteEditor::commandControls() {
-    const int action = command_->currentData().toInt();
-    destinationFields_->setVisible(action >= int(SquadBehavior::Move));
-    static_cast<QFormLayout *>(destinationFields_->layout())->setRowVisible(
-        commandCoordinates_, destination_->currentData().toInt() == 0);
-    const QStringList help{
-        "Stay at the starting position without seeking nearby enemies. Battles can still occur on contact.",
-        "Wait here and pursue nearby enemies when the game's target checks allow it.",
-        "Move to the destination without seeking nearby enemies. Battles can still occur on contact.",
-        "Move to the destination and pursue nearby enemies when the game's target checks allow it.",
-        "Move to the destination using Hit and Run movement and seek nearby enemies.",
-        "Move to the destination using Evasion movement without seeking nearby enemies.",
-        "Use the game's retreat movement toward the destination."};
-    QString text = action < 0 ? "This squad keeps its existing script. Choose a command to replace its starting orders, "
-                               "or open Advanced to edit its route and conditions." : help.value(action);
-    if (action >= 0) text += " Applying replaces this squad's starting orders. Undo restores them.";
-    if (action >= int(SquadBehavior::Move)) text += " You can drag the destination waypoint in the Map tab after applying.";
-    bool follower = false;
-    if (key_ >= 0 && routeSquad_->currentIndex() >= 0) {
-        const auto &deployments = project_->scenarios()->scenario(key_).layout.deployments;
-        const int row = routeSquad_->currentData().toInt();
-        follower = row > 1 && u8(deployments[row - 1], 16) &&
-                   deployments[row - 1][16] == deployments[row - 2][16];
-    }
-    if (follower) text = "This squad follows its movement group. Choose its group leader, or make it independent in Advanced.";
-    commandHelp_->setText(text);
-    commandApply_->setEnabled(action >= 0 && !follower && routeSquad_->currentIndex() >= 0);
+    orders_->refresh(key_, routeSquad_->currentIndex() < 0 ? -1 : routeSquad_->currentData().toInt());
 }
 void ScenarioRouteEditor::showSquadRoute() {
     if (key_ < 0 || routeSquad_->currentIndex() < 0) {

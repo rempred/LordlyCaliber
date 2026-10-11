@@ -1,5 +1,34 @@
 # Native Lordly Caliber
 
+## Map orders and Testing cold boot (2026-10-10)
+
+`SquadOrderEditor` is shared by Map and Orders. Destination picking owns the
+next left click before marker/terrain hit testing, preserves selection and
+deployment coordinates, and fills an unapplied command draft. Escape, object
+selection, scenario refresh and tool changes cancel it. The existing command
+model, shared-route protection and Undo/export paths are unchanged. Orders uses
+a scroll container with minimum-size forms to preserve advanced field heights.
+
+Testing row buttons capture the row identity rather than using the currently
+highlighted item. A worker closes only processes whose executable matches the
+chosen Project64 path, requests normal window closure, and waits for exit before
+the existing atomic installer backs up or replaces SRAM. A different Project64
+installation or a close timeout aborts before installation. No process is killed.
+The ROM file fingerprint is checked again after closure. Generated seeds retain
+slot 2 and clear suspend; an imported-save row installs the whole supplied file.
+Project64 starts fresh with the selected ROM; the user still loads the battery
+slot at the game's title screen. There is no debugger, savestate or menu injection.
+
+`ui_tests scenarioMapOrders scenarioAdvancedSmallWindow testingColdBoot` passes:
+map selection/start preservation, draft Apply/Undo, cancellation, full-height
+advanced fields at 1080×720, clicked-row identity, exit-time save flush/backups,
+fresh ROM arguments, whole-save import and refusal to close another installation.
+The emulator check uses a hidden temporary stand-in; it does not replay a real
+Project64/game session. Captured Map, advanced and Testing layouts were inspected.
+`scenarioRouteEditing` and `testingDefaultArmy` also pass after widget extraction;
+`save_document_tests scenarioSeederInstallation` passes existing slot-2, suspend,
+backup, invalid-input and byte-order checks. No game/export representation changed.
+
 ## Guided enemy commands and member popup (2026-10-10)
 
 The Scenario Orders page emits a single ordinary ESET order, with no new game
