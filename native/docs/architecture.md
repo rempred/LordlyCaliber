@@ -1,5 +1,40 @@
 # Native Lordly Caliber
 
+## Guided enemy commands and member popup (2026-10-10)
+
+The Scenario Orders page emits a single ordinary ESET order, with no new game
+code. `Scenarios::setSquadCommand` uses kind 0 for Guard/Intercept and kind 1
+for destination commands. The accepted original `func_00121F38.c` establishes
+that kind 1 also consumes movement byte 2 and wait/aggro byte 3 after publishing
+its destination. These are not unknown subtype bytes: the older parent
+`enemy-movement-ai.md` classification was conservative before this source import.
+It accepts up to three destination pairs at bytes 4–9; the simple UI emits one
+and leaves multi-destination originals in Advanced. A zero X is no destination;
+nonzero X with zero Z is a one-based scenario point. Both nonzero are map bytes.
+Next byte 17 is zero for a standalone command, so the native resolver does not
+evaluate a condition or advance it. Move-and-attack enables native proximity
+acquisition, not an unconditional attack against a particular squad.
+
+Replacing a scripted/shared starting order allocates a new node rather than
+editing shared graph records. Recognized standalone, unshared nodes can be
+updated in place; failed allocation/validation is atomic. The 16-node bound is
+unchanged. Consecutive nonzero group labels identify followers; the simple UI
+requires changing their leader or explicitly removing the grouping in Advanced.
+
+The Save member dialog edits a copied document and validates serialization before
+committing the validated packed-save changes as a single Undo action. Existing class selection and squad
+draft guards remain in the main editor. Cancel and validation errors cannot
+partially edit the army; applying refreshes board artwork while keeping the
+Army Management page active.
+
+Focused UI checks cover popup Save/Cancel, combined HP edits, rejection without
+partial writes, Undo, named destinations and untouched advanced routes. Engine
+checks cover sharing, group followers, capacity rejection and export/reopening.
+Eight emitted commands execute the original publisher from overlay descriptor 7
+(z64 0x121F38) with expected destinations, movement modes and retreat state.
+Height/point lookup and cleanup are bounded test services; full missions and
+pathfinding have not been re-tested by these checks.
+
 The Scenario Map renderer and the distinction between field resources and
 briefing artwork are documented in [battlefield maps](battlefield-maps.md).
 

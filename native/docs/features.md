@@ -606,11 +606,23 @@ member drops swap between squads. A nameplate drop uses the first compatible
 empty cell. These changes use the existing atomic save operations and Undo;
 five-place size limits, large-unit spacing, carried items, leaders, legions and
 pending drafts remain validated for both squads.
-Double-clicking a character on a left squad board opens that character's stats
-and equipment in Save Editor. Empty cells and Soldier groups do not navigate;
+Double-clicking a character on a squad board or in Reserve opens a stats and
+equipment popup, leaving the squad boards in view. Save commits all fields as
+one Undo action; Cancel discards the draft. Empty cells and Soldier groups do not open it;
 pending squad edits still need to be applied or discarded first.
 The Items table always shows Stats columns, with other field groups available
 in its side panel.
+
+Scenario **Orders** now starts with commands: Guard, Intercept nearby enemies,
+Move, Move and attack, Hit and run, Evade, and Retreat. Destinations can be named
+towns/strongholds or map positions, with waypoints movable on Map after Apply.
+Applying replaces only the selected squad's starting behavior. Shared and gated
+routes are retained, and a private simple order is reused for subsequent edits.
+New orders respect the native 16-step capacity; group followers must be made
+independent or commanded through their group leader. Original scripts, route
+steps, conditions and group settings remain under **Advanced routes and conditions**.
+Nearby-enemy commands enable native target acquisition; runtime target/state
+checks still determine whether pursuit begins.
 
 Main tabs now include **Art and Animation** and a final **Art Library**. Distinct
 outlined buttons enclose the Cutscenes inline red W.I.P label. **Import from ROM**

@@ -31,6 +31,67 @@ QVector<int> conditionTargets(const QByteArray &n) {
     return values;
 }
 } // namespace
+std::optional<SquadCommand> Scenarios::squadCommand(int key, int squadRow) const {
+    const auto &s = scenario(key);
+    index(squadRow, s.layout.deployments.size(), "squad");
+    const int row = u8(s.layout.deployments[squadRow], 6) - 4;
+    if (row < 0 || row >= s.layout.nodes.size()) return {};
+    const auto &n = s.layout.nodes[row];
+    // Multi-destination routes, gates and unknown forms remain in Advanced.
+    if (n.mid(6) != QByteArray(12, 0)) return {};
+    const int kind = u8(n, 1), move = u8(n, 2), wait = u8(n, 3);
+    if (kind == 0 && !move && !u8(n, 4) && !u8(n, 5) && wait <= 1)
+        return SquadCommand{wait ? SquadBehavior::Intercept : SquadBehavior::Guard};
+    if (kind != 1 || !u8(n, 4)) return {};
+    std::optional<SquadBehavior> behavior;
+    if (move == 0 && wait == 0) behavior = SquadBehavior::Move;
+    if (move == 0 && wait == 1) behavior = SquadBehavior::MoveAndAttack;
+    if (move == 1 && wait == 1) behavior = SquadBehavior::HitAndRun;
+    if (move == 2 && wait == 0) behavior = SquadBehavior::Evade;
+    if (move == 0 && wait == 2) behavior = SquadBehavior::Retreat;
+    if (!behavior) return {};
+    return SquadCommand{*behavior, u8(n, 4), u8(n, 5)};
+}
+void Scenarios::setSquadCommand(int key, int squadRow, const SquadCommand &command,
+                              const ClassData &classes) {
+    auto draft = *this;
+    const auto &layout = scenario(key).layout;
+    index(squadRow, layout.deployments.size(), "squad");
+    if (squadRow > 1 && u8(layout.deployments[squadRow - 1], 16) &&
+        layout.deployments[squadRow - 1][16] == layout.deployments[squadRow - 2][16])
+        throw Error("This squad follows a movement group. Edit its group leader's command, or "
+                    "make it independent in Advanced first.");
+    const int action = int(command.behavior);
+    if (action < 0 || action > int(SquadBehavior::Retreat)) throw Error("Choose a squad command");
+    const bool moving = action >= int(SquadBehavior::Move);
+    if (moving && (command.x < 1 || command.x > 255 || command.z < 0 || command.z > 255))
+        throw Error("Choose a destination: X must be 1–255 and Z 0–255");
+    int row = u8(layout.deployments[squadRow], 6) - 4;
+    bool reusable = squadCommand(key, squadRow).has_value();
+    for (int i = 0; i < layout.deployments.size(); ++i)
+        if (i != squadRow && u8(layout.deployments[i], 6) == row + 4) reusable = false;
+    for (const auto &node : layout.nodes)
+        if (nodeTargets(node).contains(row + 4)) reusable = false;
+    if (!reusable) row = draft.addNode(key, moving ? 1 : 0, classes);
+    QByteArray node(18, 0);
+    put8(node, 0, quint8(row + 4));
+    put8(node, 1, moving ? 1 : 0);
+    put8(node, 2, command.behavior == SquadBehavior::HitAndRun ? 1 :
+                     command.behavior == SquadBehavior::Evade ? 2 : 0);
+    put8(node, 3, command.behavior == SquadBehavior::Retreat ? 2 :
+                     command.behavior == SquadBehavior::Intercept ||
+                     command.behavior == SquadBehavior::MoveAndAttack ||
+                     command.behavior == SquadBehavior::HitAndRun ? 1 : 0);
+    if (moving) {
+        put8(node, 4, quint8(command.x));
+        put8(node, 5, quint8(command.z));
+    }
+    draft.setNode(key, row, node, classes);
+    auto deployment = draft.scenario(key).layout.deployments[squadRow];
+    put8(deployment, 6, quint8(row + 4));
+    draft.setDeployment(key, squadRow, deployment, classes);
+    *this = std::move(draft);
+}
 void Scenarios::validateRoutes(const Scenario &s) const {
     const auto &e = s.layout, &old = original(s.key).layout;
     for (int i = 0; i < e.nodes.size(); ++i) {

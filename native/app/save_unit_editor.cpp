@@ -446,7 +446,7 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
         reserveMember_->setCurrentIndex(reserveMember_->findData(id));
     });
     connect(reserves_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
-        editor_->selectCharacter(item->data(Qt::UserRole).toInt());
+        editor_->editCharacter(item->data(Qt::UserRole).toInt());
     });
     connect(units_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         if (!editor_->document()) return;
@@ -458,13 +458,13 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
                 for (int member = 0; member < unit.members.size(); ++member)
                     if (unit.members[member] > 0 && unit.members[member] < 100 &&
                         unit.cells[member] == cell) {
-                        editor_->selectCharacter(unit.members[member]);
+                        editor_->editCharacter(unit.members[member]);
                         return;
                     }
     });
     connect(members_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         const int row=members_->row(item);
-        if (row>=0 && row<ids_.size() && ids_[row]>0 && ids_[row]<100) editor_->selectCharacter(ids_[row]);
+        if (row>=0 && row<ids_.size() && ids_[row]>0 && ids_[row]<100) editor_->editCharacter(ids_[row]);
     });
     connect(units_, &QListWidget::currentRowChanged, this, [this] {
         if (!loading_ && editor_->hasPendingUnitEdits()) {

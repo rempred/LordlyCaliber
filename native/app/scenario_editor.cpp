@@ -147,7 +147,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
         });
     addPage(map_, "Map");
     addPage(squadPage, "Squads");
-    addPage(routes_, "Routes and conditions");
+    addPage(routes_, "Orders");
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);

@@ -4211,7 +4211,6 @@ class UiTests : public QObject {
         // Double-click the member under the pointer, including a different squad,
         // without changing the save or opening empty cells / Soldier records.
         auto tabs = editor.findChild<QTabWidget *>();
-        auto characters = editor.findChild<QTableView *>("saveCharacters");
         auto doubleClick = [&](QPoint point) {
             QTest::mouseClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
             QTest::mouseDClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
@@ -4219,27 +4218,50 @@ class UiTests : public QObject {
         };
         for (const auto [unit, cell, id] : {std::tuple{0, 4, 2}, std::tuple{5, 8, 9}}) {
             tabs->setCurrentWidget(panel);
-            editor.findChild<QLineEdit *>("saveCharactersSearch")->setText("no matching name");
-            doubleClick(overviewPoint(unit, cell));
-            QCOMPARE(tabs->currentIndex(), 0);
-            QCOMPARE(characters->model()->index(characters->currentIndex().row(), 0).data().toInt(), id);
+            const auto point = overviewPoint(unit, cell);
+            QTest::mouseClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+            bool opened = false;
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("saveMemberDialog");
+                QVERIFY(dialog);
+                const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
+                opened = true;
+                QCOMPARE(tabs->currentWidget(), panel);
+                QCOMPARE(dialog->findChild<QLineEdit *>("saveMember_name")->text(),
+                         editor.document()->value(SaveTable::Characters, id, "name").toString());
+                dialog->findChild<QSpinBox *>("saveMember_strength")->setValue(123);
+                auto weapon = dialog->findChild<QComboBox *>("saveMember_weapon");
+                weapon->setCurrentIndex(weapon->findData(1));
+                dialog->findChild<QSpinBox *>("saveMember_hpMax")->setValue(200);
+                dialog->findChild<QSpinBox *>("saveMember_hpCur")->setValue(250);
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+                QVERIFY(dialog->isVisible());
+                QVERIFY(!dialog->findChild<QLabel *>("saveMemberError")->text().isEmpty());
+                dialog->findChild<QSpinBox *>("saveMember_hpCur")->setValue(180);
+                QVERIFY(dialog->findChild<QLabel *>("saveMemberError")->text().isEmpty());
+                QCOMPARE(editor.document()->serialize(), input); // Draft has not touched the army.
+                QVERIFY(dialog->grab().save(QCoreApplication::applicationDirPath() + "/save-member-popup.png"));
+                dialog->findChild<QDialogButtonBox *>()->button(
+                    id == 2 ? QDialogButtonBox::Save : QDialogButtonBox::Cancel)->click();
+            });
+            QMouseEvent doubleEvent(QEvent::MouseButtonDblClick, QPointF(point),
+                                   QPointF(units->viewport()->mapToGlobal(point)),
+                                   Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(units->viewport(), &doubleEvent);
+            QCoreApplication::processEvents();
+            QVERIFY(opened);
+            QCOMPARE(tabs->currentWidget(), panel);
+            if (id == 2) {
+                expected = SaveDocument::open(project.rom(), input);
+                expected.apply(expected.planEdit(SaveTable::Characters, id, "hpMax", 200), true);
+                expected.apply(expected.planEdit(SaveTable::Characters, id, "hpCur", 180), true);
+                expected.apply(expected.planEdit(SaveTable::Characters, id, "strength", 123), true);
+                expected.apply(expected.planEdit(SaveTable::Characters, id, "weapon", 1), true);
+                QCOMPARE(editor.document()->memory(), expected.memory());
+                QCOMPARE(editor.undoStack()->count(), 1);
+                editor.undoStack()->undo();
+            }
             QCOMPARE(editor.document()->serialize(), input);
-        }
-        // The selected character's stat and equipment cells edit that record and undo.
-        for (const auto key : {QString("strength"), QString("weapon")}) {
-            const auto fields = editor.document()->fields(SaveTable::Characters);
-            int column = -1;
-            for (int i = 0; i < fields.size(); ++i)
-                if (fields[i].key == key) column = i + 1;
-            QVERIFY(column > 0);
-            const int row = characters->currentIndex().row();
-            const auto index = characters->model()->index(row, column);
-            QVERIFY(index.flags() & Qt::ItemIsEditable);
-            QVERIFY(characters->model()->setData(index, 1, Qt::EditRole));
-            QCOMPARE(editor.document()->value(SaveTable::Characters, 9, key).toInt(), 1);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.selectCharacter(9);
         }
         tabs->setCurrentWidget(panel);
         for (const auto [unit, cell] : {std::pair{0, 2}, std::pair{2, 7}, std::pair{4, 7}}) {
@@ -9086,6 +9108,7 @@ class UiTests : public QObject {
         auto nodes = editor.findChild<QListWidget *>("scenarioNodes");
         auto conditions = editor.findChild<QListWidget *>("scenarioConditions");
         auto tabs = editor.findChild<QTabWidget *>("scenarioRouteTabs");
+        editor.findChild<QCheckBox *>("scenarioRouteAdvanced")->setChecked(true);
         const auto original = project.scenarios()->json();
         for (int mission = 0; mission < missions->count(); ++mission) {
             missions->setCurrentRow(mission);
@@ -9153,6 +9176,39 @@ class UiTests : public QObject {
         QTest::qWait(50);
         QVERIFY(
             editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-routes.png"));
+        const auto scripted = project.scenarios()->scenario(10).layout.nodes;
+        editor.findChild<QCheckBox *>("scenarioRouteAdvanced")->setChecked(false);
+        select("squadCommand", int(SquadBehavior::MoveAndAttack));
+        select("squadCommandDestination", 0);
+        spin("squadCommandX")->setValue(96);
+        spin("squadCommandZ")->setValue(144);
+        button("squadCommandApply")->click();
+        const auto command = project.scenarios()->squadCommand(10, 0);
+        QVERIFY(command);
+        QCOMPARE(command->behavior, SquadBehavior::MoveAndAttack);
+        QCOMPARE(command->x, 96);
+        QCOMPARE(command->z, 144);
+        QCOMPARE(project.scenarios()->scenario(10).layout.nodes.first(scripted.size()), scripted);
+        const auto commanded = project.scenarios()->json();
+        undo.undo();
+        QCOMPARE(project.scenarios()->scenario(10).layout.nodes, scripted);
+        undo.redo();
+        QCOMPARE(project.scenarios()->json(), commanded);
+        for (int i = 0; i < missions->count(); ++i)
+            if (missions->item(i)->data(Qt::UserRole).toInt() == 1) missions->setCurrentRow(i);
+        select("behaviorSquad", 0);
+        select("squadCommand", int(SquadBehavior::MoveAndAttack));
+        select("squadCommandDestination", 1);
+        const auto destination = editor.findChild<QComboBox *>("squadCommandDestination");
+        const int town = u16(project.world()->scenario(1).sites, 1);
+        QCOMPARE(destination->currentText(), project.world()->townName(town));
+        button("squadCommandApply")->click();
+        const auto townCommand = project.scenarios()->squadCommand(1, 0);
+        QVERIFY(townCommand);
+        QCOMPARE(townCommand->x, 1);
+        QCOMPARE(townCommand->z, 0);
+        QTest::qWait(50);
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-commands.png"));
     }
     void scenarioSquadEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

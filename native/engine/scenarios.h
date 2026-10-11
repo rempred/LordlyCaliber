@@ -15,6 +15,11 @@ struct ScenarioPlan {
     QByteArray enemies;
     QMap<int, QByteArray> esets;
 };
+enum class SquadBehavior { Guard, Intercept, Move, MoveAndAttack, HitAndRun, Evade, Retreat };
+struct SquadCommand {
+    SquadBehavior behavior = SquadBehavior::Guard;
+    int x = 128, z = 128; // A zero Z selects the one-based scenario point in X.
+};
 class Scenarios {
   public:
     static Scenarios load(const Rom &rom);
@@ -37,6 +42,8 @@ class Scenarios {
     int addCondition(int key, int kind, const ClassData &classes);
     void removeCondition(int key, int row, const ClassData &classes);
     void setRouteGroup(int key, int squadRow, int group, int pattern, const ClassData &classes);
+    std::optional<SquadCommand> squadCommand(int key, int squadRow) const;
+    void setSquadCommand(int key, int squadRow, const SquadCommand &, const ClassData &classes);
     void restore(int key);
     void apply(const QJsonObject &value, const ClassData &classes);
     void importBrowser(const Rom &rom, const QJsonObject &scenarioProject,

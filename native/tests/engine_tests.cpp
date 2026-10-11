@@ -365,6 +365,78 @@ class EngineTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void scenarioCommands() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto classes = ClassData::load(rom);
+        auto model = Scenarios::load(rom);
+        const auto original = model.scenario(10);
+        QJsonArray cases;
+        const int moves[] = {0, 0, 0, 0, 1, 2, 0};
+        const int waits[] = {0, 1, 0, 1, 1, 0, 2};
+        int allocated = -1;
+        for (int action = 0; action < 7; ++action) {
+            model.setSquadCommand(10, 0, {SquadBehavior(action), 96, 144}, classes);
+            if (allocated < 0) allocated = int(model.scenario(10).layout.nodes.size());
+            QCOMPARE(model.scenario(10).layout.nodes.size(), allocated);
+            const auto &s = model.scenario(10);
+            const auto node = s.layout.nodes[u8(s.layout.deployments[0], 6) - 4];
+            QCOMPARE(s.layout.nodes.first(original.layout.nodes.size()), original.layout.nodes);
+            QCOMPARE(s.layout.conditions, original.layout.conditions);
+            QCOMPARE(s.squads, original.squads);
+            QCOMPARE(u8(node, 1), action < 2 ? 0 : 1);
+            QCOMPARE(u8(node, 2), moves[action]);
+            QCOMPARE(u8(node, 3), waits[action]);
+            QCOMPARE(node.mid(6), QByteArray(12, 0));
+            QCOMPARE(model.squadCommand(10, 0)->behavior, SquadBehavior(action));
+            cases.append(QJsonObject{{"node", QString::fromLatin1(node.toHex())},
+                                      {"move", moves[action]}, {"wait", waits[action]},
+                                      {"moving", action >= 2}, {"x", 96}, {"z", 144}});
+        }
+        model.setSquadCommand(10, 0, {SquadBehavior::MoveAndAttack, 2, 0}, classes);
+        auto node = model.scenario(10).layout.nodes.last();
+        cases.append(QJsonObject{{"node", QString::fromLatin1(node.toHex())},
+                                 {"move", 0}, {"wait", 1}, {"moving", true}, {"x", 2}, {"z", 0}});
+        // A second squad using the same step must keep its original orders.
+        auto deployment = model.scenario(10).layout.deployments[1];
+        deployment[6] = node[0];
+        model.setDeployment(10, 1, deployment, classes);
+        model.setSquadCommand(10, 0, {SquadBehavior::Guard}, classes);
+        QCOMPARE(model.scenario(10).layout.nodes[allocated - 1], node);
+        QCOMPARE(model.scenario(10).layout.nodes.size(), allocated + 1);
+        QCOMPARE(model.squadCommand(10, 1)->behavior, SquadBehavior::MoveAndAttack);
+        const auto valid = model.json();
+        auto restored = Scenarios::load(rom);
+        restored.apply(valid, classes);
+        QCOMPARE(restored.json(), valid);
+        const auto plan = model.plan(classes);
+        const auto built = Rom::fromBytes(ScenarioResources::load(rom).rebuild(rom, plan.enemies, plan.esets));
+        QCOMPARE(Scenarios::load(built).json(), valid);
+        QVERIFY_THROWS_EXCEPTION(Error, model.setSquadCommand(10, 0, {SquadBehavior::Move, 0, 1}, classes));
+        QCOMPARE(model.json(), valid);
+        model.setRouteGroup(10, 1, 7, 5, classes);
+        model.setRouteGroup(10, 2, 7, 5, classes);
+        const auto grouped = model.json();
+        QVERIFY_THROWS_EXCEPTION(Error, model.setSquadCommand(10, 2, {SquadBehavior::Guard}, classes));
+        QCOMPARE(model.json(), grouped);
+        model.restore(10);
+        while (model.scenario(10).layout.nodes.size() < 16) model.addNode(10, 0, classes);
+        const auto full = model.json();
+        QVERIFY_THROWS_EXCEPTION(Error, model.setSquadCommand(10, 0, {SquadBehavior::Move, 96, 144}, classes));
+        QCOMPARE(model.json(), full);
+        QTemporaryDir work;
+        QFile fixture(work.filePath("commands.json"));
+        QVERIFY(fixture.open(QIODevice::WriteOnly));
+        fixture.write(QJsonDocument(QJsonObject{{"rom", path}, {"cases", cases}}).toJson());
+        fixture.close();
+        QProcess instructions;
+        instructions.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
+                                         .filePath("squad-commands-mips.cjs"), fixture.fileName()});
+        QVERIFY(instructions.waitForFinished(30000));
+        QVERIFY2(!instructions.exitCode(), instructions.readAllStandardError().constData());
+        qInfo().noquote() << instructions.readAllStandardOutput();
+    }
     void scenarioAuthoring() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -487,6 +559,7 @@ class EngineTests : public QObject {
             put16(record, 2, 277);
             model.setSquad(10, 0, record, project.classData());
             model.setBaseLevel(22, 12, project.classData());
+            model.setSquadCommand(10, 0, {SquadBehavior::MoveAndAttack, 96, 144}, project.classData());
             // Editing an automatically allied row must retain its effective flag after remap.
             int ally = -1;
             for (int i = 0; i < model.scenario(4).squads.size(); ++i)

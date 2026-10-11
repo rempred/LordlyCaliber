@@ -43,6 +43,7 @@ class SaveEditor : public QWidget {
     bool recruitUnit(int classId, const QString &name, int cell, int level = 1);
     int promptAddCharacter(bool formSquad = false);
     void selectCharacter(int id);
+    void editCharacter(int id);
     bool removeCharacter(int id);
     bool disbandUnit(int index);
     bool disbandLegion(int index);
