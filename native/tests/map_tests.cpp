@@ -57,6 +57,60 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void nativeMountainSlopes() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto edit = MapEdits::load(rom);
+        const auto &source = edit.source(5);
+        const auto b = source.map.bounds;
+        QVector3D summit;
+        float top = -1e9f;
+        for (const auto &t : source.terrainFaces) {
+            if (t.terrain != 7)
+                continue;
+            for (const auto &p : t.points) {
+                const QPointF grid((p.x() - b.left()) * 256 / b.width(),
+                                   (p.z() - b.top()) * 256 / b.height());
+                if (QRectF(116, 116, 92, 116).contains(grid) && p.y() > top) {
+                    summit = p;
+                    top = p.y();
+                }
+            }
+        }
+        QVERIFY(top > .5f);
+        // Joe's small addition at the side of this mountain must not relocate
+        // its existing high summit to the centre of a new distance-field dome.
+        edit.paint(5, {{161.5, 132.5}}, 7, 3);
+        const FieldBorders borders(source, edit.changes(5));
+        QVERIFY(std::any_of(
+            source.terrainFaces.begin(), source.terrainFaces.end(), [&](const FieldTriangle &t) {
+                return borders.removes(t) &&
+                       std::find(t.points.begin(), t.points.end(), summit) != t.points.end();
+            }));
+        const auto model = edit.model(5);
+        const auto field = Battlefield::load(rom, 5, {}, model);
+        const double height = surfaceHeight(field.triangles(), {summit.x(), summit.z()});
+        qInfo() << "Native summit" << summit << "rebuilt height" << height;
+        QVERIFY2(std::abs(height - summit.y()) < .35,
+                 "A small border edit must retain the native summit");
+        const auto crop = QRectF(b.left() + b.width() * 116 / 256, b.top() + b.height() * 116 / 256,
+                                 b.width() * 92 / 256, b.height() * 116 / 256);
+        const auto picture = field.render(crop, 768);
+        QVERIFY(
+            picture.save(QCoreApplication::applicationDirPath() + "/native-mountain-slopes.png"));
+        const auto exported = Rom::fromBytes(edit.rebuild(rom));
+        QCOMPARE(Battlefield::load(exported, 5).render(crop, 768), picture);
+        const auto reopened = MapEdits::load(exported);
+        const auto &rebuilt = reopened.source(5);
+        const auto &grid = rebuilt.geometry[1].data;
+        auto f = [&](int at) { return double(std::bit_cast<float>(u32(grid, at))); };
+        const int x = int(std::round((summit.x() - f(4)) / (f(8) - f(4)) * (u16(grid, 0) - 1))),
+                  z = int(std::round((summit.z() - f(20)) / (f(24) - f(20)) * (u16(grid, 2) - 1)));
+        QVERIFY(movementHeight(grid, x, z) > summit.y() * .6);
+        QVERIFY(rebuilt.map.image->rgba != source.map.image->rgba);
+    }
     void raisedTerrainFoot() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

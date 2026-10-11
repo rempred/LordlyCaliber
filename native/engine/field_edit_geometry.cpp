@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <tuple>
 namespace lordly {
 namespace {
 double real(const QByteArray &b, int at) {
@@ -258,6 +259,39 @@ class Surface {
         return result == -1e9 ? heightAt(source_, p) : result;
     }
 };
+QVector<QVector3D> mountainSummits(const FieldMapSource &source, const Surface &ground, int type) {
+    if (type != 7 && type != 14)
+        return {};
+    struct Vertex {
+        QVector3D point;
+        bool higher = false, lower = false;
+    };
+    QMap<std::tuple<float, float, float>, Vertex> vertices;
+    for (const auto &t : source.terrainFaces) {
+        if (t.terrain != type)
+            continue;
+        for (const auto &p : t.points) {
+            auto &v = vertices[{p.x(), p.y(), p.z()}];
+            v.point = p;
+            for (const auto &q : t.points) {
+                v.higher |= q.y() > p.y() + .0001f;
+                v.lower |= q.y() < p.y() - .05f;
+            }
+        }
+    }
+    QVector<QVector3D> result;
+    const auto b = source.map.bounds;
+    for (const auto &v : vertices) {
+        if (v.higher || !v.lower)
+            continue;
+        const auto p = v.point;
+        const double height = p.y() - ground.height({p.x(), p.z()});
+        if (height > .1)
+            result << QVector3D(float((p.x() - b.left()) * 256 / b.width()), float(height),
+                                float((p.z() - b.top()) * 256 / b.height()));
+    }
+    return result;
+}
 QByteArray textureBytes(const QImage &image) {
     const int w = image.width(), h = image.height();
     if (w < 1 || h < 1 || (w & (w - 1)) || w * h > 2048)
@@ -362,10 +396,11 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
             float(height(world - QPointF(0, offset)) - height(world + QPointF(0, offset))));
         normal.normalize();
         QPointF uv(world.x() * brush.densityS, world.y() * brush.densityT);
-        if (shape.mountain())
-            uv = {(world.x() + world.y()) * 8,
-                  -.5 + texture.height() * std::clamp(p.distance / shape.peak(p.grid), 0., 1.)};
-        else if (border)
+        if (shape.mountain()) {
+            const auto rock = shape.mountainUv(p.grid);
+            uv = {-.5 + texture.width() * rock.x(),
+                  -.5 + texture.height() * (p.distance < 1e-7 ? 0 : rock.y())};
+        } else if (border)
             uv = {(world.x() + world.y()) * 48,
                   -.5 + texture.height() * std::clamp(p.distance / shape.edgeWidth(), 0., 1.)};
         else if (shape.road()) {
@@ -393,7 +428,12 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
             const auto a = poly[n].grid - poly[0].grid, b = poly[n + 1].grid - poly[0].grid;
             if (std::abs(a.x() * b.y() - a.y() * b.x()) < 1e-7)
                 continue;
-            const PaintTriangle t{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+            PaintTriangle t{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+            if (shape.mountain())
+                for (int i = 1; i < 3; ++i) {
+                    const double period = texture.width() * 2.;
+                    t[i].uv.rx() += std::round((t[0].uv.x() - t[i].uv.x()) / period) * period;
+                }
             if (t[0].alpha || t[1].alpha || t[2].alpha)
                 result << t;
         }
@@ -439,18 +479,19 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
 QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
     const auto &original = source.geometry[1].data;
     const FieldBorders borders(source, change);
+    const Surface surface(source, &borders);
     QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
     for (int type : {5, 7, 13, 14})
         if (borders.change.paint.contains(char(type)))
-            shapes[type] = std::make_shared<FieldBrushShape>(borders.change.paint, type,
-                                                             source.map.bounds, borders.native);
+            shapes[type] = std::make_shared<FieldBrushShape>(
+                borders.change.paint, type, source.map.bounds, borders.native,
+                mountainSummits(source, surface, type));
     const bool bridges = change.paint.contains(char(2)) || change.paint.contains(char(10));
     if (shapes.isEmpty() && borders.removed.isEmpty() && !bridges)
         return original;
     const int w = u16(original, 0), h = u16(original, 2);
     if (w < 2 || h < 2 || w > 256 || h > 256 || original.size() < 28 + h * 2)
         throw Error("Unsupported field height grid");
-    const Surface surface(source, &borders);
     QVector<BridgeSpan> spans;
     if (bridges)
         for (int type : {2, 10})
@@ -652,12 +693,16 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         command(dl, 0xd7000002, 0xffffffff);
         for (auto type = tiles.begin(); type != tiles.end(); ++type) {
             const FieldBrushShape shape(borders.change.paint, type.key(), source.map.bounds,
-                                        borders.native);
+                                        borders.native,
+                                        mountainSummits(source, surface, type.key()));
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
                 const auto &image = border ? type->border : type->texture;
                 const bool bridge = type.key() == 2 || type.key() == 10;
-                command(dl, 0xe3001201, !bridge || type->bridgeFiltered ? 0x00002000 : 0);
+                const bool filtered = bridge             ? type->bridgeFiltered
+                                      : shape.mountain() ? type->filtered
+                                                         : true;
+                command(dl, 0xe3001201, filtered ? 0x00002000 : 0);
                 const auto painted =
                     bridge
                         ? bridgeMesh(bridgeSpans(source, change, surface, type.key()), type.value())
@@ -667,9 +712,11 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 const bool highway = roadPaint(type.key());
                 // Mirroring the continuous road body makes both ends of every
                 // repeat meet at the same texels, including filtered samples.
-                const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border || bridge
-                                                                  ? 2
-                                                              : highway ? 1
+                const quint32 cs = shape.road()       ? 2
+                                   : shape.mountain() ? 1
+                                                      : 0,
+                              ct = shape.mountain() || border || bridge ? 2
+                                   : highway                            ? 1
                                                                         : 0;
                 const auto tex = out.add(textureBytes(image), 8);
                 command(dl, 0xe7000000, 0);

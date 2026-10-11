@@ -1271,6 +1271,7 @@ FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF
     };
     FieldBrush out;
     out.texture = image(m);
+    out.filtered = m.filter;
     if (terrain == 2 || terrain == 10) {
         out.bridgeFiltered = m.filter;
         // The small bridge image is an atlas for separate deck/rail/support

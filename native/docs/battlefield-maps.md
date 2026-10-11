@@ -129,14 +129,22 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   fine grids. A boundary cut clears wholly excluded cells but preserves partially
   included coarse structures. Untouched bytes remain intact.
 * Brush masks generate contoured native meshes over the original land surface.
-  Highlands form raised ridges, with their full 32x64 native texture mapped from
-  dark foot to light summit using clamped T. Forests form a raised canopy and use
+  Highlands use slope panels aimed toward local summits, with their full 32x64
+  native texture mapped from dark foot to light summit using clamped T and
+  mirrored S. The former diagonal S/distance-contour T mapping stretched rock
+  into smooth rings. Angular coordinates unwrap per triangle; summit directions
+  blend across ridges. Surviving native summit positions/heights guide rebuilt
+  mountains; new regions select separated interior peaks, avoiding narrow
+  foothills. Geometry, normals and movement heights share this profile.
+  Mountain sampling retains the source material's filtering (key 5 uses point
+  sampling), rather than forcing filtering onto the rock artwork.
+  Forests form a raised canopy and use
   the original 64x32 side-strip material when the source canopy group has one.
   Other terrain uses the full source image at a scale derived from native UV
   gradients. Roads map their edge-to-centre texture across the painted width.
-  Normal lighting replaces the first brush's full-white vertex colours. Explicit
-  filtered sampling is emitted, and the preview supports the RDP's three-point
-  footprint when the material requests filtering.
+  Normal lighting replaces the first brush's full-white vertex colours. The
+  preview supports the RDP's three-point footprint when the material requests
+  filtering.
 * The previous 32x32 repeating material crop was wrong for these assets. It
   repeated mountain base/peak bands and discarded forest edge textures. Saved
   project masks are still compatible and regenerate using the corrected brushes.
@@ -301,7 +309,7 @@ sample mapping jumped by 0.892 at a 0.0002-cell step; the blended mapping change
 by at most 0.000161. The reproduced centerline's 34 visible breaks became zero.
 The before/after render was inspected. This is an offline rendering/export check.
 
-Generated mountains retain procedural distance-based heights, UVs and normals.
+Generated mountains retain procedural summit-based heights, UVs and normals.
 They are not the original artist-authored landforms. The top-down editor uses
 approximate daylight; it does not reproduce runtime weather or lighting.
 The supplied Zenobian export exposed a concrete runtime difference: native terrain
@@ -314,6 +322,15 @@ remain under the game's control. This addresses a confirmed rendering-state
 mismatch; the final appearance still needs an in-game comparison.
 
 ## Checks and limits
+
+`map_tests nativeMountainSlopes` reproduces Joe's small key 5 border addition.
+It establishes that the selected native summit belongs to the rebuilt region,
+checks height at that same position within 0.35 world units, and verifies the
+exported movement height, changed briefing image and render/reopen identity.
+The native summit is 1.59912 high; the rebuilt mesh samples 1.50807 there.
+The supplied Desktop project and ROM were compared with the vanilla mountain
+at the same framing. Rocky detail now follows the slopes; native artist-authored
+triangulation and exact camera/weather lighting are still approximations.
 
 `map_tests raisedTerrainFoot` independently decodes the appended drawing list
 and vertex loads, requiring opaque primitive/vertex coverage for ordinary and

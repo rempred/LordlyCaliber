@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/field_mountain.h"
 #include "engine/field_road_uv.h"
 #include "engine/map_edits.h"
 #include <algorithm>
@@ -8,12 +9,13 @@ namespace lordly {
 // Distances provide a continuous boundary and a base-to-ridge coordinate.
 class FieldBrushShape {
     static constexpr int size = 258;
-    QVector<float> distance_, peaks_;
+    QVector<float> distance_;
     QRectF bounds_;
     int type_;
     double cell_;
     std::shared_ptr<FieldBrushShape> original_, coverage_;
     std::shared_ptr<FieldRoadUv> road_;
+    std::shared_ptr<FieldMountain> mountain_;
     static void transform(QVector<float> &d) {
         constexpr float diagonal = 1.41421356f;
         for (int y = 1; y < size - 1; ++y)
@@ -32,8 +34,9 @@ class FieldBrushShape {
 
   public:
     QRect cells;
-    FieldBrushShape(const QByteArray &paint, int type, QRectF bounds, const QByteArray &native = {})
-        : distance_(size * size), peaks_(size * size, 0), bounds_(bounds), type_(type),
+    FieldBrushShape(const QByteArray &paint, int type, QRectF bounds, const QByteArray &native = {},
+                    const QVector<QVector3D> &summits = {})
+        : distance_(size * size), bounds_(bounds), type_(type),
           cell_(std::min(bounds.width(), bounds.height()) / 256) {
         auto region = paint;
         if (!native.isEmpty()) {
@@ -44,8 +47,10 @@ class FieldBrushShape {
                 if (u8(paint, i) == type && u8(native, i) != type)
                     changed[i] = char(type);
             }
-            original_ = std::make_shared<FieldBrushShape>(native, type, bounds);
-            coverage_ = std::make_shared<FieldBrushShape>(changed, type, bounds);
+            original_ =
+                std::make_shared<FieldBrushShape>(native, type, bounds, QByteArray{}, summits);
+            coverage_ =
+                std::make_shared<FieldBrushShape>(changed, type, bounds, QByteArray{}, summits);
         }
         QVector<float> outside(size * size, 1000);
         int x0 = 256, z0 = 256, x1 = -1, z1 = -1;
@@ -82,30 +87,10 @@ class FieldBrushShape {
                     distance_[i] = (raw[i] + blurred) * .5f;
                 }
         }
-        // Each separate mountain gets its own peak. A narrow island must not
-        // lose its light summit because another brush stroke is much wider.
-        for (int y = 1; y <= 256; ++y)
-            for (int x = 1; x <= 256; ++x) {
-                const int start = y * size + x;
-                if (distance_[start] <= 0 || peaks_[start] != 0)
-                    continue;
-                QVector<int> queue{start};
-                peaks_[start] = -1;
-                float peak = 0;
-                for (int n = 0; n < queue.size(); ++n) {
-                    const int i = queue[n];
-                    peak = std::max(peak, distance_[i]);
-                    for (int j : {i - 1, i + 1, i - size, i + size})
-                        if (j >= 0 && j < peaks_.size() && distance_[j] > 0 && peaks_[j] == 0) {
-                            peaks_[j] = -1;
-                            queue << j;
-                        }
-                }
-                for (int i : queue)
-                    peaks_[i] = peak;
-            }
         if (coverage_ && road())
             road_ = std::make_shared<FieldRoadUv>(region, type, distance_);
+        if (mountain())
+            mountain_ = std::make_shared<FieldMountain>(distance_, summits);
         if (coverage_) {
             const int band = int(std::ceil(.65 / cell_)) + 1;
             cells = coverage_->cells.isEmpty() ? QRect()
@@ -130,12 +115,6 @@ class FieldBrushShape {
                       fx * distance_[(y + 1) * size + x + 1])) *
                cell_;
     }
-    double peak(QPointF p) const {
-        const int x = std::clamp(int(p.x() + .5), 0, 256), y = std::clamp(int(p.y() + .5), 0, 256);
-        return std::max({peaks_[y * size + x], peaks_[y * size + x + 1], peaks_[(y + 1) * size + x],
-                         peaks_[(y + 1) * size + x + 1], .5f}) *
-               cell_;
-    }
     bool mountain() const {
         return type_ == 7 || type_ == 14;
     }
@@ -153,14 +132,16 @@ class FieldBrushShape {
     double edgeWidth() const {
         return .5;
     }
+    QPointF mountainUv(QPointF p) const {
+        return mountain_->sample(p, std::max(0., distance(p)) / cell_, cell_).uv;
+    }
     double edgeOpacity(QPointF p) const {
         return std::clamp(distance(p) / (cell_ * .75), 0., 1.);
     }
     double profile(QPointF p) const {
         const double d = std::max(0., distance(p));
         if (mountain()) {
-            const double max = peak(p);
-            return std::min(3.2, max * .7) * std::pow(std::clamp(d / max, 0., 1.), .85);
+            return mountain_->sample(p, d / cell_, cell_).height;
         }
         if (forest())
             return .28 * std::min(1., d / edgeWidth()) +
