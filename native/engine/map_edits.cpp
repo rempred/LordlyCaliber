@@ -1,5 +1,6 @@
 #include "engine/map_edits.h"
 #include "engine/field_borders.h"
+#include "engine/field_brush.h"
 #include <QImage>
 #include <QJsonArray>
 #include <QLineF>
@@ -14,6 +15,44 @@ void real(QByteArray &b, int at, double v) {
     if (!std::isfinite(v) || std::abs(v) > 10000)
         throw Error("Invalid site position");
     put32(b, at, std::bit_cast<quint32>(float(v)));
+}
+int peakTerrain(const FieldMapSource &s, const FieldChanges &c, QPointF p) {
+    if (!std::isfinite(p.x()) || !std::isfinite(p.y()) || p.x() < 0 || p.y() < 0 || p.x() >= 256 ||
+        p.y() >= 256)
+        return -1;
+    const int at = int(p.y()) * 256 + int(p.x());
+    return u8(c.paint, at) == 255 ? u8(s.visualTerrain, at) : u8(c.paint, at);
+}
+void validatePeaks(const FieldMapSource &s, const FieldChanges &c) {
+    auto base = c;
+    base.peaks.clear();
+    const auto defaults = fieldMountainPeaks(s, base);
+    QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
+    if (c.peaks.size() > 4096)
+        throw Error("Too many mountain peaks");
+    for (int i = 0; i < c.peaks.size(); ++i) {
+        const auto &p = c.peaks[i];
+        if (!std::isfinite(p.position.x()) || !std::isfinite(p.position.y()) ||
+            !std::isfinite(p.height) || p.height < 0 || p.height > 8 ||
+            (p.terrain != 7 && p.terrain != 14) || p.addedId < 0 || p.addedId > 1000000 ||
+            (p.addedId && p.removed))
+            throw Error("Invalid mountain peak height or identity");
+        if (!p.addedId && std::none_of(defaults.begin(), defaults.end(),
+                                       [&](const MountainPeak &q) { return p.sameIdentity(q); }))
+            throw Error("This default peak no longer exists on the current terrain");
+        if (!p.removed && peakTerrain(s, c, p.position) != p.terrain)
+            throw Error("Place peaks inside matching Highlands terrain");
+        if (!p.removed && (p.addedId || p.position != p.origin)) {
+            if (!shapes.contains(p.terrain))
+                shapes[p.terrain] = std::make_shared<FieldBrushShape>(
+                    c.paint, p.terrain, s.map.bounds, s.visualTerrain);
+            if (shapes[p.terrain]->distance(p.position) <= 0)
+                throw Error("Keep peaks inside the mountain outline");
+        }
+        for (int j = 0; j < i; ++j)
+            if (p.sameIdentity(c.peaks[j]))
+                throw Error("Duplicate mountain peak identity");
+    }
 }
 // Keep the native image dimensions and CI8 storage layout. Rendering is
 // downsampled before palette matching, so narrow roads and small buildings survive.
@@ -192,11 +231,22 @@ void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, doubl
             stamp(stroke[i - 1] + (stroke[i] - stroke[i - 1]) * double(j) / n);
     }
     if (!next.peaks.isEmpty()) {
-        const auto available = fieldMountainPeaks(s, next);
+        auto base = next;
+        base.peaks.clear();
+        const auto available = fieldMountainPeaks(s, base);
+        QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
         next.peaks.removeIf([&](const MountainPeak &p) {
-            return std::none_of(available.begin(), available.end(), [&](const MountainPeak &q) {
-                return p.position == q.position && p.terrain == q.terrain;
-            });
+            if (!p.removed && (p.addedId || p.position != p.origin)) {
+                if (!shapes.contains(p.terrain))
+                    shapes[p.terrain] = std::make_shared<FieldBrushShape>(
+                        next.paint, p.terrain, s.map.bounds, s.visualTerrain);
+                if (shapes[p.terrain]->distance(p.position) <= 0)
+                    return true;
+            }
+            return (!p.removed && peakTerrain(s, next, p.position) != p.terrain) ||
+                   (!p.addedId &&
+                    std::none_of(available.begin(), available.end(),
+                                 [&](const MountainPeak &q) { return p.sameIdentity(q); }));
         });
     }
     edits_[s.modelId] = next;
@@ -205,30 +255,70 @@ void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, doubl
 QVector<MountainPeak> MapEdits::mountainPeaks(int key) const {
     return fieldMountainPeaks(source(key), changes(key));
 }
-void MapEdits::setPeakHeight(int key, const MountainPeak &peak, double height) {
-    if (!std::isfinite(height) || height < 0 || height > 8)
-        throw Error("Peak height must be between 0 and 8");
+MountainPeak MapEdits::currentPeak(int key, const MountainPeak &peak) const {
     const auto available = mountainPeaks(key);
-    const auto at = std::find_if(available.begin(), available.end(), [&](const MountainPeak &p) {
-        return p.position == peak.position && p.terrain == peak.terrain;
-    });
+    const auto at = std::find_if(available.begin(), available.end(),
+                                 [&](const MountainPeak &p) { return p.sameIdentity(peak); });
     if (at == available.end())
         throw Error("This peak no longer exists. Select a peak on the current terrain.");
+    return *at;
+}
+void MapEdits::savePeak(int key, const MountainPeak &peak) {
+    if (!std::isfinite(peak.height) || peak.height < 0 || peak.height > 8)
+        throw Error("Peak height must be between 0 and 8");
     const int id = modelId(key);
     auto next = *this;
     auto &peaks = next.edits_[id].peaks;
-    peaks.removeIf([&](const MountainPeak &p) {
-        return p.position == peak.position && p.terrain == peak.terrain;
-    });
-    if (std::abs(height - at->defaultHeight) > .00001) {
-        auto p = *at;
-        p.height = height;
-        peaks << p;
-    }
+    peaks.removeIf([&](const MountainPeak &p) { return p.sameIdentity(peak); });
+    if (peak.addedId ? !peak.removed
+                     : peak.removed || peak.position != peak.origin ||
+                           std::abs(peak.height - peak.defaultHeight) > .00001)
+        peaks << peak;
+    validatePeaks(next.source(key), next.changes(key));
     next.prune(id);
     next.model(key); // Validate drawing allocation before committing the edit.
     editFieldHeight(next.source(key), next.changes(key));
     edits_ = std::move(next.edits_);
+}
+void MapEdits::setPeakHeight(int key, const MountainPeak &peak, double height) {
+    auto p = currentPeak(key, peak);
+    p.height = height;
+    savePeak(key, p);
+}
+MountainPeak MapEdits::addPeak(int key, QPointF position, double height) {
+    const int type = peakTerrain(source(key), changes(key), position);
+    if (type != 7 && type != 14)
+        throw Error("Click inside Highlands terrain to add a peak");
+    const auto available = mountainPeaks(key);
+    for (const auto &p : available)
+        if (QLineF(p.position, position).length() < 1)
+            throw Error("Keep peaks at least one grid square apart");
+    int id = 1;
+    for (const auto &p : changes(key).peaks)
+        id = std::max(id, p.addedId + 1);
+    MountainPeak p{position, type, height, 1.6, position, id};
+    savePeak(key, p);
+    return p;
+}
+void MapEdits::movePeak(int key, const MountainPeak &peak, QPointF position) {
+    auto p = currentPeak(key, peak);
+    for (const auto &other : mountainPeaks(key))
+        if (!p.sameIdentity(other) && QLineF(other.position, position).length() < 1)
+            throw Error("Keep peaks at least one grid square apart");
+    p.position = position;
+    savePeak(key, p);
+}
+void MapEdits::removePeak(int key, const MountainPeak &peak) {
+    auto p = currentPeak(key, peak);
+    p.removed = true;
+    savePeak(key, p);
+}
+void MapEdits::restorePeaks(int key) {
+    const int id = modelId(key);
+    if (edits_.contains(id)) {
+        edits_[id].peaks.clear();
+        prune(id);
+    }
 }
 void MapEdits::prune(int id) {
     const auto &s = edits_[id];
@@ -565,11 +655,19 @@ QJsonObject MapEdits::json() const {
         if (!i->peaks.isEmpty()) {
             auto row = maps[QString::number(i.key())].toObject();
             QJsonArray peaks;
-            for (const auto &p : i->peaks)
-                peaks << QJsonObject{{"x", p.position.x()},
-                                     {"z", p.position.y()},
-                                     {"terrain", p.terrain},
-                                     {"height", p.height}};
+            for (const auto &p : i->peaks) {
+                QJsonObject item{{"x", p.position.x()},
+                                 {"z", p.position.y()},
+                                 {"terrain", p.terrain},
+                                 {"height", p.height}};
+                if (p.addedId)
+                    item["addedId"] = p.addedId;
+                else if (p.origin != p.position || p.removed)
+                    item["origin"] = QJsonArray{p.origin.x(), p.origin.y()};
+                if (p.removed)
+                    item["removed"] = true;
+                peaks << item;
+            }
             row["peaks"] = peaks;
             maps[QString::number(i.key())] = row;
         }
@@ -619,25 +717,33 @@ void MapEdits::apply(const QJsonObject &o) {
         if (row.contains("peaks")) {
             if (!row["peaks"].isArray() || row["peaks"].toArray().size() > 4096)
                 throw Error("Invalid saved mountain peaks");
-            const auto available = fieldMountainPeaks(s, change);
             for (const auto &item : row["peaks"].toArray()) {
                 const auto p = item.toObject();
                 const double height = p["height"].toDouble(-1);
                 const QPointF position(p["x"].toDouble(-1), p["z"].toDouble(-1));
                 const int type = p["terrain"].toInt(-1);
                 if (!item.isObject() || !p["x"].isDouble() || !p["z"].isDouble() ||
-                    !p["height"].isDouble() || !std::isfinite(height) || height < 0 || height > 8 ||
-                    std::none_of(available.begin(), available.end(),
-                                 [&](const MountainPeak &q) {
-                                     return q.position == position && q.terrain == type;
-                                 }) ||
-                    std::any_of(change.peaks.begin(), change.peaks.end(),
-                                [&](const MountainPeak &q) {
-                                    return q.position == position && q.terrain == type;
-                                }))
+                    !p["height"].isDouble() || (p.contains("removed") && !p["removed"].isBool()) ||
+                    (p.contains("addedId") &&
+                     (!p["addedId"].isDouble() || p["addedId"].toInt(-1) < 1)))
                     throw Error("Invalid saved mountain peak height or position");
-                change.peaks << MountainPeak{position, type, height};
+                MountainPeak peak{position,
+                                  type,
+                                  height,
+                                  0,
+                                  position,
+                                  p["addedId"].toInt(),
+                                  p["removed"].toBool()};
+                if (p.contains("origin")) {
+                    const auto origin = p["origin"].toArray();
+                    if (origin.size() != 2 || !origin[0].isDouble() || !origin[1].isDouble() ||
+                        peak.addedId)
+                        throw Error("Invalid saved mountain peak origin");
+                    peak.origin = {origin[0].toDouble(), origin[1].toDouble()};
+                }
+                change.peaks << peak;
             }
+            validatePeaks(s, change);
         }
         next.edits_[id] = change;
         if (row.contains("city")) {

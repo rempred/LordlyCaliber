@@ -398,19 +398,27 @@ pass for its edited terrain. `ui_tests scenarioMapEditing scenarioWorldEditing`
 also pass complete editing/export/reopen and checksum checks. Updated map and
 briefing previews were inspected. These remain offline checks.
 
-## Individual peak heights (2026-10-11)
+## Individual peaks (2026-10-11)
 
-Map's **Mountain heights** tool shows native and generated summits as diamond
-handles. Dragging vertically changes the selected peak's height above its base,
-with X/Z fixed. Release commits one Undo action and regenerates the slopes;
-Escape cancels. The sidebar accepts precise heights from 0 to 8 world units and
-can restore one peak without discarding other map edits.
+Map's **Mountain peaks** tool shows native and generated summits as diamond
+handles. Choose **Change height** to drag vertically, or **Move peak** to drag
+across matching Highlands. **Add peak on map** places a 1.6-unit summit inside
+existing Highlands; **Remove peak** deletes the selected summit. The sidebar
+accepts heights from 0 to 8 world units. **Restore all peaks** restores the
+automatic layout without discarding terrain painting or town edits. Release
+commits one Undo action and regenerates slopes; Escape cancels dragging/placement.
+The X/Z projection uses height for depth and shading, so height edits leave the
+top-down outline fixed. Painting controls that outline. First editing a native
+mountain rebuilds its artist-authored mesh with the approximate generated profile.
 
 Projects store optional `mapEdits.maps.<model>.peaks` entries keyed by grid X/Z
-and terrain (7 or 14), with a height. Peak selection precedes height overrides,
-so changing height cannot move a generated summit or change its neighbours'
-settings. Painting that removes/replaces a generated summit drops its obsolete
-height override. Native regions touched by a height edit use the existing
+and terrain (7 or 14), with a height. Layout edits add an `origin` coordinate for
+moved/removed default peaks, a `removed` flag, or a positive `addedId` for an
+explicit summit. Older height-only entries retain their original meaning.
+Automatic peak selection precedes these edits; deleted peaks do not reappear
+on redraw/reopen. Removing the last peak leaves flat Highlands within the same
+outline. Painting that removes/replaces a summit drops its obsolete edit.
+Origin and destination native regions touched by a layout edit use the existing
 border rebuild; geometry, normals and movement heights share the same profile.
 Edited summits become explicit mesh vertices so the two-cell tessellation cannot
 round away the chosen height. The movement grid retains its native sampling.

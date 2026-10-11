@@ -57,6 +57,152 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void mountainPeakLayout() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto native = MapEdits::load(rom);
+        const auto nativePeaks = native.mountainPeaks(5);
+        const auto found = std::find_if(nativePeaks.begin(), nativePeaks.end(), [](auto p) {
+            return QRectF(116, 116, 92, 116).contains(p.position) && p.height > 1.5;
+        });
+        QVERIFY(found != nativePeaks.end());
+        const auto peak = *found;
+        const auto nativeBounds = native.source(5).map.bounds;
+        auto nativeWorld = [&](QPointF p) {
+            return QPointF(nativeBounds.left() + p.x() * nativeBounds.width() / 256,
+                           nativeBounds.top() + p.y() * nativeBounds.height() / 256);
+        };
+        native.setPeakHeight(5, peak, 3);
+        const auto beforeMove = Battlefield::load(rom, 5, {}, native.model(5)).triangles();
+        const auto target = peak.position + QPointF(5, 0);
+        native.movePeak(5, peak, target);
+        const auto afterMove = Battlefield::load(rom, 5, {}, native.model(5)).triangles();
+        QVERIFY(surfaceHeight(beforeMove, nativeWorld(peak.position)) >
+                surfaceHeight(afterMove, nativeWorld(peak.position)) + .5);
+        QVERIFY(surfaceHeight(afterMove, nativeWorld(target)) > 2.7);
+        native.removePeak(5, peak);
+        const auto afterRemove = Battlefield::load(rom, 5, {}, native.model(5)).triangles();
+        QVERIFY(surfaceHeight(afterMove, nativeWorld(target)) >
+                surfaceHeight(afterRemove, nativeWorld(target)) + .5);
+        auto nativeCopy = MapEdits::load(rom);
+        nativeCopy.apply(native.json());
+        QCOMPARE(nativeCopy.model(5), native.model(5));
+        for (const auto &p : nativeCopy.mountainPeaks(5))
+            QVERIFY(!p.sameIdentity(peak));
+        for (int type : {7, 14}) {
+            auto edit = MapEdits::load(rom);
+            const auto &source = edit.source(5);
+            QPoint center(-1, -1);
+            for (int y = 20; y < 236 && center.x() < 0; y += 4)
+                for (int x = 20; x < 236 && center.x() < 0; x += 4) {
+                    bool plain = true;
+                    for (int dy = -9; dy <= 9 && plain; ++dy)
+                        for (int dx = -9; dx <= 9; ++dx)
+                            plain &= u8(source.visualTerrain, (y + dy) * 256 + x + dx) == 3;
+                    if (plain)
+                        center = {x, y};
+                }
+            QVERIFY(center.x() >= 0);
+            edit.paint(5, {center}, type, 7);
+            const auto painted = edit.json();
+            const auto paintedModel = edit.model(5);
+            const auto originals = edit.mountainPeaks(5);
+            QVector<MountainPeak> local;
+            for (const auto &p : originals)
+                if (QLineF(p.position, center).length() < 8)
+                    local << p;
+            QVERIFY(!local.isEmpty());
+            edit.movePeak(5, local[0], local[0].position + QPointF(2, 0));
+            auto roundtrip = MapEdits::load(rom);
+            roundtrip.apply(edit.json());
+            QCOMPARE(roundtrip.model(5), edit.model(5));
+            edit.restorePeaks(5);
+            QCOMPARE(edit.json(), painted);
+            QCOMPARE(edit.model(5), paintedModel);
+            for (const auto &p : local)
+                edit.removePeak(5, p);
+            const auto flat = edit.model(5);
+            const auto remaining = edit.mountainPeaks(5);
+            for (const auto &p : remaining)
+                QVERIFY(QLineF(p.position, center).length() >= 8);
+            const auto added = edit.addPeak(5, center + QPointF(-2, 0), 3);
+            QVERIFY(added.addedId > 0);
+            const auto before = edit.model(5);
+            const auto beforeHeight = editFieldHeight(source, edit.changes(5));
+            const QPointF destination = center + QPointF(2, 0);
+            edit.movePeak(5, added, destination);
+            const auto after = edit.model(5);
+            const auto b = source.map.bounds;
+            auto world = [&](QPointF p) {
+                return QPointF(b.left() + p.x() * b.width() / 256,
+                               b.top() + p.y() * b.height() / 256);
+            };
+            const auto oldTriangles = Battlefield::load(rom, 5, {}, before).triangles();
+            const auto newField = Battlefield::load(rom, 5, {}, after);
+            const auto newTriangles = newField.triangles();
+            const double oldTop = surfaceHeight(oldTriangles, world(added.position)),
+                         oldNow = surfaceHeight(newTriangles, world(added.position)),
+                         newBefore = surfaceHeight(oldTriangles, world(destination)),
+                         newTop = surfaceHeight(newTriangles, world(destination));
+            qInfo() << "Moved peak" << type << "old location" << oldTop << oldNow << "new location"
+                    << newBefore << newTop;
+            QVERIFY(oldTop > oldNow + .5);
+            QVERIFY(newTop > newBefore + .5);
+            auto heightAtGrid = [&](const QByteArray &data, QPointF p) {
+                const auto wp = world(p);
+                auto f = [&](int at) { return double(std::bit_cast<float>(u32(data, at))); };
+                const int x = int(std::round((wp.x() - f(4)) / (f(8) - f(4)) * (u16(data, 0) - 1))),
+                          z = int(
+                              std::round((wp.y() - f(20)) / (f(24) - f(20)) * (u16(data, 2) - 1)));
+                return movementHeight(data, x, z);
+            };
+            const auto afterHeight = editFieldHeight(source, edit.changes(5));
+            QVERIFY(heightAtGrid(beforeHeight, added.position) >
+                    heightAtGrid(afterHeight, added.position) + .15);
+            QVERIFY(heightAtGrid(afterHeight, destination) >
+                    heightAtGrid(beforeHeight, destination) + .15);
+            const auto second = edit.addPeak(5, center + QPointF(0, 3), 1.2);
+            const auto saved = edit.json();
+            QVERIFY_THROWS_EXCEPTION(Error, edit.movePeak(5, added, {-2, 0}));
+            QVERIFY_THROWS_EXCEPTION(Error, edit.addPeak(5, destination));
+            QCOMPARE(edit.json(), saved);
+            roundtrip.apply(saved);
+            QCOMPARE(roundtrip.model(5), edit.model(5));
+            auto bad = saved;
+            auto maps = bad["maps"].toObject();
+            auto row = maps[QString::number(source.modelId)].toObject();
+            auto entries = row["peaks"].toArray();
+            entries << entries.last();
+            row["peaks"] = entries;
+            maps[QString::number(source.modelId)] = row;
+            bad["maps"] = maps;
+            QVERIFY_THROWS_EXCEPTION(Error, edit.apply(bad));
+            QCOMPARE(edit.json(), saved);
+            const auto exported = MapEdits::load(Rom::fromBytes(edit.rebuild(rom)));
+            QCOMPARE(exported.model(5), edit.model(5));
+            QCOMPARE(exported.source(5).geometry[1].data, editFieldHeight(source, edit.changes(5)));
+            QCOMPARE(exported.fineTerrain(5), edit.fineTerrain(5));
+            QVERIFY(exported.source(5).map.image->rgba != source.map.image->rgba);
+            QCOMPARE(edit.model(1), edit.source(1).geometry[0].data);
+            edit.removePeak(5, second);
+            edit.removePeak(5, added); // Stable ID remains valid after moving.
+            QCOMPARE(edit.model(5), flat);
+            QVERIFY(surfaceHeight(Battlefield::load(rom, 5, {}, flat).triangles(),
+                                  world(destination)) < .2);
+            roundtrip.apply(edit.json());
+            QCOMPARE(roundtrip.model(5), flat); // Removed defaults must not reappear.
+            edit.restorePeaks(5);
+            QCOMPARE(edit.json(), painted);
+            const auto erased = edit.addPeak(5, center + QPointF(2, 0));
+            edit.paint(5, {erased.position}, 3, 1);
+            for (const auto &p : edit.mountainPeaks(5))
+                QVERIFY(!p.sameIdentity(erased));
+            roundtrip.apply(edit.json());
+            QCOMPARE(roundtrip.model(5), edit.model(5));
+        }
+    }
     void mountainPeakHeights() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

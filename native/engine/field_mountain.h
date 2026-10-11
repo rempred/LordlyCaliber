@@ -83,11 +83,16 @@ class FieldMountain {
                                     float(p.point.y()));
         return result;
     }
-    void setHeight(QPointF position, double height) {
+    void remove(QPointF position) {
         for (auto &region : regions_)
-            for (auto &p : region)
-                if (p.point == position)
-                    p.height = height;
+            region.removeIf([&](const Peak &p) { return p.point == position; });
+    }
+    void add(QPointF position, double height) {
+        if (position.x() < 0 || position.x() >= 256 || position.y() < 0 || position.y() >= 256)
+            return;
+        const int label = labels_[(int(position.y()) + 1) * 258 + int(position.x()) + 1];
+        if (label >= 0)
+            regions_[label] << Peak{position, 0, height};
     }
     // Blend the directions toward adjacent summits before assigning the slope
     // panels, avoiding unrelated angular seams through the middle of a ridge.

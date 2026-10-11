@@ -8983,7 +8983,7 @@ class UiTests : public QObject {
         editor.show();
         connect(&undo, &QUndoStack::indexChanged, &editor, [&] { editor.refresh(5); });
         auto tool = editor.findChild<QComboBox *>("mapTool");
-        tool->setCurrentText("Mountain heights");
+        tool->setCurrentText("Mountain peaks");
         QTest::qWait(20);
         auto objects = editor.findChild<QListWidget *>("mapObjects");
         auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
@@ -9039,8 +9039,83 @@ class UiTests : public QObject {
         QCOMPARE(undo.count(), 2);
         height->setValue(.75);
         QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].height, .75);
+        restore->click();
+        QCOMPARE(project.mapEdits()->json(), original);
+        height->setValue(.75);
+        const auto heightOnly = project.mapEdits()->json();
+        auto add = editor.findChild<QPushButton *>("mapPeakAdd");
+        auto remove = editor.findChild<QPushButton *>("mapPeakRemove");
+        auto dragMode = editor.findChild<QComboBox *>("mapPeakDrag");
+        auto resetPeaks = editor.findChild<QPushButton *>("mapPeaksRestore");
+        QVERIFY(add && remove && dragMode && resetPeaks);
+        add->click();
+        QTest::keyClick(canvas, Qt::Key_Escape);
+        QVERIFY(!add->isChecked());
+        QCOMPARE(project.mapEdits()->json(), heightOnly);
+        auto mapPixel = [&](QPointF grid) {
+            const double side = std::min(canvas->width(), canvas->height()) - 72;
+            return QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                   (grid - QPointF(128, 128)) * side / 256.;
+        };
+        QPoint place(-1, -1);
+        const auto terrain = project.mapEdits()->source(5).visualTerrain;
+        for (int y = 80; y < 210 && place.x() < 0; ++y)
+            for (int x = 70; x < 200 && place.x() < 0; ++x) {
+                bool inside = true;
+                for (int dy = -4; dy <= 4 && inside; ++dy)
+                    for (int dx = -4; dx <= 4; ++dx)
+                        inside &= u8(terrain, (y + dy) * 256 + x + dx) == 7;
+                for (const auto &p : peaks)
+                    inside &= QLineF(p.position, QPointF(x, y)).length() > 5;
+                if (inside)
+                    place = {x, y};
+            }
+        QVERIFY(place.x() >= 0);
+        add->click();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, mapPixel({-5, -5}).toPoint());
+        QCOMPARE(project.mapEdits()->json(), heightOnly);
+        QVERIFY(add->isChecked());
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, mapPixel(place).toPoint());
+        QVERIFY2(!add->isChecked(), qPrintable(editor.findChild<QLabel *>("mapNotice")->text()));
+        QCOMPARE(objects->count(), peaks.size() + 1);
+        QCOMPARE(objects->currentRow(), objects->count() - 1);
+        const auto added = project.mapEdits()->mountainPeaks(5).last();
+        QVERIFY(added.addedId > 0);
+        const auto addedState = project.mapEdits()->json();
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), heightOnly);
+        undo.redo();
+        QCOMPARE(project.mapEdits()->json(), addedState);
+        objects->setCurrentRow(objects->count() - 1);
+        dragMode->setCurrentText("Move peak");
+        QTest::qWait(20);
+        start = (mapPixel(added.position) - QPointF(0, 12 + added.height * 24)).toPoint();
+        const auto delta =
+            (mapPixel(added.position + QPointF(3, 0)) - mapPixel(added.position)).toPoint();
+        const int actions = undo.count();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + delta, 20);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + delta);
+        QCOMPARE(undo.count(), actions + 1);
+        const auto movedPeak = project.mapEdits()->mountainPeaks(5).last();
+        QCOMPARE(movedPeak.addedId, added.addedId);
+        QCOMPARE(movedPeak.height, added.height);
+        QVERIFY(QLineF(movedPeak.position, added.position + QPointF(3, 0)).length() < .4);
+        const auto movedState = project.mapEdits()->json();
+        start = (mapPixel(movedPeak.position) - QPointF(0, 12 + movedPeak.height * 24)).toPoint();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(10, 10), 20);
+        QTest::keyClick(canvas, Qt::Key_Escape);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(10, 10));
+        QCOMPARE(project.mapEdits()->json(), movedState);
+        remove->click();
+        QCOMPARE(project.mapEdits()->json(), heightOnly);
+        QCOMPARE(objects->count(), peaks.size());
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), movedState);
+        objects->setCurrentRow(objects->count() - 1);
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
-                                   "/mountain-peak-editor.png"));
+                                   "/mountain-peak-layout.png"));
         QTemporaryDir work;
         project.saveFolder(work.filePath("project"));
         auto restored = Project::fromRom(Rom::open(path));
@@ -9049,8 +9124,8 @@ class UiTests : public QObject {
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         QVERIFY(!tools.isEmpty());
         const auto result = rebuild(restored, tools, work.path());
-        const auto root =
-            QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/mountain-heights-20261011");
+        const auto root = QDir(QFileInfo(path).absolutePath())
+                              .filePath("Test ROMs/mountain-peak-layout-20261011");
         QVERIFY(QDir().mkpath(root));
         const auto candidate = QDir(root).filePath(QFileInfo(path).fileName());
         exportRom(restored, result, candidate);
@@ -9061,7 +9136,11 @@ class UiTests : public QObject {
         auto checksum = result.image;
         Rom::updateChecksum(checksum);
         QCOMPARE(checksum, result.image);
-        restore->click();
+        resetPeaks->click();
+        QCOMPARE(project.mapEdits()->json(), original);
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), movedState);
+        undo.redo();
         QCOMPARE(project.mapEdits()->json(), original);
         tool->setCurrentIndex(0);
         QVERIFY(!height->isVisible());

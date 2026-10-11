@@ -21,9 +21,15 @@ struct FieldBorders {
         : change(c), native(s.visualTerrain) {
         QSet<int> heightCells;
         for (const auto &p : c.peaks) {
-            const int at = int(p.position.y()) * 256 + int(p.position.x());
-            if (at >= 0 && at < 65536 && u8(s.visualTerrain, at) == p.terrain)
-                heightCells.insert(at);
+            auto touch = [&](QPointF point) {
+                const int at = int(point.y()) * 256 + int(point.x());
+                if (at >= 0 && at < 65536 && u8(s.visualTerrain, at) == p.terrain)
+                    heightCells.insert(at);
+            };
+            if (!p.addedId)
+                touch(p.origin);
+            if (!p.removed)
+                touch(p.position);
         }
         for (int start = 0; start < 65536; ++start) {
             const int old = u8(s.visualTerrain, start);

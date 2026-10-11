@@ -14,9 +14,16 @@ struct FieldMapSource {
     QRectF boundary;
 };
 struct MountainPeak {
-    QPointF position; // 256 by 256 map grid; stable identity within a terrain outline.
+    QPointF position; // 256 by 256 map grid.
     int terrain = 7;
     double height = 0, defaultHeight = 0;
+    QPointF origin;  // Default summit identity, independent of its edited position.
+    int addedId = 0; // Positive IDs identify explicitly added summits.
+    bool removed = false;
+    bool sameIdentity(const MountainPeak &other) const {
+        return addedId || other.addedId ? addedId == other.addedId
+                                        : terrain == other.terrain && origin == other.origin;
+    }
 };
 struct FieldChanges {
     QByteArray paint = QByteArray(65536, char(-1));
@@ -41,6 +48,10 @@ class MapEdits {
     void paint(int key, const QVector<QPointF> &stroke, int terrain, double radius);
     QVector<MountainPeak> mountainPeaks(int key) const;
     void setPeakHeight(int key, const MountainPeak &, double height);
+    MountainPeak addPeak(int key, QPointF position, double height = 1.6);
+    void movePeak(int key, const MountainPeak &, QPointF position);
+    void removePeak(int key, const MountainPeak &);
+    void restorePeaks(int key);
     const QVector<CityAsset> &cityAssets() const;
     const CityAsset &cityAsset(const QString &id) const;
     void placeCity(int key, const QString &asset, QPointF position, int rotation = 0);
@@ -71,6 +82,8 @@ class MapEdits {
     int modelId(int key) const;
     FieldBrush texture(int code) const;
     void prune(int model);
+    MountainPeak currentPeak(int key, const MountainPeak &) const;
+    void savePeak(int key, const MountainPeak &);
 };
 // Original packed model is retained; edits append native display lists and
 // translate a town's verified culling group. No bitmap replaces the battlefield.

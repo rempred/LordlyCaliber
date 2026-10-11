@@ -93,8 +93,11 @@ class FieldBrushShape {
         if (mountain()) {
             mountain_ = std::make_shared<FieldMountain>(distance_, summits);
             for (const auto &p : heights)
-                if (p.terrain == type)
-                    mountain_->setHeight(p.position, p.height);
+                if (p.terrain == type && !p.addedId)
+                    mountain_->remove(p.origin);
+            for (const auto &p : heights)
+                if (p.terrain == type && !p.removed)
+                    mountain_->add(p.position, p.height);
         }
         if (coverage_) {
             const int band = int(std::ceil(.65 / cell_)) + 1;

@@ -521,13 +521,23 @@ QVector<MountainPeak> fieldMountainPeaks(const FieldMapSource &source, const Fie
         const FieldBrushShape shape(region, type, source.map.bounds, {},
                                     mountainSummits(source, ground, type));
         for (const auto &p : shape.peaks()) {
-            MountainPeak peak{{p.x(), p.z()}, type, p.y(), p.y()};
+            MountainPeak peak{{p.x(), p.z()}, type, p.y(), p.y(), {p.x(), p.z()}};
             for (const auto &edit : change.peaks)
-                if (edit.terrain == type && edit.position == peak.position)
+                if (edit.sameIdentity(peak)) {
+                    peak.position = edit.position;
                     peak.height = edit.height;
-            result << peak;
+                    peak.removed = edit.removed;
+                }
+            if (!peak.removed)
+                result << peak;
         }
     }
+    for (const auto &edit : change.peaks)
+        if (edit.addedId && !edit.removed) {
+            auto peak = edit;
+            peak.defaultHeight = 1.6;
+            result << peak;
+        }
     return result;
 }
 QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
@@ -751,7 +761,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                                         mountainSummits(source, surface, type.key()), change.peaks);
             QVector<QPointF> peakPositions;
             for (const auto &peak : change.peaks)
-                if (peak.terrain == type.key())
+                if (peak.terrain == type.key() && !peak.removed)
                     peakPositions << peak.position;
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
