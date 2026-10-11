@@ -92,6 +92,7 @@ jobs:
         with:
           name: ${{ env.PACKAGE_NAME }}
           path: native/dist/application-files/*
+          include-hidden-files: true
           if-no-files-found: error
           compression-level: 1
           retention-days: 30
