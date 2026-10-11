@@ -8628,6 +8628,130 @@ class UiTests : public QObject {
         canvas->repaint();
         QVERIFY(editor.grab().save("map-label-selection.png"));
     }
+    void scenarioSiteAutoApply() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950); editor.show();
+        int row = -1, id = -1;
+        for (int i = 0; i < project.world()->siteCount(1); ++i) {
+            const int candidate = u16(project.world()->scenario(1).sites, 1 + i * 4);
+            const auto town = project.world()->town(candidate);
+            if (u8(town, 24) != 255 && !u8(town, 27) && !(u8(town, 25) & 3)) {
+                row = i; id = candidate; break;
+            }
+        }
+        QVERIFY(row >= 0);
+        QVERIFY(selectMapObject(editor, MapObject::Site, row));
+        QTest::qWait(50);
+        const auto before = project.manifest();
+        const auto original = project.world()->town(id);
+        const int count = project.shops()->size();
+        auto shop = editor.findChild<QCheckBox *>("worldFacility0");
+        auto den = editor.findChild<QCheckBox *>("worldFacility1");
+        auto inventory = editor.findChild<QSpinBox *>("worldShop");
+        // Undo a new shop, reuse its former ID elsewhere, then enable this
+        // site's shop again. The unrelated inventory must not be attached.
+        shop->click();
+        QCOMPARE(u8(project.world()->town(id), 27), count);
+        undo.undo();
+        QCOMPARE(addShop(&project, &undo), count);
+        shop->click();
+        QCOMPARE(project.shops()->size(), count + 2);
+        QCOMPARE(u8(project.world()->town(id), 27), count + 1);
+        undo.setIndex(0); QCOMPARE(project.manifest(), before);
+        undo.clear();
+        shop->click();
+        QCOMPARE(project.shops()->size(), count + 1);
+        QCOMPARE(u8(project.world()->town(id), 27), count);
+        QCOMPARE(undo.count(), 1); // Stock creation and assignment undo together.
+        undo.undo(); QCOMPARE(project.manifest(), before);
+        undo.redo();
+        shop->click();
+        QCOMPARE(u8(project.world()->town(id), 27), 0);
+        shop->click();
+        QCOMPARE(u8(project.world()->town(id), 27), count);
+        QCOMPARE(project.shops()->size(), count + 1); // Reuse the site's inventory.
+        den->click();
+        QCOMPARE(u8(project.world()->town(id), 25) & 3, 2);
+        QCOMPARE(inventory->value(), 0);
+        shop->click();
+        QCOMPARE(u8(project.world()->town(id), 25) & 3, 1);
+        QCOMPARE(inventory->value(), count);
+        QVERIFY(!den->isChecked());
+        undo.undo(); QCOMPARE(u8(project.world()->town(id), 25) & 3, 2);
+        undo.redo();
+        inventory->setValue(0); QVERIFY(!shop->isChecked());
+        inventory->setValue(1); QVERIFY(shop->isChecked());
+        QCOMPARE(u8(project.world()->town(id), 27), 1);
+        QCOMPARE(u8(project.world()->town(id), 25) & 0xfc, u8(original, 25) & 0xfc);
+        auto name = editor.findChild<QLineEdit *>("worldSiteName");
+        name->setFocus(); name->selectAll();
+        QTest::keyClicks(name, "Field Town");
+        QCOMPARE(project.world()->townName(id), QString("Field Town"));
+        name->setCursorPosition(5);
+        QTest::keyClicks(name, "X");
+        QCOMPARE(project.world()->townName(id), QString("FieldX Town"));
+        QCOMPARE(name->cursorPosition(), 6);
+        auto population = editor.findChild<QSpinBox *>("worldPopulation");
+        const int oldPopulation = u16(project.world()->town(id), 22);
+        population->setFocus(); population->selectAll();
+        QTest::keyClicks(population, "1234");
+        QCOMPARE(u16(project.world()->town(id), 22), oldPopulation);
+        QTest::keyClick(population, Qt::Key_Return);
+        QCOMPARE(u16(project.world()->town(id), 22), 1234);
+        auto morale = editor.findChild<QSpinBox *>("worldMorale");
+        morale->setValue(62);
+        QCOMPARE(u8(project.world()->town(id), 24), 62);
+        const auto valid = project.world()->town(id);
+        const int edits = undo.index();
+        morale->setValue(200);
+        QCOMPARE(project.world()->town(id), valid);
+        QCOMPARE(undo.index(), edits);
+        QCOMPARE(morale->value(), 62);
+        auto type = editor.findChild<QComboBox *>("worldSiteType");
+        type->setCurrentIndex(type->findData(0x29));
+        QCOMPARE(u8(project.world()->town(id), 26), 0x29);
+        auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
+        allegiance->setCurrentIndex(allegiance->findData(1));
+        QCOMPARE(u16(project.world()->scenario(1).sites, 3 + row * 4), quint16(0x2012));
+        // A real selection click commits typed numbers to the old site before
+        // loading the new site's controls, without requiring Enter.
+        population->setFocus(); population->selectAll();
+        QTest::keyClicks(population, "2345");
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        const int otherRow = (row + 1) % project.world()->siteCount(1);
+        const int otherId = u16(project.world()->scenario(1).sites, 1 + otherRow * 4);
+        const auto otherTown = project.world()->town(otherId);
+        for (int i = 0; i < objects->count(); ++i) {
+            auto item = objects->item(i);
+            if (item->data(Qt::UserRole).toInt() != int(MapObject::Site) ||
+                item->data(Qt::UserRole + 1).toInt() != otherRow) continue;
+            objects->scrollToItem(item);
+            QTest::mouseClick(objects->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              objects->visualItemRect(item).center());
+            break;
+        }
+        QCOMPARE(u16(project.world()->town(id), 22), 2345);
+        QCOMPARE(project.world()->town(otherId), otherTown);
+        const auto after = project.manifest();
+        const int undoCount = undo.count();
+        QVERIFY(selectMapObject(editor, MapObject::Site, (row + 1) % project.world()->siteCount(1)));
+        QVERIFY(selectMapObject(editor, MapObject::Site, row));
+        QCOMPARE(name->text(), QString("FieldX Town"));
+        QCOMPARE(population->value(), 2345);
+        QCOMPARE(project.manifest(), after);
+        QCOMPARE(undo.count(), undoCount);
+        QVERIFY(!editor.findChild<QPushButton *>("worldSiteApply"));
+        QVERIFY(!editor.findChild<QPushButton *>("worldShopAdd"));
+        QVERIFY(!editor.findChild<QPushButton *>("worldShopRemove"));
+        QVERIFY(editor.grab().save("site-auto-apply.png"));
+        undo.setIndex(0); QCOMPARE(project.manifest(), before);
+        undo.setIndex(undo.count()); QCOMPARE(project.manifest(), after);
+    }
     void scenarioFacilityExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
@@ -8649,21 +8773,18 @@ class UiTests : public QObject {
         QVERIFY(row >= 0);
         QVERIFY(selectMapObject(editor, MapObject::Site, row));
         const auto before = project.manifest();
-        editor.findChild<QPushButton *>("worldShopAdd")->click();
+        editor.findChild<QCheckBox *>("worldFacility0")->setChecked(true);
         const int shop = u8(project.world()->town(id), 27);
         QVERIFY(shop > 0);
         QCOMPARE(project.shops()->stock(shop).consumables, QVector<quint16>({1, 2, 3, 4, 5, 6, 8}));
         editor.findChild<QCheckBox *>("worldFacility1")->setChecked(true);
         QVERIFY(!editor.findChild<QCheckBox *>("worldFacility0")->isChecked());
-        editor.findChild<QPushButton *>("worldSiteApply")->click();
         QCOMPARE(u8(project.world()->town(id), 25) & 3, 2);
         const int shopRow = row == 0 ? 1 : 0;
         const int shopTown = u16(project.world()->scenario(5).sites, 1 + shopRow * 4);
         QVERIFY(selectMapObject(editor, MapObject::Site, shopRow));
         editor.findChild<QCheckBox *>("worldObjective")->setChecked(false);
-        editor.findChild<QCheckBox *>("worldFacility0")->setChecked(true);
         editor.findChild<QSpinBox *>("worldShop")->setValue(shop);
-        editor.findChild<QPushButton *>("worldSiteApply")->click();
         QCOMPARE(u8(project.world()->town(shopTown), 25) & 3, 1);
         const auto after = project.manifest();
         while (undo.canUndo()) undo.undo();
@@ -8687,7 +8808,8 @@ class UiTests : public QObject {
         QCOMPARE(reopened.town(id), project.world()->town(id));
         QCOMPARE(u8(reopened.town(id), 25) & 3, 2);
         QCOMPARE(u8(reopened.town(shopTown), 25) & 3, 1);
-        QCOMPARE(u8(reopened.town(id), 27), shop);
+        QCOMPARE(u8(reopened.town(id), 27), 0);
+        QCOMPARE(u8(reopened.town(shopTown), 27), shop);
         QCOMPARE(Shops::load(reopenedRom).stock(shop), restored.shops()->stock(shop));
         auto sealed = reopenedRom.bytes();
         Rom::updateChecksum(sealed);
@@ -8898,7 +9020,6 @@ class UiTests : public QObject {
             const auto beforeAllegiance = canvas->grab().toImage();
             auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
             allegiance->setCurrentIndex(allegiance->findData(2));
-            editor.findChild<QPushButton *>("worldSiteApply")->click();
             QVERIFY(beforeAllegiance != canvas->grab().toImage());
             undo.undo();
             QCOMPARE(canvas->grab().toImage(), beforeAllegiance);
@@ -9258,7 +9379,6 @@ class UiTests : public QObject {
             pages->setCurrentIndex(0);
 
             auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
-            auto apply = editor.findChild<QPushButton *>("worldSiteApply");
             QCOMPARE(project.world()->siteCount(64), 6);
             const auto original = project.world()->scenario(64).sites;
             QCOMPARE(original,
@@ -9268,7 +9388,6 @@ class UiTests : public QObject {
                 QVERIFY(selectMapObject(editor, MapObject::Site, row));
                 const int target = row == 2 ? 2 : 1;
                 allegiance->setCurrentIndex(allegiance->findData(target));
-                apply->click();
                 put16(expected, 3 + row * 4, target == 1 ? 0x2012 : 4);
                 QCOMPARE(project.world()->scenario(64).sites, expected);
             }
@@ -9348,7 +9467,6 @@ class UiTests : public QObject {
             const int key = missions->currentItem()->data(Qt::UserRole).toInt();
             for (int row = 0; row < project.world()->siteCount(key); ++row) {
                 QVERIFY(selectMapObject(editor, MapObject::Site, row));
-                button("worldSiteApply")->click();
                 QCOMPARE(project.world()->json(), base);
             }
             for (int row = 0; row < ScenarioWorld::treasureCount(project.world()->scenario(key).treasures); ++row) {
@@ -9365,34 +9483,34 @@ class UiTests : public QObject {
         const int id = u16(project.world()->scenario(52).sites, 1);
         const auto beforeShop = project.manifest();
         const int shopCount = project.shops()->size();
-        button("worldShopAdd")->click();
-        QCOMPARE(project.shops()->size(), shopCount + 1);
-        QCOMPARE(u8(project.world()->town(id), 27), quint8(shopCount));
-        button("worldShopRemove")->click();
-        QCOMPARE(u8(project.world()->town(id), 27), quint8(0));
+        const int assigned = u8(project.world()->town(id), 27) == 1 ? 2 : 1;
+        spin("worldShop")->setValue(assigned);
+        QCOMPARE(project.shops()->size(), shopCount);
+        QCOMPARE(u8(project.world()->town(id), 27), assigned);
+        editor.findChild<QCheckBox *>("worldFacility0")->setChecked(false);
+        QCOMPARE(u8(project.world()->town(id), 27), 0);
         undo.undo();
-        QCOMPARE(u8(project.world()->town(id), 27), quint8(shopCount));
+        QCOMPARE(u8(project.world()->town(id), 27), assigned);
         undo.undo();
         QCOMPARE(project.manifest(), beforeShop);
         auto den = editor.findChild<QCheckBox *>("worldFacility1");
         const auto oldFlags = u8(project.world()->town(id), 25);
         den->setChecked(!(oldFlags & 2));
-        button("worldSiteApply")->click();
         QCOMPARE(u8(project.world()->town(id), 25), quint8(oldFlags & 2 ? oldFlags & ~2 : (oldFlags & ~1) | 2));
         undo.undo();
         QCOMPARE(project.manifest(), beforeShop);
+        const int beforePopulation = undo.index();
         spin("worldPopulation")->setValue(4567);
         auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
         allegiance->setCurrentIndex(allegiance->findData(2));
-        button("worldSiteApply")->click();
         QCOMPARE(u16(project.world()->town(id), 22), quint16(4567));
         QCOMPARE(u16(project.world()->scenario(52).sites, 3), quint16(4));
-        undo.undo();
+        const int afterAllegiance = undo.index();
+        undo.setIndex(beforePopulation);
         QCOMPARE(project.world()->json(), base);
-        undo.redo();
+        undo.setIndex(afterAllegiance);
         auto objective = editor.findChild<QCheckBox *>("worldObjective");
         objective->setChecked(true);
-        button("worldSiteApply")->click();
         QCOMPARE(u8(project.world()->town(id), 24), quint8(255));
         QVERIFY(!spin("worldMorale")->isEnabled());
         editor.grab().save("scenario-sites.png");

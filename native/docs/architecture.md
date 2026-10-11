@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Automatic site edits (2026-10-10)
+
+`ScenarioWorldEditor` commits each site field independently through the existing
+validated world Undo command. Programmatic refreshes are guarded, and unchanged
+name text is not reset while typing. Number fields disable keyboard tracking so
+intermediate digits do not commit. Invalid edits restore the project value and
+show the validation error. Name, population, morale/objective, stronghold type,
+facilities and scenario allegiance no longer require Apply.
+
+Shop toggles use the existing project-level shop command: creating stock and
+assigning it is one Undo action. Turning Shop off clears its flag and inventory
+reference; the inspector remembers the site's last inventory for toggling back
+on, forgetting removed inventories during Undo before their IDs can be reused.
+Choosing an existing
+Shop ID enables Shop; None removes it. Enabling Witch's den clears Shop and its
+reference. Other capability bits stay intact. The two shop buttons are removed.
+Treasure editing and explicit project save/ROM export are unchanged.
+
+This supersedes the Apply-based inspector behavior recorded below and in the
+parent `docs/Plans/task-logs/map-label-facilities-20261010.md` completed task note.
+
+`ui_tests scenarioSiteAutoApply scenarioFacilityExport scenarioWorldEditing`
+passed (73,544 ms): automatic field edits, invalid-value rollback, name cursor,
+stock creation/reuse, Undo/Redo, browsing all scenario sites without mutation,
+project roundtrip, source-built ROM export/reopen/checksum and six original
+initializer/menu instruction cases. The sidebar screenshot was inspected.
+Those instruction cases use service doubles, not a full-game replay.
+The final `ui_tests scenarioSiteAutoApply` passed (6801 ms), additionally checking
+typed-number commit when clicking another site and unrelated inventory-ID reuse
+after Undo. Its first added fixture retained an earlier valid inventory choice;
+the ID-reuse case now starts before that independent choice.
+
 ## Map labels and town facility selection (2026-10-10)
 
 MapCanvas retains the visible label rectangles after collision layout and uses

@@ -21,6 +21,9 @@ class ScenarioWorldEditor : public QWidget {
     void showTreasure();
     void fillItems();
     int siteId() const;
+    void editSite(const QString &, const std::function<void(QByteArray &)> &);
+    void setFacility(int bit, bool enabled);
+    void setShop(int id);
     void change(const QString &label, const std::function<void(ScenarioWorld &)> &edit);
     Project *project_;
     QUndoStack *undo_;
@@ -34,6 +37,7 @@ class ScenarioWorldEditor : public QWidget {
     QComboBox *type_, *allegiance_, *table_, *item_;
     QCheckBox *objective_;
     QVector<QCheckBox *> facilities_;
+    QMap<int, int> rememberedShops_;
     QLabel *notice_, *siteHelp_, *flag_;
 };
 } // namespace lordly

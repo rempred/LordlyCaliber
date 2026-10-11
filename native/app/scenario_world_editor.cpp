@@ -96,7 +96,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
         if (facilities_.size() == 2)
             check->setToolTip(
                 "Check to add a witch’s den, or clear to remove it. "
-                "Apply site changes saves this facility for every scenario using the stronghold.");
+                "Changes apply to every scenario using the stronghold.");
         if (facilities_.size() > 2) {
             check->setText(facilities_.size() == 3 ? "Treasure flag"
                                                    : "Mine flag");
@@ -109,39 +109,15 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     }
     form->addRow("Facilities", facilityRow);
     auto facilityHelp = new QLabel(
-        "A town can show Shop or Witch’s den, not both. Apply site changes, export the ROM, "
-        "then enter the mission from the world map. Resuming a suspend save keeps its old facilities.");
+        "Changes apply automatically. Shop and Witch’s den replace each other. "
+        "Export the ROM and enter the mission from the world map to test them.");
     facilityHelp->setWordWrap(true);
     form->addRow(facilityHelp);
     shop_ = spin("worldShop", project_->shops()->size() - 1);
     shop_->setSpecialValueText("None");
+    shop_->setToolTip("Choose an existing inventory, or None to remove the shop. "
+                      "Checking Shop creates an inventory when this site has none.");
     form->addRow("Shop ID", shop_);
-    auto shops = new QVBoxLayout;
-    auto createShop = new QPushButton("Create new shop here");
-    createShop->setObjectName("worldShopAdd");
-    auto removeShop = new QPushButton("Remove shop from site");
-    removeShop->setObjectName("worldShopRemove");
-    shops->addWidget(createShop);
-    shops->addWidget(removeShop);
-    form->addRow(shops);
-    connect(createShop, &QPushButton::clicked, this, [this] {
-        if (siteId() < 0)
-            return;
-        try {
-            addShop(project_, undo_, siteId());
-        } catch (const Error &e) {
-            notice_->setText(QString::fromUtf8(e.what()));
-        }
-    });
-    connect(removeShop, &QPushButton::clicked, this, [this] {
-        if (siteId() < 0)
-            return;
-        try {
-            assignShop(project_, undo_, siteId(), 0);
-        } catch (const Error &e) {
-            notice_->setText(QString::fromUtf8(e.what()));
-        }
-    });
     allegiance_ = new QComboBox;
     allegiance_->setObjectName("worldAllegiance");
     allegiance_->addItem("Keep loaded value", -1);
@@ -149,9 +125,6 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     allegiance_->addItem("Allied", 1);
     allegiance_->addItem("Enemy", 2);
     form->addRow("Initial allegiance", allegiance_);
-    auto applySite = new QPushButton("Apply site changes");
-    applySite->setObjectName("worldSiteApply");
-    siteLayout->addWidget(applySite);
     auto restoreSite = new QPushButton("Restore loaded site metadata");
     restoreSite->setObjectName("worldSiteRestore");
     siteLayout->addWidget(restoreSite);
@@ -200,46 +173,47 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     notice_->setWordWrap(true);
     notice_->setObjectName("worldNotice");
     layout->addWidget(notice_);
-    for (int i = 0; i < 2; ++i)
-        connect(facilities_[i], &QCheckBox::toggled, this, [this, i](bool on) {
-            if (loading_) return;
-            if (on) facilities_[1 - i]->setChecked(false);
-            siteHelp_->setText("Unapplied facility changes — press Apply site changes, then export the ROM.");
+    for (int i = 0; i < facilities_.size(); ++i)
+        connect(facilities_[i], &QCheckBox::toggled, this,
+                [this, i](bool on) { setFacility(i, on); });
+    // Commit only the changed field. Refresh and Undo must never save other
+    // controls as accidental edits or reset a name while it is being typed.
+    connect(name_, &QLineEdit::textEdited, this, [this](const QString &name) {
+        editSite("Rename site", [name](QByteArray &record) {
+            const auto bytes = name.toLatin1();
+            if (QString::fromLatin1(bytes) != name)
+                throw Error("Site names require printable ASCII");
+            record.replace(1, 20, bytes + QByteArray(20 - bytes.size(), 0));
         });
+    });
+    for (auto input : {population_, morale_, shop_}) input->setKeyboardTracking(false);
+    connect(population_, &QSpinBox::valueChanged, this, [this](int n) {
+        editSite("Change site population", [n](QByteArray &r) { put16(r, 22, quint16(n)); });
+    });
+    connect(morale_, &QSpinBox::valueChanged, this, [this](int n) {
+        if (!objective_->isChecked())
+            editSite("Change site morale", [n](QByteArray &r) { put8(r, 24, quint8(n)); });
+    });
+    connect(objective_, &QCheckBox::toggled, this, [this](bool on) {
+        const int n = on ? 255 : std::clamp(morale_->value(), 0, 127);
+        editSite("Change site objective", [n](QByteArray &r) { put8(r, 24, quint8(n)); });
+    });
+    connect(type_, &QComboBox::currentIndexChanged, this, [this] {
+        const int type = type_->currentData().toInt();
+        editSite("Change stronghold type", [type](QByteArray &r) { put8(r, 26, quint8(type)); });
+    });
+    connect(shop_, &QSpinBox::valueChanged, this, &ScenarioWorldEditor::setShop);
+    connect(allegiance_, &QComboBox::currentIndexChanged, this, [this] {
+        if (loading_ || siteId() < 0 || allegiance_->currentData().toInt() < 0) return;
+        const int value = allegiance_->currentData().toInt(), key = key_, row = siteRow_;
+        change("Change site allegiance", [key, row, value](ScenarioWorld &next) {
+            next.setSiteAllegiance(key, row, value);
+        });
+        showSite();
+    });
     connect(table_, &QComboBox::currentIndexChanged, this, [this] {
         if (!loading_)
             fillItems();
-    });
-    connect(objective_, &QCheckBox::toggled, this,
-            [this](bool value) { morale_->setEnabled(!value); });
-    connect(applySite, &QPushButton::clicked, this, [this] {
-        if (siteId() < 0)
-            return;
-        change("Edit scenario site", [this](ScenarioWorld &next) {
-            const int id = siteId();
-            auto record = next.town(id);
-            if (name_->text() != next.townName(id)) {
-                const auto bytes = name_->text().toLatin1();
-                if (QString::fromLatin1(bytes) != name_->text())
-                    throw Error("Site names require printable ASCII");
-                record.replace(1, 20, bytes + QByteArray(20 - bytes.size(), 0));
-            }
-            put16(record, 22, quint16(population_->value()));
-            put8(record, 24, quint8(objective_->isChecked() ? 255 : morale_->value()));
-            int caps = u8(record, 25) & 0xf0;
-            for (int i = 0; i < 4; ++i)
-                if (facilities_[i]->isChecked())
-                    caps |= 1 << i;
-            put8(record, 25, quint8(caps));
-            if ((caps & 1) && !shop_->value())
-                throw Error("This shop needs an inventory. Choose a Shop ID or use Create new shop here.");
-            put8(record, 26, quint8(type_->currentData().toInt()));
-            put8(record, 27, quint8(shop_->value()));
-            next.setTown(id, record);
-            if (allegiance_->currentData().toInt() >= 0)
-                next.setSiteAllegiance(key_, siteRow_,
-                                       allegiance_->currentData().toInt());
-        });
     });
     connect(restoreSite, &QPushButton::clicked, this, [this] {
         if (siteId() >= 0)
@@ -275,6 +249,12 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     });
 }
 void ScenarioWorldEditor::refresh(int key) {
+    // Undo can remove a newly created shop. Its ID may then be reused by a
+    // different inventory, so stop remembering it as soon as it disappears.
+    for (auto it = rememberedShops_.begin(); it != rememberedShops_.end();) {
+        if (it.value() >= project_->shops()->size()) it = rememberedShops_.erase(it);
+        else ++it;
+    }
     if (key != key_) siteRow_ = treasureRow_ = -1;
     key_ = key;
     setEnabled(key_ > 0);
@@ -299,7 +279,8 @@ void ScenarioWorldEditor::showSite() {
     loading_ = true;
     const int id = siteId();
     const auto record = project_->world()->town(id);
-    name_->setText(project_->world()->townName(id));
+    const auto name = project_->world()->townName(id);
+    if (name_->text() != name) name_->setText(name);
     population_->setValue(u16(record, 22));
     morale_->setValue(u8(record, 24) == 255 ? 50 : u8(record, 24));
     objective_->setChecked(u8(record, 24) == 255);
@@ -307,6 +288,7 @@ void ScenarioWorldEditor::showSite() {
     select(type_, u8(record, 26));
     shop_->setMaximum(std::max(project_->shops()->size() - 1, int(u8(record, 27))));
     shop_->setValue(u8(record, 27));
+    if ((u8(record, 25) & 1) && u8(record, 27)) rememberedShops_[id] = u8(record, 27);
     for (int i = 0; i < 4; ++i)
         facilities_[i]->setChecked(u8(record, 25) & (1 << i));
     const int raw = u16(project_->world()->scenario(key_).sites, 3 + siteRow_ * 4);
@@ -320,9 +302,57 @@ void ScenarioWorldEditor::showSite() {
             .arg(raw, 4, 16, QChar('0')));
     allegiance_->setCurrentIndex(0);
     siteHelp_->setText(
-        QString("Site %1 metadata is shared across scenarios. Initial allegiance applies only to this scenario.")
+        QString("Changes apply automatically and can be undone. Site %1 metadata is shared across scenarios; allegiance changes only this scenario.")
             .arg(id));
     loading_ = false;
+}
+void ScenarioWorldEditor::editSite(const QString &label,
+                                  const std::function<void(QByteArray &)> &edit) {
+    if (loading_ || siteId() < 0) return;
+    const int id = siteId();
+    change(label, [id, &edit](ScenarioWorld &next) {
+        auto record = next.town(id);
+        edit(record);
+        next.setTown(id, record);
+    });
+    showSite(); // Roll invalid input back to the unchanged project, too.
+}
+void ScenarioWorldEditor::setShop(int id) {
+    if (loading_ || siteId() < 0) return;
+    try {
+        assignShop(project_, undo_, siteId(), id);
+        notice_->clear();
+    } catch (const Error &e) {
+        showSite();
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
+void ScenarioWorldEditor::setFacility(int bit, bool enabled) {
+    if (loading_ || siteId() < 0) return;
+    if (bit == 0) {
+        if (!enabled) { setShop(0); return; }
+        const int id = siteId();
+        int shop = u8(project_->world()->town(id), 27);
+        if (!shop) shop = rememberedShops_.value(id);
+        if (shop > 0 && shop < project_->shops()->size()) { setShop(shop); return; }
+        try {
+            addShop(project_, undo_, id);
+            notice_->clear();
+        } catch (const Error &e) {
+            showSite();
+            notice_->setText(QString::fromUtf8(e.what()));
+        }
+        return;
+    }
+    editSite("Change site facility", [bit, enabled](QByteArray &record) {
+        int flags = u8(record, 25);
+        flags = enabled ? flags | (1 << bit) : flags & ~(1 << bit);
+        if (bit == 1 && enabled) {
+            flags &= ~1;
+            put8(record, 27, 0);
+        }
+        put8(record, 25, quint8(flags));
+    });
 }
 void ScenarioWorldEditor::fillItems() {
     item_->clear();

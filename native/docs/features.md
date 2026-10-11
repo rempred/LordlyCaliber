@@ -5,6 +5,14 @@ Encounters and Art. Its shared scenario picker includes the search field and
 retains selection across Map, Squads and Routes. Map opens first. Base-level controls live
 inside Squads; map-to-field navigation also updates the selected section tab.
 
+Site inspector fields apply directly to the project with Undo/Redo. Checkboxes
+and choices update immediately; typed numbers commit on Enter or leaving the
+field. Checking Shop creates stocked inventory when needed, or reuses that site's
+inventory after toggling it off. Unchecking Shop or choosing Shop ID None removes
+the facility; another Shop ID attaches existing inventory. Shop and Witch's den
+replace each other. The separate Apply, create-shop and remove-shop buttons are
+gone. ROM export is still explicit; treasure retains its Apply action.
+
 Map renders the ROM's actual battlefield geometry, textures, roads and buildings
 in a top-down daylight overview. Town allegiance edits and Undo refresh building
 colours. Terrain and road brushes update native surface geometry plus movement
