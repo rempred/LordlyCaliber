@@ -216,7 +216,7 @@ std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *parent, con
     const auto convert = [&](int index) {
         const QSize canvas(width.value(), height.value());
         if (quint64(canvas.width()) * canvas.height() * asset.frames.size() > SpriteLibrary::pixelLimit)
-            throw Error("Prepared sequence exceeds the sprite library pixel budget");
+            throw Error("Prepared sequence exceeds the Art Library pixel budget");
         double sx = double(canvas.width()) / asset.size.width(),
                sy = double(canvas.height()) / asset.size.height();
         if (fit.currentIndex() != 3)

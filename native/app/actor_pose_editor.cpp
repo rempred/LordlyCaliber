@@ -330,7 +330,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
             if (!librarySink_) return;
             stop();
             librarySink_(poseAsset());
-            status_->setText("Copied pose frames to Sprite studio.");
+            status_->setText("Copied pose frames to Art Library.");
         } catch (const std::exception &e) {
             status_->setText(QString::fromUtf8(e.what()));
         }

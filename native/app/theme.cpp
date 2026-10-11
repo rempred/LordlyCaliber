@@ -114,16 +114,18 @@ QTabBar#workspaceNavigation {
     font-size: 10pt; font-weight: bold;
 }
 QTabBar#workspaceNavigation::tab {
-    background: transparent; color: #ecd8a8;
-    border: none; border-top: 2px solid transparent; border-bottom: 2px solid transparent;
+    background: #50371e; color: #f2dfb5;
+    border: 1px solid #94703b; border-bottom: 3px solid #684b28;
+    border-top-left-radius: 5px; border-top-right-radius: 5px;
+    margin: 4px 3px 0px 0px;
     padding: 9px 12px;
 }
 QTabBar#workspaceNavigation::tab:hover {
-    background: #5a3a1c; color: #f3cc78;
+    background: #694a27; color: #fff1cb; border-color: #d0a85c;
 }
 QTabBar#workspaceNavigation::tab:selected {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #982f25, stop:1 #70221c);
-    color: #fff1cb; border-top-color: #f3cc78; border-bottom-color: #e0b35a;
+    color: #fff1cb; border-color: #f3cc78; border-bottom-color: #f3cc78;
 }
 QTabBar#workspaceNavigation::tab:disabled { color: #b09a70; }
 QPushButton, QToolButton {

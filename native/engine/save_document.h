@@ -105,6 +105,7 @@ class SaveDocument {
     }
 
   private:
+    friend class ScenarioSeeder;
     enum class Format { Battery, Ram, State, Rzip };
     struct Cell {
         int address, bytes, bits, bit;

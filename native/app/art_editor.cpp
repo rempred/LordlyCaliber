@@ -47,7 +47,7 @@ class IconCommand final : public QUndoCommand {
 class LibraryCopyCommand final : public QUndoCommand {
   public:
     LibraryCopyCommand(Project *project, SpriteLibrary after)
-        : QUndoCommand("Copy game artwork to sprite library"), project_(project),
+        : QUndoCommand("Copy game artwork to Art Library"), project_(project),
           before_(project->sprites()), after_(std::move(after)) {}
     void undo() override {
         project_->setSprites(before_);
@@ -109,7 +109,7 @@ ArtEditor::ArtEditor(Project *project, QUndoStack *undo, std::function<void()> c
         if (!path.isEmpty())
             exportImage(path);
     });
-    action("Copy to sprite library", "artCopyToLibrary", [this] { copyToLibrary(); });
+    action("Copy to Art Library", "artCopyToLibrary", [this] { copyToLibrary(); });
     action("Restore loaded icon", "artRestore", [this] {
         auto candidate = *project_->iconArtwork();
         candidate.restore(selected_);
@@ -200,7 +200,7 @@ ArtEditor::ArtEditor(Project *project, QUndoStack *undo, std::function<void()> c
     colors->addStretch();
     auto libraryRow = new QHBoxLayout;
     work->addLayout(libraryRow);
-    libraryRow->addWidget(new QLabel("Sprite library"));
+    libraryRow->addWidget(new QLabel("Art Library"));
     library_ = new QComboBox;
     library_->setObjectName("artLibraryAsset");
     library_->setMinimumContentsLength(20);

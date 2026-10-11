@@ -97,7 +97,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
         if (!path.isEmpty())
             exportImage(path);
     });
-    action("Copy to sprite library", "armyCopyToLibrary", [this] { copyToLibrary(); });
+    action("Copy to Art Library", "armyCopyToLibrary", [this] { copyToLibrary(); });
     restoreSprite_ = action("Restore loaded sprite", "armyRestore", [this] {
         auto next = *project_->armyArtwork();
         if (class_ >= 0 && next.routes().contains(class_)) next.restoreRoute(class_);
@@ -338,7 +338,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     connect(assign, &QPushButton::clicked, this, [this] {
         guarded([this] {
             if (library_->currentIndex() < 0)
-                throw Error("Choose a sprite library image");
+                throw Error("Choose a Art Library image");
             prepareImage(project_->sprites()
                              .asset(library_->currentData().toString())
                              .composite(frame_->value() - 1));

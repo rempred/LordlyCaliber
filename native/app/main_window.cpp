@@ -18,6 +18,7 @@
 #include "app/sprite_editor.h"
 #include "app/text_workspace.h"
 #include "app/tools_editor.h"
+#include "app/testing_editor.h"
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
 #include <QAbstractSpinBox>
@@ -238,14 +239,21 @@ void MainWindow::installProject(Project project) {
     if (project_->scenarios())
         workspaces_->addTab(new ScenarioEditor(project_.get(), undo_, [this] { updateStatus(); }),
                             "Scenarios");
-    if (project_->rom().revision() == 0)
-        workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
-                                               [this] { updateStatus(); }),
-                            "Cutscenes");
+    if (project_->rom().revision() == 0) {
+        const int tab =
+            workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
+                                                   [this] { updateStatus(); }),
+                                "Cutscenes");
+        auto badge = new QLabel("W.I.P");
+        badge->setObjectName("cutsceneWipBadge");
+        badge->setStyleSheet("QLabel { background: transparent; color: #ff9990; border: none; "
+                             "padding: 0; font-size: 9pt; font-weight: bold; }");
+        badge->setAttribute(Qt::WA_TransparentForMouseEvents);
+        workspaces_->tabBar()->setTabButton(tab, QTabBar::RightSide, badge);
+        workspaces_->setTabToolTip(tab, "Cutscenes — work in progress");
+    }
     workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Tools");
-    workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Sprites");
     if (project_->rom().revision() == 0) {
         auto artwork = new QTabWidget;
         artwork->setObjectName("artWorkspace");
@@ -274,7 +282,7 @@ void MainWindow::installProject(Project project) {
         connect(artwork, &QTabWidget::currentChanged, advancedTool, [artwork, advanced, advancedTool](int index) {
             advancedTool->setVisible(artwork->widget(index) == advanced);
         });
-        workspaces_->addTab(artwork, "Art");
+        workspaces_->addTab(artwork, "Art and Animation");
     }
     if (project_->rom().revision() == 0) {
         auto save = new SaveEditor(project_.get());
@@ -285,7 +293,19 @@ void MainWindow::installProject(Project project) {
             cutscenes->setSaveProvider([save]() -> const SaveDocument * {
                 return save->document() ? &*save->document() : nullptr;
             });
+        auto testing = new TestingEditor(project_->rom().sourcePath());
+        workspaces_->addTab(testing, "Testing");
+        connect(testing, &TestingEditor::editDefaultArmy, this,
+                [this, save, testing](const QByteArray &bytes) {
+                    if (save->editDefaultArmy(bytes, [this, testing](const QByteArray &army) {
+                            testing->setDefaultArmy(army);
+                            workspaces_->setCurrentWidget(testing);
+                        }))
+                        workspaces_->setCurrentWidget(save);
+                });
     }
+    workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Art Library");
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {
@@ -370,7 +390,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                                       "New class name\nStarts with 1 HP and 1 in each base stat, "
                                       "no equipment, attacks or family."
                                       "\nKnight artwork and animations are assigned initially; "
-                                      "change them in Sprite studio.",
+                                      "change them in Art Library.",
                                       QLineEdit::Normal, "New class", &accepted);
             if (!accepted)
                 return;

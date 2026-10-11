@@ -106,7 +106,7 @@ CombatEditor::CombatEditor(Project *project, QUndoStack *undo, std::function<voi
         if (!path.isEmpty())
             exportImage(path);
     });
-    action("Copy to sprite library", "combatCopyToLibrary", [this] { copyToLibrary(); });
+    action("Copy to Art Library", "combatCopyToLibrary", [this] { copyToLibrary(); });
     action("Restore loaded child", "combatRestore", [this] {
         auto next = *project_->combatArtwork();
         next.restore(selected_, child_);
@@ -359,7 +359,7 @@ CombatEditor::CombatEditor(Project *project, QUndoStack *undo, std::function<voi
     connect(assign, &QPushButton::clicked, this, [this] {
         guarded([this] {
             if (library_->currentIndex() < 0)
-                throw Error("Choose a sprite library image");
+                throw Error("Choose a Art Library image");
             prepareImage(project_->sprites()
                              .asset(library_->currentData().toString())
                              .composite(libraryFrame_->value() - 1));

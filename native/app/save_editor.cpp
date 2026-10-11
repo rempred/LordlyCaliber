@@ -198,6 +198,35 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
     actions->addWidget(open);
     actions->addWidget(export_);
     actions->addWidget(restore_);
+    defaultArmy_ = new QPushButton("Use as default army");
+    defaultArmy_->setObjectName("saveDefaultArmy");
+    defaultArmy_->setToolTip("Save this army for Testing, then return to the mission list. Story "
+                             "progress and loose inventory are supplied by the seeder.");
+    defaultArmy_->hide();
+    actions->addWidget(defaultArmy_);
+    connect(defaultArmy_, &QPushButton::clicked, this, [this] {
+        if (!defaultArmySink_ || !document_)
+            return;
+        try {
+            if (pendingUnitEdits_)
+                throw Error("Apply or discard pending squad changes first");
+            auto prepared = *document_;
+            if (prepared.selectedSlot() != 0)
+                throw Error("Edit normal slot 1 for the default army");
+            const auto changes = prepared.planArmyRefresh(*project_);
+            if (!changes.spans.isEmpty())
+                prepared.apply(changes, true);
+            prepared.validateEquipmentEdits(int(project_->records(Table::Items).size()));
+            prepared.validateClassEdits(int(project_->records(Table::Classes).size()));
+            prepared.validateUnitSupplyEdits(*project_);
+            defaultArmySink_(prepared.serialize());
+            if (!changes.spans.isEmpty())
+                undo_->push(new SaveCommand(this, changes, "refresh default army"));
+            undo_->setClean();
+        } catch (const std::exception &e) {
+            error_->setText(QString::fromUtf8(e.what()));
+        }
+    });
     actions->addStretch();
     undoButton_ = new QPushButton("Undo");
     redoButton_ = new QPushButton("Redo");
@@ -370,12 +399,24 @@ void SaveEditor::loadBytes(const QByteArray &bytes, const QString &sourcePath) {
     auto candidate =
         SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
     pendingUnitEdits_ = false; // The caller has already handled replacing the loaded document.
+    defaultArmySink_ = {};
+    defaultArmy_->hide();
     undo_->clear();
     document_ = std::move(candidate);
     sourcePath_ = sourcePath;
     error_->clear();
     refresh();
     emit changed();
+}
+bool SaveEditor::editDefaultArmy(const QByteArray &bytes, std::function<void(const QByteArray &)> sink) {
+    if (!confirmDiscard()) return false;
+    loadBytes(bytes);
+    document_->selectSlot(0);
+    defaultArmySink_ = std::move(sink);
+    defaultArmy_->show();
+    error_->setText("Editing Testing's default army. Click Use as default army when finished.");
+    tables_->setCurrentIndex(0);
+    return true;
 }
 void SaveEditor::exportFile(const QString &path) {
     if (!document_)

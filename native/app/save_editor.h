@@ -4,6 +4,7 @@
 #include <QUndoStack>
 #include <QWidget>
 #include <optional>
+#include <functional>
 class QLabel;
 class QComboBox;
 class QTabWidget;
@@ -15,6 +16,7 @@ class SaveEditor : public QWidget {
     explicit SaveEditor(Project *, QWidget *parent = nullptr);
     ~SaveEditor() override;
     void loadBytes(const QByteArray &, const QString &sourcePath = {});
+    bool editDefaultArmy(const QByteArray &, std::function<void(const QByteArray &)>);
     void exportFile(const QString &);
     const std::optional<SaveDocument> &document() const {
         return document_;
@@ -70,6 +72,8 @@ class SaveEditor : public QWidget {
     QLabel *status_, *error_;
     QTabWidget *tables_;
     QPushButton *export_, *restore_, *undoButton_, *redoButton_;
+    QPushButton *defaultArmy_;
+    std::function<void(const QByteArray &)> defaultArmySink_;
     bool pendingUnitEdits_ = false;
 };
 } // namespace lordly

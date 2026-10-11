@@ -228,7 +228,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         actorInspector->setSpriteLibrary([project, undo, changed](SpriteAsset asset) {
             auto library = project->sprites();
             library.replace(asset);
-            undo->push(new SpriteLibraryCommand(project, "Copy actor pose to sprite library", std::move(library)));
+            undo->push(new SpriteLibraryCommand(project, "Copy actor pose to Art Library", std::move(library)));
             if (changed) changed();
         });
         auto artwork = [project] {

@@ -27,6 +27,8 @@
 #include "app/scene_preview.h"
 #include "app/shop_editor.h"
 #include "app/sprite_editor.h"
+#include "app/rom_art_import.h"
+#include "app/testing_editor.h"
 #include "app/text_workspace.h"
 #include "app/tools_editor.h"
 #include "app/transform_preview.h"
@@ -74,6 +76,9 @@
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QTimer>
+#include <QTreeWidget>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QUndoGroup>
 #include <QWheelEvent>
 #include <QtTest>
@@ -94,6 +99,121 @@ static bool selectMapObject(QWidget &editor, MapObject kind, int row) {
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void artLibraryRomImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            SpriteEditor editor(&project, &undo, [] {});
+            editor.show();
+            bool selected = false;
+            QTimer::singleShot(100, &editor, [&] {
+                auto dialog = editor.findChild<RomArtImport *>();
+                if (!dialog)
+                    return;
+                auto tabs = dialog->findChild<QTabWidget *>();
+                tabs->setCurrentIndex(1);
+                auto list = dialog->findChild<QListWidget *>("romArtList");
+                list->setCurrentRow(0);
+                auto button = dialog->findChild<QPushButton *>("romArtImportSelected");
+                selected = button && button->isEnabled();
+                if (selected)
+                    button->click();
+                else
+                    dialog->reject();
+            });
+            editor.findChild<QPushButton *>("spriteImportRom")->click();
+            QVERIFY(selected);
+            QCOMPARE(project.sprites().assets().size(), 1);
+            const auto asset = project.sprites().assets().first();
+            QCOMPARE(asset.frames.first().layers.first().image,
+                     IconArtwork::load(project.rom()).image(1));
+            undo.undo();
+            QVERIFY(project.sprites().assets().isEmpty());
+            undo.redo();
+            QCOMPARE(project.sprites().asset(asset.id), asset);
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(project.manifest());
+            QCOMPARE(reopened.sprites().asset(asset.id), asset);
+            RomArtImport picker(project.rom(), [](SpriteAsset) {});
+            picker.show();
+            auto categories = picker.findChild<QComboBox *>("romArtCategory");
+            auto list = picker.findChild<QListWidget *>("romArtList");
+            for (int kind : {1, 2, 3, 4}) {
+                categories->setCurrentIndex(kind);
+                QVERIFY(list->count() > 0);
+                list->setCurrentRow(0);
+                QVERIFY(picker.findChild<QPushButton *>("romArtImportSelected")->isEnabled());
+            }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void testingDefaultArmy() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QStandardPaths::setTestModeEnabled(true);
+        const auto oldName = QCoreApplication::applicationName();
+        QCoreApplication::setApplicationName("Testing-ui-" +
+                                             QUuid::createUuid().toString(QUuid::Id128));
+        QString defaultPath;
+        const auto cleanup = qScopeGuard([&] {
+            if (!defaultPath.isEmpty())
+                QFile::remove(defaultPath);
+            QSettings().clear();
+            QCoreApplication::setApplicationName(oldName);
+            QStandardPaths::setTestModeEnabled(false);
+        });
+        try {
+            MainWindow window;
+            window.resize(1500, 950);
+            window.show();
+            QTimer messages;
+            messages.setInterval(100);
+            connect(&messages, &QTimer::timeout, &window, [&] {
+                for (auto widget : QApplication::topLevelWidgets())
+                    if (auto box = qobject_cast<QMessageBox *>(widget)) {
+                        qWarning() << "Unexpected test dialog:" << box->text();
+                        box->reject();
+                    }
+            });
+            messages.start();
+            window.loadRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<TestingEditor *>() != nullptr, 30000);
+            auto seeder = window.findChild<TestingEditor *>();
+            auto save = window.findChild<SaveEditor *>();
+            auto tabs = window.findChild<QTabWidget *>();
+            QVERIFY(save);
+            QVERIFY(tabs);
+            QCOMPARE(tabs->tabText(tabs->count() - 1), QString("Art Library"));
+            QVERIFY(window.findChild<QLabel *>("cutsceneWipBadge"));
+            tabs->setCurrentWidget(seeder);
+            QTRY_VERIFY_WITH_TIMEOUT(seeder->ready(), 30000);
+            QCOMPARE(seeder->findChild<QTreeWidget *>("seederMissions")->topLevelItemCount(), 58);
+            defaultPath = seeder->defaultArmyPath();
+            seeder->findChild<QPushButton *>("seederEditArmy")->click();
+            QCOMPARE(tabs->currentWidget(), save);
+            QVERIFY(save->document());
+            QVERIFY(save->edit(SaveTable::Characters, 1, "luck", 33));
+            save->findChild<QPushButton *>("saveDefaultArmy")->click();
+            QCOMPARE(tabs->currentWidget(), seeder);
+            QFile f(defaultPath);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            auto army = SaveDocument::open(save->project()->rom(), f.readAll());
+            f.close();
+            QCOMPARE(army.value(SaveTable::Characters, 1, "luck").toInt(), 33);
+            seeder->findChild<QPushButton *>("seederEditArmy")->click();
+            QCOMPARE(save->document()->value(SaveTable::Characters, 1, "luck").toInt(), 33);
+            save->findChild<QPushButton *>("saveDefaultArmy")->click();
+            QTest::qWait(100);
+            QVERIFY(window.grab().save("testing.png"));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void inheritedSceneReplay_data() {
         QTest::addColumn<quint32>("key");
         QTest::addColumn<int>("mode");

@@ -1,5 +1,6 @@
 #include "engine/project.h"
 #include "engine/save_document.h"
+#include "engine/scenario_seeder.h"
 #include "game/classes/save_format.h"
 #include "game/army/soldier_reserve.h"
 #include "game/army/leader.h"
@@ -15,6 +16,129 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioSeederParity() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto refs = qEnvironmentVariable("LORDLY_SEED_REFERENCE");
+        if (path.isEmpty() || refs.isEmpty())
+            QSKIP("Private ROM and standalone reference saves required");
+        try {
+            const auto rom = Rom::open(path);
+            ScenarioSeeder seeder(rom);
+            QFile json(QDir(refs).filePath("reference.json"));
+            QVERIFY(json.open(QIODevice::ReadOnly));
+            const auto expected = QJsonDocument::fromJson(json.readAll()).array();
+            QCOMPARE(seeder.choices().size(), expected.size());
+            for (int i = 0; i < expected.size(); ++i) {
+                const auto ref = expected[i].toObject();
+                const auto &choice = seeder.choices()[i];
+                QCOMPARE(choice.route.node, ref["node"].toInt());
+                QCOMPARE(choice.route.event, ref["event"].toInt());
+                QCOMPARE(choice.chaos, ref["chaos"].toInt());
+                QFile file(QDir(refs).filePath(QString("seed-%1.sra").arg(i)));
+                QVERIFY(file.open(QIODevice::ReadOnly));
+                const auto raw = seeder.seed(i);
+                const auto expectedBytes = file.readAll();
+                // Python iterates a set of equipment IDs; native sorts IDs when
+                // filling free slots. Compare all decoded data after normalizing
+                // only inventory order, and compare the save-menu summary too.
+                auto normalizeInventory = [](QByteArray memory) {
+                    for (auto [at, count] : {qMakePair(0x196b00, 278), qMakePair(0x193ac0, 40)}) {
+                        QVector<QByteArray> rows;
+                        for (int j = 0; j < count; ++j)
+                            rows << memory.mid(at + j * 4, 4);
+                        std::sort(rows.begin(), rows.end());
+                        for (int j = 0; j < count; ++j)
+                            memory.replace(at + j * 4, 4, rows[j]);
+                    }
+                    return memory;
+                };
+                QCOMPARE(normalizeInventory(SaveDocument::open(rom, raw).memory()),
+                         normalizeInventory(SaveDocument::open(rom, expectedBytes).memory()));
+                QCOMPARE(raw.mid(0x14, 0x24), expectedBytes.mid(0x14, 0x24));
+                auto doc = SaveDocument::open(rom, raw);
+                doc.selectSlot(0);
+                QVERIFY(!doc.saveSlots()[2].valid);
+                QCOMPARE(int(u8(doc.memory(), 0x1936aa)), i == 0                     ? 7
+                                                          : choice.route.event == 57 ? 28
+                                                                                     : 6);
+                QCOMPARE(int(u8(doc.memory(), 0x193bf8 + 40)), 50);
+            }
+            auto donor = SaveDocument::open(rom, seeder.defaultArmyBytes());
+            donor.selectSlot(0);
+            donor.apply(donor.planEdit(SaveTable::Characters, 1, "luck", 37), true);
+            const auto personalized = seeder.seed(5, &donor);
+            auto doc = SaveDocument::open(rom, personalized);
+            QCOMPARE(doc.value(SaveTable::Characters, 1, "luck").toInt(), 37);
+            QCOMPARE(doc.memory().mid(0x193686, 32),
+                     SaveDocument::open(rom, seeder.seed(5)).memory().mid(0x193686, 32));
+            QCOMPARE(seeder.seed(5, &donor), personalized);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void scenarioSeederInstallation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            if (ScenarioSeeder::project64Running())
+                QSKIP("Leave the user's running emulator alone");
+            const auto rom = Rom::open(path);
+            ScenarioSeeder seeder(rom);
+            QTemporaryDir dir;
+            QVERIFY(dir.isValid());
+            const auto exe = dir.filePath("Project64.exe");
+            QFile fake(exe);
+            QVERIFY(fake.open(QIODevice::WriteOnly));
+            fake.close();
+            const auto dest = ScenarioSeeder::batteryPath(rom, exe);
+            QVERIFY(dest.startsWith(dir.path() + "/Save/"));
+            auto first = seeder.seed(0);
+            QVERIFY(ScenarioSeeder::install(rom, first, dest, true).isEmpty());
+            const auto second = seeder.seed(5);
+            auto backup = ScenarioSeeder::install(rom, second, dest, true);
+            QVERIFY(!backup.isEmpty());
+            QFile savedBackup(backup);
+            QVERIFY(savedBackup.open(QIODevice::ReadOnly));
+            QCOMPARE(savedBackup.readAll(), first);
+            QFile saved(dest);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            auto merged = saved.readAll();
+            saved.close();
+            QCOMPARE(merged.mid(0x1860, 0x1850), first.mid(0x1860, 0x1850));
+            auto loaded = SaveDocument::open(rom, merged);
+            loaded.selectSlot(0);
+            QCOMPARE(loaded.memory(), SaveDocument::open(rom, second).memory());
+            ScenarioSeeder::install(rom, first, dest, false);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), first);
+            saved.close();
+            QVERIFY_THROWS_EXCEPTION(
+                Error, ScenarioSeeder::install(rom, QByteArray(0x8000, 0), dest, false));
+            auto nativeOrder = first;
+            for (int i = 0; i < nativeOrder.size(); i += 4) {
+                std::swap(nativeOrder[i], nativeOrder[i+3]);
+                std::swap(nativeOrder[i+1], nativeOrder[i+2]);
+            }
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioSeeder::install(rom, nativeOrder, dest, false));
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), first);
+            saved.close();
+            QDir().mkpath(dir.filePath("Config"));
+            QFile cfg(dir.filePath("Config/Project64.cfg"));
+            QVERIFY(cfg.open(QIODevice::WriteOnly));
+            cfg.write("[Native Save Directory]\nUse Selected=1\nDirectory=My Saves\n");
+            cfg.close();
+            QVERIFY(ScenarioSeeder::batteryPath(rom, exe).startsWith(dir.path() + "/My Saves/"));
+            auto swapped = rom.bytes();
+            for (int i = 0; i < swapped.size(); i += 2)
+                std::swap(swapped[i], swapped[i + 1]);
+            QCOMPARE(ScenarioSeeder::batteryPath(Rom::fromBytes(swapped), exe),
+                     ScenarioSeeder::batteryPath(rom, exe));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void characterInitialization() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

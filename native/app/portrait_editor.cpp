@@ -49,7 +49,7 @@ class PortraitCommand final : public QUndoCommand {
 class LibraryCommand final : public QUndoCommand {
   public:
     LibraryCommand(Project *project, SpriteLibrary after)
-        : QUndoCommand("Copy portrait to sprite library"), project_(project),
+        : QUndoCommand("Copy portrait to Art Library"), project_(project),
           before_(project->sprites()), after_(std::move(after)) {}
     void undo() override {
         project_->setSprites(before_);
@@ -103,7 +103,7 @@ PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function
         if (!path.isEmpty())
             exportImage(path);
     });
-    action("Copy to sprite library", "portraitCopyToLibrary", [this] { copyToLibrary(); });
+    action("Copy to Art Library", "portraitCopyToLibrary", [this] { copyToLibrary(); });
     action("Restore loaded portrait", "portraitRestore", [this] {
         auto next = *project_->avatarArtwork();
         next.restore(selected_, selector_);
@@ -265,7 +265,7 @@ PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function
     connect(assign, &QPushButton::clicked, this, [this] {
         guarded([this] {
             if (library_->currentIndex() < 0)
-                throw Error("Choose an image from the sprite library");
+                throw Error("Choose an image from the Art Library");
             prepareImage(project_->sprites()
                              .asset(library_->currentData().toString())
                              .composite(frame_->value() - 1));

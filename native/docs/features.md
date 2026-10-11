@@ -578,3 +578,26 @@ animation routes, including new IDs. Source queries, secondary height and projec
 reset/countdown now execute; presentation reload ends at the gameplay boundary.
 Preserved and caller-selected battle stages use environment zero. Flat terrain and
 sample formations are stated approximations. Event predecessors remain separate work.
+
+## Testing and ROM artwork import (2026-10-10)
+
+The native **Testing** tab incorporates the standalone Scenario Seeder without
+Python or a Project64 debugger dependency. It keeps the ROM and emulator-folder
+pickers, wiki-ordered mission list, Use my army, Use my save game, and emulator
+launch. Generated world-entry saves retain normal story roads and use the game's
+normal entry initialization. Existing saves are backed up before atomic replacement;
+slot 2 survives generated seeds and stale suspend data is disabled. Full-save
+installation preserves the supplied file unchanged. Later routes retain the
+standalone tool's game-testing limits; this port adds file/readback qualification.
+
+**Edit Default Army** opens the Save tab; **Use as default army** stores that army
+in per-user app data and returns to Testing. Imported and edited army stats are
+not boosted again. Settings and edited defaults are not shipped with packages.
+
+Main tabs now include **Art and Animation** and a final **Art Library**. Distinct
+outlined buttons enclose the Cutscenes inline red W.I.P label. **Import from ROM**
+copies current-ROM or another ROM's actor poses, item icons, portraits, army
+sprites, and scene images into the reusable library. A bounded resource-key
+loader also accepts native sprite containers; resources needing external palettes
+must use their actor/pose selector. Imports retain pixels and independent pose
+layers with Undo and project persistence. Game assignments remain separate.

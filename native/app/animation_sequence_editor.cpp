@@ -112,7 +112,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     buttons->addWidget(remove_);
     auto copy = new QPushButton("Copy pose frames to library");
     copy->setObjectName("sequenceCopyToLibrary");
-    copy->setToolTip("Copy the authored frames, layers and timing into Sprite studio. Uses class "
+    copy->setToolTip("Copy the authored frames, layers and timing into Art Library. Uses class "
                     "equipment defaults. Loops, movement, material changes and sound remain in "
                     "the game sequence.");
     buttons->addWidget(copy);
@@ -123,12 +123,12 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     connect(importSequence, &QPushButton::clicked, this, [this] {
         guarded([this] {
             const auto assets = project_->sprites().assets();
-            if (assets.isEmpty()) throw Error("Add a sequence in Sprite studio first");
+            if (assets.isEmpty()) throw Error("Add a sequence in Art Library first");
             QStringList names;
             for (int i = 0; i < assets.size(); ++i)
                 names << QString("%1 · %2 (%3 frames)").arg(i + 1).arg(assets[i].name).arg(assets[i].frames.size());
             bool ok = false;
-            const auto choice = QInputDialog::getItem(this, "Import complete sequence", "Sprite library", names, 0, false, &ok);
+            const auto choice = QInputDialog::getItem(this, "Import complete sequence", "Art Library", names, 0, false, &ok);
             if (ok) this->importSequence(assets[names.indexOf(choice)]);
         });
     });
@@ -251,7 +251,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     connect(importLibrary, &QPushButton::clicked, this, [this] {
         guarded([this] {
             if (library_->currentIndex() < 0)
-                throw Error("Choose a sprite library image");
+                throw Error("Choose a Art Library image");
             prepareImage(project_->sprites()
                              .asset(library_->currentData().toString())
                              .composite(libraryFrame_->value() - 1));
@@ -593,7 +593,7 @@ void AnimationSequenceEditor::copyToLibrary() {
                                      0, {}, project_->combatArtwork()->previewEdits().value(art.descriptorKey()));
     auto library = project_->sprites();
     library.replace(asset);
-    undo_->push(new SpriteLibraryCommand(project_, "Copy pose frames to sprite library", std::move(library)));
+    undo_->push(new SpriteLibraryCommand(project_, "Copy pose frames to Art Library", std::move(library)));
     changed_();
     library_->setCurrentIndex(library_->findData(asset.id));
 }

@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/sprite_editor.h"
+#include "app/rom_art_import.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_color_dialog.h"
 #include <QApplication>
@@ -108,12 +109,18 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
     setObjectName("spriteEditor");
     auto outer = new QVBoxLayout(this);
     auto heading = new QLabel(
-        "<b>Sprite studio</b> · Create reusable artwork, frames and animation sequences");
+        "<b>Art Library</b> · Create reusable artwork, frames and animation sequences");
     outer->addWidget(heading);
     auto actions = new QHBoxLayout;
     outer->addLayout(actions);
     connect(button(actions, "New…", "spriteNew"), &QPushButton::clicked, this,
             &SpriteEditor::createAsset);
+    connect(button(actions, "Import from ROM…", "spriteImportRom"), &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            RomArtImport dialog(project_->rom(), [this](SpriteAsset asset) { addAsset(std::move(asset)); }, this);
+            dialog.exec();
+        });
+    });
     connect(button(actions, "Import…", "spriteImport"), &QPushButton::clicked, this, [this] {
         const auto path = QFileDialog::getOpenFileName(
             this, "Import sprite asset or image", {},
@@ -874,8 +881,8 @@ void SpriteEditor::chooseVideoExport(SpriteVideoFormat format) {
     QDialog dialog(this); dialog.setObjectName("spriteVideoOptions"); dialog.setWindowTitle("Export sprite animation");
     auto layout = new QVBoxLayout(&dialog);
     auto note = new QLabel(alpha ? "Animated PNG preserves exact colors and partial transparency. "
-                                  "Frame timing follows Sprite studio at 30 ticks per second."
-                                : "MP4 video uses the frame timing shown in Sprite studio at 30 ticks per "
+                                  "Frame timing follows Art Library at 30 ticks per second."
+                                : "MP4 video uses the frame timing shown in Art Library at 30 ticks per "
                           "second. Transparent pixels use the selected background. Video compression "
                           "can change colors slightly; sprite assets and PNG retain exact pixels.");
     note->setWordWrap(true); layout->addWidget(note);
