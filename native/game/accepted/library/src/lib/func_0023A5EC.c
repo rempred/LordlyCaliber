@@ -43,7 +43,7 @@ extern void memset_00023780(void *destination, s32 count);
 extern void func_0023A3A0(u8 *row, u32 kind, s32 adjustment,
                           u32 field_a, u32 field_b);
 extern void func_00048294(void);
-extern void func_0004813C(s32 value);
+extern s32 func_0004813C(s32 value);
 extern void func_000466f4(void);
 
 

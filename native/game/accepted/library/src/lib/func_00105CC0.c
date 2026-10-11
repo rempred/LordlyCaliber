@@ -78,7 +78,7 @@ M2C_UNK func_0012EA80(M2C_UNK, f32 *);
 s32 func_00131480(void *, M2C_UNK);
 M2C_UNK func_00147BDC(void *);
 M2C_UNK func_001957D0(s32, s32);
-M2C_UNK func_00195D9C(s32, M2C_UNK, M2C_UNK, M2C_UNK);
+void func_00195D9C(u8, u8, u8, u8);
 M2C_UNK func_800EA604(M2C_UNK, M2C_UNK);
 M2C_UNK func_801CC480(void *, f32, f32, f32, s32);
 M2C_UNK memset_00023780(M2C_UNK, s32);

@@ -372,6 +372,49 @@ QByteArray MapEdits::fineTerrain(int key) const {
     }
     return out;
 }
+QByteArray MapEdits::movementTerrain(int key) const {
+    const auto &s = source(key);
+    const auto &c = changes(key);
+    const auto fine = fineTerrain(key);
+    auto coarse = s.terrain[1].data;
+    // Each coarse 4x4 area uses its dominant authored type; unpainted areas
+    // keep the original hand-authored battle/encounter classification.
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            if (!c.boundary && u8(s.terrain[1].data, y * 64 + x) >= 15)
+                continue;
+            if (c.boundary) {
+                bool changed = false;
+                for (int dz = 0; dz < 4; ++dz)
+                    for (int dx = 0; dx < 4; ++dx) {
+                        const int at = (y * 4 + dz) * 256 + x * 4 + dx;
+                        changed |= fine[at] != s.terrain[0].data[at];
+                    }
+                if (!changed)
+                    continue;
+            }
+            int votes[32]{};
+            for (int dy = 0; dy < 4; ++dy)
+                for (int dx = 0; dx < 4; ++dx) {
+                    int t = fieldPaintTerrain(u8(c.boundary ? fine : c.paint,
+                                                 (y * 4 + dy) * 256 + x * 4 + dx));
+                    if (t < 32 &&
+                        (c.boundary || u8(s.terrain[0].data, (y * 4 + dy) * 256 + x * 4 + dx)))
+                        ++votes[t];
+                }
+            // A partial boundary cut must not turn a fixed wall/gate into
+            // ordinary terrain. Only wholly excluded coarse cells become void.
+            if (u8(s.terrain[1].data, y * 64 + x) >= 15 && votes[0] != 16)
+                continue;
+            int best = 0;
+            for (int t = 1; t < 32; ++t)
+                if (votes[t] > votes[best])
+                    best = t;
+            if (best || c.boundary)
+                put8(coarse, y * 64 + x, quint8(best));
+        }
+    return coarse;
+}
 FieldBrush MapEdits::texture(int code) const {
     if (textures_.contains(code))
         return textures_[code];
@@ -521,42 +564,7 @@ QVector<FieldPlan> MapEdits::plan() const {
         geometry[0].data = model(key);
         geometry[1].data = editFieldHeight(s, e.value());
         terrain[0].data = fineTerrain(key);
-        // Each coarse 4x4 area uses its dominant authored type; unpainted areas
-        // keep the original hand-authored battle/encounter classification.
-        for (int y = 0; y < 64; ++y)
-            for (int x = 0; x < 64; ++x) {
-                if (!e->boundary && u8(s.terrain[1].data, y * 64 + x) >= 15)
-                    continue;
-                if (e->boundary) {
-                    bool changed = false;
-                    for (int dz = 0; dz < 4; ++dz)
-                        for (int dx = 0; dx < 4; ++dx) {
-                            const int at = (y * 4 + dz) * 256 + x * 4 + dx;
-                            changed |= terrain[0].data[at] != s.terrain[0].data[at];
-                        }
-                    if (!changed)
-                        continue;
-                }
-                int votes[32]{};
-                for (int dy = 0; dy < 4; ++dy)
-                    for (int dx = 0; dx < 4; ++dx) {
-                        int t = fieldPaintTerrain(u8(e->boundary ? terrain[0].data : e->paint,
-                                                     (y * 4 + dy) * 256 + x * 4 + dx));
-                        if (t < 32 &&
-                            (e->boundary || u8(s.terrain[0].data, (y * 4 + dy) * 256 + x * 4 + dx)))
-                            ++votes[t];
-                    }
-                // A partial boundary cut must not turn a fixed wall/gate into
-                // ordinary terrain. Only wholly excluded coarse cells become void.
-                if (u8(s.terrain[1].data, y * 64 + x) >= 15 && votes[0] != 16)
-                    continue;
-                int best = 0;
-                for (int t = 1; t < 32; ++t)
-                    if (votes[t] > votes[best])
-                        best = t;
-                if (best || e->boundary)
-                    put8(terrain[1].data, y * 64 + x, quint8(best));
-            }
+        terrain[1].data = movementTerrain(key);
         // Alternate movement grids on the fortified maps use the same raster
         // coordinates; preserve their untouched gates/flags and paint only cells.
         for (int n = 2; n < terrain.size(); ++n)

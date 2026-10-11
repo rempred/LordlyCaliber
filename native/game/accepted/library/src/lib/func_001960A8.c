@@ -153,7 +153,7 @@ s32 func_00130794(void);
 M2C_UNK func_00130E60(M2C_UNK, M2C_UNK);
 M2C_UNK func_00131B50(u16);
 void func_001957D0(void *, s32);
-M2C_UNK func_00195D9C(u8, u8, u8, u8);
+void func_00195D9C(u8, u8, u8, u8);
 M2C_UNK func_801CC480(void *, f32, f32, f32, s32);
 M2C_UNK memset_00023780(M2C_UNK, M2C_UNK);
 

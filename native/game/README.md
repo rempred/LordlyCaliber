@@ -14,6 +14,22 @@ imports used by active adaptations: updating available source does not silently
 change those implementations. The interest report supports `--all` and searches
 the full library by symbol or source name. See the library README for scope.
 
+## Accepted movement and combat batch — 2026-10-11
+
+The complete library now contains 788 accepted pure-C owners and 829 compiler-
+recorded functions. The refresh adds 30 functions and updates nine existing
+producers (including the predecessor helper now sharing the pathfinder producer).
+The library manifest records the authenticated source/dependency identities from
+the completed October 11 verification; unfinished upstream work is excluded.
+
+`scenarios/route_path.c` actively adapts the accepted `00107E38` pathfinder and
+`00107D60` predecessor walk for the Map workspace. Native neighbor order, costs,
+transitions, destination exception and queue tie ordering are retained. A bounded
+host heap replaces allocation and frame yields. Original-ROM instruction checks
+cover path and cost equality. See [route preview](../docs/terrain-route-preview.md)
+for input mapping and limits. The other new movement, combat and squad functions
+are source imports, not wholesale replacements of existing editor behavior.
+
 ## Accepted save and pursuit batch — 2026-10-09
 
 `accepted/2026-10-09/` retains the complete accepted Squad W4 and save-record
@@ -39,8 +55,9 @@ All 21 Squad W4 functions are **imported**, available for future use. They are n
 compiled into the PC engine or executed by Routes yet. This includes the complete
 pursuit producer, `00127D30` target selection, `001284C4` movement-cell evaluation,
 and their target/reset/eligibility companions. Current Routes edits and explains
-authored orders; it does not simulate live flags, dynamic candidate lists,
-terrain costs or N64 object lifetime. Keep the accepted source intact when
+authored orders; the new Map preview additionally evaluates terrain costs through
+the separately accepted pathfinder. It does not simulate live flags, dynamic
+candidate lists or N64 object lifetime. Keep the accepted source intact when
 introducing portable consumers with those inputs. Importing source and adapting
 an executing consumer are separate statuses in `decomp-interest.json`.
 

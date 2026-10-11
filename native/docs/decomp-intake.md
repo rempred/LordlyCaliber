@@ -94,6 +94,12 @@ not proof that an entire game function is already implemented or needed.
 
 ## Refresh the complete library
 
+`node native/tools/import-accepted-c.cjs --decomp <checkout>` validates the
+passing snapshot and all source dependencies without writing. Add `--write` to
+refresh the bundled library and its manifest. It rejects unsupported evidence
+versions and changed source identities; it never runs a Decomp build. Existing
+adaptation baselines and third-party notices remain intact.
+
 Use the passing `build/current/state.json`, `verification.json` and
 `fresh-compilation.json` together. Select every exact `PURE_C` owner, join its
 compiler-recorded function names, and retain each complete producer source plus

@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
-  "revision": "d9bb4be44470a0f7c2915374f94b76e10975aacd",
-  "verifiedAt": "2026-10-09T16:40:05.800Z",
+  "revision": "40c82ff175ebde051051c2c7e7bac984ccf2b4bc",
+  "verifiedAt": "2026-10-11T15:51:47.072Z",
   "sourceClass": "PURE_C",
-  "fingerprint": "B98A0C71C91099BBD85FBB772C26124DFB484FCE6668EE24EFB2D1BBBA841A62",
-  "verificationSha256": "FDDCDDE2D85913D778ADF4B84A34B8238D143AB18E3A5E577FC5D8C57D7A2DE6",
-  "freshCompilationSha256": "81D5BB5D26EC8BA26BB59A0D5BB4131B3FB91C6830EFA7C3DC54E50F1097BD58",
+  "fingerprint": "1E95BD03B45ACD652E3F729391FE76C026C5144F35B6332B2F9C6A0EF0D40DD0",
+  "verificationSha256": "4A18C46AF99A023413685C8334CCFD2BBA783B49E5D58F01165E672832C7B04F",
+  "freshCompilationSha256": "2E9F1E71A8E3D2DC4E90F024B8BD2927EE20B277718AD337BA71688FDF36D1BF",
   "purpose": "Complete accepted pure-C source library. Source availability is separate from active editor adoption; existing adaptation manifests retain their own baselines.",
   "counts": {
-    "owners": 762,
-    "functions": 799,
-    "producerSources": 739,
-    "sourceAndHeaderFiles": 763
+    "owners": 788,
+    "functions": 829,
+    "producerSources": 763,
+    "sourceAndHeaderFiles": 787
   },
   "imports": [
     {
@@ -102,7 +102,7 @@
     },
     {
       "source": "src/battle/func_0021840C.c",
-      "sourceSha256": "B8606A2D9ED1911B2CCCC2C1941D6A4938419CCB497DC0526074832DCB220CE4",
+      "sourceSha256": "27F7710E76A7AF7CDCEF6CDAA5B6A0B0BC66F562DBA29E9EA3A27EE3FCA0AAA5",
       "file": "game/accepted/library/src/battle/func_0021840C.c",
       "symbols": [
         "func_0021840C"
@@ -187,7 +187,7 @@
     },
     {
       "source": "src/battle/func_0021B894.c",
-      "sourceSha256": "C3DE40CE5ED2A44FFDD9B2CD88FC39B9E9E3537C7539F773286636000BCCDB98",
+      "sourceSha256": "BAC454D2BAE40114CD1200030CB347D29B333FE821873FFE5D6D05964C0FDD23",
       "file": "game/accepted/library/src/battle/func_0021B894.c",
       "symbols": [
         "func_0021B894"
@@ -475,6 +475,244 @@
       "dependencies": []
     },
     {
+      "source": "src/battle/func_0021D7F0.c",
+      "sourceSha256": "B5005FE6A488A748AB6EA11D4CC7D869B93041A924C16B7B4B4B1B05B31B87D6",
+      "file": "game/accepted/library/src/battle/func_0021D7F0.c",
+      "symbols": [
+        "func_0021D7F0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021D7F0",
+          "functions": [
+            "func_0021D7F0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021DCA4.c",
+      "sourceSha256": "9838045C4A1B3F69713AFE06B2341A212C37B47814615C81CA928E51C4001352",
+      "file": "game/accepted/library/src/battle/func_0021DCA4.c",
+      "symbols": [
+        "func_0021DCA4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021DCA4",
+          "functions": [
+            "func_0021DCA4"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021E070.c",
+      "sourceSha256": "5BD7E6A89A4A68F04B6A485C467DB76DB39B62502331722A869D326918FCD3D5",
+      "file": "game/accepted/library/src/battle/func_0021E070.c",
+      "symbols": [
+        "func_0021E070"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021E070",
+          "functions": [
+            "func_0021E070"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021E2C4.c",
+      "sourceSha256": "7397CCEAB74D8B4D9378A0316B768D051C65C23B1A1AC233292D66CA92FD342B",
+      "file": "game/accepted/library/src/battle/func_0021E2C4.c",
+      "symbols": [
+        "func_0021E2C4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021E2C4",
+          "functions": [
+            "func_0021E2C4"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021E50C.c",
+      "sourceSha256": "0B4DC6FAE50066C0482FD1F09D137A672ACB920D77FFC05C191FE8CC491D7EC5",
+      "file": "game/accepted/library/src/battle/func_0021E50C.c",
+      "symbols": [
+        "func_0021E50C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021E50C",
+          "functions": [
+            "func_0021E50C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021E99C.c",
+      "sourceSha256": "AB9CB918DA6CE57BBB3DF322482BA3D7EF620CF16E4BF7DCA301E68FCBA357B2",
+      "file": "game/accepted/library/src/battle/func_0021E99C.c",
+      "symbols": [
+        "func_0021E99C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021E99C",
+          "functions": [
+            "func_0021E99C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021EAF0.c",
+      "sourceSha256": "028AC22E77388D66C36FD63BA1F66A3C0EA5049CB036046142667699EC3BA905",
+      "file": "game/accepted/library/src/battle/func_0021EAF0.c",
+      "symbols": [
+        "func_0021EAF0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021EAF0",
+          "functions": [
+            "func_0021EAF0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0021EBBC.c",
+      "sourceSha256": "ECB647EA7B9AB95107F77C9AE672C2BBDC479CFAA49D4C944370EF6079712DE5",
+      "file": "game/accepted/library/src/battle/func_0021EBBC.c",
+      "symbols": [
+        "func_0021EBBC"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0021EBBC",
+          "functions": [
+            "func_0021EBBC"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_002213DC.c",
+      "sourceSha256": "8704CC24896B9FD4B30074A620C39EF406806E458F7FBF07CE6166129E9A59F6",
+      "file": "game/accepted/library/src/battle/func_002213DC.c",
+      "symbols": [
+        "func_002213DC"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002213DC",
+          "functions": [
+            "func_002213DC"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_002215D0.c",
+      "sourceSha256": "D66A0E12FFFA1BADFBBBE7E9097CCA835B00FA380C35ED5B024D9A49E45CF6A5",
+      "file": "game/accepted/library/src/battle/func_002215D0.c",
+      "symbols": [
+        "func_002215D0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002215D0",
+          "functions": [
+            "func_002215D0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00222190.c",
+      "sourceSha256": "403D060F15093678EEBCB3933D9735AB256F45FABF3B58A32FCEF949636AF706",
+      "file": "game/accepted/library/src/battle/func_00222190.c",
+      "symbols": [
+        "func_00222190"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00222190",
+          "functions": [
+            "func_00222190"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0022222C.c",
+      "sourceSha256": "FC1CE32EFA4ADE414EDFB847A14584DDE045AE537759AFD0AD535CD5857EF771",
+      "file": "game/accepted/library/src/battle/func_0022222C.c",
+      "symbols": [
+        "func_0022222C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0022222C",
+          "functions": [
+            "func_0022222C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00222344.c",
+      "sourceSha256": "65F2BDC1AC2CC9A19E99F673B5D4B0083C8EFF7F7A5598BC610C6D9A3EA67B18",
+      "file": "game/accepted/library/src/battle/func_00222344.c",
+      "symbols": [
+        "func_00222344"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00222344",
+          "functions": [
+            "func_00222344"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_002223E0.c",
+      "sourceSha256": "ABDA8955ACC454F2BCDCD0400BEE7466BAF6747BFC29027495231D4C1382A5E4",
+      "file": "game/accepted/library/src/battle/func_002223E0.c",
+      "symbols": [
+        "func_002223E0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002223E0",
+          "functions": [
+            "func_002223E0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/battle/func_002224F4.c",
       "sourceSha256": "21478407062280597E2E9CE0E619FFAC1766FE57E7B6B65C6083BDE7637D10D6",
       "file": "game/accepted/library/src/battle/func_002224F4.c",
@@ -486,6 +724,23 @@
           "symbol": "func_002224F4",
           "functions": [
             "func_002224F4"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00222530.c",
+      "sourceSha256": "EA1C83573B9FF6EF9C8E8DA25A59415CEC601895AF493B5D58B5D84935B56A95",
+      "file": "game/accepted/library/src/battle/func_00222530.c",
+      "symbols": [
+        "func_00222530"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00222530",
+          "functions": [
+            "func_00222530"
           ]
         }
       ],
@@ -662,6 +917,30 @@
       "dependencies": []
     },
     {
+      "source": "src/battle/func_0022B1F4.c",
+      "sourceSha256": "8D5E71EEDFAEC3DF091D6D7A779DB9A41AE604F352CC3BACBA3DEA9276A86460",
+      "file": "game/accepted/library/src/battle/func_0022B1F4.c",
+      "symbols": [
+        "func_0022B1F4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0022B1F4",
+          "functions": [
+            "func_0022B1F4"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
       "source": "src/battle/func_0022BFF8.c",
       "sourceSha256": "E7A1D6E803F8A36CD1BA34E5CA68CAE8F44564D8292CA50A18566CE6AD33F6D1",
       "file": "game/accepted/library/src/battle/func_0022BFF8.c",
@@ -680,7 +959,7 @@
     },
     {
       "source": "src/battle/func_0022C78C.c",
-      "sourceSha256": "0E09F8D612D69B18D49BC849F918C09366DEC531129E700D8C431B7C415F8F58",
+      "sourceSha256": "BE41E2ED7ED898E105866AFFBE8316FE8BA8B1F647611D1009EC994672DA77E7",
       "file": "game/accepted/library/src/battle/func_0022C78C.c",
       "symbols": [
         "func_0022C78C"
@@ -690,6 +969,23 @@
           "symbol": "func_0022C78C",
           "functions": [
             "func_0022C78C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0022D14C.c",
+      "sourceSha256": "D263EF801A5AAA10A87FF2F85B2548413D81DD0F052A3EB4CBAF2A68B7D12CA5",
+      "file": "game/accepted/library/src/battle/func_0022D14C.c",
+      "symbols": [
+        "func_0022D14C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0022D14C",
+          "functions": [
+            "func_0022D14C"
           ]
         }
       ],
@@ -5057,7 +5353,7 @@
     },
     {
       "source": "src/lib/func_0004813c.c",
-      "sourceSha256": "97D78783AE4D96D8B7A33FF5EE490C3E833F2A980369AEC4605262D743527B7E",
+      "sourceSha256": "33AC10E1B76960645822B66925E5C76B4EECEC37433F5C91A5EC2A97746507C3",
       "file": "game/accepted/library/src/lib/func_0004813c.c",
       "symbols": [
         "func_0004813C"
@@ -6447,7 +6743,7 @@
     },
     {
       "source": "src/lib/func_00105CC0.c",
-      "sourceSha256": "D3F6DBDAF9EEC6492556346FFD5980A685689E9491410B1A4C0FCBAB7C64A083",
+      "sourceSha256": "7AF42FE16E0C3C103912C91BEEAA89E0FF2E56617912365B29EA4AC87CA4D62C",
       "file": "game/accepted/library/src/lib/func_00105CC0.c",
       "symbols": [
         "func_00105CC0"
@@ -6457,23 +6753,6 @@
           "symbol": "func_00105CC0",
           "functions": [
             "func_00105CC0"
-          ]
-        }
-      ],
-      "dependencies": []
-    },
-    {
-      "source": "src/lib/func_00107D60.c",
-      "sourceSha256": "FC226C56EC656C5A29C48F52F638E2C04B1893300A2F8096C49AEAEC3A6E37A4",
-      "file": "game/accepted/library/src/lib/func_00107D60.c",
-      "symbols": [
-        "func_00107D60"
-      ],
-      "owners": [
-        {
-          "symbol": "func_00107D60",
-          "functions": [
-            "func_00107D60"
           ]
         }
       ],
@@ -6529,6 +6808,30 @@
         }
       ],
       "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0011AECC.c",
+      "sourceSha256": "613351A012A2A89C692181FDCD86D116D34E5414E365A958899BC9DB5FBC8C36",
+      "file": "game/accepted/library/src/lib/func_0011AECC.c",
+      "symbols": [
+        "func_0011AECC"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0011AECC",
+          "functions": [
+            "func_0011AECC"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
     },
     {
       "source": "src/lib/func_00120CF0.c",
@@ -7109,6 +7412,57 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_0012B440.c",
+      "sourceSha256": "9446EE4055CBAA801869E7A882218645FB9DF2EE17A77AE1231CED243E7C6C91",
+      "file": "game/accepted/library/src/lib/func_0012B440.c",
+      "symbols": [
+        "func_0012B440"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0012B440",
+          "functions": [
+            "func_0012B440"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0012BC64.c",
+      "sourceSha256": "8E96EE462765DC509E533D274FE640CF6FE259E6A10F4DBC379A5A1D4D491F15",
+      "file": "game/accepted/library/src/lib/func_0012BC64.c",
+      "symbols": [
+        "func_0012BC64"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0012BC64",
+          "functions": [
+            "func_0012BC64"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0012C788.c",
+      "sourceSha256": "CBF152ACE69D3EADF96766BAA8B7FB5B19995629D630F40907F59C2CE3E979F7",
+      "file": "game/accepted/library/src/lib/func_0012C788.c",
+      "symbols": [
+        "func_0012C788"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0012C788",
+          "functions": [
+            "func_0012C788"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/lib/func_0012D170.c",
       "sourceSha256": "4F48F13074ABFCE35531D2806EEBBF1086DB8C6E86F9BB0DB691A8E53591B40A",
       "file": "game/accepted/library/src/lib/func_0012D170.c",
@@ -7426,6 +7780,31 @@
           "symbol": "func_00131480",
           "functions": [
             "func_00131480"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00131828.c",
+      "sourceSha256": "D7609C410A3C86954014F864B4484CCFCE0C844861C9F97FBA462F73538034B6",
+      "file": "game/accepted/library/src/lib/func_00131828.c",
+      "symbols": [
+        "func_00131828",
+        "func_00131948",
+        "func_00131984",
+        "func_001319C0",
+        "func_001319F0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00131828",
+          "functions": [
+            "func_00131828",
+            "func_00131948",
+            "func_00131984",
+            "func_001319C0",
+            "func_001319F0"
           ]
         }
       ],
@@ -7819,8 +8198,38 @@
       ]
     },
     {
+      "source": "src/lib/func_00195D9C.c",
+      "sourceSha256": "C685A75BA872E9B27A3D4CD64D7CE96E86329249A01E0577E848069DF921A917",
+      "file": "game/accepted/library/src/lib/func_00195D9C.c",
+      "symbols": [
+        "func_00195D9C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00195D9C",
+          "functions": [
+            "func_00195D9C"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        },
+        {
+          "path": "include/game/scenario_source_record.h",
+          "bytes": 405,
+          "sha256": "32C1B9F2C5C013955490F7E2C7A11EA914158D21927BCB6F20877927E0E1FD51",
+          "file": "game/accepted/library/include/game/scenario_source_record.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_001960A8.c",
-      "sourceSha256": "8F53D7CCC48131CB842683D65A65001A2DFDB242D634547BCE1242B843A31874",
+      "sourceSha256": "A2D89BEF7270925833B72EB30924B4C1B17D72B547F2F3CE4BF766C63680BF4C",
       "file": "game/accepted/library/src/lib/func_001960A8.c",
       "symbols": [
         "func_001960A8"
@@ -10752,7 +11161,7 @@
     },
     {
       "source": "src/lib/func_0020BF8C.c",
-      "sourceSha256": "60785E701E577959336CACC2C7F244EE2C572249F053AB1E716EE8D8491603DD",
+      "sourceSha256": "7DA84AE7F198543288321183ABE2AF039F71710713E4B720E73D27FA00FD066B",
       "file": "game/accepted/library/src/lib/func_0020BF8C.c",
       "symbols": [
         "func_0020BF8C"
@@ -11233,7 +11642,7 @@
     },
     {
       "source": "src/lib/func_0023A5EC.c",
-      "sourceSha256": "D68D6B205873CBB7FD40F7402AF9BDCC647038DA38F62381A5389940D7367D46",
+      "sourceSha256": "219A5E5958C6DC204A84A129942948BD224F565849451B4D9A4C593E460972B6",
       "file": "game/accepted/library/src/lib/func_0023A5EC.c",
       "symbols": [
         "func_0023A5EC"
@@ -12936,6 +13345,54 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/movement_107d60_107e38.c",
+      "sourceSha256": "C692B3D3B04F995C321D08B06B9C58D448E46E61929C130D21DDB43D97C8794F",
+      "file": "game/accepted/library/src/lib/movement_107d60_107e38.c",
+      "symbols": [
+        "func_00107D60",
+        "func_00107E38"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00107D60",
+          "functions": [
+            "func_00107D60"
+          ]
+        },
+        {
+          "symbol": "func_00107E38",
+          "functions": [
+            "func_00107E38"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/movement_125460_125f84.c",
+      "sourceSha256": "BDB7E616AEC19A47974ACD712C0470982DADCF648369FCE0534103CEE7ECCD73",
+      "file": "game/accepted/library/src/lib/movement_125460_125f84.c",
+      "symbols": [
+        "func_00125460",
+        "func_00125F84"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00125460",
+          "functions": [
+            "func_00125460"
+          ]
+        },
+        {
+          "symbol": "func_00125F84",
+          "functions": [
+            "func_00125F84"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/lib/resource_alloc_alt_scan.c",
       "sourceSha256": "792A6C4BBAB3F8E7A7C4E10DAF0B9DC7283BB6BF9974822C39352457C77B3858",
       "file": "game/accepted/library/src/lib/resource_alloc_alt_scan.c",
@@ -14143,193 +14600,6 @@
           "file": "game/accepted/library/third_party/lha/ob64/lha.h"
         }
       ]
-    }
-  ],
-  "supportingFiles": [
-    {
-      "path": "third_party/lha/upstream/CHANGES.euc",
-      "sha256": "308A768C0A5AAE08472FA06E7007BE7487C2832447E5161D6C3055482B148317",
-      "file": "game/accepted/library/third_party/lha/upstream/CHANGES.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/MACHINES.euc",
-      "sha256": "BBD9A4FCF77993D37B3F655CEF28798B58C7AC6AB48102D1912D2D30359AB4D3",
-      "file": "game/accepted/library/third_party/lha/upstream/MACHINES.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/Makefile",
-      "sha256": "4A834A7995B29FDAF49B529FD330B25137D5BB9FC7A8BF36666ECCD6063E40D1",
-      "file": "game/accepted/library/third_party/lha/upstream/Makefile"
-    },
-    {
-      "path": "third_party/lha/upstream/PROBLEMS.euc",
-      "sha256": "530E7AB74E09BC04B64E830A55A79FAC501CD47E806A4ED3AB4241624BB1A59E",
-      "file": "game/accepted/library/third_party/lha/upstream/PROBLEMS.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/README.euc",
-      "sha256": "C63D4422E5F48DAAA0B521D19FA197792EF1799BD5BDDCAEC89A97CAB7D567CB",
-      "file": "game/accepted/library/third_party/lha/upstream/README.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/config.eng",
-      "sha256": "40B0899DC45B51BCBED64E299D3D733F2E91B9F361277DA2F922BDA5BBE07049",
-      "file": "game/accepted/library/third_party/lha/upstream/config.eng"
-    },
-    {
-      "path": "third_party/lha/upstream/config.jpn.euc",
-      "sha256": "3F3CFFEC5B71FC3D83B324343D1BAF5F19A23DDC18CAAD4E96BEB6D4E996CFD6",
-      "file": "game/accepted/library/third_party/lha/upstream/config.jpn.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/header.doc.euc",
-      "sha256": "18FDD34D73471BCD3283478F723FDAD7B6B616330BB1032ED35513D851A0CDFC",
-      "file": "game/accepted/library/third_party/lha/upstream/header.doc.euc"
-    },
-    {
-      "path": "third_party/lha/upstream/man/Makefile",
-      "sha256": "1510EC8E960790750939E69C065E21D19803D17480AA067392E0FCE91A4CC0AE",
-      "file": "game/accepted/library/third_party/lha/upstream/man/Makefile"
-    },
-    {
-      "path": "third_party/lha/upstream/man/lha.man",
-      "sha256": "C8639C87846AA23A391946D07923088838993ACEFF9D9142C8687ADA5905316F",
-      "file": "game/accepted/library/third_party/lha/upstream/man/lha.man"
-    },
-    {
-      "path": "third_party/lha/upstream/man/lha.n",
-      "sha256": "16CF66154C931D38F95EE0216DEAE934D589A04085D47B0D9F1A5FF5FF667FFD",
-      "file": "game/accepted/library/third_party/lha/upstream/man/lha.n"
-    },
-    {
-      "path": "third_party/lha/upstream/src/Makefile",
-      "sha256": "8E1BD3AEA0DECE279C81AD153535A5471F75C8ECEEFF3AA602361D7E32D6AE62",
-      "file": "game/accepted/library/third_party/lha/upstream/src/Makefile"
-    },
-    {
-      "path": "third_party/lha/upstream/src/append.c",
-      "sha256": "1B67F73636F46439282F7CFD3227EC7718B8B0F824B949137C69FA48C1030A27",
-      "file": "game/accepted/library/third_party/lha/upstream/src/append.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/crcio.c",
-      "sha256": "45FAC4BC1A45209C20392833BA0F3179B3D73D307A169C53F652CFBB8BF833C9",
-      "file": "game/accepted/library/third_party/lha/upstream/src/crcio.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/dhuf.c",
-      "sha256": "B7E67A2F4B870E057CBDBB3A1BF66E156C6A1C1BBFEE1CA1BAA1D9A79826C296",
-      "file": "game/accepted/library/third_party/lha/upstream/src/dhuf.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/extract.c",
-      "sha256": "7774DD00494C1086F096DD55F1C6171C9BCFF61ABC91841B9A481B44561896AB",
-      "file": "game/accepted/library/third_party/lha/upstream/src/extract.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/header.c",
-      "sha256": "B284F713770DD95F993144D9E974D4091E7E1F88F5A0FC9902207487E9F61407",
-      "file": "game/accepted/library/third_party/lha/upstream/src/header.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/huf.c",
-      "sha256": "FC35AAECC5C40500D3BF7A5D0B06F4E86CA066B19A1FDA6641188CD1E08EEFA5",
-      "file": "game/accepted/library/third_party/lha/upstream/src/huf.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/larc.c",
-      "sha256": "0676EB77CE6ABFE744204A03D5B9D3E4AB6EE4AB9042795D9EC37F4A2F46F663",
-      "file": "game/accepted/library/third_party/lha/upstream/src/larc.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lha.h",
-      "sha256": "1B3EF3B7422056CBCF5CB7D474679875B73E1DCA1C1A39B00B6200A1F65EB2D4",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lha.h"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lha_macro.h",
-      "sha256": "D279D941CB1909791F07DFCDA7432E4F2827BC39733D70FDA847193A72F155C6",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lha_macro.h"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lhadd.c",
-      "sha256": "74FC6AD9A2A039AD32AB7D14C172762C9C97D5D2AE2715CEAE50CB5017505772",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lhadd.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lharc.c",
-      "sha256": "3CDE852E9A6A4690E3C201343D46676487EFBC0156E952DE9D71A96510416A74",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lharc.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lhdir.c",
-      "sha256": "9ACF6FB16F1917C998DE7DAFF728EB442532FF5D92C2EA0B3AFBF8F45BB6E7A2",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lhdir.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lhdir.h",
-      "sha256": "FCADDA04A0553CDF79F76BC98F6425B34BEE47AEDF4CD13FEB4C3C4044F31015",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lhdir.h"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lhext.c",
-      "sha256": "15DAD1CCE239B06B191CD5BDD10C734FFB5CBD9CCE55A65B1D45824711579F13",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lhext.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/lhlist.c",
-      "sha256": "E4CFFFF05789014C40C55370A2DE1B6A1E0339721C9EB6938CBB8DD04F6D607C",
-      "file": "game/accepted/library/third_party/lha/upstream/src/lhlist.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/makefile.dj",
-      "sha256": "F99746F0721ECB6008F7BD36FA3950500A81F434923977EEA176240DDAF4B5D4",
-      "file": "game/accepted/library/third_party/lha/upstream/src/makefile.dj"
-    },
-    {
-      "path": "third_party/lha/upstream/src/maketbl.c",
-      "sha256": "99A7FCD2434A7DDDD6426B958C214F0553C3762A0ECAEB871638E18BE7C9E254",
-      "file": "game/accepted/library/third_party/lha/upstream/src/maketbl.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/maketree.c",
-      "sha256": "7C5FAFDB46C523699727616FC60FCEF755229688BDE1E771592C717DB4275819",
-      "file": "game/accepted/library/third_party/lha/upstream/src/maketree.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/patmatch.c",
-      "sha256": "EE2C8C5C1AEA5053F76E3100CE56F547D95C5045922C0FEC45A07F7AA50358F3",
-      "file": "game/accepted/library/third_party/lha/upstream/src/patmatch.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/shuf.c",
-      "sha256": "E339C48AEC99F20D01F6B0E341B007E890BF31140E9452F946873B4FD1F055C0",
-      "file": "game/accepted/library/third_party/lha/upstream/src/shuf.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/slide.c",
-      "sha256": "9B89FFC5E7C2A89DB469B368B32E07CAD3A02AD937DFD13340D0499A7E0B1601",
-      "file": "game/accepted/library/third_party/lha/upstream/src/slide.c"
-    },
-    {
-      "path": "third_party/lha/upstream/src/util.c",
-      "sha256": "DD52A78780709F3D13459CF0254548C9811386C799AE4BF51DA57E78896B5A56",
-      "file": "game/accepted/library/third_party/lha/upstream/src/util.c"
-    },
-    {
-      "path": "third_party/lha/README.md",
-      "sha256": "D4FED1558BE7D30D6907AAB32D9C5A402E09F106AD549C950F2EB6C3FD6BFFC3",
-      "file": "game/accepted/library/third_party/lha/README.md"
-    },
-    {
-      "path": "third_party/lha/LOCAL_CHANGES.md",
-      "sha256": "C9EA09EB8C29EFAEC0F492CD53C1A6DA482AE1BA791774326C8D33E2B24DF1BA",
-      "file": "game/accepted/library/third_party/lha/LOCAL_CHANGES.md"
-    },
-    {
-      "path": "third_party/lha/upstream-manifest.json",
-      "sha256": "7E500C10E25FF0ECE5F78836D4B1658581D554B4B524F4BB384CD9362A73151C",
-      "file": "game/accepted/library/third_party/lha/upstream-manifest.json"
     }
   ]
 }

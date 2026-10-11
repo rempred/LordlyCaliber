@@ -62,6 +62,7 @@ class MapEdits {
     void restore(int key);
     QByteArray model(int key) const;
     QByteArray fineTerrain(int key) const;
+    QByteArray movementTerrain(int key) const;
     QVector<FieldPlan> plan() const;
     QByteArray rebuild(const Rom &) const;
     QJsonObject json() const;

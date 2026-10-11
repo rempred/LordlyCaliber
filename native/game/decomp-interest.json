@@ -3,6 +3,15 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "terrain-route-preview", "priority": 1,
+      "behavior": "Terrain-aware planned squad routes",
+      "symbols": ["func_00107D60", "func_00107E38"],
+      "editorFiles": ["game/scenarios/route_path.c", "engine/route_preview.cpp", "engine/map_edits.cpp", "app/scenario_map_editor.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Selecting a squad draws its planned route using the exported edited terrain grid, class/group movement type, native costs and directed transitions.",
+      "preserve": "Native neighbor order, blocked-cell rules, destination exception, 10/14 costs, queue tie order and predecessor chain. Host bounded arrays and a heap replace N64 pointers, allocator and frame yield. This is a coarse planned path, not live pursuit, evasion, follower offsets or fine-cell spline smoothing. See docs/terrain-route-preview.md."
+    },
+    {
       "id": "scenario-squad-members", "priority": 1,
       "behavior": "Independent scenario squad member construction",
       "symbols": ["func_0019554C"],

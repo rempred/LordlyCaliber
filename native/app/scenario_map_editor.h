@@ -37,6 +37,8 @@ class ScenarioMapEditor : public QWidget {
     MapCanvas *canvas_;
     QListWidget *objects_;
     QLabel *notice_, *reference_, *referenceName_, *selection_, *summary_;
+    QLabel *routePreview_;
+    void updateRoutePreview(int squad);
     QWidget *coordinates_;
     ScenarioWorldEditor *world_;
     SquadOrderEditor *orders_;

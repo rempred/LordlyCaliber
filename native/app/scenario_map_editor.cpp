@@ -4,6 +4,7 @@
 #include "app/view_position.h"
 #include "engine/battlefield.h"
 #include "engine/squad_members.h"
+#include "engine/route_preview.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
@@ -86,6 +87,8 @@ class MapCanvas : public QWidget {
     QVector<MapMarker> markers;
     QVector<QPair<int, QRectF>> labelHits;
     QVector<QPair<int, int>> edges;
+    QVector<QPointF> route;
+    bool routeReached = false;
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
     std::function<void(int, double)> heightMoved;
@@ -201,6 +204,27 @@ class MapCanvas : public QWidget {
         for (const auto &[a, b] : edges)
             if (markers[a].position && markers[b].position)
                 p.drawLine(toPixel(*markers[a].position), toPixel(*markers[b].position));
+        if (route.size() > 1) {
+            QPolygonF line;
+            for (auto point : route) line << toPixel(point);
+            p.setPen(QPen(QColor(25, 22, 15, 220), 6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.drawPolyline(line);
+            const QColor color = routeReached ? QColor("#ffe080") : QColor("#ffae70");
+            p.setPen(QPen(color, 3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.drawPolyline(line);
+            double since = 0;
+            for (int i = 1; i < line.size(); ++i) {
+                const auto d = line[i] - line[i - 1];
+                const double length = std::hypot(d.x(), d.y());
+                since += length;
+                if (length < 1 || since < 65) continue;
+                since = 0;
+                const QPointF unit = d / length, normal(-unit.y(), unit.x());
+                const QPointF tip = (line[i] + line[i - 1]) / 2;
+                p.drawLine(tip, tip - unit * 8 + normal * 5);
+                p.drawLine(tip, tip - unit * 8 - normal * 5);
+            }
+        }
         QVector<QRectF> labelAreas;
         QVector<int> drawOrder;
         if (current >= 0 && current < markers.size())
@@ -732,6 +756,12 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     orders_->setObjectName("mapSquadOrders");
     fields->addWidget(orders_);
     orders_->hide();
+    routePreview_ = new QLabel;
+    routePreview_->setObjectName("mapTerrainRoute");
+    routePreview_->setWordWrap(true);
+    routePreview_->setTextFormat(Qt::PlainText);
+    fields->addWidget(routePreview_);
+    routePreview_->hide();
     orders_->enableMapPicking([this, addTreasure](bool on) {
         if (on) {
             addTreasure->setChecked(false);
@@ -1373,6 +1403,7 @@ void ScenarioMapEditor::select(int row) {
     const bool squad = valid && canvas_->markers[row].kind == MapObject::Squad;
     orders_->setVisible(squad);
     orders_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
+    updateRoutePreview(squad ? canvas_->markers[row].row : -1);
     cityInspector_->setVisible(city);
     const bool worldObject = valid && (canvas_->markers[row].kind == MapObject::Site ||
                                        canvas_->markers[row].kind == MapObject::Treasure);
@@ -1448,6 +1479,21 @@ void ScenarioMapEditor::select(int row) {
         x_->setValue(128);
         z_->setValue(128);
     }
+}
+void ScenarioMapEditor::updateRoutePreview(int squad) {
+    canvas_->route.clear();
+    canvas_->routeReached = false;
+    routePreview_->setVisible(squad >= 0);
+    routePreview_->clear();
+    if (squad >= 0 && project_->mapEdits()) {
+        const auto preview = RoutePreview::squad(project_->rom(), *project_->scenarios(),
+            project_->classData(), *project_->mapEdits(), key_, squad);
+        canvas_->route = preview.points;
+        canvas_->routeReached = preview.reachable;
+        routePreview_->setText(preview.message + "\n" + preview.detail);
+        routePreview_->setToolTip("Gold line: planned terrain route. Dashed lines: order connections.");
+    } else if (squad >= 0) routePreview_->setText("Terrain route preview is unavailable for this map.");
+    canvas_->update();
 }
 void ScenarioMapEditor::editPeak(int row, double height) {
     if (row < 0 || row >= canvas_->markers.size() || canvas_->markers[row].kind != MapObject::Peak)

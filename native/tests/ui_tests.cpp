@@ -8875,6 +8875,42 @@ class UiTests : public QObject {
         output.setAutoRemove(false);
         qInfo().noquote() << "Facility test ROM:" << candidate;
     }
+    void scenarioTerrainRoute() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios(); project.loadMapEdits();
+        auto s = *project.scenarios(); const auto classes = project.classData();
+        auto d = s.scenario(5).layout.deployments[1]; put8(d, 3, 50); put8(d, 4, 100);
+        s.setDeployment(5, 1, d, classes); s.setRouteGroup(5, 1, 0, 0, classes);
+        auto members = squadMembers(s.scenario(5).squads[1]);
+        for (auto &m : members) m.classId = 2;
+        s.setSquad(5, 1, editSquadMembers(s.scenario(5).squads[1], members), classes);
+        s.setSquadCommand(5, 1, {SquadBehavior::Move, 170, 100}, classes);
+        project.setScenarios(s.json());
+        auto maps = *project.mapEdits();
+        maps.setBoundary(5, QRectF(QPointF(8,8), QPointF(248,248)));
+        maps.paint(5, {{40,100},{180,100}}, 3, 25);
+        maps.paint(5, {{110,72},{110,128}}, 8, 5);
+        project.setMapEdits(maps.json());
+        QUndoStack undo;
+        ScenarioMapEditor editor(&project, &undo, [](const Scenarios &, const QString &) {}, [](MapObject, int) {});
+        editor.resize(1250, 850); editor.show(); editor.refresh(5);
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 1));
+        auto route = editor.findChild<QLabel *>("mapTerrainRoute");
+        QVERIFY(route && route->isVisible());
+        QVERIFY2(route->text().contains("Terrain route shown"), qPrintable(route->text()));
+        QTest::qWait(50); QVERIFY(editor.grab().save("terrain-route-preview.png"));
+        // Changed orders and switching selection must refresh and clear the overlay.
+        s.setSquadCommand(5, 1, {SquadBehavior::Guard}, classes);
+        project.setScenarios(s.json()); editor.refresh(5);
+        QVERIFY(route->text().contains("No fixed destination"));
+        s.setSquadCommand(5, 1, {SquadBehavior::Move, 170, 100}, classes);
+        project.setScenarios(s.json()); editor.refresh(5);
+        QVERIFY(route->text().contains("Terrain route shown"));
+        QVERIFY(selectMapObject(editor, MapObject::Site, 0)); QVERIFY(!route->isVisible());
+    }
     void scenarioMapOrders() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

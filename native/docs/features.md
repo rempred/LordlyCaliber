@@ -1,5 +1,14 @@
 # Feature inventory and completion tracking
 
+Selecting a squad on the Map shows a gold terrain-aware planned route and its
+movement type in the sidebar. It uses the accepted game pathfinder, current class
+movement settings, movement groups and the same terrain grid used by export.
+Terrain, boundary, squad and order edits refresh it. Dashed lines still show order
+connections. Unreachable or unresolved destinations explain why no route appears.
+The preview follows fixed starting orders up to a scripted condition; live enemy
+reactions, follower offsets and the game's fine turn smoothing are not simulated.
+See [terrain route preview](terrain-route-preview.md).
+
 Scenario section navigation sits directly below the main workspaces, matching
 Encounters and Art. Its shared scenario picker includes the search field and
 retains selection across Map, Squads and Routes. Map opens first. Base-level controls live
