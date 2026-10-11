@@ -349,6 +349,8 @@ ChangeReport Project::changeReport() const {
                                       "Shared missions use the same map.")
                                   .arg(cells)
                                   .arg(row["sites"].toObject().size())};
+            if (!row["city"].toArray().isEmpty())
+                lines << QString("Placed %1 city scenery pieces.").arg(row["city"].toArray().size());
             if (row.contains("boundary")) {
                 const auto edge = row["boundary"].toArray();
                 lines << QString("Playable boundary: left %1, top %2, right %3, bottom %4.")

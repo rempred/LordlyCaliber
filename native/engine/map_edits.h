@@ -17,6 +17,7 @@ struct FieldChanges {
     QByteArray paint = QByteArray(65536, char(-1));
     QMap<int, QPointF> sites;
     std::optional<QRectF> boundary;
+    QVector<CityPlacement> city;
 };
 struct FieldPlan {
     int geometryIndex = 0, terrainIndex = 0, pointIndex = 0;
@@ -32,6 +33,11 @@ class MapEdits {
     bool canMoveSite(int key, int row) const;
     void moveSite(int key, int row, QPointF destination);
     void paint(int key, const QVector<QPointF> &stroke, int terrain, double radius);
+    const QVector<CityAsset> &cityAssets() const;
+    const CityAsset &cityAsset(const QString &id) const;
+    void placeCity(int key, const QString &asset, QPointF position, int rotation = 0);
+    void moveCity(int key, int row, QPointF position, int rotation);
+    void removeCity(int key, int row);
     QRectF boundary(int key) const;
     void setBoundary(int key, QRectF boundary);
     void restore(int key);
@@ -52,6 +58,7 @@ class MapEdits {
     Rom rom_;
     mutable QMap<int, FieldMapSource> sources_;
     mutable QMap<int, FieldBrush> textures_;
+    mutable QVector<CityAsset> cityAssets_;
     QMap<int, FieldChanges> edits_;
     int modelId(int key) const;
     FieldBrush texture(int code) const;
@@ -60,6 +67,6 @@ class MapEdits {
 // Original packed model is retained; edits append native display lists and
 // translate a town's verified culling group. No bitmap replaces the battlefield.
 QByteArray editFieldModel(const FieldMapSource &, const FieldChanges &,
-                          const QMap<int, FieldBrush> &);
+                          const QMap<int, FieldBrush> &, const QVector<CityAsset> &city = {});
 QByteArray editFieldHeight(const FieldMapSource &, const FieldChanges &);
 } // namespace lordly

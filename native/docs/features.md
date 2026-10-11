@@ -26,6 +26,14 @@ Brush radius supports half steps, including 1.5. Bridges form straight spans fro
 the ROM's bridge mesh, retaining deck, rails, support faces and atlas mapping;
 the movement-height grid follows the deck.
 
+Map's separate City pieces dropdown adds 19 current-ROM houses, towers, keeps,
+gates and wall pieces from keys 39/47/51, plus cobblestone paving and three road
+brushes. Click placement, dragging, rotation, removal, Undo, projects and native
+ROM export share the map editor. City pieces are static scenery; they do not
+create town records, movement blocking or gate scripts. Paving/roads use Highway
+gameplay terrain and rebuild affected terrain borders. Briefing regeneration
+includes the placed pieces.
+
 Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board
 with compatible gear choices and large-unit checks. Scenario squads support one

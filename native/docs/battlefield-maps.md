@@ -44,6 +44,41 @@ helper behavior at animation phase zero.
 
 ## Buildings and editing
 
+### City palette
+
+Map's **City pieces** tool offers 19 reusable models from Fort Romulus (key 39),
+Latium (47), and Talpaea (51): houses, roofed towers, keeps, gates and wall
+sections. The separate dropdown includes oblique thumbnails decoded from the
+current ROM. Click to place, use Select / move to drag a piece, and use its
+sidebar to rotate or remove it. Rotation applies to the complete geometry and
+normals. A footprint preview and selected outline show its extent.
+
+The four city brushes are cobblestone paving, cobblestone road, Romulus road and
+Talpaea road. Broad paving repeats the inner stones without road curbs. These
+visual styles use Highway movement/encounter terrain and participate in the
+ordinary contour/border recalculation. Their project paint IDs 32–35 never enter
+the game's terrain grid; export maps them to native terrain 1.
+
+City models are static scenery: they do not create town/site records, shops,
+mission events, gate-opening behavior or movement-obstacle masks. Movement still
+uses the terrain underneath. Their base follows the edited ground height; users
+can clear existing foliage by painting the desired ground first. Closed gates
+retain the source model's closed appearance. The catalog uses explicit native
+culling groups, combining separate roof/facade groups, rather than slicing a
+whole fortress by proximity. Talpaea's outer wall is a complete long wall piece.
+
+Project/Undo data stores the piece ID, world position and rotation. Exports append
+bounded native display lists, geometry, RGBA16 textures and sampling settings;
+source textures come from the loaded ROM. Repeated texture bytes are shared
+within the new city geometry. UV coordinates, vertex colors, transformed normals
+and source filtering are retained; colors use the existing static material
+interpretation. The 512 KiB model limit remains, with an additional 256-piece
+authoring cap. Original bytes and resource references stay intact. The generated
+briefing includes the pieces. Keep the project to edit individual placements;
+reopening only the ROM retains their rendered geometry as part of the map.
+
+### Existing towns and strongholds
+
 Buildings are mesh pieces in the map model, positioned by its transforms.
 Wordcode command 25, callback 0, invokes the town texture helper at ROM
 `0xF5BC4` / RAM `0x801A8E64`. Its one-based site argument selects a runtime

@@ -129,7 +129,7 @@ class FieldBrushShape {
         return type_ == 5 || type_ == 13;
     }
     bool road() const {
-        return type_ == 1 || type_ == 9 || type_ == 2 || type_ == 10;
+        return roadPaint(type_) || type_ == 2 || type_ == 10;
     }
     QPointF roadUv(QPointF p) const {
         auto uv = road_ ? road_->at(p) : QPointF(.5, p.y());

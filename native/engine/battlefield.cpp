@@ -154,6 +154,7 @@ struct Material {
 };
 struct Vertex {
     QVector3D position;
+    QVector3D normal;
     QPointF uv;
     RenderColor shade{};
 };
@@ -475,6 +476,7 @@ struct Builder {
                                 float(nx * matrix[1] + ny * matrix[5] + nz * matrix[9]),
                                 float(nx * matrix[2] + ny * matrix[6] + nz * matrix[10]));
                     n.normalize();
+                    v.normal = n;
                     const int light =
                         int(255 *
                             std::clamp(.65 + .35 * QVector3D::dotProduct(
@@ -1057,6 +1059,116 @@ bool Battlefield::terrainFog() const {
         if (!sites.contains(t.group) && (data_->materials[t.material].geometry & 0x10000))
             return true;
     return false;
+}
+CityAsset Battlefield::cityAsset(QString id, QString name, int scenario,
+                                 const QVector<int> &groups) const {
+    if (!data_ || groups.isEmpty())
+        throw Error("Missing city model");
+    CityAsset out;
+    out.id = id;
+    out.name = name;
+    out.scenario = scenario;
+    out.groups = groups;
+    QMap<int, int> materials;
+    QVector3D lo(1e9f, 1e9f, 1e9f), hi(-1e9f, -1e9f, -1e9f);
+    Battlefield preview;
+    preview.data_ = std::make_shared<Data>(*data_);
+    preview.data_->triangles.clear();
+    for (const auto &t : data_->triangles) {
+        if (!groups.contains(t.group))
+            continue;
+        const auto &m = data_->materials[t.material];
+        if (!materials.contains(t.material)) {
+            CityMaterial mat;
+            mat.filtered = m.filter;
+            mat.lit = m.geometry & 0x20000;
+            const int width = m.first ? m.first->image.width : 1,
+                      height = m.first ? m.first->image.height : 1;
+            if (width * height > 2048)
+                throw Error("City texture exceeds native texture memory");
+            mat.texture = QImage(width, height, QImage::Format_RGBA8888);
+            if (m.first) {
+                mat.cs = m.first->tile.cs;
+                mat.ct = m.first->tile.ct;
+                mat.ms = m.first->tile.ms;
+                mat.mt = m.first->tile.mt;
+            }
+            const ColorCombiner combine(m.high, m.low, m.two);
+            for (int y = 0; y < height; ++y)
+                for (int x = 0; x < width; ++x) {
+                    CombineInputs in;
+                    in.shade = {255, 255, 255, 255};
+                    in.primitive = m.primitive;
+                    in.environment = m.environment;
+                    in.texel0 = {255, 255, 255, 255};
+                    if (m.first) {
+                        const auto &im = m.first->image;
+                        for (int c = 0; c < 4; ++c)
+                            in.texel0[c] = u8(im.rgba, (y * width + x) * 4 + c);
+                    }
+                    in.texel1 = in.texel0;
+                    const auto c = combine.evaluate(in);
+                    mat.texture.setPixelColor(x, y, QColor(c[0], c[1], c[2], c[3]));
+                }
+            materials[t.material] = int(out.materials.size());
+            out.materials << mat;
+        }
+        CityFace face;
+        face.material = materials[t.material];
+        for (int i = 0; i < 3; ++i) {
+            const auto &v = t.vertices[i];
+            auto uv = v.uv;
+            if (m.first) {
+                const auto &tile = m.first->tile;
+                uv = {std::ldexp(uv.x() * m.scaleS, tile.ss <= 10 ? -tile.ss : 16 - tile.ss) -
+                          tile.left / 4.,
+                      std::ldexp(uv.y() * m.scaleT, tile.st <= 10 ? -tile.st : 16 - tile.st) -
+                          tile.top / 4.};
+            }
+            face.vertices[i] = {v.position, v.normal, uv,
+                                QColor(v.shade[0], v.shade[1], v.shade[2], v.shade[3])};
+            for (int axis = 0; axis < 3; ++axis) {
+                lo[axis] = std::min(lo[axis], v.position[axis]);
+                hi[axis] = std::max(hi[axis], v.position[axis]);
+            }
+        }
+        out.faces << face;
+        preview.data_->triangles << t;
+    }
+    if (out.faces.isEmpty())
+        throw Error("This ROM has no geometry for " + name);
+    const QVector3D origin((lo.x() + hi.x()) / 2, lo.y(), (lo.z() + hi.z()) / 2);
+    out.bounds = QRectF(QPointF(lo.x() - origin.x(), lo.z() - origin.z()),
+                        QPointF(hi.x() - origin.x(), hi.z() - origin.z()));
+    for (auto &face : out.faces)
+        for (auto &v : face.vertices)
+            v.point -= origin;
+    double left = 1e9, right = -1e9, top = 1e9, bottom = -1e9;
+    for (auto &t : preview.data_->triangles)
+        for (auto &v : t.vertices) {
+            const auto p = v.position - origin;
+            v.position = {float(.866 * p.x() - .5 * p.z()), p.y(),
+                          float(.5 * p.x() + .866 * p.z() - .75 * p.y())};
+            left = std::min(left, double(v.position.x()));
+            right = std::max(right, double(v.position.x()));
+            top = std::min(top, double(v.position.z()));
+            bottom = std::max(bottom, double(v.position.z()));
+        }
+    const auto center = QPointF((left + right) / 2, (top + bottom) / 2);
+    const double extent = std::max(right - left, bottom - top) * 1.15 + .1;
+    out.thumbnail = preview.render(
+        QRectF(center - QPointF(extent / 2, extent / 2), QSizeF(extent, extent)), 128);
+    return out;
+}
+FieldBrush Battlefield::groupBrush(int group, QRectF bounds) const {
+    Battlefield selected;
+    selected.data_ = std::make_shared<Data>(*data_);
+    selected.data_->triangles.clear();
+    selected.data_->siteGroups.clear();
+    for (const auto &t : data_->triangles)
+        if (t.group == group)
+            selected.data_->triangles << t;
+    return selected.terrainBrush(1, QByteArray(65536, 1), bounds);
 }
 FieldBrush Battlefield::terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const {
     if (!data_ || grid.size() != 65536 || !bounds.isValid())

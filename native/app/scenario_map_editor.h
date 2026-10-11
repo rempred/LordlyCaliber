@@ -13,7 +13,7 @@ class QDoubleSpinBox;
 class QPushButton;
 class QUndoStack;
 namespace lordly {
-enum class MapObject { Squad, Waypoint, Site, Treasure };
+enum class MapObject { Squad, Waypoint, Site, Treasure, City };
 class MapCanvas;
 class ScenarioWorldEditor;
 class ScenarioMapEditor : public QWidget {
@@ -46,6 +46,12 @@ class ScenarioMapEditor : public QWidget {
     void changeBoundary(QRectF);
     QComboBox *tool_, *paintType_;
     QDoubleSpinBox *brushSize_;
+    QLabel *brushLabel_;
+    QWidget *cityTools_, *cityInspector_;
+    QComboBox *cityType_;
+    QSpinBox *cityAngle_, *placedCityAngle_;
+    void updateCityTool();
+    void editCity(int row, QPointF position, int rotation);
     QLabel *mapScope_;
     void paint(const QVector<QPointF> &stroke);
     int key_ = -1;

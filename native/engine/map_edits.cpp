@@ -158,14 +158,14 @@ void MapEdits::moveSite(int key, int row, QPointF point) {
         next.sites[row] = point;
     // Compile before committing, so unsupported shared display-list state cannot
     // leave a marker moved without a corresponding building edit.
-    editFieldModel(s, next, {});
+    editFieldModel(s, next, {}, next.city.isEmpty() ? QVector<CityAsset>{} : cityAssets());
     edits_[s.modelId] = next;
     prune(s.modelId);
 }
 void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, double radius) {
     const auto &s = source(key);
     if (stroke.isEmpty() || stroke.size() > 10000 || !std::isfinite(radius) || radius < 1 ||
-        radius > 32 || (terrain != 255 && (terrain < 1 || terrain > 14)))
+        radius > 32 || (terrain != 255 && !cityPaint(terrain) && (terrain < 1 || terrain > 14)))
         throw Error("Invalid terrain brush");
     auto next = edits_.value(s.modelId);
     auto stamp = [&](QPointF p) {
@@ -196,7 +196,8 @@ void MapEdits::paint(int key, const QVector<QPointF> &stroke, int terrain, doubl
 }
 void MapEdits::prune(int id) {
     const auto &s = edits_[id];
-    if (!s.boundary && s.sites.isEmpty() && s.paint == QByteArray(65536, char(-1)))
+    if (!s.boundary && s.sites.isEmpty() && s.city.isEmpty() &&
+        s.paint == QByteArray(65536, char(-1)))
         edits_.remove(id);
 }
 void MapEdits::restore(int key) {
@@ -230,14 +231,16 @@ QByteArray MapEdits::fineTerrain(int key) const {
     for (int i = 0; i < 65536; ++i) {
         const int old = u8(out, i), painted = u8(c.paint, i);
         if (old > 0 && old < 15 && painted != 255)
-            out[i] = char(painted);
+            out[i] = char(fieldPaintTerrain(painted));
         if (c.boundary) {
             const QPointF p(i % 256, i / 256);
             if (!c.boundary->contains(p))
                 out[i] = 0;
             else if (!old) {
                 const int visual = u8(s.visualTerrain, i);
-                out[i] = char(painted != 255 ? painted : visual > 0 && visual < 15 ? visual : 3);
+                out[i] = char(painted != 255              ? fieldPaintTerrain(painted)
+                              : visual > 0 && visual < 15 ? visual
+                                                          : 3);
             }
         }
     }
@@ -246,6 +249,20 @@ QByteArray MapEdits::fineTerrain(int key) const {
 FieldBrush MapEdits::texture(int code) const {
     if (textures_.contains(code))
         return textures_[code];
+    if (cityPaint(code)) {
+        const int key = code <= 33 ? 47 : code == 34 ? 39 : 51;
+        const auto &s = source(key);
+        auto brush = code <= 33 ? s.field.groupBrush(1, s.map.bounds)
+                                : s.field.terrainBrush(1, s.terrain[0].data, s.map.bounds);
+        if (brush.texture.isNull())
+            throw Error("The selected city paving is unavailable in this ROM");
+        // Broad paving repeats the stones, not both curb edges of every road strip.
+        if (code == 32 && brush.texture.width() >= 16)
+            brush.texture = brush.texture.copy(brush.texture.width() / 4, 0,
+                                               brush.texture.width() / 2, brush.texture.height());
+        textures_[code] = brush;
+        return brush;
+    }
     QSet<int> visited;
     for (int key = 1; key <= 64; ++key) {
         if (key == 54)
@@ -279,13 +296,89 @@ QByteArray MapEdits::model(int key) const {
     const FieldBorders borders(s, c);
     for (unsigned char type : borders.change.paint)
         if (type != 255 && !tiles.contains(type)) {
-            auto brush = s.field.terrainBrush(type, s.terrain[0].data, s.map.bounds);
+            auto brush = cityPaint(type)
+                             ? texture(type)
+                             : s.field.terrainBrush(type, s.terrain[0].data, s.map.bounds);
             tiles[type] =
                 brush.texture.isNull() || ((type == 2 || type == 10) && brush.bridge.isEmpty())
                     ? texture(type)
                     : brush;
         }
-    return editFieldModel(s, c, tiles);
+    return editFieldModel(s, c, tiles, c.city.isEmpty() ? QVector<CityAsset>{} : cityAssets());
+}
+const QVector<CityAsset> &MapEdits::cityAssets() const {
+    if (!cityAssets_.isEmpty())
+        return cityAssets_;
+    QVector<CityAsset> result;
+    auto add = [&](int key, const char *id, const char *name, QVector<int> groups) {
+        result << source(key).field.cityAsset(QString::fromLatin1(id), QString::fromUtf8(name), key,
+                                              groups);
+    };
+    // Explicit complete groups from the stock field programs. House roofs and
+    // facades can have separate culling groups; include both as one object.
+    add(39, "romulus-house", "Romulus · House", {17, 18});
+    add(39, "romulus-house-wide", "Romulus · Wide house", {19, 20, 21});
+    add(39, "romulus-house-long", "Romulus · Long house", {32, 33, 34});
+    add(39, "romulus-tower", "Romulus · Roofed tower", {26, 27});
+    add(39, "romulus-wall", "Romulus · Wall section", {142});
+    add(39, "romulus-gate", "Romulus · Gate", {15});
+    add(47, "latium-house", "Latium · House", {17});
+    add(47, "latium-house-wide", "Latium · Wide house", {69});
+    add(47, "latium-house-long", "Latium · Long house", {95});
+    add(47, "latium-tower", "Latium · Tower", {148});
+    add(47, "latium-gate", "Latium · Gate", {110});
+    add(47, "latium-wall", "Latium · Wall section", {123});
+    add(47, "latium-keep", "Latium · Keep", {59});
+    add(51, "talpaea-house", "Talpaea · House", {84});
+    add(51, "talpaea-house-wide", "Talpaea · Wide house", {82});
+    add(51, "talpaea-house-long", "Talpaea · Long house", {79});
+    add(51, "talpaea-gatehouse", "Talpaea · Gatehouse", {117});
+    add(51, "talpaea-keep", "Talpaea · Keep", {1, 2});
+    add(51, "talpaea-wall", "Talpaea · Outer wall", {22});
+    cityAssets_ = result;
+    return cityAssets_;
+}
+const CityAsset &MapEdits::cityAsset(const QString &id) const {
+    for (const auto &asset : cityAssets())
+        if (asset.id == id)
+            return asset;
+    throw Error("Unknown city piece");
+}
+void MapEdits::placeCity(int key, const QString &asset, QPointF position, int rotation) {
+    const auto &s = source(key);
+    cityAsset(asset);
+    if (changes(key).city.size() >= 256)
+        throw Error("This map has reached its 256 city-piece limit");
+    auto next = *this;
+    next.edits_[s.modelId].city << CityPlacement{asset, position, rotation};
+    next.moveCity(key, int(next.edits_[s.modelId].city.size()) - 1, position, rotation);
+    *this = std::move(next);
+}
+void MapEdits::moveCity(int key, int row, QPointF position, int rotation) {
+    const auto &s = source(key);
+    const auto &pieces = changes(key).city;
+    if (row < 0 || row >= pieces.size() || rotation < 0 || rotation >= 360 ||
+        !std::isfinite(position.x()) || !std::isfinite(position.y()))
+        throw Error("Invalid city-piece placement");
+    const auto &asset = cityAsset(pieces[row].asset);
+    const double a = rotation * 3.141592653589793 / 180.;
+    for (const auto &face : asset.faces)
+        for (const auto &v : face.vertices) {
+            const QPointF p =
+                position + QPointF(v.point.x() * std::cos(a) - v.point.z() * std::sin(a),
+                                   v.point.x() * std::sin(a) + v.point.z() * std::cos(a));
+            if (!s.map.bounds.contains(p))
+                throw Error("Keep the whole city piece inside the visible map");
+        }
+    edits_[s.modelId].city[row].position = position;
+    edits_[s.modelId].city[row].rotation = rotation;
+}
+void MapEdits::removeCity(int key, int row) {
+    const int id = modelId(key);
+    if (row < 0 || row >= changes(key).city.size())
+        throw Error("Choose a placed city piece");
+    edits_[id].city.removeAt(row);
+    prune(id);
 }
 QVector<FieldPlan> MapEdits::plan() const {
     QVector<FieldPlan> out;
@@ -321,8 +414,8 @@ QVector<FieldPlan> MapEdits::plan() const {
                 int votes[32]{};
                 for (int dy = 0; dy < 4; ++dy)
                     for (int dx = 0; dx < 4; ++dx) {
-                        int t = u8(e->boundary ? terrain[0].data : e->paint,
-                                   (y * 4 + dy) * 256 + x * 4 + dx);
+                        int t = fieldPaintTerrain(u8(e->boundary ? terrain[0].data : e->paint,
+                                                     (y * 4 + dy) * 256 + x * 4 + dx));
                         if (t < 32 &&
                             (e->boundary || u8(s.terrain[0].data, (y * 4 + dy) * 256 + x * 4 + dx)))
                             ++votes[t];
@@ -349,7 +442,7 @@ QVector<FieldPlan> MapEdits::plan() const {
                         terrain[n].data[i] = terrain[0].data[i];
                     else if (u8(e->paint, i) != 255 && u8(s.terrain[n].data, i) > 0 &&
                              u8(s.terrain[n].data, i) < 15)
-                        terrain[n].data[i] = e->paint[i];
+                        terrain[n].data[i] = char(fieldPaintTerrain(u8(e->paint, i)));
         for (auto p = e->sites.begin(); p != e->sites.end(); ++p) {
             real(ps, 28 + p.key() * 8, p->x());
             real(ps, 32 + p.key() * 8, p->y());
@@ -379,7 +472,8 @@ QByteArray MapEdits::rebuild(const Rom &rom) const {
                 break;
             }
         const auto &s = source(key);
-        if (s.map.image && (!it->sites.isEmpty() || it->paint != QByteArray(65536, char(-1)))) {
+        if (s.map.image && (!it->sites.isEmpty() || !it->city.isEmpty() ||
+                            it->paint != QByteArray(65536, char(-1)))) {
             const auto current = Rom::fromBytes(image);
             const auto field = Battlefield::load(current, key);
             replaceFieldChild(image, 0x18bd022, s.modelId - 4, briefing(s, field, current));
@@ -415,6 +509,17 @@ QJsonObject MapEdits::json() const {
             sites[QString::number(p.key())] = QJsonArray{p->x(), p->y()};
         maps[QString::number(i.key())] =
             QJsonObject{{"paint", QString::fromLatin1(i->paint.toBase64())}, {"sites", sites}};
+        if (!i->city.isEmpty()) {
+            auto row = maps[QString::number(i.key())].toObject();
+            QJsonArray city;
+            for (const auto &p : i->city)
+                city << QJsonObject{{"asset", p.asset},
+                                    {"x", p.position.x()},
+                                    {"z", p.position.y()},
+                                    {"rotation", p.rotation}};
+            row["city"] = city;
+            maps[QString::number(i.key())] = row;
+        }
         if (i->boundary) {
             auto row = maps[QString::number(i.key())].toObject();
             const auto b = *i->boundary;
@@ -448,7 +553,7 @@ void MapEdits::apply(const QJsonObject &o) {
         if (data.size() != 65536)
             throw Error("Saved terrain mask must contain 256 by 256 cells");
         for (unsigned char t : data)
-            if (t != 255 && (t < 1 || t > 14))
+            if (t != 255 && !cityPaint(t) && (t < 1 || t > 14))
                 throw Error("Invalid painted terrain code");
         FieldChanges change;
         change.paint = data;
@@ -465,6 +570,19 @@ void MapEdits::apply(const QJsonObject &o) {
             change.sites[n] = {xy[0].toDouble(), xy[1].toDouble()};
         }
         next.edits_[id] = change;
+        if (row.contains("city")) {
+            if (!row["city"].isArray() || row["city"].toArray().size() > 256)
+                throw Error("Invalid saved city pieces");
+            for (const auto &item : row["city"].toArray()) {
+                const auto p = item.toObject();
+                if (!item.isObject() || !p["asset"].isString() || !p["x"].isDouble() ||
+                    !p["z"].isDouble() || !p["rotation"].isDouble() ||
+                    p["rotation"].toInt(-1) != p["rotation"].toDouble())
+                    throw Error("Invalid saved city-piece placement");
+                next.placeCity(key, p["asset"].toString(), {p["x"].toDouble(), p["z"].toDouble()},
+                               p["rotation"].toInt());
+            }
+        }
         if (row.contains("boundary")) {
             const auto b = row["boundary"].toArray();
             if (b.size() != 4 || !b[0].isDouble() || !b[1].isDouble() || !b[2].isDouble() ||

@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/city_assets.h"
 #include "engine/rom.h"
 #include <QImage>
 #include <QMap>
@@ -45,6 +46,8 @@ class Battlefield {
     QMap<int, QRectF> groups() const;
     FieldBrush terrainBrush(int terrain, const QByteArray &grid, QRectF bounds) const;
     QByteArray terrainGrid(const QByteArray &gameplay, QRectF bounds) const;
+    CityAsset cityAsset(QString id, QString name, int scenario, const QVector<int> &groups) const;
+    FieldBrush groupBrush(int group, QRectF bounds) const;
 
   private:
     struct Data;

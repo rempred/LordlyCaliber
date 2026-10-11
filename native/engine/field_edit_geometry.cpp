@@ -260,7 +260,7 @@ class Surface {
 };
 QByteArray textureBytes(const QImage &image) {
     const int w = image.width(), h = image.height();
-    if (w < 1 || h < 1 || (w & (w - 1)) || (h & (h - 1)) || w * h > 2048)
+    if (w < 1 || h < 1 || (w & (w - 1)) || w * h > 2048)
         throw Error("Invalid map brush texture dimensions");
     QByteArray out(w * h * 2, 0);
     for (int y = 0; y < h; ++y)
@@ -541,7 +541,7 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
     return out;
 }
 QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &change,
-                          const QMap<int, FieldBrush> &tiles) {
+                          const QMap<int, FieldBrush> &tiles, const QVector<CityAsset> &city) {
     const auto &original = source.geometry[0].data;
     const FieldBorders borders(source, change);
     Append out{original, int((u32(original, 48) + 15) & ~15u)};
@@ -658,7 +658,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                         : mesh(shape, type.value(), surface, border);
                 const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
                           ms = int(std::log2(w)), mt = int(std::log2(h));
-                const bool highway = type.key() == 1 || type.key() == 9;
+                const bool highway = roadPaint(type.key());
                 // Mirroring the continuous road body makes both ends of every
                 // repeat meet at the same texels, including filtered samples.
                 const quint32 cs = shape.road() ? 2 : 0, ct = shape.mountain() || border || bridge
@@ -766,6 +766,94 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                     flush();
                 }
             }
+        }
+        command(dl, 0xdf000000, 0);
+        word(program, 1);
+        word(program, out.add(dl));
+    }
+    QMap<QByteArray, quint32> cityTextures;
+    for (const auto &placement : change.city) {
+        const auto asset = std::find_if(
+            city.begin(), city.end(), [&](const CityAsset &a) { return a.id == placement.asset; });
+        if (asset == city.end())
+            throw Error("Missing city-piece source model");
+        const double angle = placement.rotation * 3.141592653589793 / 180.;
+        auto rotate = [&](QVector3D p) {
+            return QVector3D(float(p.x() * std::cos(angle) - p.z() * std::sin(angle)), p.y(),
+                             float(p.x() * std::sin(angle) + p.z() * std::cos(angle)));
+        };
+        const QVector3D offset(float(placement.position.x()),
+                               float(heightAt(elevated, placement.position)),
+                               float(placement.position.y()));
+        const bool fog = source.field.terrainFog();
+        QByteArray dl, matrix(64, 0);
+        for (int n = 0; n < 3; ++n)
+            putFixed(matrix, n * 5, 1. / 64);
+        putFixed(matrix, 15, 1);
+        command(dl, 0xe7000000, 0);
+        command(dl, 0xda380003, out.add(matrix, 16));
+        command(dl, 0xe3000a01, fog ? 0x00100000 : 0);
+        command(dl, 0xe3001001, 0);
+        command(dl, fog ? 0xfc1217ff : 0xfc127e24, fog ? 0xfffffe38 : 0xfffff9fc);
+        command(dl, 0xfa000000, 0xffffffff);
+        command(dl, 0xe200001c, fog ? 0xc8112078 : 0x00552078);
+        command(dl, 0xd7000002, 0xffffffff);
+        for (int mi = 0; mi < asset->materials.size(); ++mi) {
+            const auto &m = asset->materials[mi];
+            const int w = m.texture.width(), h = m.texture.height(), line = (w * 2 + 7) / 8;
+            const auto texels = textureBytes(m.texture);
+            if (!cityTextures.contains(texels))
+                cityTextures[texels] = out.add(texels, 8);
+            command(dl, 0xe7000000, 0);
+            command(dl, 0xd9000000, 0x00200405 | (m.lit ? 0x20000 : 0) | (fog ? 0x10000 : 0));
+            command(dl, 0xe3001201, m.filtered ? 0x2000 : 0);
+            command(dl, 0xfd100000, cityTextures[texels]);
+            command(dl, 0xf5100000, 0x07000000);
+            command(dl, 0xe6000000, 0);
+            command(dl, 0xf3000000,
+                    0x07000000 | (quint32(w * h - 1) << 12) | quint32((2048 + line - 1) / line));
+            command(dl, 0xe7000000, 0);
+            command(dl, 0xf5100000 | (quint32(line) << 9),
+                    (quint32(m.ct) << 18) | (quint32(m.mt) << 14) | (quint32(m.cs) << 8) |
+                        (quint32(m.ms) << 4));
+            command(dl, 0xf2000000, (quint32((w - 1) * 4) << 12) | quint32((h - 1) * 4));
+            QByteArray vertices;
+            auto flush = [&] {
+                const auto n = quint32(vertices.size() / 16);
+                if (!n)
+                    return;
+                command(dl, 0x01000000 | (n << 12) | (n << 1), out.add(vertices, 16));
+                for (quint32 v = 0; v < n; v += 3)
+                    command(dl, 0x05000000 | (v * 2 << 16) | ((v + 1) * 2 << 8) | ((v + 2) * 2), 0);
+                vertices.clear();
+            };
+            for (const auto &face : asset->faces) {
+                if (face.material != mi)
+                    continue;
+                for (const auto &v : face.vertices) {
+                    QByteArray bytes(16, 0);
+                    const auto point = rotate(v.point) + offset, normal = rotate(v.normal);
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const double value = point[axis] * 64;
+                        if (!std::isfinite(value) || std::abs(value) > 32767)
+                            throw Error("City piece exceeds native vertex coordinates");
+                        put16(bytes, axis * 2, quint16(qint16(std::round(value))));
+                        const int colors[] = {v.color.red(), v.color.green(), v.color.blue()};
+                        put8(bytes, 12 + axis,
+                             m.lit ? quint8(qint8(std::round(normal[axis] * 127)))
+                                   : quint8(colors[axis]));
+                    }
+                    if (std::abs(v.uv.x() * 32) > 32767 || std::abs(v.uv.y() * 32) > 32767)
+                        throw Error("City piece exceeds native texture coordinates");
+                    put16(bytes, 8, quint16(qint16(std::round(v.uv.x() * 32))));
+                    put16(bytes, 10, quint16(qint16(std::round(v.uv.y() * 32))));
+                    put8(bytes, 15, quint8(v.color.alpha()));
+                    vertices += bytes;
+                }
+                if (vertices.size() == 30 * 16)
+                    flush();
+            }
+            flush();
         }
         command(dl, 0xdf000000, 0);
         word(program, 1);

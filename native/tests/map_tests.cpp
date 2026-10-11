@@ -57,6 +57,72 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void cityPalette() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto edits = MapEdits::load(rom);
+            const auto &source = edits.source(1);
+            const auto assets = edits.cityAssets();
+            QCOMPARE(assets.size(), 19);
+            for (const auto &a : assets) {
+                QVERIFY(!a.faces.isEmpty());
+                QVERIFY(!a.materials.isEmpty());
+                QVERIFY(a.bounds.isValid());
+                QVERIFY(a.thumbnail.save(QCoreApplication::applicationDirPath() + "/city-" + a.id +
+                                         ".png"));
+                const auto p = source.map.bounds.center();
+                edits.placeCity(1, a.id, p, 90);
+                const auto field = Battlefield::load(rom, 1, {}, edits.model(1));
+                const auto triangles = field.triangles();
+                QCOMPARE(triangles.size(), source.field.triangleCount() + a.faces.size());
+                // An independent extent check catches omitted or double-applied rotation/scale.
+                double minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+                for (int i = source.field.triangleCount(); i < triangles.size(); ++i)
+                    for (auto v : triangles[i].points) {
+                        minX = std::min(minX, double(v.x()));
+                        maxX = std::max(maxX, double(v.x()));
+                        minZ = std::min(minZ, double(v.z()));
+                        maxZ = std::max(maxZ, double(v.z()));
+                    }
+                QVERIFY(std::abs(maxX - minX - a.bounds.height()) < .04);
+                QVERIFY(std::abs(maxZ - minZ - a.bounds.width()) < .04);
+                edits.removeCity(1, 0);
+                QVERIFY(!edits.modified());
+            }
+            edits.placeCity(1, "latium-house", source.map.world(100, 110));
+            edits.placeCity(1, "romulus-tower", source.map.world(120, 110), 90);
+            edits.placeCity(1, "talpaea-gatehouse", source.map.world(140, 110), 180);
+            for (int code = 32; code <= 35; ++code) {
+                const int y = 120 + (code - 32) * 10;
+                edits.paint(1, {{100., double(y)}, {155., double(y)}}, code, 1.5);
+                QCOMPARE(u8(edits.fineTerrain(1), y * 256 + 120), quint8(1));
+            }
+            const auto before = edits.json();
+            QVERIFY_THROWS_EXCEPTION(Error, edits.moveCity(1, 0, source.map.bounds.topLeft(), 0));
+            QCOMPARE(edits.json(), before);
+            auto copy = MapEdits::load(rom);
+            copy.apply(before);
+            QCOMPARE(copy.json(), before);
+            QCOMPARE(copy.model(1), edits.model(1));
+            const auto field = Battlefield::load(rom, 1, {}, edits.model(1));
+            QVERIFY(field.render(source.map.bounds, 1024)
+                        .save(QCoreApplication::applicationDirPath() + "/city-on-tenne.png"));
+            const auto exported = Rom::fromBytes(edits.rebuild(rom));
+            const auto reopened = MapEdits::load(exported);
+            QCOMPARE(reopened.source(1).geometry[0].data, edits.model(1));
+            QCOMPARE(reopened.fineTerrain(1), edits.fineTerrain(1));
+            QCOMPARE(reopened.source(1).field.render(source.map.bounds, 512),
+                     field.render(source.map.bounds, 512));
+            QCOMPARE(reopened.source(2).geometry[0].data, edits.source(2).geometry[0].data);
+            edits.restore(1);
+            QCOMPARE(edits.rebuild(rom), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void bridgePainting() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
