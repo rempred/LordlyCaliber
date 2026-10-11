@@ -1,0 +1,146 @@
+{
+  "version": 23,
+  "id": "high-attack-streamsplit",
+  "symbols": {
+    "HA_801D9A88": 2149423752,
+    "HA_801AD974": 2149243252,
+    "HA_801DC15C": 2149433692,
+    "HA_801DDF50": 2149441360,
+    "HA_801DBEB8": 2149433016,
+    "HA_801DDF10": 2149441296,
+    "HA_800712C4": 2147947204,
+    "HA_801D28FC": 2149394684,
+    "HA_800A020C": 2148139532,
+    "HA_80440040": 2151940160,
+    "HA_800900C0": 2148073664,
+    "HA_80090010": 2148073488,
+    "HA_800A4B00": 2148158208,
+    "HA_801DBF60": 2149433184,
+    "HA_80440620": 2151941664,
+    "HA_80440680": 2151941760,
+    "HA_80440700": 2151941888,
+    "HA_804407D0": 2151942096,
+    "HA_80440820": 2151942176,
+    "HA_80440900": 2151942400
+  },
+  "sites": [
+    {
+      "name": "insert",
+      "rom": 2215240,
+      "ram": 2149423736,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 0,
+      "retailSha256": "09e0a6da960bc0d433a4f390f59559d181604d0a8f22fad6ad78a3b3404876c7",
+      "legacySha256": "261044c20dd7880d1b20c9bde922548e7810474387889b7886a0c95ce7a6dbed",
+      "nativeSha256": "261044c20dd7880d1b20c9bde922548e7810474387889b7886a0c95ce7a6dbed"
+    },
+    {
+      "name": "type05",
+      "rom": 2224624,
+      "ram": 2149433120,
+      "size": 4,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 1,
+      "retailSha256": "0cb4202bde2845c78585983bf4488ed849c0a53fddc567f2484d9f3b77c9c1d0",
+      "legacySha256": "6990e85dca85581453c59533d4551a3664fa6593ca215d630a9ff4c90cfc5182",
+      "nativeSha256": "6990e85dca85581453c59533d4551a3664fa6593ca215d630a9ff4c90cfc5182"
+    },
+    {
+      "name": "type01",
+      "rom": 2224792,
+      "ram": 2149433288,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 2,
+      "retailSha256": "209fd243d009661217dcf3507b7e3440ae248c86690395c2ebd591300ffa2a18",
+      "legacySha256": "7a7d19f936e5b84bb7a2be389005c6bbb1bc2ea0d1f1a30c742ed76893c9b739",
+      "nativeSha256": "7a7d19f936e5b84bb7a2be389005c6bbb1bc2ea0d1f1a30c742ed76893c9b739"
+    },
+    {
+      "name": "type02",
+      "rom": 2224884,
+      "ram": 2149433380,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 3,
+      "retailSha256": "4a89db898ee03dd7345ce8afbd1b527e934de6c870f68cf75a1a508af4e3de77",
+      "legacySha256": "770e9fbef87aeeb80a92a85abb5e6d763f9c92c355dcce5f5bcd72d9506d863a",
+      "nativeSha256": "770e9fbef87aeeb80a92a85abb5e6d763f9c92c355dcce5f5bcd72d9506d863a"
+    },
+    {
+      "name": "final",
+      "rom": 2223180,
+      "ram": 2149431676,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 4,
+      "retailSha256": "7f122eb28946a5a3f31ebae63aa548d1c4d673aa92f6087e5bd97c9b52062df9",
+      "legacySha256": "afe843321d607386e835429463062541823acccdcda331553d4d113bcb22ecbe",
+      "nativeSha256": "afe843321d607386e835429463062541823acccdcda331553d4d113bcb22ecbe"
+    },
+    {
+      "name": "type17",
+      "rom": 2224512,
+      "ram": 2149433008,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 5,
+      "retailSha256": "b736dbea9664b8e7d1cb5ad240085ebb66af472c440cc5b3de71f311fd442794",
+      "legacySha256": "6f4d7c28005695f452828daff2d104247f3a546047e2b81d2d5e7ec623d5efba",
+      "nativeSha256": "6f4d7c28005695f452828daff2d104247f3a546047e2b81d2d5e7ec623d5efba"
+    },
+    {
+      "name": "cleanup",
+      "rom": 2045680,
+      "ram": 2149253728,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 6,
+      "retailSha256": "7092b94dc7619fa924540d60d82e670c54364166be8b30e34099fab132244d67",
+      "legacySha256": "570696eff38eb83816dd5f820cb920d4a9efc1ee8b1c02439cceae078a4d1b72",
+      "nativeSha256": "570696eff38eb83816dd5f820cb920d4a9efc1ee8b1c02439cceae078a4d1b72"
+    },
+    {
+      "name": "interrupt",
+      "rom": 2186008,
+      "ram": 2149394504,
+      "size": 8,
+      "source": "high-attack-hooks.s",
+      "hookIndex": 7,
+      "retailSha256": "ebf702bc71b31925976f9cec73e5a9a1247c862c61c4e7b9be2e33a279486fe4",
+      "legacySha256": "681fe048de4b39f4e5a6152f1339a11c376db53bbd837d88c5097d34bab0c489",
+      "nativeSha256": "681fe048de4b39f4e5a6152f1339a11c376db53bbd837d88c5097d34bab0c489"
+    },
+    {
+      "name": "loader",
+      "rom": 216832,
+      "ram": 2148158208,
+      "size": 108,
+      "source": "high-attack-bootstrap.s",
+      "retailSha256": "77133f431d5e12dd850002c0d3d4e0fecbe3a7a699d604dc8c5eae9976e1d260",
+      "legacySha256": "cd88f3b1af828df80afde20127e84c2b99150eaac68e35a73e318e2f40b97763",
+      "nativeSha256": "cb83a3f24b2b7fe519c855c46ce978a1a34b0bbfed10efee622be6ab60fd6041"
+    },
+    {
+      "name": "continuation",
+      "rom": 198156,
+      "ram": 2148139532,
+      "size": 192,
+      "source": "high-attack-continuation.s",
+      "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
+      "legacySha256": "68a10c77961e36c979378081d912f61d3fcab244394b738c598e3608205ea491",
+      "nativeSha256": "6c83c46b96375a60fcfbd1355feb7bf9a802bca43fcea25389389f2ef07166a2"
+    },
+    {
+      "name": "module",
+      "rom": 41549824,
+      "ram": 2151940096,
+      "size": 6736,
+      "source": "high-attack-module.s",
+      "retailSha256": "fd9ed7bc0d67d7ccb16a378a5f238d83bcc6c1f972143a3950ace43441c5a204",
+      "legacySha256": "11fdbb025af546ed90edbd5f3f8828cc6a2cdcd6ad82e7fc514bc5ecc1b719bb",
+      "nativeSha256": "3d94a6e9060b6352efd29a21333259fe33544eeea72d3dce9fb9794ad6c8eebf"
+    }
+  ]
+}

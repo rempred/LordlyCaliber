@@ -1,0 +1,1001 @@
+#include "engine/field_borders.h"
+#include "engine/field_brush.h"
+#include "engine/field_span.h"
+#include "engine/map_edits.h"
+#include <QSet>
+#include <algorithm>
+#include <bit>
+#include <cmath>
+#include <tuple>
+namespace lordly {
+namespace {
+double real(const QByteArray &b, int at) {
+    const double v = std::bit_cast<float>(u32(b, at));
+    if (!std::isfinite(v))
+        throw Error("Invalid map coordinate");
+    return v;
+}
+void putReal(QByteArray &b, int at, double v) {
+    put32(b, at, std::bit_cast<quint32>(float(v)));
+}
+void word(QByteArray &b, quint32 n) {
+    const int at = int(b.size());
+    b.resize(at + 4);
+    put32(b, at, n);
+}
+void command(QByteArray &b, quint32 a, quint32 c) {
+    word(b, a);
+    word(b, c);
+}
+double fixed(const QByteArray &b, int i) {
+    return qint16(u16(b, i * 2)) + u16(b, 32 + i * 2) / 65536.;
+}
+void putFixed(QByteArray &b, int i, double n) {
+    if (!std::isfinite(n) || std::abs(n) > 32767)
+        throw Error("Moved building exceeds matrix range");
+    const auto q = qint32(std::round(n * 65536));
+    put16(b, i * 2, quint16(quint32(q) >> 16));
+    put16(b, 32 + i * 2, quint16(q));
+}
+// Original RLE sample reader: z64 F3704..F37D4 (RAM 801A69A4).
+// Row offsets are halfwords from +28. FFnn repeats the following height nn times.
+quint16 heightSample(const QByteArray &b, int x, int y) {
+    const int width = u16(b, 0), height = u16(b, 2);
+    if (x < 0 || y < 0 || x >= width || y >= height)
+        return 0;
+    int at = 28 + u16(b, 28 + y * 2) * 2, cell = 0;
+    while (cell < width) {
+        const int value = u16(b, at);
+        at += 2;
+        const int run = value >> 8 == 255 ? value & 255 : 1;
+        if (!run || cell + run > width)
+            throw Error("Invalid field height run");
+        const int h = value >> 8 == 255 ? u16(b, at) : value;
+        if (value >> 8 == 255)
+            at += 2;
+        if (x < cell + run)
+            return quint16(h);
+        cell += run;
+    }
+    throw Error("Missing field height sample");
+}
+double heightAt(const FieldMapSource &source, QPointF p) {
+    if (source.geometry.size() < 2)
+        return 0;
+    const auto &b = source.geometry[1].data;
+    const double x = (p.x() - real(b, 4)) / (real(b, 8) - real(b, 4)) * (u16(b, 0) - 1),
+                 z = (p.y() - real(b, 20)) / (real(b, 24) - real(b, 20)) * (u16(b, 2) - 1);
+    const int ix = int(std::floor(x)), iz = int(std::floor(z));
+    const double fx = x - ix, fz = z - iz;
+    const double a = heightSample(b, ix, iz), d = heightSample(b, ix + 1, iz + 1);
+    const double h = fz >= fx ? a * (1 - fz) + heightSample(b, ix, iz + 1) * (fz - fx) + d * fx
+                              : a * (1 - fx) + heightSample(b, ix + 1, iz) * (fx - fz) + d * fz;
+    // Native height interpolation at z64 F33C8 uses 0x477EFF00 = 65279.
+    return real(b, 12) + (real(b, 16) - real(b, 12)) * h / 65279.;
+}
+struct Append {
+    QByteArray bytes;
+    int geometry;
+    quint32 add(QByteArray data, int alignment = 8) {
+        while (bytes.size() % alignment)
+            bytes += char(0);
+        const auto at = bytes.size();
+        if (at + data.size() > 512 * 1024)
+            throw Error("This map has reached its detail capacity (512 KiB); simplify or erase "
+                        "some strokes");
+        bytes += data;
+        return 0x02000000u + quint32(at - geometry);
+    }
+};
+class TerrainClone {
+    const QByteArray &original_;
+    Append &out_;
+    const QSet<int> &removed_;
+    QSet<quint32> active_;
+    int face_ = 0, commands_ = 0;
+
+  public:
+    TerrainClone(const QByteArray &original, Append &out, const QSet<int> &removed)
+        : original_(original), out_(out), removed_(removed) {}
+    quint32 clone(quint32 address, int depth = 0) {
+        if (depth > 24 || active_.contains(address) || address >> 24 != 2)
+            throw Error("Unsupported terrain drawing-list reference");
+        active_.insert(address);
+        QByteArray code;
+        bool changed = false;
+        for (quint32 p = address & 0xffffff;; p += 8) {
+            if (++commands_ > 100000)
+                throw Error("Terrain drawing-list budget exceeded");
+            const int at = out_.geometry + int(p);
+            const auto a = u32(original_, at), b = u32(original_, at + 4), op = a >> 24;
+            if (op == 5 || op == 6 || op == 7) {
+                const bool first = !removed_.contains(face_++);
+                const bool second = op != 5 && !removed_.contains(face_++);
+                if (first && (second || op == 5))
+                    command(code, a, b);
+                else {
+                    changed = true;
+                    if (first)
+                        command(code, 0x05000000u | (a & 0xffffff), 0);
+                    if (second)
+                        command(code, 0x05000000u | (b & 0xffffff), 0);
+                }
+            } else {
+                const auto next = op == 0xde ? clone(b, depth + 1) : b;
+                changed |= next != b;
+                command(code, a, next);
+            }
+            if (op == 0xdf || (op == 0xde && (a & 0x10000)))
+                break;
+        }
+        active_.remove(address);
+        return changed ? out_.add(code) : address;
+    }
+};
+class BuildingClone {
+    const QByteArray &original_;
+    Append &out_;
+    QVector3D delta_;
+    QMap<quint32, quint32> lists_, matrices_;
+    QSet<quint32> active_;
+    int commands_ = 0;
+
+  public:
+    BuildingClone(const QByteArray &b, Append &out, QVector3D delta)
+        : original_(b), out_(out), delta_(delta) {}
+    quint32 clone(quint32 address, int depth = 0) {
+        if (lists_.contains(address))
+            return lists_[address];
+        if (depth > 24 || active_.contains(address) || address >> 24 != 2)
+            throw Error("Building uses an unsupported shared drawing list");
+        active_.insert(address);
+        QByteArray code;
+        for (quint32 p = address & 0xffffff;; p += 8) {
+            if (++commands_ > 50000)
+                throw Error("Building drawing list exceeds budget");
+            const auto at = out_.geometry + p;
+            const quint32 a = u32(original_, at), b = u32(original_, at + 4);
+            quint32 next = b;
+            const auto op = a >> 24;
+            if (op == 0xda) {
+                if (!(a & 2) || b >> 24 != 2)
+                    throw Error("Building uses a relative or dynamic transform that cannot move "
+                                "independently yet");
+                if (!matrices_.contains(b)) {
+                    auto m = original_.mid(out_.geometry + (b & 0xffffff), 64);
+                    if (m.size() != 64)
+                        throw Error("Truncated building matrix");
+                    for (int axis = 0; axis < 3; ++axis)
+                        putFixed(m, 12 + axis, fixed(m, 12 + axis) + delta_[axis]);
+                    matrices_[b] = out_.add(m, 16);
+                }
+                next = matrices_[b];
+            } else if (op == 0xde)
+                next = clone(b, depth + 1);
+            command(code, a, next);
+            if (op == 0xdf || (op == 0xde && (a & 0x10000)))
+                break;
+        }
+        active_.remove(address);
+        const auto result = out_.add(code);
+        lists_[address] = result;
+        return result;
+    }
+};
+struct BrushPoint {
+    QPointF grid;
+    double distance, influence;
+};
+using BrushPolygon = QVector<BrushPoint>;
+BrushPolygon clip(BrushPolygon points, double boundary, bool above, bool influence = false) {
+    BrushPolygon out;
+    if (points.isEmpty())
+        return out;
+    auto coordinate = [&](const BrushPoint &p) { return influence ? p.influence : p.distance; };
+    auto prior = points.last();
+    bool was = above ? coordinate(prior) >= boundary : coordinate(prior) <= boundary;
+    for (const auto &p : points) {
+        const bool inside = above ? coordinate(p) >= boundary : coordinate(p) <= boundary;
+        if (inside != was) {
+            const double f = (boundary - coordinate(prior)) / (coordinate(p) - coordinate(prior));
+            out << BrushPoint{prior.grid + (p.grid - prior.grid) * f,
+                              prior.distance + (p.distance - prior.distance) * f,
+                              prior.influence + (p.influence - prior.influence) * f};
+        }
+        if (inside)
+            out << p;
+        prior = p;
+        was = inside;
+    }
+    return out;
+}
+// Use the original rendered land surface, including its authored slopes. A
+// coarse spatial index avoids testing every map triangle for every brush vertex.
+class Surface {
+    QVector<FieldTriangle> triangles_;
+    QVector<QVector<int>> bins_ = QVector<QVector<int>>(1024);
+    QRectF bounds_;
+    const FieldMapSource &source_;
+    int cell(double p, double start, double size) const {
+        return std::clamp(int((p - start) / size * 32), 0, 31);
+    }
+
+  public:
+    Surface(const FieldMapSource &s, const FieldBorders *borders = nullptr)
+        : triangles_(s.field.surface()), bounds_(s.map.bounds), source_(s) {
+        if (borders)
+            triangles_.removeIf([&](const FieldTriangle &t) { return borders->removes(t); });
+        for (int i = 0; i < triangles_.size(); ++i) {
+            const auto &t = triangles_[i].points;
+            const int x0 = cell(std::min({t[0].x(), t[1].x(), t[2].x()}), bounds_.left(),
+                                bounds_.width()),
+                      x1 = cell(std::max({t[0].x(), t[1].x(), t[2].x()}), bounds_.left(),
+                                bounds_.width()),
+                      z0 = cell(std::min({t[0].z(), t[1].z(), t[2].z()}), bounds_.top(),
+                                bounds_.height()),
+                      z1 = cell(std::max({t[0].z(), t[1].z(), t[2].z()}), bounds_.top(),
+                                bounds_.height());
+            for (int z = z0; z <= z1; ++z)
+                for (int x = x0; x <= x1; ++x)
+                    bins_[z * 32 + x] << i;
+        }
+    }
+    double height(QPointF p) const {
+        double result = -1e9;
+        const int x = cell(p.x(), bounds_.left(), bounds_.width()),
+                  z = cell(p.y(), bounds_.top(), bounds_.height());
+        for (int i : bins_[z * 32 + x]) {
+            const auto &t = triangles_[i].points;
+            const double ax = t[1].x() - t[0].x(), az = t[1].z() - t[0].z(),
+                         bx = t[2].x() - t[0].x(), bz = t[2].z() - t[0].z(), px = p.x() - t[0].x(),
+                         pz = p.y() - t[0].z(), det = ax * bz - bx * az;
+            if (std::abs(det) < 1e-9)
+                continue;
+            const double a = (px * bz - bx * pz) / det, b = (ax * pz - px * az) / det;
+            if (a >= -1e-5 && b >= -1e-5 && a + b <= 1.00001)
+                result = std::max(result,
+                                  t[0].y() + a * (t[1].y() - t[0].y()) + b * (t[2].y() - t[0].y()));
+        }
+        return result == -1e9 ? heightAt(source_, p) : result;
+    }
+};
+QVector<QVector3D> mountainSummits(const FieldMapSource &source, const Surface &ground, int type) {
+    if (type != 7 && type != 14)
+        return {};
+    struct Vertex {
+        QVector3D point;
+        bool higher = false, lower = false;
+    };
+    QMap<std::tuple<float, float, float>, Vertex> vertices;
+    for (const auto &t : source.terrainFaces) {
+        if (t.terrain != type)
+            continue;
+        for (const auto &p : t.points) {
+            auto &v = vertices[{p.x(), p.y(), p.z()}];
+            v.point = p;
+            for (const auto &q : t.points) {
+                v.higher |= q.y() > p.y() + .0001f;
+                v.lower |= q.y() < p.y() - .05f;
+            }
+        }
+    }
+    QVector<QVector3D> result;
+    const auto b = source.map.bounds;
+    for (const auto &v : vertices) {
+        if (v.higher || !v.lower)
+            continue;
+        const auto p = v.point;
+        const double height = p.y() - ground.height({p.x(), p.z()});
+        if (height > .1)
+            result << QVector3D(float((p.x() - b.left()) * 256 / b.width()), float(height),
+                                float((p.z() - b.top()) * 256 / b.height()));
+    }
+    return result;
+}
+QByteArray textureBytes(const QImage &image) {
+    const int w = image.width(), h = image.height();
+    if (w < 1 || h < 1 || (w & (w - 1)) || w * h > 2048)
+        throw Error("Invalid map brush texture dimensions");
+    QByteArray out(w * h * 2, 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const auto c = image.pixelColor(x, y);
+            // Decode/re-encode an RGBA16 texel without losing a level to truncation.
+            put16(out, (y * w + x) * 2,
+                  quint16(((c.red() * 31 + 127) / 255 << 11) | ((c.green() * 31 + 127) / 255 << 6) |
+                          ((c.blue() * 31 + 127) / 255 << 1) | (c.alpha() >= 128)));
+        }
+    return out;
+}
+struct PaintVertex {
+    QVector3D p, normal;
+    QPointF uv;
+    quint8 alpha;
+};
+using PaintTriangle = std::array<PaintVertex, 3>;
+struct BridgeSpan {
+    FieldSpan span;
+    double deck;
+    QVector<int> cells;
+};
+QVector<BridgeSpan> bridgeSpans(const FieldMapSource &source, const FieldChanges &change,
+                                const Surface &surface, int type) {
+    QVector<BridgeSpan> result;
+    QByteArray visited(65536, 0);
+    const QSizeF cell(source.map.bounds.width() / 256, source.map.bounds.height() / 256);
+    for (int start = 0; start < 65536; ++start) {
+        if (visited[start] || u8(change.paint, start) != type)
+            continue;
+        QVector<int> cells{start};
+        QVector<QPointF> points;
+        bool changed = false;
+        double deck = -1e9;
+        visited[start] = 1;
+        for (int i = 0; i < cells.size(); ++i) {
+            const int at = cells[i];
+            const auto p = source.map.bounds.topLeft() +
+                           QPointF((at % 256 + .5) * cell.width(), (at / 256 + .5) * cell.height());
+            points << p;
+            deck = std::max(deck, surface.height(p));
+            changed |= u8(source.visualTerrain, at) != type;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const int x = at % 256 + dx, y = at / 256 + dy;
+                    if (x < 0 || x >= 256 || y < 0 || y >= 256)
+                        continue;
+                    const int next = y * 256 + x;
+                    if (!visited[next] && u8(change.paint, next) == type) {
+                        visited[next] = 1;
+                        cells << next;
+                    }
+                }
+        }
+        if (changed)
+            result << BridgeSpan{FieldSpan(points, cell), deck + .03125, cells};
+    }
+    return result;
+}
+QVector<PaintTriangle> bridgeMesh(const QVector<BridgeSpan> &spans, const FieldBrush &brush) {
+    QVector<PaintTriangle> result;
+    for (const auto &span : spans)
+        for (const auto &face : brush.bridge) {
+            PaintTriangle out;
+            for (int n = 0; n < 3; ++n) {
+                const auto &v = face[n];
+                const auto p = span.span.world({v.point.x(), v.point.z()});
+                out[n] = {
+                    {float(p.x()), float(span.deck + v.point.y() * span.span.width), float(p.y())},
+                    {},
+                    v.uv,
+                    255};
+            }
+            const auto normal =
+                QVector3D::crossProduct(out[1].p - out[0].p, out[2].p - out[0].p).normalized();
+            for (auto &v : out)
+                v.normal = normal;
+            result << out;
+        }
+    return result;
+}
+QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brush,
+                            const Surface &surface, bool border,
+                            const QVector<QPointF> &peakPositions) {
+    QVector<PaintTriangle> result;
+    if (shape.cells.isEmpty())
+        return result;
+    const int step = shape.road() ? 1 : 2;
+    const bool hasBorder = !brush.border.isNull() && shape.forest();
+    const auto &texture = border ? brush.border : brush.texture;
+    auto vertex = [&](const BrushPoint &p) {
+        const auto world = shape.world(p.grid);
+        const double lift = shape.rise(p.grid);
+        auto height = [&](QPointF xy) { return surface.height(xy) + shape.rise(shape.grid(xy)); };
+        constexpr double offset = .12;
+        QVector3D normal(
+            float(height(world - QPointF(offset, 0)) - height(world + QPointF(offset, 0))),
+            float(2 * offset),
+            float(height(world - QPointF(0, offset)) - height(world + QPointF(0, offset))));
+        normal.normalize();
+        QPointF uv(world.x() * brush.densityS, world.y() * brush.densityT);
+        if (shape.mountain()) {
+            const auto rock = shape.mountainUv(p.grid);
+            uv = {-.5 + texture.width() * rock.x(),
+                  -.5 + texture.height() * (p.distance < 1e-7 ? 0 : rock.y())};
+        } else if (border)
+            uv = {(world.x() + world.y()) * 48,
+                  -.5 + texture.height() * std::clamp(p.distance / shape.edgeWidth(), 0., 1.)};
+        else if (shape.road()) {
+            const auto road = shape.roadUv(p.grid);
+            uv = {-.5 + texture.width() * road.x(), road.y() * brush.densityT};
+        }
+        return PaintVertex{
+            {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
+            normal,
+            uv,
+            // Raised regions are rebuilt through their complete outline. Both
+            // coverage and edge feathering must be bypassed: interpolated rim
+            // vertices can fall just outside the coverage mask, which would
+            // erase the dark native foot and leave translucent triangle teeth.
+            quint8(shape.mountain() || shape.forest()
+                       ? 255
+                       : std::round(shape.opacity(p.grid) * shape.edgeOpacity(p.grid) * 255))};
+    };
+    auto polygon = [&](BrushPolygon poly) {
+        poly = clip(poly, 0, true, true);
+        poly = clip(poly, 0, true);
+        if (hasBorder)
+            poly = clip(poly, shape.edgeWidth(), !border);
+        QVector<BrushPolygon> triangles;
+        for (int n = 1; n + 1 < poly.size(); ++n)
+            triangles << BrushPolygon{poly[0], poly[n], poly[n + 1]};
+        QRectF envelope;
+        if (!poly.isEmpty()) {
+            double x0 = poly[0].grid.x(), x1 = x0, z0 = poly[0].grid.y(), z1 = z0;
+            for (const auto &p : poly) {
+                x0 = std::min(x0, p.grid.x());
+                x1 = std::max(x1, p.grid.x());
+                z0 = std::min(z0, p.grid.y());
+                z1 = std::max(z1, p.grid.y());
+            }
+            envelope = QRectF(QPointF(x0, z0), QPointF(x1, z1)).adjusted(-1e-7, -1e-7, 1e-7, 1e-7);
+        }
+        // A summit/ridge must be real vertices, not heights sampled only
+        // at neighbouring grid corners. Split both sides when it lies on an edge.
+        for (auto p : peakPositions) {
+            if (!envelope.contains(p))
+                continue;
+            QVector<BrushPolygon> split;
+            for (const auto &t : triangles) {
+                const auto a = t[1].grid - t[0].grid, b = t[2].grid - t[0].grid, q = p - t[0].grid;
+                const double det = a.x() * b.y() - a.y() * b.x();
+                if (std::abs(det) < 1e-7)
+                    continue;
+                const double u = (q.x() * b.y() - q.y() * b.x()) / det,
+                             v = (a.x() * q.y() - a.y() * q.x()) / det;
+                const bool atVertex =
+                    std::any_of(t.begin(), t.end(), [&](const BrushPoint &vertex) {
+                        return std::hypot(vertex.grid.x() - p.x(), vertex.grid.y() - p.y()) < 1e-6;
+                    });
+                if (atVertex || u < -1e-7 || v < -1e-7 || u + v > 1.0000001) {
+                    split << t;
+                    continue;
+                }
+                const BrushPoint peak{p, shape.distance(p), shape.influence(p)};
+                for (int i = 0; i < 3; ++i)
+                    split << BrushPolygon{t[i], t[(i + 1) % 3], peak};
+            }
+            triangles = std::move(split);
+        }
+        for (const auto &triangle : triangles) {
+            const auto a = triangle[1].grid - triangle[0].grid,
+                       b = triangle[2].grid - triangle[0].grid;
+            if (std::abs(a.x() * b.y() - a.y() * b.x()) < 1e-7)
+                continue;
+            PaintTriangle t{vertex(triangle[0]), vertex(triangle[1]), vertex(triangle[2])};
+            if (shape.mountain())
+                for (int i = 1; i < 3; ++i) {
+                    const double period = texture.width() * 2.;
+                    t[i].uv.rx() += std::round((t[0].uv.x() - t[i].uv.x()) / period) * period;
+                }
+            if (t[0].alpha || t[1].alpha || t[2].alpha)
+                result << t;
+        }
+    };
+    auto patch = [&](int x, int z, int width) {
+        const QPointF a(x, z), b(x, z + width), c(x + width, z + width), d(x + width, z);
+        const BrushPoint pa{a, shape.distance(a), shape.influence(a)},
+            pb{b, shape.distance(b), shape.influence(b)},
+            pc{c, shape.distance(c), shape.influence(c)},
+            pd{d, shape.distance(d), shape.influence(d)};
+        polygon({pa, pb, pc});
+        polygon({pa, pc, pd});
+    };
+    // Small spatial blocks keep neighbouring rows in the 32-vertex RSP cache.
+    // This retains the full contour resolution without storing each shared
+    // vertex again on every scanline of a rebuilt native region.
+    const int block = step * 4;
+    for (int bz = std::max(0, shape.cells.top() / step * step);
+         bz <= std::min(255, shape.cells.bottom() + 1); bz += block)
+        for (int bx = std::max(0, shape.cells.left() / step * step);
+             bx <= std::min(255, shape.cells.right() + 1); bx += block)
+            for (int z = bz; z < bz + block && z <= std::min(255, shape.cells.bottom() + 1);
+                 z += step)
+                for (int x = bx; x < bx + block && x <= std::min(255, shape.cells.right() + 1);
+                     x += step) {
+                    // Retain tiny islands and cuts even when the coarse corners
+                    // all lie on the other side of their outline.
+                    const bool middle = shape.distance({double(x + 1), double(z + 1)}) > 0;
+                    if (step == 2 && (shape.distance({double(x), double(z)}) > 0) != middle &&
+                        (shape.distance({double(x + 2), double(z)}) > 0) != middle &&
+                        (shape.distance({double(x), double(z + 2)}) > 0) != middle &&
+                        (shape.distance({double(x + 2), double(z + 2)}) > 0) != middle) {
+                        patch(x, z, 1);
+                        patch(x + 1, z, 1);
+                        patch(x, z + 1, 1);
+                        patch(x + 1, z + 1, 1);
+                    } else
+                        patch(x, z, step);
+                }
+    return result;
+}
+} // namespace
+QVector<MountainPeak> fieldMountainPeaks(const FieldMapSource &source, const FieldChanges &change) {
+    auto region = source.visualTerrain;
+    for (int i = 0; i < region.size(); ++i)
+        if (u8(change.paint, i) != 255)
+            region[i] = change.paint[i];
+    FieldBorders borders(source, change);
+    for (const auto &t : source.terrainFaces)
+        if (t.terrain == 7 || t.terrain == 14)
+            borders.removed[t.owner].insert(t.face);
+    const Surface ground(source, &borders);
+    QVector<MountainPeak> result;
+    for (int type : {7, 14}) {
+        const FieldBrushShape shape(region, type, source.map.bounds, {},
+                                    mountainSummits(source, ground, type));
+        for (const auto &p : shape.peaks()) {
+            MountainPeak peak{{p.x(), p.z()}, type, p.y(), p.y(), {p.x(), p.z()}};
+            for (const auto &edit : change.peaks)
+                if (edit.sameIdentity(peak)) {
+                    peak.position = edit.position;
+                    peak.height = edit.height;
+                    peak.removed = edit.removed;
+                }
+            if (!peak.removed)
+                result << peak;
+        }
+    }
+    for (const auto &edit : change.peaks)
+        if (edit.addedId && !edit.removed) {
+            auto peak = edit;
+            peak.defaultHeight = 1.6;
+            result << peak;
+        }
+    return result;
+}
+QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
+    const auto &original = source.geometry[1].data;
+    const FieldBorders borders(source, change);
+    const Surface surface(source, &borders);
+    QMap<int, std::shared_ptr<FieldBrushShape>> shapes;
+    for (int type : {5, 7, 13, 14})
+        if (borders.change.paint.contains(char(type)))
+            shapes[type] = std::make_shared<FieldBrushShape>(
+                borders.change.paint, type, source.map.bounds, borders.native,
+                mountainSummits(source, surface, type), change.peaks);
+    const bool bridges = change.paint.contains(char(2)) || change.paint.contains(char(10));
+    if (shapes.isEmpty() && borders.removed.isEmpty() && !bridges)
+        return original;
+    const int w = u16(original, 0), h = u16(original, 2);
+    if (w < 2 || h < 2 || w > 256 || h > 256 || original.size() < 28 + h * 2)
+        throw Error("Unsupported field height grid");
+    QVector<BridgeSpan> spans;
+    if (bridges)
+        for (int type : {2, 10})
+            spans += bridgeSpans(source, change, surface, type);
+    const double stepX = (real(original, 8) - real(original, 4)) / (w - 1),
+                 stepZ = (real(original, 24) - real(original, 20)) / (h - 1);
+    const double minY = real(original, 12), oldMax = real(original, 16);
+    if (oldMax < minY || real(original, 8) <= real(original, 4) ||
+        real(original, 24) <= real(original, 20))
+        throw Error("Invalid field height bounds");
+    double maxY = oldMax;
+    QVector<double> values(w * h);
+    bool changed = false;
+    for (int z = 0; z < h; ++z)
+        for (int x = 0; x < w; ++x) {
+            const QPointF p(
+                real(original, 4) + x * (real(original, 8) - real(original, 4)) / (w - 1),
+                real(original, 20) + z * (real(original, 24) - real(original, 20)) / (h - 1));
+            double base = minY + (oldMax - minY) * heightSample(original, x, z) / 65279.;
+            const int gx =
+                          int((p.x() - source.map.bounds.left()) * 256 / source.map.bounds.width()),
+                      gz =
+                          int((p.y() - source.map.bounds.top()) * 256 / source.map.bounds.height());
+            if (gx >= 0 && gx < 256 && gz >= 0 && gz < 256 && borders.replaced[gz * 256 + gx]) {
+                base = surface.height(p);
+                changed = true;
+            }
+            double value = base;
+            // Narrow bridges may fall entirely between movement-height samples.
+            // Include their surrounding interpolation corners, not just sample
+            // centres that happen to land in a painted gameplay cell.
+            for (const auto &bridge : spans) {
+                const auto &span = bridge.span;
+                const double a = std::abs(FieldSpan::dot(p - span.center, span.along)),
+                             b = std::abs(FieldSpan::dot(p - span.center, span.across));
+                if (a <= span.length / 2 + std::abs(span.along.x()) * stepX +
+                             std::abs(span.along.y()) * stepZ &&
+                    b <= span.width / 2 + std::abs(span.across.x()) * stepX +
+                             std::abs(span.across.y()) * stepZ) {
+                    value = std::max(value, bridge.deck);
+                    changed = true;
+                }
+            }
+            for (const auto &shape : shapes) {
+                // Native foliage is above its walk surface; its movement grid
+                // follows roughly half of the canopy rise. Rock uses the visible
+                // surface, including when it is painted over existing foliage.
+                const double rise = shape->rise(shape->grid(p));
+                if (rise > 0) {
+                    value =
+                        std::max(value, shape->forest() ? base + rise * .5
+                                                        : std::max(base, surface.height(p)) + rise);
+                    changed = true;
+                }
+            }
+            values[z * w + x] = value;
+            maxY = std::max(maxY, value);
+        }
+    if (!changed)
+        return original;
+    // Keep the existing scale whenever possible, preserving untouched samples
+    // exactly. When a new summit exceeds it, the complete grid is requantized.
+    QByteArray out = original.left(28);
+    putReal(out, 16, maxY);
+    maxY = real(out, 16);
+    out.resize(28 + h * 2);
+    for (int z = 0; z < h; ++z) {
+        const int offset = (int(out.size()) - 28) / 2;
+        if (offset > 65535)
+            throw Error("Edited height grid exceeds row offset range");
+        put16(out, 28 + z * 2, quint16(offset));
+        QVector<quint16> row;
+        for (int x = 0; x < w; ++x)
+            row << quint16(std::clamp(
+                std::round((values[z * w + x] - minY) / (maxY - minY) * 65279.), 0., 65279.));
+        for (int x = 0; x < w;) {
+            int n = 1;
+            while (x + n < w && n < 255 && row[x + n] == row[x])
+                ++n;
+            auto half = [&](quint16 v) {
+                const int at = int(out.size());
+                out.resize(at + 2);
+                put16(out, at, v);
+            };
+            if (n >= 3) {
+                half(quint16(0xff00 | n));
+                half(row[x]);
+            } else
+                for (int i = 0; i < n; ++i)
+                    half(row[x]);
+            x += n;
+        }
+    }
+    return out;
+}
+QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &change,
+                          const QMap<int, FieldBrush> &tiles, const QVector<CityAsset> &city) {
+    const auto &original = source.geometry[0].data;
+    const FieldBorders borders(source, change);
+    Append out{original, int((u32(original, 48) + 15) & ~15u)};
+    const auto groups = source.field.siteGroups();
+    QMap<int, QVector3D> movement;
+    auto elevated = source;
+    elevated.geometry[1].data = editFieldHeight(source, change);
+    // A building on newly raised ground must rise too, even if its X/Z marker
+    // was not dragged during this stroke.
+    for (auto it = groups.begin(); it != groups.end(); ++it) {
+        const int row = it.key() - 1;
+        if (row < 0 || row >= source.map.points.size())
+            continue;
+        const auto from = source.map.points[row], to = change.sites.value(row, from);
+        const auto delta = to - from;
+        const QVector3D shift(float(delta.x()),
+                              float(heightAt(elevated, to) - heightAt(source, from)),
+                              float(delta.y()));
+        if (shift.length() > .00001)
+            movement[it.value()] = shift;
+    }
+    for (auto it = change.sites.begin(); it != change.sites.end(); ++it)
+        if (!groups.contains(it.key() + 1))
+            throw Error("Town has no verified drawing group");
+    constexpr int widths[] = {0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 3, 3, 1,
+                              1, 0, 1, 1, 1, 2, 2, 3, 1, 2, 2, 3, 2};
+    QByteArray program;
+    QMap<int, std::shared_ptr<BuildingClone>> clones;
+    const auto transforms = source.field.drawTransforms();
+    for (quint32 at = u32(original, 0);;) {
+        const int instructionAt = int(at);
+        const auto op = u32(original, at);
+        at += 4;
+        if (!op)
+            break;
+        if (op > 25)
+            throw Error("Unsupported field program");
+        word(program, op);
+        std::array<quint32, 3> args{};
+        for (int n = 0; n < widths[op]; ++n) {
+            args[n] = u32(original, at);
+            at += 4;
+        }
+        if (borders.removed.contains(instructionAt)) {
+            TerrainClone clone(original, out, *borders.removed.constFind(instructionAt));
+            args[0] = clone.clone(args[0]);
+        }
+        if (op == 18 || op == 20 || op == 22 || op == 24) {
+            const int group = int(args[1]);
+            if (movement.contains(group)) {
+                if (!clones.contains(group))
+                    clones[group] = std::make_shared<BuildingClone>(original, out, movement[group]);
+                const auto list = clones[group]->clone(args[0]);
+                // Flags and some roofs inherit the transform from an earlier material
+                // list. Seed each moved draw with its original incoming transform.
+                const auto state = transforms.value(instructionAt);
+                auto matrix = state.left(64);
+                if (state.size() != 128)
+                    throw Error("Missing building transform");
+                for (int axis = 0; axis < 3; ++axis)
+                    putFixed(matrix, 12 + axis, fixed(matrix, 12 + axis) + movement[group][axis]);
+                QByteArray wrapper;
+                command(wrapper, 0xda380003, out.add(matrix, 16));
+                command(wrapper, 0xde000000, list);
+                // Do not leak the translated matrix into the following unmoved draw.
+                command(wrapper, 0xda380003, out.add(state.mid(64), 16));
+                command(wrapper, 0xdf000000, 0);
+                args[0] = out.add(wrapper);
+            }
+        }
+        for (int n = 0; n < widths[op]; ++n)
+            word(program, args[n]);
+    }
+    for (auto i = movement.begin(); i != movement.end(); ++i) {
+        if (!clones.contains(i.key()))
+            throw Error("Town drawing group is unavailable");
+        const int at = int(u32(original, 8)) + i.key() * 96;
+        for (int p = 0; p < 8; ++p)
+            for (int axis = 0; axis < 3; ++axis)
+                putReal(out.bytes, at + p * 12 + axis * 4,
+                        real(original, at + p * 12 + axis * 4) + i.value()[axis]);
+    }
+    if (!tiles.isEmpty()) {
+        const Surface surface(source, &borders);
+        const bool fog = source.field.terrainFog();
+        QByteArray matrix(64, 0);
+        for (int n = 0; n < 3; ++n)
+            putFixed(matrix, n * 5, 1. / 64);
+        putFixed(matrix, 15, 1);
+        QByteArray dl;
+        command(dl, 0xe7000000, 0);
+        command(dl, 0xda380003, out.add(matrix, 16));
+        // Native land uses lighting and vertex normals. Full-white vertex
+        // colours bypassed that lighting and washed out the forest in game.
+        command(dl, 0xd9000000, fog ? 0x00230405 : 0x00220405);
+        command(dl, 0xe3000a01, fog ? 0x00100000 : 0);
+        command(dl, 0xe3001001, 0);
+        command(dl, 0xe3001201, 0x00002000); // Filter enlarged terrain texels.
+        // Fog consumes SHADE alpha. Keep brush coverage in primitive alpha;
+        // cycle 1 modulates texel RGB by lighting, cycle 2 passes it through.
+        command(dl, fog ? 0xfc1217ff : 0xfc127e24, fog ? 0xfffffe38 : 0xfffff9fc);
+        command(dl, 0xd7000002, 0xffffffff);
+        for (auto type = tiles.begin(); type != tiles.end(); ++type) {
+            const FieldBrushShape shape(borders.change.paint, type.key(), source.map.bounds,
+                                        borders.native,
+                                        mountainSummits(source, surface, type.key()), change.peaks);
+            QVector<QPointF> peakPositions = shape.ridgeVertices();
+            for (const auto &peak : change.peaks)
+                if (peak.terrain == type.key() && !peak.removed)
+                    peakPositions << peak.position;
+            for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
+                const bool border = pass == 1;
+                const auto &image = border ? type->border : type->texture;
+                const bool bridge = type.key() == 2 || type.key() == 10;
+                const bool filtered = bridge             ? type->bridgeFiltered
+                                      : shape.mountain() ? type->filtered
+                                                         : true;
+                command(dl, 0xe3001201, filtered ? 0x00002000 : 0);
+                const auto painted =
+                    bridge
+                        ? bridgeMesh(bridgeSpans(source, change, surface, type.key()), type.value())
+                        : mesh(shape, type.value(), surface, border, peakPositions);
+                const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
+                          ms = int(std::log2(w)), mt = int(std::log2(h));
+                const bool highway = roadPaint(type.key());
+                // Mirroring the continuous road body makes both ends of every
+                // repeat meet at the same texels, including filtered samples.
+                const quint32 cs = shape.road()       ? 2
+                                   : shape.mountain() ? 1
+                                                      : 0,
+                              ct = shape.mountain() || border || bridge ? 2
+                                   : highway                            ? 1
+                                                                        : 0;
+                const auto tex = out.add(textureBytes(image), 8);
+                command(dl, 0xe7000000, 0);
+                command(dl, 0xfd100000, tex);
+                command(dl, 0xf5100000, 0x07000000);
+                command(dl, 0xe6000000, 0);
+                const int dxt = (2048 + line - 1) / line;
+                command(dl, 0xf3000000, 0x07000000 | (quint32(w * h - 1) << 12) | quint32(dxt));
+                command(dl, 0xe7000000, 0);
+                command(dl, 0xf5100000 | (quint32(line) << 9),
+                        (ct << 18) | (quint32(mt) << 14) | (cs << 8) | (quint32(ms) << 4));
+                command(dl, 0xf2000000, (quint32((w - 1) * 4) << 12) | quint32((h - 1) * 4));
+                // Reuse vertices within the RSP's 32-entry cache, and emit
+                // two triangles per command. Storage, not stroke count, is the limit.
+                for (bool translucent : {false, true}) {
+                    command(dl, 0xe7000000, 0);
+                    // Fog maps retain their original FOG_SHADE_A first blender;
+                    // ordinary maps use AA_ZB_XLU_SURF / OPA_SURF in both cycles.
+                    command(dl, 0xe200001c,
+                            fog ? (translucent ? 0xc81049d8 : 0xc8112078)
+                                : (translucent ? 0x005049d8 : 0x00552078));
+                    QByteArray vertices;
+                    QMap<QByteArray, int> cache;
+                    QVector<std::array<int, 3>> faces;
+                    auto indices = [](const std::array<int, 3> &f) {
+                        return (quint32(f[0] * 2) << 16) | (quint32(f[1] * 2) << 8) |
+                               quint32(f[2] * 2);
+                    };
+                    auto flush = [&] {
+                        if (faces.isEmpty())
+                            return;
+                        const auto n = quint32(vertices.size() / 16);
+                        command(dl, 0x01000000 | (n << 12) | (n << 1), out.add(vertices, 16));
+                        for (int i = 0; i < faces.size(); i += 2) {
+                            if (i + 1 < faces.size())
+                                command(dl, 0x06000000 | indices(faces[i]), indices(faces[i + 1]));
+                            else
+                                command(dl, 0x05000000 | indices(faces[i]), 0);
+                        }
+                        vertices.clear();
+                        faces.clear();
+                        cache.clear();
+                    };
+                    int priorAlpha = -1;
+                    for (const auto &points : painted) {
+                        const bool blend =
+                            points[0].alpha < 255 || points[1].alpha < 255 || points[2].alpha < 255;
+                        if (blend != translucent)
+                            continue;
+                        if (fog) {
+                            // Quantized per-face coverage keeps narrow feathered
+                            // joins while allowing the RSP to write per-vertex fog.
+                            const int alpha = std::clamp(
+                                int(std::round(
+                                    (points[0].alpha + points[1].alpha + points[2].alpha) / 51.)) *
+                                    17,
+                                0, 255);
+                            if (alpha != priorAlpha) {
+                                flush();
+                                command(dl, 0xe7000000, 0);
+                                command(dl, 0xfa000000, 0xffffff00u | quint32(alpha));
+                                priorAlpha = alpha;
+                            }
+                        }
+                        const auto mid = (points[0].uv + points[1].uv + points[2].uv) / 3;
+                        const double os = cs & 2 ? 0 : std::floor(mid.x() / (w * 8)) * (w * 8),
+                                     ot = ct & 2 ? 0 : std::floor(mid.y() / (h * 8)) * (h * 8);
+                        std::array<QByteArray, 3> packed;
+                        int missing = 0;
+                        for (int v = 0; v < 3; ++v) {
+                            auto &data = packed[v];
+                            data = QByteArray(16, 0);
+                            for (int axis = 0; axis < 3; ++axis) {
+                                const double p = points[v].p[axis] * 64;
+                                if (!std::isfinite(p) || std::abs(p) > 32767)
+                                    throw Error("Paint geometry exceeds vertex range");
+                                put16(data, axis * 2, quint16(qint16(std::round(p))));
+                                put8(data, 12 + axis,
+                                     quint8(qint8(std::round(points[v].normal[axis] * 127))));
+                            }
+                            put16(data, 8,
+                                  quint16(qint16(std::round((points[v].uv.x() - os) * 32))));
+                            put16(data, 10,
+                                  quint16(qint16(std::round((points[v].uv.y() - ot) * 32))));
+                            put8(data, 15, points[v].alpha);
+                            missing += !cache.contains(data);
+                        }
+                        if (cache.size() + missing > 32)
+                            flush();
+                        std::array<int, 3> face;
+                        for (int v = 0; v < 3; ++v) {
+                            if (!cache.contains(packed[v])) {
+                                cache[packed[v]] = int(vertices.size() / 16);
+                                vertices += packed[v];
+                            }
+                            face[v] = cache[packed[v]];
+                        }
+                        faces << face;
+                    }
+                    flush();
+                }
+            }
+        }
+        command(dl, 0xdf000000, 0);
+        word(program, 1);
+        word(program, out.add(dl));
+    }
+    QMap<QByteArray, quint32> cityTextures;
+    for (const auto &placement : change.city) {
+        const auto asset = std::find_if(
+            city.begin(), city.end(), [&](const CityAsset &a) { return a.id == placement.asset; });
+        if (asset == city.end())
+            throw Error("Missing city-piece source model");
+        const double angle = placement.rotation * 3.141592653589793 / 180.;
+        auto rotate = [&](QVector3D p) {
+            return QVector3D(float(p.x() * std::cos(angle) - p.z() * std::sin(angle)), p.y(),
+                             float(p.x() * std::sin(angle) + p.z() * std::cos(angle)));
+        };
+        const QVector3D offset(float(placement.position.x()),
+                               float(heightAt(elevated, placement.position)),
+                               float(placement.position.y()));
+        const bool fog = source.field.terrainFog();
+        QByteArray dl, matrix(64, 0);
+        for (int n = 0; n < 3; ++n)
+            putFixed(matrix, n * 5, 1. / 64);
+        putFixed(matrix, 15, 1);
+        command(dl, 0xe7000000, 0);
+        command(dl, 0xda380003, out.add(matrix, 16));
+        command(dl, 0xe3000a01, fog ? 0x00100000 : 0);
+        command(dl, 0xe3001001, 0);
+        command(dl, fog ? 0xfc1217ff : 0xfc127e24, fog ? 0xfffffe38 : 0xfffff9fc);
+        command(dl, 0xfa000000, 0xffffffff);
+        command(dl, 0xe200001c, fog ? 0xc8112078 : 0x00552078);
+        command(dl, 0xd7000002, 0xffffffff);
+        for (int mi = 0; mi < asset->materials.size(); ++mi) {
+            const auto &m = asset->materials[mi];
+            const int w = m.texture.width(), h = m.texture.height(), line = (w * 2 + 7) / 8;
+            const auto texels = textureBytes(m.texture);
+            if (!cityTextures.contains(texels))
+                cityTextures[texels] = out.add(texels, 8);
+            command(dl, 0xe7000000, 0);
+            command(dl, 0xd9000000, 0x00200405 | (m.lit ? 0x20000 : 0) | (fog ? 0x10000 : 0));
+            command(dl, 0xe3001201, m.filtered ? 0x2000 : 0);
+            command(dl, 0xfd100000, cityTextures[texels]);
+            command(dl, 0xf5100000, 0x07000000);
+            command(dl, 0xe6000000, 0);
+            command(dl, 0xf3000000,
+                    0x07000000 | (quint32(w * h - 1) << 12) | quint32((2048 + line - 1) / line));
+            command(dl, 0xe7000000, 0);
+            command(dl, 0xf5100000 | (quint32(line) << 9),
+                    (quint32(m.ct) << 18) | (quint32(m.mt) << 14) | (quint32(m.cs) << 8) |
+                        (quint32(m.ms) << 4));
+            command(dl, 0xf2000000, (quint32((w - 1) * 4) << 12) | quint32((h - 1) * 4));
+            QByteArray vertices;
+            auto flush = [&] {
+                const auto n = quint32(vertices.size() / 16);
+                if (!n)
+                    return;
+                command(dl, 0x01000000 | (n << 12) | (n << 1), out.add(vertices, 16));
+                for (quint32 v = 0; v < n; v += 3)
+                    command(dl, 0x05000000 | (v * 2 << 16) | ((v + 1) * 2 << 8) | ((v + 2) * 2), 0);
+                vertices.clear();
+            };
+            for (const auto &face : asset->faces) {
+                if (face.material != mi)
+                    continue;
+                for (const auto &v : face.vertices) {
+                    QByteArray bytes(16, 0);
+                    const auto point = rotate(v.point) + offset, normal = rotate(v.normal);
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const double value = point[axis] * 64;
+                        if (!std::isfinite(value) || std::abs(value) > 32767)
+                            throw Error("City piece exceeds native vertex coordinates");
+                        put16(bytes, axis * 2, quint16(qint16(std::round(value))));
+                        const int colors[] = {v.color.red(), v.color.green(), v.color.blue()};
+                        put8(bytes, 12 + axis,
+                             m.lit ? quint8(qint8(std::round(normal[axis] * 127)))
+                                   : quint8(colors[axis]));
+                    }
+                    if (std::abs(v.uv.x() * 32) > 32767 || std::abs(v.uv.y() * 32) > 32767)
+                        throw Error("City piece exceeds native texture coordinates");
+                    put16(bytes, 8, quint16(qint16(std::round(v.uv.x() * 32))));
+                    put16(bytes, 10, quint16(qint16(std::round(v.uv.y() * 32))));
+                    put8(bytes, 15, quint8(v.color.alpha()));
+                    vertices += bytes;
+                }
+                if (vertices.size() == 30 * 16)
+                    flush();
+            }
+            flush();
+        }
+        command(dl, 0xdf000000, 0);
+        word(program, 1);
+        word(program, out.add(dl));
+    }
+    word(program, 0);
+    const auto programAddress = out.add(program, 4);
+    put32(out.bytes, 0, (programAddress & 0xffffff) + out.geometry);
+    return out.bytes;
+}
+} // namespace lordly

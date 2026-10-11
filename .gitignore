@@ -1,3 +1,8 @@
 scratch/
 __pycache__/
 *.py[cod]
+native/build/
+native/dist/
+native/live/
+native/.local/
+native/CMakeUserPresets.json

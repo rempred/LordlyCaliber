@@ -1,0 +1,3498 @@
+{
+  "generator": "native/tools/generate-class-relocations.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "originalBases": {
+    "classes": 2149088204,
+    "appearances": 2149117152,
+    "directory": 2148199856
+  },
+  "owners": [
+    {
+      "start": 4096,
+      "size": 96,
+      "retailSha256": "519b6718076ee494179f69ef271ed61caa1ece63a7259fae51c49b9b18fee61d",
+      "references": [
+        {
+          "high": 0,
+          "low": 4,
+          "group": "directory",
+          "addend": 0,
+          "fixedAddress": true
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 4192,
+      "size": 192,
+      "retailSha256": "1b8bcfde3d2f48f2f04f8c699d72118f200375114c25c585adebdd1d7724c878",
+      "references": [
+        {
+          "high": 44,
+          "low": 48,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 68,
+          "low": 72,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 80,
+          "low": 84,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 116,
+          "low": 120,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 160,
+          "low": 164,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 4384,
+      "size": 528,
+      "retailSha256": "f8bbe6b5398faa3bcb92ff2beaec1a3d3fd3bdb6fbfae69708e72683316078b1",
+      "references": [
+        {
+          "high": 116,
+          "low": 120,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 284,
+          "low": 292,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 324,
+          "low": 332,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 340,
+          "low": 348,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 364,
+          "low": 372,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 376,
+          "low": 380,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 384,
+          "low": 392,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 428,
+          "low": 436,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 456,
+          "low": 464,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": [],
+      "constants": [
+        {
+          "offset": 40,
+          "field": "directoryCapacity"
+        }
+      ]
+    },
+    {
+      "start": 4912,
+      "size": 428,
+      "retailSha256": "6a2568de055c1671024009c3297f415635e48b092744d07e95b28ee7901a15b2",
+      "references": [
+        {
+          "high": 136,
+          "low": 140,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 156,
+          "low": 164,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 216,
+          "low": 224,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 5340,
+      "size": 428,
+      "retailSha256": "26e344d7a7df56b843c05605a7a8a267b10ac66e24cc624c10460d7e0e8a7c9d",
+      "references": [
+        {
+          "high": 136,
+          "low": 140,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 156,
+          "low": 164,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 216,
+          "low": 224,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 5828,
+      "size": 296,
+      "retailSha256": "f64386442c46e3903e870800d3ad4624c38bf8ff7b7c0e36f6008043eaa7e5a0",
+      "references": [
+        {
+          "high": 88,
+          "low": 96,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 184,
+          "low": 188,
+          "group": "directory",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 6124,
+      "size": 232,
+      "retailSha256": "93fd810fac495641e4931e0a1ab1070c6606554dec0cadf4bc37761090b5b52d",
+      "references": [
+        {
+          "high": 104,
+          "low": 112,
+          "group": "directory",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 6356,
+      "size": 368,
+      "retailSha256": "8ec2f99ebd290dc40af6c31b9ec8fce9995917b99f63e0d83d5293afdce10999",
+      "references": [
+        {
+          "high": 60,
+          "low": 68,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 88,
+          "low": 96,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 280,
+          "low": 288,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 6724,
+      "size": 932,
+      "retailSha256": "76c6c542b347c2db159757205e3bb7d276d3bfc7fc38d3f053fbc0da582c7caf",
+      "references": [
+        {
+          "high": 104,
+          "low": 112,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 200,
+          "low": 204,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 448,
+          "low": 452,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 568,
+          "low": 576,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 664,
+          "low": 668,
+          "group": "directory",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 7796,
+      "size": 296,
+      "retailSha256": "d6950bb810dc6822e6e4f77641b260e37aeb2b8a02340ded5511033a9fec790a",
+      "references": [
+        {
+          "high": 92,
+          "low": 96,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 112,
+          "low": 120,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 124,
+          "low": 136,
+          "group": "directory",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 8092,
+      "size": 104,
+      "retailSha256": "35689b8e920a4c409c26a8cddb8a79e49c59381733ca8e2915aa0a06ed41a5a2",
+      "references": [
+        {
+          "high": 28,
+          "low": 36,
+          "group": "directory",
+          "addend": 0
+        },
+        {
+          "high": 52,
+          "low": 60,
+          "group": "directory",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 8196,
+      "size": 684,
+      "retailSha256": "113a49fe1a62936f15b7aa11b8e0dfb5284f1c67cecd28b3be1c65b87d4d0afb",
+      "references": [
+        {
+          "high": 132,
+          "low": 140,
+          "group": "directory",
+          "addend": 8
+        },
+        {
+          "high": 200,
+          "low": 208,
+          "group": "directory",
+          "addend": 4
+        },
+        {
+          "high": 376,
+          "low": 380,
+          "group": "directory",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 8880,
+      "size": 1256,
+      "retailSha256": "d80ec15c3959b89e18e49bb8c644e0459d63247f879b6b7c3664ffc4c3b2cc69",
+      "references": [],
+      "calls": [
+        {
+          "offset": 760,
+          "symbol": "lc_boot_classes",
+          "originalTarget": 2147945568
+        }
+      ],
+      "constants": [
+        {
+          "offset": 392,
+          "field": "codeCacheEndHigh"
+        },
+        {
+          "offset": 396,
+          "field": "codeCacheEndLow"
+        }
+      ]
+    },
+    {
+      "start": 24512,
+      "size": 1508,
+      "retailSha256": "08b5a10f4a00b892d8cbe99a62bc7f823fbb7a6b4eb9fb488d1bc2efc341b50b",
+      "references": [],
+      "calls": [
+        {
+          "offset": 1148,
+          "symbol": "lc_secondary_reset",
+          "originalTarget": 2147946260
+        }
+      ]
+    },
+    {
+      "start": 274688,
+      "size": 84,
+      "retailSha256": "bcb5bc88862770e0d568df64df38f8ac00de58b303b4149f1b09303ac44ad1d1",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 143
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 143
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 274772,
+      "size": 84,
+      "retailSha256": "a360143b33627c70935f9f8e5a9de00534e0a2ad64ce5a332c07b368f412c1ed",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 142
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 142
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 274856,
+      "size": 84,
+      "retailSha256": "d4c9bf9f22da53115df1c5072dc834876c63d20299db63facc4aeb914ebfb695",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 126
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 126
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 274940,
+      "size": 84,
+      "retailSha256": "f9138e5e22dc28e7bec614b6efddb3ad3c32d4b5f9327700bddd4c2823b9cc4b",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 133
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 133
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275024,
+      "size": 84,
+      "retailSha256": "dc33a239466c6c75d25b32bcbc7cada30b99d6dd5a79586c0cc80dcec308d529",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 134
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 134
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275108,
+      "size": 84,
+      "retailSha256": "323cfe52c551a1fc7951b1520ff11ed70388f4a750715fd48989e7545ed5decd",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 135
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 135
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275192,
+      "size": 84,
+      "retailSha256": "a944ac491360f4a04052a94577756fdb8cdf28f992bde300b6ce262df42fd4a9",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 136
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 136
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275276,
+      "size": 84,
+      "retailSha256": "13a2d76af77c8f5eece0c14e756146880fb560c9a8e63411973a6805ea34b9c7",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 80
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 80
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275360,
+      "size": 84,
+      "retailSha256": "128c7ce85a8c00724a50e0b58662ed3ab0d36568316b6b12e05e0a700e709fec",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 82
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 82
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275444,
+      "size": 84,
+      "retailSha256": "b2ed91e00da5318e9472c95ffda27ce5313c23d371ad32388164561b1055c911",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 84
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 84
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275528,
+      "size": 84,
+      "retailSha256": "9d1e4b844962a78c970c8a16f350dc966af821b8e979e51907ecb05d70759be4",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 86
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 86
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275612,
+      "size": 84,
+      "retailSha256": "fb37ca7010bb9492ad9471462b58207e70bafd6a276951b5d2ba7d7581477863",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 88
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 88
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275696,
+      "size": 84,
+      "retailSha256": "2c5a23b93c3b919a34d2067ead7bb2965eb07a31d20e2053e31ddf51825c99e3",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 90
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 90
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275780,
+      "size": 84,
+      "retailSha256": "675bf5d6dab695e208eaa11d4548dbaea178fe69a008f1aeb93a4d472dc1d125",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 92
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 92
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275864,
+      "size": 84,
+      "retailSha256": "0ffc03e91718d3da9bca0be42a77c562ee911b758d38b3b54a039ae406550cb8",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 94
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 94
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 275948,
+      "size": 84,
+      "retailSha256": "24a0a36989b420a7b4dcd342b18ec1679b4b71454f42ca7c26ac29b4e597629b",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 96
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 96
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276032,
+      "size": 84,
+      "retailSha256": "edee1751fd64199b2df73d6d1a702d896ed2f0e23b2664ecdb50e4909ed7646d",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 98
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 98
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276116,
+      "size": 84,
+      "retailSha256": "91390cc8ff96fcd94cacf7023fabc47b441a4d6f1fd1d7aad1eadbe4219844e6",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 100
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 100
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276200,
+      "size": 84,
+      "retailSha256": "d7cd95506561e3e4d167836c61dd18cbb07d72cc8966e41bf38e7dac607c06d2",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 102
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 102
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276284,
+      "size": 84,
+      "retailSha256": "e051bef60336f09c9163e57749c15dbda3be1a10ff31e53c6db196653223482c",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 104
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 104
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276368,
+      "size": 84,
+      "retailSha256": "248d31c0e627b8308865fc7887fc98a5a13ee6763238ff872916587184e5254a",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 106
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 106
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276452,
+      "size": 84,
+      "retailSha256": "7da6b4f1eb7dad040b54807ea7c4bfe0374bc4e626ac66f8f2ed39966385e20f",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 107
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 107
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276536,
+      "size": 84,
+      "retailSha256": "e55004293fec401209b95cf32d906e979eaf6781961fe16eb118fd5ec696b06a",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 108
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 108
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276620,
+      "size": 84,
+      "retailSha256": "15a998e995c6bc13670516ed37c42a5425503f2a1ac4dde0af14feb2bafed1f9",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 109
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 109
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276704,
+      "size": 84,
+      "retailSha256": "8d4a90fa7d51dd66d56f4cdf79f42a42f6dded3376b33820ceaaaf7a93b2e3fb",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 110
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 110
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276788,
+      "size": 84,
+      "retailSha256": "e8106be2263f9192f569b08d5b1e8ea72d2436fa8d1679a156b42387808837b7",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 111
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 111
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276872,
+      "size": 84,
+      "retailSha256": "4e8c9f2ca8ca25089833796051ed7a9434d99d1cddd9aa01a5e10ea913170444",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 112
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 112
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 276956,
+      "size": 84,
+      "retailSha256": "e7b52390310d9408316369184ba148134d8c84281f1c706437d4e1a1e2f9ce28",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 113
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 113
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277040,
+      "size": 84,
+      "retailSha256": "5672fbc75dd9a2c5ee03f9eb1d10d99406fe4dccad647b053d32e5dab9677e31",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 114
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 114
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277124,
+      "size": 84,
+      "retailSha256": "c71e607d4fae0e853c94d706187d061790a7e3104619470de89a74555a073a86",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 115
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 115
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277208,
+      "size": 84,
+      "retailSha256": "2b897fb81fdbb47e69cc04b3ecfef0f046122e56a6fd43e2b1283eecd6c02f95",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 116
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 116
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277292,
+      "size": 84,
+      "retailSha256": "2f39101c269db2938309e7322e9fee9f97890fa36df4f8c922198d91461c8ae1",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 127
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 127
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277376,
+      "size": 84,
+      "retailSha256": "c1ca14476760575a84ae4a9be9b8147f316050fcd36357983c39e93a720ab023",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 128
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 128
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277460,
+      "size": 76,
+      "retailSha256": "3453ef9b11db210868d53db2c1c62f903af2d4823a5977e38cbfa4a1b36d2b06",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 60,
+          "low": 72,
+          "group": "classes",
+          "addend": 129
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277536,
+      "size": 84,
+      "retailSha256": "a59f862a6b97cc21715d11c372a4660688a9bc2381b56cefcbe8a03f2978e1c1",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 130
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 130
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277620,
+      "size": 84,
+      "retailSha256": "db063fe6d01b736d8bc6a94f7de4ac3e4e8df2b13fc40a64f51621ad852278ce",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 131
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 131
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277704,
+      "size": 84,
+      "retailSha256": "aea10d120996d72a3bc88f2ce4289de23d2e6e3c254a998b0343711341ad1b8e",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 132
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 132
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277788,
+      "size": 84,
+      "retailSha256": "c296872c7a12fcbfa702c5d830d97bb10f241e41fe1dc5e55c0836a25a818761",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 76
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 76
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277872,
+      "size": 84,
+      "retailSha256": "2059526ebbcfeef3b3f1136d595cbcb2a2c7903a06153237dadf7c486194046e",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 77
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 77
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 277956,
+      "size": 84,
+      "retailSha256": "eed36d0c818b0685375010fc27bd265df1d9b6f094debb80ef3d08f2973cc8b8",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 78
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 78
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278040,
+      "size": 112,
+      "retailSha256": "b337ef82b6374ba69d82eae3e520f395041bf81ab921c699d075c021e79e17f6",
+      "references": [
+        {
+          "high": 52,
+          "low": 60,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 16,
+          "low": 24,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 92,
+          "low": 100,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278152,
+      "size": 84,
+      "retailSha256": "359ce93011df38eeeebd924bc94f9a45b60ce1adcc6d07983bbcf62e888e8903",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 118
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278236,
+      "size": 84,
+      "retailSha256": "9ca648b7d06a5b652babf493310b506b01dad218ababfd67ada63209ed2df9a0",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 120
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278320,
+      "size": 84,
+      "retailSha256": "b909671781b0ddc88e3dd0c702639f00fd1772b52d0b89aef6bbdc227f6dd151",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 122
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278404,
+      "size": 84,
+      "retailSha256": "190e01736678f255be9a12950529af65f92568154d4851f364ec92273de14821",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 124
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278488,
+      "size": 104,
+      "retailSha256": "46257318e475377d35c17dbe4d160268e7fdcc235259213667df9a01f24e055f",
+      "references": [
+        {
+          "high": 24,
+          "low": 32,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 127
+        },
+        {
+          "high": 72,
+          "low": 80,
+          "group": "classes",
+          "addend": 127
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278592,
+      "size": 52,
+      "retailSha256": "25c4839283cf80b6ba084bead37b3af3b7fd4ab41c35972cd4876da81615e75e",
+      "references": [
+        {
+          "high": 24,
+          "low": 36,
+          "group": "classes",
+          "addend": 129
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278644,
+      "size": 104,
+      "retailSha256": "579546cc3f2bd631dde06eb4dcf9b58d4bab912c43430222d627c5e6d1e8448c",
+      "references": [
+        {
+          "high": 24,
+          "low": 32,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 131
+        },
+        {
+          "high": 72,
+          "low": 80,
+          "group": "classes",
+          "addend": 131
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278748,
+      "size": 84,
+      "retailSha256": "68fb3dfaad727da940fb39f634b677351d74fa482a972a3bff4d974d8345ff39",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 48,
+          "low": 60,
+          "group": "classes",
+          "addend": 72
+        },
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 278832,
+      "size": 264,
+      "retailSha256": "76d4b3d9ca195f4a2c914ed64455fed70a92496c9e50189aa84f722153d12e70",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 68,
+          "low": 76,
+          "group": "classes",
+          "addend": 127
+        },
+        {
+          "high": 108,
+          "low": 120,
+          "group": "classes",
+          "addend": 127
+        },
+        {
+          "high": 144,
+          "low": 152,
+          "group": "classes",
+          "addend": 129
+        },
+        {
+          "high": 180,
+          "low": 192,
+          "group": "classes",
+          "addend": 129
+        },
+        {
+          "high": 208,
+          "low": 216,
+          "group": "classes",
+          "addend": 131
+        },
+        {
+          "high": 244,
+          "low": 252,
+          "group": "classes",
+          "addend": 131
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 279096,
+      "size": 264,
+      "retailSha256": "873d9895464fba0a9196eed2b1ca5b262e6014752f46298af7bad3b6dc02f77d",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 68,
+          "low": 76,
+          "group": "classes",
+          "addend": 128
+        },
+        {
+          "high": 108,
+          "low": 120,
+          "group": "classes",
+          "addend": 128
+        },
+        {
+          "high": 144,
+          "low": 152,
+          "group": "classes",
+          "addend": 130
+        },
+        {
+          "high": 180,
+          "low": 192,
+          "group": "classes",
+          "addend": 130
+        },
+        {
+          "high": 208,
+          "low": 216,
+          "group": "classes",
+          "addend": 132
+        },
+        {
+          "high": 244,
+          "low": 252,
+          "group": "classes",
+          "addend": 132
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 279564,
+      "size": 1320,
+      "retailSha256": "308cc213afcb0a7492cd4c3f4929a634891ec146d9680a42f0d2896da498beed",
+      "references": [
+        {
+          "high": 180,
+          "low": 188,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 204,
+          "low": 212,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 232,
+          "low": 240,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 276,
+          "low": 284,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 300,
+          "low": 308,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 328,
+          "low": 336,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 372,
+          "low": 380,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 396,
+          "low": 404,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 424,
+          "low": 432,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 468,
+          "low": 476,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 492,
+          "low": 500,
+          "group": "classes",
+          "addend": 124
+        },
+        {
+          "high": 520,
+          "low": 528,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 280884,
+      "size": 184,
+      "retailSha256": "13533923f467d186945a7d05cae734fea8df8deb90a974cdf6082d7688825c0c",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 56,
+          "low": 64,
+          "group": "classes",
+          "addend": 138
+        },
+        {
+          "high": 92,
+          "low": 104,
+          "group": "classes",
+          "addend": 137
+        },
+        {
+          "high": 124,
+          "low": 132,
+          "group": "classes",
+          "addend": 140
+        },
+        {
+          "high": 164,
+          "low": 172,
+          "group": "classes",
+          "addend": 139
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 281252,
+      "size": 1400,
+      "retailSha256": "cd555fa3d89d4de16927fb233dc1f02d1b4c2114f1e88038ea4a926074208ac1",
+      "references": [
+        {
+          "high": 92,
+          "low": 96,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 282652,
+      "size": 964,
+      "retailSha256": "5e6b69f219d5c438dd9e6fdeee162b3a3405c178d5b49c395d99e0346bdb9f10",
+      "references": [
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 104,
+          "low": 112,
+          "group": "classes",
+          "addend": 138
+        },
+        {
+          "high": 140,
+          "low": 148,
+          "group": "classes",
+          "addend": 137
+        },
+        {
+          "high": 172,
+          "low": 180,
+          "group": "classes",
+          "addend": 140
+        },
+        {
+          "high": 208,
+          "low": 216,
+          "group": "classes",
+          "addend": 139
+        },
+        {
+          "high": 240,
+          "low": 248,
+          "group": "classes",
+          "addend": 77
+        },
+        {
+          "high": 312,
+          "low": 316,
+          "group": "classes",
+          "addend": 72
+        },
+        {
+          "high": 392,
+          "low": 400,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 416,
+          "low": 424,
+          "group": "classes",
+          "addend": 142
+        },
+        {
+          "high": 444,
+          "low": 452,
+          "group": "classes",
+          "addend": 142
+        },
+        {
+          "high": 524,
+          "low": 532,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 548,
+          "low": 556,
+          "group": "classes",
+          "addend": 108
+        },
+        {
+          "high": 576,
+          "low": 584,
+          "group": "classes",
+          "addend": 108
+        },
+        {
+          "high": 636,
+          "low": 644,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 676,
+          "low": 684,
+          "group": "classes",
+          "addend": 138
+        },
+        {
+          "high": 708,
+          "low": 716,
+          "group": "classes",
+          "addend": 137
+        },
+        {
+          "high": 740,
+          "low": 748,
+          "group": "classes",
+          "addend": 140
+        },
+        {
+          "high": 772,
+          "low": 780,
+          "group": "classes",
+          "addend": 139
+        },
+        {
+          "high": 852,
+          "low": 860,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 876,
+          "low": 884,
+          "group": "classes",
+          "addend": 107
+        },
+        {
+          "high": 904,
+          "low": 912,
+          "group": "classes",
+          "addend": 107
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 285408,
+      "size": 268,
+      "retailSha256": "b279102c9201d0cbcbdfb6e1f5f9288248256dde6ecc08fa410c7d0a65b0804c",
+      "references": [
+        {
+          "high": 84,
+          "low": 92,
+          "group": "appearances",
+          "addend": 0
+        },
+        {
+          "high": 120,
+          "low": 128,
+          "group": "appearances",
+          "addend": 2
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 285676,
+      "size": 196,
+      "retailSha256": "837df59d91f164d63a41e514a82c63d8dd323769a5f919ce4864435ea0b27125",
+      "references": [
+        {
+          "high": 44,
+          "low": 52,
+          "group": "appearances",
+          "addend": 0
+        },
+        {
+          "high": 80,
+          "low": 88,
+          "group": "appearances",
+          "addend": 2
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 297796,
+      "size": 1144,
+      "retailSha256": "3f3ae2b8e7dbc79197d4088c5f39b2bb4ff27ddc959d4ebcdf56c7a7261ac56b",
+      "references": [
+        {
+          "high": 48,
+          "low": 52,
+          "group": "classes",
+          "addend": 0
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 320364,
+      "size": 80,
+      "retailSha256": "0d46fb092b6ee3088696e8a5b1c901135f60adf33b8f881ee69f59af9a740d66",
+      "references": [],
+      "calls": [
+        {
+          "offset": 24,
+          "symbol": "lc_secondary_reset",
+          "originalTarget": 2147946260
+        },
+        {
+          "offset": 44,
+          "symbol": "lc_heap_reset",
+          "originalTarget": 2147945568
+        }
+      ]
+    },
+    {
+      "start": 320444,
+      "size": 80,
+      "retailSha256": "49dac050d25b685ff9302b0a5dfd6f369bd9a7ea71215a5f7794e4e8d8b18b16",
+      "references": [],
+      "calls": [
+        {
+          "offset": 24,
+          "symbol": "lc_secondary_reset",
+          "originalTarget": 2147946260
+        },
+        {
+          "offset": 44,
+          "symbol": "lc_heap_reset",
+          "originalTarget": 2147945568
+        }
+      ]
+    },
+    {
+      "start": 351016,
+      "size": 2444,
+      "retailSha256": "a04c60ee7ff8633a05d0ca172a7802be8fd3f134a65bc1796d3e2f0e94260f10",
+      "references": [
+        {
+          "high": 1992,
+          "low": 2000,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 448876,
+      "size": 856,
+      "retailSha256": "6552b18e9f2561ce9f2b070b072486f15127202482cf9f334596068e54fcf88b",
+      "references": [
+        {
+          "high": 164,
+          "low": 172,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 449732,
+      "size": 624,
+      "retailSha256": "380112ada40c022691249a72f61b867125efd7bca005f8bb969d99590775fa08",
+      "references": [
+        {
+          "high": 152,
+          "low": 160,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 457364,
+      "size": 944,
+      "retailSha256": "8508ae2387d4e480f409ab71c62a3b78ee8706d70cfc9a0fe38295184ae3433b",
+      "references": [
+        {
+          "high": 444,
+          "low": 452,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 458308,
+      "size": 720,
+      "retailSha256": "5db6994d9c0c35b820b47a580607a6a0d1602536ade52e96209ed0f17fdaeea2",
+      "references": [
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 352,
+          "low": 360,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 536704,
+      "size": 1144,
+      "retailSha256": "c7b73b627376df73630dd45e39da47c0b007faf6120038eeea6cb1794ae414e7",
+      "references": [
+        {
+          "high": 48,
+          "low": 52,
+          "group": "classes",
+          "addend": 0
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 539740,
+      "size": 5492,
+      "retailSha256": "d7bc6289d237f646d86af05c7d1b3fe8a5cdc9fde977d796a9f0067f69e78f98",
+      "references": [
+        {
+          "high": 3972,
+          "low": 3980,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 574580,
+      "size": 1212,
+      "retailSha256": "d579b130e596d2b4418af53966827be75723f512a9dba2fa50678a5e32e00d52",
+      "references": [
+        {
+          "high": 720,
+          "low": 728,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 607136,
+      "size": 3768,
+      "retailSha256": "6b28ac05d2f4640dd5d4eefd855010f4c130bcc24a9f2d7621f51bc350a82880",
+      "references": [
+        {
+          "high": 520,
+          "low": 528,
+          "group": "classes",
+          "addend": 8
+        },
+        {
+          "high": 900,
+          "low": 908,
+          "group": "classes",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 610904,
+      "size": 6428,
+      "retailSha256": "55891ab672ea0c35cbbbc6c23297d37b50ade93ecf695fcf2a84452adaafd522",
+      "references": [
+        {
+          "high": 2504,
+          "low": 2508,
+          "group": "classes",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 635120,
+      "size": 2960,
+      "retailSha256": "270ba4127ad08dd04c21837b9883d90bf2736fb3ac0399cc09acb5178d187923",
+      "references": [
+        {
+          "high": 1400,
+          "low": 1408,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 638080,
+      "size": 3212,
+      "retailSha256": "454e9d8cbccc9cee2e56458fb715e98aab28b0d7d4c85bf14c26de1ed91ba9f2",
+      "references": [
+        {
+          "high": 704,
+          "low": 712,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 650524,
+      "size": 1184,
+      "retailSha256": "476d88cb63bcf8bf70b58983230989668c8f7263942ea1e798167d1b451e3dd4",
+      "references": [
+        {
+          "high": 284,
+          "low": 292,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 656120,
+      "size": 616,
+      "retailSha256": "53e9bcaea321f713a59d31f6c2f6e1df42177f578bc86e058b072e7f2644b2c0",
+      "references": [
+        {
+          "high": 564,
+          "low": 572,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 684896,
+      "size": 760,
+      "retailSha256": "8cfae1853c42a8ee22903095e85842cb6eb7bde08f65b5559fbccb43df60e374",
+      "references": [
+        {
+          "high": 576,
+          "low": 584,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 685656,
+      "size": 1828,
+      "retailSha256": "3d41f1681a13690f760c104903811dd0118a36e142eeb4ea6e7da20801185671",
+      "references": [
+        {
+          "high": 848,
+          "low": 856,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1600,
+          "low": 1608,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 888,
+          "low": 896,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 948,
+          "low": 956,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 1028,
+          "low": 1036,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 1640,
+          "low": 1648,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 687484,
+      "size": 1524,
+      "retailSha256": "f19c6bc012027f80deddd9ddb4d0ff4585be24a02f58e8dc6a4c010c08c86faa",
+      "references": [
+        {
+          "high": 672,
+          "low": 680,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 756,
+          "low": 764,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 836,
+          "low": 844,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 916,
+          "low": 924,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 689008,
+      "size": 7292,
+      "retailSha256": "36e730c6a787dbf3ec4681fbbb34675b5697d85c46fa7cb55d2993b84105eb4c",
+      "references": [
+        {
+          "high": 5000,
+          "low": 5008,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 6904,
+          "low": 6912,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 5040,
+          "low": 5048,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 5100,
+          "low": 5108,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 5180,
+          "low": 5188,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 6944,
+          "low": 6952,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 7004,
+          "low": 7012,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 7084,
+          "low": 7092,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 769452,
+      "size": 784,
+      "retailSha256": "59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3",
+      "references": [
+        {
+          "high": 340,
+          "low": 348,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 608,
+          "low": 616,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 772484,
+      "size": 524,
+      "retailSha256": "e3513ce2646238a4aef59862ddfde0ac73acf97e338e4c7f67969737956b02b9",
+      "references": [
+        {
+          "high": 80,
+          "low": 88,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 778876,
+      "size": 536,
+      "retailSha256": "32932eec8678c58daeeaeeb355424d2c47694a1cdac03803fb2d9a8e7bd5c717",
+      "references": [
+        {
+          "high": 356,
+          "low": 364,
+          "group": "classes",
+          "addend": 109
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 779412,
+      "size": 536,
+      "retailSha256": "7febfea279cd941811d44b9bea7ce3305758ceeb44eca3cbaa92a5243faa9d11",
+      "references": [
+        {
+          "high": 356,
+          "low": 364,
+          "group": "classes",
+          "addend": 109
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 781752,
+      "size": 1136,
+      "retailSha256": "8b6637185ffa126b51bf42c7c7a71766fca47321e0fc7aa32dd9177c88ce3a2d",
+      "references": [
+        {
+          "high": 156,
+          "low": 164,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 783448,
+      "size": 388,
+      "retailSha256": "f274c1272f2f2fb9a2b335cde070a32991183509d7a6a2f5d00b5affbbcff959",
+      "references": [
+        {
+          "high": 96,
+          "low": 104,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 786908,
+      "size": 2132,
+      "retailSha256": "79109c0e7d0b7de186d77c515aecceb91a8d66485e4ad43f4ceff98937abac5b",
+      "references": [
+        {
+          "high": 244,
+          "low": 252,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 452,
+          "low": 460,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1736,
+          "low": 1744,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1960,
+          "low": 1968,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 801024,
+      "size": 1196,
+      "retailSha256": "f92207bf1faff20279adf85ffb6d5f2594445e0f0584c22b7873aab6c6cf49b5",
+      "references": [
+        {
+          "high": 144,
+          "low": 152,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 176,
+          "low": 184,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 532,
+          "low": 540,
+          "group": "classes",
+          "addend": 77
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 837672,
+      "size": 3008,
+      "retailSha256": "5655541f674226b742455c549229a3d75f0388335a4715cb3fe8e1431544b1d9",
+      "references": [
+        {
+          "high": 2136,
+          "low": 2144,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 843248,
+      "size": 6204,
+      "retailSha256": "fbaeb6a94c31341705a4cc2eb55620e91036ff47e5db59e9618d6171aafa1982",
+      "references": [
+        {
+          "high": 2536,
+          "low": 2544,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 4500,
+          "low": 4508,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 852304,
+      "size": 568,
+      "retailSha256": "1224b99d57c28d2f29adb60e54caea6460e101844afb41123a90e571201d6884",
+      "references": [
+        {
+          "high": 236,
+          "low": 244,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1105332,
+      "size": 9132,
+      "retailSha256": "77d2e54439c7fb2e96a77920ffe0efcd5a2c68329fd893cb28846154b8e3739b",
+      "references": [
+        {
+          "high": 5480,
+          "low": 5488,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1216616,
+      "size": 332,
+      "retailSha256": "f41c2ec9613e88738f652525bca94e53a1af2e2f9e3cc17b1fddd2ffdc6afd61",
+      "references": [
+        {
+          "high": 256,
+          "low": 264,
+          "group": "classes",
+          "addend": 116
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1250512,
+      "size": 340,
+      "retailSha256": "c99fd80ea701263718ce76e5fe135214d5e0de9ffc8e0da4b19e5d580ac78ef9",
+      "references": [
+        {
+          "high": 48,
+          "low": 52,
+          "group": "classes",
+          "addend": 72
+        },
+        {
+          "high": 232,
+          "low": 240,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1272888,
+      "size": 9400,
+      "retailSha256": "45df03922abbe81d0e2c21ed70012bbf1a82d0adf885dcf04a7b81fa4f4d6619",
+      "references": [
+        {
+          "high": 4836,
+          "low": 4844,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 4884,
+          "low": 4892,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 4932,
+          "low": 4940,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 4984,
+          "low": 4992,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 5352,
+          "low": 5360,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1335480,
+      "size": 284,
+      "retailSha256": "4a2020d3be22888d8f196c3acadf536d27f195173903e2f4b3437e872224b6cc",
+      "references": [
+        {
+          "high": 176,
+          "low": 184,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1386156,
+      "size": 644,
+      "retailSha256": "f542054a00251602d401e8811a407ff26eeb6efdcb4969f12c26d3219c847215",
+      "references": [
+        {
+          "high": 448,
+          "low": 456,
+          "group": "classes",
+          "addend": 109
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1386800,
+      "size": 644,
+      "retailSha256": "a833c685ccef060b86614b54e4b15d2f88001c73585a40ccaa9609d9624f79a3",
+      "references": [
+        {
+          "high": 448,
+          "low": 456,
+          "group": "classes",
+          "addend": 109
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1431908,
+      "size": 1452,
+      "retailSha256": "bb45e63a6d44523308570f7f0f6067c56fbc4453de9fbf4379a9fa5d6447b2a9",
+      "references": [
+        {
+          "high": 972,
+          "low": 980,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1012,
+          "low": 1020,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1577240,
+      "size": 828,
+      "retailSha256": "37f8c6cec36d1ca4542e9ef8712ade84374f2596478b26258248ac01e6793124",
+      "references": [
+        {
+          "high": 504,
+          "low": 512,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1629316,
+      "size": 2456,
+      "retailSha256": "f60eb5fe773934347fe4265bd3e7e63c27bf8459031cc729a76fd9711e00b38e",
+      "references": [
+        {
+          "high": 1188,
+          "low": 1196,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1228,
+          "low": 1236,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1649488,
+      "size": 2980,
+      "retailSha256": "545d8240edb2d53667dcd2d35190eb912440cb5871fcf407e36b54ea8d633473",
+      "references": [
+        {
+          "high": 2312,
+          "low": 2320,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 2352,
+          "low": 2360,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1659920,
+      "size": 316,
+      "retailSha256": "aa899c6c68c2d1e7c13eac6ec8d928776a61d391ed2bef61238b9e3e43394665",
+      "references": [
+        {
+          "high": 56,
+          "low": 64,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 92,
+          "low": 96,
+          "group": "classes",
+          "addend": 72
+        },
+        {
+          "high": 108,
+          "low": 112,
+          "group": "classes",
+          "addend": 72
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1660236,
+      "size": 644,
+      "retailSha256": "5985a5dfc866d4effb58c0e412aa76a8e0ae8da0ef19bb8e44a6bf278c2a5e2b",
+      "references": [
+        {
+          "high": 192,
+          "low": 200,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1663144,
+      "size": 5776,
+      "retailSha256": "9c56d2edc784bce4b789a3a5fe3a0226c10f9ec60cdd90dd27a2a41c834f46f6",
+      "references": [
+        {
+          "high": 1584,
+          "low": 1588,
+          "group": "classes",
+          "addend": 11814
+        },
+        {
+          "high": 1592,
+          "low": 1596,
+          "group": "classes",
+          "addend": 152
+        },
+        {
+          "high": 1740,
+          "low": 1744,
+          "group": "classes",
+          "addend": 213
+        },
+        {
+          "high": 1972,
+          "low": 1976,
+          "group": "classes",
+          "addend": 213
+        },
+        {
+          "high": 4656,
+          "low": 4668,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 4672,
+          "low": 4684,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 4688,
+          "low": 4700,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 4704,
+          "low": 4716,
+          "group": "classes",
+          "addend": 124
+        },
+        {
+          "high": 5048,
+          "low": 5056,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 5084,
+          "low": 5096,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 5116,
+          "low": 5128,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 5148,
+          "low": 5160,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1676468,
+      "size": 3320,
+      "retailSha256": "6575ca121ec9ce2a796039a42620dbc039203ac86e9c692caad5eca2090ca059",
+      "references": [
+        {
+          "high": 576,
+          "low": 584,
+          "group": "classes",
+          "addend": 8
+        },
+        {
+          "high": 924,
+          "low": 932,
+          "group": "classes",
+          "addend": 8
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1704548,
+      "size": 3484,
+      "retailSha256": "d6f10fabaa830a89ef38f9a91eb0f6614a3b2f01b31789a0788ca53df9063645",
+      "references": [
+        {
+          "high": 1688,
+          "low": 1696,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1736,
+          "low": 1744,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 1784,
+          "low": 1792,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 1836,
+          "low": 1844,
+          "group": "appearances",
+          "addend": 4
+        },
+        {
+          "high": 2180,
+          "low": 2188,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1731932,
+      "size": 2468,
+      "retailSha256": "c84b5ad208bcc59f087ade870f9c818f85d1aeaa4dc689e1ebe00975922f11a6",
+      "references": [
+        {
+          "high": 1216,
+          "low": 1224,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 1256,
+          "low": 1264,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1739888,
+      "size": 92,
+      "retailSha256": "473b52a427490bceccad9640a7a0625113a90094d58ce7ddc9b1e4f1c484c562",
+      "references": [
+        {
+          "high": 16,
+          "low": 24,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 40,
+          "low": 48,
+          "group": "classes",
+          "addend": 78
+        },
+        {
+          "high": 68,
+          "low": 76,
+          "group": "classes",
+          "addend": 78
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1761884,
+      "size": 3884,
+      "retailSha256": "32968b878157464040cdef2e222f271140fd3d808081d1d0c89b8c15346cd2bc",
+      "references": [
+        {
+          "high": 3468,
+          "low": 3480,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 3484,
+          "low": 3496,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 3500,
+          "low": 3512,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 3516,
+          "low": 3528,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1795384,
+      "size": 3804,
+      "retailSha256": "b5faa1d446ef9e4212ddc98e1507cc09736b662429b75114e79968a236df808a",
+      "references": [
+        {
+          "high": 1720,
+          "low": 1728,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 1848,
+          "low": 1856,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 1976,
+          "low": 1984,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 2104,
+          "low": 2112,
+          "group": "classes",
+          "addend": 124
+        },
+        {
+          "high": 2248,
+          "low": 2260,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 2264,
+          "low": 2276,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 2280,
+          "low": 2292,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 2296,
+          "low": 2308,
+          "group": "classes",
+          "addend": 124
+        },
+        {
+          "high": 2324,
+          "low": 2332,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 2444,
+          "low": 2452,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 2564,
+          "low": 2572,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 2684,
+          "low": 2692,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1804080,
+      "size": 732,
+      "retailSha256": "c01277909a50ba1f44cc0b8b2fb3f5bb46379ab6ed7f623a3c2ae135284d847a",
+      "references": [
+        {
+          "high": 444,
+          "low": 452,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1804812,
+      "size": 720,
+      "retailSha256": "78858ddb8254be7c542062b383360614d697fea76c15ea82bd2eecc69bfd38fc",
+      "references": [
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 352,
+          "low": 360,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1898848,
+      "size": 96,
+      "retailSha256": "4a5d23949992bf83c255b1961d5b480903f01d13880401cbb95d446816c54335",
+      "references": [],
+      "calls": [
+        {
+          "offset": 48,
+          "symbol": "lc_secondary_reset",
+          "originalTarget": 2147946260
+        },
+        {
+          "offset": 68,
+          "symbol": "lc_heap_reset",
+          "originalTarget": 2147945568
+        }
+      ]
+    },
+    {
+      "start": 1898944,
+      "size": 160,
+      "retailSha256": "14932901fdee26587d0587c3f72628caac0b2ea8594b87e43bf8129f02551c0d",
+      "references": [],
+      "calls": [
+        {
+          "offset": 16,
+          "symbol": "lc_secondary_reset",
+          "originalTarget": 2147946260
+        },
+        {
+          "offset": 36,
+          "symbol": "lc_heap_reset",
+          "originalTarget": 2147945568
+        }
+      ]
+    },
+    {
+      "start": 2102660,
+      "size": 68,
+      "retailSha256": "532555a6784d5e7575b235f46c6d435231455c318293faf891679bff52d36035",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2102728,
+      "size": 84,
+      "retailSha256": "f84d95472b0f85a8c9e0448ed3429975df0dd20d61bccdd984b350ba8ebc48b9",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2102812,
+      "size": 84,
+      "retailSha256": "b2c1dbc58927915c04e1ef5af416cb1089fc50764fdb0da5504cd88069ddd63b",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2102896,
+      "size": 132,
+      "retailSha256": "78e45e6a249a45d7baecb01af24baaa6f0946b5a071ff104e6e92629cac5212a",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2103028,
+      "size": 132,
+      "retailSha256": "a60d43698eb4ac799cd4a82d5fa15716989eb78704253f2b93f834563b233a35",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2103192,
+      "size": 160,
+      "retailSha256": "44925273a50ce75569a060cff8b8a8aa32ee01aae294b680949874a65739f0f0",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2103352,
+      "size": 104,
+      "retailSha256": "8683bdc70336340225b7c068ffba935a65136e4fe78f7b95ffd0cc68c6685d57",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2103456,
+      "size": 104,
+      "retailSha256": "8bb4908998cd6ff3ffc4fb7b84b49867b4149206e9f8072a1c9fcc851ac55b07",
+      "references": [
+        {
+          "high": 12,
+          "low": 20,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2137972,
+      "size": 7532,
+      "retailSha256": "ac44cea185ecea7bdac8cfcb21765944a72ca6749d44cce7d86c7265cbea202a",
+      "references": [
+        {
+          "high": 4132,
+          "low": 4140,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 4172,
+          "low": 4180,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2335648,
+      "size": 588,
+      "retailSha256": "8405362bf8c1ea2c307d73299a0ba09e837ba78510d13a416a3c71f005f94796",
+      "references": [
+        {
+          "high": 64,
+          "low": 72,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2366440,
+      "size": 2236,
+      "retailSha256": "2717f4300583e14b07f327eb840f51d522ac13de8a2c89be6bbcba60c532c10c",
+      "references": [
+        {
+          "high": 696,
+          "low": 704,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 776,
+          "low": 784,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 988,
+          "low": 996,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2396816,
+      "size": 1924,
+      "retailSha256": "872ab608d734fbf2c425cf70ad0eeb1d2015f49fd9de440fe873d2dfc70f8ff2",
+      "references": [
+        {
+          "high": 348,
+          "low": 356,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2398740,
+      "size": 900,
+      "retailSha256": "53b98aeca6c92115205ff4959ff737618399c6791e2bf437634bf0ae40dd0c3f",
+      "references": [
+        {
+          "high": 588,
+          "low": 596,
+          "group": "classes",
+          "addend": 118
+        },
+        {
+          "high": 624,
+          "low": 636,
+          "group": "classes",
+          "addend": 120
+        },
+        {
+          "high": 652,
+          "low": 664,
+          "group": "classes",
+          "addend": 122
+        },
+        {
+          "high": 680,
+          "low": 692,
+          "group": "classes",
+          "addend": 124
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2613096,
+      "size": 2376,
+      "retailSha256": "b5d2e60eeac97226d4ed7ca5e9826f5c4ed3e0d27aede7fafb7574b330160733",
+      "references": [
+        {
+          "high": 804,
+          "low": 812,
+          "group": "classes",
+          "addend": 141
+        },
+        {
+          "high": 956,
+          "low": 964,
+          "group": "appearances",
+          "addend": 4
+        }
+      ],
+      "calls": []
+    }
+  ]
+}

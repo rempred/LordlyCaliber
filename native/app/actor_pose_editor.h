@@ -1,0 +1,87 @@
+#pragma once
+#include "engine/actor_pose.h"
+#include "engine/actor_renderer.h"
+#include "engine/director.h"
+#include "engine/sprite_pose.h"
+#include "engine/sprite_library.h"
+#include <functional>
+#include <QWidget>
+#include <optional>
+#include <variant>
+class QCheckBox;
+class QDoubleSpinBox;
+class QComboBox;
+class QSpinBox;
+class QLabel;
+class QPushButton;
+class QListWidget;
+class QGraphicsView;
+class QGraphicsScene;
+class QGraphicsPixmapItem;
+class QTimer;
+namespace lordly {
+class ActorPoseEditor : public QWidget {
+    Q_OBJECT
+  public:
+    explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
+    void selectCommand(const DirectorProgram &, int command);
+    void setArtwork(const ActorArtworkEdits &);
+    void setBodyAnimations(BodyAnimationData::Pointer);
+    void selectPrivateSequence(int classId,int flags,int state);
+    void showFrame(int frame);
+    void setSpriteLibrary(std::function<void(SpriteAsset)>);
+    SpriteAsset poseAsset() const;
+
+  private:
+    void loadSources();
+    void loadBank();
+    void resolveAction();
+    void restart();
+    void seek(int step);
+    void step();
+    void draw();
+    void drawProjected();
+    std::optional<BodyAppearance> appearance() const;
+    void stop();
+    int advancePose();
+    bool suspendedPose() const;
+    QString poseError() const;
+    Rom rom_;
+    BodyAnimationData::Pointer bodyAnimations_;
+    QWidget *actionControls_;
+    QWidget *sourceControls_;
+    QComboBox *actions_, *actionModes_;
+    ActorRenderer renderer_;
+    ActorArtworkEdits artwork_;
+    QCheckBox *projected_, *shadows_, *automaticFit_;
+    QComboBox *placementMode_, *materialMode_;
+    std::array<QSpinBox *, 3> actorRgb_, environmentRgb_;
+    QWidget *placementControls_;
+    std::array<QDoubleSpinBox *, 3> placement_;
+    QDoubleSpinBox *size_, *cameraYaw_, *cameraHeight_, *cameraDistance_;
+    QSpinBox *facing_;
+    int previousPlacementMode_ = 0;
+    std::array<std::array<double, 3>, 2> previewCameras_{{{0, 80, 300}, {65, 80, 300}}};
+    std::optional<ActorArt> art_;
+    std::optional<std::variant<ActorPosePlayer, SpritePosePlayer>> player_;
+    QCheckBox *sepia_;
+    QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
+    QComboBox *equipment_;
+    QSpinBox *bodyPalette_;
+    QWidget *bodyControls_;
+    BodyAppearance defaultAppearance_;
+    QSpinBox *variant_, *position_, *speed_;
+    QPushButton *play_;
+    QPushButton *copyToLibrary_;
+    std::function<void(SpriteAsset)> librarySink_;
+    QLabel *status_, *selection_;
+    QListWidget *layers_;
+    QGraphicsView *view_;
+    QGraphicsScene *canvas_;
+    QTimer *timer_;
+    QVector<QGraphicsPixmapItem *> items_;
+    bool fit_ = true;
+    int step_ = 0;
+    std::optional<int> selectedFrame_;
+};
+} // namespace lordly

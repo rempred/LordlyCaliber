@@ -1,0 +1,45 @@
+#pragma once
+#include "engine/image.h"
+#include "engine/avatar_library.h"
+#include "engine/class_data.h"
+#include <QHash>
+#include <QVector>
+#include <array>
+#include <functional>
+namespace lordly {
+struct DialogueTexture {
+    int width, height, stride, bits;
+    QByteArray indices;
+    QVector<quint16> palette;
+    bool wrapX = false, mirrorX = false, mirrorY = false;
+    int maskHeight = 0;
+};
+struct DialogueRectangle {
+    DialogueTexture texture;
+    std::array<int, 4> bounds, scissor;
+    std::array<double, 2> uv, step;
+    quint8 opacity = 255;
+};
+// Source-based dialogue composition. Unresolved font encodings remain explicit.
+// Artwork comes from the supplied ROM; no captured drawing answers are used.
+class DialogueDrawing {
+  public:
+    using PortraitProvider = std::function<QByteArray(int,bool)>;
+    explicit DialogueDrawing(Rom rom);
+    void setPortraitProvider(PortraitProvider provider) { portraits_=std::move(provider); }
+    QVector<DialogueRectangle> compose(const QByteArray &window, const QByteArray &payload);
+    static void paint(RasterImage &, const QVector<DialogueRectangle> &);
+    DialogueTexture portrait(int identity, bool variant) const;
+
+  private:
+    QByteArray resource(quint32 key, bool compressed = false) const;
+    QByteArray member(quint32 key, int index);
+    DialogueTexture frame(int index);
+    DialogueTexture glyph(int index, int color) const;
+    Rom rom_;
+    PortraitProvider portraits_;
+    QHash<quint64, QByteArray> members_;
+    mutable std::optional<ClassData> classes_;
+    mutable std::optional<AvatarLibrary> avatars_;
+};
+} // namespace lordly

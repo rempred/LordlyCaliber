@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "upstream": "OB64 Decomp",
+  "verifiedAt": "2026-10-08T03:17:57.968Z",
+  "imports": [
+    {
+      "source": "src/lib/func_00201798.c",
+      "revision": "497181d8a6ba4bc32c35a465fccd261abe2e0c69",
+      "sourceSha256": "1F1567680D3E1DBFD963A9F36262E831BE6DC772FCAB7F40002FA673B36F9367",
+      "file": "game/accepted/func_00201798.c",
+      "symbols": [
+        "func_00201798"
+      ]
+    },
+    {
+      "source": "src/lib/combat_pose_metadata.c",
+      "revision": "43d0821946b9db79a23f625a628ecb368370b3f0",
+      "sourceSha256": "9F66F026AED5C65C6AF25D46090E19961F850C00242332789D5AE59842CD7398",
+      "file": "game/accepted/combat_pose_metadata.c",
+      "symbols": [
+        "func_00204EE0",
+        "func_00204F24",
+        "func_00204F2C",
+        "func_00204F34",
+        "func_002050AC"
+      ]
+    },
+    {
+      "source": "src/lib/func_00201E38.c",
+      "revision": "497181d8a6ba4bc32c35a465fccd261abe2e0c69",
+      "sourceSha256": "53F29BC94690BCBA0C00FDE5D1FA87FD73714574B044E6A16F4B3E767EA2BE19",
+      "file": "game/accepted/func_00201E38.c",
+      "symbols": [
+        "func_00201E38"
+      ]
+    },
+    {
+      "source": "src/lib/func_00203414.c",
+      "revision": "497181d8a6ba4bc32c35a465fccd261abe2e0c69",
+      "sourceSha256": "0DE8DA48CBDB94A7953AA6AF3AB82D8CC9A582E886E0CDC32927BB6741830D13",
+      "file": "game/accepted/func_00203414.c",
+      "symbols": [
+        "func_00203414"
+      ]
+    },
+    {
+      "source": "src/lib/func_00203664.c",
+      "revision": "497181d8a6ba4bc32c35a465fccd261abe2e0c69",
+      "sourceSha256": "76FC0E10AFAED93FCAF2D07B035CDA6A0DA90AEE7CDEEB4AA6296E1583F5B6CC",
+      "file": "game/accepted/func_00203664.c",
+      "symbols": [
+        "func_00203664"
+      ]
+    }
+  ]
+}

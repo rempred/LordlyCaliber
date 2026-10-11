@@ -1104,6 +1104,49 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  // An edited stream, or a ROM the editor exported, can carry a different
+  // background operand than the retail launch profile. The operand resolves
+  // through the same table: mode two copies it into both the environment and
+  // the foreground selector; classes 4 and 5 index the scene-group table.
+  function operandBackgroundRequest(request, operand, catalog) {
+    var next = M.cloneJson(request, 'background request');
+    var entry = catalog && catalog.getBackgroundSelectorEntry
+      ? catalog.getBackgroundSelectorEntry(request.selectorTableId, operand) : null;
+    next.commandOperand = operand;
+    next.selector = operand;
+    next.evidenceStatus = 'director-command-operand';
+    next.status = 'The Director command operand ' + operand + ' selects row ' + operand +
+      ' of ' + request.selectorTableId + '.';
+    if (request.selectorTableId === 'background-table:mode2-environment:80') {
+      next.environmentSelector = operand;
+      next.environmentSelectorCandidates = [operand];
+      next.foregroundSelector = operand;
+      next.foregroundSelectorCandidates = [operand];
+      var front = catalog && catalog.getBackgroundSelectorEntry
+        ? catalog.getBackgroundSelectorEntry('background-table:mode2-overlay:80', operand) : null;
+      next.stageLayers = (entry && Array.isArray(entry.stageLayers)
+        ? M.cloneJson(entry.stageLayers, 'environment layers') : []).concat(
+        (front && front.archiveAssetIds || []).map(function(assetId, index) {
+          return { assetId: assetId, role: 'foreground-mask', depth: 2 + index,
+            evidenceStatus: 'native-overlay-selector',
+            associationStatus: 'resource 0x002938C8 selects this foreground or occlusion layer independently of the environment base' };
+        }));
+    } else {
+      next.stageLayers = backgroundLayers(entry, M.capabilities.PREVIEW_ONLY, catalog)
+        .map(function(layer) {
+          return { assetId: layer.assetId, role: layer.role, depth: layer.depth,
+            nativeOrdinal: layer.nativeOrdinal, evidenceStatus: 'director-command-operand',
+            associationStatus: layer.source.associationStatus };
+        });
+    }
+    next.stageAssetIds = next.stageLayers.map(function(layer) { return layer.assetId; });
+    next.assetIds = next.stageAssetIds.slice();
+    next.members = next.stageLayers.map(function(layer, index) {
+      return { ordinal: index, assetId: layer.assetId };
+    });
+    return next;
+  }
+
   function profileBackground(request, document, catalog) {
     if (!request) return null;
     return stagedBackground(request.stageLayers, document, {
@@ -1514,6 +1557,7 @@ window.OB64 = window.OB64 || {};
       };
     }
     var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.externalProducers&&options.nativeLaunchInputs.externalProducers.value&&options.nativeLaunchInputs.externalProducers.value.directorLaunch&&['rom-mode-two-director-v1','rom-mode-zero-director-v1'].includes(options.nativeLaunchInputs.externalProducers.value.directorLaunch.kind);
+    var compactStandalone=!options.nativeLaunchInputs;
     var observedBackground = romOnlyStart?null:observationBackground(scene, document, catalog);
     var documentBackground = documentModeTwoBackground(document, catalog);
     var directorMode = romOnlyStart?{value:options.nativeLaunchInputs.externalProducers.value.directorLaunch.sceneMode,status:'ROM terminal-class dispatcher selects scene mode',evidenceStatus:'ROM-caller-rule'}:directorModeFromProfile(scene);
@@ -3042,14 +3086,23 @@ window.OB64 = window.OB64 || {};
         return;
       }
       var observation = scene.backgroundRuntimeObservation || null;
+      var observedOperand = observation && (Number.isInteger(observation.commandOperand)
+        ? observation.commandOperand : observation.environmentSelector);
       if (observation && Array.isArray(observation.stageLayers) &&
-          observation.stageLayers.length) {
+          observation.stageLayers.length &&
+          (!Number.isInteger(observedOperand) || observedOperand === commandOperand)) {
         state.background = observationBackground(scene, document, catalog);
         return;
       }
       var requestProfile = launchProfile.background.requests.find(function(request) {
         return request.wordStart === node.startWord;
       }) || null;
+      if (requestProfile && Number.isInteger(requestProfile.commandOperand) &&
+          requestProfile.commandOperand >= 0 && commandOperand >= 0 &&
+          requestProfile.commandOperand !== commandOperand &&
+          requestProfile.selectorTableId) {
+        requestProfile = operandBackgroundRequest(requestProfile, commandOperand, catalog);
+      }
       if(framebufferProfile&&requestProfile&&requestProfile.stageLayers&&requestProfile.stageLayers.length&&requestProfile.selector!==commandOperand){producerBoundary('Changed background selector lacks matching current layer metadata.','framebuffer-layers');return;}
       var requestStageProps = requestProfile &&
         modeTwoStageProps(catalog, requestProfile.foregroundSelector);
@@ -3271,7 +3324,23 @@ window.OB64 = window.OB64 || {};
       payload.nativeProgramDelay = effect.delay;
       payload.displayedFrameToken = effect.displayedFrameToken;
       payload.stageX = Number.isFinite(effect.positionX) ? 160 + effect.positionX : null;
-      payload.stageY = Number.isFinite(effect.positionY) ? 120 + effect.positionY : null;
+      // The record stores the negated operand, i.e. a y-up model value; the
+      // Stage's top-down pixel row is therefore 120 minus it (01F438FE: every
+      // candle flame lands on its candle only with this sign).
+      payload.stageY = Number.isFinite(effect.positionY) ? 120 - effect.positionY : null;
+      // The animated scene-sprite table renderer draws each record under a
+      // scene-transform channel (unassigned records follow the 0x7C default,
+      // channel 0), so a mode-zero pan moves these sprites with the stage.
+      if (state.directorMode === 0) {
+        payload.transformChannel = 0;
+        payload.sceneTransform = Object.assign({},
+          state.transformChannels[0] || identityTransformChannel());
+        payload.renderPipeline = 'mode-zero-scene-record';
+      } else {
+        payload.transformChannel = null;
+        payload.sceneTransform = null;
+        payload.renderPipeline = null;
+      }
       payload.rotationDegrees = Number.isFinite(effect.rotationDegrees)
         ? effect.rotationDegrees : null;
       payload.nativeRotationValue = Number.isInteger(effect.rotationValue)
@@ -4278,12 +4347,27 @@ window.OB64 = window.OB64 || {};
         });
       }
       else if (opcode === 0x5F) {
-        var x1 = signed(words[1]), z1 = signed(words[2]);
-        var x2 = signed(words[3]), z2 = signed(words[4]);
+        // Constructor z64 0x002AF470: signed-halfword points, single-precision
+        // coefficients, and low-byte channel selectors (see the command reference,
+        // "Automatic Actor transform-channel divider").
+        var x1 = lowS16(words[1]), z1 = lowS16(words[2]);
+        var x2 = lowS16(words[3]), z2 = lowS16(words[4]);
+        var coefficientA, coefficientB;
+        if (z2 === z1) { coefficientA = z1; coefficientB = 0; }
+        else if (x2 === x1) { coefficientA = 0; coefficientB = x1; }
+        else {
+          coefficientA = Math.fround(Math.fround(z2 - z1) / Math.fround(x2 - x1));
+          coefficientB = Math.fround(Math.fround(-Math.fround(coefficientA * x1)) + z1);
+        }
         state.transformDivider = {
           x1: x1, z1: z1, x2: x2, z2: z2,
-          trueChannel: signed(words[5]), falseChannel: signed(words[6])
+          a: coefficientA, b: coefficientB,
+          trueChannel: unsigned(words[5]) & 0xFF, falseChannel: unsigned(words[6]) & 0xFF
         };
+      }
+      else if (opcode === 0x75) {
+        // Release z64 0x002AF5C4 frees the divider without rewriting Actor channels.
+        state.transformDivider = null;
       }
       else if (opcode === 0x62) {
         var transientSlot = signed(words[1]);
@@ -4488,6 +4572,22 @@ window.OB64 = window.OB64 || {};
       else if (node.name !== 'director_label_marker') {
         uniquePush(unsupportedCommands, node.name);
       }
+    }
+
+    // Classifier z64 0x002AF5F4: the normal mode-zero scheduler runs it once per
+    // update, before movement, over every existing Actor. Transposed comparisons
+    // for axis-aligned dividers follow the native coefficient storage.
+    function applyTransformDivider() {
+      var divider = state.transformDivider;
+      if (!divider || state.directorMode !== 0) return;
+      Object.keys(state.actors).forEach(function(slot) {
+        var actor = state.actors[slot];
+        var x = Math.fround(actor.x), z = Math.fround(actor.z), selected;
+        if (divider.b === 0) selected = divider.a < x;
+        else if (divider.a === 0) selected = divider.b < z;
+        else selected = Math.fround(Math.fround(divider.a * x) + divider.b) < z;
+        actor.transformChannel = selected ? divider.trueChannel : divider.falseChannel;
+      });
     }
 
     function updateMovementJobs() {
@@ -4696,7 +4796,7 @@ window.OB64 = window.OB64 || {};
     function updateJobs() {
       if(state.specialActorFade&&state.directorMode===2&&state.alternateDirectorScheduling!==true)state.specialActorFade.progress=Math.min(60,state.specialActorFade.progress+1);
       updateOversizedImageTransition();
-      if (state.alternateDirectorScheduling !== true) updateMovementJobs();
+      if (state.alternateDirectorScheduling !== true) { applyTransformDivider(); updateMovementJobs(); }
       updateTurnJobs();
       updateProjectionJob();
       updateScreenTransition();
@@ -5166,6 +5266,7 @@ window.OB64 = window.OB64 || {};
       var registeredProjection = projectionFromCamera(state.cameras.registered);
       return {
         ...(nativeActorDrawing?{nativeActorDrawing:nativeActorDrawing}:{}),
+        ...(state.transformDivider?{transformDivider:state.transformDivider}:{}),
         frame: state.tick,
         timeSeconds: state.tick / M.previewFps,
         pathId: 'default',
@@ -5299,7 +5400,15 @@ window.OB64 = window.OB64 || {};
           break;
         }
       }
+      // Native scanner (z64 0x2862FC): with no bridge ahead, or fewer barriers
+      // than the depth between the failing query and that bridge, it returns -1;
+      // the parser adds one and restarts the stream from word 0 in the same call
+      // (live-proven 2026-09-26, opening ceremony Test ROM v1).
+      // With no bridge inside the stream the native forward walk continues into
+      // whatever memory follows; that outcome is undefined and is not modeled,
+      // so the caller keeps its previous handling (a plain retry for waits).
       if (bridgeIndex < 0) return null;
+      var virtualBridge = false;
       var remaining = Math.max(1, depth || 1);
       for (var cursor = bridgeIndex - 1; cursor > startIndex; cursor--) {
         var candidate = activeProgram.primitives[cursor];
@@ -5309,13 +5418,34 @@ window.OB64 = window.OB64 || {};
         var compositeId = activeProgram.compositeByNodeId[candidate.id];
         return {
           node: candidate,
-          bridgeNode: activeProgram.primitives[bridgeIndex],
+          bridgeNode: virtualBridge ? null : activeProgram.primitives[bridgeIndex],
           compositeIndex: compositeIndexById[compositeId],
           resumePrimitiveIndex: cursor + 1,
           resumeNode: activeProgram.primitives[cursor + 1] || null
         };
       }
-      return null;
+      return { restart: true, reason: 'barrier-depth-' + Math.max(1, depth || 1) +
+        (virtualBridge ? '-absent-before-stream-end' : '-absent-before-bridge'),
+        bridgeNode: virtualBridge ? null : activeProgram.primitives[bridgeIndex] };
+    }
+
+    var scannerRestarts = 0;
+    var scannerRestartTotal = 0;
+    function scannerRestart(node, depth, destination, kind) {
+      scannerRestartTotal += 1;
+      if (++scannerRestarts > 8) {
+        fail('Director failure scan restarted the stream more than eight times in one update.', 'scanner-restart-loop');
+      }
+      recordTrace({
+        tick: state.tick,
+        kind: 'scanner-restart',
+        nodeId: node.id,
+        queryKind: kind,
+        scannerDepth: depth,
+        reason: destination.reason,
+        bridgeNodeId: destination.bridgeNode ? destination.bridgeNode.id : null
+      });
+      installCursorAtPrimitive(0);
     }
 
     function executeBranchQuery(node, words) {
@@ -5348,12 +5478,17 @@ window.OB64 = window.OB64 || {};
         return;
       }
       var destination = parserResynchronization
-        ? nextBarrier(node) : normalFailureBarrier(node, branchDepth);
+        ? (nextBarrier(node) || { restart: true, reason: 'no-barrier-ahead-in-resynchronization' })
+        : normalFailureBarrier(node, branchDepth);
       branchDepth -= 1;
       if (!destination) {
         missing('Failed Director query ' + node.id +
           ' has no following native branch barrier.');
         state.terminal = true;
+        return;
+      }
+      if (destination.restart) {
+        scannerRestart(node, branchDepth + 1, destination, 'branch');
         return;
       }
       var resumeNode = installCursorAtPrimitive(destination.resumePrimitiveIndex);
@@ -5535,6 +5670,7 @@ window.OB64 = window.OB64 || {};
       state.tick = tick;
       parserResynchronization = false;
       branchDepth = 0;
+      scannerRestarts = 0;
       parserResumeMarked = false;
       pendingSubstreamSelector = 0xFF;
       state.audioEvents = [];
@@ -5611,7 +5747,19 @@ window.OB64 = window.OB64 || {};
         resumeNodes: (resumeNodes || []).slice(),
         resumeComposite: composite
       };
-      if (!blockComplete(block)) return;
+      if (!blockComplete(block)) {
+        // A wait-style query that is not satisfied fails natively on every
+        // update and runs the failure scan. When that scan cannot find its
+        // barrier, the native parser restarts the stream instead of waiting.
+        if (!parserResynchronization) {
+          var scan = normalFailureBarrier(query, branchDepth + 1);
+          if (scan && scan.restart) {
+            block = null;
+            scannerRestart(query, branchDepth + 1, scan, 'wait');
+          }
+        }
+        return;
+      }
       var completed = block;
       block = null;
       if (completed.resumeNodes.length) {
@@ -5940,11 +6088,15 @@ window.OB64 = window.OB64 || {};
       var nextSnapshot=snapshot(block);
       // Effect payloads change each tick. Store their shared field schema once,
       // while retaining the complete drawing values for public frames and seeking.
-      if(romOnlyStart)nextSnapshot.effects.forEach(function(effect){effect.payload=compactRecord(effect.payload);});
-      if(sharedActorProfile||romOnlyStart){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
+      // Runs without native launch inputs (standalone diagnostic playback) use the
+      // same compact records as ROM-start runs, so long mode-zero scenes such as
+      // 01F849CA fit the unchanged budget; captured and native-launch lanes keep
+      // their existing representation.
+      if(romOnlyStart||compactStandalone)nextSnapshot.effects.forEach(function(effect){effect.payload=compactRecord(effect.payload);});
+      if(sharedActorProfile||romOnlyStart||compactStandalone){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
       var frameState = shareSnapshot(states[states.length - 1], nextSnapshot, frameBudget);
-      if(sharedActorProfile||romOnlyStart)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
-      if(romOnlyStart)frameState.effects.forEach(function(effect){Object.freeze(effect.payload.values);Object.freeze(effect.payload);});
+      if(sharedActorProfile||romOnlyStart||compactStandalone)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
+      if(romOnlyStart||compactStandalone)frameState.effects.forEach(function(effect){Object.freeze(effect.payload.values);Object.freeze(effect.payload);});
       var frameBytes = frameBudget.bytes;
       if (retainedStateBytes + framebufferBytes + frameBytes > maxStateBytes) {
         if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');
@@ -6034,6 +6186,7 @@ window.OB64 = window.OB64 || {};
       framebuffers:framebuffers,
       traceCount: traceCount,
       traceTruncated: traceCount > trace.length,
+      scannerRestarts: scannerRestartTotal,
       executedNodeIds: state.executedNodeIds.slice(),
       sourcePrimitiveCount: rootProgram.primitives.length,
       executedPrimitiveCount: dispatchCount,

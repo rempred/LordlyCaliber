@@ -1289,14 +1289,19 @@ OB64.recalcN64CRC = function(z64) {
 // ============================================================
 // Export modified ROM in the same byte order the user loaded.
 // ============================================================
-OB64.exportROM = function(romOrZ64) {
+OB64.exportROM = function(romOrZ64, options) {
+  options = options || {};
   var z64 = romOrZ64 && romOrZ64.z64 ? romOrZ64.z64 : romOrZ64;
   var byteOrder = romOrZ64 && romOrZ64.z64
     ? (romOrZ64.exportByteOrder || romOrZ64.byteOrder || 'v64')
     : 'v64';
   var out = OB64.serializeRomImage(z64, byteOrder);
   var ext = OB64.romByteOrderExtension(byteOrder);
-  var filename = 'ob64_modified.' + ext;
+  var filenameBase = options.filenameBase || 'ob64_modified';
+  if (!/^[A-Za-z0-9_-]+$/.test(filenameBase)) {
+    throw new Error('Export filename base contains unsupported characters.');
+  }
+  var filename = filenameBase + '.' + ext;
   var blob = new Blob([out], { type: 'application/octet-stream' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');

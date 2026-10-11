@@ -1,0 +1,91 @@
+#pragma once
+#include "engine/rom.h"
+#include "engine/scene_capture.h"
+#include "engine/scene_image_cache.h"
+#include <QVector>
+#include <array>
+#include <optional>
+namespace lordly {
+enum class WorldColorPass {
+    Background,
+    BackgroundProps,
+    BeforeForegroundProps,
+    Foreground,
+    AfterForegroundProps,
+    Objects
+};
+struct SceneSpecialActorPass {
+    int slot;
+    bool sepia;
+    quint8 alpha;
+};
+// Scene-owned color transitions and the independent special-actor black pass.
+class SceneEffects {
+  public:
+    SceneCapture &capture() {
+        return capture_;
+    }
+    const SceneCapture &capture() const {
+        return capture_;
+    }
+    bool sepia() const {
+        return sepia_;
+    }
+    void setSepia(bool value) {
+        sepia_ = vignette_ = value;
+        selectedColorActor_ = -1;
+        if (!value)
+            images_.clear();
+    }
+    SceneImageCache &images() {
+        return images_;
+    }
+    const SceneImageCache &images() const {
+        return images_;
+    }
+    int selectedColorActor() const {
+        return selectedColorActor_;
+    }
+    void selectColorActor(quint32 slot, const std::array<QByteArray, 28> &actors);
+    bool processActorImage(int slot) const {
+        return vignette_ && sepia_ && selectedColorActor_ != slot && capture_.selector() != 3;
+    }
+    void setImageProcessing(bool value) {
+        sepia_ = value;
+    }
+    bool vignette() const {
+        return vignette_;
+    }
+    QVector<SceneSpecialActorPass> specialActorPasses(const std::array<QByteArray, 28> &) const;
+    void supplyColor(int slot, QByteArray record);
+    const QByteArray &colorRecord(int slot) const;
+    void setSharedColor(std::array<quint8, 5> rgbaAndMask) {
+        shared_ = rgbaAndMask;
+    }
+    const std::array<quint8, 5> &sharedColor() const {
+        return shared_;
+    }
+    std::optional<std::array<quint8, 4>> worldColor(WorldColorPass) const;
+    void startColor(const QVector<quint32> &operands);
+    void advanceColors();
+    void supplySpecialBlack(QByteArray record);
+    const QByteArray &specialBlackRecord() const {
+        return special_;
+    }
+    void advanceSpecialBlack();
+    quint8 specialBlackAlpha() const;
+    static bool visibleAboveSpecialBlack(qint32 source);
+    bool service(quint32 opcode, const QVector<quint32> &operands);
+
+  private:
+    SceneCapture capture_;
+    SceneImageCache images_;
+    int selectedColorActor_ = -1;
+    bool sepia_ = false;
+    bool vignette_ = false;
+    static void checkSlot(int slot);
+    std::array<QByteArray, 20> colors_;
+    std::array<quint8, 5> shared_{255, 255, 255, 255, 0};
+    QByteArray special_;
+};
+} // namespace lordly

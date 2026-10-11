@@ -1,0 +1,36 @@
+{
+  "generator": "native/tools/generate-world-resource-owners.cjs",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "spans": [
+    {
+      "name": "Site archive selection",
+      "start": 1210580,
+      "size": 96,
+      "sha256": "0de1e2a43dd8eb3f144d7f19a6fe954fdce760a2bac692b4066952b40a69fa79"
+    },
+    {
+      "name": "Treasure archive selection",
+      "start": 1663288,
+      "size": 60,
+      "sha256": "97e65d43bee20e857281da3f9bb73eb527e89e2a5fadfe188efbde075b361556"
+    },
+    {
+      "name": "Resource command dispatcher",
+      "start": 38796,
+      "size": 652,
+      "sha256": "e46e7a557b69a964dd00409f7a3adf40b702a8cb195cc1f337289ac15c229807"
+    },
+    {
+      "name": "Resource transfer",
+      "start": 107392,
+      "size": 192,
+      "sha256": "a6b79fba2e66eddb584bef50482b1f313c84fc4bccb42810cd23a05804e4227a"
+    },
+    {
+      "name": "Resource key and envelope readers",
+      "start": 187984,
+      "size": 744,
+      "sha256": "c11292faebbe15618fb44336c4b39156d23ac422a4f2fee1a96f44069f11e5ef"
+    }
+  ]
+}

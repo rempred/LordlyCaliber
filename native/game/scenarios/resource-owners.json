@@ -1,0 +1,30 @@
+{
+  "generator": "native/tools/generate-scenario-resource-owners.cjs",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "spans": [
+    {
+      "name": "Scenario archive selection",
+      "start": 967032,
+      "size": 116,
+      "sha256": "34a44d97cc5fb4c48e3fb8e1d261c1b5337ced8dbb12258355c7be9a56d619fd"
+    },
+    {
+      "name": "Resource command dispatcher",
+      "start": 38796,
+      "size": 652,
+      "sha256": "e46e7a557b69a964dd00409f7a3adf40b702a8cb195cc1f337289ac15c229807"
+    },
+    {
+      "name": "Resource transfer",
+      "start": 107392,
+      "size": 192,
+      "sha256": "a6b79fba2e66eddb584bef50482b1f313c84fc4bccb42810cd23a05804e4227a"
+    },
+    {
+      "name": "Resource key and envelope readers",
+      "start": 187984,
+      "size": 744,
+      "sha256": "c11292faebbe15618fb44336c4b39156d23ac422a4f2fee1a96f44069f11e5ef"
+    }
+  ]
+}

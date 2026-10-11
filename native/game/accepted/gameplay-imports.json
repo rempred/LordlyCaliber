@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "upstream": "OB64 Decomp",
+  "verifiedAt": "2026-10-08T03:17:57.968Z",
+  "imports": [
+    {
+      "source": "src/lib/func_0019BE40.c",
+      "revision": "07daff2d9d1422d147f3e39d1aba20a80a9c7f92",
+      "sourceSha256": "6D58DD5B17A2F53A4983A04770C032BFA681D93EAE8C8437A0E00624792D4C86",
+      "file": "game/accepted/func_0019BE40.c",
+      "symbols": [
+        "func_0019BE40"
+      ]
+    },
+    {
+      "source": "src/lib/func_0004501C.c",
+      "revision": "6268e78656767e633e43fb1819f64a6d21346ab0",
+      "sourceSha256": "F222AAC7637D9B881831E891CADE80C37E3E0CB13E7B79F87CAF29E28AEC664B",
+      "file": "game/accepted/func_0004501C.c",
+      "symbols": [
+        "func_0004501C"
+      ]
+    },
+    {
+      "source": "src/lib/func_00044aa4.c",
+      "revision": "60692c49e108d986150919075562c5f2177e46c9",
+      "sourceSha256": "11BA8E424A53D1318B7FD358C8ED485D765C97B89AC0FFE26093DF9E36F5B42C",
+      "file": "game/accepted/func_00044aa4.c",
+      "symbols": [
+        "func_00044aa4"
+      ]
+    },
+    {
+      "source": "src/lib/func_000457e4.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "E6A43112C899FA954721FD8A25360942D0877C1DDED12BFF4B8DE16DB5147DCF",
+      "file": "game/accepted/func_000457e4.c",
+      "symbols": [
+        "func_000457e4"
+      ]
+    },
+    {
+      "source": "src/lib/func_00045820.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "3CDE10D421AE32FFC2701AB5BF0010BFF4A1A4423F472E5D042D664ADF3F13AE",
+      "file": "game/accepted/func_00045820.c",
+      "symbols": [
+        "func_00045820"
+      ]
+    },
+    {
+      "source": "src/lib/func_00045840.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "FB02604C67F84DBC877E554C6CC2B5A722C6CEDFD4F9757D7C04D5F2FB83567F",
+      "file": "game/accepted/func_00045840.c",
+      "symbols": [
+        "func_00045840"
+      ]
+    },
+    {
+      "source": "src/lib/func_0004585c.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "FB18C5DBD052D7843CC694E8367B4D726A2C79087CBF24A02C9E9DC614B1326D",
+      "file": "game/accepted/func_0004585c.c",
+      "symbols": [
+        "func_0004585c"
+      ]
+    },
+    {
+      "source": "src/lib/func_00045878.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "C0006D7B5146946C850DF26645827ACDA72BB09DAC4514DF4BE72A14EB3E8B7D",
+      "file": "game/accepted/func_00045878.c",
+      "symbols": [
+        "func_00045878"
+      ]
+    },
+    {
+      "source": "src/lib/func_00045898.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "D81D27DB25EF5002CC982A8DB1CF26AF88B2D259C98BA62FD82CF868D2FC00A5",
+      "file": "game/accepted/func_00045898.c",
+      "symbols": [
+        "func_00045898"
+      ]
+    },
+    {
+      "source": "src/lib/func_000458b8.c",
+      "revision": "50aed75816e3a9fce5247a620b60b50e8d5309bc",
+      "sourceSha256": "9E760F4B0704FE264199E92823F487E0E373F4ACCA03DA89CC11E3B3741084C0",
+      "file": "game/accepted/func_000458b8.c",
+      "symbols": [
+        "func_000458b8"
+      ]
+    },
+    {
+      "source": "src/lib/func_00128AD0.c",
+      "revision": "b9d4c60e112a095781314afd539f545f2e8440a6",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "0CFBE3CE36658D186BDDF85C5CF1D76214B757025860B70C7B101E0EC3DAFE19",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128AD0.c",
+      "symbols": [
+        "func_00128AD0"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00128BF4.c",
+      "revision": "13d3564295be0ee343b54633d8d4d84b39d537c2",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "2FCE0151AAD387888057FB8A00BDB16C6F5A64AF75C29E2BE0A889EB6D2B7734",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128BF4.c",
+      "symbols": [
+        "func_00128BF4"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00127D30.c",
+      "revision": "8d2787b54c8d39f60d9b875f82852bb8c0efc6b3",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "9C8EB0A76BC655A2EF53A9B50704E3683DAA7BBAEF07B996E3E2A6E68052A0D4",
+      "file": "game/accepted/2026-10-09/src/lib/func_00127D30.c",
+      "symbols": [
+        "func_00127D30"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00127EAC.c",
+      "revision": "13d3564295be0ee343b54633d8d4d84b39d537c2",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "CCE664F619BB34623DF1C70458905221DBBA73B2579E74BE864FFF067037DFC0",
+      "file": "game/accepted/2026-10-09/src/lib/func_00127EAC.c",
+      "symbols": [
+        "func_00127EAC"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00128050.c",
+      "revision": "b9d4c60e112a095781314afd539f545f2e8440a6",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "E4EB357CB3472049300B166C0459AAAB90CABCF031D96069E2AD4DF31DDE1285",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128050.c",
+      "symbols": [
+        "func_00128050"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_001284C4.c",
+      "revision": "8d2787b54c8d39f60d9b875f82852bb8c0efc6b3",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "D574FF6421D0033F9BA5A4CDF3BD5C8E5BB411E995B28C6EB83D559B59B2A0BE",
+      "file": "game/accepted/2026-10-09/src/lib/func_001284C4.c",
+      "symbols": [
+        "func_001284C4"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00128980.c",
+      "revision": "2eda4e81381fc8e172c36b47a630d11af1690e1a",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "9516B3D8393BB7975776179C0EAC53BAD90B5898E789A60147F07D708079AA89",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128980.c",
+      "symbols": [
+        "func_00128980"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_001289BC.c",
+      "revision": "13d3564295be0ee343b54633d8d4d84b39d537c2",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "E8BB2DDB8C067955D6B987C150C459A6DF4A2D4B18A95AAB5D79F026E9534BE5",
+      "file": "game/accepted/2026-10-09/src/lib/func_001289BC.c",
+      "symbols": [
+        "func_001289BC"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00128D50.c",
+      "revision": "2eda4e81381fc8e172c36b47a630d11af1690e1a",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "7193E0BDFC4A690572701745D7C386FA6156723A43836A88B68CBE54D21B941C",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128D50.c",
+      "symbols": [
+        "func_00128D50"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00128DDC.c",
+      "revision": "13d3564295be0ee343b54633d8d4d84b39d537c2",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "AD85DCE813EB6796C24886702F8E6A211AF6C48F49D6981D6B642684BDD5F59F",
+      "file": "game/accepted/2026-10-09/src/lib/func_00128DDC.c",
+      "symbols": [
+        "func_00128DDC"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/squad_pursuit_producer.c",
+      "revision": "8d2787b54c8d39f60d9b875f82852bb8c0efc6b3",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "FB31FCABF23DB690EDF2C3A7B956D5DDF5E83ACFF42FD77B1D22FDA28E24B72B",
+      "file": "game/accepted/2026-10-09/src/lib/squad_pursuit_producer.c",
+      "symbols": [
+        "func_0010766C",
+        "func_00106CE0",
+        "func_00106E48",
+        "func_00106F34",
+        "func_001070F4",
+        "func_001072B8",
+        "func_0010738C",
+        "func_0010746C",
+        "func_0010756C"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0012A050.c",
+      "revision": "2eda4e81381fc8e172c36b47a630d11af1690e1a",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "64DE641808F74404EEAD3D0768281821C5372EDF7DF31630AAF51E0A5A26A16D",
+      "file": "game/accepted/2026-10-09/src/lib/func_0012A050.c",
+      "symbols": [
+        "func_0012A050"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0012FB64.c",
+      "revision": "2eda4e81381fc8e172c36b47a630d11af1690e1a",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "D790305FDF16DEBF96C38B0E7484631926D13710FB02F097D8460AD4DF6C7A3F",
+      "file": "game/accepted/2026-10-09/src/lib/func_0012FB64.c",
+      "symbols": [
+        "func_0012FB64"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/boot/boot_resource_checksum_chain.c",
+      "revision": "8d2787b54c8d39f60d9b875f82852bb8c0efc6b3",
+      "verifiedAt": "2026-10-09T16:40:05.800Z",
+      "sourceSha256": "63112E98284EE31AF6004BC4CF11FC25D1B66542E6F262C823A5338C88EAF8AB",
+      "file": "game/accepted/2026-10-09/src/boot/boot_resource_checksum_chain.c",
+      "symbols": [
+        "func_00005760",
+        "func_0000581C",
+        "func_00005978",
+        "func_00005A88",
+        "boot_resource_probe_indexed_record_copy_flag",
+        "boot_resource_probe_large_record_copy_flag",
+        "boot_resource_probe_small_record_copy_flag",
+        "func_00005D9C",
+        "func_00005E84",
+        "func_00005EC4",
+        "func_00005F00",
+        "func_00005F60"
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/2026-10-09/include/common/types.h"
+        },
+        {
+          "path": "src/boot/boot_resource_probe_indexed_record_copy_flag.c",
+          "bytes": 734,
+          "sha256": "E1B53A1B31421C648FDAD923DEE318CE16ADDD03AEA7AC734D8AEC0521C02104",
+          "file": "game/accepted/2026-10-09/src/boot/boot_resource_probe_indexed_record_copy_flag.c"
+        },
+        {
+          "path": "src/boot/boot_resource_probe_large_record_copy_flag.c",
+          "bytes": 675,
+          "sha256": "04EB0CE42278E09E20428A5A093DCA4C9CC3CB8E3F790E20F23EBDC44FB2BCC5",
+          "file": "game/accepted/2026-10-09/src/boot/boot_resource_probe_large_record_copy_flag.c"
+        },
+        {
+          "path": "src/boot/boot_resource_probe_small_record_copy_flag.c",
+          "bytes": 664,
+          "sha256": "1F0E8C88341670E56E4A660C1AC6F4144EBC0CA4B23FFDB78EE70B96664364E3",
+          "file": "game/accepted/2026-10-09/src/boot/boot_resource_probe_small_record_copy_flag.c"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/func_00005760.c",
+          "bytes": 700,
+          "sha256": "E2864E607F13C38717DF3BA881A001CF2F0DC4A9C7F08D64E7009DAB8E5C2DA0",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/func_00005760.c"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/func_0000581C.c",
+          "bytes": 1181,
+          "sha256": "5273815639E1F5FD2F821F7C60B9543CBE6EA7D0BE9D58062D124E0385DBE0D2",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/func_0000581C.c"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/func_00005978.c",
+          "bytes": 1181,
+          "sha256": "FE15177DDE22EC9A635CB278BBE98DF7825DCAAED2FB5C5446C6570CFEB6CA08",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/func_00005978.c"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/func_00005A88.c",
+          "bytes": 1049,
+          "sha256": "69169D9253596CB6B585BCA3A93B1280A368EE994825DA721DF9662E4A8772F0",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/func_00005A88.c"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/interfaces.h",
+          "bytes": 1191,
+          "sha256": "06CEBFD700759C85394E73AA6C5D9E22D89DD2E5CA6E0C6A2D709893B587D838",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/interfaces.h"
+        },
+        {
+          "path": "src/boot/resource_checksum_chain/signature_and_checksums.c",
+          "bytes": 3246,
+          "sha256": "7DD367DDE3364F1CBADCE456AB692A3F3794796560A7D15EE0DA3F2D0459F4AF",
+          "file": "game/accepted/2026-10-09/src/boot/resource_checksum_chain/signature_and_checksums.c"
+        }
+      ]
+    }
+  ]
+}

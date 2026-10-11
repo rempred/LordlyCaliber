@@ -1,0 +1,38 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../..');global.window=global;global.OB64={};
+for(const f of ['parsers.js','cutscene-data.js','cutscene-model.js','cutscene-njpg.js','cutscene-assets.js','art.js'])
+ vm.runInThisContext(fs.readFileSync(path.join(root,f),'utf8'),{filename:f});
+const b=fs.readFileSync(process.argv[2]);if(b.readUInt32BE(0)===0x37804012)b.swap16();
+const out=process.argv[3],rows=[],types={},hash=v=>crypto.createHash('sha256').update(v).digest('hex');
+const archives=OB64.findArchives(b);
+for(const asset of OB64.cutsceneData.imageAssets){
+ let bytes,source;
+ if(asset.sourceKind==='lha-archive'){
+  const a=archives[asset.archiveIndex];bytes=Buffer.from(OB64.extractArchive(b,a));source={kind:'lha',offset:a.offset};
+ }else if(asset.sourceKind==='rom-resource'){
+  const compressed=asset.source.compressionKind==='ob64-custom-lz';
+  const r=compressed?OB64.art.readCompressedResource(b,asset.source.resourceKey):OB64.art.readResource(b,asset.source.resourceKey);
+  bytes=Buffer.from(compressed?r.decoded:r.stored);source={kind:compressed?'custom':'stored',offset:asset.source.resourceKey+0x594280};
+ }else {bytes=b.subarray(asset.source.z64Start,asset.source.z64EndExclusive);source={kind:'slice',offset:asset.source.z64Start,size:bytes.length};}
+ if(asset.source.decodedSha256)assert.equal(hash(bytes),asset.source.decodedSha256.toLowerCase());
+ const parsed=OB64.cutsceneAssets.parseImageAsset(bytes,asset);
+ assert(parsed.renderable);
+ const huff=asset.container.endsWith('njpg')||parsed.records?.some(r=>r.embeddedContainer);
+ const name=`pixels-${rows.length}.rgba`;if(huff)fs.writeFileSync(path.join(out,name),Buffer.from(parsed.rgba));
+ rows.push({id:asset.assetId,container:asset.container,layout:asset.layout,source,width:parsed.width,height:parsed.height,
+  originX:parsed.originX||0,originY:parsed.originY||0,sha256:hash(parsed.rgba),pixels:huff?name:null,
+  layers:(parsed.records||[]).map(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))});
+ types[asset.container]=(types[asset.container]||0)+1;
+}
+const compoundAsset=OB64.cutsceneData.imageAssets.find(a=>a.compound);
+const compound=OB64.cutsceneAssets.composeCompoundImageAsset(compoundAsset,compoundAsset.compound.members.map(m=>{
+ const a=OB64.cutsceneData.imageAssets.find(a=>a.assetId===m.assetId);
+ return {assetId:a.assetId,image:OB64.cutsceneAssets.parseImageAsset(OB64.extractArchive(b,archives[a.archiveIndex]),a)};
+}));
+rows.push({id:compoundAsset.assetId,compound:true,width:compound.width,height:compound.height,
+ originX:compound.originX,originY:compound.originY,sha256:hash(compound.rgba)});
+const selectors=OB64.cutsceneData.backgroundSelectorTables.map(t=>({id:t.tableId,
+ entries:t.entries.map(e=>({selector:e.selector,images:e.archiveAssetIds}))}));
+fs.writeFileSync(path.join(out,'backgrounds.json'),JSON.stringify({rows,types,selectors}));
+console.log(`Independent background references: ${rows.length}; ${JSON.stringify(types)}`);

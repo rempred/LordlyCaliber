@@ -1,0 +1,162 @@
+#include "engine/actor_instance.h"
+#include <bit>
+#include <cmath>
+#include <cstring>
+namespace lordly {
+namespace {
+LordlyActorRecord raw(const QByteArray &record) {
+    if (record.size() != LORDLY_ACTOR_RECORD_BYTES)
+        throw Error("Actor record must contain 336 bytes");
+    LordlyActorRecord result;
+    std::memcpy(result.bytes, record.constData(), sizeof(result.bytes));
+    return result;
+}
+QByteArray bytes(const LordlyActorRecord &record) {
+    return {reinterpret_cast<const char *>(record.bytes), sizeof(record.bytes)};
+}
+struct Context {
+    Rom rom;
+    ActorInstance::Height height;
+    QMap<int, ActorArt> art;
+    QString error;
+};
+int resolve(void *context, int32_t bank, int32_t animation, int32_t facing, int *state) {
+    auto &c = *static_cast<Context *>(context);
+    try {
+        if (!c.art.contains(bank))
+            c.art.insert(bank, ActorArt::load(c.rom, bank));
+        *state = c.art[bank].resolve(animation, facing);
+        return 1;
+    } catch (const Error &e) {
+        c.error = QString::fromUtf8(e.what());
+        return 0;
+    }
+}
+int height(void *context, int mode, float x, float z, float *result) {
+    auto &c = *static_cast<Context *>(context);
+    try {
+        if (!c.height) {
+            c.error = "Actor placement requires the scene terrain height";
+            return 0;
+        }
+        *result = c.height(mode, x, z);
+        return 1;
+    } catch (const std::exception &e) {
+        c.error = QString::fromUtf8(e.what());
+        return 0;
+    }
+}
+void require(int result, const Context &context) {
+    if (result != LORDLY_ACTOR_OK)
+        throw Error(context.error.isEmpty() ? "Invalid actor construction or State request"
+                                            : context.error);
+}
+ActorPosePlayer player(const Rom &rom, const QByteArray &record, BodyAnimationData::Pointer data) {
+    const auto r = raw(record);
+    LordlyActorPose fields{};
+    lordly_actor_read_pose(&r, &fields);
+    auto art = fields.decoder_mode ? ActorArt::loadBody(rom, fields.bank, fields.owner,
+                                                        fields.variant, fields.flag_b, data)
+                                   : ActorArt::load(rom, fields.bank);
+    // Special body classes clamp the state at their next native invocation.
+    // Use a valid constructor state, then restore every native field below.
+    ActorPosePlayer result(rom, std::move(art), 0, fields.variant);
+    result.actor() = fields;
+    return result;
+}
+} // namespace
+ActorInstance::ActorInstance(const Rom &rom, const QByteArray &record, BodyAnimationData::Pointer data)
+    : rom_(rom), bodyData_(std::move(data)), record_(record), pose_(player(rom, record, bodyData_)) {}
+ActorInstance ActorInstance::create(const Rom &rom, const LordlyActorSelection &selection, int mode,
+                                    const Height &terrain, BodyAnimationData::Pointer data) {
+    Context context{rom, terrain, {}, {}};
+    LordlyActorRecord record{};
+    require(lordly_actor_construct(&record, &selection, mode, resolve, height, &context), context);
+    ActorInstance result(rom, bytes(record), std::move(data));
+    if (result.pose_.advance() != LORDLY_POSE_OK)
+        throw Error(result.pose_.error());
+    return result;
+}
+void ActorInstance::select(const LordlyActorSelection &selection) {
+    if (pose_.suspended())
+        throw Error("Finish the actor's current pose invocation before changing State");
+    Context context{rom_, {}, {}, {}};
+    auto next = raw(record());
+    int advance = 0;
+    require(lordly_actor_select(&next, &selection, resolve, &context, &advance), context);
+    if (!advance)
+        return;
+    ActorInstance replacement(rom_, bytes(next), bodyData_);
+    if (replacement.pose_.advance() != LORDLY_POSE_OK)
+        throw Error(replacement.pose_.error());
+    *this = std::move(replacement);
+}
+QByteArray ActorInstance::record() const {
+    auto result = raw(record_);
+    lordly_actor_write_pose(&result, &pose_.actor());
+    return bytes(result);
+}
+void ActorInstance::setSlot(int slot) {
+    if (slot < 0 || slot >= 28)
+        throw Error("Actor slot is outside 0..27");
+    put32(record_, 0xe4, quint32(slot));
+}
+void ActorInstance::setOpacity(quint8 value) {
+    put8(record_, 0x13c, value);
+}
+void ActorInstance::setTint(quint8 red, quint8 green, quint8 blue) {
+    put8(record_, 0x142, red);
+    put8(record_, 0x143, green);
+    put8(record_, 0x144, blue);
+}
+void ActorInstance::setChannel(quint8 channel) {
+    put8(record_, 0x13e, channel);
+}
+void ActorInstance::setDrawing(const ActorMatrices &drawing) {
+    const auto x = float(drawing.position.x()), y = float(drawing.position.y());
+    if (drawing.matrix.size() != 64 || drawing.shadow.size() != 64 || !std::isfinite(x) ||
+        !std::isfinite(y))
+        throw Error("Invalid Actor main drawing state");
+    record_.replace(0xa0, 64, drawing.matrix);
+    record_.replace(0x20, 64, drawing.shadow);
+    record_.replace(0x60, 64, drawing.shadow);
+    put32(record_, 0xfc, std::bit_cast<quint32>(x));
+    put32(record_, 0x100, std::bit_cast<quint32>(y));
+}
+void ActorInstance::setDrawing(const ActorWorldMatrices &drawing) {
+    if (drawing.matrix.size() != 64 || drawing.shadows[0].size() != 64 ||
+        drawing.shadows[1].size() != 64)
+        throw Error("Invalid Actor world drawing state");
+    record_.replace(0xa0, 64, drawing.matrix);
+    for (int i = 0; i < 2; ++i)
+        record_.replace(0x20 + i * 64, 64, drawing.shadows[i]);
+}
+void ActorInstance::setUniformScale(float value) {
+    if (!std::isfinite(value))
+        throw Error("Actor scale must be finite");
+    for (int i = 0; i < 3; ++i)
+        put32(record_, 0x104 + i * 4, std::bit_cast<quint32>(value));
+}
+void ActorInstance::addHeight(float step) {
+    const float base = pose_.actor().position.y + step;
+    const bool secondary = !(u8(record_, 0x145) & 4);
+    const float height = secondary ? std::bit_cast<float>(u32(record_, 0x128)) + step : 0;
+    if (!std::isfinite(base) || (secondary && !std::isfinite(height)))
+        throw Error("Actor height movement produced a nonfinite coordinate");
+    pose_.actor().position.y = base;
+    if (secondary)
+        put32(record_, 0x128, std::bit_cast<quint32>(height));
+}
+void ActorInstance::setSecondaryHeight(float value, bool addBase) {
+    if (!std::isfinite(value)) throw Error("Actor secondary height must be finite");
+    put32(record_, 0x128, std::bit_cast<quint32>(value));
+    put8(record_, 0x145, addBase ? 4 : 2);
+}
+void ActorInstance::resetHeight(qint32 value) {
+    // ROM29C5A0 uses signed whole world units, not thousandths.
+    if (value != -1)
+        pose_.actor().position.y = float(value);
+    put32(record_, 0x128, 0);
+    put8(record_, 0x145, (u8(record_, 0x145) & 0xfe) | 4);
+}
+} // namespace lordly

@@ -1,0 +1,472 @@
+{
+  "generator": "native/tools/generate-custom-owners.cjs",
+  "input": "Original Decomp ASM; US Rev0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "name": "card_text",
+      "start": 940392,
+      "size": 3124,
+      "address": 2149157864,
+      "files": [
+        "func_000E5968.s"
+      ],
+      "retailSha256": "f681a58add89ea811ce1d164c08bd6638d5bd707340b12af2ce40df8bb7d5cc6",
+      "sites": [
+        {
+          "offset": 364,
+          "entry": "lc_card_text_site",
+          "original": [
+            33757217,
+            2894266372
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_80093380": 2148086656,
+        "service_8007938c": 2147980172,
+        "service_8019dbb0": 2149178288,
+        "service_8019cb3c": 2149174076,
+        "service_8019c7a8": 2149173160,
+        "service_80093540": 2148087104
+      }
+    },
+    {
+      "name": "card_message",
+      "start": 1105332,
+      "size": 9132,
+      "address": 2149291636,
+      "files": [
+        "func_0010DDB4.s"
+      ],
+      "retailSha256": "77d2e54439c7fb2e96a77920ffe0efcd5a2c68329fd893cb28846154b8e3739b",
+      "sites": [
+        {
+          "offset": 5668,
+          "entry": "lc_card_message_site",
+          "original": [
+            10627105,
+            816185343
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801a9db0": 2149227952,
+        "service_801b54c4": 2149274820,
+        "service_801dadf0": 2149428720,
+        "service_800900c0": 2148073664,
+        "service_80090010": 2148073488,
+        "service_8009da50": 2148129360,
+        "service_80093380": 2148086656,
+        "service_801dc95c": 2149435740,
+        "service_801dc910": 2149435664,
+        "service_801f69fc": 2149542396,
+        "service_8020cda0": 2149633440,
+        "service_801da340": 2149425984,
+        "service_801d5208": 2149405192,
+        "service_801da228": 2149425704,
+        "service_801b54fc": 2149274876,
+        "service_801da0a8": 2149425320,
+        "service_801db478": 2149430392,
+        "service_801dcf90": 2149437328,
+        "service_8019fad8": 2149186264,
+        "service_801c740c": 2149348364,
+        "service_801dd2b0": 2149438128,
+        "service_801d92d0": 2149421776,
+        "service_801d935c": 2149421916,
+        "service_801c3dc0": 2149334464,
+        "service_80092a60": 2148084320,
+        "service_801daa00": 2149427712,
+        "service_801db180": 2149429632,
+        "service_801b2d2c": 2149264684,
+        "service_80186190": 2149081488,
+        "service_800ea604": 2148443652,
+        "service_801de440": 2149442624,
+        "service_801dc720": 2149435168
+      }
+    },
+    {
+      "name": "materializer",
+      "start": 2338888,
+      "size": 472,
+      "address": 2149389544,
+      "files": [
+        "func_0023B048.s"
+      ],
+      "retailSha256": "153f6808ba4c8a4de0167b7925d83cd100b658ebb81f53b229fd6f5acd670394",
+      "sites": [
+        {
+          "offset": 180,
+          "entry": "lc_materializer_site",
+          "original": [
+            604110849,
+            375521303
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_80093380": 2148086656,
+        "service_801d0840": 2149386304
+      }
+    },
+    {
+      "name": "persuasion",
+      "start": 2181468,
+      "size": 640,
+      "address": 2149389964,
+      "files": [
+        "func_0021495C.s"
+      ],
+      "retailSha256": "865827b16661908d4272a4082a3d2632cb0dc168f9382732fd7278fdc5f440c7",
+      "sites": [
+        {
+          "offset": 172,
+          "entry": "lc_persuasion_site",
+          "original": [
+            201803040,
+            2382692428
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801c9380": 2149356416,
+        "service_801c8fe8": 2149355496,
+        "service_801c8e30": 2149355056,
+        "service_801c8e9c": 2149355164,
+        "service_801c8e64": 2149355108,
+        "service_801c8e80": 2149355136,
+        "service_801c8b68": 2149354344,
+        "service_801d1480": 2149389440,
+        "service_8009dbb8": 2148129720,
+        "service_800712c4": 2147947204,
+        "service_8009c7cc": 2148124620
+      }
+    },
+    {
+      "name": "retreat",
+      "start": 2182108,
+      "size": 340,
+      "address": 2149390604,
+      "files": [
+        "func_00214BDC.s"
+      ],
+      "retailSha256": "c232d0f263a2e37010f5c51f166118c81a0c3def90e3958551bfa7b5eee71c36",
+      "sites": [
+        {
+          "offset": 116,
+          "entry": "lc_retreat_site",
+          "original": [
+            8225,
+            1006960689
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801c8adc": 2149354204,
+        "service_801c8e30": 2149355056,
+        "service_801c8b84": 2149354372,
+        "service_801c8e9c": 2149355164,
+        "service_801c8e64": 2149355108,
+        "service_801c8e80": 2149355136,
+        "service_8009dbb8": 2148129720,
+        "service_800712c4": 2147947204
+      }
+    },
+    {
+      "name": "recruit",
+      "start": 2179780,
+      "size": 668,
+      "address": 2149388276,
+      "files": [
+        "func_002142C4.s"
+      ],
+      "retailSha256": "fc2de8c7b4ea33d8615b393dc09ad931e872656413d0e010cab2ad9abda873cb",
+      "sites": [
+        {
+          "offset": 20,
+          "entry": "lc_talk_target_site",
+          "original": [
+            201794819,
+            2947547160
+          ],
+          "keepDelay": true
+        }
+      ],
+      "calls": {
+        "service_801c940c": 2149356556,
+        "service_80093380": 2148086656,
+        "service_80093060": 2148085856,
+        "service_8016c048": 2148974664,
+        "service_8016c0c8": 2148974792,
+        "service_8016df88": 2148982664,
+        "service_8016dfdc": 2148982748,
+        "service_8016e030": 2148982832,
+        "service_8016e084": 2148982916,
+        "service_8016b6fc": 2148972284
+      }
+    },
+    {
+      "name": "talk_results",
+      "start": 2202132,
+      "size": 1272,
+      "address": 2149410628,
+      "files": [
+        "func_00219A14.s"
+      ],
+      "retailSha256": "ab78564153e072fa1a0afa836eb0254df1729fd9176087b9247b88f57ec4351a",
+      "sites": [
+        {
+          "offset": 200,
+          "entry": "lc_talk_target_site",
+          "original": [
+            201794819,
+            0
+          ],
+          "keepDelay": false
+        },
+        {
+          "offset": 800,
+          "entry": "lc_talk_target_site",
+          "original": [
+            201794819,
+            0
+          ],
+          "keepDelay": false
+        },
+        {
+          "offset": 892,
+          "entry": "lc_talk_target_site",
+          "original": [
+            201794819,
+            0
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801d168c": 2149389964,
+        "service_801c940c": 2149356556,
+        "service_8016e1dc": 2148983260,
+        "service_801db820": 2149431328,
+        "service_801ad9d4": 2149243348,
+        "service_8009c7cc": 2148124620,
+        "service_801be264": 2149311076,
+        "service_801bc35c": 2149303132,
+        "service_801d0ff4": 2149388276,
+        "service_8017c2fc": 2149040892,
+        "service_800934b0": 2148086960,
+        "service_801af9b8": 2149251512,
+        "service_80070f30": 2147946288,
+        "service_80093060": 2148085856,
+        "service_801efaac": 2149513900,
+        "service_800712c4": 2147947204,
+        "service_801d90e0": 2149421280,
+        "service_801c88cc": 2149353676
+      }
+    },
+    {
+      "name": "action_budget",
+      "start": 2186480,
+      "size": 3400,
+      "address": 2149394976,
+      "files": [
+        "func_00215CF0.s"
+      ],
+      "retailSha256": "8e0531c287f3635893aaeb1282f89adfc257682f8ed69d1311b0c23b21b21c9e",
+      "sites": [
+        {
+          "offset": 708,
+          "entry": "lc_fight_budget_site",
+          "original": [
+            608370687,
+            0
+          ],
+          "keepDelay": false
+        },
+        {
+          "offset": 1144,
+          "entry": "lc_talk_budget_site",
+          "original": [
+            608370686,
+            0
+          ],
+          "keepDelay": false
+        },
+        {
+          "offset": 1896,
+          "entry": "lc_fight_budget_site",
+          "original": [
+            608370687,
+            0
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801d2700": 2149394176,
+        "service_801d7b9c": 2149415836,
+        "service_8017f214": 2149052948,
+        "service_801c5938": 2149341496,
+        "service_801c8adc": 2149354204,
+        "service_801c88cc": 2149353676,
+        "service_8017f334": 2149053236,
+        "service_80070f30": 2147946288,
+        "service_80093060": 2148085856,
+        "service_801efaac": 2149513900,
+        "service_800712c4": 2147947204,
+        "service_801d90e0": 2149421280,
+        "service_8016fef4": 2148990708,
+        "service_801aed14": 2149248276,
+        "service_8017ef24": 2149052196,
+        "service_8016f4e0": 2148988128,
+        "service_800934b0": 2148086960,
+        "service_8009c550": 2148123984
+      }
+    },
+    {
+      "name": "menu_iterator",
+      "start": 2185680,
+      "size": 800,
+      "address": 2149394176,
+      "files": [
+        "func_002159D0.s"
+      ],
+      "retailSha256": "3e34625b1c1630ea8a974abf082d1aa19123e62d4a60b674d821de3892ba06e8",
+      "sites": [
+        {
+          "offset": 508,
+          "entry": "lc_menu_iterator_site",
+          "original": [
+            201811368,
+            0
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_80070f30": 2147946288,
+        "service_80093060": 2148085856,
+        "service_801efaac": 2149513900,
+        "service_800712c4": 2147947204,
+        "service_801d90e0": 2149421280,
+        "service_801cc37c": 2149368700,
+        "service_801d96a0": 2149422752,
+        "service_801c8aec": 2149354220,
+        "service_801c8afc": 2149354236,
+        "service_801c5938": 2149341496
+      }
+    },
+    {
+      "name": "round",
+      "start": 2223036,
+      "size": 10272,
+      "address": 2149431532,
+      "files": [
+        "func_0021EBBC.s",
+        "func_0021EBBC_chunk34tail.s"
+      ],
+      "retailSha256": "fb00f50a286089c39efdd6777416ccd2c9e47b974503554059eaf98a1a0d7a87",
+      "sites": [
+        {
+          "offset": 9924,
+          "entry": "lc_round_site",
+          "original": [
+            201794239,
+            0
+          ],
+          "keepDelay": false
+        }
+      ],
+      "calls": {
+        "service_801c8fe8": 2149355496,
+        "service_80093060": 2148085856,
+        "service_801c8e30": 2149355056,
+        "service_801c8b84": 2149354372,
+        "service_801ca29c": 2149360284,
+        "service_8020b0e4": 2149626084,
+        "service_801c8b54": 2149354324,
+        "service_801c8c3c": 2149354556,
+        "service_8020b1e0": 2149626336,
+        "service_801ad974": 2149243252,
+        "service_801be3a8": 2149311400,
+        "service_801be410": 2149311504,
+        "service_801c8ac0": 2149354176,
+        "service_801c8aa4": 2149354148,
+        "service_8007fe70": 2148007536,
+        "service_801da520": 2149426464,
+        "service_801ad9d4": 2149243348,
+        "service_801dada0": 2149428640,
+        "service_801ebc80": 2149497984,
+        "service_801e34d8": 2149463256,
+        "service_801da9d4": 2149427668,
+        "service_801db23c": 2149429820,
+        "service_801db6cc": 2149430988,
+        "service_801be034": 2149310516,
+        "service_8016e440": 2148983872,
+        "service_801af730": 2149250864,
+        "service_801c8e9c": 2149355164,
+        "service_801d7b9c": 2149415836,
+        "service_801c5938": 2149341496,
+        "service_801c9028": 2149355560,
+        "service_801be0f4": 2149310708,
+        "service_801ae4ec": 2149246188,
+        "service_801c8c74": 2149354612,
+        "service_801c9fb4": 2149359540,
+        "service_801adb00": 2149243648,
+        "service_801adbc0": 2149243840,
+        "service_801c8aec": 2149354220,
+        "service_801c8afc": 2149354236,
+        "service_8016fe78": 2148990584,
+        "service_801c8b68": 2149354344,
+        "service_8016ba6c": 2148973164,
+        "service_801ca038": 2149359672,
+        "service_801cc574": 2149369204,
+        "service_801c8e64": 2149355108,
+        "service_801da4fc": 2149426428,
+        "service_801c8e80": 2149355136,
+        "service_801da4b4": 2149426356,
+        "service_801da4d8": 2149426392,
+        "service_801d8e70": 2149420656,
+        "service_8016eba4": 2148985764,
+        "service_801d8da4": 2149420452,
+        "service_801bc3d8": 2149303256,
+        "service_801e1660": 2149455456,
+        "service_801c8eb8": 2149355192,
+        "service_801afb0c": 2149251852,
+        "service_80093380": 2148086656,
+        "service_8016df88": 2148982664,
+        "service_8016dfdc": 2148982748,
+        "service_8016e030": 2148982832,
+        "service_8016e084": 2148982916,
+        "service_801e1a48": 2149456456,
+        "service_801afbe8": 2149252072,
+        "service_801daff4": 2149429236,
+        "service_801d96a0": 2149422752,
+        "service_80172394": 2149000084,
+        "service_8017223c": 2148999740,
+        "service_801707f4": 2148993012,
+        "service_801cc37c": 2149368700,
+        "service_801c9fa4": 2149359524,
+        "service_8016e338": 2148983608,
+        "service_801d2614": 2149393940,
+        "service_801c88cc": 2149353676
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "start": 231440,
+      "size": 40,
+      "sha256": "9c94d164b29e79a5d145d83d53e9a42040a9035fcc2e3305e79ea5070f2b2f28"
+    },
+    {
+      "start": 231640,
+      "size": 40,
+      "sha256": "45171bd5fe26dcefc5aa6b58302107c3cc362b5fe5da0e4e9fabd095bf3bf4f2"
+    }
+  ]
+}

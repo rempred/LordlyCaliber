@@ -1,0 +1,61 @@
+{
+  "checkedOn": "2026-10-04",
+  "qt": {
+    "version": "6.12.0",
+    "modules": [
+      "Core",
+      "Gui",
+      "Widgets",
+      "Concurrent",
+      "Test",
+      "Qml",
+      "ZlibPrivate"
+    ],
+    "source": "https://www.qt.io/blog/qt-6.12-released",
+    "bundledZlib": {
+      "version": "1.3.2",
+      "checkedOn": "2026-10-05",
+      "source": "https://zlib.net/",
+      "qtAttribution": "https://doc.qt.io/qt-6/qtcore-attribution-zlib.html",
+      "use": "Bounded RZIP inflation through the zlib headers and prefixed symbols shipped with pinned Qt Core; no additional download. Recheck the private header target when changing Qt versions."
+    },
+    "archives": [
+      {
+        "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "sha1": "bf35f8916164c6f313af8347dd0e91efe18178f0",
+        "sha256": "219d1b86def3be418e31d704572bc4acc91b2ec373c65595c9fb12b42bf098dc"
+      },
+      {
+        "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "sha1": "e1c5b24e2448539684ac59dfc1a1be4de01de1d1",
+        "sha256": "dfcad02224b71724e3314d0bc3ffc0b862dfa6e02bc4aadd39f1738f6c364c79"
+      },
+      {
+        "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "sha1": "879b647b61a1da35d50132e3a51ec5895b03fb95",
+        "sha256": "73328e361429378df518f391ebe4d82c51e833f4d5a951692768ab5a5a1d7da5"
+      },
+      {
+        "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "sha1": "bfe26cb07fd8d497fa1384a53d82434ad45a9756",
+        "sha256": "258146e9972fadbc1162cda31c7d7ed7e627f5022b2a848f2edb84d9c2ce27db"
+      }
+    ]
+  },
+  "cmake": {
+    "version": "4.4.4",
+    "url": "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip",
+    "sha256": "bace36e94b31c68ab6fa295f26dfa11219e0701cf7c94b0284a7d1cb13dac536"
+  },
+  "ninja": {
+    "version": "1.13.2",
+    "source": "https://github.com/ninja-build/ninja/releases/tag/v1.13.2"
+  },
+  "compiler": {
+    "toolset": "MSVC 2022 14.44",
+    "testedCompiler": "19.44.35228.0",
+    "installationDirectoryVersion": "14.44.35207",
+    "reason": "Qt 6.12 Windows x64 support lists MSVC 2022. Use the installed supported toolset rather than choosing MSVC 2026 solely for a higher version number.",
+    "source": "https://doc.qt.io/qt-6/windows.html"
+  }
+}

@@ -92,7 +92,20 @@ window.OB64 = window.OB64 || {};
     return bytes;
   }
 
+  // A two-option choice in the retail layout (archive 163 entry 1): the lord's
+  // name, two numbered options, then @1/@2 writing 1 or 255 to control byte 3.
+  function choiceRawText(choice) {
+    [choice.option1, choice.option2].forEach(function(option) {
+      if (typeof option !== 'string' || !option.trim().length || option.length > 24 || /[^\x20-\x7e]|[@{}]/.test(option)) {
+        fail('Each choice option needs 1 to 24 printable characters without control tokens.');
+      }
+    });
+    return '@S0@%0@n    1. {T05}' + choice.option1.trim() + '@n    2. {T05}' + choice.option2.trim() +
+      '@1@w3001@c@n@2@w3255@c@n@#';
+  }
+
   function authoredRawText(payload) {
+    if (payload.choice) return choiceRawText(payload.choice);
     var speaker = payload.speaker;
     var text = payload.text;
     if (typeof speaker !== 'string' || !speaker.length || speaker.length > 28 ||
@@ -189,6 +202,13 @@ window.OB64 = window.OB64 || {};
     return output;
   }
 
-  O.cutsceneAuthoring = { readDialogue: read, dialogueEntry: entry,
+  function choiceOptionsFromRawText(rawText) {
+    var match = /^@S0@%0@n    1\. \{T05\}(.*)@n    2\. \{T05\}(.*)@1@w3001@c@n@2@w3255@c@n@#$/.exec(String(rawText || ''));
+    return match ? { option1: match[1], option2: match[2] } : null;
+  }
+
+  O.cutsceneAuthoring = {
+    choiceRawText: choiceRawText,
+    choiceOptionsFromRawText: choiceOptionsFromRawText, readDialogue: read, dialogueEntry: entry,
     authoredDialogueRawText: authoredRawText, dialogueResources: resources };
 })(window.OB64);

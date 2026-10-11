@@ -1,0 +1,733 @@
+{
+  "generator": "native/tools/generate-scenario-import-catalog.cjs",
+  "inputs": [
+    "scenario-eset-data.js",
+    "parsers.js",
+    "private US Rev0 ROM"
+  ],
+  "sourceRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "scenarios": {
+    "1": {
+      "archive": 753,
+      "filename": "eset0_01.bin",
+      "resourcePath": "ob64_all/e753/eset0_01.bin",
+      "sha256": "a26139f094b25870477ee08dfb140fd32fe4e30cd6cb03015dc5f3d26da696e8",
+      "baseLevel": 2,
+      "aliases": [
+        1
+      ],
+      "excluded": false
+    },
+    "2": {
+      "archive": 754,
+      "filename": "eset0_02.bin",
+      "resourcePath": "ob64_all/e754/eset0_02.bin",
+      "sha256": "028465775b3259177d4d970307da62e8eb24e96cc38b6f21e7530464989aedd3",
+      "baseLevel": 2,
+      "aliases": [
+        2
+      ],
+      "excluded": false
+    },
+    "3": {
+      "archive": 755,
+      "filename": "eset1_01.bin",
+      "resourcePath": "ob64_all/e755/eset1_01.bin",
+      "sha256": "09525430cf15f6cae9566eb05a25c8621e4d692c4826dffe121f292121dcaa12",
+      "baseLevel": 3,
+      "aliases": [
+        3
+      ],
+      "excluded": false
+    },
+    "4": {
+      "archive": 756,
+      "filename": "eset1_02.bin",
+      "resourcePath": "ob64_all/e756/eset1_02.bin",
+      "sha256": "1fdc1badf3ab0979bf24554c3c515bf99a3e6eabc5a1b2d6fc8f7656a9f6dddf",
+      "baseLevel": 5,
+      "aliases": [
+        4
+      ],
+      "excluded": false
+    },
+    "5": {
+      "archive": 757,
+      "filename": "eset1_03.bin",
+      "resourcePath": "ob64_all/e757/eset1_03.bin",
+      "sha256": "6905b9411777a9a07a1a769914ecc441539b22fefc57730b081c88d78bb9db35",
+      "baseLevel": 5,
+      "aliases": [
+        5
+      ],
+      "excluded": false
+    },
+    "6": {
+      "archive": 758,
+      "filename": "eset1_04.bin",
+      "resourcePath": "ob64_all/e758/eset1_04.bin",
+      "sha256": "a65352caa90c56785add604e33035ef1c2a5232b7b95ba313a99c4597fd4435a",
+      "baseLevel": 6,
+      "aliases": [
+        6
+      ],
+      "excluded": false
+    },
+    "7": {
+      "archive": 759,
+      "filename": "eset1_05.bin",
+      "resourcePath": "ob64_all/e759/eset1_05.bin",
+      "sha256": "1bb208cd4a32d906f6af703c5a370d529e923fbe8bf5eff09b6327454cd80aa4",
+      "baseLevel": 7,
+      "aliases": [
+        7
+      ],
+      "excluded": false
+    },
+    "8": {
+      "archive": 760,
+      "filename": "eset1_06.bin",
+      "resourcePath": "ob64_all/e760/eset1_06.bin",
+      "sha256": "e0939d56645416361493bc7f36f7a36d4ed8c64727390eb6b7e6519bc612836d",
+      "baseLevel": 8,
+      "aliases": [
+        8
+      ],
+      "excluded": false
+    },
+    "9": {
+      "archive": 761,
+      "filename": "eset1_07.bin",
+      "resourcePath": "ob64_all/e761/eset1_07.bin",
+      "sha256": "6d0042c16902648b265a0c417bdcc02665251b30a5bf40829ee5f42acb102882",
+      "baseLevel": 8,
+      "aliases": [
+        9
+      ],
+      "excluded": false
+    },
+    "10": {
+      "archive": 752,
+      "filename": "eset0_00.bin",
+      "resourcePath": "ob64_all/e752/eset0_00.bin",
+      "sha256": "2083a3183ca1ddc51a4976cfced13ca2ceda3b2aad182e4d2134810e0c821577",
+      "baseLevel": 2,
+      "aliases": [
+        10,
+        22,
+        35,
+        62
+      ],
+      "excluded": false
+    },
+    "11": {
+      "archive": 762,
+      "filename": "eset2_01.bin",
+      "resourcePath": "ob64_all/e762/eset2_01.bin",
+      "sha256": "cd3c798c49e3857ad2d14840d48639b7d793f0d66f59cb4153bb77ce30051e99",
+      "baseLevel": 9,
+      "aliases": [
+        11
+      ],
+      "excluded": false
+    },
+    "12": {
+      "archive": 763,
+      "filename": "eset2_02.bin",
+      "resourcePath": "ob64_all/e763/eset2_02.bin",
+      "sha256": "1bac1ceb9fa4e377b1a28309fbc249156967c77704b4da180b6b93d07a174b28",
+      "baseLevel": 11,
+      "aliases": [
+        12
+      ],
+      "excluded": false
+    },
+    "13": {
+      "archive": 764,
+      "filename": "eset2_03.bin",
+      "resourcePath": "ob64_all/e764/eset2_03.bin",
+      "sha256": "43fe3e306986c60634613377d1a07d04d54103a7c3386fd3544621365732c8f7",
+      "baseLevel": 11,
+      "aliases": [
+        13
+      ],
+      "excluded": false
+    },
+    "14": {
+      "archive": 765,
+      "filename": "eset2_04.bin",
+      "resourcePath": "ob64_all/e765/eset2_04.bin",
+      "sha256": "7d064bb089397a5cae745caf2ee039324bf692aa3bd23a4a0c2550f5015227e0",
+      "baseLevel": 12,
+      "aliases": [
+        14
+      ],
+      "excluded": false
+    },
+    "15": {
+      "archive": 766,
+      "filename": "eset2_05a.bin",
+      "resourcePath": "ob64_all/e766/eset2_05a.bin",
+      "sha256": "f52eee62affe83feccffc2abfbf398a3295a3a3849b4526720cb51c3b36229e0",
+      "baseLevel": 12,
+      "aliases": [
+        15
+      ],
+      "excluded": false
+    },
+    "16": {
+      "archive": 767,
+      "filename": "eset2_05b.bin",
+      "resourcePath": "ob64_all/e767/eset2_05b.bin",
+      "sha256": "02b0e56b07ce27b40221fba21d06aa8e699b4f839e1990adc478a243677673f9",
+      "baseLevel": 12,
+      "aliases": [
+        16
+      ],
+      "excluded": false
+    },
+    "17": {
+      "archive": 768,
+      "filename": "eset2_06.bin",
+      "resourcePath": "ob64_all/e768/eset2_06.bin",
+      "sha256": "a0d507b0995ca834963252730b7f874e2c86c639f5e6af3a940f2c55a3c205e3",
+      "baseLevel": 13,
+      "aliases": [
+        17
+      ],
+      "excluded": false
+    },
+    "18": {
+      "archive": 769,
+      "filename": "eset2_07.bin",
+      "resourcePath": "ob64_all/e769/eset2_07.bin",
+      "sha256": "1734c4ef591b1867cd3179283a157a68138d8dcf1fa6f5c5865192ff993d0e4d",
+      "baseLevel": 14,
+      "aliases": [
+        18
+      ],
+      "excluded": false
+    },
+    "19": {
+      "archive": 770,
+      "filename": "eset2_08.bin",
+      "resourcePath": "ob64_all/e770/eset2_08.bin",
+      "sha256": "ad7f4a45626d3740ebd4458c0fd92a79b64b948591976a21b0dd55acbe908d42",
+      "baseLevel": 15,
+      "aliases": [
+        19
+      ],
+      "excluded": false
+    },
+    "20": {
+      "archive": 771,
+      "filename": "eset2_09a.bin",
+      "resourcePath": "ob64_all/e771/eset2_09a.bin",
+      "sha256": "8fc1562c5d635dcd92ebfc4b1240b311fd9fe81276ba05bba65048c7b0d02244",
+      "baseLevel": 16,
+      "aliases": [
+        20
+      ],
+      "excluded": false
+    },
+    "21": {
+      "archive": 772,
+      "filename": "eset2_09b.bin",
+      "resourcePath": "ob64_all/e772/eset2_09b.bin",
+      "sha256": "ac8b668030e8851c20aca98bf4ba06009d7cc0d55d56bd72c3d7bdfc37164496",
+      "baseLevel": 16,
+      "aliases": [
+        21
+      ],
+      "excluded": false
+    },
+    "22": {
+      "archive": 752,
+      "filename": "eset0_00.bin",
+      "resourcePath": "ob64_all/e752/eset0_00.bin",
+      "sha256": "2083a3183ca1ddc51a4976cfced13ca2ceda3b2aad182e4d2134810e0c821577",
+      "baseLevel": 2,
+      "aliases": [
+        10,
+        22,
+        35,
+        62
+      ],
+      "excluded": false
+    },
+    "23": {
+      "archive": 773,
+      "filename": "eset3_01.bin",
+      "resourcePath": "ob64_all/e773/eset3_01.bin",
+      "sha256": "9ff9cb57783e8c9d872bcf6fb6e1e69826ae949f380149fd371be51fcdb77dcb",
+      "baseLevel": 16,
+      "aliases": [
+        23
+      ],
+      "excluded": false
+    },
+    "24": {
+      "archive": 774,
+      "filename": "eset3_02.bin",
+      "resourcePath": "ob64_all/e774/eset3_02.bin",
+      "sha256": "59245a6352c7841ea24df63cf6efcfa1b5847864ee25dd1d6b2804efa2e0a691",
+      "baseLevel": 16,
+      "aliases": [
+        24
+      ],
+      "excluded": false
+    },
+    "25": {
+      "archive": 775,
+      "filename": "eset3_03.bin",
+      "resourcePath": "ob64_all/e775/eset3_03.bin",
+      "sha256": "f082cd8304202cdbf4ac4d5ce99e867e067f2f4f8e7a4b1838d7efd0e9f877e2",
+      "baseLevel": 17,
+      "aliases": [
+        25
+      ],
+      "excluded": false
+    },
+    "26": {
+      "archive": 776,
+      "filename": "eset3_04.bin",
+      "resourcePath": "ob64_all/e776/eset3_04.bin",
+      "sha256": "a279e3acde24ebdc2c64eaf236261397c4ceab0e51c16e4dda157d0ea719686d",
+      "baseLevel": 18,
+      "aliases": [
+        26
+      ],
+      "excluded": false
+    },
+    "27": {
+      "archive": 777,
+      "filename": "eset3_05.bin",
+      "resourcePath": "ob64_all/e777/eset3_05.bin",
+      "sha256": "2beecd36ac52c48806995cb42c11539b0a498580359c36818581e1cf979e8e7e",
+      "baseLevel": 19,
+      "aliases": [
+        27
+      ],
+      "excluded": false
+    },
+    "28": {
+      "archive": 778,
+      "filename": "eset3_06a.bin",
+      "resourcePath": "ob64_all/e778/eset3_06a.bin",
+      "sha256": "98354921d4273de05662d7b0282a7abbc9558342376b637dc34bbdd15050967c",
+      "baseLevel": 20,
+      "aliases": [
+        28
+      ],
+      "excluded": false
+    },
+    "29": {
+      "archive": 779,
+      "filename": "eset3_06b.bin",
+      "resourcePath": "ob64_all/e779/eset3_06b.bin",
+      "sha256": "98354921d4273de05662d7b0282a7abbc9558342376b637dc34bbdd15050967c",
+      "baseLevel": 20,
+      "aliases": [
+        29
+      ],
+      "excluded": false
+    },
+    "30": {
+      "archive": 780,
+      "filename": "eset3_07a.bin",
+      "resourcePath": "ob64_all/e780/eset3_07a.bin",
+      "sha256": "8a0f9c4f974fd6a2248609f905d02a3f8684433344aca4c9dfb007828a438783",
+      "baseLevel": 21,
+      "aliases": [
+        30
+      ],
+      "excluded": false
+    },
+    "31": {
+      "archive": 782,
+      "filename": "eset3_08.bin",
+      "resourcePath": "ob64_all/e782/eset3_08.bin",
+      "sha256": "a910595acc48d0a68bfa2e7a92d6c4c434d73cf61c21e022f96d6585f9b233bc",
+      "baseLevel": 21,
+      "aliases": [
+        31
+      ],
+      "excluded": false
+    },
+    "32": {
+      "archive": 783,
+      "filename": "eset3_09.bin",
+      "resourcePath": "ob64_all/e783/eset3_09.bin",
+      "sha256": "aa6b280fdf9b2537be9883dce8f611ea976434a321b95d616bb8709bdb5aa5d5",
+      "baseLevel": 22,
+      "aliases": [
+        32
+      ],
+      "excluded": false
+    },
+    "33": {
+      "archive": 784,
+      "filename": "eset3_10.bin",
+      "resourcePath": "ob64_all/e784/eset3_10.bin",
+      "sha256": "81e72fa9304c313878d272a4ea1c5ed3522161df31aff0f91f617089622e2356",
+      "baseLevel": 23,
+      "aliases": [
+        33
+      ],
+      "excluded": false
+    },
+    "34": {
+      "archive": 781,
+      "filename": "eset3_07b.bin",
+      "resourcePath": "ob64_all/e781/eset3_07b.bin",
+      "sha256": "8a0f9c4f974fd6a2248609f905d02a3f8684433344aca4c9dfb007828a438783",
+      "baseLevel": 21,
+      "aliases": [
+        34
+      ],
+      "excluded": false
+    },
+    "35": {
+      "archive": 752,
+      "filename": "eset0_00.bin",
+      "resourcePath": "ob64_all/e752/eset0_00.bin",
+      "sha256": "2083a3183ca1ddc51a4976cfced13ca2ceda3b2aad182e4d2134810e0c821577",
+      "baseLevel": 2,
+      "aliases": [
+        10,
+        22,
+        35,
+        62
+      ],
+      "excluded": false
+    },
+    "36": {
+      "archive": 785,
+      "filename": "eset4_01.bin",
+      "resourcePath": "ob64_all/e785/eset4_01.bin",
+      "sha256": "dbea28eb6bae2236c657dca9feb538081496f8896577b00f8c85fce1d521a584",
+      "baseLevel": 23,
+      "aliases": [
+        36
+      ],
+      "excluded": false
+    },
+    "37": {
+      "archive": 786,
+      "filename": "eset4_02a.bin",
+      "resourcePath": "ob64_all/e786/eset4_02a.bin",
+      "sha256": "dac67ec74295570df0bfdbef02e988c5ad36ab45a8eebaa0e9f8b930abe08aae",
+      "baseLevel": 24,
+      "aliases": [
+        37
+      ],
+      "excluded": false
+    },
+    "38": {
+      "archive": 787,
+      "filename": "eset4_02b.bin",
+      "resourcePath": "ob64_all/e787/eset4_02b.bin",
+      "sha256": "3fd0e2e7da413858e2f6f084858fa8b81305fe51eadcd9b6b0540902fa6865dc",
+      "baseLevel": 24,
+      "aliases": [
+        38
+      ],
+      "excluded": false
+    },
+    "39": {
+      "archive": 788,
+      "filename": "eset4_03.bin",
+      "resourcePath": "ob64_all/e788/eset4_03.bin",
+      "sha256": "5d6639e617e9f17031fc556afc63526ead711454b89f170a254d397db9be9991",
+      "baseLevel": 25,
+      "aliases": [
+        39
+      ],
+      "excluded": false
+    },
+    "40": {
+      "archive": 789,
+      "filename": "eset4_04a.bin",
+      "resourcePath": "ob64_all/e789/eset4_04a.bin",
+      "sha256": "f4b51ebe1efa72babc73dde5d090e49ef09df6e01961580fdeb1533674790142",
+      "baseLevel": 26,
+      "aliases": [
+        40
+      ],
+      "excluded": false
+    },
+    "41": {
+      "archive": 791,
+      "filename": "eset4_05a.bin",
+      "resourcePath": "ob64_all/e791/eset4_05a.bin",
+      "sha256": "a09d3205821949c47047e0d661ae9aa70f4060a9297e487f6335da2eb92db6ae",
+      "baseLevel": 27,
+      "aliases": [
+        41
+      ],
+      "excluded": false
+    },
+    "42": {
+      "archive": 793,
+      "filename": "eset4_06a.bin",
+      "resourcePath": "ob64_all/e793/eset4_06a.bin",
+      "sha256": "786b6f2ffd98c1f138f9dc5b5cb308b3a91d4cfc38a8229b9ae17d3fecd6829b",
+      "baseLevel": 28,
+      "aliases": [
+        42
+      ],
+      "excluded": false
+    },
+    "43": {
+      "archive": 795,
+      "filename": "eset4_07a.bin",
+      "resourcePath": "ob64_all/e795/eset4_07a.bin",
+      "sha256": "c2f67970b35b10532ee4f04dce3ead113e0d232ae17d42c35deafe7ff1cd7574",
+      "baseLevel": 29,
+      "aliases": [
+        43
+      ],
+      "excluded": false
+    },
+    "44": {
+      "archive": 797,
+      "filename": "eset4_08a.bin",
+      "resourcePath": "ob64_all/e797/eset4_08a.bin",
+      "sha256": "49e75c12e1275d1a1d6da3219e8b1faec893543e765cbf0043913ab1cc80e949",
+      "baseLevel": 30,
+      "aliases": [
+        44
+      ],
+      "excluded": false
+    },
+    "45": {
+      "archive": 799,
+      "filename": "eset4_09a.bin",
+      "resourcePath": "ob64_all/e799/eset4_09a.bin",
+      "sha256": "3d4a50c36a4aa9400078938da097d61cf377c5778fc4f5acc069e71fc6c2a352",
+      "baseLevel": 31,
+      "aliases": [
+        45
+      ],
+      "excluded": false
+    },
+    "46": {
+      "archive": 800,
+      "filename": "eset4_09b.bin",
+      "resourcePath": "ob64_all/e800/eset4_09b.bin",
+      "sha256": "1792fbaa3bcec6c0878130b66d0ea753effc9ad7e8b5f5cab2d1b1dc64efee30",
+      "baseLevel": 33,
+      "aliases": [
+        46
+      ],
+      "excluded": false
+    },
+    "47": {
+      "archive": 801,
+      "filename": "eset4_10a.bin",
+      "resourcePath": "ob64_all/e801/eset4_10a.bin",
+      "sha256": "b65c16a515cf34a59cd4d6d678dc3cf516851c32374192ece4b5c9af35e14e9f",
+      "baseLevel": 32,
+      "aliases": [
+        47
+      ],
+      "excluded": false
+    },
+    "48": {
+      "archive": 803,
+      "filename": "eset4_10c.bin",
+      "resourcePath": "ob64_all/e803/eset4_10c.bin",
+      "sha256": "de2406b305507f9f5af12f95e2b6450cc574629fc9044bee75717a6e5335e2bd",
+      "baseLevel": 32,
+      "aliases": [
+        48
+      ],
+      "excluded": false
+    },
+    "49": {
+      "archive": 805,
+      "filename": "eset4_11.bin",
+      "resourcePath": "ob64_all/e805/eset4_11.bin",
+      "sha256": "dc0c88196742d5b4c1934149571bf48434bb278d39c5a7880faf308ffa0d0c88",
+      "baseLevel": 32,
+      "aliases": [
+        49
+      ],
+      "excluded": false
+    },
+    "50": {
+      "archive": 806,
+      "filename": "eset4_12.bin",
+      "resourcePath": "ob64_all/e806/eset4_12.bin",
+      "sha256": "d1bdc619774b55ca17cd73c918f5501a90d3a5b7fcee70c8631d51e6c01c97ac",
+      "baseLevel": 34,
+      "aliases": [
+        50
+      ],
+      "excluded": false
+    },
+    "51": {
+      "archive": 807,
+      "filename": "eset4_13.bin",
+      "resourcePath": "ob64_all/e807/eset4_13.bin",
+      "sha256": "20df3d0b9eb2fd3e556fc688725c1eed767241f09793e8dfe20ff71047a54b45",
+      "baseLevel": 33,
+      "aliases": [
+        51
+      ],
+      "excluded": false
+    },
+    "52": {
+      "archive": 808,
+      "filename": "eset4_14.bin",
+      "resourcePath": "ob64_all/e808/eset4_14.bin",
+      "sha256": "c7647afdb6fd5b88fcfd1c11dbea7ba75328b5ed7930a7fd491f101f4baadafe",
+      "baseLevel": 34,
+      "aliases": [
+        52,
+        53,
+        54
+      ],
+      "excluded": false
+    },
+    "53": {
+      "archive": 808,
+      "filename": "eset4_14.bin",
+      "resourcePath": "ob64_all/e808/eset4_14.bin",
+      "sha256": "c7647afdb6fd5b88fcfd1c11dbea7ba75328b5ed7930a7fd491f101f4baadafe",
+      "baseLevel": 34,
+      "aliases": [
+        52,
+        53,
+        54
+      ],
+      "excluded": false
+    },
+    "54": {
+      "archive": 808,
+      "filename": "eset4_14.bin",
+      "resourcePath": "ob64_all/e808/eset4_14.bin",
+      "sha256": "c7647afdb6fd5b88fcfd1c11dbea7ba75328b5ed7930a7fd491f101f4baadafe",
+      "baseLevel": 34,
+      "aliases": [
+        52,
+        53,
+        54
+      ],
+      "excluded": true
+    },
+    "55": {
+      "archive": 790,
+      "filename": "eset4_04b.bin",
+      "resourcePath": "ob64_all/e790/eset4_04b.bin",
+      "sha256": "63de518259a7bedb1d55c059af28a7f77168c38480e2971dfe6fa9eab3fd7383",
+      "baseLevel": 31,
+      "aliases": [
+        55
+      ],
+      "excluded": false
+    },
+    "56": {
+      "archive": 792,
+      "filename": "eset4_05b.bin",
+      "resourcePath": "ob64_all/e792/eset4_05b.bin",
+      "sha256": "7849aeaf637b9e9bf085c9417f38c75a5ec83ec7e03ad1778008863389fc350c",
+      "baseLevel": 30,
+      "aliases": [
+        56
+      ],
+      "excluded": false
+    },
+    "57": {
+      "archive": 794,
+      "filename": "eset4_06b.bin",
+      "resourcePath": "ob64_all/e794/eset4_06b.bin",
+      "sha256": "aed595e451edf34dcb1473df52d846598caf10ff62f8b96000690d4ede9c6761",
+      "baseLevel": 31,
+      "aliases": [
+        57
+      ],
+      "excluded": false
+    },
+    "58": {
+      "archive": 796,
+      "filename": "eset4_07b.bin",
+      "resourcePath": "ob64_all/e796/eset4_07b.bin",
+      "sha256": "5d93cb7ee17da3963eee5b3cad904d88c6620368b954031605ebc6713d5fb280",
+      "baseLevel": 31,
+      "aliases": [
+        58
+      ],
+      "excluded": false
+    },
+    "59": {
+      "archive": 810,
+      "filename": "eset4_15.bin",
+      "resourcePath": "ob64_all/e810/eset4_15.bin",
+      "sha256": "3ffcddf617995fb0e350310b5db3ddfff763275a383ae3509f2a4fad512540ae",
+      "baseLevel": 36,
+      "aliases": [
+        59
+      ],
+      "excluded": false
+    },
+    "60": {
+      "archive": 802,
+      "filename": "eset4_10b.bin",
+      "resourcePath": "ob64_all/e802/eset4_10b.bin",
+      "sha256": "64aeb7ee95332b58a040ae65a0c38fef2c48bfeed59f256dcff1f9fcff35a27a",
+      "baseLevel": 32,
+      "aliases": [
+        60
+      ],
+      "excluded": false
+    },
+    "61": {
+      "archive": 804,
+      "filename": "eset4_10d.bin",
+      "resourcePath": "ob64_all/e804/eset4_10d.bin",
+      "sha256": "ce2f86dfe5cbcf3e96863af203422a5e9913f604b13168852431b2416c2e98c5",
+      "baseLevel": 32,
+      "aliases": [
+        61
+      ],
+      "excluded": false
+    },
+    "62": {
+      "archive": 752,
+      "filename": "eset0_00.bin",
+      "resourcePath": "ob64_all/e752/eset0_00.bin",
+      "sha256": "2083a3183ca1ddc51a4976cfced13ca2ceda3b2aad182e4d2134810e0c821577",
+      "baseLevel": 2,
+      "aliases": [
+        10,
+        22,
+        35,
+        62
+      ],
+      "excluded": false
+    },
+    "63": {
+      "archive": 811,
+      "filename": "eset5_01.bin",
+      "resourcePath": "ob64_all/e811/eset5_01.bin",
+      "sha256": "d7a337b1a33dc810471e0d17ac1fb6422aee9b05ea1ddeb7608a27569a3731be",
+      "baseLevel": 10,
+      "aliases": [
+        63
+      ],
+      "excluded": false
+    },
+    "64": {
+      "archive": 812,
+      "filename": "eset5_02.bin",
+      "resourcePath": "ob64_all/e812/eset5_02.bin",
+      "sha256": "a7d18744c2966ed7be2a24448d3ecaeab3e3283c5e06595302bf8c575ad795a2",
+      "baseLevel": 20,
+      "aliases": [
+        64
+      ],
+      "excluded": false
+    }
+  }
+}

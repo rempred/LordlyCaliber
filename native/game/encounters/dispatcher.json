@@ -1,0 +1,78 @@
+{
+  "generator": "native/tools/generate-encounter-source.cjs",
+  "input": "Accepted Decomp ASM func_0013C060.s; US Rev0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "start": 1294432,
+  "size": 1084,
+  "address": 2149480736,
+  "retailSha256": "dbaa9242f9dd566468fa8f5fd4492e93a69be37dd59f80931e28d81835c5d8cd",
+  "nativeMaskedSha256": "9f031ac738f0f7147e50ba7cf5e647826b585ace904e1c797dec520e930a4eba",
+  "scenarioMaskedSha256": "42645e2a1cdeb81f00b1cd987f3a2c3fab08b5fe441aec5795ade738ee385f09",
+  "fields": [
+    {
+      "offset": 392,
+      "key": "divisor",
+      "half": "high"
+    },
+    {
+      "offset": 396,
+      "key": "divisor",
+      "half": "low"
+    },
+    {
+      "offset": 412,
+      "key": "alternatePassCount",
+      "half": "high"
+    },
+    {
+      "offset": 420,
+      "key": "alternatePassCount",
+      "half": "low"
+    },
+    {
+      "offset": 424,
+      "key": "normalPassCount",
+      "half": "high"
+    },
+    {
+      "offset": 428,
+      "key": "normalPassCount",
+      "half": "low"
+    }
+  ],
+  "calls": {
+    "service_8009da50": 2148129360,
+    "service_801dc054": 2149433428,
+    "service_801b8d44": 2149289284,
+    "service_80186210": 2149081616,
+    "service_80092a60": 2148084320,
+    "service_80093540": 2148087104,
+    "service_801d935c": 2149421916,
+    "service_801d92d0": 2149421776,
+    "service_801dcd90": 2149436816
+  },
+  "selection": {
+    "offset": 948,
+    "entry": "lc_selection_site",
+    "original": [
+      339803981,
+      608305408
+    ]
+  },
+  "dma": {
+    "start": 187984,
+    "size": 164,
+    "sha256": "79ddc6b13a2f99f11cf43c28a4de9889b58544b131d4883f437aa7b3f885396d"
+  },
+  "overlay": {
+    "start": 231640,
+    "size": 40,
+    "sha256": "45171bd5fe26dcefc5aa6b58302107c3cc362b5fe5da0e4e9fabd095bf3bf4f2"
+  },
+  "random": {
+    "start": 142944,
+    "size": 44,
+    "address": 2148084320,
+    "outputBits": 30,
+    "sha256": "33416dc6ace647ad8ab60566f80ef6d3dc30917219956571c999d55e282c6d1b"
+  }
+}

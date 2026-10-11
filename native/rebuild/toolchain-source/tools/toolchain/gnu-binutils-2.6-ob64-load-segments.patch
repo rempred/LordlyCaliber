@@ -1,0 +1,119 @@
+diff --git a/bfd/elf.c b/bfd/elf.c
+index e52ad75..7d7381d 100644
+--- a/bfd/elf.c
++++ b/bfd/elf.c
+@@ -230,8 +230,17 @@ _bfd_elf_make_section_from_shdr (abfd, hdr, name)
+ 	{
+ 	  if (phdr->p_type == PT_LOAD
+ 	      && phdr->p_vaddr != phdr->p_paddr
++#ifdef OB64_EXACT_SECTION_LOAD_MAPPING
++	      && phdr->p_vaddr == hdr->sh_addr
++	      && phdr->p_memsz == hdr->sh_size
++	      && (hdr->sh_type == SHT_NOBITS
++		  || (phdr->p_offset == hdr->sh_offset
++		      && phdr->p_filesz == hdr->sh_size))
++#else
+ 	      && phdr->p_vaddr <= hdr->sh_addr
+-	      && phdr->p_vaddr + phdr->p_memsz >= hdr->sh_addr + hdr->sh_size)
++	      && phdr->p_vaddr + phdr->p_memsz >= hdr->sh_addr + hdr->sh_size
++#endif
++	      )
+ 	    {
+ 	      newsect->lma += phdr->p_paddr - phdr->p_vaddr;
+ 	      break;
+@@ -1498,6 +1507,18 @@ get_program_header_size (abfd, sorted_hdrs, count, maxpagesize)
+ 
+   if (sorted_hdrs != NULL)
+     {
++#ifdef OB64_ONE_SECTION_PER_LOAD
++      unsigned int i;
++      Elf_Internal_Shdr **hdrpp;
++
++      /* The OB64 link model deliberately assigns one allocated output
++	 section to each PT_LOAD.  Count those sections directly so the
++	 program-header reservation agrees with map_program_segments.  */
++      segs = 0;
++      for (i = 0, hdrpp = sorted_hdrs; i < count; i++, hdrpp++)
++	if (((*hdrpp)->sh_flags & SHF_ALLOC) != 0 && (*hdrpp)->sh_size != 0)
++	  ++segs;
++#else
+       unsigned int i;
+       unsigned int last_type;
+       Elf_Internal_Shdr **hdrpp;
+@@ -1571,12 +1592,25 @@ get_program_header_size (abfd, sorted_hdrs, count, maxpagesize)
+ 
+ 	  last_type = hdr->sh_type;
+ 	}
++#endif
+     }
+   else
+     {
++#ifdef OB64_ONE_SECTION_PER_LOAD
++      /* This path is used only by SIZEOF_HEADERS-style queries before
++	 sorted ELF headers are available.  Count the allocated BFD output
++	 sections instead of assuming the traditional text/data pair.  */
++      segs = 0;
++      for (s = abfd->sections; s != NULL; s = s->next)
++	if ((s->flags & SEC_ALLOC) != 0)
++	  ++segs;
++      if (segs == 0)
++	segs = 2;
++#else
+       /* Assume we will need exactly two PT_LOAD segments: one for text
+ 	 and one for data.  */
+       segs = 2;
++#endif
+     }
+ 
+   s = bfd_get_section_by_name (abfd, ".interp");
+@@ -1618,8 +1652,9 @@ map_program_segments (abfd, off, first, sorted_hdrs, phdr_size)
+      Elf_Internal_Shdr **sorted_hdrs;
+      bfd_size_type phdr_size;
+ {
+-  Elf_Internal_Phdr phdrs[10];
++  Elf_Internal_Phdr *phdrs;
+   unsigned int phdr_count;
++  unsigned int phdr_capacity;
+   Elf_Internal_Phdr *phdr;
+   int phdr_size_adjust;
+   unsigned int i;
+@@ -1630,8 +1665,15 @@ map_program_segments (abfd, off, first, sorted_hdrs, phdr_size)
+   struct elf_backend_data *bed = get_elf_backend_data (abfd);
+ 
+   BFD_ASSERT ((abfd->flags & (EXEC_P | DYNAMIC)) != 0);
+-  BFD_ASSERT (phdr_size / sizeof (Elf_Internal_Phdr)
+-	      <= sizeof phdrs / sizeof (phdrs[0]));
++
++  phdr_capacity = phdr_size / bed->s->sizeof_phdr;
++  phdrs = ((Elf_Internal_Phdr *)
++	   bfd_alloc (abfd, phdr_capacity * sizeof (Elf_Internal_Phdr)));
++  if (phdrs == NULL && phdr_capacity != 0)
++    {
++      bfd_set_error (bfd_error_no_memory);
++      return (file_ptr) -1;
++    }
+ 
+   phdr_count = 0;
+   phdr = phdrs;
+@@ -1708,11 +1750,12 @@ map_program_segments (abfd, off, first, sorted_hdrs, phdr_size)
+ 
+       /* Ignore any section which will not be part of the process
+ 	 image.  */
+-      if ((hdr->sh_flags & SHF_ALLOC) == 0)
++      if ((hdr->sh_flags & SHF_ALLOC) == 0 || hdr->sh_size == 0)
+ 	continue;
+ 
+       /* If this section fits in the segment we are constructing, add
+ 	 it in.  */
++#ifndef OB64_ONE_SECTION_PER_LOAD
+       if (phdr->p_type != PT_NULL
+ 	  && (hdr->sh_offset - (phdr->p_offset + phdr->p_memsz)
+ 	      == hdr->sh_addr - (phdr->p_vaddr + phdr->p_memsz))
+@@ -1733,6 +1776,7 @@ map_program_segments (abfd, off, first, sorted_hdrs, phdr_size)
+ 	  last_type = hdr->sh_type;
+ 	  continue;
+ 	}
++#endif
+ 
+       /* The section won't fit, start a new segment.  If we're already in one,
+ 	 move to the next one.  */

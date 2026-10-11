@@ -1,0 +1,390 @@
+{
+  "_note": "Runtime keys and wiki mission labels for the scenario selector. Forked from tools/project64/keys_index.json by runs/battery-seeder-20261009/fork_seeder.py.",
+  "_source": "wiki/runtime-key-branch-labels.json",
+  "keys": [
+    {
+      "key": 1,
+      "label": "The Southern Reaches",
+      "wikiId": 1,
+      "status": "one-to-one"
+    },
+    {
+      "key": 2,
+      "label": "Sparks (Volmus Mine I)",
+      "wikiId": 2,
+      "status": "one-to-one"
+    },
+    {
+      "key": 3,
+      "label": "First Assignment (Crenel Canyon I)",
+      "wikiId": 3,
+      "status": "one-to-one"
+    },
+    {
+      "key": 4,
+      "label": "The Path Diverges (Mylesia I)",
+      "wikiId": 4,
+      "status": "one-to-one"
+    },
+    {
+      "key": 5,
+      "label": "True Intentions",
+      "wikiId": 5,
+      "status": "one-to-one"
+    },
+    {
+      "key": 6,
+      "label": "The Revolutionary Army (Volmus Mine II)",
+      "wikiId": 6,
+      "status": "one-to-one"
+    },
+    {
+      "key": 7,
+      "label": "A New Beginning - flagged key 7",
+      "wikiId": 7,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 8,
+      "label": "The Infernal Aura (Dardunnelles, the Crossroads I)",
+      "wikiId": 8,
+      "status": "one-to-one"
+    },
+    {
+      "key": 9,
+      "label": "Liberation of Alba",
+      "wikiId": 9,
+      "status": "one-to-one"
+    },
+    {
+      "key": 10,
+      "label": "Runtime Key 10 - internal alias",
+      "wikiId": null,
+      "status": "internal/no-candidate"
+    },
+    {
+      "key": 11,
+      "label": "Idealism and Realism (Crenel Canyon II)",
+      "wikiId": 10,
+      "status": "one-to-one"
+    },
+    {
+      "key": 12,
+      "label": "Warriors of the Fallen Kingdom (Mylesia II)",
+      "wikiId": 11,
+      "status": "one-to-one"
+    },
+    {
+      "key": 13,
+      "label": "The Steadfast",
+      "wikiId": 12,
+      "status": "one-to-one"
+    },
+    {
+      "key": 14,
+      "label": "City of the Past",
+      "wikiId": 13,
+      "status": "one-to-one"
+    },
+    {
+      "key": 15,
+      "label": "Thoughts - Audvera after Sable",
+      "wikiId": 14,
+      "status": "known-wiki-variant"
+    },
+    {
+      "key": 16,
+      "label": "Thoughts - Audvera before Sable",
+      "wikiId": 14,
+      "status": "known-wiki-variant"
+    },
+    {
+      "key": 17,
+      "label": "Uncertainty",
+      "wikiId": 15,
+      "status": "one-to-one"
+    },
+    {
+      "key": 18,
+      "label": "Visitors from the West - flagged key 18",
+      "wikiId": 16,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 19,
+      "label": "A Legendary Land (Mount Keryoleth I) - flagged key 19",
+      "wikiId": 17,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 20,
+      "label": "The Grim Path - decline peace / Ankiseth",
+      "wikiId": 18,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 21,
+      "label": "The Grim Path - make peace / Baldwin",
+      "wikiId": 18,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 22,
+      "label": "Runtime Key 22 - internal alias, not wiki 22",
+      "wikiId": null,
+      "status": "internal/no-candidate"
+    },
+    {
+      "key": 23,
+      "label": "The Setting Sun (Dardunnelles, the Crossroads II) - flagged key 23",
+      "wikiId": 19,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 24,
+      "label": "Brigade of the Radiant Cross (Gules Hills I)",
+      "wikiId": 20,
+      "status": "one-to-one"
+    },
+    {
+      "key": 25,
+      "label": "The Eastern Orthodox Church",
+      "wikiId": 21,
+      "status": "one-to-one"
+    },
+    {
+      "key": 26,
+      "label": "The Rebel",
+      "wikiId": 24,
+      "status": "one-to-one"
+    },
+    {
+      "key": 27,
+      "label": "Suspicion",
+      "wikiId": 22,
+      "status": "one-to-one"
+    },
+    {
+      "key": 28,
+      "label": "The Bearer of Knowledge - runtime key 28 alias",
+      "wikiId": 26,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 29,
+      "label": "The Bearer of Knowledge - runtime key 29 alias",
+      "wikiId": 26,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 30,
+      "label": "No Man's Land (Tremos Mountains II) - runtime key 30 alias",
+      "wikiId": 25,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 31,
+      "label": "Child of the Covenant (Temple of Berthe I) - flagged key 31",
+      "wikiId": 27,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 32,
+      "label": "Gateway to Another World (Temple of Berthe II)",
+      "wikiId": 28,
+      "status": "one-to-one"
+    },
+    {
+      "key": 33,
+      "label": "Mercenaries (Tremos Mountains I)",
+      "wikiId": 23,
+      "status": "one-to-one"
+    },
+    {
+      "key": 34,
+      "label": "No Man's Land (Tremos Mountains II) - runtime key 34 alias",
+      "wikiId": 25,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 35,
+      "label": "Runtime Key 35 - internal alias",
+      "wikiId": null,
+      "status": "internal/no-candidate"
+    },
+    {
+      "key": 36,
+      "label": "The March to Latium (Gules Hills II)",
+      "wikiId": 29,
+      "status": "one-to-one"
+    },
+    {
+      "key": 37,
+      "label": "Betrayal - Xevec branch",
+      "wikiId": 30,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 38,
+      "label": "Separate Ways - Dio branch",
+      "wikiId": 30,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 39,
+      "label": "Royal Blood",
+      "wikiId": 31,
+      "status": "one-to-one"
+    },
+    {
+      "key": 40,
+      "label": "Insanity - branch key 40",
+      "wikiId": 32,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 41,
+      "label": "Denizens of the Netherworld - runtime key 41 alias",
+      "wikiId": 34,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 42,
+      "label": "The Disillusioned - after Latium / Carth",
+      "wikiId": 33,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 43,
+      "label": "Lord of Remus Keep - before Latium / Reucharle",
+      "wikiId": 35,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 44,
+      "label": "Advocates of the Darkness - flagged key 44",
+      "wikiId": 36,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 45,
+      "label": "March on the Capital - Ruolanair/Vesalus branch",
+      "wikiId": 37,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 46,
+      "label": "March on the Capital - Knights of Danika branch",
+      "wikiId": 37,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 47,
+      "label": "Promises - Procus and Yumil / Yumil variant A",
+      "wikiId": 38,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 48,
+      "label": "Promises - Yumil only / Yumil variant A",
+      "wikiId": 38,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 49,
+      "label": "The Battle Rages On (Aurua Plains I) - flagged key 49",
+      "wikiId": 39,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 50,
+      "label": "Pressure (Wentinus II)",
+      "wikiId": 40,
+      "status": "one-to-one"
+    },
+    {
+      "key": 51,
+      "label": "Adversaries",
+      "wikiId": 41,
+      "status": "one-to-one"
+    },
+    {
+      "key": 52,
+      "label": "The Sleeping Goddess (Mount Keryoleth II) - runtime key 52 alias",
+      "wikiId": 42,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 53,
+      "label": "The Sleeping Goddess (Mount Keryoleth II) - runtime key 53 alias",
+      "wikiId": 42,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 54,
+      "label": "The Sleeping Goddess (Mount Keryoleth II) - runtime key 54 alias",
+      "wikiId": 42,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 55,
+      "label": "Insanity - branch key 55",
+      "wikiId": 32,
+      "status": "branch-unresolved"
+    },
+    {
+      "key": 56,
+      "label": "Denizens of the Netherworld - runtime key 56 alias",
+      "wikiId": 34,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 57,
+      "label": "The Disillusioned - after Latium / Carth alias",
+      "wikiId": 33,
+      "status": "alias-unresolved"
+    },
+    {
+      "key": 58,
+      "label": "Lord of Remus Keep - after Latium / Silvis",
+      "wikiId": 35,
+      "status": "weak-branch-candidate"
+    },
+    {
+      "key": 59,
+      "label": "Caliber (Aurua Plains II)",
+      "wikiId": 43,
+      "status": "one-to-one"
+    },
+    {
+      "key": 60,
+      "label": "Promises - Procus and Yumil / Yumil variant B",
+      "wikiId": 38,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 61,
+      "label": "Promises - Yumil only / Yumil variant B",
+      "wikiId": 38,
+      "status": "known-story-branch"
+    },
+    {
+      "key": 62,
+      "label": "Runtime Key 62 - internal alias",
+      "wikiId": null,
+      "status": "internal/no-candidate"
+    },
+    {
+      "key": 63,
+      "label": "The Infernal Aura (Dardunnelles, the Crossroads I) - flagged key 63",
+      "wikiId": 8,
+      "status": "weak/ambiguous"
+    },
+    {
+      "key": 64,
+      "label": "A New Beginning - flagged key 64",
+      "wikiId": 7,
+      "status": "weak/ambiguous"
+    }
+  ]
+}

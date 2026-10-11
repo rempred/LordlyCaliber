@@ -72,7 +72,31 @@ window.OB64 = window.OB64 || {};
     return 'director-evaluation';
   }
 
-  function primitiveFromIrNode(irNode) {
+  // Parser facts from the accepted C dispatcher, attached to the grammar by the
+  // catalog cross-check (cutscene-catalog.js). Commands whose whole effect is
+  // guarded by the director mode are inert in a scene that launches in another
+  // mode: the parser still consumes their words, so the width never changes.
+  var parserFactsCache = { grammar: null, byOpcode: null };
+  function parserFactsFor(opcode) {
+    var grammar = OB64.cutsceneData && OB64.cutsceneData.directorGrammar;
+    if (!Array.isArray(grammar)) return null;
+    if (parserFactsCache.grammar !== grammar) {
+      var byOpcode = {};
+      grammar.forEach(function(template) {
+        byOpcode[unsigned(template.opcodeU32)] = template;
+      });
+      parserFactsCache = { grammar: grammar, byOpcode: byOpcode };
+    }
+    var template = parserFactsCache.byOpcode[opcode];
+    return template && template.parser ? template.parser : null;
+  }
+
+  function launchDirectorModeOf(scene) {
+    var launch = scene && scene.launchProfile && scene.launchProfile.directorMode || null;
+    return launch && Number.isInteger(launch.value) ? launch.value : null;
+  }
+
+  function primitiveFromIrNode(irNode, launchMode) {
     var definition = irNode && irNode.definition;
     var words = irNode && irNode.currentWords;
     if (!definition || !Array.isArray(words) || !words.length) {
@@ -111,6 +135,10 @@ window.OB64 = window.OB64 || {};
         producerInput: definition.queryRecordKind === 'Q4' ? signed(words[3]) : null
       };
     }
+    var parser = parserFactsFor(opcode);
+    var requirement = parser && Number.isInteger(parser.directorModeRequirement)
+      ? parser.directorModeRequirement : null;
+    var inert = requirement !== null && Number.isInteger(launchMode) && launchMode !== requirement;
     return {
       id: definition.id,
       index: -1,
@@ -121,8 +149,14 @@ window.OB64 = window.OB64 || {};
       opcodeHex: '0x' + opcode.toString(16).toUpperCase().padStart(8, '0'),
       name: definition.name,
       label: title(definition.name),
-      summary: definition.semanticSummary,
+      summary: inert
+        ? definition.semanticSummary + ' No effect in this scene: the accepted C parser ' +
+          'consumes its words, but the command acts only in director mode ' +
+          requirement + ' and this scene launches in mode ' + launchMode + '.'
+        : definition.semanticSummary,
       confidence: definition.confidence,
+      directorModeRequirement: requirement,
+      inertInLaunchMode: inert,
       category: categoryFor(definition.name),
       clock: clockFor(definition.name),
       runtimeReachability: definition.runtimeReachability,
@@ -426,7 +460,10 @@ window.OB64 = window.OB64 || {};
     if (!scene || !scene.source || !Array.isArray(irNodes)) {
       fail('A source-backed Director scene is required.', 'invalid-scene');
     }
-    var primitives = irNodes.map(primitiveFromIrNode);
+    var launchMode = launchDirectorModeOf(scene);
+    var primitives = irNodes.map(function(irNode) {
+      return primitiveFromIrNode(irNode, launchMode);
+    });
     primitives.forEach(function(node, index) { node.index = index; });
     var cursor = 0;
     primitives.forEach(function(node) {

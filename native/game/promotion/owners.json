@@ -1,0 +1,473 @@
+{
+  "generator": "native/tools/generate-promotion-owner-catalog.cjs",
+  "input": "native-classes-data.js (validated Rebuild baseline 559b231); C menu verified by native/tests/class_menu_mips.cjs",
+  "romStart": 41746432,
+  "romSize": 65536,
+  "resourceKey": 35896704,
+  "owners": [
+    {
+      "name": "func_000aeb8c",
+      "start": 715660,
+      "size": 8304,
+      "retailSha256": "af91327c17cd71b9370af22b514253e221ef8f400f499dda7f2b8ba9bb9c38b3",
+      "familySha256": "e7513211d223a1d1a81076f1eb721f5b888582c1af549bbcc49ca7635e5e2794",
+      "directGateSha256": "dc191226167bb27f763ff27517546813296f523056b1d7db043928ed7f222bb9",
+      "keySite": 716672
+    },
+    {
+      "name": "func_000cc828",
+      "start": 837672,
+      "size": 3008,
+      "retailSha256": "5655541f674226b742455c549229a3d75f0388335a4715cb3fe8e1431544b1d9",
+      "familySha256": "5dabd8a9f8d5b4be75a710270dd0bf60b32de973edde8ee5ff994d77f3fe0b8d",
+      "directGateSha256": "75625cd11cbe9e0767d5f387cde3da33d5e1b095979d54209959a765724533ca",
+      "keySite": 837772,
+      "expandedInstructions": [
+        {
+          "offset": 320,
+          "assembly": "lhu $a0, CATEGORY_CLASSES_OFFSET($a1)"
+        },
+        {
+          "offset": 964,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 1284,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 2296,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 2760,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v1)"
+        }
+      ]
+    },
+    {
+      "name": "func_000cd3e8",
+      "start": 840680,
+      "size": 2568,
+      "retailSha256": "87e97278985be7a289969d5165af97d48ae926cec3bd839b28195494e59b5890",
+      "familySha256": "a9f643b48205651a122fd9d50b5601426aab5a97a2c9c18b4f7c94fc06666aa9",
+      "directGateSha256": "440cf77a8735cf2f35c60fae1311132d90e6011eaee096bf7c02236e5d712257",
+      "keySite": 840900,
+      "assemblyFragments": [
+        {
+          "offset": 592,
+          "size": 8,
+          "source": "equipment-first-class.s"
+        }
+      ]
+    },
+    {
+      "name": "func_000cddf0",
+      "start": 843248,
+      "size": 6204,
+      "retailSha256": "fbaeb6a94c31341705a4cc2eb55620e91036ff47e5db59e9618d6171aafa1982",
+      "familySha256": "557fd5c8e0945f1cdd159695003778175f086305f2e7112b2429979f4979e085",
+      "directGateSha256": "05f244d4a9b3f2258e2a5a9610786ea883f7d2a9442dd9c057bc4aaff0836167",
+      "keySite": 843352,
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 2504,
+          "low": 2512,
+          "addend": 0
+        },
+        {
+          "group": "aliases",
+          "high": 4532,
+          "low": 4540,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000bbd50",
+      "start": 769360,
+      "size": 48,
+      "retailSha256": "0e5d40e094a3b906486091986af2b2549ba585a742eea7ca44414c3999c61a46",
+      "familySha256": "096332a632aa8a8c86616894feac4fdba1be5f6703222759de28e675c24a0b2e"
+    },
+    {
+      "name": "func_000bf248",
+      "start": 782920,
+      "size": 528,
+      "retailSha256": "852d00c511422c5168b11ec4e50c0bd709fad83f6632816c605ec972a1f69498",
+      "familySha256": "dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298",
+      "cSource": "family-menu.c",
+      "cSourceSha256": "ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42"
+    },
+    {
+      "name": "func_000c37ec",
+      "start": 800748,
+      "size": 276,
+      "retailSha256": "8602902fd9c683339d85f80f7bbc619d038c54beb9bc286f157b1904ced19a00",
+      "familySha256": "1b75e382befe62241aacf2185640fc9fd51bea4b9d2a66283d0e954e0a12baed"
+    },
+    {
+      "name": "func_000c3900",
+      "start": 801024,
+      "size": 1196,
+      "retailSha256": "f92207bf1faff20279adf85ffb6d5f2594445e0f0584c22b7873aab6c6cf49b5",
+      "familySha256": "94d94e45b7102a9299794b617b2d3c3042e2d24f9ff02677681c597d50575955",
+      "expandedInstructions": [
+        {
+          "offset": 1024,
+          "assembly": "sltiu $v0, $a0, CLASS_COUNT"
+        },
+        {
+          "offset": 444,
+          "assembly": "addiu $v0, $s8, -42"
+        },
+        {
+          "offset": 448,
+          "assembly": "sltiu $v0, $v0, 123"
+        },
+        {
+          "offset": 452,
+          "assembly": "beq $v0, $zero, .+40"
+        }
+      ],
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 108,
+          "low": 116,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000d0150",
+      "start": 852304,
+      "size": 568,
+      "retailSha256": "1224b99d57c28d2f29adb60e54caea6460e101844afb41123a90e571201d6884",
+      "familySha256": "f69b6ed704705f34dfcdcbbb820488dea832b40bcaf9a4c1d3d07e5146ed1068",
+      "cSource": "class-screen.c",
+      "cSourceSha256": "e0b97def94deb8b58d02286b96ce05b876c3f23e8c3c6d46ce96a1066f11644e",
+      "cExtent": 560,
+      "cReferences": [
+        {
+          "high": 208,
+          "low": 216,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_records": 2149088276,
+        "lc_prepare_class": 2149460940,
+        "lc_prepare_actor": 2149426136,
+        "lc_family_menu": 2149394408,
+        "lc_equipment_summary": 2149394936,
+        "lc_equipment_entry": 2149378588,
+        "lc_family_lookup": 2149380848
+      }
+    },
+    {
+      "name": "func_000c91a0",
+      "start": 823712,
+      "size": 388,
+      "retailSha256": "0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a",
+      "familySha256": "0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a",
+      "cSource": "class-selection.c",
+      "cSourceSha256": "95b1d89159f2d4832d25984e27595cf6b508d8edc12df2c89033f5aaaa89ca0a",
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_input_buttons": 2148434176,
+        "lc_repeat_buttons": 2148435712,
+        "lc_menu_sound": 2149419616,
+        "lc_menu_update": 2149383204,
+        "lc_menu_equipment": 2149395324
+      }
+    },
+    {
+      "name": "func_000c3dac",
+      "start": 802220,
+      "size": 420,
+      "retailSha256": "9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb",
+      "familySha256": "9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb",
+      "cSource": "class-discovery.c",
+      "cSourceSha256": "3dfdb788788a84869c42d87793d972af83cf05648095dc94389d9daff6acedf1",
+      "symbols": {
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_eligible": 2149412512
+      }
+    },
+    {
+      "name": "func_000a4a00",
+      "start": 674304,
+      "size": 10184,
+      "retailSha256": "a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2",
+      "familySha256": "a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2",
+      "cFragment": "class-render-rows.c",
+      "fragmentEntry": "class-render-entry.s",
+      "fragmentStart": 675164,
+      "fragmentEnd": 675544,
+      "styleSource": "class-render-style.s",
+      "styleStart": 677480,
+      "styleSize": 76,
+      "cSourceSha256": "49532166880bb6aff99023a64852baf01bd28d1073121df1f3fad637f5b94798",
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_class_coordinates": 2149346088,
+        "lc_class_matrix": 2148109344
+      }
+    },
+    {
+      "name": "func_000bbd80",
+      "start": 769408,
+      "size": 44,
+      "requiresFamilyResource": false,
+      "onMaskEdit": true,
+      "retailSha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef",
+      "familySha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef",
+      "cSource": "compatibility-mask.c",
+      "cSourceSha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef"
+    },
+    {
+      "name": "func_000bf5dc",
+      "start": 783836,
+      "size": 332,
+      "retailSha256": "5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6",
+      "familySha256": "5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6",
+      "cSource": "equipment-class-menu.c",
+      "cSourceSha256": "596f62bbad0375119955a0524b6baabf613c67b05142728bc6aefd742e8d4ed1",
+      "requiresFamilyResource": false,
+      "onFlagsEdit": true,
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_goth": 2149149292,
+        "lc_equipment_summary": 2149394936,
+        "lc_equipment_cost": 2149396192,
+        "lc_equipment_full": 2149396012
+      }
+    },
+    {
+      "name": "func_000bc0bc",
+      "start": 770236,
+      "size": 412,
+      "retailSha256": "b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0",
+      "familySha256": "b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0",
+      "cSource": "class-categories.c",
+      "cSourceSha256": "d70c4e823eb4dffe9067061244528dcb01d67c8653f321f232b390e35338196f",
+      "requiresFamilyResource": false,
+      "onMaskEdit": true,
+      "symbols": {
+        "lc_army_owner": 2149149432
+      }
+    },
+    {
+      "name": "func_000bbdac",
+      "start": 769452,
+      "size": 784,
+      "retailSha256": "59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3",
+      "familySha256": "59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3",
+      "cSource": "category-class-counts.c",
+      "cSourceSha256": "dc2acf0669eecdb8517188318dbd35ca40cc31cd5abf279cec19e6852c183378",
+      "cReferences": [
+        {
+          "high": 668,
+          "low": 676,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "requiresFamilyResource": false,
+      "onMaskEdit": true,
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_records": 2149088276,
+        "lc_clear": 2148086656,
+        "lc_check_change": 2149393240
+      }
+    }
+  ],
+  "expandedOwners": [
+    {
+      "name": "func_0009b0f0",
+      "start": 635120,
+      "size": 2960,
+      "retailSha256": "270ba4127ad08dd04c21837b9883d90bf2736fb3ac0399cc09acb5178d187923",
+      "expandedInstructions": [
+        {
+          "offset": 1376,
+          "assembly": "lbu $v0, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 2120,
+          "assembly": "lhu $a2, CATEGORY_CURRENT_OFFSET($v0)"
+        },
+        {
+          "offset": 2176,
+          "assembly": "lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)"
+        }
+      ]
+    },
+    {
+      "name": "func_0009bc80",
+      "start": 638080,
+      "size": 3212,
+      "retailSha256": "454e9d8cbccc9cee2e56458fb715e98aab28b0d7d4c85bf14c26de1ed91ba9f2",
+      "expandedInstructions": [
+        {
+          "offset": 680,
+          "assembly": "lbu $v1, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 1996,
+          "assembly": "lbu $s3, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 2076,
+          "assembly": "lhu $a2, CATEGORY_CURRENT_OFFSET($v0)"
+        },
+        {
+          "offset": 2128,
+          "assembly": "lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)"
+        }
+      ]
+    },
+    {
+      "name": "func_000bc984",
+      "start": 772484,
+      "size": 524,
+      "retailSha256": "e3513ce2646238a4aef59862ddfde0ac73acf97e338e4c7f67969737956b02b9",
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 44,
+          "low": 52,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000bedb8",
+      "start": 781752,
+      "size": 1136,
+      "retailSha256": "8b6637185ffa126b51bf42c7c7a71766fca47321e0fc7aa32dd9177c88ce3a2d",
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 120,
+          "low": 128,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000bf458",
+      "start": 783448,
+      "size": 388,
+      "retailSha256": "f274c1272f2f2fb9a2b335cde070a32991183509d7a6a2f5d00b5affbbcff959",
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 64,
+          "low": 72,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000c01dc",
+      "start": 786908,
+      "size": 2132,
+      "retailSha256": "79109c0e7d0b7de186d77c515aecceb91a8d66485e4ad43f4ceff98937abac5b",
+      "expandedInstructions": [
+        {
+          "offset": 224,
+          "assembly": "bnel $v0, $zero, .+32"
+        },
+        {
+          "offset": 256,
+          "assembly": "addiu $v0, $v1, -81"
+        },
+        {
+          "offset": 260,
+          "assembly": "sltiu $v0, $v0, 84"
+        },
+        {
+          "offset": 264,
+          "assembly": "xori $v0, $v0, 1"
+        },
+        {
+          "offset": 432,
+          "assembly": "bnel $v0, $zero, .+32"
+        },
+        {
+          "offset": 464,
+          "assembly": "addiu $v0, $a0, -81"
+        },
+        {
+          "offset": 468,
+          "assembly": "sltiu $v0, $v0, 84"
+        },
+        {
+          "offset": 472,
+          "assembly": "xori $v0, $v0, 1"
+        },
+        {
+          "offset": 1096,
+          "assembly": "addiu $v0, $v0, -81"
+        },
+        {
+          "offset": 1100,
+          "assembly": "sltiu $v0, $v0, 84"
+        }
+      ],
+      "expandedDataReferences": [
+        {
+          "group": "aliases",
+          "high": 208,
+          "low": 216,
+          "addend": 0
+        },
+        {
+          "group": "aliases",
+          "high": 416,
+          "low": 424,
+          "addend": 0
+        },
+        {
+          "group": "aliases",
+          "high": 1704,
+          "low": 1712,
+          "addend": 0
+        },
+        {
+          "group": "aliases",
+          "high": 1932,
+          "low": 1940,
+          "addend": 0
+        }
+      ]
+    },
+    {
+      "name": "func_000ae3f0",
+      "start": 713712,
+      "size": 1304,
+      "retailSha256": "b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3",
+      "expandedInstructions": [
+        {
+          "offset": 4,
+          "assembly": "addiu $a0, $zero, ARMY_OWNER_BYTES"
+        },
+        {
+          "offset": 44,
+          "assembly": "addiu $a1, $zero, ARMY_OWNER_BYTES"
+        }
+      ]
+    }
+  ]
+}

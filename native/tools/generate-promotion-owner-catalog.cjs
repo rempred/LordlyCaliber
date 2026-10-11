@@ -1,0 +1,168 @@
+// Developer-only migration of validated function extents and hashes. No ROM bytes
+// enter the output. Native exports compile maintained sources using the user's ROM.
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const crypto = require('node:crypto');
+const root = path.resolve(__dirname, '../..');
+const sandbox = {window: {}};
+vm.runInNewContext(fs.readFileSync(path.join(root, 'native-classes-data.js'), 'utf8'), sandbox);
+const data = sandbox.window.OB64.NATIVE_CLASSES_DATA.payload;
+const sha = hex => crypto.createHash('sha256').update(Buffer.from(hex, 'hex')).digest('hex');
+const catalog = {
+  generator: 'native/tools/generate-promotion-owner-catalog.cjs',
+  input: 'native-classes-data.js (validated Rebuild baseline 559b231); C menu verified by native/tests/class_menu_mips.cjs',
+  romStart: data.families.romStart,
+  romSize: data.families.romSize,
+  resourceKey: data.families.resourceKey,
+  owners: data.families.owners.map(owner => ({
+    name: path.basename(owner.source, '.s'), start: owner.start, size: owner.size,
+    retailSha256: sha(owner.retailHex), familySha256: sha(owner.familyHex),
+    // Padded complete owner from the pinned compiler. The MIPS comparison test
+    // independently checks this hash against the maintained C and configuration.
+    cSource: owner.start === 0xbf248 ? 'family-menu.c' : undefined,
+    cSourceSha256: owner.start === 0xbf248 ? 'ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42' : undefined,
+    directGateSha256: data.promotion.loaders.find(loader => loader.start === owner.start)?.relocatedSha256.toLowerCase(),
+    keySite: data.promotion.loaders.find(loader => loader.start === owner.start)?.keySite
+  }))
+};
+// Complete US Rev 0 owner, previously unchanged by family exports. Hashes only;
+// the comparison test reads the user's optional private ROM for original code.
+catalog.owners.push({
+  name:'func_000c91a0', start:0xc91a0, size:0x184,
+  retailSha256:'0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a',
+  familySha256:'0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a',
+  cSource:'class-selection.c',
+  cSourceSha256:'95b1d89159f2d4832d25984e27595cf6b508d8edc12df2c89033f5aaaa89ca0a',
+  symbols:{lc_army_owner:0x80196AF8, lc_input_buttons:0x800E8100,
+    lc_repeat_buttons:0x800E8700, lc_menu_sound:0x801D8A60,
+    lc_menu_update:0x801CFC24, lc_menu_equipment:0x801D2B7C}
+});
+catalog.owners.push({
+  name:'func_000c3dac', start:0xc3dac, size:0x1a4,
+  retailSha256:'9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb',
+  familySha256:'9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb',
+  cSource:'class-discovery.c',
+  cSourceSha256:'3dfdb788788a84869c42d87793d972af83cf05648095dc94389d9daff6acedf1',
+  symbols:{lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,lc_class_eligible:0x801D6EA0}
+});
+catalog.owners.push({
+  name:'func_000a4a00', start:0xa4a00, size:0x27c8,
+  retailSha256:'a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2',
+  familySha256:'a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2',
+  cFragment:'class-render-rows.c', fragmentEntry:'class-render-entry.s',
+  fragmentStart:0xa4d5c, fragmentEnd:0xa4ed8,
+  styleSource:'class-render-style.s', styleStart:0xa5668, styleSize:76,
+  cSourceSha256:'49532166880bb6aff99023a64852baf01bd28d1073121df1f3fad637f5b94798',
+  symbols:{lc_army_owner:0x80196AF8,lc_class_coordinates:0x801C6B28,lc_class_matrix:0x80098C20}
+});
+catalog.owners.push({
+  name:'func_000bbd80', start:0xbbd80, size:44,
+  requiresFamilyResource:false, onMaskEdit:true,
+  retailSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
+  familySha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
+  cSource:'compatibility-mask.c',
+  cSourceSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef'
+});
+catalog.owners.push({
+  name:'func_000bf5dc', start:0xbf5dc, size:332,
+  retailSha256:'5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6',
+  familySha256:'5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6',
+  cSource:'equipment-class-menu.c',
+  cSourceSha256:'596f62bbad0375119955a0524b6baabf613c67b05142728bc6aefd742e8d4ed1',
+  requiresFamilyResource:false, onFlagsEdit:true,
+  symbols:{lc_army_owner:0x80196AF8,lc_goth:0x80196A6C,lc_equipment_summary:0x801D29F8,
+    lc_equipment_cost:0x801D2EE0,lc_equipment_full:0x801D2E2C}
+});
+catalog.owners.push({
+  name:'func_000bc0bc', start:0xbc0bc, size:412,
+  retailSha256:'b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0',
+  familySha256:'b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0',
+  cSource:'class-categories.c',
+  cSourceSha256:'d70c4e823eb4dffe9067061244528dcb01d67c8653f321f232b390e35338196f',
+  requiresFamilyResource:false, onMaskEdit:true,
+  symbols:{lc_army_owner:0x80196AF8}
+});
+catalog.owners.push({
+  name:'func_000bbdac', start:0xbbdac, size:784,
+  retailSha256:'59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3',
+  familySha256:'59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3',
+  cSource:'category-class-counts.c',
+  cSourceSha256:'dc2acf0669eecdb8517188318dbd35ca40cc31cd5abf279cec19e6852c183378',
+  cReferences:[{high:668,low:676,group:'classes',addend:141}],
+  requiresFamilyResource:false, onMaskEdit:true,
+  symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
+    lc_class_records:0x80187C14,lc_clear:0x80093380,lc_check_change:0x801D2358}
+});
+catalog.owners.find(owner=>owner.start===0xcd3e8).assemblyFragments = [
+  {offset:0xcd638-0xcd3e8,size:8,source:'equipment-first-class.s'}
+];
+Object.assign(catalog.owners.find(owner=>owner.start===0xd0150), {
+  cSource:'class-screen.c', cExtent:560,
+  cSourceSha256:'e0b97def94deb8b58d02286b96ce05b876c3f23e8c3c6d46ce96a1066f11644e',
+  cReferences:[{high:208,low:216,group:'classes',addend:141}],
+  symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
+    lc_class_records:0x80187C14,lc_prepare_class:0x801E2BCC,lc_prepare_actor:0x801DA3D8,
+    lc_family_menu:0x801D27E8,lc_equipment_summary:0x801D29F8,
+    lc_equipment_entry:0x801CEA1C,lc_family_lookup:0x801CF2F0}
+});
+// Expanded builds retain these owners and assemble only their established
+// array/allocation operands. Other screens reuse the old union storage.
+const classOwners = JSON.parse(fs.readFileSync(path.join(root, 'native/game/classes/relocations.json'))).owners;
+catalog.expandedOwners = [0x9b0f0, 0x9bc80, 0xbc984, 0xbedb8, 0xbf458, 0xc01dc].map(start => {
+  const owner = classOwners.find(entry => entry.start === start);
+  return {name:'func_'+start.toString(16).padStart(8,'0'), start, size:owner.size,
+    retailSha256:owner.retailSha256};
+});
+catalog.expandedOwners.push({name:'func_000ae3f0',start:0xae3f0,size:0x518,
+  retailSha256:'b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3'});
+const expandedInstructions = [
+  [0xc01dc, [
+    // These action gates classify original 81..164 specially. Route both alias
+    // paths through one range check, retaining their delay-slot assignments.
+    [0xc02bc, 'bnel $v0, $zero, .+32'],
+    [0xc02dc, 'addiu $v0, $v1, -81'],
+    [0xc02e0, 'sltiu $v0, $v0, 84'],
+    [0xc02e4, 'xori $v0, $v0, 1'],
+    [0xc038c, 'bnel $v0, $zero, .+32'],
+    [0xc03ac, 'addiu $v0, $a0, -81'],
+    [0xc03b0, 'sltiu $v0, $v0, 84'],
+    [0xc03b4, 'xori $v0, $v0, 1'],
+    [0xc0624, 'addiu $v0, $v0, -81'],
+    [0xc0628, 'sltiu $v0, $v0, 84']]],
+  [0xc3900, [[0xc3d00, 'sltiu $v0, $a0, CLASS_COUNT'],
+    // Preserve the original secondary-ID restriction only for retail 42..164.
+    // The following existing default-class load becomes the branch delay slot.
+    [0xc3abc, 'addiu $v0, $s8, -42'],
+    [0xc3ac0, 'sltiu $v0, $v0, 123'],
+    [0xc3ac4, 'beq $v0, $zero, .+40']]],
+  [0xae3f0, [[0xae3f4, 'addiu $a0, $zero, ARMY_OWNER_BYTES'],
+    [0xae41c, 'addiu $a1, $zero, ARMY_OWNER_BYTES']]],
+  [0x9b0f0, [[0x9b650, 'lbu $v0, CATEGORY_CLASSES_OFFSET+1($v0)'],
+    [0x9b938, 'lhu $a2, CATEGORY_CURRENT_OFFSET($v0)'],
+    [0x9b970, 'lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)']]],
+  [0x9bc80, [[0x9bf28, 'lbu $v1, CATEGORY_CLASSES_OFFSET+1($v0)'],
+    [0x9c44c, 'lbu $s3, CATEGORY_CLASSES_OFFSET+1($v0)'],
+    [0x9c49c, 'lhu $a2, CATEGORY_CURRENT_OFFSET($v0)'],
+    [0x9c4d0, 'lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)']]],
+  [0xcc828, [[0xcc968, 'lhu $a0, CATEGORY_CLASSES_OFFSET($a1)'],
+    [0xccbec, 'lhu $v0, CATEGORY_CLASSES_OFFSET($v0)'],
+    [0xccd2c, 'lhu $v0, CATEGORY_CLASSES_OFFSET($v0)'],
+    [0xcd120, 'lhu $v0, CATEGORY_CLASSES_OFFSET($v0)'],
+    [0xcd2f0, 'lhu $v0, CATEGORY_CLASSES_OFFSET($v1)']]]
+];
+for (const [start, instructions] of expandedInstructions) {
+  const owner = [...catalog.owners, ...catalog.expandedOwners].find(entry=>entry.start===start);
+  owner.expandedInstructions = instructions.map(([site, assembly])=>({offset:site-start, assembly}));
+}
+// Three-instruction indexed reads verified in the original Army code. Sources
+// that are replaced by C get their alias references from the linked ELF instead.
+for (const [start, sites] of [
+  [0xbc984, [0xbc9b0]], [0xbedb8, [0xbee30]], [0xbf458, [0xbf498]],
+  [0xc01dc, [0xc02ac, 0xc037c, 0xc0884, 0xc0968]],
+  [0xc3900, [0xc396c]], [0xcddf0, [0xce7b8, 0xcefa4]]
+]) {
+  const owner = [...catalog.owners, ...catalog.expandedOwners].find(entry=>entry.start===start);
+  owner.expandedDataReferences = sites.map(site=>({group:'aliases',high:site-start,low:site+8-start,addend:0}));
+}
+fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

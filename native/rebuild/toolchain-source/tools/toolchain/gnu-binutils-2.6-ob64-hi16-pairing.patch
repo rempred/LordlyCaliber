@@ -1,0 +1,96 @@
+diff --git a/bfd/elf32-mips.c b/bfd/elf32-mips.c
+index 6b0942e..b4baa4b 100644
+--- a/bfd/elf32-mips.c
++++ b/bfd/elf32-mips.c
+@@ -2515,6 +2515,39 @@ mips_elf_relocate_hi16 (input_bfd, relhi, rello, contents, addend)
+ 	      contents + relhi->r_offset);
+ }
+ 
++/* Find the LO16 relocation associated with a HI16 relocation.  GNU 2.6
++   normally accepts only an immediately adjacent pair.  KMC GCC may place
++   another relocation between a symbolic HI16 and its LO16.  The opt-in OB64
++   mode searches forward for the first LO16 against the same symbol while
++   leaving the historical GNU 2.6 rule unchanged for every other build.  */
++
++static Elf_Internal_Rela *
++mips_elf_associated_lo16 (rel, relend)
++     Elf_Internal_Rela *rel;
++     Elf_Internal_Rela *relend;
++{
++#ifdef OB64_SYMBOL_MATCHED_HI16_LO16
++  unsigned long r_symndx;
++#endif
++
++  if (ELF32_R_TYPE (rel->r_info) != R_MIPS_HI16)
++    return NULL;
++
++#ifdef OB64_SYMBOL_MATCHED_HI16_LO16
++  r_symndx = ELF32_R_SYM (rel->r_info);
++  for (++rel; rel < relend; rel++)
++    if (ELF32_R_TYPE (rel->r_info) == R_MIPS_LO16
++	&& ELF32_R_SYM (rel->r_info) == r_symndx)
++      return rel;
++  return NULL;
++#else
++  ++rel;
++  if (rel < relend && ELF32_R_TYPE (rel->r_info) == R_MIPS_LO16)
++    return rel;
++  return NULL;
++#endif
++}
++
+ /* Relocate a MIPS ELF section.  */
+ 
+ static boolean
+@@ -2534,6 +2567,7 @@ mips_elf_relocate_section (output_bfd, info, input_bfd, input_section,
+   size_t extsymoff;
+   Elf_Internal_Rela *rel;
+   Elf_Internal_Rela *relend;
++  Elf_Internal_Rela *rello;
+ 
+   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
+ 
+@@ -2570,6 +2604,7 @@ mips_elf_relocate_section (output_bfd, info, input_bfd, input_section,
+       howto = elf_mips_howto_table + r_type;
+ 
+       r_symndx = ELF32_R_SYM (rel->r_info);
++      rello = mips_elf_associated_lo16 (rel, relend);
+ 
+       /* Mix in the change in GP address for a GP relative reloc.  */
+       if (r_type != R_MIPS_GPREL16
+@@ -2651,15 +2686,13 @@ mips_elf_relocate_section (output_bfd, info, input_bfd, input_section,
+ 		  /* If this is HI16 with an associated LO16, adjust
+ 		     the addend accordingly.  Otherwise, just
+ 		     relocate.  */
+-		  if (r_type != R_MIPS_HI16
+-		      || (rel + 1) >= relend
+-		      || ELF32_R_TYPE ((rel + 1)->r_info) != R_MIPS_LO16)
++		  if (rello == NULL)
+ 		    r = _bfd_relocate_contents (howto, input_bfd,
+ 						addend,
+ 						contents + rel->r_offset);
+ 		  else
+ 		    {
+-		      mips_elf_relocate_hi16 (input_bfd, rel, rel + 1,
++		      mips_elf_relocate_hi16 (input_bfd, rel, rello,
+ 					      contents, addend);
+ 		      r = bfd_reloc_ok;
+ 		    }
+@@ -2713,15 +2746,13 @@ mips_elf_relocate_section (output_bfd, info, input_bfd, input_section,
+ 		}
+ 	    }
+ 
+-	  if (r_type != R_MIPS_HI16
+-	      || (rel + 1) >= relend
+-	      || ELF32_R_TYPE ((rel + 1)->r_info) != R_MIPS_LO16)
++	  if (rello == NULL)
+ 	    r = _bfd_final_link_relocate (howto, input_bfd, input_section,
+ 					  contents, rel->r_offset,
+ 					  relocation, addend);
+ 	  else
+ 	    {
+-	      mips_elf_relocate_hi16 (input_bfd, rel, rel + 1,
++	      mips_elf_relocate_hi16 (input_bfd, rel, rello,
+ 				      contents, relocation + addend);
+ 	      r = bfd_reloc_ok;
+ 	    }

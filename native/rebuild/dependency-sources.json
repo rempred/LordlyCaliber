@@ -1,0 +1,38 @@
+[
+  {
+    "file": "qtsvg-6.12.0.tar.xz",
+    "url": "https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtsvg-everywhere-src-6.12.0.tar.xz",
+    "sha256": "e4ab39534ec97987b1b9b60ef7f4d3253d5912a69f8c713a01753174a4029331",
+    "bytes": 2341876
+  },
+  {
+    "file": "mips-binutils-2.6.tar.gz",
+    "url": "https://api.github.com/repos/decompals/mips-binutils-2.6/tarball/54514ded39ceb32165a125ddba04ca5b551773a2",
+    "sha256": "0048b99bb9099b4d61339a6735496bb68fa55ee5e841e19f977ae6137fb3344b",
+    "bytes": 3974608
+  },
+  {
+    "file": "mips-gcc-2.7.2.tar.gz",
+    "url": "https://api.github.com/repos/decompals/mips-gcc-2.7.2/tarball/43d1cdb67ed135879869b5266f01efaaada5e35a",
+    "sha256": "dc8c8c529a299aa756e87836844935abf93b48e3af963d66bed0205c887e386c",
+    "bytes": 7127755
+  },
+  {
+    "file": "qtbase-6.12.0.tar.xz",
+    "url": "https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz",
+    "sha256": "a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307",
+    "bytes": 51220268
+  },
+  {
+    "file": "msys2-runtime-3.6.10-2.src.tar.zst",
+    "url": "https://repo.msys2.org/msys/sources/msys2-runtime-3.6.10-2.src.tar.zst",
+    "sha256": "5bf784a32271863f58e91711abad1ecd710d694648ce5b71b8dc52a9099b9b5f",
+    "bytes": 128685694
+  },
+  {
+    "file": "qtdeclarative-6.12.0.tar.xz",
+    "url": "https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtdeclarative-everywhere-src-6.12.0.tar.xz",
+    "sha256": "311f3a2603e1973bb59baef9dfa740a376de713157d4782ee043681e889c9260",
+    "bytes": 39221652
+  }
+]

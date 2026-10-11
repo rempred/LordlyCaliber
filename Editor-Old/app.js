@@ -1,0 +1,9260 @@
+// OB64 Mod Editor — App Logic
+// Tab rendering, inline editing, cross-references, export pipeline
+
+window.OB64 = window.OB64 || {};
+
+(function() {
+  var rom = null;       // Parsed ROM data from OB64.loadROM()
+  var saveState = null; // Parsed save state from OB64.parseSaveFile() — independent of rom
+  var saveFileName = null; // Original save filename for export naming
+  var changes = 0;      // Pending change count
+  var changeBatchDepth = 0;
+  var pendingChangeBatch = null;
+  var activeTab = 'shops';
+  var romLoadGeneration = 0;
+  var activeRomReader = null;
+  // Per-subsystem dirty flags — only re-splice/rewrite archives that the
+  // user actually edited. LH5 round-trip can inflate untouched archives
+  // past their original ROM slot, which previously broke unrelated exports.
+  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var activeInfoPopupAnchor = null;
+
+  function infoPopupElement() {
+    var popup = document.getElementById('ob-info-popup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'ob-info-popup';
+      popup.className = 'ob-info-popup';
+      popup.setAttribute('role', 'tooltip');
+      popup.hidden = true;
+      document.body.appendChild(popup);
+    }
+    return popup;
+  }
+
+  function showInfoPopup(anchor, text) {
+    var popup = infoPopupElement();
+    if (activeInfoPopupAnchor && activeInfoPopupAnchor !== anchor) {
+      activeInfoPopupAnchor.removeAttribute('aria-describedby');
+    }
+    activeInfoPopupAnchor = anchor;
+    popup.textContent = text;
+    popup.hidden = false;
+    popup.style.left = '0px';
+    popup.style.top = '0px';
+    var margin = 10;
+    var gap = 8;
+    var anchorRect = anchor.getBoundingClientRect();
+    var popupRect = popup.getBoundingClientRect();
+    var left = anchorRect.left + (anchorRect.width - popupRect.width) / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - popupRect.width - margin));
+    var top = anchorRect.top - popupRect.height - gap;
+    if (top < margin) top = Math.min(window.innerHeight - popupRect.height - margin, anchorRect.bottom + gap);
+    popup.style.left = Math.max(margin, left) + 'px';
+    popup.style.top = Math.max(margin, top) + 'px';
+    anchor.setAttribute('aria-describedby', popup.id);
+  }
+
+  function hideInfoPopup(anchor) {
+    if (anchor && activeInfoPopupAnchor !== anchor) return;
+    var popup = document.getElementById('ob-info-popup');
+    if (popup) popup.hidden = true;
+    if (activeInfoPopupAnchor) activeInfoPopupAnchor.removeAttribute('aria-describedby');
+    activeInfoPopupAnchor = null;
+  }
+
+  OB64.showInfoPopup = showInfoPopup;
+  OB64.hideInfoPopup = hideInfoPopup;
+
+  function absorbNativeTitle(element) {
+    if (!element || element.nodeType !== 1 || !element.hasAttribute('title')) return;
+    var text = element.getAttribute('title') || '';
+    if (text) element.setAttribute('data-ob-tooltip', text);
+    else element.removeAttribute('data-ob-tooltip');
+    element.removeAttribute('title');
+  }
+
+  function absorbNativeTitles(root) {
+    if (!root) return;
+    if (root.nodeType === 1) absorbNativeTitle(root);
+    if (root.querySelectorAll) {
+      var titled = root.querySelectorAll('[title]');
+      for (var i = 0; i < titled.length; i++) absorbNativeTitle(titled[i]);
+    }
+  }
+
+  function tooltipAnchorFor(target) {
+    if (!target || !target.closest || target.closest('[data-ob-popup-control]')) return null;
+    return target.closest('[data-ob-tooltip]');
+  }
+
+  function installStyledTooltips() {
+    absorbNativeTitles(document);
+
+    var observer = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var mutation = mutations[i];
+        if (mutation.type === 'attributes') {
+          absorbNativeTitle(mutation.target);
+          continue;
+        }
+        for (var j = 0; j < mutation.addedNodes.length; j++) {
+          absorbNativeTitles(mutation.addedNodes[j]);
+        }
+      }
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['title']
+    });
+
+    document.addEventListener('mouseover', function(event) {
+      if (event.target && event.target.closest && event.target.closest('[data-ob-popup-control]')) {
+        hideInfoPopup();
+        return;
+      }
+      var anchor = tooltipAnchorFor(event.target);
+      if (anchor) showInfoPopup(anchor, anchor.getAttribute('data-ob-tooltip'));
+    });
+    document.addEventListener('mouseout', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (!anchor) return;
+      if (event.relatedTarget && anchor.contains(event.relatedTarget)) return;
+      hideInfoPopup(anchor);
+    });
+    document.addEventListener('focusin', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (anchor) showInfoPopup(anchor, anchor.getAttribute('data-ob-tooltip'));
+    });
+    document.addEventListener('focusout', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (!anchor) return;
+      if (event.relatedTarget && anchor.contains(event.relatedTarget)) return;
+      hideInfoPopup(anchor);
+    });
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') hideInfoPopup();
+    });
+  }
+
+  installStyledTooltips();
+
+  // Bridges for the Squads tab (squads.js) — give it the live rom + a change hook.
+  OB64._romRef = function() { return rom; };
+  OB64._squadChanged = function() { markChanged('squadOverrides'); };
+  OB64._scenarioChanged = function() { markChanged('scenario'); };
+
+  // ============================================================
+  // DOM refs
+  // ============================================================
+  var fileInput = document.getElementById('rom-file');
+  var btnExport = document.getElementById('btn-export');
+  var btnChangelog = document.getElementById('btn-changelog');
+  var btnSavePatch = document.getElementById('btn-save-patch');
+  var btnRomCompatibility = document.getElementById('btn-rom-compatibility');
+  var buildModeSelect = document.getElementById('build-mode');
+  var buildModeHelp = document.getElementById('build-mode-help');
+  var patchFileInput = document.getElementById('patch-file');
+  var btnLoadPatchLabel = document.getElementById('btn-load-patch-label');
+  var patchChip = document.getElementById('patch-chip');
+  var tabBar = document.getElementById('tab-bar');
+  var emptyState = document.getElementById('empty-state');
+  var statusBar = document.getElementById('status-bar');
+  var content = document.getElementById('content');
+  var appTop = document.querySelector('.app-top');
+
+  // The application header and mod tabs are fixed as one viewport-level unit.
+  // Keep an exact body offset so wrapped controls or font-size changes never
+  // leave page content hidden underneath the fixed chrome.
+  function syncAppTopHeight() {
+    var height = appTop ? Math.ceil(appTop.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--app-top-height', height + 'px');
+  }
+  syncAppTopHeight();
+  window.addEventListener('resize', syncAppTopHeight);
+  if (window.ResizeObserver && appTop) {
+    new window.ResizeObserver(syncAppTopHeight).observe(appTop);
+  }
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(syncAppTopHeight);
+  }
+
+  // Name of the most-recently loaded or saved project (for status display)
+  var lastProjectFilename = null;
+
+  function currentBuildMode() {
+    return OB64.buildModes && rom ? OB64.buildModes.get(rom) : 'patch';
+  }
+
+  function currentBuildModeInfo() {
+    return OB64.buildModes
+      ? OB64.buildModes.info(currentBuildMode())
+      : { id: 'patch', label: 'Patch ROM', help: 'Uses the legacy export path.' };
+  }
+
+  function mergeDirtyFlags(target, source) {
+    target = Object.assign({}, target || {});
+    Object.keys(source || {}).forEach(function(key) {
+      target[key] = !!target[key] || !!source[key];
+    });
+    return target;
+  }
+
+  function syncBuildModeControl() {
+    if (!buildModeSelect) return;
+    var info = currentBuildModeInfo();
+    buildModeSelect.value = info.id;
+    buildModeHelp.textContent = info.help;
+  }
+
+  if (buildModeSelect) {
+    buildModeSelect.addEventListener('change', function() {
+      if (!rom || !OB64.buildModes) return;
+      var previous = OB64.buildModes.get(rom);
+      var next = OB64.buildModes.set(rom, buildModeSelect.value);
+      if (next === 'rebuild' && rom.nativeRebuild &&
+          rom.nativeRebuild.pendingRebuildDirty) {
+        dirty = mergeDirtyFlags(dirty, rom.nativeRebuild.pendingRebuildDirty);
+      }
+      syncBuildModeControl();
+      if (next !== previous) changes++;
+      renderTab(activeTab);
+      statusBar.textContent = OB64.buildModes.info(next).label +
+        ' selected. The in-memory edit model is unchanged.';
+    });
+  }
+
+  // ============================================================
+  // ROM Loading
+  // ============================================================
+  function beginDatasetLoad(id) {
+    try {
+      if (!OB64.datasetLoader) {
+        throw new Error('The generated dataset loader is unavailable.');
+      }
+      return OB64.datasetLoader.load(id).then(function(value) {
+        return { value: value, error: null };
+      }, function(error) {
+        return { value: null, error: error };
+      });
+    } catch (error) {
+      return Promise.resolve({ value: null, error: error });
+    }
+  }
+
+  async function requireDataset(load) {
+    var result = await load;
+    if (result.error) throw result.error;
+    return result.value;
+  }
+
+  function setRomMutationControlsEnabled(editEnabled, exportEnabled) {
+    if (exportEnabled == null) exportEnabled = editEnabled;
+    btnExport.disabled = !exportEnabled;
+    btnChangelog.disabled = !editEnabled;
+    btnSavePatch.disabled = !editEnabled;
+    patchFileInput.disabled = !editEnabled;
+    btnLoadPatchLabel.setAttribute('aria-disabled', editEnabled ? 'false' : 'true');
+    if (buildModeSelect) buildModeSelect.disabled = !editEnabled;
+  }
+
+  function setRomEditingContentUnavailable(busy) {
+    if (!content) return;
+    content.inert = true;
+    if (busy) content.setAttribute('aria-busy', 'true');
+    else content.removeAttribute('aria-busy');
+  }
+
+  function setRomEditingContentAvailable() {
+    if (!content) return;
+    content.inert = false;
+    content.removeAttribute('aria-busy');
+  }
+
+  function invalidateLoadedRomUi(loadBusy) {
+    rom = null;
+    changes = 0;
+    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    lastProjectFilename = null;
+    updatePatchChip();
+    setRomMutationControlsEnabled(false);
+    if (buildModeSelect) buildModeSelect.value = 'patch';
+    if (buildModeHelp) buildModeHelp.textContent = 'Patch ROM keeps the legacy export path.';
+    if (btnRomCompatibility) {
+      btnRomCompatibility.hidden = true;
+      btnRomCompatibility.disabled = true;
+      btnRomCompatibility.classList.remove('is-warning', 'is-blocked', 'is-verified');
+    }
+    fileInput.disabled = false;
+    setRomEditingContentUnavailable(!!loadBusy);
+    emptyState.style.display = '';
+    var staleConsumablesPanel = document.getElementById('panel-consumables');
+    if (staleConsumablesPanel) staleConsumablesPanel.innerHTML = '';
+  }
+
+  function currentRomLoadFailed(generation, reader, message, error) {
+    if (generation !== romLoadGeneration || activeRomReader !== reader) return;
+    invalidateLoadedRomUi(false);
+    statusBar.textContent = 'Error loading ROM: ' + message +
+      ' Select the ROM again after checking the file.';
+    if (error) console.error(error);
+  }
+
+  fileInput.addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var generation = ++romLoadGeneration;
+    var priorReader = activeRomReader;
+    activeRomReader = null;
+    if (priorReader && priorReader.readyState === 1 && priorReader.abort) {
+      try { priorReader.abort(); } catch (abortError) {
+        // The prior request is already stale. Its abort outcome must not affect
+        // the new selection.
+      }
+    }
+    invalidateLoadedRomUi(true);
+    statusBar.textContent = 'Loading ROM...';
+    var reader = new FileReader();
+    activeRomReader = reader;
+    reader.onload = async function(ev) {
+      if (generation !== romLoadGeneration || activeRomReader !== reader) return;
+      try {
+        var sourceIdentity = null;
+        var sourceIdentityError = null;
+        try {
+          sourceIdentity = await OB64.consumableEffects.inspectSourceIdentity(
+            new Uint8Array(ev.target.result),
+            file.name
+          );
+        } catch (identityError) {
+          sourceIdentityError = identityError;
+          sourceIdentity = { facts: { filename: file.name } };
+        }
+        if (generation !== romLoadGeneration || activeRomReader !== reader) return;
+
+        // Parse and initialize the complete candidate session locally. Nothing
+        // below this point may expose a partial ROM through OB64._romRef().
+        var nextRom = OB64.loadROM(ev.target.result);
+        await OB64.romCompatibility.identify(nextRom, sourceIdentity);
+        if (sourceIdentityError) {
+          OB64.romCompatibility.setComponent(nextRom.compatibility, {
+            id: 'source-identity',
+            label: 'Source container identity',
+            category: 'identity',
+            status: 'blocked',
+            reason: sourceIdentityError.message || String(sourceIdentityError),
+            details: { exception: sourceIdentityError.name || 'Error' },
+            affectsTabs: ['consumables'],
+            requiredForExport: true
+          });
+          OB64.romCompatibility.recompute(nextRom.compatibility);
+        }
+
+        // These independent generated datasets can download together. Each
+        // owning initializer still receives and reports its own load failure.
+        var datasetLoads = {};
+        if (nextRom.compatibility.canEdit && nextRom.layout &&
+            nextRom.layout.id === 'us-rev0') {
+          datasetLoads.animationCorpus = beginDatasetLoad('animation-corpus');
+          datasetLoads.cutsceneData = beginDatasetLoad('cutscene-data');
+        }
+
+        // A recognized layout with at least one readable editor surface can
+        // initialize each feature independently. One incompatible feature must
+        // not discard the readable parts of the ROM or hide its own diagnostic.
+        if (nextRom.compatibility.canEdit) {
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'native-rebuild-source',
+            label: 'Authenticated native rebuild source',
+            affectsTabs: ['shops', 'tools'],
+            requiredForExport: true
+          }, function() { return OB64.nativeRebuild.initializeSource(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'native-art',
+            label: 'Avatars, item icons, combat sprites, and Army sprites',
+            affectsTabs: ['art', 'sprites']
+          }, async function() {
+            if (nextRom.layout && nextRom.layout.id === 'us-rev0') {
+              await requireDataset(datasetLoads.animationCorpus);
+            }
+            return OB64.art.initialize(nextRom);
+          });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'sprite-library', label: 'Sprite Editor Project library',
+            affectsTabs: ['sprites']
+          }, function() { return OB64.spriteLibrary.initialize(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'consumable-effects', label: 'Consumable effect code and text',
+            affectsTabs: ['consumables'], requiredForExport: true
+          }, function() {
+            return OB64.consumableEffects.initializeSession(nextRom, sourceIdentity, {
+              filename: file.name
+            });
+          });
+          // Rehydrate an existing shared ROM-tail shop table before taking the
+          // project baseline, so reopening a patched ROM preserves its shops.
+          if (OB64.runtimeOverrides) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'runtime-shop-readback', label: 'Runtime shop override readback',
+              affectsTabs: ['shops']
+            }, function() { return OB64.runtimeOverrides.applyParsedShopOverrides(nextRom); });
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'runtime-neutral-readback', label: 'Neutral runtime override readback',
+              affectsTabs: ['encounters']
+            }, function() { return OB64.runtimeOverrides.applyParsedNeutralOverrides(nextRom); });
+          }
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'combat-animation-overrides', label: 'Combat animation override lane',
+            affectsTabs: ['classes']
+          }, function() { return OB64.combatAnimationOverrides.initialize(nextRom); });
+          if (OB64.animationSequences) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'combat-animation-sequences',
+              label: 'Combat animation separated sequence lane',
+              affectsTabs: ['art', 'sprites']
+            }, function() { return OB64.animationSequences.initialize(nextRom); });
+          }
+          if (OB64.cutsceneUI) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'cutscene-studio', label: 'Cutscene Studio scene and presentation catalog',
+              affectsTabs: ['cutscenes', 'sprites']
+            }, async function() {
+              if (nextRom.layout && nextRom.layout.id === 'us-rev0') {
+                await requireDataset(datasetLoads.cutsceneData);
+              }
+              return OB64.cutsceneUI.initialize(nextRom);
+            });
+          }
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'project-baseline', label: 'Project and export baseline',
+            requiredForExport: true
+          }, function() { return OB64.patch.snapshotOriginal(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'tools-patches', label: 'Tools patch regions', affectsTabs: ['tools']
+          }, function() {
+            OB64.tools.initState(nextRom);
+            OB64.nativeRebuild.initializeToolState(nextRom);
+          });
+          if (nextRom.squadOverrides) nextRom.squadOverrides = {};
+          if (OB64.scenario) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'scenario-models', label: 'Scenario authoring models', affectsTabs: ['scenario']
+            }, function() { return OB64.scenario.ensureState(nextRom); });
+          }
+        }
+
+        OB64.romCompatibility.assessFeatures(nextRom);
+        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        // A ROM patched by an older build of a Tools feature upgrades on the
+        // next export unless the user switches the feature off.
+        nextDirty.tools = !!nextRom.tools && OB64.tools.pendingChanges(nextRom) > 0;
+
+        // This is the single shared-state/UI commit for the current selection.
+        if (generation !== romLoadGeneration || activeRomReader !== reader) return;
+        rom = nextRom;
+        changes = 0;
+        dirty = nextDirty;
+        lastProjectFilename = null;
+        syncBuildModeControl();
+        emptyState.style.display = 'none';
+        updatePatchChip();
+        renderTab(activeTab);
+        setRomMutationControlsEnabled(
+          rom.compatibility.canEdit,
+          rom.compatibility.canExport
+        );
+        updateRomCompatibilityButton(rom.compatibility);
+        setRomEditingContentAvailable();
+        var compatibilityCounts = OB64.romCompatibility.counts(rom.compatibility);
+        var loadDisposition = rom.compatibility.overall === 'verified'
+          ? ''
+          : (rom.compatibility.overall === 'blocked'
+            ? ' with blocked systems'
+            : ' with compatibility warnings');
+        statusBar.textContent = currentBuildModeInfo().label + ' · ROM loaded' + loadDisposition +
+          ': ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' +
+          (rom.layout ? rom.layout.name : 'Unknown layout') + ' .' + (rom.byteOrder || 'v64') +
+          ' | ' + rom.archives.length + ' archives | ' +
+          compatibilityCounts.conflict + ' conflict' + (compatibilityCounts.conflict === 1 ? '' : 's') +
+          ', ' + compatibilityCounts.blocked + ' blocked check' + (compatibilityCounts.blocked === 1 ? '' : 's') +
+          ' | 0 pending changes';
+        var compatibilityLog = OB64.romCompatibility.logLine(rom.compatibility);
+        if (rom.compatibility.overall === 'verified') console.info(compatibilityLog);
+        else console.warn(compatibilityLog, rom.compatibility);
+        if (rom.compatibility.overall !== 'verified') {
+          showRomCompatibilityModal(rom.compatibility);
+        }
+      } catch(err) {
+        currentRomLoadFailed(generation, reader, err.message, err);
+      } finally {
+        if (generation === romLoadGeneration && activeRomReader === reader) {
+          activeRomReader = null;
+        }
+      }
+    };
+    reader.onerror = function() {
+      var reason = reader.error && reader.error.message
+        ? reader.error.message
+        : 'The selected file could not be read.';
+      currentRomLoadFailed(generation, reader, reason, reader.error);
+      if (generation === romLoadGeneration && activeRomReader === reader) activeRomReader = null;
+    };
+    reader.onabort = function() {
+      currentRomLoadFailed(generation, reader, 'The file read was aborted.');
+      if (generation === romLoadGeneration && activeRomReader === reader) activeRomReader = null;
+    };
+    try {
+      reader.readAsArrayBuffer(file);
+    } catch (readStartError) {
+      currentRomLoadFailed(generation, reader, readStartError.message, readStartError);
+      if (generation === romLoadGeneration && activeRomReader === reader) {
+        activeRomReader = null;
+      }
+    }
+  });
+
+  // ============================================================
+  // Export
+  // ============================================================
+  btnExport.addEventListener('click', async function() {
+    if (!rom) return;
+    var buildMode = currentBuildMode();
+    var buildInfo = currentBuildModeInfo();
+    if (!rom.compatibility || !rom.compatibility.canExport) {
+      statusBar.textContent = buildInfo.label +
+        ' export is blocked by the compatibility report.';
+      if (rom.compatibility) showRomCompatibilityModal(rom.compatibility);
+      return;
+    }
+    var exportRom = rom;
+    var exportLoadGeneration = romLoadGeneration;
+    btnExport.disabled = true;
+    fileInput.disabled = true;
+    patchFileInput.disabled = true;
+    btnSavePatch.disabled = true;
+    btnChangelog.disabled = true;
+    btnLoadPatchLabel.setAttribute('aria-disabled', 'true');
+    var exportContent = content;
+    if (exportContent) {
+      exportContent.inert = true;
+      exportContent.setAttribute('aria-busy', 'true');
+    }
+    statusBar.textContent = buildInfo.label + ' · Exporting...';
+    var exportProgress = showRomExportProgressModal();
+    var sourceWorkingZ64 = rom.z64;
+    var candidateRom = null;
+    var nativePlan = null;
+    var nativeResult = null;
+    var effectTransaction = null;
+    var effectAdoption = null;
+    var effectOwners = [];
+    var selectorPlan = null;
+    var toolsResult = null;
+    var runtimeWritePlan = null;
+    var runtimeMode = 'none';
+    var scenarioResult = null;
+    var statGatePlan = null;
+    var sourceRedirectPlan = null;
+    var sourceRedirectResult = null;
+    var artPlan = null;
+    var artResult = null;
+    var artTouchedIndex = -1;
+    var cutscenePlan = null;
+    var cutsceneResult = null;
+    var classPlan = null;
+    var classResult = null;
+    var exportDirty = Object.assign({}, dirty);
+    try {
+      await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
+      if (buildMode === 'patch') {
+        if (OB64.classFamilies && OB64.classFamilies.isActive(exportRom)) {
+          throw new Error('Family edits require Rebuild ROM. Select Rebuild ROM to export these changes.');
+        }
+        OB64.nativeRebuild.patchSourceCheck(exportRom);
+      } else {
+        nativePlan = OB64.nativeRebuild.prepareExport(exportRom, {
+          shopsDirty: !!dirty.shops,
+        });
+      }
+      candidateRom = OB64.romExportCandidate.create(exportRom);
+      if (nativePlan) candidateRom.z64 = nativePlan.baseZ64.slice();
+      sourceWorkingZ64 = candidateRom.z64;
+      var touched = [];
+      if (nativePlan && nativePlan.writes.length === 0) {
+        touched.push('authenticated exact US Rev 0 retail product');
+      }
+      if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
+        await paintRomExportProgress(exportProgress, 4,
+          'Planning and verifying all native art resources');
+        if (OB64.art.prepareExportAsync) {
+          artPlan = await OB64.art.prepareExportAsync(
+            rom, candidateRom, function(detail, fraction) {
+              exportProgress.update('Native art · ' + detail + ' · ' +
+                Math.round(Math.max(0, Math.min(1, fraction)) * 100) + '%',
+                4 + Math.max(0, Math.min(1, fraction)) * 3);
+            });
+        } else {
+          artPlan = OB64.art.prepareExport(rom, candidateRom);
+        }
+      }
+      if (dirty.cutscenes && OB64.cutsceneExport) {
+        await paintRomExportProgress(exportProgress, 6,
+          'Planning and verifying edited Cutscene director payloads');
+        cutscenePlan = await OB64.cutsceneExport.prepare(exportRom, candidateRom);
+      }
+      await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
+      selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
+      if (nativePlan) {
+        if (!OB64.nativeClasses) throw new Error('The Classes rebuild component is unavailable. Reload the editor.');
+        classPlan = OB64.nativeClasses.prepare(rom, candidateRom.z64, dirty);
+        statGatePlan = classPlan.promotion;
+      }
+      var shopOverridesForRuntime = buildMode === 'patch' && OB64.runtimeOverrides
+        ? OB64.runtimeOverrides.collectShopOverrides(rom)
+        : [];
+      var legacyShopDirty = buildMode === 'patch' && !!dirty.shops;
+      // Rebuild ROM runs every neutral runtime feature through the native
+      // Neutral module. Only Patch ROM feeds them to the shared runtime.
+      var legacyNeutralRuntime = buildMode === 'patch' && !!OB64.runtimeOverrides;
+      var neutralRuntimeLegacyDirty = buildMode === 'patch' && !!dirty.neutralRuntime;
+      var scenarioRateOverridesForRuntime = legacyNeutralRuntime
+        ? OB64.runtimeOverrides.collectScenarioRateOverrides(rom)
+        : [];
+      var weightedDropOverridesForRuntime = legacyNeutralRuntime
+        ? OB64.runtimeOverrides.collectWeightedDropOverrides(rom)
+        : [];
+      var customNeutralSquadsForRuntime = legacyNeutralRuntime
+        ? OB64.runtimeOverrides.collectCustomNeutralSquads(rom)
+        : [];
+      var nativeNeutralPlan = null;
+      if (buildMode === 'rebuild' && OB64.nativeNeutral && OB64.nativeNeutral.isActive(rom)) {
+        try {
+          nativeNeutralPlan = OB64.nativeNeutral.prepare(rom, candidateRom.z64);
+        } catch (neutralError) {
+          showErrorModal(buildInfo.label + ' blocked - neutral encounters', neutralError.message);
+          statusBar.textContent = buildInfo.label + ' blocked (neutral encounters)';
+          return;
+        }
+      }
+
+      // Shop membership edits compile into the shared OBM2 runtime blob below.
+      // Archive #751 remains the retail fallback for unchanged shop indices.
+      if (legacyShopDirty && (!OB64.runtimeOverrides ||
+          (rom.layout && rom.layout.supportsShopOverrides === false))) {
+        showErrorModal(buildInfo.label + ' - runtime shops unavailable',
+          'This ROM revision can parse shopcsv, but its per-shop runtime ' +
+          'source-list hook is unavailable. The archive fallback cannot ' +
+          'represent per-shop consumables or the larger runtime limits.');
+        statusBar.textContent = buildInfo.label + ' failed (runtime shops unavailable)';
+        return;
+      }
+
+      // Rebuild ROM writes custom squads as real enemydat records through the
+      // Scenario archive composer. Only Patch ROM installs the squad override hook.
+      var nativeSquadPlan = buildMode === 'rebuild' && OB64.scenario
+        ? OB64.scenario.planNativeSquadLibrary(rom)
+        : null;
+      var nativeSquadsActive = !!(nativeSquadPlan &&
+        (nativeSquadPlan.remappedRows || nativeSquadPlan.blocked.length));
+      var squadRuntimeDirty = buildMode === 'patch' && !!dirty.squadOverrides;
+      var squadOverridesForConflict = (buildMode === 'patch' && OB64.squad &&
+          OB64.collectSquadOverrides)
+        ? OB64.collectSquadOverrides(rom)
+        : [];
+      var currentStatRedirectRequests = OB64.statGateRelocation
+        ? OB64.statGateRelocation.currentRequests(rom.statGates)
+        : [];
+      var currentScenarioRedirectRequests = OB64.sourceRedirect && OB64.scenario
+        ? OB64.sourceRedirect.scenarioRequests(rom.scenarioRelocations || [])
+        : [];
+      try {
+        if (dirty.statGates && !nativePlan) {
+          if (!OB64.statGateRelocation) {
+            throw new Error('The stat-gate relocation component is unavailable. Reload the editor and try again.');
+          }
+          statGatePlan = OB64.statGateRelocation.prepare(
+            rom.statGates,
+            candidateRom.z64,
+            rom.layout
+          );
+        }
+
+        // Scenario planning writes only to the detached candidate. The shared
+        // redirect hook stays untouched until stat and Scenario requests have
+        // been merged and checked below.
+        if ((dirty.scenario || nativeSquadsActive) && OB64.scenario) {
+          scenarioResult = OB64.scenario.exportScenarioArchives(candidateRom, {
+            deferRedirect: true,
+            nativeSquads: nativeSquadPlan,
+          });
+          if (scenarioResult.blocked && scenarioResult.blocked.length) {
+            showErrorModal(buildInfo.label + ' blocked - scenario edits',
+              scenarioResult.blocked.join('\n\n'));
+            statusBar.textContent = buildInfo.label + ' blocked (scenario edits)';
+            return;
+          }
+        }
+
+        var knownRedirectRequests = currentStatRedirectRequests.concat(
+          currentScenarioRedirectRequests
+        );
+        var desiredStatRedirectRequests = statGatePlan
+          ? statGatePlan.redirectRequests
+          : currentStatRedirectRequests;
+        var desiredScenarioRedirectRequests = scenarioResult
+          ? scenarioResult.redirectRequests
+          : currentScenarioRedirectRequests;
+        if (statGatePlan || dirty.statGates || dirty.scenario || nativeSquadsActive || knownRedirectRequests.length) {
+          if (!OB64.sourceRedirect) {
+            throw new Error('The shared PI-source redirect controller is unavailable. Reload the editor and try again.');
+          }
+          sourceRedirectPlan = OB64.sourceRedirect.prepare(
+            candidateRom.z64,
+            desiredStatRedirectRequests.concat(desiredScenarioRedirectRequests),
+            { knownCurrentRequests: knownRedirectRequests }
+          );
+        }
+      } catch (relocationError) {
+        showErrorModal(buildInfo.label + ' blocked - relocation ownership',
+          relocationError.message);
+        statusBar.textContent = buildInfo.label + ' blocked (relocation ownership): ' +
+          relocationError.message;
+        return;
+      }
+      if (neutralRuntimeLegacyDirty && (!OB64.runtimeOverrides ||
+          (rom.layout && rom.layout.supportsNeutralRuntimeOverrides === false))) {
+        showErrorModal(buildInfo.label + ' - neutral runtime unavailable',
+          'This ROM revision can edit retail encounter tables, but its ' +
+          'per-scenario rate and weighted-drop hooks are unavailable.');
+        statusBar.textContent = buildInfo.label + ' failed (neutral runtime unavailable)';
+        return;
+      }
+      if (customNeutralSquadsForRuntime.length && rom.layout &&
+          rom.layout.supportsNeutralCustomSquads === false) {
+        showErrorModal(buildInfo.label + ' - custom neutral squads unavailable',
+          'This ROM revision does not have verified custom neutral-squad hooks. ' +
+          'Remove the custom squads or export from a supported US revision 0 ROM.');
+        statusBar.textContent = buildInfo.label + ' failed (custom neutral squads unavailable)';
+        return;
+      }
+      var sharedRegionOwners = [];
+      var artOwner = OB64.art && artPlan ? OB64.art.patchOwner(artPlan) : null;
+      if (artOwner) sharedRegionOwners.push(artOwner);
+      var cutsceneOwner = OB64.cutsceneExport && cutscenePlan
+        ? OB64.cutsceneExport.patchOwner(cutscenePlan) : null;
+      if (cutsceneOwner) sharedRegionOwners.push(cutsceneOwner);
+      var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
+      if (selectorOwner) sharedRegionOwners.push(selectorOwner);
+      if (OB64.squad && (legacyShopDirty || squadRuntimeDirty || neutralRuntimeLegacyDirty ||
+          squadOverridesForConflict.length || shopOverridesForRuntime.length ||
+          scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+          customNeutralSquadsForRuntime.length)) {
+        var runtimeOwnerRegions = (shopOverridesForRuntime.length || legacyShopDirty || neutralRuntimeLegacyDirty ||
+            scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+            customNeutralSquadsForRuntime.length) && OB64.runtimeOverrides
+          ? OB64.runtimeOverrides.patchRegions(rom)
+          : OB64.squad.patchRegions(rom);
+        sharedRegionOwners.push({
+          id: 'runtime-overrides',
+          name: 'Shared Runtime Overrides',
+          category: 'runtimeOverrides',
+          regions: buildMode === 'rebuild'
+            ? OB64.nativeRebuild.remainingRuntimeRegions(rom, runtimeOwnerRegions)
+            : runtimeOwnerRegions
+        });
+      }
+      if (nativeNeutralPlan) sharedRegionOwners.push(nativeNeutralPlan.owner);
+      if (classPlan) sharedRegionOwners = sharedRegionOwners.concat(classPlan.owners);
+      if (sourceRedirectPlan && OB64.sourceRedirect &&
+          (sourceRedirectPlan.changed || sourceRedirectPlan.requests.length ||
+            sourceRedirectPlan.currentEntries.length)) {
+        sharedRegionOwners.push(OB64.sourceRedirect.patchOwner());
+      }
+      if (dirty.squadOverrides && rom.layout && rom.layout.supportsSquadOverrides === false) {
+        showErrorModal(buildInfo.label + ' - squad overrides unavailable',
+          'This ROM revision can be parsed and repacked, but the Squads runtime ' +
+          'override hook has not been verified for it yet.\n\n' +
+          (rom.layout.unsupportedFeaturesReason || 'Load a supported header revision 0 ROM to export squad overrides.'));
+        statusBar.textContent = buildInfo.label + ' failed (squad overrides unavailable for ' + rom.layout.name + ')';
+        return;
+      }
+      if ((dirty.squadOverrides || dirty.scenario) && OB64.scenario &&
+          OB64.scenario.squadLeaderIssues) {
+        var leaderIssues = OB64.scenario.squadLeaderIssues(rom);
+        if (leaderIssues.length) {
+          showErrorModal(buildInfo.label + ' blocked - invalid squad leader', leaderIssues.join('\n\n'));
+          statusBar.textContent = buildInfo.label + ' blocked (invalid squad leader)';
+          return;
+        }
+      }
+
+      var standardOwnerDirty = Object.assign({}, dirty);
+      if (buildMode === 'rebuild') {
+        standardOwnerDirty.tools = false;
+        standardOwnerDirty.consumableDescriptions = false;
+        standardOwnerDirty.consumableEffects = false;
+        standardOwnerDirty.classDefs = false;
+        standardOwnerDirty.classDescriptions = false;
+        standardOwnerDirty.actionDescriptions = false;
+        standardOwnerDirty.statGates = false;
+        if (nativeSquadsActive) standardOwnerDirty.scenario = true;
+      }
+      effectOwners = OB64.consumableEffects.standardPatchOwners(
+        candidateRom, standardOwnerDirty).concat(sharedRegionOwners);
+      if (nativePlan) {
+        effectOwners = effectOwners.filter(function(owner) {
+          return owner.id !== 'consumable-effects' &&
+            owner.id !== 'consumable-healing-descriptions' &&
+            owner.id !== 'consumable-descriptions-adopted';
+        });
+        effectOwners = effectOwners.concat(
+          nativePlan.owners,
+          nativePlan.restorationOwners,
+          OB64.nativeRebuild.passthroughToolOwners(rom)
+        );
+      }
+      var plannedOwnerConflicts = OB64.consumableEffects.findRegionConflicts(
+        effectOwners
+      );
+      if (plannedOwnerConflicts.length) {
+        showErrorModal(buildInfo.label + ' blocked - feature collision',
+          plannedOwnerConflicts.map(function(conflict) {
+            return conflict.a.ownerName + ' (' + conflict.a.label +
+              ') overlaps ' + conflict.b.ownerName + ' (' +
+              conflict.b.label + ').';
+          }).join('\n\n'));
+        statusBar.textContent = buildInfo.label + ' blocked (feature collision)';
+        return;
+      }
+      if (!nativePlan) {
+        effectTransaction = OB64.consumableEffects.prepareTransaction(
+          rom.consumableEffects,
+          sourceWorkingZ64,
+          effectOwners
+        );
+      }
+      if (nativePlan) {
+        var compositionOwners = effectOwners.slice();
+        if (effectTransaction) {
+          compositionOwners.push(effectTransaction.deltaOwner);
+          if (effectTransaction.textOwner) {
+            compositionOwners.push(effectTransaction.textOwner);
+          }
+        }
+        nativePlan.compositionAuthorization =
+          OB64.nativeRebuild.authorizeComposition(compositionOwners);
+      }
+      // Tools adds its selected feature owners internally. Replace concrete
+      // same-session effect ranges with the one broad effect collision guard.
+      var toolCompatibilityOwners =
+        OB64.consumableEffects.toolCompatibilityOwners(
+          effectOwners,
+          effectTransaction
+        );
+      if (OB64.tools && toolCompatibilityOwners.length) {
+        OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners,
+          nativePlan ? { excludeIds: OB64.nativeRebuild.migratedToolIds } : null);
+      }
+
+      await paintRomExportProgress(exportProgress, 14, 'Writing edited ROM data tables');
+      if (cutscenePlan && cutscenePlan.changedEntries.length) {
+        cutsceneResult = OB64.cutsceneExport.apply(candidateRom, cutscenePlan);
+        touched.push('cutscenes (' + cutsceneResult.changedSceneCount + ' scene' +
+          (cutsceneResult.changedSceneCount === 1 ? '' : 's') +
+          (cutsceneResult.relocatedSceneCount
+            ? ', ' + cutsceneResult.relocatedSceneCount + ' relocated' : '') + ')');
+      }
+      // Item stats (direct z64 patch at 0x62310)
+      if (dirty.items) {
+        OB64.serializeItemStats(rom.itemStats, candidateRom.z64);
+        touched.push('items');
+      }
+
+      // Class definitions (direct z64 patch at 0x5DAD8)
+      if (dirty.classDefs && !nativePlan) {
+        OB64.serializeClassDefs(rom.classDefs, candidateRom.z64);
+        touched.push('classes');
+      }
+
+      // Neutral encounter pool at 0x141ED0 — outside CRC window, no recalc.
+      if (dirty.encounters) {
+        OB64.serializeNeutralEncounters(rom.neutralEncounters, candidateRom.z64);
+        touched.push('encounters');
+      }
+
+      // Creature drop table at 0x142258 — outside CRC window, no recalc.
+      if (dirty.creatureDrops) {
+        OB64.serializeCreatureDrops(rom.creatureDrops, candidateRom.z64);
+        touched.push('creature drops');
+      }
+
+      // Consumable master table at 0x645CC — inside CRC window.
+      if (dirty.consumables) {
+        OB64.serializeConsumables(rom.consumables, candidateRom.z64);
+        touched.push('consumables');
+      }
+
+      if (dirty.itemDescriptions) {
+        OB64.serializeItemDescriptions(rom.itemDescriptions, candidateRom.z64);
+        touched.push('item descriptions');
+      }
+      if (dirty.consumableDescriptions && !nativePlan) {
+        OB64.serializeConsumableDescriptions(
+          rom.consumableDescriptions,
+          candidateRom.z64
+        );
+        touched.push('consumable descriptions');
+      }
+      if (dirty.classDescriptions && !nativePlan) {
+        OB64.serializeClassDescriptions(rom.classDescriptions, candidateRom.z64);
+        touched.push('class descriptions');
+      }
+      if (dirty.actionDescriptions && !nativePlan) {
+        OB64.serializeActionDescriptions(rom.actionDescriptions, candidateRom.z64);
+        touched.push('action descriptions');
+      }
+
+      // Stat gates keep fitting streams in the retail slot and place only
+      // oversized streams in the bounded ROM-tail owner. The shared redirect
+      // is applied once after Scenario writes below.
+      if (dirty.statGates && !nativePlan) {
+        var statGateResult = OB64.statGateRelocation.apply(
+          statGatePlan,
+          candidateRom.z64
+        );
+        candidateRom.statGatePlan = statGatePlan;
+        touched.push(statGateResult.relocated
+          ? ('stat gates relocated (' + statGateResult.logicalStreamBytes +
+            ' logical bytes)')
+          : ('stat gates in retail slot (' +
+            statGateResult.logicalStreamBytes + ' logical bytes)'));
+      }
+
+      await paintRomExportProgress(exportProgress, 25, 'Applying Tools-tab patches');
+      // Tools-tab features (byte-level ROM patches, e.g. the Chaos Frame
+      // counter). applyDesired writes pending toggles into rom.z64 and
+      // restores originals for disabled ones; foreign-state features are
+      // skipped and reported.
+      var toolsCrc = false;
+      if (dirty.tools) {
+        toolsResult = OB64.tools.applyDesired(candidateRom,
+          nativePlan ? { excludeIds: OB64.nativeRebuild.migratedToolIds } : null);
+        if (toolsResult.skipped.length) {
+          showErrorModal(buildInfo.label + ' - Tool skipped — unrecognized bytes',
+            'These features could not be toggled because their ROM bytes ' +
+            'match neither the retail original nor this editor\'s build ' +
+            '(another patch may occupy them):\n\n  ' +
+            toolsResult.skipped.join('\n  '));
+        }
+        var toolValueByName = {};
+        var toolFeaturesForResult = OB64.tools.features();
+        for (var tv = 0; tv < toolFeaturesForResult.length; tv++) {
+          var toolResultFeature = toolFeaturesForResult[tv];
+          if (toolsResult.values[toolResultFeature.id] != null) {
+            toolValueByName[toolResultFeature.name] = toolsResult.values[toolResultFeature.id];
+          }
+        }
+        var toolParts = toolsResult.applied.map(function(name) {
+          return toolValueByName[name] == null ? name : name + ' set to ' + toolValueByName[name] + '%';
+        });
+        for (var tu = 0; tu < toolsResult.upgraded.length; tu++) {
+          toolParts.push(toolsResult.upgraded[tu] + ' updated');
+        }
+        for (var tc = 0; tc < toolsResult.updated.length; tc++) {
+          var updatedTool = toolsResult.updated[tc];
+          toolParts.push(updatedTool + ' set to ' + toolValueByName[updatedTool] + '%');
+        }
+        for (var tr = 0; tr < toolsResult.removed.length; tr++) {
+          toolParts.push(toolsResult.removed[tr] + ' removed');
+        }
+        if (toolParts.length) touched.push('tools: ' + toolParts.join(', '));
+        toolsCrc = toolsResult.crc;
+      }
+
+      await paintRomExportProgress(exportProgress, 36, 'Building shared runtime patches');
+      // Shops, per-scenario neutral rates, custom neutral squads, and weighted drops share the
+      // Squads loader, ROM-tail lane, and upper-RAM module. A Squads-only
+      // export retains its already-proven byte path.
+      var runtimeCrc = false;
+      if ((squadRuntimeDirty || legacyShopDirty || neutralRuntimeLegacyDirty) && OB64.squad) {
+        var ovs = squadOverridesForConflict;
+        var hasSharedRuntime = shopOverridesForRuntime.length ||
+          scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+          customNeutralSquadsForRuntime.length;
+        if (hasSharedRuntime) {
+          var rtw = OB64.runtimeOverrides.buildRuntimeOverrideWrites(
+            ovs, shopOverridesForRuntime, rom.shops.length, candidateRom, {
+              scenarioRateOverrides: scenarioRateOverridesForRuntime,
+              weightedDropOverrides: weightedDropOverridesForRuntime,
+              customNeutralSquads: customNeutralSquadsForRuntime
+            });
+          if (nativePlan) OB64.nativeRebuild.detachRuntimePlan(rtw);
+          for (var rwi = 0; rwi < rtw.writes.length; rwi++) {
+            candidateRom.z64.set(rtw.writes[rwi].bytes, rtw.writes[rwi].offset);
+          }
+          runtimeWritePlan = rtw;
+          runtimeMode = 'write';
+          runtimeCrc = rtw.crcWindow;
+          if (legacyShopDirty) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
+          if (dirty.neutralRuntime) {
+            touched.push('scenario rates (' + scenarioRateOverridesForRuntime.length + ')');
+            touched.push('weighted drop classes (' + weightedDropOverridesForRuntime.length + ')');
+            touched.push('custom neutral squads (' + customNeutralSquadsForRuntime.length + ')');
+          }
+          if (squadRuntimeDirty && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
+          if (squadRuntimeDirty) {
+            var sharedUnmapped = OB64.squadCountUnmapped(rom);
+            if (sharedUnmapped) {
+              showErrorModal(buildInfo.label + ' - Some overrides skipped',
+                sharedUnmapped + ' squad override(s) are in scenarios whose scenario gate ' +
+                'is not mapped yet, so they were not written. They remain saved in the patch.');
+            }
+          }
+        } else if (ovs.length) {
+          // Last shared override removed while squads remain: restore every
+          // other hook, then install the proven Squads-only module.
+          if (OB64.runtimeOverrides) {
+            OB64.runtimeOverrides.restoreShopHook(candidateRom.z64, candidateRom);
+            OB64.runtimeOverrides.restoreNeutralHooks(candidateRom.z64, candidateRom);
+          }
+          var sqw = OB64.squad.buildSquadOverrideWrites(ovs, candidateRom);
+          for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
+            candidateRom.z64.set(sqw.writes[sqi].bytes, sqw.writes[sqi].offset);
+          }
+          runtimeWritePlan = sqw;
+          runtimeMode = 'write';
+          if (OB64.runtimeOverrides) {
+            var restoredShopLayout = OB64.runtimeOverrides.patchLayout(candidateRom);
+            runtimeWritePlan = Object.assign({}, sqw, {
+              writes: sqw.writes.concat([
+                {
+                  offset: restoredShopLayout.SHOP_HOOK_ROM,
+                  label: 'restored retail shop source-list hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.SHOP_ORIGINAL_WORDS
+                  )
+                },
+                {
+                  offset: restoredShopLayout.RATE_HOOK_ROM,
+                  label: 'restored retail neutral-rate RNG hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.RATE_ORIGINAL_WORDS
+                  )
+                },
+                {
+                  offset: restoredShopLayout.DROP_HOOK_ROM,
+                  label: 'restored retail creature-drop RNG hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.DROP_ORIGINAL_WORDS
+                  )
+                }
+              ])
+            });
+          }
+          if (nativePlan) {
+            OB64.nativeRebuild.detachRuntimePlan(runtimeWritePlan);
+            for (var detachedIndex = 0;
+                detachedIndex < runtimeWritePlan.writes.length; detachedIndex++) {
+              candidateRom.z64.set(runtimeWritePlan.writes[detachedIndex].bytes,
+                runtimeWritePlan.writes[detachedIndex].offset);
+            }
+          }
+          runtimeCrc = sqw.crcWindow;
+          if (legacyShopDirty) touched.push('runtime shops removed');
+          if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
+          if (squadRuntimeDirty) touched.push('squad overrides (' + ovs.length + ')');
+          var unmapped = OB64.squadCountUnmapped(rom);
+          if (unmapped) {
+            showErrorModal(buildInfo.label + ' - Some overrides skipped',
+              unmapped + ' squad override(s) are in scenarios whose scenario gate ' +
+              'is not mapped yet, so they were not written. They remain saved in the patch.');
+          }
+        } else {
+          // Last shared override removed: restore both hook sites and the
+          // canonical loader/cave/tail allocation.
+          if (OB64.runtimeOverrides) OB64.runtimeOverrides.restoreAll(candidateRom.z64, candidateRom);
+          else OB64.squad.restoreVanilla(candidateRom.z64, candidateRom);
+          runtimeMode = 'restore';
+          runtimeCrc = true;
+          if (legacyShopDirty) touched.push('runtime shops removed');
+          if (squadRuntimeDirty) touched.push('squad overrides removed');
+          if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
+        }
+      }
+
+      await paintRomExportProgress(exportProgress, 49, 'Rebuilding edited scenario archives');
+      // Scenario tab edits. Unsupported authoring cases, such as towns with no
+      // scincsv descriptor row or add-squad donor collisions, block export with
+      // an actionable reason from the Scenario module. Planning already wrote
+      // the detached archive candidate; publish its result here.
+      var scenarioCrc = false;
+      if (scenarioResult && scenarioResult.touched.length) {
+        touched.push('scenarios: ' + scenarioResult.touched.join(', '));
+      }
+
+      if (sourceRedirectPlan) {
+        sourceRedirectResult = OB64.sourceRedirect.apply(
+          candidateRom.z64,
+          sourceRedirectPlan
+        );
+        scenarioCrc = !!sourceRedirectResult.crc;
+        if (sourceRedirectResult.changed) {
+          touched.push(sourceRedirectResult.entryCount
+            ? ('shared PI-source redirect (' + sourceRedirectResult.entryCount +
+              ' entries)')
+            : 'shared PI-source redirect removed');
+        }
+      }
+
+      await paintRomExportProgress(exportProgress, 59, 'Applying code and animation overrides');
+      var effectWrites = [];
+      if (effectTransaction) {
+        effectWrites = OB64.consumableEffects.applyTransaction(
+          effectTransaction,
+          candidateRom.z64,
+          rom.consumableEffects
+        );
+        if (effectWrites.length) {
+          touched.push('consumable effects (' +
+            effectTransaction.modelChanges.length + ' model' +
+            (effectTransaction.modelChanges.length === 1 ? '' : 's') + ')');
+        }
+      }
+
+      // Recheck the complete owned lane immediately before its only writes.
+      var selectorResult = OB64.combatAnimationOverrides.applyPlan(candidateRom, selectorPlan);
+      if (selectorResult.touched.length) {
+        touched.push('attack animation overrides (' +
+          rom.combatAnimationOverrides.desired.length + ' / ' +
+          OB64.combatAnimationOverrides.capacity + ')');
+      }
+
+      if (artPlan) {
+        artResult = OB64.art.applyExport(rom, candidateRom, artPlan);
+        if (artResult) {
+          artTouchedIndex = touched.length;
+          touched.push('art: ' + artResult.summary);
+          for (var artLogIndex = 0; artLogIndex < artResult.log.length; artLogIndex++) {
+            console.info('[art export] ' + artResult.log[artLogIndex]);
+          }
+        }
+      }
+
+      var neutralCrc = false;
+      if (classPlan) {
+        classResult = OB64.nativeClasses.apply(candidateRom, classPlan);
+        OB64.nativeClasses.validateApplied(candidateRom, classPlan);
+        if (classResult.writes) touched.push('rebuilt Classes (' + classResult.owners.join(', ') + ')');
+      }
+      if (nativeNeutralPlan) {
+        OB64.nativeNeutral.apply(candidateRom, nativeNeutralPlan);
+        OB64.nativeNeutral.validateApplied(candidateRom, nativeNeutralPlan);
+        neutralCrc = nativeNeutralPlan.crc;
+        touched.push('native neutral encounters (' + nativeNeutralPlan.counts.rates + ' scenario rates, ' +
+          nativeNeutralPlan.counts.drops + ' weighted drops, ' + nativeNeutralPlan.counts.squads + ' Neutral Squads)');
+      }
+      if (nativePlan) {
+        nativeResult = OB64.nativeRebuild.applyPlan(
+          nativePlan, candidateRom, runtimeWritePlan);
+        var nativeParts = [];
+        if (nativeResult.experiencePercent !== 100) {
+          nativeParts.push('Experience Scale ' + nativeResult.experiencePercent + '%');
+        }
+        if (nativePlan.selected['cf-army-counter']) nativeParts.push('Chaos Frame Counter');
+        if (nativePlan.selected['character-card-luck']) nativeParts.push('Character Card Luck');
+        if (nativePlan.selected['squad-menu-alignment']) nativeParts.push('Squad Menu Alignment');
+        if (nativeResult.shopSelected) nativeParts.push('Shop memberships');
+        nativeParts.push('Consumable effects and descriptions');
+        if (nativeParts.length) touched.push('native owners: ' + nativeParts.join(', '));
+      }
+
+      // CRC must be recalculated whenever we patch the CIC-6102 window
+      // (z64 0x1000-0x101000). Encounter/drop tables and stat gates live
+      // past that window; items/classes/
+      // consumables, Tools-tab features, and the shared runtime bootstrap do not.
+      await paintRomExportProgress(exportProgress, 66, 'Finalizing the N64 boot checksum');
+      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
+        toolsCrc || runtimeCrc || scenarioCrc || neutralCrc || effectWrites.length || selectorResult.crc ||
+        (artResult && artResult.crc) || (nativeResult && nativeResult.crc) ||
+        (classResult && classResult.crc));
+      if (crcChanged) {
+        OB64.recalcN64CRC(candidateRom.z64);
+      }
+      if (artResult) {
+        OB64.art.finalizeExportSummary(artResult, candidateRom.z64);
+        touched[artTouchedIndex] = 'art: ' + artResult.summary;
+      }
+
+      var finalLedgerOwners = effectOwners.slice();
+      if (effectTransaction) {
+        finalLedgerOwners.push(effectTransaction.deltaOwner);
+        if (effectTransaction.textOwner) {
+          finalLedgerOwners.push(effectTransaction.textOwner);
+        }
+      }
+
+      var validationOptions = {
+        buildMode: buildMode,
+        buildModeLabel: buildInfo.label,
+        sourceRom: exportRom,
+        candidateRom: candidateRom,
+        dirty: exportDirty,
+        touched: touched,
+        owners: finalLedgerOwners,
+        scenarioResult: scenarioResult,
+        statGatePlan: statGatePlan,
+        sourceRedirectPlan: sourceRedirectPlan,
+        runtimeWritePlan: runtimeWritePlan,
+        runtimeMode: runtimeMode,
+        shopOverrides: shopOverridesForRuntime,
+        scenarioRateOverrides: scenarioRateOverridesForRuntime,
+        weightedDropOverrides: weightedDropOverridesForRuntime,
+        customNeutralSquads: customNeutralSquadsForRuntime,
+        toolsResult: toolsResult,
+        nativePlan: nativePlan,
+        nativeResult: nativeResult,
+        classPlan: classPlan,
+        selectorPlan: selectorPlan,
+        effectTransaction: effectTransaction,
+        artPlan: artPlan,
+        artResult: artResult,
+        cutscenePlan: cutscenePlan,
+      };
+      await paintRomExportProgress(exportProgress, 70, 'Starting finished-ROM safety tests');
+      var validationReport;
+      if (OB64.romExportValidator.validateAsync) {
+        validationReport = await OB64.romExportValidator.validateAsync(
+          validationOptions,
+          function(progress) {
+            var completed = Math.max(0, progress.index - (progress.complete ? 0 : 1));
+            var fraction = progress.total ? completed / progress.total : 0;
+            exportProgress.update(
+              progress.complete ? progress.name : ('Testing: ' + progress.name),
+              70 + Math.round(fraction * 25)
+            );
+          }
+        );
+      } else {
+        validationReport = OB64.romExportValidator.validate(validationOptions);
+      }
+      if (!validationReport.ok) {
+        statusBar.textContent = buildInfo.label + ' blocked: ' + validationReport.errors.length +
+          ' ROM validation error' + (validationReport.errors.length === 1 ? '' : 's') + '.';
+        exportProgress.close();
+        var validationActions = null;
+        if (buildMode === 'patch') {
+          validationActions = {
+            onDownloadAnyway: function() {
+              if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) {
+                throw new Error('The loaded ROM changed after validation. Start a new export instead.');
+              }
+              var unsafeName = OB64.exportROM(candidateRom);
+              statusBar.textContent = buildInfo.label +
+                ' unvalidated download initiated as ' + unsafeName +
+                '. The failed candidate was not adopted by the editor.';
+              return unsafeName;
+            },
+          };
+        }
+        showRomValidationModal(validationReport, validationActions);
+        return;
+      }
+
+      if (touched.length === 0 && buildMode === 'patch') {
+        statusBar.textContent = buildInfo.label + ' has nothing to export — no edits made yet.';
+        return;
+      }
+
+      await paintRomExportProgress(exportProgress, 97, 'Preparing the validated ROM download');
+      var exportedName;
+      var provenance = null;
+      var exportFilenameBase = buildMode === 'rebuild' ? 'ob64_rebuilt' : 'ob64_modified';
+      if (effectTransaction) {
+        OB64.consumableEffects.validateFinalAfterImage(
+          effectTransaction,
+          candidateRom.z64,
+          rom.consumableEffects
+        );
+        var crcVerification = OB64.consumableEffects.verifyIndependentCrc(candidateRom.z64);
+        if (!crcVerification.ok) {
+          throw new Error('Independent CIC-6102 verification rejected the final candidate.');
+        }
+        var candidateOrder = rom.exportByteOrder || rom.byteOrder || 'v64';
+        var candidateExtension = OB64.romByteOrderExtension(candidateOrder);
+        var candidateFilename = exportFilenameBase + '.' + candidateExtension;
+        var candidatePackage =
+          OB64.consumableEffects.createVerifiedCandidatePackage(
+            exportRom,
+            candidateRom,
+            rom.consumableEffects,
+            effectTransaction,
+            candidateFilename
+          );
+        provenance = await OB64.consumableEffects.buildProvenance(
+          candidatePackage,
+          finalLedgerOwners,
+          exportDirty
+        );
+        if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
+        if (exportRom.consumableEffects.generation !== effectTransaction.baseGeneration) {
+          throw new Error('Consumable effect state changed while the final candidate was being verified.');
+        }
+        OB64.consumableEffects.finalizeVerifiedCandidatePackage(
+          candidatePackage,
+          provenance
+        );
+        var downloadReceipt = OB64.consumableEffects.downloadRomCandidate(
+          candidatePackage,
+          provenance
+        );
+        exportedName = downloadReceipt.candidateFilename;
+      } else {
+        var ordinaryLedger = null;
+        if (rom.consumableEffects && rom.consumableEffects.identity &&
+            rom.consumableEffects.identity.eligible) {
+          var ordinaryBytes = OB64.consumableEffects.serializeCandidate(candidateRom);
+          var ordinaryOrder = rom.exportByteOrder || rom.byteOrder || 'v64';
+          var ordinaryFilename = exportFilenameBase + '.' +
+            OB64.romByteOrderExtension(ordinaryOrder);
+          ordinaryLedger = await OB64.consumableEffects.prepareOrdinaryExport(
+            candidateRom,
+            rom.consumableEffects,
+            candidateRom.z64,
+            ordinaryBytes,
+            ordinaryFilename,
+            finalLedgerOwners
+          );
+          if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
+        }
+        exportedName = OB64.exportROM(candidateRom,
+          { filenameBase: exportFilenameBase });
+        // The validated receipt is intentionally not adopted. Both build modes
+        // must remain able to consume the same in-memory edit model.
+      }
+      OB64.nativeRebuild.markExport(exportRom, {
+        outputFilename: exportedName,
+        dirty: Object.assign({}, exportDirty),
+        ownerIds: finalLedgerOwners.map(function(owner) { return owner.id; }),
+        migratedCombination: nativeResult ? nativeResult.acceptedMatrixId : null,
+      });
+      await paintRomExportProgress(exportProgress, 100, 'ROM download started');
+      if (artResult) console.info('[art export] ' + artResult.summary);
+      var exportMsg = buildInfo.label + ' export initiated as ' + exportedName + ' ('
+        + touched.join(', ') + ') | ' + changes + ' staged changes exported';
+      // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
+      // native saves look gone. Surface the recovery recipe instead of a silent surprise.
+      if (crcChanged) {
+        exportMsg += ' | CRC changed: Project64 will use a NEW save folder for this ROM'
+          + ' — reseed it (tools/seed_pj64_save.py) or copy your .sra into the new folder';
+      }
+      // Preserve the staged model and dirty categories after every download.
+      // A mode switch therefore rebuilds the same edits through the other path.
+      if (activeTab === 'tools') renderTab('tools');
+      if (activeTab === 'consumables') renderTab('consumables');
+      if (activeTab === 'art') renderTab('art');
+      if (activeTab === 'sprites') renderTab('sprites');
+      if (activeTab === 'cutscenes') renderTab('cutscenes');
+      statusBar.textContent = exportMsg;
+    } catch(err) {
+      if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
+      statusBar.textContent = buildInfo.label + ' export error: ' + err.message;
+      exportProgress.close();
+      if (OB64.romExportValidator && OB64.romExportValidator.unexpectedReport) {
+        showRomValidationModal(
+          OB64.romExportValidator.unexpectedReport(
+            err, 'candidate-build', buildMode, buildInfo.label)
+        );
+      } else {
+        showErrorModal(buildInfo.label + ' failed', err.message);
+      }
+      console.error(err);
+    } finally {
+      exportProgress.close();
+      fileInput.disabled = false;
+      setRomMutationControlsEnabled(
+        !!(rom && rom.compatibility && rom.compatibility.canEdit),
+        !!(rom && rom.compatibility && rom.compatibility.canExport)
+      );
+      if (exportContent && romLoadGeneration === exportLoadGeneration &&
+          rom === exportRom) {
+        setRomEditingContentAvailable();
+      }
+    }
+  });
+
+  // ============================================================
+  // Project - Save / Load
+  // ============================================================
+  function consumableEffectSummaryParts(payload) {
+    payload = payload || {};
+    var out = [];
+    var sharedTargets = OB64.consumableEffects.SHARED_TARGETS;
+    function name(id) {
+      var record = rom && rom.consumables && rom.consumables[id];
+      return record && record.name
+        ? record.name
+        : (OB64.consumableName ? OB64.consumableName(id) : 'Consumable ' + id);
+    }
+    function signed(value) { return Number(value) > 0 ? '+' + value : String(value); }
+    function range(entry) {
+      return entry ? signed(entry.deltaMin) + '..' + signed(entry.deltaMax) : '';
+    }
+    ['1', '2', '3', '4', '5'].forEach(function(projectKey) {
+      if (!payload[projectKey]) return;
+      var modelKey = OB64.consumableEffects.ITEM_TO_MODEL[Number(projectKey)];
+      var def = OB64.consumableEffects.MODEL_DEFS[modelKey];
+      var requested = payload[projectKey].magnitude;
+      var imported = rom && rom.consumableEffects &&
+        rom.consumableEffects.importedModels &&
+        rom.consumableEffects.importedModels[modelKey];
+      var baseline = imported ? imported.magnitude : def.vanillaMagnitude;
+      var status = OB64.consumableEffects.magnitudeStatus(modelKey, requested);
+      var detail = name(Number(projectKey)) + ' (ID ' + projectKey + ') magnitude ' +
+        baseline + ' -> ' + requested + ' (retail ' + def.vanillaMagnitude +
+        '; target ' + def.target + '; ' + status.label;
+      if (def.healingDescription) {
+        detail += '; prose ' + status.padded;
+      }
+      if (def.pairAtomic) detail += '; one value/two equal words';
+      out.push(detail + ')');
+    });
+    if (payload['10']) out.push(name(10) + ' effect ' + range(payload['10']));
+    if (payload['11-16']) {
+      out.push('Shared Stat Boosters (IDs 11\u201316: ' +
+        [11, 12, 13, 14, 15, 16].map(function(id) {
+          return name(id) + ' -> ' + sharedTargets[id].split(' ')[0];
+        }).join(', ') + ') effect ' + range(payload['11-16']));
+    }
+    if (payload['17']) out.push(name(17) + ' effect ' + range(payload['17']));
+    if (payload['18']) out.push(name(18) + ' effect ' + range(payload['18']));
+    if (payload['19']) out.push(name(19) + ' effect ' + range(payload['19']));
+    return out;
+  }
+
+  btnSavePatch.addEventListener('click', function() {
+    if (!rom) return;
+    try {
+      var patch = OB64.patch.collectPatch(rom);
+      var shopsN = patch.summary.shops_modified;
+      var pricesN = patch.summary.item_prices_modified;
+      var itemsN = patch.summary.item_stats_modified || 0;
+      var classesN = patch.summary.class_defs_modified || 0;
+      var neutralSlicesN = patch.summary.neutral_slices_modified || 0;
+      var terrainRatesN = patch.summary.terrain_rates_modified || 0;
+      var scenarioRatesN = patch.summary.neutral_scenario_rates_modified || 0;
+      var customNeutralSquadsN = patch.summary.custom_neutral_squads_modified || 0;
+      var creatureDropsN = patch.summary.creature_drop_records_modified || 0;
+      var weightedDropRatesN = patch.summary.weighted_drop_classes_modified || 0;
+      var consumablesN = patch.summary.consumables_modified || 0;
+      var itemDescriptionsN = patch.summary.item_descriptions_modified || 0;
+      var consumableDescriptionsN = patch.summary.consumable_descriptions_modified || 0;
+      var classDescriptionsN = patch.summary.class_descriptions_modified || 0;
+      var actionDescriptionsN = patch.summary.action_descriptions_modified || 0;
+      var statGatesN = patch.summary.stat_gates_modified || 0;
+      var familiesN = patch.summary.class_families_modified || 0;
+      var globalRateN = patch.summary.neutral_global_rate_modified || 0;
+      var toolsN = patch.summary.tools_modified || 0;
+      var nativeOwnersN = patch.summary.native_owners_selected || 0;
+      var squadsN = patch.summary.squad_overrides_modified || 0;
+      var scenarioN = patch.summary.scenario_modified || 0;
+      var cutscenesN = patch.summary.cutscenes_modified || 0;
+      var consumableEffectsN = patch.summary.consumable_effect_models_modified || 0;
+      var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
+      var avatarArtN = patch.summary.avatar_art_modified || 0;
+      var iconArtN = patch.summary.item_icon_art_modified || 0;
+      var combatSpriteArtN = patch.summary.combat_sprite_art_modified || 0;
+      var armySpriteArtN = patch.summary.army_sprite_art_modified || 0;
+      var separatedAnimationN =
+        patch.summary.separated_animation_sequences_modified || 0;
+      var spriteLibraryN = patch.summary.sprite_library_assets || 0;
+      var initialBuildMode = rom.nativeRebuild
+        ? rom.nativeRebuild.initialBuildMode : 'patch';
+      var buildModeChanged = patch.build_mode !== initialBuildMode;
+      if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
+          terrainRatesN + scenarioRatesN + customNeutralSquadsN +
+          creatureDropsN + weightedDropRatesN + consumablesN +
+          itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
+          actionDescriptionsN + statGatesN + familiesN +
+          globalRateN + toolsN + nativeOwnersN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
+          avatarArtN + iconArtN + combatSpriteArtN + armySpriteArtN +
+          separatedAnimationN +
+          spriteLibraryN === 0 && !buildModeChanged) {
+        statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
+          (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
+        return;
+      }
+      OB64.patch.downloadPatch(patch);
+      lastProjectFilename = 'ob64_project_' + patch.created_at.replace(/[:.]/g, '-') + '.json';
+      updatePatchChip();
+      var parts = [OB64.buildModes.info(patch.build_mode).label];
+      if (shopsN) parts.push(shopsN + ' shop' + (shopsN === 1 ? '' : 's'));
+      if (pricesN) parts.push(pricesN + ' price' + (pricesN === 1 ? '' : 's'));
+      if (itemsN) parts.push(itemsN + ' item' + (itemsN === 1 ? '' : 's'));
+      if (classesN) parts.push(classesN + ' class' + (classesN === 1 ? '' : 'es'));
+      if (neutralSlicesN) parts.push(neutralSlicesN + ' encounter slice' + (neutralSlicesN === 1 ? '' : 's'));
+      if (terrainRatesN) parts.push(terrainRatesN + ' terrain rate' + (terrainRatesN === 1 ? '' : 's'));
+      if (scenarioRatesN) parts.push(scenarioRatesN + ' scenario rate override' + (scenarioRatesN === 1 ? '' : 's'));
+      if (customNeutralSquadsN) parts.push(customNeutralSquadsN + ' custom neutral squad' + (customNeutralSquadsN === 1 ? '' : 's'));
+      if (creatureDropsN) parts.push(creatureDropsN + ' creature drop record' + (creatureDropsN === 1 ? '' : 's'));
+      if (weightedDropRatesN) parts.push(weightedDropRatesN + ' weighted drop class' + (weightedDropRatesN === 1 ? '' : 'es'));
+      if (consumablesN) parts.push(consumablesN + ' consumable' + (consumablesN === 1 ? '' : 's'));
+      if (itemDescriptionsN) parts.push(itemDescriptionsN + ' item description' + (itemDescriptionsN === 1 ? '' : 's'));
+      if (consumableDescriptionsN) parts.push(consumableDescriptionsN + ' consumable description' + (consumableDescriptionsN === 1 ? '' : 's'));
+      if (classDescriptionsN) parts.push(classDescriptionsN + ' class description' + (classDescriptionsN === 1 ? '' : 's'));
+      if (actionDescriptionsN) parts.push(actionDescriptionsN + ' action description' + (actionDescriptionsN === 1 ? '' : 's'));
+      if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
+      if (familiesN) parts.push('class families');
+      if (globalRateN) parts.push('global encounter roll');
+      if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
+      if (nativeOwnersN) parts.push(nativeOwnersN + ' native owner' +
+        (nativeOwnersN === 1 ? '' : 's'));
+      if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
+      if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
+      if (cutscenesN) parts.push(cutscenesN + ' edited cutscene' + (cutscenesN === 1 ? '' : 's'));
+      if (selectorOverridesN) parts.push(selectorOverridesN + ' attack animation override change' + (selectorOverridesN === 1 ? '' : 's'));
+      if (avatarArtN) parts.push(avatarArtN + ' detached avatar' + (avatarArtN === 1 ? '' : 's'));
+      if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
+      if (combatSpriteArtN) parts.push(combatSpriteArtN + ' edited combat-sprite source' +
+        (combatSpriteArtN === 1 ? '' : 's'));
+      if (armySpriteArtN) parts.push(armySpriteArtN + ' edited Army sprite' +
+        (armySpriteArtN === 1 ? '' : 's'));
+      if (separatedAnimationN) parts.push(separatedAnimationN +
+        ' separated animation sequence' + (separatedAnimationN === 1 ? '' : 's'));
+      if (spriteLibraryN) parts.push(spriteLibraryN +
+        ' Sprite Editor asset' + (spriteLibraryN === 1 ? '' : 's'));
+      parts = parts.concat(consumableEffectSummaryParts(
+        patch.patches && patch.patches.consumableEffects
+      ));
+      statusBar.textContent = 'Project saved (' + parts.join(', ') + ' changed).' +
+        (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
+    } catch (err) {
+      statusBar.textContent = 'Save Project failed: ' + err.message;
+      console.error(err);
+    }
+  });
+
+  patchFileInput.addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file || !rom) return;
+    var projectRom = rom;
+    var projectLoadGeneration = romLoadGeneration;
+    var reader = new FileReader();
+    reader.onload = async function(ev) {
+      try {
+        var patch = OB64.patch.parsePatchFile(ev.target.result);
+        var preparedImports = {};
+        if (patch.patches && patch.patches.cutscenes) {
+          statusBar.textContent = 'Verifying Cutscene Project sources…';
+          preparedImports.cutscenes = await OB64.cutsceneProject.prepareImport(
+            projectRom, patch.patches.cutscenes);
+        }
+        if (romLoadGeneration !== projectLoadGeneration || rom !== projectRom) {
+          throw new Error('The loaded ROM changed while the Project was being verified. Load the Project again.');
+        }
+        var priorBuildMode = currentBuildMode();
+        var result = OB64.patch.applyPatch(rom, patch, dirty, preparedImports);
+        // Count applied changes so status + export modal show the right counts
+        changes += result.applied.shops + result.applied.prices +
+          (result.applied.itemStats || 0) + (result.applied.classDefs || 0) +
+          (result.applied.neutralSlices || 0) + (result.applied.terrainRates || 0) +
+          (result.applied.neutralScenarioRates || 0) +
+          (result.applied.customNeutralSquads || 0) +
+          (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
+          (result.applied.weightedDropRates || 0) +
+          (result.applied.itemDescriptions || 0) +
+          (result.applied.consumableDescriptions || 0) +
+          (result.applied.classDescriptions || 0) +
+          (result.applied.actionDescriptions || 0) +
+          (result.applied.statGates || 0) +
+          (result.applied.classFamilies || 0) +
+          (result.applied.neutralGlobalRate || 0) +
+          (result.applied.tools || 0) +
+          (result.applied.squadOverrides || 0) +
+          (result.applied.scenario || 0) +
+          (result.applied.cutscenes || 0) +
+          (result.applied.consumableEffects || 0) +
+          (result.applied.combatAnimationOverrides || 0) +
+          (result.applied.art || 0);
+        if (result.buildMode !== priorBuildMode) changes++;
+        lastProjectFilename = file.name;
+        updatePatchChip();
+        syncBuildModeControl();
+        renderTab(activeTab);
+
+        var loadedParts = [result.buildModeLabel];
+        if (result.applied.shops) loadedParts.push(result.applied.shops + ' shop' + (result.applied.shops === 1 ? '' : 's'));
+        if (result.applied.prices) loadedParts.push(result.applied.prices + ' price' + (result.applied.prices === 1 ? '' : 's'));
+        if (result.applied.itemStats) loadedParts.push(result.applied.itemStats + ' item' + (result.applied.itemStats === 1 ? '' : 's'));
+        if (result.applied.classDefs) loadedParts.push(result.applied.classDefs + ' class' + (result.applied.classDefs === 1 ? '' : 'es'));
+        if (result.applied.neutralSlices) loadedParts.push(result.applied.neutralSlices + ' encounter slice' + (result.applied.neutralSlices === 1 ? '' : 's'));
+        if (result.applied.terrainRates) loadedParts.push(result.applied.terrainRates + ' terrain rate' + (result.applied.terrainRates === 1 ? '' : 's'));
+        if (result.applied.neutralScenarioRates) loadedParts.push(result.applied.neutralScenarioRates + ' scenario rate override' + (result.applied.neutralScenarioRates === 1 ? '' : 's'));
+        if (result.applied.customNeutralSquads) loadedParts.push(result.applied.customNeutralSquads + ' custom neutral squad' + (result.applied.customNeutralSquads === 1 ? '' : 's'));
+        if (result.applied.creatureDrops) loadedParts.push(result.applied.creatureDrops + ' creature drop record' + (result.applied.creatureDrops === 1 ? '' : 's'));
+        if (result.applied.weightedDropRates) loadedParts.push(result.applied.weightedDropRates + ' weighted drop class' + (result.applied.weightedDropRates === 1 ? '' : 'es'));
+        if (result.applied.consumables) loadedParts.push(result.applied.consumables + ' consumable' + (result.applied.consumables === 1 ? '' : 's'));
+        if (result.applied.itemDescriptions) loadedParts.push(result.applied.itemDescriptions + ' item description' + (result.applied.itemDescriptions === 1 ? '' : 's'));
+        if (result.applied.consumableDescriptions) loadedParts.push(result.applied.consumableDescriptions + ' consumable description' + (result.applied.consumableDescriptions === 1 ? '' : 's'));
+        if (result.applied.classDescriptions) loadedParts.push(result.applied.classDescriptions + ' class description' + (result.applied.classDescriptions === 1 ? '' : 's'));
+        if (result.applied.actionDescriptions) loadedParts.push(result.applied.actionDescriptions + ' action description' + (result.applied.actionDescriptions === 1 ? '' : 's'));
+        if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
+        if (result.applied.classFamilies) loadedParts.push('class families');
+        if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
+        if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
+        if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
+        if (result.applied.scenario) loadedParts.push(result.applied.scenario + ' scenario change' + (result.applied.scenario === 1 ? '' : 's'));
+        if (result.applied.cutscenes) loadedParts.push(result.applied.cutscenes + ' edited cutscene' + (result.applied.cutscenes === 1 ? '' : 's'));
+        if (result.applied.combatAnimationOverrides) loadedParts.push(result.applied.combatAnimationOverrides + ' attack animation override change' + (result.applied.combatAnimationOverrides === 1 ? '' : 's'));
+        if (result.applied.art) loadedParts.push(result.applied.art + ' art asset' + (result.applied.art === 1 ? '' : 's'));
+        if (result.applied.spriteLibrary) loadedParts.push(
+          result.applied.spriteLibrary + ' Sprite Editor asset' +
+          (result.applied.spriteLibrary === 1 ? '' : 's'));
+        if (result.applied.consumableEffects) {
+          loadedParts = loadedParts.concat(consumableEffectSummaryParts(
+            patch.patches && patch.patches.consumableEffects
+          ));
+        }
+        var msg = 'Project loaded: ' + file.name + ' (' +
+          loadedParts.join(', ') + ').';
+        if (result.warnings.length) {
+          console.warn('[project] warnings:', result.warnings);
+          msg += ' (' + result.warnings.length + ' warning' + (result.warnings.length === 1 ? '' : 's') + ' — see console)';
+        }
+        statusBar.textContent = msg;
+      } catch (err) {
+        statusBar.textContent = 'Load Project failed: ' + err.message;
+        console.error(err);
+      } finally {
+        // Clear the input so re-loading the same filename re-fires change
+        patchFileInput.value = '';
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  function updatePatchChip() {
+    if (!patchChip) return;
+    if (lastProjectFilename) {
+      patchChip.textContent = 'project: ' + lastProjectFilename;
+      patchChip.hidden = false;
+    } else {
+      patchChip.textContent = '';
+      patchChip.hidden = true;
+    }
+  }
+
+  function updateRomCompatibilityButton(report) {
+    if (!btnRomCompatibility) return;
+    btnRomCompatibility.hidden = !report;
+    btnRomCompatibility.disabled = !report;
+    btnRomCompatibility.classList.remove('is-warning', 'is-blocked', 'is-verified');
+    if (!report) {
+      btnRomCompatibility.textContent = 'ROM Compatibility';
+      return;
+    }
+    var label = report.overall === 'verified'
+      ? 'Verified'
+      : (report.overall === 'blocked' ? 'Blocked' : 'Warning');
+    btnRomCompatibility.textContent = 'ROM Compatibility: ' + label;
+    btnRomCompatibility.classList.add('is-' + report.overall);
+  }
+
+  function romCompatibilityFilename(report) {
+    var hash = report && report.source && report.source.normalizedSha256 || 'unknown';
+    return 'ob64-rom-compatibility-' + hash.slice(0, 12).toLowerCase() + '.json';
+  }
+
+  function downloadRomCompatibilityReport(report) {
+    var blob = new Blob([JSON.stringify(report, null, 2) + '\n'], {
+      type: 'application/json'
+    });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = romCompatibilityFilename(report);
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+    return link.download;
+  }
+
+  function showRomCompatibilityModal(report) {
+    if (!report) return;
+    var previous = document.querySelector('.rom-compatibility-overlay');
+    if (previous && previous.parentNode) previous.parentNode.removeChild(previous);
+
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay rom-compatibility-overlay';
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-validation-modal rom-compatibility-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    modal.setAttribute('aria-labelledby', 'rom-compatibility-title');
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var title = document.createElement('h2');
+    title.id = 'rom-compatibility-title';
+    title.textContent = report.overall === 'verified'
+      ? 'ROM Compatibility Verified'
+      : (report.overall === 'blocked' ? 'ROM Loaded for Diagnosis' : 'ROM Compatibility Warning');
+    header.appendChild(title);
+    var closeX = document.createElement('button');
+    closeX.type = 'button';
+    closeX.className = 'error-modal-close';
+    closeX.setAttribute('aria-label', 'Close ROM compatibility report');
+    closeX.textContent = '×';
+    closeX.addEventListener('click', close);
+    header.appendChild(closeX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-validation-body rom-compatibility-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-validation-intro';
+    intro.textContent = report.summary;
+    body.appendChild(intro);
+
+    var identity = document.createElement('dl');
+    identity.className = 'rom-compatibility-identity';
+    [
+      ['Classification', report.classification],
+      ['Selected layout', report.source.selectedLayout || 'None'],
+      ['Header revision', report.source.headerRevision == null ? 'Unknown' : String(report.source.headerRevision)],
+      ['Byte order', report.source.byteOrder],
+      ['ROM size', Number(report.source.size || 0).toLocaleString() + ' bytes'],
+      ['Normalized SHA-256', report.source.normalizedSha256 || 'Unavailable'],
+      ['Editing', report.canEdit ? 'Enabled for readable systems' : 'Disabled'],
+      ['Export', report.canExport ? 'Enabled with per-feature validation' : 'Disabled']
+    ].forEach(function(pair) {
+      var dt = document.createElement('dt'); dt.textContent = pair[0];
+      var dd = document.createElement('dd'); dd.textContent = pair[1];
+      identity.appendChild(dt); identity.appendChild(dd);
+    });
+    body.appendChild(identity);
+
+    if (report.reasons && report.reasons.length) {
+      var runtime = document.createElement('section');
+      runtime.className = 'rom-compatibility-runtime';
+      var runtimeTitle = document.createElement('h3');
+      runtimeTitle.textContent = 'Why this ROM may not work';
+      runtime.appendChild(runtimeTitle);
+      var runtimeList = document.createElement('ul');
+      report.reasons.forEach(function(foundReason) {
+        var runtimeItem = document.createElement('li');
+        runtimeItem.textContent = foundReason;
+        runtimeList.appendChild(runtimeItem);
+      });
+      runtime.appendChild(runtimeList);
+      body.appendChild(runtime);
+    }
+
+    var list = document.createElement('div');
+    list.className = 'rom-validation-error-list rom-compatibility-list';
+    report.components.forEach(function(found) {
+      var card = document.createElement('section');
+      card.className = 'rom-validation-error rom-compatibility-check is-' + found.status;
+      var heading = document.createElement('h3');
+      var badge = document.createElement('span');
+      badge.className = 'rom-compatibility-status';
+      badge.textContent = found.status === 'readable' ? 'READABLE' : found.status.toUpperCase();
+      heading.appendChild(badge);
+      heading.appendChild(document.createTextNode(found.label));
+      card.appendChild(heading);
+      var reason = document.createElement('p');
+      reason.textContent = found.reason;
+      card.appendChild(reason);
+      if (found.affectsTabs && found.affectsTabs.length) {
+        var affected = document.createElement('p');
+        affected.className = 'rom-compatibility-affects';
+        affected.textContent = 'Affects: ' + found.affectsTabs.join(', ') + '.';
+        card.appendChild(affected);
+      }
+      list.appendChild(card);
+    });
+    body.appendChild(list);
+
+    var note = document.createElement('p');
+    note.className = 'rom-validation-report-note';
+    note.textContent = 'Download the report for hashes, parser counts, offsets, ownership states, and exact technical details.';
+    body.appendChild(note);
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer rom-validation-footer';
+    var download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'error-modal-ok rom-validation-download';
+    download.textContent = 'Download Compatibility Report';
+    download.addEventListener('click', function() {
+      var filename = downloadRomCompatibilityReport(report);
+      statusBar.textContent = 'ROM compatibility report downloaded as ' + filename + '.';
+    });
+    footer.appendChild(download);
+    var done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'error-modal-ok rom-validation-close';
+    done.textContent = 'Close';
+    done.addEventListener('click', close);
+    footer.appendChild(done);
+    modal.appendChild(footer);
+
+    overlay.addEventListener('click', function(event) {
+      if (event.target === overlay) close();
+    });
+    document.body.appendChild(overlay);
+    modal.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(event) {
+      if (event.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+  }
+
+  function renderCompatibilityBlockedPanel(panel, tab, state) {
+    panel.innerHTML = '';
+    var shell = document.createElement('section');
+    shell.className = 'rom-compatibility-tab-block';
+    var title = document.createElement('h2');
+    title.textContent = 'This part of the ROM could not be read safely';
+    shell.appendChild(title);
+    var intro = document.createElement('p');
+    intro.textContent = 'The ROM remains loaded. The editor did not guess at missing offsets or structures for the ' + tab + ' tab.';
+    shell.appendChild(intro);
+    var list = document.createElement('ul');
+    (state.reasons || []).forEach(function(reason) {
+      var item = document.createElement('li');
+      item.textContent = reason;
+      list.appendChild(item);
+    });
+    shell.appendChild(list);
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn-secondary';
+    open.textContent = 'Open ROM Compatibility Report';
+    open.addEventListener('click', function() {
+      showRomCompatibilityModal(rom.compatibility);
+    });
+    shell.appendChild(open);
+    panel.appendChild(shell);
+  }
+
+  function prependCompatibilityWarning(panel, state) {
+    if (!panel || !state || state.status !== 'warning') return;
+    var warning = document.createElement('section');
+    warning.className = 'rom-compatibility-tab-warning';
+    var title = document.createElement('strong');
+    title.textContent = 'Compatibility warning';
+    warning.appendChild(title);
+    var summary = document.createElement('span');
+    summary.textContent = ' ' + state.reasons.join(' ');
+    warning.appendChild(summary);
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn-secondary';
+    open.textContent = 'Details';
+    open.addEventListener('click', function() {
+      showRomCompatibilityModal(rom.compatibility);
+    });
+    warning.appendChild(open);
+    panel.insertBefore(warning, panel.firstChild);
+  }
+
+  if (btnRomCompatibility) {
+    btnRomCompatibility.addEventListener('click', function() {
+      if (rom && rom.compatibility) showRomCompatibilityModal(rom.compatibility);
+    });
+  }
+
+  // ============================================================
+  // Tab Switching
+  // ============================================================
+  function activateTab(tab) {
+    if (OB64.editorInteraction) OB64.editorInteraction.stopAll();
+    if (activeTab === 'cutscenes' && tab !== 'cutscenes' && rom &&
+        rom.cutsceneStudio && OB64.cutsceneUI) {
+      OB64.cutsceneUI.pause(rom.cutsceneStudio);
+    }
+    activeTab = tab;
+
+    var buttons = tabBar.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle('active', buttons[i].dataset.tab === tab);
+    }
+    if (btnChangelog) btnChangelog.classList.toggle('active', tab === 'changelog');
+
+    var panels = document.querySelectorAll('.tab-panel');
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle('active', panels[i].id === 'panel-' + tab);
+    }
+    // The Save tab works independently of the ROM — it edits a save state,
+    // not the ROM. Hide the "No ROM Loaded" scroll when the save tab is
+    // active so the user sees the save panel instead.
+    if (tab === 'save') {
+      emptyState.style.display = 'none';
+      renderSaveGame(document.getElementById('panel-save'));
+    } else if (!rom) {
+      emptyState.style.display = '';
+    } else {
+      renderTab(tab);
+    }
+  }
+
+  tabBar.addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    var tab = e.target.dataset.tab;
+    if (!tab) return;
+    activateTab(tab);
+  });
+
+  if (btnChangelog) {
+    btnChangelog.addEventListener('click', function() {
+      if (!rom) return;
+      activateTab('changelog');
+    });
+  }
+
+  // ============================================================
+  // Render dispatcher
+  // ============================================================
+  function renderTab(tab) {
+    syncBuildModeControl();
+    var panel = document.getElementById('panel-' + tab);
+    var compatibilityState = null;
+    if (rom && rom.compatibility && tab !== 'save') {
+      compatibilityState = OB64.romCompatibility.tabState(
+        rom.compatibility,
+        tab
+      );
+      if (compatibilityState.status === 'blocked') {
+        renderCompatibilityBlockedPanel(panel, tab, compatibilityState);
+        return;
+      }
+    }
+    switch(tab) {
+      case 'shops':     renderShops(panel); break;
+      case 'consumables':
+        OB64.consumableEffects.render(panel, rom, {
+          onChange: function() { markChanged(); },
+          onEditDescription: function(id) {
+            openDescriptionEditor('consumables', id);
+          }
+        });
+        break;
+      case 'squads':    OB64.renderSquads(panel); break;
+      case 'scenario':  OB64.renderScenarioTab(panel); break;
+      case 'classes':   renderClasses(panel); break;
+      case 'items':     renderItems(panel); break;
+      case 'art':
+        OB64.artUI.render(panel, rom, {
+          onReturnSprites: function() { activateTab('sprites'); },
+          onChange: function() { markChanged(); },
+          onAnimationMappingChange: function() {
+            markChanged('combatAnimationOverrides');
+          },
+          onAnimationRouteChange: function() {
+            beginChangeBatch();
+            markChanged();
+            markChanged('combatAnimationOverrides');
+            endChangeBatch();
+          },
+          onClassDefinitionChange: function() {
+            markChanged('classDefs');
+          },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
+      case 'sprites':
+        OB64.spriteEditorUI.render(panel, rom, {
+          onChange: function() {
+            statusBar.textContent =
+              'Sprite Library changed. Save Project to keep these reusable assets.';
+          },
+          onOpenArt: function(request) { OB64.artUI.beginLibraryTransfer(rom, request); activateTab('art'); },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
+      case 'cutscenes':
+        OB64.cutsceneUI.render(panel, rom, {
+          onChange: function() { markChanged('cutscenes'); },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
+      case 'encounters': renderEncounters(panel); break;
+      case 'tools':     renderTools(panel); break;
+      case 'changelog': renderChangelog(panel); break;
+      case 'save':      renderSaveGame(panel); break;
+      case 'map':       renderMap(panel); break;
+    }
+    prependCompatibilityWarning(panel, compatibilityState);
+  }
+
+  function renderChangelog(panel) {
+    panel.innerHTML = '';
+    if (!rom) return;
+
+    var patch;
+    try {
+      patch = OB64.patch.collectPatch(rom);
+    } catch (error) {
+      // A Project that cannot be collected (for example while Cutscene Studio is
+      // still reading new scenes from the ROM) has no changelog yet.
+      var notice = document.createElement('p');
+      notice.className = 'changelog-unavailable';
+      notice.textContent = error && error.message || String(error);
+      panel.appendChild(notice);
+      return;
+    }
+    var report = OB64.changelog.build(rom, patch, {
+      projectName: lastProjectFilename || ''
+    });
+
+    var shell = document.createElement('div');
+    shell.className = 'changelog-shell';
+
+    var heading = document.createElement('div');
+    heading.className = 'changelog-heading';
+    var headingCopy = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Mod Changelog';
+    var intro = document.createElement('p');
+    intro.textContent = 'A plain-English release summary generated from the same exact diff used by Save Project.';
+    headingCopy.appendChild(title);
+    headingCopy.appendChild(intro);
+
+    var download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'changelog-download';
+    download.textContent = 'Download Changelog (.txt)';
+    download.disabled = report.sections.length === 0;
+    download.addEventListener('click', function() {
+      var filename;
+      if (lastProjectFilename) {
+        filename = lastProjectFilename.replace(/\.(json|txt)$/i, '') + '_changelog.txt';
+      }
+      var downloaded = OB64.changelog.download(report, filename);
+      statusBar.textContent = 'Changelog downloaded as ' + downloaded + '.';
+    });
+
+    heading.appendChild(headingCopy);
+    heading.appendChild(download);
+    shell.appendChild(heading);
+
+    var note = document.createElement('div');
+    note.className = 'changelog-note';
+    note.textContent = report.note;
+    shell.appendChild(note);
+
+    var summary = document.createElement('div');
+    summary.className = 'changelog-summary';
+    var total = document.createElement('strong');
+    total.textContent = String(report.totalChanges);
+    summary.appendChild(total);
+    var summaryText = ' changed project record' +
+      (report.totalChanges === 1 ? '' : 's') + ' across ' + report.sections.length +
+      ' area' + (report.sections.length === 1 ? '' : 's');
+    summary.appendChild(document.createTextNode(summaryText));
+    shell.appendChild(summary);
+
+    if (!report.sections.length) {
+      var empty = document.createElement('div');
+      empty.className = 'changelog-empty';
+      var emptyTitle = document.createElement('h3');
+      emptyTitle.textContent = 'No changes yet';
+      var emptyText = document.createElement('p');
+      emptyText.textContent = 'Edit the loaded ROM or load a Project JSON file. The changelog will be generated automatically.';
+      empty.appendChild(emptyTitle);
+      empty.appendChild(emptyText);
+      shell.appendChild(empty);
+      panel.appendChild(shell);
+      return;
+    }
+
+    report.sections.forEach(function(section) {
+      var sectionEl = document.createElement('section');
+      sectionEl.className = 'changelog-section';
+      var sectionTitle = document.createElement('h3');
+      sectionTitle.textContent = section.title;
+      var badge = document.createElement('span');
+      badge.textContent = String(section.count);
+      sectionTitle.appendChild(badge);
+      sectionEl.appendChild(sectionTitle);
+
+      section.entries.forEach(function(entry) {
+        var entryEl = document.createElement('article');
+        entryEl.className = 'changelog-entry';
+        var entryTitle = document.createElement('h4');
+        entryTitle.textContent = entry.title;
+        entryEl.appendChild(entryTitle);
+        var list = document.createElement('ul');
+        entry.lines.forEach(function(line) {
+          var item = document.createElement('li');
+          item.textContent = line;
+          list.appendChild(item);
+        });
+        entryEl.appendChild(list);
+        sectionEl.appendChild(entryEl);
+      });
+      shell.appendChild(sectionEl);
+    });
+
+    panel.appendChild(shell);
+  }
+
+  function updateStatus() {
+    if (!rom) return;
+    var text = currentBuildModeInfo().label + ' | ROM loaded | ' +
+      rom.archives.length + ' archives';
+    if (changes > 0) text += ' | <span class="changes">' + changes + ' pending changes</span>';
+    else text += ' | 0 pending changes';
+    statusBar.innerHTML = text;
+  }
+
+  // ============================================================
+  // Tools tab — byte-level ROM fixes and QOL features
+  // ============================================================
+  // Each feature is a verified set of ROM writes defined in tools-data.js
+  // (generated from the research workspace). A control stages the change;
+  // Export ROM writes it or restores the retail bytes.
+  function formatToolPercent(value) {
+    return String(Math.round(Number(value) * 1000) / 1000) + '%';
+  }
+
+  function displayedToolState(feature) {
+    var state = OB64.tools.featureState(rom.z64, feature);
+    return OB64.nativeRebuild
+      ? OB64.nativeRebuild.displayToolState(rom, feature, state)
+      : state;
+  }
+
+  function displayedToolPercent(feature) {
+    var value = OB64.tools.parameterValue(rom.z64, feature);
+    return OB64.nativeRebuild
+      ? OB64.nativeRebuild.displayToolPercent(rom, feature, value)
+      : value;
+  }
+
+  function toolScaleStatus(feature, currentState, currentPercent, desiredPercent, unsupported, foreign) {
+    var retail = Number(feature.parameter.default);
+    if (unsupported) {
+      return { className: 'foreign', text: (rom.tools.unsupportedReasons && rom.tools.unsupportedReasons[feature.id])
+        ? rom.tools.unsupportedReasons[feature.id]
+        : 'Unavailable for this ROM revision' };
+    }
+    if (foreign) {
+      return { className: 'foreign', text: 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)' };
+    }
+    if (currentState === 'clean' && desiredPercent === retail) {
+      return { className: 'off', text: 'Retail setting: ' + formatToolPercent(retail) };
+    }
+    if (currentState === 'applied' && desiredPercent === retail) {
+      return { className: 'pending', text: 'Will restore retail ' + formatToolPercent(retail) + ' on export' };
+    }
+    if (currentState === 'applied' && currentPercent === desiredPercent) {
+      return { className: 'applied', text: 'Applied in this ROM: ' + formatToolPercent(currentPercent) };
+    }
+    if (currentState === 'applied') {
+      return {
+        className: 'pending',
+        text: 'Will change ' + formatToolPercent(currentPercent) + ' to ' + formatToolPercent(desiredPercent) + ' on export'
+      };
+    }
+    return { className: 'pending', text: 'Will set ' + formatToolPercent(desiredPercent) + ' on export' };
+  }
+
+  function toolScaleWeightsText(feature, percent) {
+    return 'Effective XP weights: ' + OB64.tools.effectiveWeights(feature, percent).map(function(weight) {
+      return weight.label + ' ' + formatToolPercent(weight.percent);
+    }).join(' · ');
+  }
+
+  function syncToolScaleCard(card, feature, percent) {
+    var output = card.querySelector('[data-tool-scale-output]');
+    var weights = card.querySelector('[data-tool-scale-weights]');
+    var reset = card.querySelector('[data-tool-scale-reset]');
+    var status = card.querySelector('[data-tool-scale-status]');
+    var currentState = displayedToolState(feature);
+    var currentPercent = displayedToolPercent(feature);
+    var unsupported = rom.tools.initial[feature.id] === 'unsupported';
+    var foreign = rom.tools.initial[feature.id] === 'foreign';
+    var statusInfo = toolScaleStatus(
+      feature, currentState, currentPercent, percent, unsupported, foreign);
+    if (output) output.textContent = formatToolPercent(percent);
+    if (weights) weights.textContent = toolScaleWeightsText(feature, percent);
+    if (reset) reset.disabled = unsupported || foreign || percent === Number(feature.parameter.default);
+    if (status) {
+      status.className = 'tool-status ' + statusInfo.className;
+      status.textContent = statusInfo.text;
+    }
+  }
+
+  function wireToolScaleControls(panel) {
+    var scales = panel.querySelectorAll('input[data-tool-scale-id]');
+    for (var s = 0; s < scales.length; s++) {
+      scales[s].addEventListener('input', function(e) {
+        var id = e.target.dataset.toolScaleId;
+        var feature = OB64.tools.getFeature(id);
+        var value = OB64.tools.setDesiredPercent(rom, id, Number(e.target.value));
+        syncToolScaleCard(e.target.closest('.tool-card'), feature, value);
+      });
+      scales[s].addEventListener('change', function(e) {
+        var id = e.target.dataset.toolScaleId;
+        var feature = OB64.tools.getFeature(id);
+        var value = OB64.tools.setDesiredPercent(rom, id, Number(e.target.value));
+        syncToolScaleCard(e.target.closest('.tool-card'), feature, value);
+        markChanged();
+      });
+    }
+
+    var scaleResets = panel.querySelectorAll('button[data-tool-scale-reset]');
+    for (var sr = 0; sr < scaleResets.length; sr++) {
+      scaleResets[sr].addEventListener('click', function(e) {
+        var id = e.target.dataset.toolScaleReset;
+        var feature = OB64.tools.getFeature(id);
+        OB64.tools.setDesiredPercent(rom, id, Number(feature.parameter.default));
+        markChanged();
+        renderTools(panel);
+      });
+    }
+  }
+
+  function renderTools(panel) {
+    if (!rom) return;
+    var features = OB64.tools.features();
+    var toolsDisabled = rom.tools && rom.tools.disabledReason;
+
+    var html = '<div class="tools-intro">' +
+      '<h2>Tools</h2>' +
+      '<p>ROM fixes, quality-of-life features, and verified game settings. A change ' +
+      'is written into the ROM on the next <b>Export ROM</b>. Retail values can ' +
+      'be restored from the same control. Features already present in the ' +
+      'loaded ROM are detected automatically.</p>' +
+      (toolsDisabled ? '<p><b>Unavailable for this ROM:</b> ' + toolsDisabled + '</p>' : '') +
+      '</div>';
+
+    html += '<div class="tool-cards">';
+    for (var i = 0; i < features.length; i++) {
+      var f = features[i];
+      var cur = displayedToolState(f);
+      var unsupported = rom.tools.initial[f.id] === 'unsupported';
+      var foreign = rom.tools.initial[f.id] === 'foreign';
+      var parameterized = OB64.tools.isParameterized(f);
+      var desired = !!rom.tools.desired[f.id];
+
+      if (parameterized) {
+        var desiredScale = OB64.tools.desiredPercent(rom, f);
+        var currentScale = displayedToolPercent(f);
+        var scaleStatus = toolScaleStatus(
+          f, cur, currentScale, desiredScale, unsupported, foreign);
+        html += '<div class="tool-card tool-scale-card' + ((foreign || unsupported) ? ' tool-foreign' : '') + '">' +
+          '<div class="tool-card-head">' +
+            '<span class="tool-name">' + f.name + '</span>' +
+          '</div>' +
+          '<div class="tool-status ' + scaleStatus.className + '" data-tool-scale-status="' + f.id + '">' + scaleStatus.text + '</div>' +
+          '<div class="tool-desc">' + f.description + '</div>' +
+          '<div class="tool-scale-control">' +
+            '<label for="tool-scale-' + f.id + '">' + f.parameter.label +
+              ' <output data-tool-scale-output="' + f.id + '">' + formatToolPercent(desiredScale) + '</output></label>' +
+            '<input id="tool-scale-' + f.id + '" type="range" data-tool-scale-id="' + f.id + '"' +
+              ' min="' + f.parameter.min + '" max="' + f.parameter.max + '" step="' + f.parameter.step + '"' +
+              ' value="' + desiredScale + '"' + ((foreign || unsupported) ? ' disabled' : '') +
+              ' aria-label="' + f.parameter.label + '">' +
+            '<button type="button" class="tool-scale-reset" data-tool-scale-reset="' + f.id + '"' +
+              ((foreign || unsupported || desiredScale === Number(f.parameter.default)) ? ' disabled' : '') +
+              '>Retail ' + formatToolPercent(f.parameter.default) + '</button>' +
+          '</div>' +
+          '<div class="tool-scale-weights" data-tool-scale-weights="' + f.id + '">' +
+            toolScaleWeightsText(f, desiredScale) + '</div>' +
+          (f.notes && f.notes.length
+            ? '<ul class="tool-notes">' + f.notes.map(function(n) { return '<li>' + n + '</li>'; }).join('') + '</ul>'
+            : '') +
+        '</div>';
+        continue;
+      }
+
+      var statusClass, statusText;
+      if (unsupported) {
+        statusClass = 'foreign';
+        statusText = (rom.tools.unsupportedReasons && rom.tools.unsupportedReasons[f.id])
+          ? rom.tools.unsupportedReasons[f.id]
+          : 'Unavailable for this ROM revision';
+      } else if (foreign) {
+        statusClass = 'foreign';
+        statusText = 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)';
+      } else if (cur === 'outdated') {
+        statusClass = 'pending';
+        statusText = desired
+          ? 'Older version in this ROM — will be updated on export'
+          : 'Older version in this ROM — will be removed on export';
+      } else if (cur === 'applied' && desired) {
+        statusClass = 'applied';
+        statusText = 'Applied in this ROM';
+      } else if (cur === 'applied' && !desired) {
+        statusClass = 'pending';
+        statusText = 'Will be removed on export';
+      } else if (desired) {
+        statusClass = 'pending';
+        statusText = 'Will be applied on export';
+      } else {
+        statusClass = 'off';
+        statusText = 'Not applied';
+      }
+
+      html += '<div class="tool-card' + ((foreign || unsupported) ? ' tool-foreign' : '') + '">' +
+        '<div class="tool-card-head">' +
+          '<span class="tool-name">' + f.name + '</span>' +
+          '<label class="tool-switch" title="' + ((foreign || unsupported) ? 'Unavailable' : 'Enable / disable') + '">' +
+            '<input type="checkbox" data-tool-id="' + f.id + '"' +
+              (desired ? ' checked' : '') + ((foreign || unsupported) ? ' disabled' : '') + '>' +
+            '<span class="tool-slider"></span>' +
+          '</label>' +
+        '</div>' +
+        '<div class="tool-status ' + statusClass + '">' + statusText + '</div>' +
+        '<div class="tool-desc">' + f.description + '</div>' +
+        (f.notes && f.notes.length
+          ? '<ul class="tool-notes">' + f.notes.map(function(n) { return '<li>' + n + '</li>'; }).join('') + '</ul>'
+          : '') +
+      '</div>';
+    }
+    html += '</div>';
+
+    panel.innerHTML = html;
+
+    var boxes = panel.querySelectorAll('input[data-tool-id]');
+    for (var b = 0; b < boxes.length; b++) {
+      boxes[b].addEventListener('change', function(e) {
+        var id = e.target.dataset.toolId;
+        rom.tools.desired[id] = e.target.checked;
+        markChanged();          // routes to setDirtyFlagForActiveTab('tools')
+        renderTools(panel);     // refresh status chips
+      });
+    }
+    wireToolScaleControls(panel);
+  }
+
+  function beginChangeBatch() {
+    if (changeBatchDepth === 0) {
+      pendingChangeBatch = { needsCount: false, flags: {}, useActiveTab: false };
+    }
+    changeBatchDepth++;
+  }
+
+  function endChangeBatch() {
+    if (changeBatchDepth <= 0) return;
+    changeBatchDepth--;
+    if (changeBatchDepth > 0) return;
+    var batch = pendingChangeBatch;
+    pendingChangeBatch = null;
+    if (!batch || !batch.needsCount) return;
+    applyChanged(batch);
+  }
+
+  function markChanged(flagName) {
+    if (changeBatchDepth > 0) {
+      if (!pendingChangeBatch) {
+        pendingChangeBatch = { needsCount: false, flags: {}, useActiveTab: false };
+      }
+      pendingChangeBatch.needsCount = true;
+      if (flagName) pendingChangeBatch.flags[flagName] = true;
+      else pendingChangeBatch.useActiveTab = true;
+      return;
+    }
+    var batch = { needsCount: true, flags: {}, useActiveTab: !flagName };
+    if (flagName) batch.flags[flagName] = true;
+    applyChanged(batch);
+  }
+
+  function applyChanged(batch) {
+    changes++;
+    var hasExplicitFlag = false;
+    if (batch && batch.flags) {
+      for (var flag in batch.flags) {
+        if (batch.flags[flag]) {
+          setDirtyFlag(flag);
+          hasExplicitFlag = true;
+        }
+      }
+    }
+    if (!hasExplicitFlag && (!batch || batch.useActiveTab)) {
+      setDirtyFlagForActiveTab();
+    }
+    updateStatus();
+  }
+
+  function setDirtyFlag(flagName) {
+    if (!flagName) return;
+    if (flagName === 'save') {
+      if (saveState) saveState.dirty = true;
+      renderSaveExportButtonState();
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(dirty, flagName)) {
+      dirty[flagName] = true;
+      if (flagName === 'shops' && rom && OB64.nativeRebuild) {
+        OB64.nativeRebuild.setShopOwnerSelected(rom, true);
+      }
+    }
+  }
+
+  function setDirtyFlagForActiveTab() {
+    // Map the currently-active tab to a dirty flag so export can skip
+    // subsystems the user never touched.
+    switch (activeTab) {
+      case 'shops':
+        dirty.shops = true;
+        if (OB64.nativeRebuild) OB64.nativeRebuild.setShopOwnerSelected(rom, true);
+        break;
+      case 'consumables':
+        dirty.consumableEffects = OB64.consumableEffects.refreshPending(
+          rom.consumableEffects
+        );
+        break;
+      case 'squads':   dirty.squadOverrides = true; break;
+      case 'scenario': dirty.scenario = true; break;
+      case 'items':    dirty.items = true; break;
+      case 'classes':  dirty.classDefs = true; break;
+      case 'art':      dirty.art = OB64.art.hasPendingExport(rom.art); break;
+      case 'cutscenes':
+        dirty.cutscenes = OB64.cutsceneUI.editCount(rom.cutsceneStudio) > 0;
+        break;
+      case 'encounters':
+        // Encounters tab edits can touch either the neutral-encounter pool,
+        // the creature drop table, or both. The renderer sets the specific
+        // flag directly (dirty.encounters / dirty.creatureDrops) before
+        // calling markChanged(), so here we only bump the change counter.
+        break;
+      case 'tools':
+        // A toggle is only "dirty" while it differs from what the ROM buffer
+        // currently holds, so flipping a feature on and back off leaves
+        // nothing to export.
+        dirty.tools = OB64.tools.pendingChanges(rom) > 0;
+        break;
+      case 'save':
+        // Save-state edits are tracked on the saveState object itself so
+        // the export button can enable/disable. Nothing else needs to fire.
+        if (saveState) saveState.dirty = true;
+        renderSaveExportButtonState();
+        break;
+      // Consumable edits happen inside the Shops tab's Expendable modal;
+      // that modal sets dirty.consumables directly before calling markChanged().
+      // Map is not editable in the current UI.
+    }
+  }
+
+  function renderSaveExportButtonState() {
+    var btn = document.getElementById('btn-save-export');
+    if (btn) btn.disabled = !(saveState && saveState.dirty);
+  }
+
+  // ============================================================
+  // Shared editing helpers — dropdown, searchable input, numeric
+  // ============================================================
+
+  // Keep the stored value visible when a byte/ID also has a friendly label.
+  // The editor is a modding surface, so a guide-facing name must never replace
+  // the underlying value that will be written back to the ROM.
+  function formatByteChoice(value, label) {
+    var n = Number(value) & 0xFF;
+    return '0x' + n.toString(16).padStart(2, '0').toUpperCase() + ' · ' + label;
+  }
+
+  function formatU16Choice(value, label) {
+    var n = Number(value) & 0xFFFF;
+    return '0x' + n.toString(16).padStart(4, '0').toUpperCase() + ' · ' + label;
+  }
+
+  // Small enum dropdown (<30 options). options = {value: label, ...}
+  function makeDropdown(td, options, currentVal, onCommit) {
+    if (td.querySelector('select')) return;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
+    var sel = document.createElement('select');
+    for (var k in options) {
+      var opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = options[k];
+      if (String(k) === String(currentVal)) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    td.textContent = '';
+    td.appendChild(sel);
+    sel.focus();
+
+    function commit() {
+      if (committed) return;
+      var v = parseInt(sel.value, 10);
+      if (!isNaN(v)) {
+        if (String(v) === String(currentVal)) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
+      }
+    }
+    sel.addEventListener('change', function() { commit(); });
+    sel.addEventListener('blur', function() { commit(); });
+    sel.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
+    });
+  }
+
+  // Large searchable input (items=277, classes=164). options = {value: label, ...}
+  function makeSearchableInput(td, options, currentVal, onCommit) {
+    if (td.querySelector('input')) return;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
+    var listId = 'dl-' + Math.random().toString(36).slice(2, 8);
+    var dl = document.createElement('datalist');
+    dl.id = listId;
+    // Build reverse map: label → value
+    var reverseMap = {};
+    for (var k in options) {
+      var opt = document.createElement('option');
+      opt.value = options[k] + ' [' + k + ']';
+      dl.appendChild(opt);
+      reverseMap[options[k] + ' [' + k + ']'] = parseInt(k);
+      reverseMap[options[k]] = parseInt(k);
+    }
+    var inp = document.createElement('input');
+    inp.setAttribute('list', listId);
+    // Leave input empty so Chrome doesn't filter the datalist to a substring match
+    // of the current value (showing only 1 option). Show the current value as
+    // placeholder instead; empty commit keeps the existing value.
+    inp.value = '';
+    inp.placeholder = options[currentVal]
+      ? 'Current: ' + options[currentVal] + ' [' + currentVal + ']'
+      : 'Current: ' + String(currentVal) + ' (none)';
+    td.textContent = '';
+    td.appendChild(dl);
+    td.appendChild(inp);
+    inp.focus();
+
+    function commit() {
+      if (committed) return;
+      var text = inp.value.trim();
+      // Empty input = no change, restore previous display
+      if (text === '') { committed = true; restorePrevious(); return; }
+      var v = reverseMap[text];
+      // Also try parsing [NNN] from the end
+      if (v === undefined) {
+        var m = text.match(/\[(\d+)\]\s*$/);
+        if (m) v = parseInt(m[1]);
+      }
+      if (v === undefined) v = parseInt(text);
+      if (!isNaN(v)) {
+        if (String(v) === String(currentVal)) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
+      } else {
+        committed = true;
+        restorePrevious();
+      }
+    }
+    inp.addEventListener('blur', function() { commit(); });
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
+    });
+  }
+
+  // Numeric input with min/max validation
+  function makeNumericInput(td, currentVal, min, max, onCommit) {
+    if (td.querySelector('input')) return;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
+    var inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = min;
+    inp.max = max;
+    inp.value = currentVal;
+    td.textContent = '';
+    td.appendChild(inp);
+    inp.focus();
+    inp.select();
+
+    function commit() {
+      if (committed) return;
+      var v = parseInt(inp.value, 10);
+      if (!isNaN(v) && v >= min && v <= max) {
+        if (v === currentVal) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
+      } else {
+        committed = true;
+        restorePrevious();
+      }
+    }
+    inp.addEventListener('blur', function() { commit(); });
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
+    });
+  }
+
+  function captureRestore(el) {
+    var previousNodes = Array.prototype.slice.call(el.childNodes);
+    var previousText = el.textContent;
+    return function() {
+      el.textContent = '';
+      if (!previousNodes.length) {
+        el.textContent = previousText;
+        return;
+      }
+      for (var i = 0; i < previousNodes.length; i++) {
+        el.appendChild(previousNodes[i]);
+      }
+    };
+  }
+
+  // ============================================================
+  // Item picker modal (shop-tab-style, reused across tabs).
+  // Used by Enemies/Classes/Encounters/Save-Game-Editor wherever an item or
+  // enum field was formerly edited via makeSearchableInput.
+  //   opts = { title, options: {id: label} or [{id,label}], currentId,
+  //            onSelect(id), withIcons (bool, default true) }
+  // ============================================================
+  function openItemPickerFromDict(opts) {
+    var items = [];
+    if (Array.isArray(opts.options)) {
+      items = opts.options.map(function(o) { return { id: o.id, name: o.label, kind: 'enum' }; });
+    } else {
+      for (var k in opts.options) {
+        items.push({ id: parseInt(k), name: opts.options[k], kind: 'enum' });
+      }
+    }
+    openSaveItemPickerModal({
+      title:     opts.title || 'Select',
+      items:     items,
+      currentId: opts.currentId,
+      withIcons: opts.withIcons !== false, // default true for items
+      rowActionLabel: opts.rowActionLabel,
+      onRowAction: opts.onRowAction ? function(item) {
+        opts.onRowAction(item.id, item);
+      } : null,
+      onSelect:  function(id) {
+        if (opts.currentId !== undefined && String(id) === String(opts.currentId)) return;
+        beginChangeBatch();
+        try {
+          if (opts.onSelect) opts.onSelect(id);
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
+      }
+    });
+  }
+  OB64.openItemPickerFromDict = openItemPickerFromDict;
+
+  // ============================================================
+  // Filter helper
+  // ============================================================
+  function makeFilterBar(placeholder, onFilter) {
+    var div = document.createElement('div');
+    div.className = 'filter-bar';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = placeholder;
+    input.addEventListener('input', function() { onFilter(input.value.toLowerCase()); });
+    div.appendChild(input);
+    return div;
+  }
+
+  // ============================================================
+  // Sortable columns — click any <th> to sort
+  // ============================================================
+  function compareSortableText(aText, bText, sortAsc) {
+    // Blank values are always a final bucket. Only populated values reverse
+    // direction, so descending sorts do not promote blanks.
+    var aEmpty = (aText === '\u2014' || aText === '-' || aText === '');
+    var bEmpty = (bText === '\u2014' || bText === '-' || bText === '');
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+
+    if (aText.indexOf('0x') === 0 && bText.indexOf('0x') === 0) {
+      return sortAsc
+        ? parseInt(aText, 16) - parseInt(bText, 16)
+        : parseInt(bText, 16) - parseInt(aText, 16);
+    }
+    if (aText.charAt(0) === '#' && bText.charAt(0) === '#') {
+      return sortAsc
+        ? parseInt(aText.slice(1)) - parseInt(bText.slice(1))
+        : parseInt(bText.slice(1)) - parseInt(aText.slice(1));
+    }
+
+    var aNum = parseFloat(aText);
+    var bNum = parseFloat(bText);
+    if (!isNaN(aNum) && !isNaN(bNum)) {
+      return sortAsc ? aNum - bNum : bNum - aNum;
+    }
+    return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  }
+
+  function makeSortable(table, options) {
+    options = options || {};
+    var headers = table.querySelectorAll('thead th');
+    var tbody = table.querySelector('tbody');
+    var sortCol = Number.isInteger(options.sortCol) ? options.sortCol : -1;
+    var sortAsc = options.sortAsc !== false;
+
+    function updateIndicators() {
+      for (var j = 0; j < headers.length; j++) {
+        headers[j].classList.remove('sort-asc', 'sort-desc');
+      }
+      if (sortCol >= 0 && sortCol < headers.length) {
+        headers[sortCol].classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+      }
+    }
+
+    updateIndicators();
+
+    for (var h = 0; h < headers.length; h++) {
+      headers[h].dataset.colIdx = h;
+      headers[h].addEventListener('click', function() {
+        var col = parseInt(this.dataset.colIdx);
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = true;
+        }
+
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort(function(a, b) {
+          var aCell = a.cells[col];
+          var bCell = b.cells[col];
+          if (!aCell || !bCell) return 0;
+          var aText = aCell.textContent.trim();
+          var bText = bCell.textContent.trim();
+          return compareSortableText(aText, bText, sortAsc);
+        });
+
+        for (var i = 0; i < rows.length; i++) {
+          tbody.appendChild(rows[i]);
+        }
+
+        updateIndicators();
+        if (typeof options.onSort === 'function') {
+          options.onSort({ col: sortCol, asc: sortAsc, rows: rows.slice(0) });
+        }
+      });
+    }
+  }
+
+  // Click-to-edit controls must also be reachable without a mouse. Existing
+  // click handlers remain the single edit path; Enter and Space activate them.
+  function makeClickEditorsKeyboardAccessible(container, areaLabel) {
+    var editors = container.querySelectorAll('.editable');
+    for (var i = 0; i < editors.length; i++) {
+      var editor = editors[i];
+      if (/^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(editor.tagName)) continue;
+      editor.tabIndex = 0;
+      editor.setAttribute('role', 'button');
+
+      if (!editor.getAttribute('aria-label')) {
+        var detail = editor.getAttribute('title') || '';
+        if (!detail && editor.tagName === 'TD') {
+          var table = editor.closest('table');
+          var header = table && table.querySelectorAll('thead th')[editor.cellIndex];
+          var rowId = editor.parentElement && editor.parentElement.cells[0];
+          detail = (rowId ? rowId.textContent.trim() + ' ' : '') +
+            (header ? header.textContent.trim() : 'value');
+        }
+        if (!detail) detail = editor.textContent.trim() || 'value';
+        editor.setAttribute('aria-label', areaLabel + ' edit ' + detail);
+      }
+
+      editor.addEventListener('keydown', function(event) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.currentTarget.click();
+        }
+      });
+    }
+  }
+
+  function makeColumnsResizable(table, storageKey, options) {
+    options = options || {};
+    var headers = Array.prototype.slice.call(table.querySelectorAll('thead th'));
+    if (!headers.length) return;
+    function minimumWidth(index) {
+      var configured = Number(options.minimumWidths && options.minimumWidths[index]);
+      return Number.isFinite(configured) && configured >= 48 ? configured : 48;
+    }
+    var saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    } catch (error) {
+      saved = null;
+    }
+    var widths = headers.map(function(header, index) {
+      var measured = Math.ceil(header.getBoundingClientRect().width);
+      var stored = saved && Number(saved[index]);
+      var minimum = minimumWidth(index);
+      var initial = Number(options.initialMinimumWidths &&
+        options.initialMinimumWidths[index]);
+      var fallback = Math.max(minimum, measured,
+        Number.isFinite(initial) ? initial : 0);
+      return Number.isFinite(stored) && stored >= minimum ? stored : fallback;
+    });
+    var colgroup = document.createElement('colgroup');
+    var columns = widths.map(function(width) {
+      var col = document.createElement('col');
+      col.style.width = width + 'px';
+      colgroup.appendChild(col);
+      return col;
+    });
+    table.insertBefore(colgroup, table.firstChild);
+    table.classList.add('resizable-columns');
+
+    function applyWidths(persist) {
+      var total = 0;
+      for (var i = 0; i < widths.length; i++) {
+        columns[i].style.width = widths[i] + 'px';
+        total += widths[i];
+      }
+      table.style.width = total + 'px';
+      table.style.minWidth = total + 'px';
+      if (options.stickyOffsetColumn != null) {
+        table.style.setProperty('--class-id-column-width',
+          widths[options.stickyOffsetColumn] + 'px');
+      }
+      if (persist) {
+        try { localStorage.setItem(storageKey, JSON.stringify(widths)); }
+        catch (error) { /* Column resizing still works without persistence. */ }
+      }
+    }
+
+    headers.forEach(function(header, index) {
+      var handle = document.createElement('span');
+      handle.className = 'column-resize-handle';
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      handle.setAttribute('aria-label', 'Resize ' + header.textContent.trim() + ' column');
+      handle.tabIndex = 0;
+      handle.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      handle.addEventListener('pointerdown', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var startX = event.clientX;
+        var startWidth = widths[index];
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add('is-resizing-column');
+        function move(moveEvent) {
+          widths[index] = Math.max(minimumWidth(index),
+            Math.round(startWidth + moveEvent.clientX - startX));
+          applyWidths(false);
+        }
+        function finish(finishEvent) {
+          if (handle.hasPointerCapture(finishEvent.pointerId)) {
+            handle.releasePointerCapture(finishEvent.pointerId);
+          }
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', finish);
+          handle.removeEventListener('pointercancel', finish);
+          document.body.classList.remove('is-resizing-column');
+          applyWidths(true);
+        }
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', finish);
+        handle.addEventListener('pointercancel', finish);
+      });
+      handle.addEventListener('keydown', function(event) {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        event.stopPropagation();
+        widths[index] = Math.max(minimumWidth(index),
+          widths[index] + (event.key === 'ArrowRight' ? 8 : -8));
+        applyWidths(true);
+      });
+      header.appendChild(handle);
+    });
+    applyWidths(false);
+  }
+
+  function descriptionTitle(kind, id) {
+    if (kind === 'items') return OB64.itemName(id);
+    if (kind === 'consumables') {
+      var consumable = rom && rom.consumables && rom.consumables[id];
+      return consumable && consumable.name
+        ? consumable.name : OB64.consumableName(id);
+    }
+    if (kind === 'classes') return OB64.className(id);
+    if (kind === 'actions') {
+      return OB64.actionEditorName ? OB64.actionEditorName(id) : ('Action ' + id);
+    }
+    return 'Description';
+  }
+
+  function isTopItemModal(overlay) {
+    var overlays = document.querySelectorAll('.item-modal-overlay');
+    return overlays.length && overlays[overlays.length - 1] === overlay;
+  }
+
+  function openDescriptionEditor(kind, id) {
+    if (!rom || !OB64.descriptionCodec) return;
+    var spec = OB64.descriptionCodec.specs[kind];
+    var block = spec && rom[spec.property];
+    var record = block && block.records[id];
+    if (!spec || !record) {
+      showErrorModal('Description unavailable', 'No description record exists for this selection.');
+      return;
+    }
+
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    var modal = document.createElement('div');
+    modal.className = 'item-modal description-editor-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var heading = document.createElement('h2');
+    heading.textContent = 'Edit description — ' + descriptionTitle(kind, id);
+    header.appendChild(heading);
+    var closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'item-modal-close';
+    closeButton.textContent = '\u00D7';
+    header.appendChild(closeButton);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'description-editor-body';
+    var textarea = document.createElement('textarea');
+    textarea.className = 'description-editor-text';
+    textarea.rows = 4;
+    textarea.value = record.editableText;
+    textarea.setAttribute('aria-label', descriptionTitle(kind, id) + ' description');
+    body.appendChild(textarea);
+    var capacity = document.createElement('div');
+    capacity.className = 'description-editor-capacity';
+    capacity.setAttribute('role', 'status');
+    capacity.setAttribute('aria-live', 'polite');
+    var capacitySummary = document.createElement('strong');
+    var capacityRemaining = document.createElement('span');
+    capacity.appendChild(capacitySummary);
+    capacity.appendChild(capacityRemaining);
+    body.appendChild(capacity);
+    var error = document.createElement('div');
+    error.className = 'description-editor-error';
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+    body.appendChild(error);
+    modal.appendChild(body);
+
+    var actions = document.createElement('div');
+    actions.className = 'description-editor-actions';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'primary';
+    save.textContent = 'Save';
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    modal.appendChild(actions);
+
+    var capacityTimer = null;
+    function byteCount(value) {
+      return Number(value).toLocaleString('en-US');
+    }
+    function calculateCapacity() {
+      capacityTimer = null;
+      try {
+        var measurement = OB64.descriptionCodec.measureText(
+          block,
+          id,
+          textarea.value
+        );
+        capacity.classList.toggle('is-over', !measurement.fits);
+        capacity.classList.remove('is-calculating');
+        capacitySummary.textContent = 'Expected compressed table: ' +
+          byteCount(measurement.compressedSize) + ' / ' +
+          byteCount(measurement.compressedCapacity) + ' bytes';
+        capacityRemaining.textContent = measurement.fits
+          ? '· ' + byteCount(measurement.remaining) + ' bytes available'
+          : '· ' + byteCount(Math.abs(measurement.remaining)) + ' bytes over';
+        save.disabled = !measurement.fits;
+      } catch (capacityError) {
+        capacity.classList.remove('is-calculating');
+        capacity.classList.add('is-over');
+        capacitySummary.textContent = 'Expected compressed table size unavailable';
+        capacityRemaining.textContent = capacityError.message;
+        save.disabled = true;
+      }
+    }
+    function queueCapacity() {
+      if (capacityTimer !== null) clearTimeout(capacityTimer);
+      capacity.classList.add('is-calculating');
+      capacity.classList.remove('is-over');
+      capacitySummary.textContent = 'Calculating expected compressed table size…';
+      capacityRemaining.textContent = '';
+      save.disabled = true;
+      capacityTimer = setTimeout(calculateCapacity, 120);
+    }
+    function close() {
+      if (capacityTimer !== null) clearTimeout(capacityTimer);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escape);
+    }
+    function escape(event) {
+      if (event.key === 'Escape' && isTopItemModal(overlay)) close();
+    }
+    function commit() {
+      error.hidden = true;
+      if (textarea.value === record.editableText) {
+        close();
+        return;
+      }
+      try {
+        var updated = OB64.descriptionCodec.withText(block, id, textarea.value);
+        rom[spec.property] = updated;
+        markChanged(spec.dirty);
+        dirty[spec.dirty] = OB64.descriptionCodec.hasTextChanges(
+          updated,
+          rom.original && rom.original.descriptions &&
+            rom.original.descriptions[kind]
+        );
+        updateStatus();
+        close();
+      } catch (descriptionError) {
+        error.textContent = descriptionError.message;
+        error.hidden = false;
+        textarea.focus();
+      }
+    }
+    closeButton.addEventListener('click', close);
+    cancel.addEventListener('click', close);
+    save.addEventListener('click', commit);
+    overlay.addEventListener('click', function(event) {
+      if (event.target === overlay) close();
+    });
+    textarea.addEventListener('keydown', function(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      }
+    });
+    textarea.addEventListener('input', queueCapacity);
+    document.addEventListener('keydown', escape);
+    document.body.appendChild(overlay);
+    calculateCapacity();
+    setTimeout(function() { textarea.focus(); textarea.select(); }, 0);
+  }
+
+  function descriptionEditButton(kind, id, compact) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = compact ? 'description-edit-button compact' : 'description-edit-button';
+    button.textContent = compact ? 'Edit' : 'Edit description';
+    button.addEventListener('click', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openDescriptionEditor(kind, id);
+    });
+    return button;
+  }
+
+  // ============================================================
+  // SHOPS TAB
+  // ============================================================
+  var SHOP_CATEGORIES = ['head', 'weapon', 'accessory', 'body', 'expendable'];
+
+  // Categorize an item ID into one of the 5 shop columns based on equipType.
+  // Items not present in the stat table (or with equipType outside the equipment
+  // range) are treated as expendable consumables.
+  function categorizeShopItem(id) {
+    var stat = rom && rom.itemStats ? rom.itemStats[id] : null;
+    if (!stat) return 'expendable';
+    var eq = stat.equipType;
+    if (eq === 0x15 || eq === 0x16) return 'head';                          // Helm, Headgear
+    if ((eq >= 0x01 && eq <= 0x0D) || eq === 0x18) return 'weapon';         // swords..doll + fan
+    if (eq === 0x0E || eq === 0x0F || eq === 0x17 || eq === 0x19) return 'accessory'; // shields, spellbook, accessory
+    if (eq >= 0x10 && eq <= 0x14) return 'body';                            // armor/robe/clothing
+    return 'expendable';
+  }
+
+  var SHOP_CATEGORY_LABELS = {
+    head: 'Head', weapon: 'Weapon', accessory: 'Accessory',
+    body: 'Body', expendable: 'Expendable'
+  };
+
+  // Stronghold-name overrides for ROM spellings that diverge from the fan
+  // wiki (ogrebattle64.net). Most are simple transpositions/typos the
+  // matcher caught while doing the scene-overlap analysis; we honor the
+  // wiki spelling in the UI but the ROM bytes are left alone.
+  var STRONGHOLD_ALIASES = {
+    'Amdelm':         'Andelm',
+    'Danillof':       'Danillor',
+    'Castle Grann':   'Castle Gramm',
+    'Purolva':        'Purlova',
+    'Cotoltus':       'Cotolus',
+    'Crotal Castle':  'Castle Crotal',
+    'Nakina':         'Nakima',
+    'Chelefteu':      'Cheleftu',
+    'Castle Andvari': 'Castle Andarvi',
+  };
+  function strongholdDisplay(name) {
+    return STRONGHOLD_ALIASES[name] || name;
+  }
+  // Build the Shops tab's presentation-only record → runtime-key join from
+  // the same scenario dataset used by the Scenario tab. A ktenmain mission
+  // group is not a scenario key and can cover several visits or branches.
+  function buildShopScenarioKeyIndex() {
+    var byRecord = {};
+    var scenarios = (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scenarios) || [];
+    for (var i = 0; i < scenarios.length; i++) {
+      var entry = scenarios[i];
+      var sites = entry.sites || [];
+      for (var j = 0; j < sites.length; j++) {
+        var recordIndex = sites[j].ktenmainRecordIndex;
+        if (recordIndex == null) continue;
+        if (!byRecord[recordIndex]) byRecord[recordIndex] = [];
+        if (byRecord[recordIndex].indexOf(entry.runtimeKey) === -1) {
+          byRecord[recordIndex].push(entry.runtimeKey);
+        }
+      }
+    }
+    Object.keys(byRecord).forEach(function(recordIndex) {
+      byRecord[recordIndex].sort(function(a, b) {
+        return OB64.compareScenarioKeys ? OB64.compareScenarioKeys(a, b) : a - b;
+      });
+    });
+    return byRecord;
+  }
+
+  function shopScenarioKeyLabel(runtimeKey) {
+    var info = OB64.scenarioKeyInfo
+      ? OB64.scenarioKeyInfo(runtimeKey)
+      : { label: 'Runtime Key ' + runtimeKey };
+    return 'Key ' + runtimeKey + ': ' + info.label;
+  }
+
+  // URL for an item-icon PNG in resources/Item Icons/.
+  // encodeURIComponent handles spaces and apostrophes safely.
+  function itemIconURL(name) {
+    if (!name) return null;
+    return 'resources/Item%20Icons/' + encodeURIComponent(name) + '.png';
+  }
+  OB64.itemIconURL = itemIconURL;
+
+  // All items in the game that belong to a given category, sorted by equipType.
+  // Expendables use their actual plain runtime-list IDs; the shared shop
+  // override encodes those separately from bit-15 equipment IDs.
+  function allItemsInCategory(cat) {
+    if (cat === 'expendable') {
+      if (!rom.consumables) return [];
+      return rom.consumables
+        .filter(function(c) { return c.flagHi !== 0xFFFF; }) // skip the "None" sentinel
+        .map(function(c) {
+          return {
+            id: c.index,
+            name: c.name,
+            equipType: null,
+            equipTypeName: 'Consumable',
+            isConsumable: true,
+            consumableIndex: c.index,
+            price: c.price,
+            flagHi: c.flagHi,
+            category: c.category,
+            effect: c.effect,
+            isKnownShopConsumable: OB64.isKnownShopExpendable(c)
+          };
+        });
+    }
+    var out = [];
+    if (!rom.itemStats) return out;
+    for (var i = 1; i < rom.itemStats.length; i++) {
+      var stat = rom.itemStats[i];
+      if (!stat || stat.equipType === 0 || stat.equipType === 0xFF) continue;
+      if (categorizeShopItem(i) !== cat) continue;
+      var name = OB64.itemName(i);
+      if (!name || name === '(None)') continue;
+      out.push({
+        id: i, name: name,
+        equipType: stat.equipType,
+        equipTypeName: OB64.equipTypeName(stat.equipType),
+        price: stat.price, isConsumable: false
+      });
+    }
+    out.sort(function(a, b) {
+      if (a.equipType !== b.equipType) return a.equipType - b.equipType;
+      return a.id - b.id;
+    });
+    return out;
+  }
+
+  function renderShops(panel) {
+    panel.innerHTML = '';
+    var rebuildShopContract = currentBuildMode() === 'rebuild';
+
+    // shopIdx → list of stronghold records (for stronghold names + mission IDs).
+    // Skips:
+    //   - Mission-objective strongholds (B24=0xFF): boss target; the game
+    //     doesn't expose their shop at runtime even when shopIdx is set.
+    //     Dev-leftover data on Tacikent (m1) and Dardunnelles (m44).
+    //   - ktenmain mission group 1: the opening tutorial. Not documented in
+    //     the fan wiki and would otherwise clutter every shop it touches
+    //     (Shop #1 via Shafsabus/Tobolisk, Shop #2 via Gerall Avad).
+    var shopRecs = {};
+    for (var i = 0; i < rom.strongholds.length; i++) {
+      var sh = rom.strongholds[i];
+      if (sh.shopIdx === 0) continue;
+      if (sh.isObjective) continue;
+      if (sh.missionId === 1) continue;
+      if (!shopRecs[sh.shopIdx]) shopRecs[sh.shopIdx] = [];
+      shopRecs[sh.shopIdx].push(sh);
+    }
+    var scenarioKeysByRecord = buildShopScenarioKeyIndex();
+
+    // Each build mode publishes its active per-Shop contract capacities.
+    var shopCapacities = OB64.nativeRebuild
+      ? OB64.nativeRebuild.capacities(currentBuildMode())
+      : { equipment: OB64.SHOP_MAX_EQUIPMENT_PER_SHOP,
+          expendables: OB64.SHOP_MAX_CONSUMABLES_PER_SHOP };
+    var activeShops = rebuildShopContract ? rom.shops.slice(1, 36) : rom.shops;
+    var total = OB64.totalShopItems(activeShops);
+    var runtimeShopCount = !rebuildShopContract && OB64.runtimeOverrides
+      ? OB64.runtimeOverrides.collectShopOverrides(rom).length
+      : 0;
+    var overCapacity = false;
+    var nearCapacity = false;
+    var capacityStart = rebuildShopContract ? 1 : 0;
+    var capacityEnd = rebuildShopContract ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var capIdx = capacityStart; capIdx < capacityEnd; capIdx++) {
+      var capShop = rom.shops[capIdx];
+      var equipCount = (capShop.items || []).length;
+      var expendableCount = (capShop.consumables || []).length;
+      if (equipCount > shopCapacities.equipment ||
+          expendableCount > shopCapacities.expendables) overCapacity = true;
+      if (equipCount >= shopCapacities.equipment - 3 ||
+          expendableCount >= shopCapacities.expendables - 2) nearCapacity = true;
+    }
+    var counter = document.createElement('div');
+    counter.className = 'shop-counter';
+    var state = overCapacity ? 'over' : (nearCapacity ? 'near' : 'ok');
+    counter.classList.add('shop-counter-' + state);
+    var countSpan = '<strong>' + total + '</strong> equipment entries · ' +
+      (rebuildShopContract
+        ? ('Shop owner: <strong>' +
+          (OB64.nativeRebuild.shopOwnerSelected(rom) ? 'native source' : 'retail') +
+          '</strong>')
+        : ('<strong>' + runtimeShopCount + '</strong> runtime-overridden shops'));
+    var suffix = '';
+    if (state === 'over') {
+      suffix = ' <span class="shop-counter-warn">one or more shops exceeds the static consumer arrays</span>';
+    } else if (state === 'near') {
+      suffix = ' <span class="shop-counter-warn">one or more shops is near capacity</span>';
+    }
+    counter.innerHTML = countSpan + ' · per-shop limits: ' +
+      shopCapacities.equipment + ' equipment / ' +
+      shopCapacities.expendables + ' expendables (' +
+      currentBuildModeInfo().label + ')' + suffix;
+    panel.appendChild(counter);
+
+    var filter = makeFilterBar('Filter by stronghold, scenario, or item name...', function(q) {
+      var cards = panel.querySelectorAll('.shop-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].style.display = cards[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      }
+    });
+    panel.appendChild(filter);
+
+    var grid = document.createElement('div');
+    grid.className = 'shop-cards';
+
+    // Render order follows the lowest mapped normal wiki mission from the
+    // Scenario dataset. Ties use the corresponding runtime key, ktenmain
+    // mission ID, then shop index. Dev-only and unmapped shops land at the end.
+    // A shop is shown if it either holds items OR is referenced by at
+    // least one stronghold — that way emptying a real shop doesn't hide
+    // its card, but shopcsv padding slots stay hidden.
+    var shopOrder = [];
+    var shopStart = rebuildShopContract ? 1 : 0;
+    var shopEnd = rebuildShopContract ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var si = shopStart; si < shopEnd; si++) {
+      var shopRecsList = shopRecs[si] || [];
+      if (!rebuildShopContract && rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
+          !rom.shops[si].runtimeOverride && !rom.shops[si].nativeOverride) continue;
+      var minWiki = Infinity;
+      var minScenarioKey = Infinity;
+      var minMission = Infinity;
+      for (var mi = 0; mi < shopRecsList.length; mi++) {
+        var rr = shopRecsList[mi];
+        var runtimeKeys = scenarioKeysByRecord[rr.index] || [];
+        for (var rki = 0; rki < runtimeKeys.length; rki++) {
+          var runtimeKey = runtimeKeys[rki];
+          if (OB64.isDevScenarioKey && OB64.isDevScenarioKey(runtimeKey)) continue;
+          var keyInfo = OB64.scenarioKeyInfo
+            ? OB64.scenarioKeyInfo(runtimeKey)
+            : { wikiId: 0 };
+          if (!keyInfo.wikiId) continue;
+          if (keyInfo.wikiId < minWiki ||
+              (keyInfo.wikiId === minWiki && runtimeKey < minScenarioKey)) {
+            minWiki = keyInfo.wikiId;
+            minScenarioKey = runtimeKey;
+          }
+        }
+        if (rr.missionId < minMission) minMission = rr.missionId;
+      }
+      shopOrder.push({ idx: si, minWiki: minWiki, minScenarioKey: minScenarioKey, minMission: minMission });
+    }
+    shopOrder.sort(function(a, b) {
+      if (a.minWiki !== b.minWiki) return a.minWiki - b.minWiki;
+      if (a.minScenarioKey !== b.minScenarioKey) return a.minScenarioKey - b.minScenarioKey;
+      if (a.minMission !== b.minMission) return a.minMission - b.minMission;
+      return a.idx - b.idx;
+    });
+
+    for (var oi = 0; oi < shopOrder.length; oi++) {
+      var s = shopOrder[oi].idx;
+      var shop = rom.shops[s];
+
+      var card = document.createElement('div');
+      card.className = 'shop-card';
+
+      // 64x64 thumbnail (blank for now)
+      var thumb = document.createElement('div');
+      thumb.className = 'shop-thumb';
+      thumb.title = 'Shop #' + s;
+      card.appendChild(thumb);
+
+      // These are the two byte-exact downstream array capacities, not the
+      // largest inventory observed in retail data.
+      var perShopCount = shop.items.length;
+      var perShopConsumables = (shop.consumables || []).length;
+      var perShopCap = shopCapacities.equipment;
+      var perShopConsumableCap = shopCapacities.expendables;
+      var shopCounter = document.createElement('div');
+      shopCounter.className = 'shop-item-count';
+      if (perShopCount > perShopCap || perShopConsumables > perShopConsumableCap) {
+        shopCounter.classList.add('shop-item-count-over');
+      } else if (perShopCount >= perShopCap - 3 ||
+                 perShopConsumables >= perShopConsumableCap - 2) {
+        shopCounter.classList.add('shop-item-count-near');
+      }
+      shopCounter.textContent = perShopCount + ' / ' + perShopCap + ' equipment · ' +
+        perShopConsumables + ' / ' + perShopConsumableCap + ' expendable';
+      shopCounter.title = currentBuildModeInfo().label + ' capacities: ' +
+        perShopCap + ' equipment and ' + perShopConsumableCap + ' Expendables.';
+      card.appendChild(shopCounter);
+
+      // Per-stronghold location rows: "Stronghold, Scenario".
+      // A single stronghold may appear under multiple mission groups (same
+      // town, different scenario) — collapse those into one row and join
+      // the scenario names so the card never shows the same stronghold twice.
+      var locs = document.createElement('div');
+      locs.className = 'shop-locations';
+      var recs = shopRecs[s] || [];
+      if (recs.length === 0) {
+        var none = document.createElement('div');
+        none.className = 'shop-location unassigned';
+        none.textContent = '(unassigned shop #' + s + ')';
+        locs.appendChild(none);
+      } else {
+        var groupOrder = [];
+        var groups = {};
+        for (var r = 0; r < recs.length; r++) {
+          var rec = recs[r];
+          var key = strongholdDisplay(rec.name) || '(no name)';
+          if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+          var mappedKeys = scenarioKeysByRecord[rec.index] || [];
+          if (mappedKeys.length === 0) {
+            var unmapped = 'No scenario-key mapping (ktenmain group ' + rec.missionId + ')';
+            if (groups[key].indexOf(unmapped) === -1) groups[key].push(unmapped);
+          }
+          for (var sk = 0; sk < mappedKeys.length; sk++) {
+            var scenarioLabel = shopScenarioKeyLabel(mappedKeys[sk]);
+            if (groups[key].indexOf(scenarioLabel) === -1) groups[key].push(scenarioLabel);
+          }
+        }
+        for (var g = 0; g < groupOrder.length; g++) {
+          var name = groupOrder[g];
+          var row = document.createElement('div');
+          row.className = 'shop-location';
+          row.textContent = name + ', ' + groups[name].join(' / ');
+          locs.appendChild(row);
+        }
+      }
+      card.appendChild(locs);
+
+      // Bucket items into the 5 categories
+      var buckets = { head: [], weapon: [], accessory: [], body: [], expendable: [] };
+      for (var k = 0; k < shop.items.length; k++) {
+        buckets[categorizeShopItem(shop.items[k])].push(shop.items[k]);
+      }
+      var expNames = (shop.consumables || []).map(function(id) {
+        var c = rom.consumables && rom.consumables[id];
+        return c && c.name ? c.name : ('Consumable #' + id);
+      });
+
+      var catsEl = document.createElement('div');
+      catsEl.className = 'shop-categories';
+      SHOP_CATEGORIES.forEach(function(cat) {
+        var section = document.createElement('div');
+        section.className = 'shop-category';
+        section.dataset.shopIdx = s;
+        section.dataset.category = cat;
+
+        var label = document.createElement('div');
+        label.className = 'shop-category-label';
+        label.textContent = SHOP_CATEGORY_LABELS[cat];
+        section.appendChild(label);
+
+        var items = document.createElement('div');
+        items.className = 'shop-category-items';
+        var names;
+        if (cat === 'expendable') {
+          names = expNames;
+        } else {
+          names = buckets[cat].map(function(id) { return OB64.itemName(id); });
+        }
+        items.textContent = names.length ? names.join(', ') : '(none)';
+        section.appendChild(items);
+
+        section.addEventListener('click', shopCategoryClick);
+        catsEl.appendChild(section);
+      });
+      card.appendChild(catsEl);
+
+      grid.appendChild(card);
+    }
+    panel.appendChild(grid);
+  }
+
+  function shopCategoryClick(e) {
+    var el = e.currentTarget;
+    var shopIdx = parseInt(el.dataset.shopIdx);
+    var category = el.dataset.category;
+    openItemModal(shopIdx, category);
+  }
+
+  // ---------- Shop-item modal ----------
+  function openItemModal(shopIdx, category) {
+    if (currentBuildMode() === 'rebuild' && (shopIdx < 1 || shopIdx > 35)) {
+      showErrorModal('Rebuild ROM - Shop record unavailable',
+        'Rebuild ROM supports real Shop records 1 through 35. Record zero is the empty sentinel.');
+      return;
+    }
+    var shop = rom.shops[shopIdx];
+    var isConsumableModal = (category === 'expendable');
+    var items = allItemsInCategory(category);
+    var shopCapacities = OB64.nativeRebuild
+      ? OB64.nativeRebuild.capacities(currentBuildMode())
+      : { equipment: OB64.SHOP_MAX_EQUIPMENT_PER_SHOP,
+          expendables: OB64.SHOP_MAX_CONSUMABLES_PER_SHOP };
+
+    // Initial selection state.
+    // Both ID spaces are per-shop; runtime encoding distinguishes them with
+    // bit 15 rather than by changing their stored IDs here.
+    var selected = {};
+    var selectedOrder = [];
+    if (isConsumableModal) {
+      (shop.consumables || []).forEach(function(id) {
+        selected[id] = true;
+        selectedOrder.push(id);
+      });
+    } else {
+      shop.items.forEach(function(id) {
+        if (categorizeShopItem(id) === category) {
+          selected[id] = true;
+          selectedOrder.push(id);
+        }
+      });
+    }
+
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) closeModal();
+    });
+
+    var modal = document.createElement('div');
+    modal.className = 'item-modal';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var title = document.createElement('h2');
+    title.textContent = isConsumableModal
+      ? 'Shop #' + shopIdx + ' — Expendables'
+      : 'Shop #' + shopIdx + ' — ' + SHOP_CATEGORY_LABELS[category];
+    header.appendChild(title);
+    var btnClose = document.createElement('button');
+    btnClose.className = 'item-modal-close';
+    btnClose.textContent = '×';
+    btnClose.addEventListener('click', closeModal);
+    header.appendChild(btnClose);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'item-modal-body';
+
+    // Group by equipType so we can emit sub-type separators, max 20 per column
+    var columns = [];
+    var currentColumn = [];
+    var currentType = null;
+    items.forEach(function(item) {
+      var typeKey = item.isConsumable ? 'consumable' : item.equipType;
+      if (currentType !== null && typeKey !== currentType && currentColumn.length >= 4) {
+        // Start a new column when sub-type changes AND current has some content
+        // (still enforce 20-per-column cap below)
+      }
+      if (currentColumn.length >= 20) {
+        columns.push(currentColumn);
+        currentColumn = [];
+      }
+      if (typeKey !== currentType) {
+        currentColumn.push({ kind: 'header', label: item.equipTypeName || 'Consumable' });
+        currentType = typeKey;
+      }
+      currentColumn.push({ kind: 'item', item: item });
+    });
+    if (currentColumn.length) columns.push(currentColumn);
+
+    columns.forEach(function(colEntries) {
+      var col = document.createElement('div');
+      col.className = 'item-modal-col';
+      colEntries.forEach(function(entry) {
+        if (entry.kind === 'header') {
+          var h = document.createElement('div');
+          h.className = 'item-modal-type-header';
+          h.textContent = entry.label;
+          col.appendChild(h);
+        } else {
+          var item = entry.item;
+          var row = document.createElement('div');
+          row.className = 'item-modal-row';
+          if (selected[item.id]) row.classList.add('selected');
+          if (!isConsumableModal && !selected[item.id] && !isItemInAnyShop(item.id)) {
+            row.classList.add('unused');
+          }
+          if (item.isConsumable) row.classList.add('consumable-item');
+
+          var img = document.createElement('img');
+          img.className = 'item-modal-icon';
+          img.src = itemIconURL(item.name);
+          img.alt = '';
+          img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
+          row.appendChild(img);
+
+          var name = document.createElement('span');
+          name.className = 'item-modal-name';
+          name.textContent = item.name;
+          row.appendChild(name);
+
+          if (item.isConsumable) {
+            var badge = document.createElement('span');
+            badge.className = 'item-modal-kind';
+            badge.textContent = item.isKnownShopConsumable ? 'retail' : (item.category || 'special');
+            badge.title = item.isKnownShopConsumable
+              ? 'Written by the byte-exact retail shop source-list producer.'
+              : 'Not written by the retail shop producer. Purchase/use behavior still needs runtime proof.';
+            row.appendChild(badge);
+          }
+
+          // Price chip — shown for equipment and consumables alike.
+          // Consumables use a separate price-edit path (writes to
+          // rom.consumables[i].price, dirty.consumables).
+          if (typeof item.price === 'number' && item.price >= 0) {
+            var price = document.createElement('span');
+            price.className = 'item-modal-price editable-price';
+            price.textContent = item.price + 'g';
+            price.title = 'Click to edit price';
+            (function(priceEl, itm) {
+              priceEl.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                beginPriceEdit(priceEl, itm);
+              });
+            })(price, item);
+            row.appendChild(price);
+          }
+
+          if (item.isConsumable && !item.isKnownShopConsumable) {
+            row.title = 'Custom/special consumable: list encoding is verified, but purchase and use behavior are not.';
+          }
+          row.addEventListener('click', function(ev) {
+            // Ctrl/Cmd+click: strip this ID from every OTHER shop but leave
+            // the current shop's selection untouched.
+            if (ev.ctrlKey || ev.metaKey) {
+              ev.preventDefault();
+              var removedFrom = isConsumableModal
+                ? removeConsumableFromOtherShops(shopIdx, item.id)
+                : removeItemFromOtherShops(shopIdx, item.id);
+              flashHint(hint, removedFrom
+                ? 'Removed ' + item.name + ' from ' + removedFrom + ' other shop' + (removedFrom === 1 ? '' : 's') + '.'
+                : item.name + ' is not in any other shop.');
+              updateRowUnused(row, item.id, isConsumableModal);
+              return;
+            }
+            if (selected[item.id]) {
+              delete selected[item.id];
+              selectedOrder = selectedOrder.filter(function(id) { return id !== item.id; });
+              row.classList.remove('selected');
+            } else {
+              var currentCount = isConsumableModal
+                ? (shop.consumables || []).length
+                : shop.items.length;
+              var maxCount = isConsumableModal
+                ? shopCapacities.expendables
+                : shopCapacities.equipment;
+              if (currentCount >= maxCount) {
+                flashHint(hint, 'Shop #' + shopIdx + ' is already at the static ' +
+                  maxCount + (isConsumableModal ? '-consumable' : '-equipment') +
+                  ' consumer-array capacity.', 'error');
+                return;
+              }
+              selected[item.id] = true;
+              selectedOrder.push(item.id);
+              row.classList.add('selected');
+            }
+            if (isConsumableModal) {
+              commitConsumableSelectionToShop(shopIdx, selectedOrder, selected);
+            } else {
+              commitSelectionToShop(shopIdx, category, selectedOrder, selected);
+            }
+            updateRowUnused(row, item.id, isConsumableModal);
+          });
+          col.appendChild(row);
+        }
+      });
+      body.appendChild(col);
+    });
+
+    modal.appendChild(body);
+
+    // Hint strip at the bottom. Kept as a single persistent element so
+    // flashHint() can swap in transient status lines (e.g. after Ctrl+click
+    // cascade removal) and revert to the default tip after a couple seconds.
+    var hint = document.createElement('div');
+    hint.className = 'item-modal-hint';
+    hint.dataset.defaultText = isConsumableModal
+      ? 'Select up to ' + shopCapacities.expendables + ' Expendables for ' +
+        currentBuildModeInfo().label + '. Membership order is preserved; new entries append.'
+      : 'Select up to ' + shopCapacities.equipment + ' equipment entries for ' +
+        currentBuildModeInfo().label + '. Membership order is preserved; Ctrl+click removes an item elsewhere.';
+    hint.textContent = hint.dataset.defaultText;
+    modal.appendChild(hint);
+
+    document.body.appendChild(overlay);
+    function closeModal() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      renderShops(document.getElementById('panel-shops'));
+    }
+    // ESC to close
+    var escHandler = function(ev) { if (ev.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
+  }
+
+  function flashHint(hint, message, kind) {
+    if (!hint) return;
+    hint.textContent = message;
+    hint.classList.add('item-modal-hint-flash');
+    hint.classList.toggle('item-modal-hint-error', kind === 'error');
+    clearTimeout(hint._resetTimer);
+    hint._resetTimer = setTimeout(function() {
+      hint.textContent = hint.dataset.defaultText || '';
+      hint.classList.remove('item-modal-hint-flash');
+      hint.classList.remove('item-modal-hint-error');
+    }, 2000);
+  }
+
+  function removeItemFromOtherShops(currentShopIdx, itemId) {
+    var removedFrom = 0;
+    var start = currentBuildMode() === 'rebuild' ? 1 : 0;
+    var end = currentBuildMode() === 'rebuild' ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var i = start; i < end; i++) {
+      if (i === currentShopIdx) continue;
+      var shop = rom.shops[i];
+      var before = shop.items.length;
+      shop.items = shop.items.filter(function(id) { return id !== itemId; });
+      if (shop.items.length !== before) {
+        if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, i);
+        removedFrom++;
+      }
+    }
+    if (removedFrom > 0) markChanged('shops');
+    return removedFrom;
+  }
+
+  function removeConsumableFromOtherShops(currentShopIdx, consumableId) {
+    var removedFrom = 0;
+    var start = currentBuildMode() === 'rebuild' ? 1 : 0;
+    var end = currentBuildMode() === 'rebuild' ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var i = start; i < end; i++) {
+      if (i === currentShopIdx) continue;
+      var shop = rom.shops[i];
+      var before = (shop.consumables || []).length;
+      shop.consumables = (shop.consumables || []).filter(function(id) { return id !== consumableId; });
+      if (shop.consumables.length !== before) {
+        if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, i);
+        removedFrom++;
+      }
+    }
+    if (removedFrom > 0) markChanged('shops');
+    return removedFrom;
+  }
+
+  function isItemInAnyShop(itemId) {
+    for (var i = 0; i < rom.shops.length; i++) {
+      if (rom.shops[i].items.indexOf(itemId) !== -1) return true;
+    }
+    return false;
+  }
+
+  function updateRowUnused(row, itemId, isConsumable) {
+    // The red "unused" cue is useful for equipment distribution, but it made
+    // most perfectly selectable special consumables look disabled. Their
+    // retail/custom status is carried by the badge and tooltip instead.
+    if (isConsumable || isItemInAnyShop(itemId)) row.classList.remove('unused');
+    else row.classList.add('unused');
+  }
+
+  // Inline price edit inside the shop-item modal. The price actually lives
+  // in the item-stat table (not the shop), so committing sets dirty.items
+  // directly rather than going through markChanged() (which keys off the
+  // active tab and would misfile the edit under dirty.shops).
+  function beginPriceEdit(priceEl, item) {
+    if (priceEl.querySelector('input')) return;
+    // Consumables live in the global consumable master table; equipment
+    // prices live in the item-stat table. Route writes accordingly.
+    var isConsumable = !!item.isConsumable;
+    var rec = isConsumable ? rom.consumables[item.consumableIndex] : rom.itemStats[item.id];
+    if (!rec) return;
+    var cur = rec.price;
+
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.min = 0;
+    input.max = 65535;
+    input.value = cur;
+    input.className = 'item-modal-price-input';
+    priceEl.textContent = '';
+    priceEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    var committed = false;
+    function finish(save) {
+      if (committed) return;
+      committed = true;
+      if (save) {
+        var val = parseInt(input.value, 10);
+        if (!isNaN(val) && val >= 0 && val <= 65535 && val !== cur) {
+          rec.price = val;
+          item.price = val;
+          priceEl.classList.add('price-modified');
+          markChanged(isConsumable ? 'consumables' : 'items');
+        }
+      }
+      priceEl.textContent = rec.price + 'g';
+    }
+    input.addEventListener('click',   function(ev) { ev.stopPropagation(); });
+    input.addEventListener('blur',    function() { finish(true); });
+    input.addEventListener('keydown', function(ev) {
+      ev.stopPropagation();
+      if (ev.key === 'Enter')  { finish(true);  input.blur(); }
+      if (ev.key === 'Escape') { finish(false); input.blur(); }
+    });
+  }
+
+  // ---------- Generic error modal ----------
+  function showErrorModal(title, message) {
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay';
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) closeErr();
+    });
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = title;
+    header.appendChild(h2);
+    var btnX = document.createElement('button');
+    btnX.className = 'error-modal-close';
+    btnX.textContent = '×';
+    btnX.addEventListener('click', closeErr);
+    header.appendChild(btnX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body';
+    body.textContent = message;
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer';
+    var btnOk = document.createElement('button');
+    btnOk.className = 'error-modal-ok';
+    btnOk.textContent = 'OK';
+    btnOk.addEventListener('click', closeErr);
+    footer.appendChild(btnOk);
+    modal.appendChild(footer);
+
+    document.body.appendChild(overlay);
+    btnOk.focus();
+
+    function closeErr() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+    }
+    var escHandler = function(ev) { if (ev.key === 'Escape') closeErr(); };
+    document.addEventListener('keydown', escHandler);
+  }
+
+  var romExportProgressModalSerial = 0;
+
+  function showRomExportProgressModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay rom-export-progress-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-export-progress-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    var titleId = 'rom-export-progress-title-' + (++romExportProgressModalSerial);
+    modal.setAttribute('aria-labelledby', titleId);
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var title = document.createElement('h2');
+    title.id = titleId;
+    title.textContent = 'Exporting ROM';
+    header.appendChild(title);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-export-progress-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-export-progress-intro';
+    intro.textContent = 'The editor is building and testing the finished ROM.';
+    body.appendChild(intro);
+
+    var stageLabel = document.createElement('label');
+    stageLabel.className = 'rom-export-progress-label';
+    stageLabel.textContent = 'Active stage';
+    var stageField = document.createElement('input');
+    stageField.type = 'text';
+    stageField.className = 'rom-export-progress-stage';
+    stageField.readOnly = true;
+    stageField.value = 'Starting export';
+    stageField.setAttribute('aria-live', 'polite');
+    stageLabel.appendChild(stageField);
+    body.appendChild(stageLabel);
+
+    var track = document.createElement('div');
+    track.className = 'rom-export-progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', 'ROM export progress');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', '0');
+    var fill = document.createElement('div');
+    fill.className = 'rom-export-progress-fill';
+    fill.style.width = '0%';
+    track.appendChild(fill);
+    body.appendChild(track);
+
+    var percentText = document.createElement('p');
+    percentText.className = 'rom-export-progress-percent';
+    percentText.textContent = '0%';
+    body.appendChild(percentText);
+    modal.appendChild(body);
+
+    document.body.appendChild(overlay);
+    modal.focus();
+
+    return {
+      update: function(stage, percent) {
+        var value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        stageField.value = String(stage || 'Working');
+        track.setAttribute('aria-valuenow', String(value));
+        track.setAttribute('aria-valuetext', stageField.value);
+        fill.style.width = value + '%';
+        percentText.textContent = value + '%';
+      },
+      close: function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      },
+      element: overlay,
+    };
+  }
+
+  function paintRomExportProgress(progress, percent, stage) {
+    if (progress) progress.update(stage, percent);
+    return new Promise(function(resolve) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(function() { setTimeout(resolve, 0); });
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+  }
+
+  var romValidationModalSerial = 0;
+
+  function romValidationReportFilename(report) {
+    var generatedAt = report && report.generatedAt
+      ? String(report.generatedAt)
+      : new Date().toISOString();
+    var stamp = generatedAt.replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '');
+    return 'ob64-rom-export-errors-' + stamp + '.json';
+  }
+
+  function downloadRomValidationReport(report) {
+    var json = JSON.stringify(report, null, 2) + '\n';
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = romValidationReportFilename(report);
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+    return link.download;
+  }
+
+  // Blocked export results use the same parchment/wax-red modal chrome as
+  // other editor errors. Only plain-language fields appear here; offsets,
+  // hashes, exception text, and check evidence remain in the JSON report.
+  function showRomValidationModal(report, actions) {
+    actions = actions || {};
+    var errors = report && Array.isArray(report.errors) ? report.errors : [];
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-validation-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    var titleId = 'rom-validation-title-' + (++romValidationModalSerial);
+    modal.setAttribute('aria-labelledby', titleId);
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var h2 = document.createElement('h2');
+    h2.id = titleId;
+    h2.textContent = 'ROM Export Blocked';
+    header.appendChild(h2);
+    var btnX = document.createElement('button');
+    btnX.type = 'button';
+    btnX.className = 'error-modal-close';
+    btnX.setAttribute('aria-label', 'Close ROM validation errors');
+    btnX.textContent = '×';
+    btnX.addEventListener('click', closeValidation);
+    header.appendChild(btnX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-validation-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-validation-intro';
+    intro.textContent = errors.length === 1
+      ? 'The editor found one problem and stopped the automatic ROM download.'
+      : 'The editor found ' + errors.length + ' problems and stopped the automatic ROM download.';
+    body.appendChild(intro);
+
+    var list = document.createElement('div');
+    list.className = 'rom-validation-error-list';
+    errors.forEach(function(found, index) {
+      var card = document.createElement('section');
+      card.className = 'rom-validation-error';
+      var cardTitle = document.createElement('h3');
+      cardTitle.textContent = (index + 1) + '. ' +
+        (found.title || 'ROM validation problem');
+      card.appendChild(cardTitle);
+      var message = document.createElement('p');
+      message.textContent = found.message ||
+        'The finished ROM did not pass an export safety check.';
+      card.appendChild(message);
+      if (found.suggestion) {
+        var suggestion = document.createElement('p');
+        suggestion.className = 'rom-validation-suggestion';
+        suggestion.textContent = found.suggestion;
+        card.appendChild(suggestion);
+      }
+      list.appendChild(card);
+    });
+    body.appendChild(list);
+
+    var reportNote = document.createElement('p');
+    reportNote.className = 'rom-validation-report-note';
+    reportNote.textContent = 'Download the error report for check results, hashes, and technical details.';
+    body.appendChild(reportNote);
+    if (typeof actions.onDownloadAnyway === 'function') {
+      var bypassNote = document.createElement('p');
+      bypassNote.className = 'rom-validation-bypass-note';
+      bypassNote.textContent = 'Download Anyway saves the failed candidate without adopting it into the editor.';
+      body.appendChild(bypassNote);
+    }
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer rom-validation-footer';
+    var btnReport = document.createElement('button');
+    btnReport.type = 'button';
+    btnReport.className = 'error-modal-ok rom-validation-download';
+    btnReport.textContent = 'Download Error Report';
+    btnReport.addEventListener('click', function() {
+      downloadRomValidationReport(report);
+    });
+    footer.appendChild(btnReport);
+    if (typeof actions.onDownloadAnyway === 'function') {
+      var btnAnyway = document.createElement('button');
+      btnAnyway.type = 'button';
+      btnAnyway.className = 'error-modal-ok rom-validation-anyway';
+      btnAnyway.textContent = 'Download Anyway';
+      btnAnyway.addEventListener('click', function() {
+        btnAnyway.disabled = true;
+        try {
+          actions.onDownloadAnyway();
+          closeValidation();
+        } catch (downloadError) {
+          closeValidation();
+          if (OB64.romExportValidator && OB64.romExportValidator.unexpectedReport) {
+            showRomValidationModal(
+              OB64.romExportValidator.unexpectedReport(downloadError, 'download-anyway')
+            );
+          } else {
+            showErrorModal('Download failed', downloadError.message);
+          }
+          console.error(downloadError);
+        }
+      });
+      footer.appendChild(btnAnyway);
+    }
+    var btnClose = document.createElement('button');
+    btnClose.type = 'button';
+    btnClose.className = 'error-modal-ok rom-validation-close';
+    btnClose.textContent = 'Close';
+    btnClose.addEventListener('click', closeValidation);
+    footer.appendChild(btnClose);
+    modal.appendChild(footer);
+
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) closeValidation();
+    });
+    document.body.appendChild(overlay);
+    btnReport.focus();
+
+    function closeValidation() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+    }
+    var escHandler = function(ev) {
+      if (ev.key === 'Escape') closeValidation();
+    };
+    document.addEventListener('keydown', escHandler);
+  }
+
+  // Themed confirm dialog on the error-modal chrome (native window.confirm looks foreign
+  // against the parchment UI). onConfirm runs only when the user clicks the confirm button;
+  // overlay click, x, Cancel, and Escape all dismiss without confirming.
+  function showConfirmModal(title, message, onConfirm, confirmLabel) {
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay';
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) close();
+    });
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = title;
+    header.appendChild(h2);
+    var btnX = document.createElement('button');
+    btnX.className = 'error-modal-close';
+    btnX.textContent = '×';
+    btnX.addEventListener('click', close);
+    header.appendChild(btnX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body';
+    body.textContent = message;
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer';
+    var btnCancel = document.createElement('button');
+    btnCancel.className = 'error-modal-ok';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', close);
+    footer.appendChild(btnCancel);
+    var btnGo = document.createElement('button');
+    btnGo.className = 'error-modal-ok';
+    btnGo.textContent = confirmLabel || 'Confirm';
+    btnGo.addEventListener('click', function() { close(); onConfirm(); });
+    footer.appendChild(btnGo);
+    modal.appendChild(footer);
+
+    document.body.appendChild(overlay);
+    btnCancel.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+    }
+    var escHandler = function(ev) { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', escHandler);
+  }
+  OB64.showErrorModal = showErrorModal;
+  OB64.showConfirmModal = showConfirmModal;
+  OB64.showRomExportProgressModal = showRomExportProgressModal;
+  OB64.showRomValidationModal = showRomValidationModal;
+  OB64.downloadRomValidationReport = downloadRomValidationReport;
+
+  function commitSelectionToShop(shopIdx, category, selectedOrder, selected) {
+    var shop = rom.shops[shopIdx];
+    if (currentBuildMode() === 'patch') {
+      var legacyKept = shop.items.filter(function(id) {
+        return categorizeShopItem(id) !== category;
+      });
+      var legacyIds = Object.keys(selected).map(function(key) {
+        return parseInt(key, 10);
+      });
+      shop.items = legacyKept.concat(legacyIds);
+      if (OB64.runtimeOverrides) {
+        OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+      }
+      markChanged('shops');
+      return;
+    }
+    var selectedMap = Object.create(null);
+    selectedOrder.forEach(function(id) { selectedMap[id] = true; });
+    var emitted = Object.create(null);
+    var nextItems = [];
+    shop.items.forEach(function(id) {
+      if (categorizeShopItem(id) !== category) {
+        nextItems.push(id);
+      } else if (selectedMap[id]) {
+        nextItems.push(id);
+        emitted[id] = true;
+      }
+    });
+    selectedOrder.forEach(function(id) {
+      if (!emitted[id]) nextItems.push(id);
+    });
+    shop.items = nextItems;
+    if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+    markChanged('shops');
+  }
+
+  function commitConsumableSelectionToShop(shopIdx, selectedOrder, selected) {
+    var shop = rom.shops[shopIdx];
+    shop.consumables = currentBuildMode() === 'patch'
+      ? Object.keys(selected).map(function(key) { return parseInt(key, 10); })
+      : selectedOrder.slice();
+    if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+    markChanged('shops');
+  }
+
+  // ============================================================
+  // ITEMS TAB
+  // ============================================================
+  var ITEM_GROWTH_FIELDS = {
+    growthHpStr: true, growthUnknown: true, growthInt: true, growthAgi: true,
+    growthDex: true, growthVit: true, growthMen: true, growthLck: true,
+  };
+  var ITEM_RAW_BYTE_FIELDS = {
+    b3Raw: true, b12Raw: true,
+    b22Raw: true, b23Raw: true, b24Raw: true, b25Raw: true, b26Raw: true, b27Raw: true,
+    b28Raw: true, b29Raw: true, b30Raw: true, b31Raw: true,
+  };
+
+  function renderItems(panel) {
+    panel.innerHTML = '';
+    var filter = makeFilterBar('Filter by name, type, element, or category...', function(q) {
+      var rows = panel.querySelectorAll('tbody tr');
+      for (var i = 0; i < rows.length; i++) {
+        rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      }
+    });
+    panel.appendChild(filter);
+
+    var growthNote = document.createElement('div');
+    growthNote.className = 'item-growth-note';
+    growthNote.innerHTML = '<strong>Level-up growth (B20-B21):</strong> each value is a permanent 0-3 addition per level from this equipped item. Retail code applies B20 bits 7:6 to both HP and STR; the community layout hypothesis is that this was intended as HP only. B20 bits 5:4 is shown as <strong>STR? unused</strong>: its dedicated accessor fits the missing STR position, but no accepted retail caller or effect is established. These fields are separate from ordinary while-equipped stat bonuses.';
+    panel.appendChild(growthNote);
+
+    var rawNote = document.createElement('div');
+    rawNote.className = 'item-raw-note';
+    rawNote.innerHTML = '<strong>Raw byte access:</strong> all 278 logical records are shown (ID 0 sentinel plus 277 equipment IDs, 0x01-0x115). Shaded ⚠ columns expose every remaining logical record byte and use intentionally conservative labels. Logical B28-B31 form the current item\'s runtime name pointer and are physically stored at statOff-4..statOff-1; changing pointer bytes can break names or crash the game. Click an editable value, or focus it and press Enter or Space.';
+    panel.appendChild(rawNote);
+
+    var table = document.createElement('table');
+    table.className = 'items-table';
+    table.innerHTML = '<thead><tr>' +
+      '<th title="Record index / game item ID. The ID is not stored as a separate byte inside the 32-byte item record.">ID</th>' +
+      '<th title="Name resolved through logical B28-B31, the current item-name pointer (physically statOff-4..statOff-1).">Name</th>' +
+      '<th title="B0: equipment type / slot byte.">Type</th>' +
+      '<th title="B1: element byte.">Elem</th>' +
+      '<th title="B2: equipment grade / quality byte.">Gr</th>' +
+      '<th title="B4-B5: price (unsigned 16-bit, big-endian).">Price</th>' +
+      '<th title="B6: Strength static equipment modifier (signed byte).">STR</th>' +
+      '<th title="B7: Intelligence static equipment modifier (signed byte).">INT</th>' +
+      '<th title="B8: Agility static equipment modifier (signed byte).">AGI</th>' +
+      '<th title="B9: Dexterity static equipment modifier (signed byte).">DEX</th>' +
+      '<th title="B10: Vitality static equipment modifier (signed byte).">VIT</th>' +
+      '<th title="B11: Mentality static equipment modifier (signed byte).">MEN</th>' +
+      '<th title="B13: Physical resistance modifier (signed byte).">Phys</th>' +
+      '<th title="B14: Wind resistance modifier (signed byte).">Wind</th>' +
+      '<th title="B15: Fire resistance modifier (signed byte).">Fire</th>' +
+      '<th title="B16: Earth resistance modifier (signed byte).">Earth</th>' +
+      '<th title="B17: Water resistance modifier (signed byte).">Water</th>' +
+      '<th title="B18: Virtue resistance modifier (signed byte).">Virt</th>' +
+      '<th title="B19: Bane resistance modifier (signed byte).">Bane</th>' +
+      '<th class="item-growth-start" title="B20 bits 7:6. Retail code permanently adds this value to both HP and STR. Community layout inference suggests HP was the intended lane.">HP (+STR retail)</th>' +
+      '<th title="B21 bits 5:4. Permanent VIT addition per level while equipped.">VIT-g</th>' +
+      '<th title="B20 bits 3:2. Permanent INT addition per level while equipped.">INT-g</th>' +
+      '<th title="B21 bits 3:2. Permanent MEN addition per level while equipped.">MEN-g</th>' +
+      '<th title="B20 bits 1:0. Permanent AGI addition per level while equipped.">AGI-g</th>' +
+      '<th title="B21 bits 7:6. Permanent DEX addition per level while equipped.">DEX-g</th>' +
+      '<th title="B21 bits 1:0. Permanent LCK addition per level while equipped.">LCK-g</th>' +
+      '<th class="item-growth-unknown" title="B20 bits 5:4. Likely intended STR position by packed-layout symmetry, but the dedicated accessor has no accepted retail caller or established effect.">STR? unused</th>' +
+      '<th class="item-raw-byte item-raw-start" title="B3 reserved/unknown raw byte. Exact semantics unknown; edit with caution.">B3 ?</th>' +
+      '<th class="item-raw-byte" title="B12 unknown signed/stat-adjacent byte. Exact consumer and semantics are unverified.">B12 ?</th>' +
+      '<th class="item-raw-byte" title="B22 tail byte. Partial consumers exist, but complete semantics are unknown.">B22 ?</th>' +
+      '<th class="item-raw-byte" title="B23 tail byte. Complete semantics are unknown.">B23 ?</th>' +
+      '<th class="item-raw-byte" title="B24 tail byte. Complete semantics are unknown.">B24 ?</th>' +
+      '<th class="item-raw-byte" title="B25 tail byte. Complete semantics are unknown.">B25 ?</th>' +
+      '<th class="item-raw-byte" title="B26 tail byte. Complete semantics are unknown.">B26 ?</th>' +
+      '<th class="item-raw-byte" title="B27 tail byte. Complete semantics are unknown.">B27 ?</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B28: current item-name pointer byte 0, physically statOff-4. Editing can break name lookup or crash.">Ptr28</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B29: current item-name pointer byte 1, physically statOff-3. Editing can break name lookup or crash.">Ptr29</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B30: current item-name pointer byte 2, physically statOff-2. Editing can break name lookup or crash.">Ptr30</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B31: current item-name pointer byte 3, physically statOff-1. Editing can break name lookup or crash.">Ptr31</th>' +
+      '</tr></thead>';
+    var tbody = document.createElement('tbody');
+
+    // Stat field definitions: field name, CSS class, raw field name
+    var STAT_FIELDS = [
+      { field: 'str', css: 'stat-atk', raw: 'strRaw' },
+      { field: 'int', css: 'stat-int', raw: 'intRaw' },
+      { field: 'agi', css: 'stat-agi', raw: 'agiRaw' },
+      { field: 'dex', css: 'stat-dex', raw: 'dexRaw' },
+      { field: 'vit', css: 'stat-vit', raw: 'vitRaw' },
+      { field: 'men', css: 'stat-men', raw: 'menRaw' },
+    ];
+
+    var RES_FIELDS = [
+      { field: 'resPhys', label: 'Phys' },
+      { field: 'resWind', label: 'Wind' },
+      { field: 'resFire', label: 'Fire' },
+      { field: 'resEarth', label: 'Earth' },
+      { field: 'resWater', label: 'Water' },
+      { field: 'resVirtue', label: 'Virt' },
+      { field: 'resBane', label: 'Bane' },
+    ];
+
+    var GROWTH_FIELDS = [
+      { field: 'growthHpStr', start: true },
+      { field: 'growthVit' },
+      { field: 'growthInt' },
+      { field: 'growthMen' },
+      { field: 'growthAgi' },
+      { field: 'growthDex' },
+      { field: 'growthLck' },
+      { field: 'growthUnknown', unknown: true },
+    ];
+
+    var RAW_FIELDS = [
+      { field: 'b3Raw', hint: 'B3 reserved/unknown raw byte.' },
+      { field: 'b12Raw', hint: 'B12 unknown signed/stat-adjacent byte.' },
+      { field: 'b22Raw', hint: 'B22 partially consumed tail byte; complete semantics unknown.' },
+      { field: 'b23Raw', hint: 'B23 tail byte; semantics unknown.' },
+      { field: 'b24Raw', hint: 'B24 tail byte; semantics unknown.' },
+      { field: 'b25Raw', hint: 'B25 tail byte; semantics unknown.' },
+      { field: 'b26Raw', hint: 'B26 tail byte; semantics unknown.' },
+      { field: 'b27Raw', hint: 'B27 tail byte; semantics unknown.' },
+      { field: 'b28Raw', pointer: true, hint: 'Logical B28 current item-name pointer byte; physically statOff-4. Editing can break names or crash.' },
+      { field: 'b29Raw', pointer: true, hint: 'Logical B29 current item-name pointer byte; physically statOff-3. Editing can break names or crash.' },
+      { field: 'b30Raw', pointer: true, hint: 'Logical B30 current item-name pointer byte; physically statOff-2. Editing can break names or crash.' },
+      { field: 'b31Raw', pointer: true, hint: 'Logical B31 current item-name pointer byte; physically statOff-1. Editing can break names or crash.' },
+    ];
+
+    for (var i = 0; i < rom.itemStats.length; i++) {
+      var item = rom.itemStats[i];
+      var tr = document.createElement('tr');
+      if (i === 0 || item.equipType === 0xFF) {
+        tr.className = 'item-internal-record';
+        tr.title = 'Internal/sentinel item-stat record. All bytes are editable, but gameplay safety is not established.';
+      }
+
+      // ID
+      td(tr, '0x' + item.gameId.toString(16).padStart(2, '0'));
+
+      // Name
+      var tdName = td(tr, '');
+      tdName.className = 'item-name';
+      var itemNameText = document.createElement('span');
+      itemNameText.className = 'description-name-text';
+      itemNameText.textContent = OB64.itemName(item.gameId);
+      var itemNameControl = document.createElement('div');
+      itemNameControl.className = 'description-name-control';
+      itemNameControl.appendChild(itemNameText);
+      itemNameControl.appendChild(descriptionEditButton('items', item.gameId, false));
+      tdName.appendChild(itemNameControl);
+
+      // Equip Type (dropdown)
+      (function(itm) {
+        var tdType = td(tr, formatByteChoice(itm.equipType, OB64.equipTypeName(itm.equipType)));
+        tdType.className = 'equip-type editable';
+        tdType.addEventListener('click', function() {
+          makeDropdown(tdType, OB64.EQUIP_TYPES, itm.equipType, function(v) {
+            itm.equipType = v;
+            tdType.textContent = formatByteChoice(v, OB64.equipTypeName(v));
+          });
+        });
+      })(item);
+
+      // Element (dropdown)
+      (function(itm) {
+        var tdElem = td(tr, formatByteChoice(itm.element, OB64.elementName(itm.element)));
+        tdElem.className = 'element element-' + itm.element + ' editable';
+        tdElem.addEventListener('click', function() {
+          makeDropdown(tdElem, OB64.ELEMENT_NAMES, itm.element, function(v) {
+            itm.element = v;
+            tdElem.textContent = formatByteChoice(v, OB64.elementName(v));
+            tdElem.className = 'element element-' + v + ' editable modified';
+          });
+        });
+      })(item);
+
+      // Grade (number input)
+      (function(itm) {
+        var tdGrade = td(tr, itm.grade || '\u2014');
+        tdGrade.className = 'num editable' + (itm.grade ? '' : ' dim');
+        tdGrade.addEventListener('click', function() {
+          makeNumericInput(tdGrade, itm.grade, 0, 255, function(v) {
+            itm.grade = v;
+            tdGrade.textContent = v || '\u2014';
+            tdGrade.classList.toggle('dim', !v);
+          });
+        });
+      })(item);
+
+      // Price (editable)
+      var tdPrice = document.createElement('td');
+      tdPrice.className = 'editable num';
+      tdPrice.textContent = item.price;
+      tdPrice.dataset.itemIdx = i;
+      tdPrice.dataset.field = 'price';
+      tdPrice.addEventListener('click', itemCellClick);
+      tr.appendChild(tdPrice);
+
+      // 6 character stats — STR, INT, AGI, DEX, VIT, MEN (all signed, all editable)
+      for (var sf = 0; sf < STAT_FIELDS.length; sf++) {
+        var def = STAT_FIELDS[sf];
+        var val = item[def.field];
+        var tdStat = document.createElement('td');
+        if (val !== 0) {
+          tdStat.textContent = val;
+          tdStat.className = (val < 0) ? 'num stat-neg editable' : 'num ' + def.css + ' editable';
+        } else {
+          tdStat.textContent = '\u2014';
+          tdStat.className = 'num dim editable';
+        }
+        tdStat.dataset.itemIdx = i;
+        tdStat.dataset.field = def.field;
+        tdStat.addEventListener('click', itemCellClick);
+        tr.appendChild(tdStat);
+      }
+
+      // 7 Resistances — each in its own column, editable
+      for (var ri = 0; ri < RES_FIELDS.length; ri++) {
+        (function(resIdx, itm) {
+          var rdef = RES_FIELDS[resIdx];
+          var rv = itm[rdef.field];
+          var tdR = document.createElement('td');
+          if (rv !== 0) {
+            tdR.textContent = rv;
+            tdR.className = (rv < 0) ? 'num stat-neg editable' : 'num stat-def editable';
+          } else {
+            tdR.textContent = '\u2014';
+            tdR.className = 'num dim editable';
+          }
+          tdR.dataset.itemIdx = i;
+          tdR.dataset.field = rdef.field;
+          tdR.addEventListener('click', itemCellClick);
+          tr.appendChild(tdR);
+        })(ri, item);
+      }
+
+      // Packed B20-B21 level-up additions (all eight 2-bit lanes, editable 0-3).
+      for (var gi = 0; gi < GROWTH_FIELDS.length; gi++) {
+        var gdef = GROWTH_FIELDS[gi];
+        var gv = item[gdef.field];
+        var tdGrowth = document.createElement('td');
+        tdGrowth.textContent = gv || '\u2014';
+        tdGrowth.className = 'num editable item-growth' +
+          (gv ? '' : ' dim') +
+          (gdef.start ? ' item-growth-start' : '') +
+          (gdef.unknown ? ' item-growth-unknown' : '');
+        tdGrowth.dataset.itemIdx = i;
+        tdGrowth.dataset.field = gdef.field;
+        tdGrowth.addEventListener('click', itemCellClick);
+        tr.appendChild(tdGrowth);
+      }
+
+      // Every otherwise-unmodeled byte remains directly editable. These cells
+      // are deliberately shaded and warned because their consumers are either
+      // incomplete or, for B28-B31, pointer-sensitive.
+      for (var rfi = 0; rfi < RAW_FIELDS.length; rfi++) {
+        var rawDef = RAW_FIELDS[rfi];
+        var rawVal = item[rawDef.field] & 0xFF;
+        var tdRaw = document.createElement('td');
+        tdRaw.textContent = rawVal;
+        tdRaw.className = 'num editable item-raw-byte' +
+          (rfi === 0 ? ' item-raw-start' : '') +
+          (rawDef.pointer ? ' item-pointer-byte' : '');
+        tdRaw.title = rawDef.hint + ' Raw range: 0-255.';
+        tdRaw.dataset.itemIdx = i;
+        tdRaw.dataset.field = rawDef.field;
+        tdRaw.addEventListener('click', itemCellClick);
+        tr.appendChild(tdRaw);
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    var tableWrap = document.createElement('div');
+    tableWrap.className = 'items-table-wrap';
+    tableWrap.appendChild(table);
+    panel.appendChild(tableWrap);
+    makeClickEditorsKeyboardAccessible(table, 'Item');
+    makeColumnsResizable(table, 'ob64_items_column_widths', {
+      minimumWidths: { 1: 128 },
+      initialMinimumWidths: { 1: 224 }
+    });
+    makeSortable(table);
+  }
+
+  // Signed stat fields (all character stats + resistances)
+  var SIGNED_ITEM_FIELDS = {
+    str: 'strRaw', int: 'intRaw', agi: 'agiRaw', dex: 'dexRaw',
+    vit: 'vitRaw', men: 'menRaw', b12: 'b12Raw',
+    resPhys: true, resWind: true, resFire: true, resEarth: true,
+    resWater: true, resVirtue: true, resBane: true,
+  };
+
+  function itemCellClick(e) {
+    var tcell = e.currentTarget;
+    if (tcell.querySelector('input')) return;
+    var idx = parseInt(tcell.dataset.itemIdx);
+    var field = tcell.dataset.field;
+    var item = rom.itemStats[idx];
+
+    // Signed fields: ordinary stats and resistances. Growth lanes are unsigned 0-3.
+    var isSigned = field in SIGNED_ITEM_FIELDS;
+    var isGrowth = field in ITEM_GROWTH_FIELDS;
+    var isRawByte = field in ITEM_RAW_BYTE_FIELDS;
+    var maxVal = field === 'price' ? 65535 : (isGrowth ? 3 : (isRawByte ? 255 : 127));
+    var minVal = isSigned ? -128 : 0;
+    var curVal = item[field];
+
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.min = minVal;
+    input.max = maxVal;
+    input.value = curVal;
+    tcell.textContent = '';
+    tcell.appendChild(input);
+    input.focus();
+    input.select();
+
+    input.addEventListener('blur', function() { commitItemEdit(tcell, input, idx, field, minVal, maxVal, isSigned); });
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') commitItemEdit(tcell, input, idx, field, minVal, maxVal, isSigned);
+      if (ev.key === 'Escape') {
+        tcell.textContent = field === 'price' ? curVal : (curVal || '\u2014');
+      }
+    });
+  }
+
+  function commitItemEdit(tcell, input, idx, field, minVal, maxVal, isSigned) {
+    var val = parseInt(input.value);
+    if (!isNaN(val) && val >= minVal && val <= maxVal) {
+      if (val !== rom.itemStats[idx][field]) {
+        rom.itemStats[idx][field] = val;
+        // Update raw byte value for export
+        if (isSigned) {
+          var rawField = SIGNED_ITEM_FIELDS[field];
+          if (typeof rawField === 'string') {
+            rom.itemStats[idx][rawField] = val < 0 ? val + 256 : val;
+          }
+        }
+        if (field === 'b12Raw') rom.itemStats[idx].b12 = OB64.signedByte(val);
+        if (/^b(?:28|29|30|31)Raw$/.test(field)) {
+          var ptrItem = rom.itemStats[idx];
+          ptrItem.namePtr = ((ptrItem.b28Raw << 24) | (ptrItem.b29Raw << 16) |
+            (ptrItem.b30Raw << 8) | ptrItem.b31Raw) >>> 0;
+        }
+        tcell.classList.add('modified');
+        markChanged();
+      }
+    }
+    var shown = rom.itemStats[idx][field];
+    tcell.textContent = field === 'price' ? shown : (shown || '\u2014');
+  }
+
+  // ============================================================
+  // CLASSES TAB
+  // ============================================================
+
+  // Build a lookup from class definition records to class IDs.
+  // The class def table has 166 x 72-byte records at ROM 0x5DAD8.
+  // Mapping: record_index = class_id + 1.
+  // Verified by cross-referencing all VANILLA class stats/growths/resistances/
+  // combat coefficients from the H2F Mod class chart CSV against ROM hex data.
+  // Every field matches perfectly with offset +1 for all 14+ tested classes.
+  // Record 0 = pointer table (header). Record 1 = 0xFFFF terminator (class 0x00 "None").
+  // Records 2-N cover class IDs 0x01 (Soldier) through 0xA4 (Death Bahamut /
+  // Grozz Nuy) per the GameShark mapping — 164 classes total, with intermediate
+  // terminator/sentinel rows that the inner guard skips.
+  function buildClassDefMap(classDefs) {
+    var map = {}; // classId -> array of def records
+    for (var cid = 0; cid <= 0xA4; cid++) {
+      var ri = cid + 1;
+      if (ri < classDefs.length) {
+        var r = classDefs[ri];
+        if (OB64.refreshClassDefClassification) {
+          OB64.refreshClassDefClassification(r);
+        }
+        if (!r.isTerm && !r.isSentinel) {
+          map[cid] = [r];
+        }
+      }
+    }
+    return map;
+  }
+
+  // Build evolution lookup from the MIPS-verified B53-B56 progression chain.
+  // B53 is the base class, B54 the first absolute-level transition, B55 the
+  // optional intermediate class, and B56 the final absolute-level transition.
+  // The direct predecessor is B55 when present, otherwise B53.
+  //
+  // The evolution table at ROM 0x654A0 is only used for tier display —
+  // its "tree" field is per-category (not global) and cannot derive chains.
+  function buildEvolutionLookup(classEvolution) {
+    var defMap = buildClassDefMap(rom.classDefs);
+
+    // Reverse each target class's direct predecessor.
+    var promotions = {}; // classId -> [target classIds]
+    var demotions = {};  // classId -> [source classIds]
+    for (var cid = 0; cid <= 0xA4; cid++) {
+      var defs = defMap[cid];
+      if (!defs || defs.length === 0) continue;
+      var def = defs[0];
+      var src = def.intermediateClass > 0 ? def.intermediateClass : def.baseClass;
+      if (src > 0 && src !== cid) {
+        if (!promotions[src]) promotions[src] = [];
+        if (promotions[src].indexOf(cid) === -1) {
+          promotions[src].push(cid);
+        }
+        if (!demotions[cid]) demotions[cid] = [];
+        if (demotions[cid].indexOf(src) === -1) {
+          demotions[cid].push(src);
+        }
+      }
+    }
+
+    // Build class -> evolution entry lookup (for tier display only)
+    var byClass = {};
+    for (var i = 0; i < classEvolution.length; i++) {
+      var e = classEvolution[i];
+      if (!e.isSeparator) byClass[e.classId] = e;
+    }
+    return { promotions: promotions, demotions: demotions, byClass: byClass };
+  }
+
+  // Stat order in class def table (B0-B23): STR, VIT, INT, MEN, AGI, DEX
+  // Confirmed by cross-referencing H2F Mod class chart CSV against ROM hex data.
+  var CLASS_STAT_NAMES = ['STR', 'VIT', 'INT', 'MEN', 'AGI', 'DEX'];
+  var CLASS_STAT_CSS = ['stat-atk', 'stat-vit', 'stat-int', 'stat-men', 'stat-agi', 'stat-dex'];
+  var CLASS_GROWTH_HISTORY_HELP = {
+    baseClass: 'B53 is the early growth class used to initialize and level-scale a generated character before the first switch level (B54). It does not control player promotion eligibility.',
+    firstSwitchLevel: 'B54 is the first absolute level boundary in generated stat history. Below this level the game uses B53; from this level until B56 it uses B55 when a middle class is present. It is not a required promotion level.',
+    middleClass: 'B55 is the middle class used while reconstructing generated-character growth between B54 and B56. A value of 0 means there is no middle growth stage. It is not a required prior class.',
+    secondSwitchLevel: 'B56 is the second absolute level boundary in generated stat history. From this level onward the requested/current class supplies growth. It is not levels spent in B55 or a promotion requirement.',
+    historyLink: 'B57 is compared with the character\'s secondary class byte (+0x12) to decide whether this class row\'s growth history applies or the secondary class row is used. That operation is proven; the design name "Class History Link" remains descriptive.'
+  };
+  var CLASS_ITEM_CAPACITY_HELP = 'B59 is this character class\'s contribution to its squad\'s carried-item limit. ' +
+    'The game sums the five initialized members without clamping; Scenario starting-supply edits and export require the result to stay within the 10-slot destination.';
+  var CLASS_HP_GROWTH_HELP = 'nameOff+10 / statOff-2 is the class base/minimum HP gain per level. For ordinary classes: gain = this byte + two independent 0/1 RNG rolls + equipped HP/STR growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
+  var CLASS_BASE_STAT_WARNING = 'This starting value only comes into play when this class is used as a base growth class in Growth. It does not directly set the stats of a character merely because this is their current class.';
+  var CLASS_SEX_VOICE_HELP = 'Logical B65 (H+5): nameOff+5 / statOff-7. Sex/type classification; exact values and consumer are not fully traced. Edit with caution.';
+  var CLASS_LEADERSHIP_HELP = 'Logical B66 (H+6): nameOff+6 / statOff-6. Leader type: 0 = No, 1 = Yes, 2 = Centurion.';
+
+  function classBaseStatWarningBadge() {
+    var badge = document.createElement('span');
+    badge.className = 'class-base-stat-warning';
+    badge.textContent = '\u26A0';
+    badge.tabIndex = 0;
+    badge.setAttribute('role', 'button');
+    badge.setAttribute('aria-label', CLASS_BASE_STAT_WARNING);
+    badge.setAttribute('data-ob-popup-control', '');
+    badge.addEventListener('mouseenter', function() { showInfoPopup(badge, CLASS_BASE_STAT_WARNING); });
+    badge.addEventListener('mouseleave', function() {
+      if (document.activeElement !== badge) hideInfoPopup(badge);
+    });
+    badge.addEventListener('focus', function() { showInfoPopup(badge, CLASS_BASE_STAT_WARNING); });
+    badge.addEventListener('blur', function() { hideInfoPopup(badge); });
+    badge.addEventListener('click', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      badge.focus();
+      showInfoPopup(badge, CLASS_BASE_STAT_WARNING);
+    });
+    badge.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        hideInfoPopup(badge);
+        badge.blur();
+      }
+    });
+    return badge;
+  }
+
+  function classGrowthHelp(statIdx) {
+    var byteOff = 2 + statIdx * 4;
+    return 'B' + byteOff + ' is the class base/minimum per-level gain. For ordinary classes: gain = B' +
+      byteOff + ' + two independent 0/1 RNG rolls + equipped-item growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
+  }
+  function syncClassNamePointer(def) {
+    def.namePtr = ((def.namePtr0Raw << 24) | (def.namePtr1Raw << 16) |
+      (def.namePtr2Raw << 8) | def.namePtr3Raw) >>> 0;
+    def.ptr = def.namePtr;
+  }
+
+  function applyClassAttackSelection(classId, def, field, actionId) {
+    var api = OB64.combatAnimationOverrides;
+    var state = rom && rom.combatAnimationOverrides;
+    var result;
+    beginChangeBatch();
+    try {
+      result = api.applyLiveAttackChange(state, def, classId, field, actionId);
+      if (result.classChanged) markChanged('classDefs');
+    } finally {
+      endChangeBatch();
+    }
+    if (result.requiresAnimationSelection) {
+      statusBar.textContent = 'Attack changed. Choose its body animation in ' +
+        'Art and Animation. Until then, the game uses fallback selector 0x28.';
+    } else if (result.classChanged && result.newAction) {
+      statusBar.textContent = 'Attack changed. Its existing body-animation ' +
+        'mapping remains selected.';
+    }
+    return result;
+  }
+
+  function combatOverrideButton(classId) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'combat-animation-override-button';
+    button.dataset.combatAnimationClass = classId;
+    button.textContent = 'Animations';
+    var animationState = rom && rom.art && rom.art.animations;
+    var disabled = !rom || !rom.art || !rom.art.supported ||
+      !animationState || !animationState.supported;
+    button.disabled = disabled;
+    if (disabled) button.title = animationState
+      ? animationState.unavailableReason : 'Combat animation art is unavailable.';
+    else button.addEventListener('click', function() {
+      openCombatAnimationClass(classId);
+    });
+    return button;
+  }
+
+  function openCombatAnimationClass(classId) {
+    if (!rom || !rom.art || !OB64.artUI.openAnimationRoute(rom.art, {
+      classId: classId
+    })) {
+      showErrorModal('Combat Animation unavailable',
+        'The Art and Animation tab cannot preview this ROM.');
+      return;
+    }
+    activateTab('art');
+    statusBar.textContent = 'Opened this class in Art and Animation.';
+  }
+
+  function renderClasses(panel) {
+    panel.innerHTML = '';
+    function familyChanged() { markChanged('classFamilies');renderClasses(panel); }
+    if (OB64.classFamiliesUI) OB64.classFamiliesUI.mount(rom, panel, familyChanged);
+
+    var filter = makeFilterBar('Filter by class name, category, or ID...', function(q) {
+      // Filter both table rows and cards
+      var rows = panel.querySelectorAll('.classes-table tbody tr');
+      for (var i = 0; i < rows.length; i++) {
+        rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      }
+      var cards = panel.querySelectorAll('.class-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].style.display = cards[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      }
+    });
+    panel.appendChild(filter);
+
+    // View toggle
+    var viewToggle = document.createElement('div');
+    viewToggle.className = 'class-view-toggle';
+    var classViewMode = localStorage.getItem('ob64_classes_view') || 'table';
+    var rawClassDataUnlocked = localStorage.getItem('ob64_classes_raw_data') === '1';
+
+    var btnTable = document.createElement('button');
+    btnTable.textContent = 'Table View';
+    var btnCards = document.createElement('button');
+    btnCards.textContent = 'Card View';
+    viewToggle.appendChild(btnTable);
+    viewToggle.appendChild(btnCards);
+
+    var rawDataGate = document.createElement('label');
+    rawDataGate.className = 'class-raw-data-gate';
+    var rawDataInput = document.createElement('input');
+    rawDataInput.type = 'checkbox';
+    rawDataInput.checked = rawClassDataUnlocked;
+    rawDataGate.appendChild(rawDataInput);
+    var rawDataCopy = document.createElement('span');
+    rawDataCopy.innerHTML = '<strong>Edit raw class records</strong> Show and edit terminator/sentinel class bytes in Table and Card views. These records are not proven combat-safe.';
+    rawDataGate.appendChild(rawDataCopy);
+    panel.appendChild(viewToggle);
+    panel.appendChild(rawDataGate);
+
+    var tableContainer = document.createElement('div');
+    tableContainer.id = 'classes-table-view';
+    var cardsContainer = document.createElement('div');
+    cardsContainer.id = 'classes-card-view';
+    cardsContainer.className = 'class-cards';
+
+    function setClassView(mode) {
+      classViewMode = mode === 'cards' ? 'cards' : 'table';
+      localStorage.setItem('ob64_classes_view', classViewMode);
+      btnTable.classList.toggle('active', classViewMode === 'table');
+      btnCards.classList.toggle('active', classViewMode === 'cards');
+      tableContainer.style.display = classViewMode === 'table' ? '' : 'none';
+      cardsContainer.style.display = classViewMode === 'cards' ? '' : 'none';
+    }
+
+    btnTable.addEventListener('click', function() {
+      setClassView('table');
+    });
+    btnCards.addEventListener('click', function() {
+      setClassView('cards');
+    });
+    rawDataInput.addEventListener('change', function() {
+      localStorage.setItem('ob64_classes_raw_data', rawDataInput.checked ? '1' : '0');
+      renderClasses(panel);
+    });
+
+    // Data
+    var defMap = buildClassDefMap(rom.classDefs);
+    var evoLookup = buildEvolutionLookup(rom.classEvolution);
+
+    // Build per-slot filtered item dropdowns based on item stat B0=equipType.
+    //
+    //   Weapon slot: filtered per-class by the class's current weapon type so
+    //                animations stay consistent (Fighter with 1H Sword only
+    //                sees other 1H Swords). `weaponsByType[equipType]` has a
+    //                map per weapon type; `allWeapons` is the fallback for
+    //                classes with no default weapon (beast/dragon classes).
+    //
+    //   Body slot:   armor/robes/clothing (0x10-0x14)
+    //   Head slot:   helms/headgear (0x15-0x16)
+    //   Accessory:   shields, spellbooks, amulets (0x0E, 0x0F, 0x17, 0x19) —
+    //                the "off-hand" slot in the char struct (+0x2F).
+    //
+    // Every map starts with a "None [0]" entry so users can explicitly clear
+    // a slot from the dropdown.
+    var weaponsByType = {};
+    var allWeapons = { 0: 'None' };
+    var bodyItems = { 0: 'None' };
+    var headItems = { 0: 'None' };
+    var accessoryItems = { 0: 'None' };
+    for (var _k in OB64.ITEM_NAMES) {
+      var _iid = parseInt(_k);
+      var _stat = rom.itemStats[_iid];
+      if (!_stat) continue;
+      var _et = _stat.equipType;
+      var _name = OB64.ITEM_NAMES[_k];
+      if ((_et >= 0x01 && _et <= 0x0D) || _et === 0x18) {
+        if (!weaponsByType[_et]) weaponsByType[_et] = { 0: 'None' };
+        weaponsByType[_et][_iid] = _name;
+        allWeapons[_iid] = _name;
+      } else if (_et >= 0x10 && _et <= 0x14) {
+        bodyItems[_iid] = _name;
+      } else if (_et === 0x15 || _et === 0x16) {
+        headItems[_iid] = _name;
+      } else if (_et === 0x0E || _et === 0x0F || _et === 0x17 || _et === 0x19) {
+        accessoryItems[_iid] = _name;
+      }
+    }
+
+    // Options map for a class's weapon slot — restricted to the current
+    // default weapon's type. Falls back to all weapons when the class has
+    // no default weapon.
+    function getWeaponOptions(def) {
+      var wpnId = def && def.defaultEquip[0];
+      if (wpnId && rom.itemStats[wpnId]) {
+        var t = rom.itemStats[wpnId].equipType;
+        if (weaponsByType[t]) return weaponsByType[t];
+      }
+      return allWeapons;
+    }
+
+    // Options map for a defaultEquip slot index (0..3). Used by both the
+    // table view (via COL_TO_SLOT) and the card view (iterates slots directly).
+    function getSlotOptions(slotIdx, def) {
+      if (slotIdx === 0) return getWeaponOptions(def);
+      if (slotIdx === 1) return bodyItems;
+      if (slotIdx === 2) return accessoryItems;
+      return headItems; // slotIdx === 3
+    }
+
+    // Collect all class IDs
+    var allClassIds = [];
+    for (var id in OB64.CLASS_NAMES) {
+      var nid = parseInt(id);
+      if (nid > 0) allClassIds.push(nid);
+    }
+    allClassIds.sort(function(a, b) { return a - b; });
+
+    // Helper: get class category string
+    function getCatName(cid) {
+      for (var cat in OB64.CLASS_CATEGORIES) {
+        if (OB64.CLASS_CATEGORIES[cat].indexOf(cid) >= 0) return cat;
+      }
+      return '';
+    }
+
+    // Helper: render promo links into a td
+    function renderPromoLinks(container, ids) {
+      if (ids && ids.length > 0) {
+        for (var p = 0; p < ids.length; p++) {
+          if (p > 0) container.appendChild(document.createTextNode(', '));
+          var link = document.createElement('span');
+          link.className = 'xref';
+          link.textContent = OB64.className(ids[p]);
+          link.dataset.classId = ids[p];
+          link.addEventListener('click', jumpToClass);
+          container.appendChild(link);
+        }
+      } else {
+        container.textContent = '\u2014';
+        container.className += ' dim';
+      }
+    }
+
+    // Helper: alignment label
+    function alnLabel(al) {
+      if (al >= 70) return al + ' (Lawful)';
+      if (al >= 55) return al + ' (Lawful-leaning)';
+      if (al >= 45) return al + ' (Neutral)';
+      if (al >= 30) return al + ' (Chaotic-leaning)';
+      return al + ' (Chaotic)';
+    }
+
+    var RES_SHORT = ['Phys', 'Air', 'Fire', 'Earth', 'Water', 'Virtue', 'Bane'];
+    // Display-column labels (table view order: Wpn, Body, Head, Acc)
+    var EQUIP_LABELS = ['Wpn', 'Body', 'Head', 'Acc'];
+    // Slot-indexed labels (defaultEquip[0..3] = weapon, body, off-hand/acc, head)
+    var SLOT_LABELS_FULL = ['Weapon', 'Body', 'Accessory', 'Headgear'];
+    // Maps a display-column index (0..3) to the defaultEquip slot index it shows.
+    // Col 2 (Head) reads slot 3, col 3 (Acc) reads slot 2 — the class def order
+    // is [weapon, body, off-hand, head] but we want Head before Acc visually.
+    var COL_TO_SLOT = [0, 1, 3, 2];
+
+    // ---- TABLE VIEW (sub-tabbed by field group) ----
+    //
+    // The classes table is split into focused field-group sub-views so column
+    // count stays scannable. A second-level
+    // toggle under the main Table/Card switch picks the active sub-view; the
+    // choice is persisted in localStorage.
+    var TABLE_SUBVIEWS = [
+      { id: 'unit',      label: 'Unit Info' },
+      { id: 'combat',    label: 'Combat' },
+      { id: 'growth',    label: 'Growth' },
+      { id: 'gates',     label: 'Promotion' },
+      { id: 'raw',       label: 'Raw Bytes ⚠' }
+    ];
+    var CLASS_SUBVIEW_INITIAL_WIDTHS = {
+      unit: [64, 300, 110, 130, 110, 72, 72, 130, 110, 72, 72, 72, 72, 72, 72, 72],
+      combat: [64, 300, 130, 90, 90, 90, 110, 110, 110, 110, 84, 190, 190, 190, 180],
+      growth: [64, 300, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92,
+        92, 92, 160, 100, 160, 100, 160, 200, 180],
+      gates: [64, 300, 220, 84, 84, 84, 84, 84, 84, 96, 96, 180, 180, 180, 180],
+      raw: [64, 300, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88]
+    };
+    function classColumnWidthOptions(columns, subview) {
+      var profile = CLASS_SUBVIEW_INITIAL_WIDTHS[subview] || [];
+      var minimums = {};
+      var initials = {};
+      for (var widthIndex = 0; widthIndex < columns.length; widthIndex++) {
+        minimums[widthIndex] = widthIndex === 0 ? 56 : (widthIndex === 1 ? 160 : 64);
+        initials[widthIndex] = profile[widthIndex] || Math.max(
+          minimums[widthIndex],
+          Math.min(180, columns[widthIndex].label.length * 10 + 30)
+        );
+      }
+      return {
+        stickyOffsetColumn: 0,
+        minimumWidths: minimums,
+        initialMinimumWidths: initials
+      };
+    }
+    var activeSubview = localStorage.getItem('ob64_classes_subview') || 'unit';
+    if (activeSubview === 'stats') activeSubview = 'unit';
+    if (activeSubview === 'promotion') activeSubview = 'growth';
+    if (!TABLE_SUBVIEWS.some(function(s) { return s.id === activeSubview; })) {
+      activeSubview = 'unit';
+    }
+    localStorage.setItem('ob64_classes_subview', activeSubview);
+
+    // Preserve the exact class order when the table is rebuilt for another subview.
+    // The active sort column is only meaningful in the subview that supplied it, while
+    // the resulting row order is shared by every subview and survives editor reloads.
+    var classSortState = null;
+    try {
+      classSortState = JSON.parse(localStorage.getItem('ob64_classes_sort_state') || 'null');
+    } catch (e) {
+      classSortState = null;
+    }
+    function normalizeClassRowOrder(order) {
+      var known = {};
+      var out = [];
+      for (var i = 0; i < allClassIds.length; i++) known[allClassIds[i]] = true;
+      if (Array.isArray(order)) {
+        for (var j = 0; j < order.length; j++) {
+          var id = parseInt(order[j], 10);
+          if (known[id]) { out.push(id); delete known[id]; }
+        }
+      }
+      for (var k = 0; k < allClassIds.length; k++) {
+        if (known[allClassIds[k]]) out.push(allClassIds[k]);
+      }
+      return out;
+    }
+    var classRowOrder = normalizeClassRowOrder(classSortState && classSortState.order);
+
+    var subviewBar = document.createElement('div');
+    subviewBar.className = 'classes-subview-toggle';
+    var subviewBtns = {};
+    TABLE_SUBVIEWS.forEach(function(sv) {
+      var b = document.createElement('button');
+      b.textContent = sv.label;
+      if (sv.id === activeSubview) b.classList.add('active');
+      b.addEventListener('click', function() {
+        activeSubview = sv.id;
+        localStorage.setItem('ob64_classes_subview', sv.id);
+        for (var k in subviewBtns) subviewBtns[k].classList.toggle('active', k === sv.id);
+        renderSubview();
+      });
+      subviewBtns[sv.id] = b;
+      subviewBar.appendChild(b);
+    });
+    tableContainer.appendChild(subviewBar);
+
+    var tableHost = document.createElement('div');
+    tableHost.className = 'classes-table-scroll';
+    tableContainer.appendChild(tableHost);
+
+    function refreshGrowthHistoryLinks() {
+      evoLookup = buildEvolutionLookup(rom.classEvolution);
+
+      var usedByCells = tableHost.querySelectorAll('[data-growth-used-by-class-id]');
+      for (var i = 0; i < usedByCells.length; i++) {
+        var usedByCell = usedByCells[i];
+        var usedByClassId = parseInt(usedByCell.dataset.growthUsedByClassId, 10);
+        usedByCell.textContent = '';
+        usedByCell.className = 'col-growth-used-by';
+        renderPromoLinks(usedByCell, evoLookup.promotions[usedByClassId]);
+      }
+
+      var predecessorCells = tableHost.querySelectorAll('[data-growth-predecessor-class-id]');
+      for (var j = 0; j < predecessorCells.length; j++) {
+        var predecessorCell = predecessorCells[j];
+        var predecessorClassId = parseInt(predecessorCell.dataset.growthPredecessorClassId, 10);
+        predecessorCell.textContent = '';
+        predecessorCell.className = '';
+        renderPromoLinks(predecessorCell, evoLookup.demotions[predecessorClassId]);
+      }
+    }
+
+    // Cell builders — each appends exactly ONE <td>. `def` is passed in so the
+    // click-handler closures capture the correct class-def record.
+    function addNumericCell(tr, def, field, max, extraCls) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', extraCls);
+      var c = td(tr, def[field]);
+      c.className = 'editable' + (extraCls ? ' ' + extraCls : '');
+      if (def) {
+        c.addEventListener('click', function() {
+          makeNumericInput(c, def[field], 0, max, function(nv) {
+            def[field] = nv;
+            if (/^namePtr[0-3]Raw$/.test(field)) syncClassNamePointer(def);
+            c.textContent = nv;
+            markChanged();
+          });
+        });
+      }
+      return c;
+    }
+    function addRawByteCell(tr, def, field, hint) {
+      var c = addNumericCell(tr, def, field, 255, 'raw-byte');
+      c.title = hint || 'Uncertain field \u2014 edit with caution';
+      return c;
+    }
+    function addStatBaseCell(tr, def, statIdx) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', CLASS_STAT_CSS[statIdx]);
+      var v = def.stats.length > statIdx ? def.stats[statIdx].base : 0;
+      var c = td(tr, v);
+      c.className = 'editable ' + CLASS_STAT_CSS[statIdx];
+      if (def) {
+        c.addEventListener('click', function() {
+          makeNumericInput(c, def.stats[statIdx].base, 0, 65535, function(nv) {
+            def.stats[statIdx].base = nv;
+            OB64.refreshClassDefClassification(def);
+            c.textContent = nv;
+            markChanged();
+          });
+        });
+      }
+      return c;
+    }
+    function addStatGrowthCell(tr, def, statIdx, growthField) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'col-growth ' + CLASS_STAT_CSS[statIdx]);
+      var c = td(tr, def[growthField]);
+      c.className = 'editable col-growth ' + CLASS_STAT_CSS[statIdx];
+      c.title = classGrowthHelp(statIdx);
+      if (def) {
+        c.addEventListener('click', function() {
+          makeNumericInput(c, def[growthField], 0, 255, function(nv) {
+            def[growthField] = nv;
+            def.stats[statIdx].g1 = nv; // keep legacy stats[i].g1 in sync for the serializer
+            c.textContent = nv;
+            markChanged();
+          });
+        });
+      }
+      return c;
+    }
+    function addResCell(tr, def, resIdx) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var rv = def.resistances.length > resIdx ? def.resistances[resIdx] : 50;
+      var c = td(tr, rv);
+      c.className = 'editable';
+      if (rv < 50) c.classList.add('resist-strong');
+      else if (rv > 50) c.classList.add('resist-weak');
+      if (def) {
+        c.addEventListener('click', function() {
+          makeNumericInput(c, def.resistances[resIdx], 0, 255, function(nv) {
+            def.resistances[resIdx] = nv;
+            c.textContent = nv;
+            c.classList.remove('resist-strong', 'resist-weak');
+            if (nv < 50) c.classList.add('resist-strong');
+            else if (nv > 50) c.classList.add('resist-weak');
+            markChanged();
+          });
+        });
+      }
+      return c;
+    }
+    function addDropdownCell(tr, def, field, optTable, nameFn) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var c = td(tr, formatByteChoice(def[field], nameFn(def[field])));
+      c.className = 'editable';
+      if (def) {
+        c.addEventListener('click', function() {
+          makeDropdown(c, optTable, def[field], function(nv) {
+            def[field] = nv;
+            c.textContent = formatByteChoice(nv, nameFn(nv));
+            markChanged();
+          });
+        });
+      }
+      return c;
+    }
+    function addEquipCell(tr, def, displayCol) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'equip-config');
+      var slotIdx = COL_TO_SLOT[displayCol];
+      var itemId = def.defaultEquip.length > slotIdx ? def.defaultEquip[slotIdx] : 0;
+      var c = td(tr, formatU16Choice(itemId, itemId > 0 ? OB64.itemName(itemId) : 'None'));
+      c.className = 'editable equip-config';
+      c.title = EQUIP_LABELS[displayCol] + ': 0x' + itemId.toString(16).padStart(4, '0');
+      if (def) {
+        c.addEventListener('click', function() {
+          var opts = getSlotOptions(slotIdx, def);
+          openItemPickerFromDict({
+            title: 'Default ' + EQUIP_LABELS[displayCol] + ' \u2014 ' + (def.name || ''),
+            options: opts, currentId: def.defaultEquip[slotIdx],
+            onSelect: function(nv) {
+              def.defaultEquip[slotIdx] = nv;
+              c.textContent = formatU16Choice(nv, nv > 0 ? OB64.itemName(nv) : 'None');
+              c.title = EQUIP_LABELS[displayCol] + ': 0x' + nv.toString(16).padStart(4, '0');
+              c.classList.add('modified');
+            }
+          });
+        });
+      }
+      return c;
+    }
+    // Combat-action picker cell: ordinary names come from the byte-derived ROM
+    // name map, while the nine shared-dynamic-name records use their verified
+    // resolver-template roles from data.js. Falls back to a raw byte cell if the
+    // generated name module is not loaded.
+    function addActionCell(tr, cid, def, field, label, extraTitle) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'equip-config');
+      if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
+        return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
+      }
+      var id = def[field] || 0;
+      var c = td(tr, formatByteChoice(id, id > 0 ? OB64.actionEditorName(id) : 'None'));
+      c.className = 'editable equip-config';
+      c.title = label + ' — ID ' + id + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+      if (def) {
+        c.addEventListener('click', function() {
+          openItemPickerFromDict({
+            title: label + ' — ' + (def.name || ''),
+            options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
+            rowActionLabel: 'Edit',
+            onRowAction: function(actionId) {
+              if (actionId > 0) openDescriptionEditor('actions', actionId);
+            },
+            onSelect: function(nv) {
+              try {
+                applyClassAttackSelection(cid, def, field, nv);
+                c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
+                c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+                c.classList.add('modified');
+              } catch (e) {
+                showErrorModal('Attack change rejected', e.message);
+              }
+            }
+          });
+        });
+      }
+      return c;
+    }
+    // Read-only cell for data that isn't part of the class def (e.g. stat-gate
+    // thresholds from the LZSS-compressed block, back-row attack counts from
+    // wiki data). Rendered with .read-only-cell for a muted look.
+    function addReadOnlyCell(tr, text, title, extraCls) {
+      var c = td(tr, text === null || text === undefined ? '\u2014' : text);
+      c.className = 'read-only-cell' + (extraCls ? ' ' + extraCls : '');
+      if (title) c.title = title;
+      return c;
+    }
+    // Editable stat-gate cell. Writes to rom.statGates.byClass[cid][field]
+    // and explicitly marks dirty.statGates instead of the surrounding
+    // Classes tab's dirty.classDefs flag.
+    // For classes without a gate record, falls back to read-only dash.
+    function addStatGateCell(tr, gate, field, title) {
+      if (!gate) return addReadOnlyCell(tr, '\u2014', title, 'col-gate');
+      var v = gate[field] | 0;
+      var c = td(tr, v || '\u2014');
+      c.className = 'editable col-gate';
+      if (title) c.title = title;
+      c.addEventListener('click', function() {
+        makeNumericInput(c, gate[field] | 0, 0, 255, function(nv) {
+          gate[field] = nv & 0xFF;
+          c.textContent = nv || '\u2014';
+          markChanged('statGates');
+        });
+      });
+      return c;
+    }
+
+    function addClassFieldCell(tr, def, field, title) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var c = td(tr, formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None'));
+      c.className = 'editable';
+      if (title) c.title = title;
+      if (def) {
+        c.addEventListener('click', function() {
+          var classOpts = { 0: 'None' };
+          for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
+          makeSearchableInput(c, classOpts, def[field], function(nv) {
+            def[field] = nv;
+            c.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
+            markChanged();
+            if (field === 'baseClass' || field === 'intermediateClass') {
+              refreshGrowthHistoryLinks();
+            }
+          });
+        });
+      }
+      return c;
+    }
+
+    function renderSubview() {
+      tableHost.innerHTML = '';
+      var table = document.createElement('table');
+      table.className = 'classes-table';
+
+      var cols; // [{label, title?, cls?}]
+      var fillRow; // function(cid, tr, def)
+
+      if (activeSubview === 'unit') {
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
+          { label: 'Sex/Type', title: CLASS_SEX_VOICE_HELP, cls: 'col-raw' },
+          { label: 'Leader', title: CLASS_LEADERSHIP_HELP },
+          { label: 'LCK', title: 'B23 Luck base (40-60 typical)' },
+          { label: 'ALN', title: 'B24 Alignment (0-100)' },
+          { label: 'Element', title: 'B58 default damage element (CSV-verified: 0x00=Physical, 0x01=Wind, 0x02=Flame, 0x03=Earth, 0x04=Water, 0xFF=Random/None)' },
+          { label: 'Item Cap.', title: CLASS_ITEM_CAPACITY_HELP },
+          { label: 'Phys' }, { label: 'Wind' }, { label: 'Fire' }, { label: 'Earth' },
+          { label: 'Water' }, { label: 'Virt' }, { label: 'Bane' }
+        ];
+        fillRow = function(cid, tr, def) {
+          addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
+          var sexCell = addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          sexCell.classList.add('raw-byte');
+          sexCell.title = CLASS_SEX_VOICE_HELP;
+          var leadershipCell = addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          leadershipCell.title = CLASS_LEADERSHIP_HELP;
+          addNumericCell(tr, def, 'lck', 255);
+          addNumericCell(tr, def, 'alignment', 100);
+          addDropdownCell(tr, def, 'dragonElement', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName);
+          var itemCapacityCell = addDropdownCell(tr, def, 'itemCapacity',
+            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
+          itemCapacityCell.title = CLASS_ITEM_CAPACITY_HELP;
+          for (var ri = 0; ri < 7; ri++) addResCell(tr, def, ri);
+        };
+      } else if (activeSubview === 'combat') {
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'Move', title: 'B32 movement type' },
+          { label: 'FrontAtks', title: 'B44 front row attack count (verified in-game)' },
+          { label: 'MidAtks', title: 'B46 middle row attack count (verified in-game)' },
+          { label: 'RearAtks', title: 'B48 rear row attack count (verified via "Class Chart.csv" cross-check, 79/79 match). Previously mislabeled "atkType".' },
+          { label: 'PAtk Coef', title: 'Physical Attack Coefficient (B49) — fixed per-class byte used by the derived Physical Attack formulas; not a direct percentage multiplier.' },
+          { label: 'MAtk Coef', title: 'Magic Attack Coefficient (B50) — fixed per-class byte entering the leading term (B50 + equipment INT bonuses) / 6; not a direct percentage multiplier.' },
+          { label: 'PDef Coef', title: 'Physical Defense Coefficient (B51) — fixed per-class byte entering the leading term B51 / 20; not a direct percentage multiplier.' },
+          { label: 'MDef Coef', title: 'Magic Defense Coefficient (B52) — fixed per-class byte entering the leading term B52 / 20; not a direct percentage multiplier.' },
+          { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
+          { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Ordinary names come from the ROM name pool; shared dynamic-name records show verified template roles.' },
+          { label: 'Middle Attack', title: 'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1).' },
+          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). IDs 45-48, 51-54, and 145 are resolver templates whose concrete display spell may be composed later.' },
+          { label: 'Attack Animations', title: 'Class/action fixed body-selector overrides (US Rev 0 only).' }
+        ];
+        fillRow = function(cid, tr, def) {
+          addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
+          addNumericCell(tr, def, 'frontAtks', 255);
+          addNumericCell(tr, def, 'midAtks', 255);
+          addNumericCell(tr, def, 'rearAtks', 255);
+          addNumericCell(tr, def, 'physAtk', 255);
+          addNumericCell(tr, def, 'magAtk', 255);
+          addNumericCell(tr, def, 'physDef', 255);
+          addNumericCell(tr, def, 'magDef', 255);
+          addRawByteCell(tr, def, 'b42Raw', 'B42 \u2014 fixed-equip-slots bitmask: 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head');
+          addActionCell(tr, cid, def, 'b43Raw', 'Front attack (B43)');
+          addActionCell(tr, cid, def, 'b45Raw', 'Middle attack (B45)');
+          addActionCell(tr, cid, def, 'b47Raw', 'Rear attack (B47)', 'Caster IDs 45-48/51-54 display element-composed names in-game.');
+          var animationCell=document.createElement('td'); animationCell.appendChild(combatOverrideButton(cid)); tr.appendChild(animationCell);
+        };
+      } else if (activeSubview === 'growth') {
+        var STAT_GROWTH_FIELDS = ['strGrowth', 'vitGrowth', 'intGrowth', 'menGrowth', 'agiGrowth', 'dexGrowth'];
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'STR', title: 'B0 base (u16)', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(0), cls: 'col-growth' },
+          { label: 'VIT', title: 'B4 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(1), cls: 'col-growth' },
+          { label: 'INT', title: 'B8 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(2), cls: 'col-growth' },
+          { label: 'MEN', title: 'B12 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(3), cls: 'col-growth' },
+          { label: 'AGI', title: 'B16 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(4), cls: 'col-growth' },
+          { label: 'DEX', title: 'B20 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(5), cls: 'col-growth' },
+          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)', warning: true },
+          { label: 'Gain/Lv', title: CLASS_HP_GROWTH_HELP, cls: 'col-growth' },
+          { label: 'Early Growth', title: CLASS_GROWTH_HISTORY_HELP.baseClass },
+          { label: 'Switch Lv 1', title: CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel },
+          { label: 'Middle Growth', title: CLASS_GROWTH_HISTORY_HELP.middleClass },
+          { label: 'Switch Lv 2', title: CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel },
+          { label: 'History Link', title: CLASS_GROWTH_HISTORY_HELP.historyLink },
+          {
+            label: 'Used as Growth By',
+            title: 'Classes whose most recent configured growth-history predecessor is this class (B55 when present, otherwise B53).',
+            cls: 'col-growth-used-by'
+          },
+          { label: 'Promotes From' }
+        ];
+        fillRow = function(cid, tr, def) {
+          for (var si = 0; si < 6; si++) {
+            addStatBaseCell(tr, def, si);
+            addStatGrowthCell(tr, def, si, STAT_GROWTH_FIELDS[si]);
+          }
+          var baseHpCell = addNumericCell(tr, def, 'baseHp', 65535);
+          baseHpCell.title = 'nameOff+8..9 / statOff-4..-3 base HP (u16)';
+          var hpGrowthCell = addNumericCell(tr, def, 'hpGrowth', 255, 'col-growth');
+          hpGrowthCell.title = CLASS_HP_GROWTH_HELP;
+          addClassFieldCell(tr, def, 'baseClass', CLASS_GROWTH_HISTORY_HELP.baseClass);
+          var firstSwitchCell = addNumericCell(tr, def, 'baseTransitionLevel', 255);
+          firstSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel;
+          addClassFieldCell(tr, def, 'intermediateClass', CLASS_GROWTH_HISTORY_HELP.middleClass);
+          var secondSwitchCell = addNumericCell(tr, def, 'finalTransitionLevel', 255);
+          secondSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel;
+          addClassFieldCell(tr, def, 'classCopyMatch', CLASS_GROWTH_HISTORY_HELP.historyLink);
+          var tdTo = document.createElement('td');
+          tdTo.className = 'col-growth-used-by';
+          tdTo.dataset.growthUsedByClassId = cid;
+          renderPromoLinks(tdTo, evoLookup.promotions[cid]);
+          tr.appendChild(tdTo);
+          var tdFrom = document.createElement('td');
+          tdFrom.dataset.growthPredecessorClassId = cid;
+          renderPromoLinks(tdFrom, evoLookup.demotions[cid]);
+          tr.appendChild(tdFrom);
+        };
+      } else if (activeSubview === 'gates') {
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'Family', title: 'Class-change family; create families in Class families above.' },
+          // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C
+          // and edited through the existing stat-gate write path.
+          { label: 'G-STR', title: 'Stat gate: STR threshold for promoting INTO this class (LZSS block)', cls: 'col-gate' },
+          { label: 'G-VIT', title: 'Stat gate: VIT threshold', cls: 'col-gate' },
+          { label: 'G-INT', title: 'Stat gate: INT threshold', cls: 'col-gate' },
+          { label: 'G-MEN', title: 'Stat gate: MEN threshold', cls: 'col-gate' },
+          { label: 'G-AGI', title: 'Stat gate: AGI threshold', cls: 'col-gate' },
+          { label: 'G-DEX', title: 'Stat gate: DEX threshold', cls: 'col-gate' },
+          { label: 'G-AlnMin', title: 'Stat gate: minimum alignment (inclusive)', cls: 'col-gate' },
+          { label: 'G-AlnMax', title: 'Stat gate: maximum alignment (inclusive)', cls: 'col-gate' },
+          { label: 'Wpn', title: 'B34-35 default weapon' },
+          { label: 'Body', title: 'B36-37 default body armor' },
+          { label: 'Head', title: 'B40-41 default headgear' },
+          { label: 'Acc', title: 'B38-39 default accessory/off-hand' }
+        ];
+        fillRow = function(cid, tr, def) {
+          // Stat gates are class-id-indexed (NOT class_id+1 like class defs).
+          // A missing entry means no stat gate is defined for the class.
+          var gate = rom.statGates && rom.statGates.byClass[cid];
+          var gateLabel = gate ? 'Stat gate: promote INTO ' + OB64.className(cid) : 'No stat gate defined for ' + OB64.className(cid);
+          var familyCell = document.createElement('td');
+          if (OB64.classFamiliesUI) familyCell.appendChild(OB64.classFamiliesUI.select(rom, cid, familyChanged));
+          tr.appendChild(familyCell);
+          addStatGateCell(tr, gate, 'str', gateLabel);
+          addStatGateCell(tr, gate, 'vit', gateLabel);
+          addStatGateCell(tr, gate, 'int', gateLabel);
+          addStatGateCell(tr, gate, 'men', gateLabel);
+          addStatGateCell(tr, gate, 'agi', gateLabel);
+          addStatGateCell(tr, gate, 'dex', gateLabel);
+          addStatGateCell(tr, gate, 'alnMin', gateLabel);
+          addStatGateCell(tr, gate, 'alnMax', gateLabel);
+          for (var ei = 0; ei < 4; ei++) addEquipCell(tr, def, ei);
+        };
+      } else { // raw bytes
+        var classPointerWarning = 'Current-class runtime name-pointer byte. Editing can break class-name lookup or crash the game.';
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'B3 ?', title: 'Adjacent raw byte after STR growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B7 ?', title: 'Adjacent raw byte after VIT growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B11 ?', title: 'Adjacent raw byte after INT growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B15 ?', title: 'Adjacent raw byte after MEN growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B19 ?', title: 'Adjacent raw byte after AGI growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B33 ?', title: 'Padding/raw byte with unknown semantics.', cls: 'col-raw' },
+          { label: 'Ptr+0', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+1', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+2', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+3', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'H+7 ?', title: 'nameOff+7 / statOff-5 padding/raw header byte.', cls: 'col-raw' },
+          { label: 'H+11 ?', title: 'nameOff+11 / statOff-1 padding/raw header byte.', cls: 'col-raw' }
+        ];
+        fillRow = function(cid, tr, def) {
+          addRawByteCell(tr, def, 'b3Raw', 'B3 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b7Raw', 'B7 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b11Raw', 'B11 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b15Raw', 'B15 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b19Raw', 'B19 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b33Raw', 'B33 padding/raw byte; semantics unknown.');
+          addRawByteCell(tr, def, 'namePtr0Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr1Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr2Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr3Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte; semantics unknown.');
+          addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte; semantics unknown.');
+        };
+      }
+
+      var thead = document.createElement('thead');
+      var hTr = document.createElement('tr');
+      cols.forEach(function(col) {
+        var th = document.createElement('th');
+        if (col.cls) th.className = col.cls;
+        if (col.title) th.title = col.title;
+        th.textContent = col.label;
+        if (col.warning) th.appendChild(classBaseStatWarningBadge());
+        hTr.appendChild(th);
+      });
+      thead.appendChild(hTr);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      for (var ci = 0; ci < classRowOrder.length; ci++) {
+        var cid = classRowOrder[ci];
+        var defs = defMap[cid];
+        var rawDef = rom.classDefs && rom.classDefs[cid + 1] ? rom.classDefs[cid + 1] : null;
+        var def = defs && defs.length > 0 ? defs[0] : null;
+        var showingRawClassRecord = false;
+        if (rawClassDataUnlocked && rawDef && (rawDef.isTerm || rawDef.isSentinel)) {
+          def = rawDef;
+          showingRawClassRecord = true;
+        }
+        var tr = document.createElement('tr');
+        tr.id = 'class-' + cid;
+        tr.dataset.classId = cid;
+        if (showingRawClassRecord) {
+          tr.classList.add('class-raw-record');
+          tr.title = 'Raw terminator/sentinel record. Every record byte is editable, but gameplay safety is not established.';
+        }
+        var tdId = td(tr, '0x' + cid.toString(16).padStart(2, '0'));
+        tdId.className = 'col-sticky';
+        var tdName = td(tr, '');
+        tdName.className = 'class-name col-sticky-name';
+        var classNameText = document.createElement('span');
+        classNameText.className = 'description-name-text';
+        classNameText.textContent = OB64.className(cid);
+        var classNameControl = document.createElement('div');
+        classNameControl.className = 'description-name-control';
+        classNameControl.appendChild(classNameText);
+        classNameControl.appendChild(descriptionEditButton('classes', cid, false));
+        tdName.appendChild(classNameControl);
+        fillRow(cid, tr, def);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      tableHost.appendChild(table);
+      makeClickEditorsKeyboardAccessible(table, 'Class');
+      makeColumnsResizable(
+        table,
+        'ob64_classes_column_widths_v2_' + activeSubview,
+        classColumnWidthOptions(cols, activeSubview)
+      );
+      makeSortable(table, {
+        sortCol: classSortState && classSortState.subview === activeSubview ? classSortState.col : -1,
+        sortAsc: !classSortState || classSortState.asc !== false,
+        onSort: function(sort) {
+          classRowOrder = sort.rows.map(function(row) { return parseInt(row.dataset.classId, 10); });
+          classSortState = {
+            subview: activeSubview,
+            col: sort.col,
+            asc: sort.asc,
+            order: classRowOrder.slice(0)
+          };
+          localStorage.setItem('ob64_classes_sort_state', JSON.stringify(classSortState));
+        }
+      });
+
+      // Re-apply any active text filter after rebuild
+      var filterInput = filter.querySelector('input');
+      var q = filterInput ? filterInput.value.toLowerCase() : '';
+      if (q) {
+        var rows = tbody.querySelectorAll('tr');
+        for (var i = 0; i < rows.length; i++) {
+          rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+        }
+      }
+    }
+
+    renderSubview();
+    panel.appendChild(tableContainer);
+
+    // ---- CARD VIEW ----
+    //
+    // Every logical class-record byte is editable. Unknown/padding bytes,
+    // guide-labeled fields whose consumers remain untraced, and the four
+    // runtime pointer bytes render shaded with explicit caution tooltips.
+    // Sections below the three always-open blocks are collapsible <details>.
+
+    // Collapsible-section factory.
+    function makeSection(title, open) {
+      var wrap = document.createElement('details');
+      if (open) wrap.open = true;
+      var summary = document.createElement('summary');
+      summary.className = 'class-card-section-label';
+      summary.textContent = title;
+      wrap.appendChild(summary);
+      return wrap;
+    }
+
+    // Editable numeric tile. opts: {raw: bool, title: string, max: number}
+    function tileNumeric(d, field, label, opts) {
+      opts = opts || {};
+      var e = document.createElement('div');
+      e.className = 'stat-entry editable' + (opts.raw ? ' raw-byte' : '');
+      e.title = opts.title || (opts.raw ? 'Uncertain field \u2014 edit with caution' : '');
+      var lbl = document.createElement('span');
+      lbl.className = 'stat-label';
+      lbl.textContent = label;
+      if (opts.warning) lbl.appendChild(classBaseStatWarningBadge());
+      e.appendChild(lbl);
+      var val = document.createElement('span');
+      val.className = 'stat-value';
+      val.textContent = d[field];
+      e.appendChild(val);
+      e.addEventListener('click', function() {
+        makeNumericInput(e, d[field], 0, opts.max || 255, function(nv) {
+          d[field] = nv;
+          if (/^namePtr[0-3]Raw$/.test(field)) syncClassNamePointer(d);
+          e.textContent = '';
+          e.appendChild(lbl);
+          val.textContent = nv;
+          e.appendChild(val);
+          markChanged();
+        });
+      });
+      return e;
+    }
+
+    // Editable stat-gate tile — writes to rom.statGates.byClass[cid][field]
+    // and explicitly marks dirty.statGates (same pattern as the table's
+    // addStatGateCell). Value 0 displays as em-dash.
+    function tileStatGate(gate, field, label) {
+      var e = document.createElement('div');
+      e.className = 'stat-entry editable';
+      var lbl = document.createElement('span');
+      lbl.className = 'stat-label';
+      lbl.textContent = label;
+      e.appendChild(lbl);
+      var val = document.createElement('span');
+      val.className = 'stat-value';
+      val.textContent = (gate[field] | 0) || '\u2014';
+      e.appendChild(val);
+      e.addEventListener('click', function() {
+        makeNumericInput(e, gate[field] | 0, 0, 255, function(nv) {
+          gate[field] = nv & 0xFF;
+          e.textContent = '';
+          e.appendChild(lbl);
+          val.textContent = nv || '\u2014';
+          e.appendChild(val);
+          markChanged('statGates');
+        });
+      });
+      return e;
+    }
+
+    // Editable dropdown tile.
+    function tileDropdown(d, field, label, optTable, nameFn) {
+      var e = document.createElement('div');
+      e.className = 'stat-entry editable';
+      var lbl = document.createElement('span');
+      lbl.className = 'stat-label';
+      lbl.textContent = label;
+      e.appendChild(lbl);
+      var val = document.createElement('span');
+      val.className = 'stat-value';
+      val.textContent = formatByteChoice(d[field], nameFn(d[field]));
+      e.appendChild(val);
+      e.addEventListener('click', function() {
+        makeDropdown(e, optTable, d[field], function(nv) {
+          d[field] = nv;
+          e.textContent = '';
+          e.appendChild(lbl);
+          val.textContent = formatByteChoice(nv, nameFn(nv));
+          e.appendChild(val);
+          markChanged();
+        });
+      });
+      return e;
+    }
+
+    for (var ci = 0; ci < allClassIds.length; ci++) {
+      (function(cid) {
+        var name = OB64.className(cid);
+        var defs = defMap[cid];
+        var rawDef = rom.classDefs && rom.classDefs[cid + 1] ? rom.classDefs[cid + 1] : null;
+        var def = defs && defs.length > 0 ? defs[0] : null;
+        var showingRawClassRecord = false;
+        if (rawClassDataUnlocked && rawDef && (rawDef.isTerm || rawDef.isSentinel)) {
+          def = rawDef;
+          showingRawClassRecord = true;
+        }
+
+        var card = document.createElement('div');
+        card.className = 'class-card';
+        if (showingRawClassRecord) card.classList.add('class-card-raw-record');
+
+        // Header
+        var cardHeader = document.createElement('div');
+        cardHeader.className = 'class-card-header';
+        var cardHeaderName = document.createElement('div');
+        cardHeaderName.className = 'class-card-name-row';
+        var hName = document.createElement('span');
+        hName.className = 'class-card-name';
+        hName.textContent = name;
+        var hId = document.createElement('span');
+        hId.className = 'class-card-id';
+        hId.textContent = '0x' + cid.toString(16).padStart(2, '0');
+        cardHeaderName.appendChild(hName);
+        cardHeaderName.appendChild(descriptionEditButton('classes', cid, false));
+        cardHeader.appendChild(cardHeaderName);
+        cardHeader.appendChild(hId);
+        card.appendChild(cardHeader);
+
+        // Meta strip
+        var catName = getCatName(cid);
+        var evoEntry = evoLookup.byClass[cid];
+        var tierLabel = evoEntry ? (OB64.EVOLUTION_TIERS[evoEntry.category] || 'Tier ' + evoEntry.category) : '';
+        var metaParts = [];
+        if (catName) metaParts.push(catName);
+        if (tierLabel) metaParts.push(tierLabel);
+        if (def) {
+          metaParts.push(OB64.moveTypeName(def.moveType));
+          metaParts.push(OB64.unitSizeName(def.unitSize));
+          if (def.dragonElement !== 0xFF) metaParts.push(OB64.dragonElementName(def.dragonElement));
+        }
+        var portraitImg = OB64.createClassPortrait ? OB64.createClassPortrait(cid, 'class-card-portrait') : null;
+        if (metaParts.length > 0 || portraitImg) {
+          var intro = document.createElement('div');
+          intro.className = 'class-card-intro';
+          var introText = document.createElement('div');
+          introText.className = 'class-card-intro-text';
+          if (metaParts.length > 0) {
+            var meta = document.createElement('div');
+            meta.className = 'class-card-meta';
+            meta.textContent = metaParts.join(' \u2022 ');
+            introText.appendChild(meta);
+          }
+          intro.appendChild(introText);
+          if (portraitImg) {
+            var portraitFrame = document.createElement('div');
+            portraitFrame.className = 'class-card-portrait-frame';
+            portraitFrame.appendChild(portraitImg);
+            intro.appendChild(portraitFrame);
+          }
+          card.appendChild(intro);
+        }
+
+        if (def) {
+          if (showingRawClassRecord) {
+            var rawWarn = document.createElement('div');
+            rawWarn.className = 'class-card-raw-warning';
+            rawWarn.textContent = 'Raw terminator/sentinel record. These bytes are editable, but the class is not a proven combat-safe class.';
+            card.appendChild(rawWarn);
+          }
+
+          // --- Base Stats (always visible) — 6 stat tiles with base + growth badge, plus LCK
+          var statsWrap = document.createElement('div');
+          statsWrap.className = 'class-card-stats';
+          var sLabel = document.createElement('div');
+          sLabel.className = 'class-card-section-label';
+          sLabel.textContent = 'Base Stats / Level Growth';
+          statsWrap.appendChild(sLabel);
+          var statsGrid = document.createElement('div');
+          statsGrid.className = 'stats-grid';
+          var STAT_G = ['strGrowth', 'vitGrowth', 'intGrowth', 'menGrowth', 'agiGrowth', 'dexGrowth'];
+          if (def.stats.length === 6) {
+            for (var s = 0; s < 6; s++) {
+              (function(statIdx) {
+                var entry = document.createElement('div');
+                entry.className = 'stat-entry';
+                var sName = document.createElement('span');
+                sName.className = 'stat-label ' + CLASS_STAT_CSS[statIdx];
+                sName.textContent = CLASS_STAT_NAMES[statIdx];
+                sName.appendChild(classBaseStatWarningBadge());
+                entry.appendChild(sName);
+                // Base (click to edit)
+                var sVal = document.createElement('span');
+                sVal.className = 'stat-value editable';
+                sVal.textContent = def.stats[statIdx].base;
+                sVal.title = 'Base stat (u16 BE)';
+                sVal.addEventListener('click', function(ev) {
+                  ev.stopPropagation();
+                  makeNumericInput(sVal, def.stats[statIdx].base, 0, 65535, function(nv) {
+                    def.stats[statIdx].base = nv;
+                    OB64.refreshClassDefClassification(def);
+                    sVal.textContent = nv;
+                    markChanged();
+                  });
+                });
+                entry.appendChild(sVal);
+                // Growth sub-badge (click to edit)
+                var gVal = document.createElement('span');
+                gVal.className = 'growth-sub editable';
+                gVal.textContent = 'base +' + def[STAT_G[statIdx]];
+                gVal.title = classGrowthHelp(statIdx);
+                gVal.addEventListener('click', function(ev) {
+                  ev.stopPropagation();
+                  makeNumericInput(gVal, def[STAT_G[statIdx]], 0, 255, function(nv) {
+                    def[STAT_G[statIdx]] = nv;
+                    def.stats[statIdx].g1 = nv; // keep legacy shape in sync for serializer
+                    gVal.textContent = 'base +' + nv;
+                    markChanged();
+                  });
+                });
+                entry.appendChild(gVal);
+                statsGrid.appendChild(entry);
+              })(s);
+            }
+          }
+          // LCK tile (u8, no growth pair)
+          (function() {
+            var entry = document.createElement('div');
+            entry.className = 'stat-entry editable';
+            var lckName = document.createElement('span');
+            lckName.className = 'stat-label';
+            lckName.textContent = 'LCK';
+            entry.appendChild(lckName);
+            var lckVal = document.createElement('span');
+            lckVal.className = 'stat-value';
+            lckVal.textContent = def.lck;
+            lckVal.title = 'B23 LCK base (40-60 typical)';
+            entry.appendChild(lckVal);
+            entry.addEventListener('click', function() {
+              makeNumericInput(entry, def.lck, 0, 255, function(nv) {
+                def.lck = nv;
+                entry.textContent = '';
+                entry.appendChild(lckName);
+                lckVal.textContent = nv;
+                entry.appendChild(lckVal);
+                markChanged();
+              });
+            });
+            statsGrid.appendChild(entry);
+          })();
+          statsWrap.appendChild(statsGrid);
+          card.appendChild(statsWrap);
+
+          // --- Alignment (always visible)
+          var alignDiv = document.createElement('div');
+          alignDiv.className = 'class-card-alignment';
+          var alLabel = document.createElement('div');
+          alLabel.className = 'class-card-section-label';
+          alLabel.textContent = 'Alignment';
+          alignDiv.appendChild(alLabel);
+          (function() {
+            var alVal = document.createElement('span');
+            alVal.className = 'alignment-value editable';
+            var al = def.alignment;
+            alVal.textContent = alnLabel(al);
+            alVal.classList.add(al >= 55 ? 'align-law' : al <= 45 ? 'align-chaos' : 'align-neutral');
+            alVal.addEventListener('click', function() {
+              makeNumericInput(alVal, def.alignment, 0, 100, function(nv) {
+                def.alignment = nv;
+                alVal.textContent = alnLabel(nv);
+                alVal.classList.remove('align-law', 'align-chaos', 'align-neutral');
+                alVal.classList.add(nv >= 55 ? 'align-law' : nv <= 45 ? 'align-chaos' : 'align-neutral');
+                markChanged();
+              });
+            });
+            alignDiv.appendChild(alVal);
+          })();
+          card.appendChild(alignDiv);
+
+          // --- Resistances (always visible)
+          if (def.resistances.length === 7) {
+            var resDiv = document.createElement('div');
+            resDiv.className = 'class-card-resistances';
+            var rLabel = document.createElement('div');
+            rLabel.className = 'class-card-section-label';
+            rLabel.textContent = 'Resistances';
+            resDiv.appendChild(rLabel);
+            var resGrid = document.createElement('div');
+            resGrid.className = 'resist-grid';
+            for (var ri = 0; ri < 7; ri++) {
+              (function(resIdx) {
+                var rv = def.resistances[resIdx];
+                var entry = document.createElement('div');
+                entry.className = 'resist-entry editable';
+                var rName = document.createElement('span');
+                rName.className = 'resist-label resist-' + OB64.RESISTANCE_NAMES[resIdx].toLowerCase();
+                rName.textContent = OB64.RESISTANCE_NAMES[resIdx];
+                entry.appendChild(rName);
+                var rVal = document.createElement('span');
+                rVal.className = 'resist-value';
+                rVal.textContent = rv;
+                if (rv < 50) rVal.classList.add('resist-strong');
+                else if (rv > 50) rVal.classList.add('resist-weak');
+                entry.appendChild(rVal);
+                entry.addEventListener('click', function() {
+                  makeNumericInput(entry, def.resistances[resIdx], 0, 255, function(nv) {
+                    def.resistances[resIdx] = nv;
+                    entry.textContent = '';
+                    entry.appendChild(rName);
+                    rVal.textContent = nv;
+                    rVal.className = 'resist-value';
+                    if (nv < 50) rVal.classList.add('resist-strong');
+                    else if (nv > 50) rVal.classList.add('resist-weak');
+                    entry.appendChild(rVal);
+                    markChanged();
+                  });
+                });
+                resGrid.appendChild(entry);
+              })(ri);
+            }
+            resDiv.appendChild(resGrid);
+            card.appendChild(resDiv);
+          }
+
+          // --- Equipment Defaults (collapsible, open) — 4 searchable dropdowns
+          var eqSec = makeSection('Equipment Defaults', true);
+          var eqGrid = document.createElement('div');
+          eqGrid.className = 'stats-grid';
+          for (var de = 0; de < 4; de++) {
+            (function(displayCol) {
+              var slotIdx = COL_TO_SLOT[displayCol];
+              var entry = document.createElement('div');
+              entry.className = 'stat-entry editable';
+              var lbl = document.createElement('span');
+              lbl.className = 'stat-label';
+              lbl.textContent = EQUIP_LABELS[displayCol];
+              entry.appendChild(lbl);
+              var vs = document.createElement('span');
+              vs.className = 'stat-value';
+              var iid = def.defaultEquip[slotIdx];
+              vs.textContent = formatU16Choice(iid, iid > 0 ? OB64.itemName(iid) : 'None');
+              entry.appendChild(vs);
+              entry.addEventListener('click', function() {
+                var opts = getSlotOptions(slotIdx, def);
+                openItemPickerFromDict({
+                  title: 'Default ' + EQUIP_LABELS[displayCol] + ' \u2014 ' + (def.name || ''),
+                  options: opts, currentId: def.defaultEquip[slotIdx],
+                  onSelect: function(nv) {
+                    def.defaultEquip[slotIdx] = nv;
+                    vs.textContent = formatU16Choice(nv, nv > 0 ? OB64.itemName(nv) : 'None');
+                    entry.classList.add('modified');
+                  }
+                });
+              });
+              eqGrid.appendChild(entry);
+            })(de);
+          }
+          eqSec.appendChild(eqGrid);
+          card.appendChild(eqSec);
+
+          // --- Combat (collapsible, open) — row attacks + coefficients + raw bytes
+          var combatSec = makeSection('Combat', true);
+          var combatGrid = document.createElement('div');
+          combatGrid.className = 'stats-grid';
+          combatGrid.appendChild(tileNumeric(def, 'frontAtks', 'FrontAtks',
+            {title: 'B44 front row attack count (verified in-game)'}));
+          combatGrid.appendChild(tileNumeric(def, 'midAtks', 'MidAtks',
+            {title: 'B46 middle row attack count (verified in-game)'}));
+          combatGrid.appendChild(tileNumeric(def, 'rearAtks', 'RearAtks',
+            {title: 'B48 rear row attack count. Decoded via CSV cross-check (79/79 match) \u2014 previously mislabeled "atkType".'}));
+          combatGrid.appendChild(tileNumeric(def, 'physAtk', 'PAtk Coef',
+            {title: 'Physical Attack Coefficient (B49) — fixed per-class byte used by the derived Physical Attack formulas; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'magAtk', 'MAtk Coef',
+            {title: 'Magic Attack Coefficient (B50) — fixed per-class byte entering the leading term (B50 + equipment INT bonuses) / 6; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'physDef', 'PDef Coef',
+            {title: 'Physical Defense Coefficient (B51) — fixed per-class byte entering the leading term B51 / 20; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'magDef', 'MDef Coef',
+            {title: 'Magic Defense Coefficient (B52) — fixed per-class byte entering the leading term B52 / 20; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'b42Raw', 'FixEq Mask',
+            {raw: true, title: 'B42 \u2014 fixed-equip-slots bitmask (identified via CSV "Fixed Equips"). 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head. Lycanthrope=0x0F (all fixed), Soldier=0x03 (Wpn+Off).'}));
+          function actionTile(field, label, hint) {
+            if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
+              return tileNumeric(def, field, label, {raw: true, title: hint});
+            }
+            var entry = document.createElement('div');
+            entry.className = 'stat-entry editable';
+            entry.title = hint;
+            var lbl = document.createElement('span');
+            lbl.className = 'stat-label';
+            lbl.textContent = label;
+            entry.appendChild(lbl);
+            var vs = document.createElement('span');
+            vs.className = 'stat-value';
+            var cur = def[field] || 0;
+            vs.textContent = formatByteChoice(cur, cur > 0 ? OB64.actionEditorName(cur) : 'None');
+            entry.appendChild(vs);
+            entry.addEventListener('click', function() {
+              openItemPickerFromDict({
+                title: label + ' \u2014 ' + (def.name || ''),
+                options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
+                rowActionLabel: 'Edit',
+                onRowAction: function(actionId) {
+                  if (actionId > 0) openDescriptionEditor('actions', actionId);
+                },
+                onSelect: function(nv) {
+                  try {
+                    applyClassAttackSelection(cid, def, field, nv);
+                    vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
+                    entry.classList.add('modified');
+                  } catch (e) {
+                    showErrorModal('Attack change rejected', e.message);
+                  }
+                }
+              });
+            });
+            return entry;
+          }
+          combatGrid.appendChild(actionTile('b43Raw', 'Front Attack',
+            'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1)'));
+          combatGrid.appendChild(actionTile('b45Raw', 'Middle Attack',
+            'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1)'));
+          combatGrid.appendChild(actionTile('b47Raw', 'Rear Attack',
+            'B47 \u2014 rear-row attack (IDs 45-48, 51-54, and 145 show verified resolver-template roles; concrete element-dependent spells resolve later)'));
+          combatSec.appendChild(combatGrid);
+          var animationControl=document.createElement('div');animationControl.className='combat-animation-card-control';animationControl.appendChild(combatOverrideButton(cid));combatSec.appendChild(animationControl);
+          card.appendChild(combatSec);
+
+          // --- Generated growth history and actual promotion gates (collapsible)
+          var promoSec = makeSection('Growth History / Promotion Gates', false);
+          var promoGrid = document.createElement('div');
+          promoGrid.className = 'stats-grid';
+          if (OB64.classFamiliesUI) {
+            var familyLabel = document.createElement('label');familyLabel.textContent = 'Family ';
+            familyLabel.appendChild(OB64.classFamiliesUI.select(rom, cid, familyChanged));
+            promoGrid.appendChild(familyLabel);
+          }
+          function progressionClassTile(field, label, titleText) {
+            var entry = document.createElement('div');
+            entry.className = 'stat-entry editable';
+            entry.title = titleText;
+            var lbl = document.createElement('span');
+            lbl.className = 'stat-label';
+            lbl.textContent = label;
+            entry.appendChild(lbl);
+            var vs = document.createElement('span');
+            vs.className = 'stat-value';
+            vs.textContent = formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None');
+            entry.appendChild(vs);
+            entry.addEventListener('click', function() {
+              var classOpts = { 0: 'None' };
+              for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
+              makeSearchableInput(entry, classOpts, def[field], function(nv) {
+                def[field] = nv;
+                entry.textContent = '';
+                entry.appendChild(lbl);
+                vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
+                entry.appendChild(vs);
+                markChanged();
+                if (field === 'baseClass' || field === 'intermediateClass') {
+                  refreshGrowthHistoryLinks();
+                }
+              });
+            });
+            return entry;
+          }
+          promoGrid.appendChild(progressionClassTile('baseClass', 'Early Growth Class',
+            CLASS_GROWTH_HISTORY_HELP.baseClass));
+          promoGrid.appendChild(tileNumeric(def, 'baseTransitionLevel', 'Growth Switch Lv 1',
+            {title: CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel}));
+          promoGrid.appendChild(progressionClassTile('intermediateClass', 'Middle Growth Class',
+            CLASS_GROWTH_HISTORY_HELP.middleClass));
+          promoGrid.appendChild(tileNumeric(def, 'finalTransitionLevel', 'Growth Switch Lv 2',
+            {title: CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel}));
+          promoGrid.appendChild(progressionClassTile('classCopyMatch', 'Class History Link',
+            CLASS_GROWTH_HISTORY_HELP.historyLink));
+          promoSec.appendChild(promoGrid);
+
+          // Stat-gate thresholds: LZSS-compressed block at z64 0x3A960C,
+          // class-id-indexed (8 bytes per class). Edits set dirty.statGates
+          // directly; on export the block is recompressed and spliced back.
+          // Only shown when the class has a gate entry.
+          var gate = rom.statGates && rom.statGates.byClass[cid];
+          if (gate) {
+            var gateHdr = document.createElement('div');
+            gateHdr.className = 'class-card-section-label class-card-gate-label';
+            gateHdr.textContent = 'Stat Gate (Promotion Thresholds)';
+            gateHdr.title = 'LZSS block at z64 0x3A960C. Editing recompresses the block on export.';
+            promoSec.appendChild(gateHdr);
+            var gateGrid = document.createElement('div');
+            gateGrid.className = 'stats-grid';
+            var gateFields = [
+              ['STR \u2265', 'str'],
+              ['VIT \u2265', 'vit'],
+              ['INT \u2265', 'int'],
+              ['MEN \u2265', 'men'],
+              ['AGI \u2265', 'agi'],
+              ['DEX \u2265', 'dex'],
+              ['Aln \u2265', 'alnMin'],
+              ['Aln \u2264', 'alnMax']
+            ];
+            gateFields.forEach(function(gf) {
+              gateGrid.appendChild(tileStatGate(gate, gf[1], gf[0]));
+            });
+            promoSec.appendChild(gateGrid);
+          }
+
+          card.appendChild(promoSec);
+
+          // --- Classification (collapsible)
+          var clsSec = makeSection('Classification', false);
+          var clsGrid = document.createElement('div');
+          clsGrid.className = 'stats-grid';
+          clsGrid.appendChild(tileDropdown(def, 'dragonElement', 'Element', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName));
+          var itemCapacityTile = tileDropdown(def, 'itemCapacity', 'Item Capacity',
+            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
+          itemCapacityTile.title = CLASS_ITEM_CAPACITY_HELP;
+          clsGrid.appendChild(itemCapacityTile);
+          clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
+          var sexTile = tileDropdown(def, 'sexOrVoice', 'Sex/Type', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          sexTile.classList.add('raw-byte');
+          sexTile.title = CLASS_SEX_VOICE_HELP;
+          clsGrid.appendChild(sexTile);
+          var leadershipTile = tileDropdown(def, 'leadership', 'Leader', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          leadershipTile.title = CLASS_LEADERSHIP_HELP;
+          clsGrid.appendChild(leadershipTile);
+          clsGrid.appendChild(tileDropdown(def, 'moveType', 'Move', OB64.MOVEMENT_TYPES, OB64.moveTypeName));
+          clsGrid.appendChild(tileNumeric(def, 'baseHp', 'Base HP',
+            {title: 'nameOff+8..9 / statOff-4..-3', max: 65535, warning: true}));
+          clsGrid.appendChild(tileNumeric(def, 'hpGrowth', 'HP base/lv', {title: CLASS_HP_GROWTH_HELP}));
+          clsSec.appendChild(clsGrid);
+          card.appendChild(clsSec);
+
+          // --- Raw / Padding (collapsed by default) — padding + adjacent unknown bytes
+          var rawSec = makeSection('Raw / Padding', false);
+          var pointerWarn = document.createElement('div');
+          pointerWarn.className = 'class-card-raw-warning';
+          pointerWarn.textContent = 'All bytes are editable. Ptr+0..3 form the runtime class-name pointer; changing them can break name lookup or crash the game.';
+          rawSec.appendChild(pointerWarn);
+          var rawGrid = document.createElement('div');
+          rawGrid.className = 'stats-grid';
+          rawGrid.appendChild(tileNumeric(def, 'namePtr0Raw', 'Ptr+0', {raw: true, title: 'Runtime class-name pointer byte 0. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr1Raw', 'Ptr+1', {raw: true, title: 'Runtime class-name pointer byte 1. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr2Raw', 'Ptr+2', {raw: true, title: 'Runtime class-name pointer byte 2. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr3Raw', 'Ptr+3', {raw: true, title: 'Runtime class-name pointer byte 3. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'b33Raw', 'B33', {raw: true, title: 'B33 padding'}));
+          rawGrid.appendChild(tileNumeric(def, 'headerPad', 'H+7', {raw: true, title: 'nameOff+7 / statOff-5 padding/raw header byte'}));
+          rawGrid.appendChild(tileNumeric(def, 'headerTailRaw', 'H+11', {raw: true, title: 'nameOff+11 / statOff-1 padding/raw header byte'}));
+          rawGrid.appendChild(tileNumeric(def, 'b3Raw', 'B3', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b7Raw', 'B7', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b11Raw', 'B11', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b15Raw', 'B15', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b19Raw', 'B19', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawSec.appendChild(rawGrid);
+          card.appendChild(rawSec);
+        }
+
+        // Evolution xref links (kept outside the `if (def)` branch)
+        var promoIds = evoLookup.promotions[cid];
+        var fromIds = evoLookup.demotions[cid];
+        if ((promoIds && promoIds.length > 0) || (fromIds && fromIds.length > 0)) {
+          var evoDiv = document.createElement('div');
+          evoDiv.className = 'class-card-evo';
+          var evLabel = document.createElement('div');
+          evLabel.className = 'class-card-section-label';
+          evLabel.textContent = 'Evolution';
+          evoDiv.appendChild(evLabel);
+          if (fromIds && fromIds.length > 0) {
+            var fromLine = document.createElement('div');
+            fromLine.innerHTML = '<span class="evo-arrow">\u2190</span> From: ';
+            renderPromoLinks(fromLine, fromIds);
+            evoDiv.appendChild(fromLine);
+          }
+          if (promoIds && promoIds.length > 0) {
+            var toLine = document.createElement('div');
+            toLine.innerHTML = '<span class="evo-arrow">\u2192</span> To: ';
+            renderPromoLinks(toLine, promoIds);
+            evoDiv.appendChild(toLine);
+          }
+          card.appendChild(evoDiv);
+        }
+
+        cardsContainer.appendChild(card);
+      })(allClassIds[ci]);
+    }
+
+    makeClickEditorsKeyboardAccessible(cardsContainer, 'Class');
+    panel.appendChild(cardsContainer);
+    setClassView(classViewMode);
+  }
+
+  function jumpToClass(e) {
+    var cid = parseInt(e.target.dataset.classId);
+    // If already on classes tab, just scroll
+    if (activeTab === 'classes') {
+      var row = document.getElementById('class-' + cid);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.style.outline = '2px solid #e94560';
+        setTimeout(function() { row.style.outline = ''; }, 2000);
+      }
+      return;
+    }
+    // Switch to classes tab
+    activeTab = 'classes';
+    var buttons = tabBar.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle('active', buttons[i].dataset.tab === 'classes');
+    }
+    var panels = document.querySelectorAll('.tab-panel');
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle('active', panels[i].id === 'panel-classes');
+    }
+    renderClasses(document.getElementById('panel-classes'));
+    var row = document.getElementById('class-' + cid);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.style.outline = '2px solid #e94560';
+      setTimeout(function() { row.style.outline = ''; }, 2000);
+    }
+  }
+
+  // ============================================================
+  // ENCOUNTERS TAB — neutral-encounter pool + creature drop table.
+  // One card per scenario slice (skipping empty slices). Each card shows
+  // 10 terrain slots with creature chips and inline drop lists. Drops
+  // are class-keyed so edits propagate across every scenario using
+  // that creature.
+  // ============================================================
+  function renderEncounters(panel) {
+    panel.innerHTML = '';
+
+    // Drop availability remains one visual channel. Buggy, unverified, and
+    // story-class warnings are separate badges so none can hide another.
+    function dropStatus(classId) {
+      if (!classId) return 'empty';
+      var hasDrops = rom.creatureDrops.byClass[classId] && !rom.creatureDrops.byClass[classId].isSentinel;
+      return hasDrops ? 'ok' : 'no-drops';
+    }
+    function dropStatusLabel(status) {
+      switch(status) {
+        case 'ok':          return 'Drops OK';
+        case 'no-drops':    return 'No drops';
+        default:            return '';
+      }
+    }
+
+    // Filter bar — filters cards by scenario name / creature name / row
+    var filter = makeFilterBar('Filter by scenario, creature, or row...', function(q) {
+      var cards = panel.querySelectorAll('.encounter-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].style.display = cards[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      }
+    });
+    panel.appendChild(filter);
+
+    // Heads-up note about shared drops / row structure
+    var note = document.createElement('div');
+    note.className = 'encounter-help';
+    note.innerHTML =
+      '<strong>Neutral encounters</strong> — wild creatures that spawn while walking a tactical map. ' +
+      'Each card is one creature-pool slice (20 B, 10 terrain slots). A scenario selector appears only when multiple runtime scenarios share that pool. ' +
+      'Each selected scenario has one optional direct rate override; leaving it untouched keeps the retail encounter-rate path. ' +
+      'Slot\u2192terrain mapping is globally consistent. Scenarios may share retail creature bytes without sharing runtime overrides. ' +
+      '<em>Drops are class-keyed</em>: editing Wyrm\u2019s drops in any card changes them for every scenario using Wyrm. ' +
+      'Each drop record has three retail slots with editable non-negative weights. Zero excludes a slot, while an empty positive-weight slot means no drop. ' +
+      'The confirmed adjacent spare permits one additional class record while retaining the final zero sentinel.';
+    panel.appendChild(note);
+
+    // Build the "vanilla encounter pool" class list once — the set of class
+    // IDs that appear in ANY slot of any scenario in the current ROM. This is
+    // the "Vanilla" tab in the picker modal. Re-computed on each render so it
+    // reflects edits the user has made within the session.
+    function renderGlobalRatePanel() {
+      var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
+      if (!globalRate) return null;
+
+      var SAFE_MAX_MULT = OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER || 3;
+      var HARD_MAX_MULT = OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER || 100;
+      var divisor = Number.isInteger(globalRate.divisor) && globalRate.divisor > 0
+        ? globalRate.divisor : OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
+      var branches = [
+        { key: 'normal', label: 'Area Investigation', stateLabel: 'state bit 17 set', vanillaPassCount: 51 },
+        { key: 'alternate', label: 'In-Scenario Mission', stateLabel: 'state bit 17 clear', vanillaPassCount: 11 }
+      ];
+
+      function fmtMult(mult) {
+        return Number(mult).toFixed(2).replace(/\.00$/, '');
+      }
+      function clampMultiplier(mult) {
+        mult = Number(mult);
+        if (!isFinite(mult)) mult = 1;
+        return Math.max(0.01, Math.min(HARD_MAX_MULT, Math.round(mult * 100) / 100));
+      }
+      function currentPassCount(config) {
+        var count = Number(globalRate[config.key + 'PassCount']);
+        if (!Number.isInteger(count) || count < 1) {
+          var micro = OB64.neutralGlobalBranchMicroBasisPoints(globalRate, config.key);
+          count = Math.round((micro * divisor) / 1000000);
+        }
+        return Math.max(1, Math.min(0x8000, count));
+      }
+      function passCountForMultiplier(config, mult) {
+        return Math.max(1, Math.min(0x8000,
+          Math.round(config.vanillaPassCount * clampMultiplier(mult))));
+      }
+      function percent(passCount) {
+        return ((passCount * 100) / divisor).toFixed(4) + '%';
+      }
+      function exactChance(passCount) {
+        return passCount + ' / ' + divisor + ' = ' + percent(passCount);
+      }
+      function describeMode() {
+        if (globalRate.mode === 'never') return 'Current ROM: globally disabled by branch patch.';
+        if (globalRate.mode === 'always') return 'Current ROM: global roll always passes by branch patch.';
+        if (globalRate.mode === 'threshold') {
+          return 'Current Area Investigation rate: ' + exactChance(currentPassCount(branches[0])) +
+            '. In-Scenario Mission rate: ' + exactChance(currentPassCount(branches[1])) + '.';
+        }
+        return 'Current ROM pattern is not recognized. Editing will replace only the known divisor, threshold, and comparison-branch words.';
+      }
+      function recordPassCount(config, passCount) {
+        var microBp = Math.round((passCount * 1000000) / divisor);
+        globalRate[config.key + 'PassCount'] = passCount;
+        globalRate[config.key + 'Threshold'] = passCount - 1;
+        globalRate[config.key + 'MicroBasisPoints'] = microBp;
+        globalRate[config.key + 'BasisPoints'] = Math.round((passCount * 10000) / divisor);
+        globalRate[config.key + 'Modified'] = true;
+        if (config.key === 'normal') {
+          globalRate.microBasisPoints = microBp;
+          globalRate.basisPoints = microBp / 100;
+          globalRate.multiplier = passCount / config.vanillaPassCount;
+        }
+      }
+      function markRateChanged() {
+        globalRate.mode = 'threshold';
+        globalRate.modified = true;
+        dirty.encounters = true;
+        markChanged();
+      }
+
+      var wrap = document.createElement('div');
+      wrap.className = 'global-rate-panel';
+
+      var head = document.createElement('div');
+      head.className = 'terrain-rate-head';
+      var title = document.createElement('div');
+      title.className = 'terrain-rate-title';
+      title.textContent = 'Global encounter roll';
+      head.appendChild(title);
+      var meta = document.createElement('div');
+      meta.className = 'terrain-rate-meta';
+      meta.textContent = 'ROM 0x13C1E8 / 0x13C1FC / 0x13C200';
+      head.appendChild(meta);
+      wrap.appendChild(head);
+
+      var help = document.createElement('div');
+      help.className = 'terrain-rate-help';
+      help.textContent = 'This first gate has separate Area Investigation (state bit 17 set) and In-Scenario Mission (state bit 17 clear) rates. Each value is the exact number of passing RNG remainders.';
+      wrap.appendChild(help);
+
+      var current = document.createElement('div');
+      current.className = 'global-rate-current';
+      current.textContent = describeMode();
+      wrap.appendChild(current);
+
+      var initialMax = branches.some(function(config) {
+        return currentPassCount(config) / config.vanillaPassCount > SAFE_MAX_MULT;
+      }) ? HARD_MAX_MULT : SAFE_MAX_MULT;
+      var maxMult = initialMax;
+      var branchUis = {};
+      function syncUi(config, passCount) {
+        var ui = branchUis[config.key];
+        if (!ui) return;
+        var mult = passCount / config.vanillaPassCount;
+        ui.range.value = String(Math.max(0.01, Math.min(maxMult, mult)));
+        ui.number.value = fmtMult(mult);
+        ui.value.textContent = exactChance(passCount);
+        ui.threshold.textContent = 'threshold ' + (passCount - 1) + '; passes ' + passCount + ' remainders';
+      }
+      function commitBranch(config, mult) {
+        var passCount = passCountForMultiplier(config, mult);
+        recordPassCount(config, passCount);
+        syncUi(config, passCount);
+        if (globalRate.linked) {
+          var other = config.key === 'normal' ? branches[1] : branches[0];
+          recordPassCount(other, passCount);
+          syncUi(other, passCount);
+        }
+        markRateChanged();
+      }
+      function makeBranchControls(config) {
+        var passCount = currentPassCount(config);
+        var startMult = passCount / config.vanillaPassCount;
+        var controls = document.createElement('div');
+        controls.className = 'global-rate-controls global-rate-branch-' + config.key;
+        var label = document.createElement('div');
+        label.className = 'terrain-rate-label';
+        label.textContent = config.label + ' multiplier';
+        label.title = config.stateLabel;
+        controls.appendChild(label);
+        var range = document.createElement('input');
+        range.className = 'global-rate-range';
+        range.type = 'range';
+        range.min = '0.01';
+        range.max = String(maxMult);
+        range.step = '0.01';
+        controls.appendChild(range);
+        var number = document.createElement('input');
+        number.className = 'global-rate-number';
+        number.type = 'number';
+        number.min = '0.01';
+        number.max = String(maxMult);
+        number.step = '0.01';
+        controls.appendChild(number);
+        var value = document.createElement('div');
+        value.className = 'terrain-rate-value';
+        controls.appendChild(value);
+        var threshold = document.createElement('div');
+        threshold.className = 'global-rate-threshold';
+        controls.appendChild(threshold);
+        branchUis[config.key] = { range: range, number: number, value: value, threshold: threshold };
+        syncUi(config, passCount);
+        range.addEventListener('input', function() {
+          var preview = passCountForMultiplier(config, parseFloat(range.value));
+          number.value = fmtMult(preview / config.vanillaPassCount);
+          value.textContent = exactChance(preview);
+          threshold.textContent = 'threshold ' + (preview - 1) + '; passes ' + preview + ' remainders';
+        });
+        range.addEventListener('change', function() { commitBranch(config, parseFloat(range.value)); });
+        number.addEventListener('change', function() { commitBranch(config, parseFloat(number.value)); });
+        return controls;
+      }
+      branches.forEach(function(config) { wrap.appendChild(makeBranchControls(config)); });
+
+      var linkWrap = document.createElement('label');
+      linkWrap.className = 'global-rate-unlock';
+      var link = document.createElement('input');
+      link.type = 'checkbox';
+      link.checked = !!globalRate.linked;
+      linkWrap.appendChild(link);
+      var linkText = document.createElement('span');
+      linkText.innerHTML = '<strong>Link both encounter contexts</strong>. A linked edit gives both rates the same exact pass count.';
+      linkWrap.appendChild(linkText);
+      link.addEventListener('change', function() {
+        globalRate.linked = link.checked;
+        if (globalRate.linked) {
+          var passCount = currentPassCount(branches[0]);
+          recordPassCount(branches[1], passCount);
+          syncUi(branches[1], passCount);
+        }
+        markRateChanged();
+      });
+      wrap.appendChild(linkWrap);
+
+      var unlockWrap = document.createElement('label');
+      unlockWrap.className = 'global-rate-unlock';
+      var unlock = document.createElement('input');
+      unlock.type = 'checkbox';
+      unlock.checked = maxMult === HARD_MAX_MULT;
+      unlockWrap.appendChild(unlock);
+      var unlockText = document.createElement('span');
+      unlockText.innerHTML =
+        '<strong>Enable x100 test range</strong>. ' +
+        'Normal tuning is x0.01-x3.00. The larger range remains intended for deliberate test builds.';
+      unlockWrap.appendChild(unlockText);
+      unlock.addEventListener('change', function() {
+        maxMult = unlock.checked ? HARD_MAX_MULT : SAFE_MAX_MULT;
+        branches.forEach(function(config) {
+          var ui = branchUis[config.key];
+          ui.range.max = String(maxMult);
+          ui.number.max = String(maxMult);
+          var mult = currentPassCount(config) / config.vanillaPassCount;
+          if (mult > maxMult) commitBranch(config, maxMult);
+          else syncUi(config, currentPassCount(config));
+        });
+      });
+      wrap.appendChild(unlockWrap);
+
+      var note = document.createElement('div');
+      note.className = 'terrain-rate-global-note';
+      note.innerHTML =
+        '<strong>Export behavior:</strong> untouched ROMs keep both retail words exactly. ' +
+        'An unlinked edit preserves the other path’s pass count. Linked edits intentionally match both paths. ' +
+        'A threshold of <code>0</code> still passes one remainder, so this data-only control never labels either path disabled. ' +
+        'Retail Area Investigation is <code>51 / 72000</code>. Retail In-Scenario Mission is <code>11 / 72000</code>.';
+      wrap.appendChild(note);
+
+      return wrap;
+    }
+
+    function renderTerrainRatePanel() {
+      var terrainRates = rom.neutralEncounters && rom.neutralEncounters.terrainRates;
+      var entries = terrainRates && terrainRates.entries ? terrainRates.entries : [];
+      if (!entries.length) return null;
+
+      var wrap = document.createElement('div');
+      wrap.className = 'terrain-rate-panel';
+
+      var head = document.createElement('div');
+      head.className = 'terrain-rate-head';
+      var title = document.createElement('div');
+      title.className = 'terrain-rate-title';
+      title.textContent = 'Terrain encounter rates';
+      head.appendChild(title);
+      var meta = document.createElement('div');
+      meta.className = 'terrain-rate-meta';
+      meta.textContent = 'ROM 0x141E80 -> RAM 0x801ED740';
+      head.appendChild(meta);
+      wrap.appendChild(head);
+
+      var help = document.createElement('div');
+      help.className = 'terrain-rate-help';
+      help.textContent = 'These are the terrain-byte thresholds for the per-unit rand % 100 check after the global encounter roll. 0 disables that terrain byte; 100 guarantees this local check. Decoy Cap doubles the active terrain rate.';
+      wrap.appendChild(help);
+
+      var globalNote = document.createElement('div');
+      globalNote.className = 'terrain-rate-global-note';
+      globalNote.innerHTML =
+        '<strong>Important:</strong> 100% terrain rate does not mean an encounter every step. ' +
+        'The game first passes a global/base roll, then applies this terrain roll. ' +
+        'Vanilla normal play passes <code>51 / 72000</code> attempts before terrain is checked; ' +
+        'use the Global encounter roll panel above to change that first gate. ' +
+        'Terrain rates are best treated as terrain weighting/filter knobs, while the global roll controls overall pacing.';
+      wrap.appendChild(globalNote);
+
+      var grid = document.createElement('div');
+      grid.className = 'terrain-rate-grid';
+
+      function fmtByte(n) {
+        return '0x' + n.toString(16).toUpperCase().padStart(2, '0');
+      }
+
+      function commitRate(entry, next, numberInput, rangeInput, valueEl) {
+        var nv = parseInt(next, 10);
+        if (!isFinite(nv)) nv = 0;
+        if (nv < 0) nv = 0;
+        if (nv > 100) nv = 100;
+        entry.rate = nv;
+        numberInput.value = String(nv);
+        rangeInput.value = String(nv);
+        valueEl.textContent = nv + '%';
+        dirty.encounters = true;
+        markChanged();
+      }
+
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        if (!entry.enabled) continue;
+        (function(entry) {
+          var row = document.createElement('div');
+          row.className = 'terrain-rate-row terrain-rate-slot-' + entry.encounterSlot;
+
+          var label = document.createElement('div');
+          label.className = 'terrain-rate-label';
+          label.textContent = entry.terrainName;
+          row.appendChild(label);
+
+          var detail = document.createElement('div');
+          detail.className = 'terrain-rate-detail';
+          detail.textContent = fmtByte(entry.terrainByte) + ' -> slot ' + entry.encounterSlot + ' (lookup ' + entry.rawLookup + ')';
+          row.appendChild(detail);
+
+          var range = document.createElement('input');
+          range.className = 'terrain-rate-range';
+          range.type = 'range';
+          range.min = '0';
+          range.max = '100';
+          range.step = '1';
+          range.value = String(entry.rate);
+          row.appendChild(range);
+
+          var number = document.createElement('input');
+          number.className = 'terrain-rate-number';
+          number.type = 'number';
+          number.min = '0';
+          number.max = '100';
+          number.step = '1';
+          number.value = String(entry.rate);
+          row.appendChild(number);
+
+          var value = document.createElement('div');
+          value.className = 'terrain-rate-value';
+          value.textContent = entry.rate + '%';
+          row.appendChild(value);
+
+          range.addEventListener('input', function() {
+            number.value = range.value;
+            value.textContent = range.value + '%';
+          });
+          range.addEventListener('change', function() {
+            commitRate(entry, range.value, number, range, value);
+          });
+          number.addEventListener('change', function() {
+            commitRate(entry, number.value, number, range, value);
+          });
+
+          grid.appendChild(row);
+        })(entry);
+      }
+
+      wrap.appendChild(grid);
+      return wrap;
+    }
+
+    var globalRatePanel = renderGlobalRatePanel();
+    if (globalRatePanel) panel.appendChild(globalRatePanel);
+
+    var ratePanel = renderTerrainRatePanel();
+    if (ratePanel) panel.appendChild(ratePanel);
+
+    function computeVanillaClasses() {
+      var set = {};
+      var records = rom.neutralEncounters.records;
+      for (var i = 0; i < records.length; i++) {
+        var r = records[i];
+        for (var s = 0; s < r.slots.length; s++) {
+          if (r.slots[s].classA) set[r.slots[s].classA] = true;
+          if (r.slots[s].classB) set[r.slots[s].classB] = true;
+        }
+      }
+      return Object.keys(set).map(function(k) { return parseInt(k); }).sort(function(a, b) { return a - b; });
+    }
+    var vanillaClasses = computeVanillaClasses();
+
+    function globalRateBranchDefaults(key) {
+      var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate || {};
+      var divisor = Number(globalRate.divisor);
+      if (!Number.isInteger(divisor) || divisor <= 0 || divisor > 0xFFFFFFFF) {
+        divisor = OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR || 72000;
+      }
+      var passCount = Number(globalRate[key + 'PassCount']);
+      if (!Number.isInteger(passCount) || passCount < 1 ||
+          passCount > Math.min(0x10000, divisor)) {
+        var vanillaPassCount = key === 'normal' ? 51 : 11;
+        var micro = OB64.neutralGlobalBranchMicroBasisPoints
+          ? OB64.neutralGlobalBranchMicroBasisPoints(globalRate, key)
+          : Math.round((vanillaPassCount * 1000000) / divisor);
+        passCount = Math.round((micro * divisor) / 1000000);
+        passCount = Math.max(1, Math.min(0x10000, divisor, passCount));
+      }
+      return { passCount: passCount, divisor: divisor };
+    }
+
+    function formatScenarioRateBranch(branch) {
+      branch = branch || {};
+      if (branch.mode === 'disabled') return 'disabled';
+      if (branch.mode !== 'override') return 'retail rate';
+      var passCount = Number(branch.passCount);
+      var divisor = Number(branch.divisor);
+      if (!Number.isInteger(passCount) || !Number.isInteger(divisor) || divisor <= 0) {
+        return 'invalid override';
+      }
+      var percent = ((passCount * 100) / divisor).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+      return passCount + ' / ' + divisor + ' (' + percent + '%)';
+    }
+
+    function renderScenarioRateControls(rec, scope) {
+      scope = scope || {};
+      rec.rateOverride = rec.rateOverride || OB64.makeNeutralSliceRateOverride();
+      var titlePrefix = scope.title || 'Scenario encounter-rate override';
+      var runtimeAvailable = !rom.layout || rom.layout.supportsNeutralRuntimeOverrides !== false;
+      var details = document.createElement('details');
+      details.className = 'slice-rate-details';
+      if (!runtimeAvailable) details.classList.add('slice-rate-unavailable');
+      var summary = document.createElement('summary');
+      summary.className = 'slice-rate-summary';
+      details.appendChild(summary);
+
+      function updateSummary() {
+        var rate = rec.rateOverride;
+        var normal = formatScenarioRateBranch(rate.normal);
+        var alternate = formatScenarioRateBranch(rate.alternate);
+        if (normal === 'retail rate' && alternate === 'retail rate') {
+          summary.textContent = titlePrefix + ' — not set; both contexts use retail rates';
+        } else {
+          summary.textContent = titlePrefix + ' — Area Investigation: ' + normal +
+            '; In-Scenario Mission: ' + alternate;
+        }
+      }
+
+      var intro = document.createElement('div');
+      intro.className = 'slice-rate-help';
+      intro.textContent = runtimeAvailable
+        ? (scope.help || 'This optional override affects only the selected runtime scenario. Use retail rate follows the ordinary global encounter roll. Disabled always takes the existing rejection path.')
+        : 'Runtime encounter rates are not mapped for this ROM revision.';
+      details.appendChild(intro);
+
+      var configs = [
+        { key: 'normal', label: 'Area Investigation', stateLabel: 'state bit 17 set' },
+        { key: 'alternate', label: 'In-Scenario Mission', stateLabel: 'state bit 17 clear' }
+      ];
+      configs.forEach(function(config) {
+        var branch = rec.rateOverride[config.key] || OB64.makeNeutralSliceRateBranch();
+        rec.rateOverride[config.key] = branch;
+        var row = document.createElement('div');
+        row.className = 'slice-rate-row';
+
+        var label = document.createElement('div');
+        label.className = 'slice-rate-label';
+        label.textContent = config.label;
+        label.title = config.stateLabel;
+        row.appendChild(label);
+
+        var mode = document.createElement('select');
+        mode.className = 'slice-rate-mode';
+        [
+          ['inherit', 'Use retail rate'],
+          ['override', 'Override'],
+          ['disabled', 'Disabled']
+        ].forEach(function(optionInfo) {
+          var option = document.createElement('option');
+          option.value = optionInfo[0];
+          option.textContent = optionInfo[1];
+          mode.appendChild(option);
+        });
+        mode.value = branch.mode === 'override' || branch.mode === 'disabled'
+          ? branch.mode : 'inherit';
+        mode.disabled = !runtimeAvailable;
+        row.appendChild(mode);
+
+        var passWrap = document.createElement('label');
+        passWrap.className = 'slice-rate-number-wrap';
+        passWrap.appendChild(document.createTextNode('passing remainders '));
+        var passInput = document.createElement('input');
+        passInput.className = 'slice-rate-number';
+        passInput.type = 'number';
+        passInput.min = '1';
+        passInput.max = '65536';
+        passInput.step = '1';
+        passWrap.appendChild(passInput);
+        row.appendChild(passWrap);
+
+        var divisorWrap = document.createElement('label');
+        divisorWrap.className = 'slice-rate-number-wrap';
+        divisorWrap.appendChild(document.createTextNode('divisor '));
+        var divisorInput = document.createElement('input');
+        divisorInput.className = 'slice-rate-number slice-rate-divisor';
+        divisorInput.type = 'number';
+        divisorInput.min = '1';
+        divisorInput.max = '4294967295';
+        divisorInput.step = '1';
+        divisorWrap.appendChild(divisorInput);
+        row.appendChild(divisorWrap);
+
+        var exact = document.createElement('div');
+        exact.className = 'slice-rate-exact';
+        row.appendChild(exact);
+
+        function syncBranch() {
+          var defaults = scope.branchDefaults
+            ? scope.branchDefaults(config.key) : globalRateBranchDefaults(config.key);
+          var isOverride = branch.mode === 'override';
+          passInput.value = String(isOverride ? branch.passCount : defaults.passCount);
+          divisorInput.value = String(isOverride ? branch.divisor : defaults.divisor);
+          passInput.disabled = !runtimeAvailable || !isOverride;
+          divisorInput.disabled = !runtimeAvailable || !isOverride;
+          exact.textContent = formatScenarioRateBranch(branch);
+          updateSummary();
+        }
+
+        function markScenarioRateChanged() {
+          dirty.neutralRuntime = true;
+          markChanged();
+          syncBranch();
+        }
+
+        function commitNumbers() {
+          var passCount = Number(passInput.value);
+          var divisor = Number(divisorInput.value);
+          var validDivisor = Number.isInteger(divisor) && divisor >= 1 && divisor <= 0xFFFFFFFF;
+          var maxPass = validDivisor ? Math.min(0x10000, divisor) : 0;
+          var validPass = Number.isInteger(passCount) && passCount >= 1 && passCount <= maxPass;
+          passInput.setCustomValidity(validPass ? '' :
+            'Passing remainders must be an integer from 1 through ' + (maxPass || 1) + '.');
+          divisorInput.setCustomValidity(validDivisor ? '' :
+            'Divisor must be an integer from 1 through 4294967295.');
+          if (!validDivisor || !validPass) {
+            (validDivisor ? passInput : divisorInput).reportValidity();
+            syncBranch();
+            return;
+          }
+          passInput.setCustomValidity('');
+          divisorInput.setCustomValidity('');
+          if (branch.passCount === passCount && branch.divisor === divisor) return;
+          branch.passCount = passCount;
+          branch.divisor = divisor;
+          markScenarioRateChanged();
+        }
+
+        mode.addEventListener('change', function() {
+          var nextMode = mode.value;
+          if (branch.mode === nextMode) return;
+          branch.mode = nextMode;
+          if (nextMode === 'override') {
+            var defaults = scope.branchDefaults
+              ? scope.branchDefaults(config.key) : globalRateBranchDefaults(config.key);
+            branch.passCount = defaults.passCount;
+            branch.divisor = defaults.divisor;
+          } else {
+            branch.passCount = null;
+            branch.divisor = null;
+          }
+          markScenarioRateChanged();
+        });
+        passInput.addEventListener('change', commitNumbers);
+        divisorInput.addEventListener('change', commitNumbers);
+        syncBranch();
+        details.appendChild(row);
+      });
+      updateSummary();
+      return details;
+    }
+
+    function updateDropRowDisplay(dropsRow, classId) {
+      var dropsRec = rom.creatureDrops.byClass[classId];
+      if (!dropsRec) return;
+      var total = OB64.creatureDropTotalWeight(dropsRec);
+      var chips = dropsRow.querySelectorAll('.drop-chip[data-slot-index]');
+      for (var i = 0; i < chips.length; i++) {
+        var slotIndex = Number(chips[i].dataset.slotIndex);
+        var dropSlot = dropsRec.slots[slotIndex];
+        var weight = Number.isInteger(dropSlot.weight) && dropSlot.weight >= 0
+          ? dropSlot.weight : 1;
+        chips[i].className = 'drop-chip ' +
+          (dropSlot.isEquipment ? 'drop-chip-bit15-set' : 'drop-chip-bit15-clear');
+        chips[i].textContent = OB64.creatureDropLabel(dropSlot) + ' · ' +
+          (total ? (weight + '/' + total) : 'invalid');
+        chips[i].title = OB64.creatureDropKindLabel(dropSlot) +
+          ' — selector slot ' + (slotIndex + 1) + ' has weight ' + weight +
+          ' of ' + total + ' — namespace ID 0x' +
+          dropSlot.itemId.toString(16).padStart(4, '0') +
+          ' — affects all scenarios using ' + OB64.className(classId);
+      }
+      var inputs = dropsRow.querySelectorAll('.drop-weight-input[data-slot-index]');
+      for (i = 0; i < inputs.length; i++) {
+        var inputSlot = Number(inputs[i].dataset.slotIndex);
+        var inputWeight = dropsRec.slots[inputSlot].weight;
+        inputs[i].value = String(Number.isInteger(inputWeight) && inputWeight >= 0 ? inputWeight : 1);
+      }
+      var summaryEl = dropsRow.querySelector('.drop-odds-summary');
+      if (summaryEl) {
+        summaryEl.textContent = total
+          ? 'Outcomes: ' + OB64.creatureDropOutcomes(dropsRec).map(function(outcome) {
+              return outcome.label + ' ' + outcome.numerator + '/' + outcome.denominator;
+            }).join(' · ')
+          : 'Invalid: the three slot weights total zero.';
+      }
+    }
+
+    function refreshDropClassDisplays(classId) {
+      var rows = panel.querySelectorAll('.drops-row[data-drop-class-id="' + classId + '"]');
+      for (var i = 0; i < rows.length; i++) updateDropRowDisplay(rows[i], classId);
+    }
+
+    function markNeutralRuntimeChanged() {
+      dirty.neutralRuntime = true;
+      markChanged();
+    }
+
+    function customNeutralProfile(runtimeKey, terrainSlot) {
+      var profiles = rom.neutralEncounters.customSquads || [];
+      for (var i = 0; i < profiles.length; i++) {
+        if (profiles[i].runtimeKey === runtimeKey && profiles[i].terrainSlot === terrainSlot) {
+          return profiles[i];
+        }
+      }
+      return null;
+    }
+
+    function nextCustomNeutralProfileId() {
+      var used = {};
+      (rom.neutralEncounters.customSquads || []).forEach(function(profile) {
+        used[Number(profile.profileId)] = true;
+      });
+      for (var id = 1; id <= 255; id++) if (!used[id]) return id;
+      throw new Error('No custom neutral squad profile IDs remain.');
+    }
+
+    function defaultCustomNeutralMembers() {
+      if (OB64.makeDefaultNeutralSquadMembers) return OB64.makeDefaultNeutralSquadMembers();
+      return [
+        { cohort: 'A', classId: 0x05, levelOffsetRaw: 0x01, cell: 7 },
+        { cohort: 'B', classId: 0x47, levelOffsetRaw: 0x00, cell: 2 }
+      ];
+    }
+
+    function defaultCustomNeutralEquipment() {
+      return { A: [0, 0], B: [0, 0], C: [0, 0] };
+    }
+
+    function defaultCustomNeutralRewards() {
+      return { slots: [
+        { raw: 0, weight: 1 },
+        { raw: 0, weight: 1 },
+        { raw: 0, weight: 1 }
+      ] };
+    }
+
+    function removeCustomNeutralProfile(profile) {
+      var profiles = rom.neutralEncounters.customSquads || [];
+      var index = profiles.indexOf(profile);
+      if (index < 0) return false;
+      profiles.splice(index, 1);
+      markNeutralRuntimeChanged();
+      return true;
+    }
+
+    function openCustomNeutralSquadModal(profile, card, rec, scenarioRow, slot) {
+      try {
+        profile.label = OB64.runtimeOverrides.normalizeEncounterText(profile.label);
+      } catch (encounterTextError) {
+        profile.label = 'Bandits!';
+      }
+      var initialPersuasionChance = Number(profile.persuasion && profile.persuasion.chance);
+      if (!Number.isInteger(initialPersuasionChance) ||
+          initialPersuasionChance < 0 || initialPersuasionChance > 100) {
+        initialPersuasionChance = 10;
+      }
+      var initialClassBonuses = profile.persuasion && Array.isArray(profile.persuasion.classBonuses)
+        ? profile.persuasion.classBonuses.slice(0, 3).map(function(entry) {
+            return { classId: Number(entry.classId), bonus: Number(entry.bonus) };
+          }).filter(function(entry) {
+            return Number.isInteger(entry.classId) && entry.classId > 1 && entry.classId <= 0xFF &&
+              Number.isInteger(entry.bonus) && entry.bonus >= 1 && entry.bonus <= 100;
+          }) : [];
+      var seenBonusClasses = {};
+      initialClassBonuses = initialClassBonuses.filter(function(entry) {
+        if (seenBonusClasses[entry.classId]) return false;
+        seenBonusClasses[entry.classId] = true;
+        return true;
+      });
+      profile.persuasion = {
+        mode: 'fixed',
+        chance: initialPersuasionChance,
+        classBonuses: initialClassBonuses
+      };
+      var initialRetreatHpThreshold = Number(profile.retreat && profile.retreat.hpThreshold);
+      if (!Number.isInteger(initialRetreatHpThreshold) ||
+          initialRetreatHpThreshold < 0 || initialRetreatHpThreshold > 100) {
+        initialRetreatHpThreshold = 0;
+      }
+      profile.retreat = { hpThreshold: initialRetreatHpThreshold };
+      profile.members = Array.isArray(profile.members)
+        ? profile.members : defaultCustomNeutralMembers();
+      profile.equipment = profile.equipment || defaultCustomNeutralEquipment();
+      profile.rewards = profile.rewards && Array.isArray(profile.rewards.slots) &&
+        profile.rewards.slots.length === 3 ? {
+          slots: profile.rewards.slots.map(function(entry) {
+            var raw = Number(entry && entry.raw);
+            var weight = Number(entry && entry.weight);
+            return {
+              raw: Number.isInteger(raw) && raw >= 0 && raw <= 0xFFFF ? raw : 0,
+              weight: Number.isInteger(weight) && weight >= 0 && weight <= 0xFFFF ? weight : 1
+            };
+          })
+        } : defaultCustomNeutralRewards();
+      if (!profile.rewards.slots.some(function(entry) { return entry.weight > 0; })) {
+        profile.rewards = defaultCustomNeutralRewards();
+      }
+
+      var overlay = document.createElement('div');
+      overlay.className = 'item-modal-overlay neutral-squad-modal-overlay';
+      var modal = document.createElement('div');
+      modal.className = 'item-modal neutral-squad-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      overlay.appendChild(modal);
+
+      var header = document.createElement('div');
+      header.className = 'item-modal-header';
+      var title = document.createElement('h2');
+      title.id = 'neutral-squad-modal-title-' + profile.profileId;
+      title.textContent = profile.label + ' · ' + encounterScenarioLabel(scenarioRow.runtimeKey) +
+        ' · ' + slot.terrainName;
+      modal.setAttribute('aria-labelledby', title.id);
+      header.appendChild(title);
+      var closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'item-modal-close';
+      closeButton.textContent = '\u00d7';
+      closeButton.title = 'Close squad editor (Esc)';
+      closeButton.setAttribute('aria-label', 'Close squad editor');
+      closeButton.addEventListener('click', closeModal);
+      header.appendChild(closeButton);
+      modal.appendChild(header);
+
+      var body = document.createElement('div');
+      body.className = 'item-modal-body neutral-squad-modal-body';
+      var help = document.createElement('div');
+      help.className = 'neutral-squad-modal-help';
+      help.textContent = 'This profile replaces both retail creature choices for this scenario and terrain. Its encounter-card text is customizable below. This squad can keep fighting until the encounter resolves. Persuasion rolls only when exactly one eligible enemy remains; an early or failed Talk returns to the encounter without forcing a retreat. Retail creatures withdraw at a class-specific HP threshold; this squad uses the threshold below.';
+      body.appendChild(help);
+
+      var messageSection = document.createElement('div');
+      messageSection.className = 'neutral-profile-section neutral-message-section';
+      var messageLabel = document.createElement('label');
+      messageLabel.className = 'neutral-message-label';
+      messageLabel.textContent = 'Encounter card text';
+      var messageInput = document.createElement('input');
+      messageInput.className = 'neutral-message-input';
+      messageInput.type = 'text';
+      messageInput.maxLength = OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS;
+      messageInput.value = profile.label;
+      messageInput.setAttribute('aria-label', 'Encounter card text');
+      messageLabel.appendChild(messageInput);
+      messageSection.appendChild(messageLabel);
+      var messageHelp = document.createElement('div');
+      messageHelp.className = 'neutral-profile-section-help neutral-message-help';
+      messageHelp.textContent = 'Up to ' +
+        OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+        ' plain characters. The default is “Bandits!”.';
+      messageSection.appendChild(messageHelp);
+      messageInput.addEventListener('input', function() {
+        try {
+          var nextText = OB64.runtimeOverrides.normalizeEncounterText(messageInput.value);
+          messageInput.setCustomValidity('');
+          messageHelp.textContent = 'Up to ' +
+            OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+            ' plain characters. The default is “Bandits!”.';
+          if (profile.label === nextText) return;
+          profile.label = nextText;
+          title.textContent = profile.label + ' · ' +
+            encounterScenarioLabel(scenarioRow.runtimeKey) + ' · ' + slot.terrainName;
+          markNeutralRuntimeChanged();
+        } catch (messageError) {
+          messageInput.setCustomValidity(messageError.message);
+          messageHelp.textContent = messageError.message;
+        }
+      });
+      messageInput.addEventListener('blur', function() {
+        if (messageInput.checkValidity()) return;
+        messageInput.value = profile.label;
+        messageInput.setCustomValidity('');
+        messageHelp.textContent = 'Up to ' +
+          OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+          ' plain characters. The default is “Bandits!”.';
+      });
+      body.appendChild(messageSection);
+
+      var persuasion = document.createElement('div');
+      persuasion.className = 'neutral-persuasion-controls';
+      var persuasionLabel = document.createElement('label');
+      persuasionLabel.className = 'neutral-persuasion-slider-label';
+      var persuasionCaption = document.createElement('span');
+      persuasionCaption.className = 'neutral-persuasion-caption';
+      persuasionCaption.textContent = 'Persuasion chance';
+      persuasionLabel.appendChild(persuasionCaption);
+      var chance = document.createElement('input');
+      chance.className = 'neutral-persuasion-slider';
+      chance.type = 'range';
+      chance.min = '0';
+      chance.max = '100';
+      chance.step = '1';
+      chance.value = String(profile.persuasion.chance);
+      chance.setAttribute('aria-label', 'Persuasion chance');
+      chance.setAttribute('aria-valuetext', profile.persuasion.chance + ' percent');
+      persuasionLabel.appendChild(chance);
+      var chanceValue = document.createElement('output');
+      chanceValue.className = 'neutral-persuasion-value';
+      chanceValue.textContent = profile.persuasion.chance + '%';
+      persuasionLabel.appendChild(chanceValue);
+      persuasion.appendChild(persuasionLabel);
+      chance.addEventListener('input', function() {
+        var value = Number(chance.value);
+        chanceValue.textContent = value + '%';
+        chance.setAttribute('aria-valuetext', value + ' percent');
+        if (profile.persuasion.chance === value) return;
+        profile.persuasion.mode = 'fixed';
+        profile.persuasion.chance = value;
+        markNeutralRuntimeChanged();
+      });
+
+      var bonusSection = document.createElement('div');
+      bonusSection.className = 'neutral-profile-section neutral-class-bonuses';
+      var bonusTitle = document.createElement('div');
+      bonusTitle.className = 'neutral-profile-section-title';
+      bonusTitle.textContent = 'Player leader class bonuses';
+      bonusSection.appendChild(bonusTitle);
+      var bonusHelp = document.createElement('div');
+      bonusHelp.className = 'neutral-profile-section-help';
+      bonusHelp.textContent = 'Add up to three exact current leader-class matches. One matching bonus is added to the base chance, capped at 100%. Bonuses never stack.';
+      bonusSection.appendChild(bonusHelp);
+      var bonusRows = document.createElement('div');
+      bonusRows.className = 'neutral-class-bonus-rows';
+      bonusSection.appendChild(bonusRows);
+      var addBonus = document.createElement('button');
+      addBonus.type = 'button';
+      addBonus.className = 'btn-secondary neutral-add-class-bonus';
+      addBonus.textContent = 'Add Class Bonus';
+      bonusSection.appendChild(addBonus);
+
+      function availableBonusClass() {
+        var used = {};
+        profile.persuasion.classBonuses.forEach(function(entry) { used[entry.classId] = true; });
+        var ids = Object.keys(OB64.CLASS_NAMES || {}).map(Number).sort(function(a, b) { return a - b; });
+        for (var index = 0; index < ids.length; index++) {
+          if (ids[index] > 1 && ids[index] <= 0xFF && !used[ids[index]]) return ids[index];
+        }
+        return 0;
+      }
+
+      function renderClassBonuses() {
+        bonusRows.innerHTML = '';
+        var used = {};
+        profile.persuasion.classBonuses.forEach(function(entry) { used[entry.classId] = true; });
+        profile.persuasion.classBonuses.forEach(function(entry, rowIndex) {
+          var row = document.createElement('div');
+          row.className = 'neutral-class-bonus-row';
+          var select = document.createElement('select');
+          select.setAttribute('aria-label', 'Player leader bonus class ' + (rowIndex + 1));
+          Object.keys(OB64.CLASS_NAMES || {}).map(Number).sort(function(a, b) { return a - b; }).forEach(function(classId) {
+            if (!Number.isInteger(classId) || classId <= 1 || classId > 0xFF) return;
+            var option = document.createElement('option');
+            option.value = String(classId);
+            option.textContent = OB64.className ? OB64.className(classId) : OB64.CLASS_NAMES[classId];
+            option.selected = classId === entry.classId;
+            option.disabled = classId !== entry.classId && !!used[classId];
+            select.appendChild(option);
+          });
+          select.addEventListener('change', function() {
+            var classId = Number(select.value);
+            var duplicate = profile.persuasion.classBonuses.some(function(other, otherIndex) {
+              return otherIndex !== rowIndex && other.classId === classId;
+            });
+            if (duplicate) {
+              renderClassBonuses();
+              return;
+            }
+            entry.classId = classId;
+            markNeutralRuntimeChanged();
+            renderClassBonuses();
+          });
+          row.appendChild(select);
+          var plus = document.createElement('span');
+          plus.className = 'neutral-class-bonus-plus';
+          plus.textContent = '+';
+          row.appendChild(plus);
+          var amount = document.createElement('input');
+          amount.type = 'number';
+          amount.min = '1';
+          amount.max = '100';
+          amount.step = '1';
+          amount.value = String(entry.bonus);
+          amount.setAttribute('aria-label', 'Persuasion bonus percent for ' +
+            (OB64.className ? OB64.className(entry.classId) : entry.classId));
+          amount.addEventListener('change', function() {
+            var value = Number(amount.value);
+            if (!Number.isInteger(value) || value < 1 || value > 100) {
+              amount.value = String(entry.bonus);
+              return;
+            }
+            if (entry.bonus === value) return;
+            entry.bonus = value;
+            markNeutralRuntimeChanged();
+          });
+          row.appendChild(amount);
+          var percent = document.createElement('span');
+          percent.textContent = '%';
+          row.appendChild(percent);
+          var removeBonus = document.createElement('button');
+          removeBonus.type = 'button';
+          removeBonus.className = 'btn-secondary neutral-remove-class-bonus';
+          removeBonus.textContent = 'Remove';
+          removeBonus.addEventListener('click', function() {
+            profile.persuasion.classBonuses.splice(rowIndex, 1);
+            markNeutralRuntimeChanged();
+            renderClassBonuses();
+          });
+          row.appendChild(removeBonus);
+          bonusRows.appendChild(row);
+        });
+        addBonus.disabled = profile.persuasion.classBonuses.length >= 3 || !availableBonusClass();
+      }
+
+      addBonus.addEventListener('click', function() {
+        var classId = availableBonusClass();
+        if (!classId || profile.persuasion.classBonuses.length >= 3) return;
+        profile.persuasion.classBonuses.push({ classId: classId, bonus: 10 });
+        markNeutralRuntimeChanged();
+        renderClassBonuses();
+      });
+      renderClassBonuses();
+      persuasion.appendChild(bonusSection);
+
+      var retreatLabel = document.createElement('label');
+      retreatLabel.className = 'neutral-persuasion-slider-label neutral-retreat-slider-label';
+      var retreatCaption = document.createElement('span');
+      retreatCaption.className = 'neutral-persuasion-caption neutral-retreat-caption';
+      retreatCaption.textContent = 'Retreat at or below HP';
+      retreatLabel.appendChild(retreatCaption);
+      var retreatSlider = document.createElement('input');
+      retreatSlider.className = 'neutral-persuasion-slider neutral-retreat-slider';
+      retreatSlider.type = 'range';
+      retreatSlider.min = '0';
+      retreatSlider.max = '100';
+      retreatSlider.step = '1';
+      retreatSlider.value = String(profile.retreat.hpThreshold);
+      retreatSlider.setAttribute('aria-label', 'Retreat at or below HP');
+      retreatSlider.setAttribute('aria-valuetext', profile.retreat.hpThreshold === 0
+        ? 'Never retreat' : profile.retreat.hpThreshold + ' percent HP');
+      retreatLabel.appendChild(retreatSlider);
+      var retreatValue = document.createElement('output');
+      retreatValue.className = 'neutral-persuasion-value neutral-retreat-value';
+      retreatValue.textContent = profile.retreat.hpThreshold === 0
+        ? 'Never' : profile.retreat.hpThreshold + '%';
+      retreatLabel.appendChild(retreatValue);
+      persuasion.appendChild(retreatLabel);
+      retreatSlider.addEventListener('input', function() {
+        var value = Number(retreatSlider.value);
+        retreatValue.textContent = value === 0 ? 'Never' : value + '%';
+        retreatSlider.setAttribute('aria-valuetext', value === 0
+          ? 'Never retreat' : value + ' percent HP');
+        if (profile.retreat.hpThreshold === value) return;
+        profile.retreat.hpThreshold = value;
+        markNeutralRuntimeChanged();
+      });
+      body.appendChild(persuasion);
+
+      var rewards = document.createElement('div');
+      rewards.className = 'neutral-profile-section neutral-reward-section';
+      var rewardsTitle = document.createElement('div');
+      rewardsTitle.className = 'neutral-profile-section-title';
+      rewardsTitle.textContent = 'Squad victory reward';
+      rewards.appendChild(rewardsTitle);
+      var rewardsHelp = document.createElement('div');
+      rewardsHelp.className = 'neutral-profile-section-help';
+      rewardsHelp.textContent = 'Choose three weighted outcomes. “None” is a valid outcome. The game rolls this table once after defeating the squad; persuasion awards nothing.';
+      rewards.appendChild(rewardsHelp);
+      var rewardRows = document.createElement('div');
+      rewardRows.className = 'neutral-reward-rows';
+      rewards.appendChild(rewardRows);
+      var rewardSummary = document.createElement('div');
+      rewardSummary.className = 'neutral-reward-summary';
+      rewards.appendChild(rewardSummary);
+
+      function rewardDisplay(raw) {
+        var itemId = raw & 0x7FFF;
+        var isEquipment = !!(raw & 0x8000);
+        if (!itemId) return { label: '(none)', itemId: 0, isEquipment: false };
+        var slot = { itemId: itemId, isEquipment: isEquipment, raw: raw };
+        return {
+          label: OB64.creatureDropLabel ? OB64.creatureDropLabel(slot) :
+            ((isEquipment ? 'Equipment ' : 'Consumable ') + itemId),
+          itemId: itemId,
+          isEquipment: isEquipment
+        };
+      }
+
+      function renderRewards() {
+        rewardRows.innerHTML = '';
+        var total = 0;
+        profile.rewards.slots.forEach(function(entry, rewardIndex) {
+          total += entry.weight;
+          var display = rewardDisplay(entry.raw);
+          var row = document.createElement('div');
+          row.className = 'neutral-reward-row';
+          var label = document.createElement('span');
+          label.className = 'neutral-reward-label';
+          label.textContent = 'Choice ' + (rewardIndex + 1);
+          row.appendChild(label);
+          var pick = document.createElement('button');
+          pick.type = 'button';
+          pick.className = 'neutral-reward-picker';
+          pick.textContent = display.label;
+          pick.title = 'Choose reward outcome ' + (rewardIndex + 1);
+          pick.addEventListener('click', function() {
+            openItemPicker(pick, display.itemId, display.isEquipment, function(newItemId, kind) {
+              if (newItemId === undefined) return;
+              if (!newItemId || kind === 'none') entry.raw = 0;
+              else entry.raw = (newItemId & 0x7FFF) |
+                (kind === 'bit15-set' ? 0x8000 : 0);
+              markNeutralRuntimeChanged();
+              renderRewards();
+            });
+          });
+          row.appendChild(pick);
+          var weightLabel = document.createElement('label');
+          weightLabel.className = 'neutral-reward-weight';
+          weightLabel.textContent = 'Weight ';
+          var weight = document.createElement('input');
+          weight.type = 'number';
+          weight.min = '0';
+          weight.max = '65535';
+          weight.step = '1';
+          weight.value = String(entry.weight);
+          weight.setAttribute('aria-label', 'Reward choice ' + (rewardIndex + 1) + ' weight');
+          weight.addEventListener('change', function() {
+            var value = Number(weight.value);
+            if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) {
+              weight.value = String(entry.weight);
+              return;
+            }
+            var otherTotal = profile.rewards.slots.reduce(function(sum, slotEntry, index) {
+              return sum + (index === rewardIndex ? 0 : slotEntry.weight);
+            }, 0);
+            if (value + otherTotal === 0) {
+              weight.value = String(entry.weight);
+              return;
+            }
+            if (entry.weight === value) return;
+            entry.weight = value;
+            markNeutralRuntimeChanged();
+            renderRewards();
+          });
+          weightLabel.appendChild(weight);
+          row.appendChild(weightLabel);
+          rewardRows.appendChild(row);
+        });
+        rewardSummary.textContent = 'Total weight: ' + total;
+      }
+      renderRewards();
+      body.appendChild(rewards);
+
+      var editorHost = document.createElement('div');
+      editorHost.className = 'neutral-squad-editor-host';
+      body.appendChild(editorHost);
+      modal.appendChild(body);
+
+      var footer = document.createElement('div');
+      footer.className = 'neutral-squad-modal-footer';
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn-secondary neutral-remove-squad';
+      remove.textContent = 'Remove Squad';
+      remove.addEventListener('click', function() {
+        removeCustomNeutralProfile(profile);
+        closeModal();
+      });
+      footer.appendChild(remove);
+      var done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'neutral-squad-modal-done';
+      done.textContent = 'Done';
+      done.addEventListener('click', function() {
+        if (!messageInput.checkValidity()) {
+          messageInput.reportValidity();
+          messageInput.focus();
+          return;
+        }
+        closeModal();
+      });
+      footer.appendChild(done);
+      modal.appendChild(footer);
+
+      var closed = false;
+      function closeModal() {
+        if (closed) return;
+        closed = true;
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        if (card && card.isConnected) rebuildCardBody(card, rec);
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') closeModal();
+      }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', function(event) {
+        if (event.target === overlay) closeModal();
+      });
+
+      document.body.appendChild(overlay);
+      OB64.renderNeutralSquadEditor(editorHost, rom, profile, {
+        onChange: function() { markNeutralRuntimeChanged(); }
+      });
+      closeButton.focus();
+    }
+
+    function renderCustomNeutralSquad(tile, card, rec, scenarioRow, slot) {
+      var wrap = document.createElement('div');
+      wrap.className = 'neutral-custom-squad';
+      var customAvailable = (!rom.layout ||
+        rom.layout.supportsNeutralCustomSquads !== false) &&
+        !!OB64.renderNeutralSquadEditor;
+      if (!scenarioRow) {
+        wrap.classList.add('neutral-custom-unavailable');
+        wrap.textContent = 'Select a mapped scenario to add a squad.';
+        tile.appendChild(wrap);
+        return;
+      }
+      var profile = customNeutralProfile(scenarioRow.runtimeKey, slot.slotIdx);
+      if (!profile) {
+        var profileLimit = OB64.runtimeOverrides && OB64.runtimeOverrides.consts
+          ? OB64.runtimeOverrides.consts.TYPED_MAX_PROFILES : 113;
+        var profileCount = (rom.neutralEncounters.customSquads || []).length;
+        var profileCapacityReached = profileCount >= profileLimit;
+        var add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'neutral-add-squad';
+        add.textContent = 'Add Squad';
+        add.disabled = !customAvailable || profileCapacityReached;
+        add.title = !customAvailable
+          ? 'Custom neutral squads are unavailable for this ROM revision.'
+          : (profileCapacityReached
+            ? 'The custom neutral squad table is full (' + profileLimit + ' profiles).'
+            : 'Replace both retail creature choices for this scenario and terrain with a custom squad.');
+        add.addEventListener('click', function() {
+          rom.neutralEncounters.customSquads = rom.neutralEncounters.customSquads || [];
+          var newProfile = {
+            profileId: nextCustomNeutralProfileId(),
+            runtimeKey: scenarioRow.runtimeKey,
+            slice: rec.s0,
+            terrainSlot: slot.slotIdx,
+            members: defaultCustomNeutralMembers(),
+            equipment: defaultCustomNeutralEquipment(),
+            label: 'Bandits!',
+            persuasion: { mode: 'fixed', chance: 10, classBonuses: [] },
+            retreat: { hpThreshold: 0 },
+            rewards: defaultCustomNeutralRewards()
+          };
+          rom.neutralEncounters.customSquads.push(newProfile);
+          markNeutralRuntimeChanged();
+          rebuildCardBody(card, rec);
+          openCustomNeutralSquadModal(newProfile, card, rec, scenarioRow, slot);
+        });
+        wrap.appendChild(add);
+        var addHelp = document.createElement('div');
+        addHelp.className = 'neutral-custom-hint';
+        addHelp.textContent = 'Opens the Scenario-style squad and formation editor.';
+        wrap.appendChild(addHelp);
+        tile.appendChild(wrap);
+        return;
+      }
+
+      var head = document.createElement('div');
+      head.className = 'neutral-custom-head';
+      var title = document.createElement('div');
+      title.className = 'neutral-custom-title';
+      title.textContent = (profile.label || 'Bandits!') + ' · custom squad';
+      head.appendChild(title);
+      var actions = document.createElement('div');
+      actions.className = 'neutral-custom-actions';
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'neutral-edit-squad';
+      edit.textContent = 'Edit Squad';
+      edit.addEventListener('click', function() {
+        openCustomNeutralSquadModal(profile, card, rec, scenarioRow, slot);
+      });
+      actions.appendChild(edit);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn-secondary neutral-remove-squad';
+      remove.textContent = 'Remove Squad';
+      remove.addEventListener('click', function() {
+        if (removeCustomNeutralProfile(profile)) rebuildCardBody(card, rec);
+      });
+      actions.appendChild(remove);
+      head.appendChild(actions);
+      wrap.appendChild(head);
+
+      var memberTotal = Array.isArray(profile.members) ? profile.members.length : 2;
+      var persuasionChance = Number(profile.persuasion && profile.persuasion.chance);
+      if (!Number.isInteger(persuasionChance) || persuasionChance < 0 ||
+          persuasionChance > 100) persuasionChance = 10;
+      var persuasionSummary = persuasionChance + '% persuasion';
+      var retreatHpThreshold = Number(profile.retreat && profile.retreat.hpThreshold);
+      if (!Number.isInteger(retreatHpThreshold) || retreatHpThreshold < 0 ||
+          retreatHpThreshold > 100) retreatHpThreshold = 0;
+      var retreatSummary = retreatHpThreshold === 0
+        ? 'never retreats' : 'retreats at ≤' + retreatHpThreshold + '% HP';
+      var help = document.createElement('div');
+      help.className = 'neutral-custom-hint';
+      help.textContent = memberTotal + ' members · ' + persuasionSummary +
+        ' · ' + retreatSummary + ' · replaces both retail choices for this terrain.';
+      wrap.appendChild(help);
+      tile.appendChild(wrap);
+    }
+
+    // Per-slot rendering helper.
+    //   `linked` = true when classA === classB; picks commit to both fields.
+    //   `which`  = 'classA' | 'classB' when linked=false; commits to just that side.
+    function renderCreatureSlot(card, rec, slot, which, linked) {
+      var chip = document.createElement('div');
+      var classId = slot[which];
+      chip.className = 'creature-chip';
+
+      // Shared commit callback used by both the empty-slot and populated
+      // branches. Updates the right side(s) of the slot and rebuilds.
+      function commit(newClass) {
+        if (newClass === undefined) return; // cancel
+        if (linked) {
+          slot.classA = newClass;
+          slot.classB = newClass;
+        } else {
+          slot[which] = newClass;
+        }
+        dirty.encounters = true;
+        markChanged();
+        rebuildCardBody(card, rec);
+      }
+
+      if (!classId) {
+        chip.classList.add('empty-slot');
+        chip.textContent = '+';
+        chip.title = 'Click to add a creature for ' + slot.terrainName;
+        chip.addEventListener('click', function() {
+          openClassPickerModal(0, function(newClass) {
+            if (!newClass) return;
+            // For empty single-creature case we also mirror the other side.
+            slot.classA = newClass;
+            slot.classB = newClass;
+            dirty.encounters = true;
+            markChanged();
+            rebuildCardBody(card, rec);
+          });
+        });
+        return chip;
+      }
+
+      var status = dropStatus(classId);
+      chip.classList.add('drop-' + status);
+
+      var name = document.createElement('span');
+      name.className = 'creature-name';
+      name.textContent = OB64.className(classId);
+      chip.appendChild(name);
+
+      var dot = document.createElement('span');
+      dot.className = 'drop-dot drop-dot-' + status;
+      dot.title = dropStatusLabel(status);
+      chip.appendChild(dot);
+
+      var classWarnings = OB64.neutralClassWarnings(classId, rom.creatureDrops);
+      for (var warningIndex = 0; warningIndex < classWarnings.length; warningIndex++) {
+        var warning = classWarnings[warningIndex];
+        var warningBadge = document.createElement('span');
+        warningBadge.className = 'neutral-class-warning neutral-class-warning-' + warning.id;
+        warningBadge.textContent = warning.label;
+        warningBadge.title = warning.detail;
+        chip.appendChild(warningBadge);
+      }
+
+      chip.title = 'Class 0x' + classId.toString(16).padStart(2, '0') + ' \u2014 click to change (or remove)';
+      chip.addEventListener('click', function(e) {
+        if (e.target !== chip && e.target !== name && e.target !== dot) return;
+        openClassPickerModal(classId, commit);
+      });
+
+      // Inline drops strip below creature name
+      var dropsRow = document.createElement('div');
+      dropsRow.className = 'drops-row';
+      dropsRow.dataset.dropClassId = String(classId);
+      var dropsRec = rom.creatureDrops.byClass[classId];
+      if (dropsRec) {
+        for (var s = 0; s < 3; s++) {
+          (function(slotIdx) {
+            var dropSlot = dropsRec.slots[slotIdx];
+            var slotControl = document.createElement('span');
+            slotControl.className = 'drop-slot-control';
+            var dchip = document.createElement('span');
+            dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-bit15-set' : ' drop-chip-bit15-clear');
+            dchip.dataset.slotIndex = String(slotIdx);
+            dchip.addEventListener('click', function(e) {
+              e.stopPropagation();
+              openItemPicker(dchip, dropSlot.itemId, dropSlot.isEquipment, function(newItemId, kind) {
+                if (newItemId === undefined) return;
+                dropSlot.itemId = newItemId;
+                if (kind === 'bit15-clear') {
+                  dropSlot.isEquipment = false;
+                } else if (kind === 'bit15-set') {
+                  dropSlot.isEquipment = true;
+                } else if (kind === 'none' || newItemId === 0) {
+                  dropSlot.isEquipment = false;
+                } else {
+                  dropSlot.isEquipment = !!dropSlot.isEquipment;
+                }
+                dropSlot.raw = (dropSlot.itemId & 0x7FFF) | (dropSlot.isEquipment ? 0x8000 : 0);
+                dirty.creatureDrops = true;
+                markChanged();
+                refreshDropClassDisplays(classId);
+              });
+            });
+            slotControl.appendChild(dchip);
+
+            var weightLabel = document.createElement('label');
+            weightLabel.className = 'drop-weight-label';
+            weightLabel.appendChild(document.createTextNode('weight '));
+            var weightInput = document.createElement('input');
+            weightInput.className = 'drop-weight-input';
+            weightInput.type = 'number';
+            weightInput.min = '0';
+            weightInput.max = '65535';
+            weightInput.step = '1';
+            weightInput.dataset.slotIndex = String(slotIdx);
+            weightInput.setAttribute('aria-label', OB64.className(classId) +
+              ' drop slot ' + (slotIdx + 1) + ' weight');
+            weightInput.addEventListener('click', function(e) { e.stopPropagation(); });
+            weightInput.addEventListener('change', function(e) {
+              e.stopPropagation();
+              var previous = Number.isInteger(dropSlot.weight) && dropSlot.weight >= 0
+                ? dropSlot.weight : 1;
+              var next = Number(weightInput.value);
+              var valid = Number.isInteger(next) && next >= 0 && next <= 0xFFFF;
+              var prospectiveTotal = 0;
+              for (var wi = 0; wi < 3; wi++) {
+                prospectiveTotal += wi === slotIdx ? next : Number(dropsRec.slots[wi].weight);
+              }
+              if (!valid || !prospectiveTotal) {
+                weightInput.setCustomValidity(!valid
+                  ? 'Weight must be an integer from 0 through 65535.'
+                  : 'At least one of the three slot weights must be positive.');
+                weightInput.reportValidity();
+                weightInput.value = String(previous);
+                weightInput.setCustomValidity('');
+                return;
+              }
+              if (next === previous) return;
+              dropSlot.weight = next;
+              dropsRec.weightedRuntimeOverride = dropsRec.slots.some(function(candidate) {
+                return Number(candidate.weight) !== 1;
+              });
+              dirty.neutralRuntime = true;
+              markChanged();
+              refreshDropClassDisplays(classId);
+            });
+            weightLabel.appendChild(weightInput);
+            slotControl.appendChild(weightLabel);
+            dropsRow.appendChild(slotControl);
+          })(s);
+        }
+        var outcomeSummary = document.createElement('span');
+        outcomeSummary.className = 'drop-odds-summary';
+        dropsRow.appendChild(outcomeSummary);
+        updateDropRowDisplay(dropsRow, classId);
+      } else {
+        var nodrop = document.createElement('span');
+        nodrop.className = 'drops-missing';
+        nodrop.textContent = 'no drop entry';
+        nodrop.title = OB64.className(classId) + ' is not in the active creature-drop table.';
+        dropsRow.appendChild(nodrop);
+        if (rom.creatureDrops.remainingCapacity > 0) {
+          var addDrop = document.createElement('button');
+          addDrop.className = 'drops-add-record';
+          addDrop.textContent = 'Add drop record';
+          addDrop.title = 'Use the one confirmed adjacent zero record and retain the following zero sentinel.';
+          addDrop.addEventListener('click', function(e) {
+            e.stopPropagation();
+            OB64.allocateCreatureDropRecord(rom.creatureDrops, classId);
+            dirty.creatureDrops = true;
+            markChanged();
+            rebuildCardBody(card, rec);
+          });
+          dropsRow.appendChild(addDrop);
+        }
+      }
+      chip.appendChild(dropsRow);
+      return chip;
+    }
+
+    function rebuildCardBody(card, rec) {
+      // Replace the body (grid) while keeping the header intact
+      var body = card.querySelector('.encounter-body');
+      if (!body) return;
+      body.innerHTML = '';
+      // Two sub-grids: 6 warm tiles in a 3-col grid (fills cleanly), 4 cold
+      // tiles in a 4-col grid (fills cleanly). Keeps cold tiles from being
+      // stretched by a tall warm neighbour in the same row.
+      var warmSection = document.createElement('div');
+      warmSection.className = 'encounter-section encounter-section-warm';
+      var coldSection = document.createElement('div');
+      coldSection.className = 'encounter-section encounter-section-cold';
+      var scenarioRow = card._neutralScenarioRow || null;
+      for (var s = 0; s < rec.slots.length; s++) {
+        var slot = rec.slots[s];
+        var tile = document.createElement('div');
+        tile.className = 'terrain-tile terrain-slot-' + s;
+        if (s >= 6) tile.classList.add('terrain-cold');
+        var label = document.createElement('div');
+        label.className = 'terrain-label';
+        label.textContent = slot.terrainName;
+        tile.appendChild(label);
+
+        // One creature column per row side (A and B). Usually both sides
+        // hold the same class (single creature); if different, it renders
+        // as a 50/50 pair.
+        var pair = document.createElement('div');
+        pair.className = 'creature-pair';
+        if (slot.classA === slot.classB) {
+          // Single creature — one chip whose commit updates BOTH sides.
+          pair.appendChild(renderCreatureSlot(card, rec, slot, 'classA', true));
+        } else {
+          // 50/50 pair — two chips, each edits its own side independently.
+          pair.appendChild(renderCreatureSlot(card, rec, slot, 'classA', false));
+          pair.appendChild(renderCreatureSlot(card, rec, slot, 'classB', false));
+        }
+        tile.appendChild(pair);
+
+        // Secondary chip: "make this a 50/50 pair" affordance (only when
+        // slot has a single creature, not empty)
+        if (slot.classA && slot.classA === slot.classB) {
+          (function(slot_) {
+            var splitBtn = document.createElement('button');
+            splitBtn.className = 'slot-split-btn';
+            splitBtn.textContent = '+ pair';
+            splitBtn.title = 'Add a second creature so this terrain spawns a 50/50 mix';
+            splitBtn.addEventListener('click', function() {
+              openClassPickerModal(0, function(newClass) {
+                if (!newClass || newClass === slot_.classA) return;
+                slot_.classB = newClass;
+                dirty.encounters = true;
+                markChanged();
+                rebuildCardBody(card, rec);
+              });
+            });
+            tile.appendChild(splitBtn);
+          })(slot);
+        }
+
+        renderCustomNeutralSquad(tile, card, rec, scenarioRow, slot);
+
+        (s < 6 ? warmSection : coldSection).appendChild(tile);
+      }
+      body.appendChild(warmSection);
+      body.appendChild(coldSection);
+    }
+
+    function encounterScenarioLabel(runtimeKey) {
+      var info = OB64.scenarioKeyInfo ? OB64.scenarioKeyInfo(runtimeKey) : null;
+      return info && info.label ? info.label : ('Runtime Key ' + runtimeKey);
+    }
+
+    // Build cards — one per shared creature-pool slice. Each card selects one
+    // concrete runtime scenario, so rates and custom squads never alias merely
+    // because two scenarios reuse the same retail creature bytes.
+    var grid = document.createElement('div');
+    grid.className = 'encounter-grid';
+    var records = rom.neutralEncounters.records;
+    var scenarioRateRows = rom.neutralEncounters.scenarioRates || [];
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      if (rec.isEmpty) continue;
+      (function(rec) {
+        var aliases = scenarioRateRows.filter(function(row) { return row.slice === rec.s0; });
+        var selectedKey = Number(rec._neutralSelectedScenarioKey);
+        var selectedScenario = aliases.filter(function(row) {
+          return row.runtimeKey === selectedKey;
+        })[0] || aliases[0] || null;
+        if (selectedScenario) rec._neutralSelectedScenarioKey = selectedScenario.runtimeKey;
+
+        var card = document.createElement('div');
+        card.className = 'encounter-card';
+        card._neutralScenarioRow = selectedScenario;
+
+        // Header
+        var header = document.createElement('div');
+        header.className = 'encounter-header';
+        var nameEl = document.createElement('div');
+        nameEl.className = 'encounter-name';
+        header.appendChild(nameEl);
+        var meta = document.createElement('div');
+        meta.className = 'encounter-meta';
+        header.appendChild(meta);
+        card.appendChild(header);
+
+        var selector = null;
+        if (aliases.length > 1) {
+          var selectorWrap = document.createElement('label');
+          selectorWrap.className = 'encounter-scenario-selector';
+          selectorWrap.appendChild(document.createTextNode('Scenario '));
+          selector = document.createElement('select');
+          aliases.forEach(function(row) {
+            var option = document.createElement('option');
+            option.value = String(row.runtimeKey);
+            option.textContent = 'Key ' + row.runtimeKey + ' · ' +
+              encounterScenarioLabel(row.runtimeKey);
+            selector.appendChild(option);
+          });
+          selector.value = String(selectedScenario.runtimeKey);
+          selectorWrap.appendChild(selector);
+          card.appendChild(selectorWrap);
+          var sharedWarning = document.createElement('div');
+          sharedWarning.className = 'encounter-shared-warning';
+          sharedWarning.textContent =
+            'Changing either retail creature choice changes encounters for both scenarios. ' +
+            'Custom squads and rate overrides remain scenario-specific.';
+          card.appendChild(sharedWarning);
+        }
+
+        var scenarioRateHost = document.createElement('div');
+        scenarioRateHost.className = 'encounter-scenario-rate-host';
+        card.appendChild(scenarioRateHost);
+
+        var body = document.createElement('div');
+        body.className = 'encounter-body';
+        card.appendChild(body);
+
+        function refreshScenarioLayer() {
+          var row = card._neutralScenarioRow;
+          nameEl.textContent = row ? encounterScenarioLabel(row.runtimeKey) :
+            (OB64.ENCOUNTER_SCENARIO_NAMES[rec.s0] || ('Neutral slice ' + rec.s0));
+          meta.textContent = row
+            ? ('runtime key ' + row.runtimeKey + ' · shared slice ' + rec.s0 +
+              ' · ROM 0x' + rec.offset.toString(16))
+            : ('shared slice ' + rec.s0 + ' · ROM 0x' + rec.offset.toString(16));
+          scenarioRateHost.innerHTML = '';
+          if (row) {
+            scenarioRateHost.appendChild(renderScenarioRateControls(row, {
+              title: 'Scenario rate override',
+              help: 'This box belongs only to runtime scenario key ' +
+                row.runtimeKey + '. Leave either context on Use retail rate to keep the ordinary encounter path. ' +
+                'A Global encounter roll edit above still applies when no scenario override is set.'
+            }));
+          }
+          rebuildCardBody(card, rec);
+        }
+
+        if (selector) {
+          selector.addEventListener('change', function() {
+            var runtimeKey = Number(selector.value);
+            card._neutralScenarioRow = aliases.filter(function(row) {
+              return row.runtimeKey === runtimeKey;
+            })[0] || null;
+            rec._neutralSelectedScenarioKey = runtimeKey;
+            refreshScenarioLayer();
+          });
+        }
+        refreshScenarioLayer();
+
+        grid.appendChild(card);
+      })(rec);
+    }
+    panel.appendChild(grid);
+
+    // ============================================================
+    // Class picker modal — opens a centred dialog with two tabs:
+    //   1. Vanilla — the 32-ish classes already present in the encounter
+    //      table (computed at render time). These are safe & combat-tested.
+    //   2. All classes — every other class 0x01-0xA4 with drop-status tags
+    //      so the user knows which won't drop loot or might not render.
+    //
+    // Calls onPick(classId) with the chosen class ID (0 = remove).
+    // Closes on overlay click, close button, Escape, or after a commit.
+    // ============================================================
+    function openClassPickerModal(currentClass, onPick) {
+      var committed = false;
+
+      var overlay = document.createElement('div');
+      overlay.className = 'class-picker-overlay';
+
+      var modal = document.createElement('div');
+      modal.className = 'class-picker-modal';
+      overlay.appendChild(modal);
+
+      var header = document.createElement('div');
+      header.className = 'class-picker-header';
+      var title = document.createElement('div');
+      title.className = 'class-picker-title';
+      title.textContent = currentClass
+        ? 'Change creature (currently: ' + OB64.className(currentClass) + ')'
+        : 'Pick a creature';
+      header.appendChild(title);
+      var closeBtn = document.createElement('button');
+      closeBtn.className = 'class-picker-close';
+      closeBtn.textContent = '\u00d7';
+      closeBtn.title = 'Cancel (Esc)';
+      closeBtn.addEventListener('click', close);
+      header.appendChild(closeBtn);
+      modal.appendChild(header);
+
+      // Tab bar
+      var tabBar = document.createElement('div');
+      tabBar.className = 'class-picker-tabs';
+      var tabVanilla = document.createElement('button');
+      tabVanilla.className = 'class-picker-tab active';
+      tabVanilla.textContent = 'Vanilla encounters (' + vanillaClasses.length + ')';
+      tabVanilla.addEventListener('click', function() { switchTab('vanilla'); });
+      tabBar.appendChild(tabVanilla);
+      var tabAll = document.createElement('button');
+      tabAll.className = 'class-picker-tab';
+      // Total class count minus class 0 minus the vanilla set
+      var allClassIds = Object.keys(OB64.CLASS_NAMES).map(function(x){return parseInt(x);}).filter(function(x){return x > 0;});
+      var otherClasses = allClassIds.filter(function(id) { return vanillaClasses.indexOf(id) === -1; }).sort(function(a,b){return a-b;});
+      tabAll.textContent = 'All other classes (' + otherClasses.length + ')';
+      tabAll.addEventListener('click', function() { switchTab('all'); });
+      tabBar.appendChild(tabAll);
+      modal.appendChild(tabBar);
+
+      // Search input
+      var searchWrap = document.createElement('div');
+      searchWrap.className = 'class-picker-search-wrap';
+      var search = document.createElement('input');
+      search.type = 'text';
+      search.className = 'class-picker-search';
+      search.placeholder = 'Filter by class name or ID...';
+      search.addEventListener('input', filterList);
+      searchWrap.appendChild(search);
+      modal.appendChild(searchWrap);
+
+      // Scrollable class list
+      var listEl = document.createElement('div');
+      listEl.className = 'class-picker-list';
+      modal.appendChild(listEl);
+
+      // Footer — cancel + remove-current
+      var footer = document.createElement('div');
+      footer.className = 'class-picker-footer';
+      if (currentClass) {
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'class-picker-remove';
+        removeBtn.textContent = 'Remove creature (set empty)';
+        removeBtn.addEventListener('click', function() { commit(0); });
+        footer.appendChild(removeBtn);
+      }
+      var cancelBtn = document.createElement('button');
+      cancelBtn.className = 'class-picker-cancel';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', close);
+      footer.appendChild(cancelBtn);
+      modal.appendChild(footer);
+
+      // Active tab state
+      var activeTab = 'vanilla';
+      function switchTab(t) {
+        activeTab = t;
+        tabVanilla.classList.toggle('active', t === 'vanilla');
+        tabAll.classList.toggle('active', t === 'all');
+        renderList();
+      }
+
+      function renderList() {
+        listEl.innerHTML = '';
+        var ids = activeTab === 'vanilla' ? vanillaClasses : otherClasses;
+        var q = (search.value || '').toLowerCase();
+        for (var i = 0; i < ids.length; i++) {
+          var id = ids[i];
+          var name = OB64.className(id);
+          var idStr = '0x' + id.toString(16).padStart(2, '0');
+          if (q && name.toLowerCase().indexOf(q) === -1 && idStr.indexOf(q) === -1) continue;
+          (function(cid) {
+            var row = document.createElement('div');
+            var status = dropStatus(cid);
+            row.className = 'class-picker-row drop-' + status;
+            if (cid === currentClass) row.classList.add('current');
+            var n = document.createElement('span');
+            n.className = 'class-picker-row-name';
+            n.textContent = OB64.className(cid);
+            row.appendChild(n);
+            var idTag = document.createElement('span');
+            idTag.className = 'class-picker-row-id';
+            idTag.textContent = '0x' + cid.toString(16).padStart(2, '0');
+            row.appendChild(idTag);
+            var statusWrap = document.createElement('span');
+            statusWrap.className = 'class-picker-status-wrap';
+            var warnings = OB64.neutralClassWarnings(cid, rom.creatureDrops);
+            if (!warnings.length) {
+              var okTag = document.createElement('span');
+              okTag.className = 'class-picker-row-status class-picker-status-ok';
+              okTag.textContent = 'Drops OK';
+              statusWrap.appendChild(okTag);
+            }
+            for (var warningIndex = 0; warningIndex < warnings.length; warningIndex++) {
+              var warning = warnings[warningIndex];
+              var statusTag = document.createElement('span');
+              statusTag.className = 'class-picker-row-status class-picker-status-' + warning.id;
+              statusTag.textContent = warning.label;
+              statusTag.title = warning.detail;
+              statusWrap.appendChild(statusTag);
+            }
+            row.appendChild(statusWrap);
+            row.addEventListener('click', function() { commit(cid); });
+            listEl.appendChild(row);
+          })(id);
+        }
+        if (!listEl.children.length) {
+          var empty = document.createElement('div');
+          empty.className = 'class-picker-empty';
+          empty.textContent = 'No classes match';
+          listEl.appendChild(empty);
+        }
+      }
+
+      function filterList() { renderList(); }
+
+      function commit(classId) {
+        committed = true;
+        close();
+        onPick(classId);
+      }
+
+      function close() {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+
+      function onKey(e) {
+        if (e.key === 'Escape') close();
+      }
+      document.addEventListener('keydown', onKey);
+
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) close();
+      });
+
+      document.body.appendChild(overlay);
+      renderList();
+      search.focus();
+    }
+
+    // ============================================================
+    // Item picker for drop editing — pop-up modal (shop-tab style).
+    // Accepts both equipment (bit 15 = 1 when raw is built) AND consumables
+    // (bit 15 = 0). Consumables show a kindLabel tag to disambiguate IDs
+    // that collide across the two namespaces.
+    // ============================================================
+    function openItemPicker(targetEl, currentItem, currentBit15, onPick) {
+      var items = [];
+      items.push({ id: 0, name: '(none)', kind: 'none' });
+      for (var id in OB64.ITEM_NAMES) {
+        items.push({ id: parseInt(id), name: OB64.ITEM_NAMES[id], kind: 'bit15-set', kindLabel: 'Equipment' });
+      }
+      for (var cid in OB64.SAVE.CONSUMABLE_NAMES) {
+        var cn = parseInt(cid);
+        if (cn === 0) continue;
+        items.push({
+          id: cn, name: OB64.SAVE.CONSUMABLE_NAMES[cid],
+          kind: 'bit15-clear', kindLabel: 'Consumable'
+        });
+      }
+      openSaveItemPickerModal({
+        title: 'Drop item',
+        items: items,
+        currentId: currentItem,
+        currentKind: currentItem ? (currentBit15 ? 'bit15-set' : 'bit15-clear') : 'none',
+        onSelect: function(v, kind) { onPick(v | 0, kind); }
+      });
+    }
+  }
+
+  // ============================================================
+  // MAP TAB
+  // ============================================================
+  function renderMap(panel) {
+    panel.innerHTML = '';
+
+    var table = document.createElement('table');
+    table.innerHTML = '<thead><tr><th>Node A</th><th>Location A</th><th>Node B</th><th>Location B</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+
+    var map = rom.worldMap;
+    for (var i = 0; i < map.edges.length; i++) {
+      var edge = map.edges[i];
+      var tr = document.createElement('tr');
+
+      td(tr, edge.nodeA);
+      td(tr, map.locations[edge.nodeA] || '?');
+      td(tr, edge.nodeB);
+      td(tr, map.locations[edge.nodeB] || '?');
+
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    panel.appendChild(table);
+    makeSortable(table);
+  }
+
+  // ============================================================
+  // SAVE-GAME TAB
+  // Edits a RetroArch Mupen64Plus-Next save state, BizHawk .SaveRAM, or raw
+  // 8 MB RDRAM dump.
+  // Independent of the ROM — loads its own file, exports its own file.
+  // ============================================================
+  function renderSaveGame(panel) {
+    panel.innerHTML = '';
+
+    // --- Top bar: load / export / status ---
+    var bar = document.createElement('div');
+    bar.className = 'save-bar';
+
+    var loadInput = document.createElement('input');
+    loadInput.type = 'file';
+    loadInput.id = 'save-file-input';
+    loadInput.accept = '.state,.state1,.state2,.state3,.state4,.state5,.state6,.state7,.state8,.state9,.bin,.SaveRAM,.saveram,.sra';
+    loadInput.style.display = 'none';
+
+    var loadLabel = document.createElement('label');
+    loadLabel.className = 'save-load-btn';
+    loadLabel.htmlFor = 'save-file-input';
+    loadLabel.textContent = 'Load Save';
+
+    var exportBtn = document.createElement('button');
+    exportBtn.id = 'btn-save-export';
+    exportBtn.className = 'save-export-btn';
+    exportBtn.textContent = 'Export Save';
+    exportBtn.disabled = !(saveState && saveState.dirty);
+    exportBtn.addEventListener('click', handleSaveExport);
+
+    var status = document.createElement('span');
+    status.className = 'save-status';
+    status.id = 'save-status';
+    status.textContent = saveState
+      ? buildSaveStatusLine()
+      : 'No save loaded. Accepts RetroArch .state, BizHawk .SaveRAM, Project64 .sra, or 8 MB .bin RDRAM dumps.';
+
+    bar.appendChild(loadLabel);
+    bar.appendChild(loadInput);
+    bar.appendChild(exportBtn);
+    if (saveState && saveState.format === 'bizhawk-saveram') {
+      bar.appendChild(buildSaveRamSlotPicker());
+    }
+    bar.appendChild(status);
+    panel.appendChild(bar);
+
+    loadInput.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      handleSaveFileLoad(file);
+    });
+
+    if (!saveState) {
+      var hint = document.createElement('div');
+      hint.className = 'save-empty-hint';
+      hint.innerHTML = [
+        '<h3>How to produce a save file</h3>',
+        '<ul>',
+        '<li><strong>RetroArch:</strong> press F2 in-game to save a state. Files live in <code>RetroArch/states/Mupen64Plus-Next/</code> as <code>&lt;rom&gt;.state</code>, <code>.state1</code>, etc.</li>',
+        '<li><strong>BizHawk:</strong> use the in-game save menu, then load the battery save from <code>BizHawk/N64/SaveRAM/&lt;rom&gt;.SaveRAM</code>.</li>',
+        '<li><strong>Project64:</strong> use the in-game save menu, then load the cartridge save from <code>Project64/Save/OgreBattle64-&lt;hash&gt;/OgreBattle64.sra</code> (each ROM build gets its own hash folder).</li>',
+        '</ul>',
+        '<p class="save-empty-note">Your edits produce <code>&lt;name&gt;-edited.&lt;ext&gt;</code>. The original file is never overwritten.</p>',
+      ].join('\n');
+      panel.appendChild(hint);
+      return;
+    }
+
+    // --- Roster ---
+    var rosterHeading = document.createElement('h2');
+    rosterHeading.className = 'save-section-heading';
+    rosterHeading.textContent = 'Roster \u2014 ' + saveState.characters.length + ' characters';
+    panel.appendChild(rosterHeading);
+
+    // Add Character button intentionally disabled: seeded characters don't
+    // appear in-game even with +0x1A, Alignment, and Luck filled, so the game has
+    // another activation list or validation field this editor has not located.
+    // Re-enable once that mechanism is decoded.
+    // var rosterActions = document.createElement('div');
+    // rosterActions.className = 'save-inv-actions';
+    // var addCharBtn = document.createElement('button');
+    // addCharBtn.className = 'save-inv-add';
+    // addCharBtn.textContent = '+ Add Character (to reserve)';
+    // addCharBtn.addEventListener('click', openAddCharacterModal);
+    // rosterActions.appendChild(addCharBtn);
+    // panel.appendChild(rosterActions);
+
+    var grid = document.createElement('div');
+    grid.className = 'class-cards save-roster';
+    for (var i = 0; i < saveState.characters.length; i++) {
+      grid.appendChild(buildCharacterCard(saveState.characters[i]));
+    }
+    panel.appendChild(grid);
+
+    // --- Game state ---
+    var gsHeading = document.createElement('h2');
+    gsHeading.className = 'save-section-heading';
+    gsHeading.textContent = 'Game State';
+    panel.appendChild(gsHeading);
+    panel.appendChild(buildGameStatePanel(saveState.gameState));
+
+    // --- Army inventory (tabbed, mirrors in-game Item menu) ---
+    var invHeading = document.createElement('h2');
+    invHeading.className = 'save-section-heading';
+    var eqTotal = saveState.inventory.entries.length;
+    var cTotal = saveState.consumableInventory.entries.length;
+    invHeading.textContent = 'Army Inventory \u2014 ' + eqTotal + ' equipment, ' + cTotal + ' consumable/treasure';
+    panel.appendChild(invHeading);
+    panel.appendChild(buildTabbedInventory());
+  }
+
+  function buildSaveStatusLine() {
+    if (!saveState) return '';
+    var fmtLabel = { 'rzip': 'RZIP .state', 'state-raw': 'uncompressed .state', 'bin': '8 MB .bin', 'bizhawk-saveram': 'BizHawk .SaveRAM' }[saveState.format] || saveState.format;
+    if (saveState.sourceFormat === 'pj64-sra') fmtLabel = 'Project64 .sra';
+    var armyHex = '0x' + saveState.armyBase.toString(16).padStart(6, '0');
+    var slot = '';
+    if (saveState.format === 'bizhawk-saveram') {
+      var validSlots = (saveState.slots || []).filter(function(s) { return s.valid; }).length;
+      slot = ' \u2014 slot ' + ((saveState.slotIndex || 0) + 1) + (validSlots > 1 ? ' (' + validSlots + ' valid slots)' : '');
+    }
+    return 'Loaded ' + (saveFileName || 'save') + ' \u2014 ' + fmtLabel + slot + ' \u2014 ' +
+           saveState.characters.length + ' characters \u2014 roster at RDRAM ' + armyHex;
+  }
+
+  function buildSaveRamSlotPicker() {
+    var wrap = document.createElement('label');
+    wrap.className = 'save-slot-picker';
+
+    var label = document.createElement('span');
+    label.textContent = 'In-game slot';
+
+    var select = document.createElement('select');
+    var slots = saveState.slots || [];
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      var opt = document.createElement('option');
+      opt.value = s.slotIndex;
+      opt.disabled = !s.valid;
+      var suffix = s.valid ? (s.name ? ' — ' + s.name : ' — valid') : (s.empty ? ' — empty' : ' — checksum failed');
+      opt.textContent = 'Slot ' + (s.slotIndex + 1) + suffix;
+      select.appendChild(opt);
+    }
+    select.value = saveState.slotIndex;
+    select.addEventListener('change', function() {
+      switchSaveRamSlot(parseInt(select.value, 10));
+    });
+
+    wrap.appendChild(label);
+    wrap.appendChild(select);
+    return wrap;
+  }
+
+  function commitCurrentSaveRamSlotEdits() {
+    if (!saveState || saveState.format !== 'bizhawk-saveram') return;
+    saveState.saveram = OB64.exportBizhawkSaveRam(saveState);
+    saveState.slots = OB64.parseSaveRamSlots(saveState.saveram);
+  }
+
+  function switchSaveRamSlot(slotIndex) {
+    if (!saveState || saveState.format !== 'bizhawk-saveram') return;
+    if (slotIndex === saveState.slotIndex) return;
+
+    var wasDirty = !!saveState.dirty;
+    var origBytes = saveState.origBytes;
+    try {
+      // Preserve edits already made to the currently-visible native slot so a
+      // single exported .SaveRAM can carry changes across multiple in-game saves.
+      if (saveState.dirty) commitCurrentSaveRamSlotEdits();
+      var mergedBytes = saveState.saveram || saveState.origBytes;
+      var next = OB64.parseBizhawkSaveRamFromBytes(mergedBytes, slotIndex);
+      next.origBytes = origBytes;
+      next.saveram = mergedBytes.slice();
+      next.sourceFormat = saveState.sourceFormat;
+      next.dirty = wasDirty;
+      saveState = next;
+      renderSaveGame(document.getElementById('panel-save'));
+    } catch (err) {
+      console.error(err);
+      showErrorModal('Save slot switch failed', err.message);
+      renderSaveGame(document.getElementById('panel-save'));
+    }
+  }
+
+  function handleSaveFileLoad(file) {
+    var reader = new FileReader();
+    var statusEl = document.getElementById('save-status');
+    if (statusEl) statusEl.textContent = 'Loading ' + file.name + '...';
+    reader.onload = function(ev) {
+      try {
+        saveState = OB64.parseSaveFile(ev.target.result);
+        saveState.dirty = false;
+        saveFileName = file.name;
+        renderSaveGame(document.getElementById('panel-save'));
+      } catch (err) {
+        console.error(err);
+        if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+        showErrorModal('Save load failed', err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleSaveExport() {
+    if (!saveState) return;
+    try {
+      if (saveState.format === 'bizhawk-saveram') {
+        commitCurrentSaveRamSlotEdits();
+      }
+      OB64.downloadSaveFile(saveState, saveFileName);
+      // Clear dirty flag after successful export so the button disables
+      // until the next edit.
+      saveState.dirty = false;
+      renderSaveExportButtonState();
+      var statusEl = document.getElementById('save-status');
+      if (statusEl) statusEl.textContent = buildSaveStatusLine() + ' \u2014 exported.';
+    } catch (err) {
+      console.error(err);
+      showErrorModal('Save export failed', err.message);
+    }
+  }
+
+  function buildCharacterCard(ch) {
+    var card = document.createElement('div');
+    card.className = 'class-card save-char-card';
+    card.dataset.slotOff = ch.slotOff;
+
+    // Header: name + slot index badge + action buttons
+    var hdr = document.createElement('div');
+    hdr.className = 'class-card-header';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'class-card-name save-name';
+    nameEl.textContent = ch.name;
+    nameEl.title = 'Click to edit name';
+    nameEl.addEventListener('click', function() { editCharName(nameEl, ch); });
+    var idEl = document.createElement('div');
+    idEl.className = 'class-card-id';
+    idEl.textContent = 'Slot ' + ch.slotIndex;
+    hdr.appendChild(nameEl);
+    hdr.appendChild(idEl);
+    card.appendChild(hdr);
+
+    // Repair button — shown when the remaining known activation byte from
+    // older Add Character builds is missing. Alignment 0 is valid Chaotic
+    // alignment, not a broken-slot signal.
+    var R = saveState.rdram, F = OB64.SAVE.FIELD;
+    var isBrokenSeed = (R[ch.slotOff + F.FLAG_1A] === 0);
+    var actions = document.createElement('div');
+    actions.className = 'save-char-actions';
+    if (isBrokenSeed) {
+      var repair = document.createElement('button');
+      repair.className = 'save-char-btn save-char-repair';
+      repair.textContent = 'Repair';
+      repair.title = 'Fill in the +0x1A activation byte that earlier versions of "Add Character" missed.';
+      repair.addEventListener('click', function() { repairSeededCharacter(ch); });
+      actions.appendChild(repair);
+    }
+    // Delete is intentionally hidden until the save unit/reserve assignment
+    // table is decoded. Zeroing a character slot can leave active-unit
+    // references pointing at an empty record.
+    card.appendChild(actions);
+
+    // Meta row: class + level + HP
+    var meta = document.createElement('div');
+    meta.className = 'class-card-meta save-meta';
+    var classEl = document.createElement('span');
+    classEl.className = 'save-class-name creature-name';
+    classEl.textContent = OB64.className(ch.classId);
+    classEl.title = 'Click to change class';
+    classEl.addEventListener('click', function() { editCharClass(classEl, ch); });
+    var lvlEl = document.createElement('span');
+    lvlEl.className = 'save-level';
+    lvlEl.innerHTML = 'Lv <strong>' + ch.level + '</strong>';
+    lvlEl.title = 'Click to edit level';
+    lvlEl.addEventListener('click', function() { editCharLevel(lvlEl, ch); });
+    var hpEl = document.createElement('span');
+    hpEl.className = 'save-hp save-hp-edit';
+    hpEl.innerHTML = 'HP <strong>' + ch.hpCur + '</strong>/<strong>' + ch.hpMax + '</strong>';
+    hpEl.title = 'Click to edit max HP (and sets current to max).';
+    hpEl.addEventListener('click', function() { editCharHp(hpEl, ch); });
+    meta.appendChild(classEl);
+    meta.appendChild(lvlEl);
+    meta.appendChild(hpEl);
+    card.appendChild(meta);
+
+    // Element / Alignment / Luck / Experience row
+    var attrLabel = document.createElement('div');
+    attrLabel.className = 'class-card-section-label';
+    attrLabel.textContent = 'Attributes';
+    card.appendChild(attrLabel);
+
+    var attrRow = document.createElement('div');
+    attrRow.className = 'save-attr-row';
+    attrRow.appendChild(buildElementField(ch));
+    attrRow.appendChild(buildAlignmentField(ch));
+    attrRow.appendChild(buildLuckField(ch));
+    attrRow.appendChild(buildExpField(ch));
+    card.appendChild(attrRow);
+
+    // Stats grid
+    var statsLabel = document.createElement('div');
+    statsLabel.className = 'class-card-section-label';
+    statsLabel.textContent = 'Stats';
+    card.appendChild(statsLabel);
+    var statsGrid = document.createElement('div');
+    statsGrid.className = 'stats-grid';
+    var statKeys = ['STR', 'VIT', 'INT', 'MEN', 'AGI', 'DEX'];
+    for (var i = 0; i < statKeys.length; i++) {
+      statsGrid.appendChild(buildSaveStatEntry(statKeys[i], ch));
+    }
+    card.appendChild(statsGrid);
+
+    // Equipment — u8 item id overrides at +0x2B/+0x2D/+0x2F/+0x31.
+    // Byte = 0 means "use class default from class def B34-41".
+    var equipLabel = document.createElement('div');
+    equipLabel.className = 'class-card-section-label';
+    equipLabel.textContent = 'Equipment';
+    card.appendChild(equipLabel);
+    var equipTags = document.createElement('div');
+    equipTags.className = 'equip-tags';
+    [
+      { key: 'weapon',  label: 'Wpn'     },
+      { key: 'body',    label: 'Body'    },
+      { key: 'offhand', label: 'Off'     },
+      { key: 'head',    label: 'Head'    },
+    ].forEach(function(eq) {
+      equipTags.appendChild(buildSaveEquipTag(eq.key, eq.label, ch));
+    });
+    card.appendChild(equipTags);
+
+    return card;
+  }
+
+  function buildSaveEquipTag(field, label, ch) {
+    var tag = document.createElement('span');
+    tag.className = 'equip-tag save-equip-tag';
+    var itemId = ch.equip[field];
+    var itemLabel = itemId ? OB64.itemName(itemId) : '(class default)';
+    tag.innerHTML = '<em>' + label + ':</em> ' + itemLabel;
+    var hint = field === 'offhand'
+      ? 'Off-hand slot \u2014 shield / spellbook / accessory. 0 = class default.'
+      : '0 = class default.';
+    tag.title = 'Click to change. ' + hint + ' Save overrides are one byte, so only item IDs 0x01-0xFF are offered.';
+    tag.addEventListener('click', function() { editCharEquip(tag, ch, field, label); });
+    return tag;
+  }
+
+  function editCharEquip(el, ch, field, label) {
+    // Slot-appropriate item pool, rendered as a pop-up modal (shop-tab style).
+    var items = itemsForCharacterSlot(field);
+    openSaveItemPickerModal({
+      title: label + ' \u2014 ' + ch.name,
+      items: items,
+      currentId: ch.equip[field] || 0,
+      includeNone: true,
+      onSelect: function(id) {
+        if (id === ch.equip[field]) return;
+        ch.equip[field] = id;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        var itemLabel = id ? OB64.itemName(id) : '(class default)';
+        el.innerHTML = '<em>' + label + ':</em> ' + itemLabel;
+        markChanged();
+      }
+    });
+  }
+
+  // Lightweight enum-picker modal — same shell as the item picker, but rows
+  // are just labels (no sprite, no id hint). Used for Month, Element,
+  // and other small enum fields.
+  function openSaveEnumPickerModal(opts) {
+    // Accept options as either {id: label, ...} or [{id, label}].
+    var items = [];
+    if (Array.isArray(opts.options)) {
+      items = opts.options.slice();
+    } else {
+      for (var k in opts.options) {
+        items.push({ id: parseInt(k), label: opts.options[k] });
+      }
+    }
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) close(); });
+
+    var modal = document.createElement('div');
+    modal.className = 'item-modal save-enum-picker';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var title = document.createElement('h2');
+    title.textContent = opts.title;
+    header.appendChild(title);
+    var btnClose = document.createElement('button');
+    btnClose.className = 'item-modal-close';
+    btnClose.textContent = '\u00D7';
+    btnClose.addEventListener('click', close);
+    header.appendChild(btnClose);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'item-modal-body save-enum-picker-body';
+    var col = document.createElement('div');
+    col.className = 'item-modal-col';
+    items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.className = 'item-modal-row save-enum-row';
+      if (item.id === opts.currentId) row.classList.add('selected');
+      var name = document.createElement('span');
+      name.className = 'item-modal-name';
+      name.textContent = item.label;
+      row.appendChild(name);
+      var idHint = document.createElement('span');
+      idHint.className = 'item-modal-price';
+      idHint.textContent = String(item.id);
+      row.appendChild(idHint);
+      row.addEventListener('click', function() {
+        if (opts.currentId === undefined || String(item.id) !== String(opts.currentId)) {
+          opts.onSelect(item.id);
+        }
+        close();
+      });
+      col.appendChild(row);
+    });
+    body.appendChild(col);
+    modal.appendChild(body);
+
+    document.body.appendChild(overlay);
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', esc);
+    }
+    var esc = function(ev) { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', esc);
+  }
+
+  // Allowed items per character slot.
+  //   weapon  → all weapons (0x01-0x86)
+  //   body    → armor + robes/clothing (0x99-0xDB)
+  //   offhand → shields + spellbooks + accessories
+  //   head    → helms/headgear + accessories (helms slot can hold accessories
+  //             for some classes)
+  function itemsForCharacterSlot(field) {
+    var out = [];
+    for (var iid in OB64.ITEM_NAMES) {
+      var id = parseInt(iid);
+      if (id === 0) continue;
+      if (id > 0xFF) continue; // character equipment overrides are u8 item IDs
+      var t = OB64.tabForItemId(id);
+      var keep =
+        (field === 'weapon'  && t === 'weapon') ||
+        (field === 'body'    && t === 'armor') ||
+        (field === 'offhand' && (t === 'shield' || t === 'spellbook' || t === 'accessory')) ||
+        (field === 'head'    && (t === 'head'   || t === 'accessory'));
+      if (keep) out.push({ id: id, name: OB64.itemName(id), kind: 'equip' });
+    }
+    return out;
+  }
+
+  function buildElementField(ch) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-attr-field';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-attr-label';
+    lbl.textContent = 'Element';
+    wrap.appendChild(lbl);
+    var val = document.createElement('span');
+    val.className = 'save-attr-value save-attr-clickable';
+    val.textContent = OB64.SAVE.ELEMENT_OVERRIDES[ch.element] || String(ch.element);
+    val.title = 'Click to change element override. 0 = class default. Experimental field \u2014 verify in-game.';
+    val.addEventListener('click', function() {
+      openSaveEnumPickerModal({
+        title: 'Element override \u2014 ' + ch.name,
+        options: OB64.SAVE.ELEMENT_OVERRIDES,
+        currentId: ch.element,
+        onSelect: function(v) {
+          ch.element = v;
+          OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+          val.textContent = OB64.SAVE.ELEMENT_OVERRIDES[v] || String(v);
+          val.classList.add('modified');
+          markChanged();
+        }
+      });
+    });
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function alignmentLabel(v) {
+    for (var i = 0; i < OB64.SAVE.ALIGNMENT_BUCKETS.length; i++) {
+      var b = OB64.SAVE.ALIGNMENT_BUCKETS[i];
+      if (v >= b.min && v <= b.max) return b.label;
+    }
+    return '';
+  }
+
+  function buildAlignmentField(ch) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-attr-field';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-attr-label';
+    lbl.textContent = 'Align';
+    wrap.appendChild(lbl);
+    var val = document.createElement('span');
+    val.className = 'save-attr-value save-attr-clickable';
+    val.textContent = ch.alignment + ' (' + alignmentLabel(ch.alignment) + ')';
+    val.title = 'Click to edit. 0=Chaotic, 50=Neutral, 100=Lawful.';
+    val.addEventListener('click', function() {
+      makeNumericInput(val, ch.alignment, 0, 100, function(v) {
+        ch.alignment = v;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        val.textContent = v + ' (' + alignmentLabel(v) + ')';
+      });
+    });
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function buildLuckField(ch) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-attr-field';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-attr-label';
+    lbl.textContent = 'Luck';
+    wrap.appendChild(lbl);
+    var val = document.createElement('span');
+    val.className = 'save-attr-value save-attr-clickable';
+    val.textContent = ch.luck;
+    val.title = 'Click to edit Luck (0-100). Stored at character +0x28.';
+    val.addEventListener('click', function() {
+      makeNumericInput(val, ch.luck, 0, 100, function(v) {
+        ch.luck = v;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        val.textContent = v;
+      });
+    });
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function buildExpField(ch) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-attr-field';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-attr-label';
+    lbl.textContent = 'Exp';
+    wrap.appendChild(lbl);
+    var val = document.createElement('span');
+    val.className = 'save-attr-value save-attr-clickable';
+    val.textContent = ch.exp;
+    val.title = 'Click to edit experience toward next level (0-99).';
+    val.addEventListener('click', function() {
+      makeNumericInput(val, ch.exp, 0, 99, function(v) {
+        ch.exp = v;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        val.textContent = v;
+      });
+    });
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function buildSaveStatEntry(key, ch) {
+    var entry = document.createElement('div');
+    entry.className = 'stat-entry save-stat-entry';
+    var statColor = {
+      STR: 'ob-stat-str', VIT: 'ob-stat-vit',
+      INT: 'ob-stat-int', MEN: 'ob-stat-men',
+      AGI: 'ob-stat-agi', DEX: 'ob-stat-dex',
+    }[key] || '';
+    var labelEl = document.createElement('span');
+    labelEl.className = 'stat-label ' + statColor;
+    labelEl.textContent = key;
+    var valEl = document.createElement('span');
+    valEl.className = 'stat-value';
+    valEl.textContent = ch.stats[key];
+    valEl.title = 'Click to edit';
+    valEl.addEventListener('click', function() { editCharStat(valEl, ch, key); });
+    entry.appendChild(labelEl);
+    entry.appendChild(valEl);
+    return entry;
+  }
+
+
+  // Active inventory sub-tab (persists across re-renders of the Save tab).
+  var saveInvActiveTab = 'weapon';
+
+  function buildTabbedInventory() {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-inv-wrap';
+
+    var eqByTab = {}, conByTab = {};
+    OB64.SAVE.INVENTORY_TABS.forEach(function(t) { eqByTab[t.id] = []; conByTab[t.id] = []; });
+    saveState.inventory.entries.forEach(function(e) {
+      var tab = OB64.tabForItemId(e.itemId);
+      if (tab) eqByTab[tab].push(e);
+    });
+    saveState.consumableInventory.entries.forEach(function(e) {
+      var tab = OB64.tabForConsumableId(e.consumableId);
+      conByTab[tab].push(e);
+    });
+
+    var tabBar = document.createElement('div');
+    tabBar.className = 'save-inv-tabs';
+    var body = document.createElement('div');
+    body.className = 'save-inv-body';
+
+    OB64.SAVE.INVENTORY_TABS.forEach(function(t) {
+      var btn = document.createElement('button');
+      btn.className = 'save-inv-tab';
+      if (t.id === saveInvActiveTab) btn.classList.add('active');
+      var count = (eqByTab[t.id] || []).length + (conByTab[t.id] || []).length;
+      var iconUrl = t.icon ? ('resources/Item%20Icons/' + encodeURIComponent(t.icon)) : '';
+      btn.innerHTML =
+        (iconUrl ? '<img class="save-inv-tab-icon" src="' + iconUrl + '" alt="">' : '') +
+        '<span class="save-inv-tab-label">' + t.label + '</span>' +
+        '<span class="save-inv-tab-count">' + count + '</span>';
+      btn.addEventListener('click', function() {
+        saveInvActiveTab = t.id;
+        tabBar.querySelectorAll('.save-inv-tab').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        body.innerHTML = '';
+        body.appendChild(buildInventoryTabBody(t.id, eqByTab[t.id], conByTab[t.id]));
+      });
+      tabBar.appendChild(btn);
+    });
+    wrap.appendChild(tabBar);
+
+    body.appendChild(buildInventoryTabBody(saveInvActiveTab, eqByTab[saveInvActiveTab], conByTab[saveInvActiveTab]));
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function buildInventoryTabBody(tabId, eqEntries, conEntries) {
+    var wrap = document.createElement('div');
+
+    var actions = document.createElement('div');
+    actions.className = 'save-inv-actions';
+    var addBtn = document.createElement('button');
+    addBtn.className = 'save-inv-add';
+    addBtn.textContent = '+ Add ' + tabId.charAt(0).toUpperCase() + tabId.slice(1);
+    addBtn.addEventListener('click', function() { openInventoryAddModal(tabId); });
+    actions.appendChild(addBtn);
+    wrap.appendChild(actions);
+
+    var total = (eqEntries || []).length + (conEntries || []).length;
+    if (total === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'save-inv-empty';
+      empty.textContent = 'No ' + tabId + ' items in the army inventory.';
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    var list = document.createElement('div');
+    list.className = 'save-inv-list';
+    (eqEntries || []).forEach(function(e) { list.appendChild(buildInventoryRowEq(e)); });
+    (conEntries || []).forEach(function(e) { list.appendChild(buildInventoryRowConsumable(e)); });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  function buildInventoryRowEq(entry) {
+    var row = document.createElement('div');
+    row.className = 'save-inv-row';
+    var name = OB64.itemName(entry.itemId);
+    row.appendChild(makeSaveItemIcon(name));
+    var nm = document.createElement('span');
+    nm.className = 'save-inv-name';
+    nm.textContent = name;
+    row.appendChild(nm);
+    var count = document.createElement('span');
+    count.className = 'save-inv-count';
+    count.textContent = entry.owned;
+    count.title = 'Click to edit owned count';
+    count.addEventListener('click', function() {
+      makeNumericInput(count, entry.owned, 0, 255, function(v) {
+        entry.owned = v;
+        OB64.writeInventoryEntry(saveState.rdram, entry);
+        count.textContent = v;
+      });
+    });
+    row.appendChild(count);
+    return row;
+  }
+
+  function buildInventoryRowConsumable(entry) {
+    var row = document.createElement('div');
+    row.className = 'save-inv-row';
+    var name = OB64.consumableName(entry.consumableId);
+    row.appendChild(makeSaveItemIcon(name));
+    var nm = document.createElement('span');
+    nm.className = 'save-inv-name';
+    nm.textContent = name;
+    row.appendChild(nm);
+    var count = document.createElement('span');
+    count.className = 'save-inv-count';
+    count.textContent = entry.count;
+    count.title = 'Click to edit count';
+    count.addEventListener('click', function() {
+      makeNumericInput(count, entry.count, 0, 255, function(v) {
+        entry.count = v;
+        OB64.writeConsumableInventoryEntry(saveState.rdram, entry);
+        count.textContent = v;
+      });
+    });
+    row.appendChild(count);
+    return row;
+  }
+
+  function makeSaveItemIcon(name) {
+    var img = document.createElement('img');
+    img.className = 'save-inv-icon';
+    img.src = itemIconURL(name);
+    img.alt = '';
+    img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
+    return img;
+  }
+
+  function refreshInventorySection() {
+    renderSaveGame(document.getElementById('panel-save'));
+  }
+
+  // Find the first unused slot in the character array. A slot is "free" if
+  // its class_id byte (+0x11) is zero — matches OB64.parseCharacter's "empty"
+  // check. Returns the absolute RDRAM offset, or -1 if no free slot exists.
+  function findFirstFreeSlot() {
+    var base = saveState.armyBase;
+    var stride = OB64.SAVE.CHAR_STRIDE;
+    var max = OB64.SAVE.MAX_SLOTS;
+    for (var i = 0; i < max; i++) {
+      var off = base + i * stride;
+      if (off + stride > saveState.rdram.length) break;
+      if (saveState.rdram[off + OB64.SAVE.FIELD.CLASS_ID] === 0) return off;
+    }
+    return -1;
+  }
+
+  // "Add character" flow: pick a class via modal, then write a seed record
+  // into the first free character slot. Lands in the reserve pool by default
+  // (no unit table manipulation needed \u2014 the unit table is a separate
+  // structure we haven't decoded, pending-tasks #10).
+  function openAddCharacterModal() {
+    var freeOff = findFirstFreeSlot();
+    if (freeOff < 0) {
+      showErrorModal('No free slot', 'The character array is full. Remove a character before adding a new one.');
+      return;
+    }
+    // Class picker (modal, icon-less \u2014 class ids are not items)
+    openSaveEnumPickerModal({
+      title: 'Add character \u2014 pick class',
+      options: OB64.CLASS_NAMES,
+      currentId: 0,
+      onSelect: function(classId) {
+        seedNewCharacter(freeOff, classId);
+        refreshInventorySection();
+      }
+    });
+  }
+
+  // Writes a minimal, in-game-safe character record at the given slot.
+  // Seeds all fields the game looks at to consider a slot valid/visible:
+  //   +0x14 gender, +0x1A activation, Alignment, Luck, HP, stats, slot_index.
+  //   Alignment 0 is valid Chaotic; new seeded characters use neutral/default
+  //   values of 50 for both Alignment and Luck.
+  function seedNewCharacter(slotOff, classId) {
+    var F = OB64.SAVE.FIELD;
+    var slotIndex = ((slotOff - saveState.armyBase) / OB64.SAVE.CHAR_STRIDE) + 1;
+    var ch = {
+      slotOff: slotOff,
+      slotIndex: slotIndex,
+      name: 'Recruit',
+      classId: classId,
+      level: 1,
+      gender: 0,
+      element: 0,
+      alignment: 50,
+      luck: 50,
+      exp: 0,
+      hpMax: 50,
+      hpCur: 50,
+      stats: { STR: 50, VIT: 50, INT: 50, MEN: 50, AGI: 50, DEX: 50 },
+      equip: { weapon: 0, body: 0, offhand: 0, head: 0 },
+    };
+    // Zero the slot first, then write the seed, then fill the remaining
+    // activation byte at +0x1A. +0x1B is Alignment and may legitimately be 0.
+    for (var i = 0; i < OB64.SAVE.CHAR_STRIDE; i++) saveState.rdram[slotOff + i] = 0;
+    saveState.rdram[slotOff + F.SLOT_INDEX] = slotIndex & 0xFF;
+    OB64.writeCharacter(saveState.rdram, slotOff, ch);
+    saveState.rdram[slotOff + F.FLAG_1A] = 0x02;
+    markChanged();
+  }
+
+  // Repair an existing slot that was seeded before the FLAG_1A fix landed.
+  // Called from the "Repair" button on broken seed cards.
+  function repairSeededCharacter(ch) {
+    var F = OB64.SAVE.FIELD;
+    if (saveState.rdram[ch.slotOff + F.FLAG_1A] === 0) saveState.rdram[ch.slotOff + F.FLAG_1A] = 0x02;
+    markChanged();
+    refreshInventorySection();
+  }
+
+  // Zero a character's slot (removes from the roster).
+  function deleteCharacter(ch) {
+    for (var i = 0; i < OB64.SAVE.CHAR_STRIDE; i++) saveState.rdram[ch.slotOff + i] = 0;
+    markChanged();
+    refreshInventorySection();
+  }
+
+  // ============================================================
+  // Save-tab modal pickers — replace dropdowns with shop-tab-style modals.
+  // ============================================================
+
+  // Returns a list of {id, name, kind: 'equip'|'consumable'} items that belong
+  // to the named tab. "equip" kinds reference the 277 equipment IDs in the
+  // 278-record logical item-stat table (ID 0 is the sentinel);
+  // "consumable" kinds index the 45-entry consumable master.
+  function saveItemsForTab(tabId) {
+    var out = [];
+    if (tabId === 'consumable' || tabId === 'treasure') {
+      for (var cid = 1; cid <= 44; cid++) {
+        if (OB64.tabForConsumableId(cid) === tabId) {
+          out.push({ id: cid, name: OB64.consumableName(cid), kind: 'consumable' });
+        }
+      }
+    } else {
+      for (var iid in OB64.ITEM_NAMES) {
+        var id = parseInt(iid);
+        if (id === 0) continue;
+        if (OB64.tabForItemId(id) === tabId) {
+          out.push({ id: id, name: OB64.itemName(id), kind: 'equip' });
+        }
+      }
+    }
+    return out;
+  }
+  OB64.saveItemsForTab = saveItemsForTab;
+
+  // Shop-tab-style modal: list of icon + name rows, click to select.
+  //   opts = { title, items, currentId, includeNone, withIcons, onSelect(id) }
+  // Item rows may provide iconName, withIcon=false, iconPlaceholder, and idLabel.
+  function openSaveItemPickerModal(opts) {
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) close(); });
+
+    var modal = document.createElement('div');
+    modal.className = 'item-modal save-item-picker';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var title = document.createElement('h2');
+    title.textContent = opts.title;
+    header.appendChild(title);
+    var btnClose = document.createElement('button');
+    btnClose.className = 'item-modal-close';
+    btnClose.textContent = '\u00D7';
+    btnClose.addEventListener('click', close);
+    header.appendChild(btnClose);
+    modal.appendChild(header);
+
+    // Search bar — filters the visible rows by substring match (case-insensitive).
+    var searchWrap = document.createElement('div');
+    searchWrap.className = 'item-modal-search-wrap';
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.className = 'item-modal-search';
+    search.placeholder = 'Search \u2026';
+    searchWrap.appendChild(search);
+    modal.appendChild(searchWrap);
+
+    var body = document.createElement('div');
+    body.className = 'item-modal-body save-item-picker-body';
+
+    var items = opts.items.slice();
+    if (opts.includeNone) items.unshift({ id: 0, name: '(class default)', kind: 'none' });
+
+    var col = document.createElement('div');
+    col.className = 'item-modal-col';
+    // Track rows + searchable strings so filter can toggle visibility in-place.
+    var entries = [];
+    items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.className = 'item-modal-row';
+      if (item.id === opts.currentId) row.classList.add('selected');
+      if (opts.withIcons !== false) {
+        if (item.withIcon === false) {
+          var iconPlaceholder = document.createElement('span');
+          iconPlaceholder.className = 'item-modal-icon item-modal-icon-empty';
+          iconPlaceholder.textContent = item.iconPlaceholder || '';
+          iconPlaceholder.setAttribute('aria-hidden', 'true');
+          row.appendChild(iconPlaceholder);
+        } else {
+          var img = document.createElement('img');
+          img.className = 'item-modal-icon';
+          img.src = itemIconURL(item.iconName || item.name);
+          img.alt = '';
+          img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
+          row.appendChild(img);
+        }
+      }
+      var name = document.createElement('span');
+      name.className = 'item-modal-name';
+      name.textContent = item.name;
+      if (item.kindLabel) {
+        var tag = document.createElement('span');
+        tag.className = 'item-modal-kind';
+        tag.textContent = item.kindLabel;
+        name.appendChild(tag);
+      }
+      row.appendChild(name);
+      if (opts.onRowAction && item.id > 0) {
+        var rowAction = document.createElement('button');
+        rowAction.type = 'button';
+        rowAction.className = 'item-modal-row-action';
+        rowAction.textContent = opts.rowActionLabel || 'Edit';
+        rowAction.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          opts.onRowAction(item);
+        });
+        row.appendChild(rowAction);
+      }
+      var idHint = document.createElement('span');
+      idHint.className = 'item-modal-price';
+      idHint.textContent = item.idLabel != null ? item.idLabel : (item.id ? ('0x' + item.id.toString(16)) : '');
+      row.appendChild(idHint);
+      row.addEventListener('click', function() {
+        var sameId = opts.currentId !== undefined && String(item.id) === String(opts.currentId);
+        var sameKind = opts.currentKind === undefined || item.kind === opts.currentKind;
+        if (!(sameId && sameKind)) {
+          opts.onSelect(item.id, item.kind);
+        }
+        close();
+      });
+      col.appendChild(row);
+      entries.push({ row: row, needle: (item.name + ' ' + (item.kindLabel || '') + ' ' + (item.idLabel || '')).toLowerCase() });
+    });
+    body.appendChild(col);
+    modal.appendChild(body);
+
+    function applyFilter() {
+      var q = search.value.trim().toLowerCase();
+      var visible = 0;
+      entries.forEach(function(e) {
+        var match = !q || e.needle.indexOf(q) !== -1;
+        e.row.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+    }
+    search.addEventListener('input', applyFilter);
+    // Defer focus until after modal lands in the DOM.
+    setTimeout(function() { search.focus(); }, 0);
+
+    document.body.appendChild(overlay);
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', esc);
+    }
+    var esc = function(ev) {
+      if (ev.key === 'Escape' && isTopItemModal(overlay)) close();
+    };
+    document.addEventListener('keydown', esc);
+  }
+  OB64.openSaveItemPickerModal = openSaveItemPickerModal;
+
+  // Small count-edit modal (for equipped/owned on equipment inventory, or count
+  // on consumable inventory).
+  function openSaveInventoryEditor(entry, isConsumable, onChange) {
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) close(); });
+
+    var modal = document.createElement('div');
+    modal.className = 'item-modal save-count-editor';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var title = document.createElement('h2');
+    var itemName = isConsumable ? OB64.consumableName(entry.consumableId) : OB64.itemName(entry.itemId);
+    title.textContent = itemName;
+    header.appendChild(title);
+    var btnClose = document.createElement('button');
+    btnClose.className = 'item-modal-close';
+    btnClose.textContent = '\u00D7';
+    btnClose.addEventListener('click', close);
+    header.appendChild(btnClose);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'item-modal-body save-count-editor-body';
+
+    if (isConsumable) {
+      body.appendChild(makeCountField('Count', entry.count, function(v) {
+        entry.count = v;
+        OB64.writeConsumableInventoryEntry(saveState.rdram, entry);
+        markChanged();
+      }));
+    } else {
+      body.appendChild(makeCountField('Equipped', entry.equipped, function(v) {
+        entry.equipped = v;
+        OB64.writeInventoryEntry(saveState.rdram, entry);
+        markChanged();
+      }));
+      body.appendChild(makeCountField('Owned', entry.owned, function(v) {
+        entry.owned = v;
+        OB64.writeInventoryEntry(saveState.rdram, entry);
+        markChanged();
+      }));
+    }
+
+    var footer = document.createElement('div');
+    footer.className = 'item-modal-hint';
+    footer.textContent = 'Edits save immediately. Press Esc or click outside to close.';
+    modal.appendChild(body);
+    modal.appendChild(footer);
+
+    document.body.appendChild(overlay);
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', esc);
+      if (onChange) onChange();
+    }
+    var esc = function(ev) { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', esc);
+  }
+
+  function makeCountField(label, value, onCommit) {
+    var row = document.createElement('div');
+    row.className = 'save-count-row';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-count-label';
+    lbl.textContent = label;
+    row.appendChild(lbl);
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = '255';
+    input.value = value;
+    input.className = 'save-count-input';
+    input.addEventListener('change', function() {
+      var v = parseInt(input.value);
+      if (!isNaN(v) && v >= 0 && v <= 255) onCommit(v);
+    });
+    row.appendChild(input);
+    return row;
+  }
+
+  // Invoked by buildInventoryRow* / "Add" buttons.
+  function openInventoryAddModal(tabId) {
+    var items = saveItemsForTab(tabId);
+    openSaveItemPickerModal({
+      title: 'Add ' + tabId.charAt(0).toUpperCase() + tabId.slice(1),
+      items: items,
+      currentId: 0,
+      onSelect: function(id) {
+        addItemToInventory(tabId, id);
+        refreshInventorySection();
+      }
+    });
+  }
+  function openInventoryEditModal(entry, isConsumable) {
+    openSaveInventoryEditor(entry, isConsumable, refreshInventorySection);
+  }
+
+  // Append an entry to the right inventory list. Writes to the end of the
+  // existing zero-terminated list in RDRAM, shifting the terminator.
+  function addItemToInventory(tabId, id) {
+    if (!id) return;
+    var nativeSaveRam = saveState && saveState.format === 'bizhawk-saveram';
+    if (tabId === 'consumable' || tabId === 'treasure') {
+      var list = saveState.consumableInventory.entries;
+      var conBase = nativeSaveRam ? OB64.SAVE.SAVERAM_CONSUMABLE_INV_BASE : OB64.SAVE.CONSUMABLE_INV_BASE;
+      var conSize = nativeSaveRam ? OB64.SAVE.SAVERAM_CONSUMABLE_INV_ENTRY_SIZE : OB64.SAVE.CONSUMABLE_INV_ENTRY_SIZE;
+      var off = conBase + list.length * conSize;
+      var entry = { off: off, consumableId: id, count: 1, nativeSaveRam: nativeSaveRam };
+      list.push(entry);
+      OB64.writeConsumableInventoryEntry(saveState.rdram, entry);
+    } else {
+      var list = saveState.inventory.entries;
+      var eqBase = nativeSaveRam ? OB64.SAVE.SAVERAM_EQUIPMENT_INV_BASE : OB64.SAVE.INVENTORY_BASE;
+      var eqSize = nativeSaveRam ? OB64.SAVE.SAVERAM_EQUIPMENT_INV_ENTRY_SIZE : OB64.SAVE.INVENTORY_ENTRY_SIZE;
+      var off = eqBase + list.length * eqSize;
+      var entry = { off: off, itemId: id, equipped: 0, owned: 1, nativeSaveRam: nativeSaveRam };
+      list.push(entry);
+      OB64.writeInventoryEntry(saveState.rdram, entry);
+    }
+    markChanged();
+  }
+
+  function buildGameStatePanel(gs) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-gamestate';
+
+    var rows = [];
+    rows.push({ key: 'goth', label: 'Goth', min: 0, max: 9999999 });
+    rows.push({ key: 'chaosFrame', label: 'Chaos Frame', min: 0, max: 100 });
+    if (gs.nativeSaveRam) {
+      // Goth (0x196A6C, 31 bits) and Chaos Frame (0x1936A9, 7 bits) are
+      // codec-mapped in battery saves, so they round-trip. The calendar /
+      // scenario fields are only partially persisted (e.g. scenario keeps
+      // 4 bits), so those stay hidden for native saves.
+      var note = document.createElement('div');
+      note.className = 'save-gs-note';
+      note.textContent = 'Battery saves support Goth and Chaos Frame. Calendar/scenario fields are not fully mapped in the packed format yet.';
+      wrap.appendChild(note);
+    } else {
+      rows.push({ key: 'scenario', label: 'Scenario', min: 0, max: 255, labels: OB64.SAVE.SCENARIO_LABELS });
+    }
+    for (var i = 0; i < rows.length; i++) {
+      wrap.appendChild(buildGameStateRow(rows[i], gs));
+    }
+    return wrap;
+  }
+
+  function buildGameStateRow(def, gs) {
+    var row = document.createElement('div');
+    row.className = 'save-gs-row';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-gs-label';
+    lbl.textContent = def.label;
+    var val = document.createElement('span');
+    val.className = 'save-gs-value';
+    var current = gs[def.key];
+    var displayText = String(current);
+    if (def.options && def.options[current]) displayText = def.options[current] + ' (' + current + ')';
+    if (def.labels && def.labels[current]) displayText = def.labels[current] + ' (' + current + ')';
+    val.textContent = displayText;
+    val.title = 'Click to edit';
+    val.addEventListener('click', function() {
+      if (def.options) {
+        // Modal picker for enum-style fields (Month, etc.) — per user
+        // request, all non-numerical selectors use pop-up modals.
+        openSaveEnumPickerModal({
+          title: def.label,
+          options: def.options,
+          currentId: saveState.gameState[def.key],
+          onSelect: function(v) {
+            saveState.gameState[def.key] = v;
+            OB64.writeGameState(saveState.rdram, saveState.gameState);
+            val.textContent = (def.options[v] || String(v)) + ' (' + v + ')';
+            val.classList.add('modified');
+            markChanged();
+          }
+        });
+      } else {
+        makeNumericInput(val, current, def.min, def.max, function(v) {
+          saveState.gameState[def.key] = v;
+          OB64.writeGameState(saveState.rdram, saveState.gameState);
+          var t = String(v);
+          if (def.labels && def.labels[v]) t = def.labels[v] + ' (' + v + ')';
+          val.textContent = t;
+        });
+      }
+    });
+    row.appendChild(lbl);
+    row.appendChild(val);
+    return row;
+  }
+
+  // --- Character field editors -----------------------------------
+
+  function editCharName(el, ch) {
+    if (el.querySelector('input')) return;
+    var prev = el.textContent;
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.maxLength = OB64.SAVE.NAME_MAX_LEN;
+    inp.value = ch.name;
+    el.textContent = '';
+    el.appendChild(inp);
+    inp.focus();
+    inp.select();
+    function commit() {
+      var name = inp.value.trim();
+      if (name.length > 0 && name !== ch.name) {
+        ch.name = name;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        el.classList.add('modified');
+        markChanged();
+      }
+      el.textContent = ch.name;
+    }
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { el.textContent = prev; }
+    });
+  }
+
+  function editCharClass(el, ch) {
+    // Filter to classes that share the character's current unit type
+    // (humanoid vs beast/dragon - corrected class size byte). Changing between
+    // unit types isn't allowed in-game. Requires the ROM to be loaded so
+    // we can read classDefs; if not loaded, fall back to the full list.
+    var items = classItemsForSize(ch.classId);
+    var title = 'Change class \u2014 ' + ch.name;
+    if (rom && rom.classDefs) {
+      var curDef = classDefFor(ch.classId);
+      var curType = curDef ? curDef.unitSize : null;
+      if (curType) title += ' (' + (OB64.unitSizeName(curType)) + ' only)';
+    } else {
+      title += ' (ROM not loaded \u2014 showing all classes)';
+    }
+    openSaveEnumPickerModal({
+      title: title,
+      options: items,
+      currentId: ch.classId,
+      onSelect: function(v) {
+        ch.classId = v;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        el.textContent = OB64.className(v);
+        markChanged();
+      }
+    });
+  }
+
+  // Look up a class-def record by class id. parseClassDefs uses record_index
+  // = class_id + 1, so classDefs[class_id + 1] is the record.
+  function classDefFor(classId) {
+    if (!rom || !rom.classDefs) return null;
+    return rom.classDefs[classId + 1] || null;
+  }
+
+  // Build the option list for a class-change modal. If the ROM is loaded,
+  // filter to classes with the same unit type as the input class. Otherwise
+  // return every known class.
+  function classItemsForSize(classId) {
+    var out = [];
+    var curDef = classDefFor(classId);
+    var curType = curDef ? curDef.unitSize : null;
+    for (var id in OB64.CLASS_NAMES) {
+      var idNum = parseInt(id);
+      if (idNum === 0) continue;
+      if (curType && rom && rom.classDefs) {
+        var def = classDefFor(idNum);
+        // Skip if the class def is missing (terminator/sentinel records) or
+        // its unit type differs. Also skip records with unitSize = 0 since
+        // those are the two non-class terminator rows in the table.
+        if (!def || def.isTerm || def.isSentinel || def.unitSize === 0 || def.unitSize !== curType) continue;
+      }
+      out.push({ id: idNum, label: OB64.className(idNum) });
+    }
+    return out;
+  }
+
+  function editCharLevel(el, ch) {
+    makeNumericInput(el, ch.level, 1, 50, function(v) {
+      ch.level = v;
+      OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+      el.innerHTML = 'Lv <strong>' + v + '</strong>';
+    });
+  }
+
+  function editCharHp(el, ch) {
+    makeNumericInput(el, ch.hpMax, 1, 255, function(v) {
+      ch.hpMax = v;
+      ch.hpCur = v; // heal to full on max-hp edit
+      OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+      el.innerHTML = 'HP <strong>' + v + '</strong>/<strong>' + v + '</strong>';
+    });
+  }
+
+  function editCharStat(el, ch, key) {
+    makeNumericInput(el, ch.stats[key], 0, 999, function(v) {
+      ch.stats[key] = v;
+      OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+      el.textContent = v;
+    });
+  }
+
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function td(tr, text) {
+    var el = document.createElement('td');
+    el.textContent = text;
+    tr.appendChild(el);
+    return el;
+  }
+
+})();

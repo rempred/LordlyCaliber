@@ -1,0 +1,36 @@
+{
+  "generator": "native/tools/generate-background-owners.cjs",
+  "input": "cutscene-rom-start-data.js qualified original launch owners",
+  "owners": [
+    {
+      "name": "func_0004ED60",
+      "rom": 322912,
+      "size": 432,
+      "sha256": "a899ffb72403883a59f9524a0412774200b590c8dcf521cfee7ab0420ace6275"
+    },
+    {
+      "name": "func_00283E14",
+      "rom": 2637332,
+      "size": 404,
+      "sha256": "598ecd0602e3a0e7d8ba105f175314c4aeb3052261a6cf632aac69e98e33dc6c"
+    },
+    {
+      "name": "func_002827EC",
+      "rom": 2631660,
+      "size": 1900,
+      "sha256": "bf7423237d3e8aed91494fe118cb6b62595cbac3b8999f1bd87d76909509ed73"
+    },
+    {
+      "name": "callerRouteTable",
+      "rom": 2648912,
+      "size": 64,
+      "sha256": "164de42594172d2d07b6e5158f40b2fff377fd0991b8bcec85e7132118489100"
+    },
+    {
+      "name": "terminalClassTable",
+      "rom": 2648976,
+      "size": 32,
+      "sha256": "03979ebe38613899f6b1937dbefa467c4caa299f217037862268e4f7abc05b6c"
+    }
+  ]
+}
