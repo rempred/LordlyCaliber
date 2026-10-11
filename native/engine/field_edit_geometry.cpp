@@ -376,11 +376,13 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
             {float(world.x()), float(surface.height(world) + lift + .03125), float(world.y())},
             normal,
             uv,
-            // Raised landforms meet the ground with an opaque dark foot, like
-            // native meshes. Per-face fog alpha made a sawtooth of half-visible
-            // triangles around that foot instead of a continuous outline.
-            quint8(std::round(shape.opacity(p.grid) *
-                              (shape.mountain() || shape.forest() ? 1. : shape.edgeOpacity(p.grid)) * 255))};
+            // Raised regions are rebuilt through their complete outline. Both
+            // coverage and edge feathering must be bypassed: interpolated rim
+            // vertices can fall just outside the coverage mask, which would
+            // erase the dark native foot and leave translucent triangle teeth.
+            quint8(shape.mountain() || shape.forest()
+                       ? 255
+                       : std::round(shape.opacity(p.grid) * shape.edgeOpacity(p.grid) * 255))};
     };
     auto polygon = [&](BrushPolygon poly) {
         poly = clip(poly, 0, true, true);

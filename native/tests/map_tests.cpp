@@ -57,6 +57,55 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void raisedTerrainFoot() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        for (int key : {1, 5}) for (int type : {5, 7, 13, 14}) {
+            auto edit = MapEdits::load(rom);
+            const auto &s = edit.source(key);
+            QPoint center(-1, -1);
+            for (int y = 16; y < 240 && center.x() < 0; y += 4)
+                for (int x = 16; x < 240 && center.x() < 0; x += 4) {
+                    bool plain = true;
+                    for (int dy = -9; dy <= 9 && plain; ++dy)
+                        for (int dx = -9; dx <= 9; ++dx)
+                            if (u8(s.visualTerrain, (y + dy) * 256 + x + dx) != 3) {
+                                plain = false; break;
+                            }
+                    if (plain) center = {x, y};
+                }
+            QVERIFY(center.x() >= 0);
+            edit.paint(key, {center}, type, 7);
+            const auto model = edit.model(key);
+            const int geometry = int((u32(model, 48) + 15) & ~15u);
+            constexpr int widths[] = {0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 3, 3, 1,
+                                      1, 0, 1, 1, 1, 2, 2, 3, 1, 2, 2, 3, 2};
+            quint32 last = 0;
+            for (int at = int(u32(model, 0)); u32(model, at);) {
+                const int op = int(u32(model, at));
+                QVERIFY(op <= 25);
+                if (op == 1) last = u32(model, at + 4);
+                at += (1 + widths[op]) * 4;
+            }
+            QVERIFY(last);
+            int vertices = 0;
+            for (int at = geometry + int(last & 0xffffff); u32(model, at) != 0xdf000000; at += 8) {
+                const auto a = u32(model, at), b = u32(model, at + 4);
+                // Fog uses primitive coverage; clear maps use vertex coverage.
+                // Neither may fade the dark foot into the ground underneath it.
+                if (a >> 24 == 0xfa) QCOMPARE(b & 255, 255u);
+                if (a >> 24 != 1) continue;
+                const int count = (a >> 12) & 255, start = geometry + int(b & 0xffffff);
+                for (int i = 0; i < count; ++i) QCOMPARE(u8(model, start + i * 16 + 15), 255);
+                vertices += count;
+            }
+            QVERIFY(vertices > 0);
+            const auto picture = Battlefield::load(rom, key, {}, model).render(s.map.bounds, 1024);
+            const auto exported = Rom::fromBytes(edit.rebuild(rom));
+            QCOMPARE(Battlefield::load(exported, key).render(s.map.bounds, 1024), picture);
+        }
+    }
     void terrainGroundPreservation() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

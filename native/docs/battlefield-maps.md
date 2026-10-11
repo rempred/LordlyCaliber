@@ -148,8 +148,12 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   replacement terrain cuts away the old surface, and matching extensions share
   one border. Both plain and snowy variants use this path. Flat brush edges receive
   a narrow coverage feather; raised forest/highlands retain opaque feet, avoiding
-  the sawtooth of per-face fog alpha. Forest borders retain their separate side
-  texture. Raised distance fields receive half-strength 3-by-3 smoothing before
+  the sawtooth of per-face fog alpha. Raised meshes bypass both edge and native-join
+  coverage feathering: their complete connected region is rebuilt, and clipped
+  contour vertices can fall just outside the sampled coverage mask. Retaining
+  that mask's opacity erased the native dark texture at those vertices, leaving
+  triangular gaps even after edge feathering was disabled. Forest borders retain
+  their separate side texture. Raised distance fields receive half-strength 3-by-3 smoothing before
   tracing, retaining one-cell islands without increasing mesh density.
 * Original faces are identified by wordcode draw and face ordinal, including
   ungrouped mountains. Changed display lists are cloned with only affected terrain
@@ -310,6 +314,14 @@ remain under the game's control. This addresses a confirmed rendering-state
 mismatch; the final appearance still needs an in-game comparison.
 
 ## Checks and limits
+
+`map_tests raisedTerrainFoot` independently decodes the appended drawing list
+and vertex loads, requiring opaque primitive/vertex coverage for ordinary and
+snowy forest/highlands on both clear and fog maps. A clear plain patch prevents
+unchanged native landforms from satisfying the check. It reproduces a zero-alpha
+rim vertex before the fix and passes afterward, with matching render/export/reopen
+images for all eight cases. Joe's key 5/6/7 project was also regenerated and the
+before/after outlines inspected. These are offline checks, not an in-game replay.
 
 `map_tests battlefieldRendering` decodes and renders all 63 currently supported
 keys, checks non-flat output, confirms Tenne's eight town texture selections,
