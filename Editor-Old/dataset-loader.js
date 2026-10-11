@@ -8,13 +8,13 @@ window.OB64 = window.OB64 || {};
   var DATASETS = {
     'animation-corpus': {
       label: 'combat-animation corpus',
-      source: 'animation-corpus-data.js',
+      source: '../animation-corpus-data.js',
       global: 'animationCorpusData',
       promise: null
     },
     'cutscene-data': {
       label: 'Cutscene Studio catalog',
-      source: 'cutscene-data.js',
+      source: '../cutscene-data.js',
       global: 'cutsceneData',
       promise: null
     }

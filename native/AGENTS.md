@@ -1,8 +1,10 @@
 # Native Lordly Caliber
 
-Joe authorized a new C++/Qt product in this migration worktree. Existing browser
-code is a feature and compatibility reference, not a required implementation.
-Keep its original files intact while native features become complete.
+Joe authorized a new C++/Qt product in this migration worktree. The archived
+browser application is in `../Editor-Old/`; shared JavaScript, fixtures and tools
+still used by native builds, tests or generators remain at the repository root.
+Keep those active dependencies available. The archived browser code is a feature
+and compatibility reference, not a required implementation.
 
 Read `docs/architecture.md`, `docs/features.md`, and the active current-state
 note in the parent repository (`docs/Plans/task-logs/classes-rebuild-20261002.md`).

@@ -59,7 +59,7 @@ function loadModule(document) {
     'concurrent requests must share one dataset promise');
   assert.strictEqual(document.scripts.length, 1,
     'concurrent requests must append one script');
-  assert.strictEqual(document.scripts[0].src, 'animation-corpus-data.js');
+  assert.strictEqual(document.scripts[0].src, '../animation-corpus-data.js');
   assert.strictEqual(document.scripts[0].async, true);
   assert.strictEqual(document.scripts[0].dataset.ob64Dataset, 'animation-corpus');
 
