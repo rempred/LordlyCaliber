@@ -4,18 +4,26 @@
 supports **Actions → Windows release ZIP → Run workflow**. Select `main`.
 Other branches are deliberately excluded from this release workflow.
 
-Each successful run uploads `release-files-RUN-ATTEMPT`, containing:
+Each successful run uploads `LordlyCaliber-main-COMMIT-windows-x64`. GitHub's
+download ZIP contains the application folder and its file-attestation bundle.
+Extract it once and run `LordlyCaliber.exe` from the application folder. The
+workflow uploads unpacked files, so there is no nested application ZIP.
+Reruns add an attempt suffix to the filename, preserving earlier artifacts.
 
-- The complete portable `LordlyCaliber-main-COMMIT-windows-x64.zip`.
-- Its SHA-256 checksum file.
-- Signed provenance for the ZIP, GUI executable and CLI executable.
-- Source/build metadata and [verification instructions](../VERIFY-BUILD.md).
+The separate `verification-files-RUN-ATTEMPT` artifact contains the download's
+SHA-256 checksum, combined attestations, build metadata and
+[verification instructions](../VERIFY-BUILD.md). These files are optional for
+running the editor. The workflow attests the manifest and executables before
+upload, then attests the actual GitHub ZIP using its returned archive digest.
+It downloads and checks that exact archive before completing successfully.
 
 Push-triggered builds do not create GitHub releases. To make a public download,
 run the workflow manually with **Publish this Main build as a GitHub prerelease**
 enabled. Only that explicit run grants the separate publishing job permission
 to create a release. It creates a unique `native-main-RUN-ATTEMPT` tag pointing
-to the exact built commit and never overwrites an existing release. These are
+to the exact built commit and never overwrites an existing release. It retrieves
+the application artifact as raw ZIP bytes, checks its published checksum, and
+uploads it with the verification sidecars without repacking. These are
 development prereleases; this workflow does not declare a stable 0.5 release.
 
 The build job uses Windows Server 2022's MSVC 2022 toolset, pinned Qt/CMake

@@ -58,6 +58,15 @@ if ($Zip) {
     Copy-Item -LiteralPath ($Zip + '.sha256') -Destination ($candidate + '.sha256')
     $expectedCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
     Expect-Rejection { & "$sourceRoot/tools/check-release.ps1" -Zip $candidate -ExpectedCommit $expectedCommit } 'ZIP checksum mismatch'
+    # Reproduce the former Actions wrapper: one application ZIP inside another.
+    [IO.File]::Delete($candidate)
+    $archive = [IO.Compression.ZipFile]::Open($candidate, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $Zip, [IO.Path]::GetFileName($Zip), [IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+    } finally { $archive.Dispose() }
+    $hash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText(($candidate + '.sha256'), "$hash  $([IO.Path]::GetFileName($candidate))`n", [Text.UTF8Encoding]::new($false))
+    Expect-Rejection { & "$sourceRoot/tools/check-release.ps1" -Zip $candidate -ExpectedCommit $expectedCommit } 'Unexpected release archive path'
     Copy-Item -LiteralPath $Zip -Destination $candidate -Force
     $archive = [IO.Compression.ZipFile]::Open($candidate, [IO.Compression.ZipArchiveMode]::Update)
     $packageName = [IO.Path]::GetFileNameWithoutExtension($Zip)

@@ -1,8 +1,14 @@
 # Verify a Lordly Caliber build
 
-Download the portable `.zip`, its matching `.zip.sha256`, and
-`attestations.jsonl` from the same release. A workflow artifact contains those
-files inside an outer download ZIP; verify the inner `LordlyCaliber-*.zip`.
+Download `LordlyCaliber-main-COMMIT-windows-x64.zip` from Actions or a release.
+Extract it once, open the `LordlyCaliber-main-COMMIT-windows-x64` folder, and run
+`LordlyCaliber.exe`. The download contains the application files directly.
+
+The matching `.zip.sha256` and combined `attestations.jsonl` are separate release
+assets, or are available in the same Actions run's `verification-files` artifact.
+The ZIP checksum is also displayed in the run summary. Verification files are
+optional for running the editor; online signature verification needs only the
+application ZIP and the [GitHub CLI](https://cli.github.com/).
 
 ## Check the download
 
@@ -16,8 +22,8 @@ if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) {
 }
 ```
 
-A checksum detects a changed download. Verify its signed origin separately with
-the [GitHub CLI](https://cli.github.com/):
+A checksum detects a changed download. Verify the signed origin of the ZIP you
+downloaded with the GitHub CLI:
 
 ```powershell
 gh attestation verify $zip --repo rempred/LordlyCaliber --source-ref refs/heads/main --signer-workflow rempred/LordlyCaliber/.github/workflows/windows-release.yml --deny-self-hosted-runners
@@ -29,9 +35,12 @@ downloaded attestation bundle, append `--bundle attestations.jsonl`; the CLI can
 still require network access for its trust material. This is not an offline
 verification procedure.
 
-After extracting the portable ZIP, the same command also works with
-`LordlyCaliber.exe` or `LordlyCaliber-cli.exe` as its file argument. Both
-executables are attested separately, alongside the complete ZIP.
+After extracting the portable ZIP, the same command also works with the path to
+`LordlyCaliber.exe`, `LordlyCaliber-cli.exe` or `FILES.sha256` as its file argument.
+Those files are attested before upload; their bundle is included beside the
+application folder. The combined bundle from `verification-files` or the release
+also covers the completed download ZIP. The ZIP's own attestation is generated
+after upload and therefore accompanies the ZIP separately.
 
 `build-info.json` records the source commit, workflow run and dependency policy.
 `FILES.sha256` lists checksums for every other file inside the package. Those
@@ -46,7 +55,8 @@ are pinned to commit IDs. Qt is downloaded from its official archive and checked
 against the repository's SHA-256 pins. The N64 export tools are a separately
 authenticated, prebuilt third-party dependency; their individual identities,
 source revisions, build recipes and patches ship with the package. The entire
-ZIP, including dependencies, is attested.
+GitHub-generated download ZIP, including dependencies, is attested using the
+upload action's archive digest. Releases use that exact ZIP without repacking it.
 
 The workflow tests ZIP integrity, package completeness and startup with developer
 paths removed. It runs the public test suite, with private-ROM cases skipped.

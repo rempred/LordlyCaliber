@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      actions: read
       id-token: write
       attestations: write
     defaults:
@@ -33,6 +34,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     outputs:
       package-name: ${{ steps.names.outputs.package-name }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Check out the exact Main commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -44,6 +46,7 @@ jobs:
         id: names
         run: |
           $name = "LordlyCaliber-main-$($env:GITHUB_SHA.Substring(0, 12))-windows-x64"
+          if ([int]$env:GITHUB_RUN_ATTEMPT -gt 1) { $name += "-attempt$env:GITHUB_RUN_ATTEMPT" }
           "package-name=$name" >> $env:GITHUB_OUTPUT
           "PACKAGE_NAME=$name" >> $env:GITHUB_ENV
           "PACKAGE_PATH=$env:GITHUB_WORKSPACE/native/dist/$name" >> $env:GITHUB_ENV
@@ -66,39 +69,81 @@ jobs:
       - name: Check rejection of damaged dependencies and incomplete packages
         run: ./native/tests/release-packaging.ps1 -Zip "$env:PACKAGE_PATH.zip"
 
-      - name: Attest the release ZIP and both executables
-        id: attest
+      - name: Attest the file manifest and both executables
+        id: attest-files
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            native/dist/${{ env.PACKAGE_NAME }}.zip
+            native/dist/${{ env.PACKAGE_NAME }}/FILES.sha256
             native/dist/${{ env.PACKAGE_NAME }}/LordlyCaliber.exe
             native/dist/${{ env.PACKAGE_NAME }}/LordlyCaliber-cli.exe
 
-      - name: Collect verifiable release files
+      - name: Prepare a download that extracts directly to the application
         env:
-          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          ATTESTATION_BUNDLE: ${{ steps.attest-files.outputs.bundle-path }}
         run: |
-          $out = New-Item -ItemType Directory -Path native/dist/release-files
-          Copy-Item -LiteralPath "$env:PACKAGE_PATH.zip", "$env:PACKAGE_PATH.zip.sha256" -Destination $out
-          Copy-Item -LiteralPath "$env:PACKAGE_PATH/build-info.json" -Destination $out
+          $out = New-Item -ItemType Directory -Path native/dist/application-files
+          Copy-Item -LiteralPath $env:PACKAGE_PATH -Destination $out -Recurse
           Copy-Item -LiteralPath $env:ATTESTATION_BUNDLE -Destination "$out/attestations.jsonl"
+
+      - name: Upload the portable application files
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: native/dist/application-files/*
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 30
+
+      - name: Attest the actual GitHub download ZIP
+        id: attest-zip
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.PACKAGE_NAME }}.zip
+          subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
+
+      - name: Collect download checksums and verification files
+        env:
+          FILE_ATTESTATIONS: native/dist/application-files/attestations.jsonl
+          ZIP_ATTESTATION: ${{ steps.attest-zip.outputs.bundle-path }}
+          ZIP_SHA256: ${{ steps.upload.outputs.artifact-digest }}
+          DOWNLOAD_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          $out = New-Item -ItemType Directory -Path native/dist/verification-files
+          [IO.File]::WriteAllText("$out/$env:PACKAGE_NAME.zip.sha256", "$env:ZIP_SHA256  $env:PACKAGE_NAME.zip`n", [Text.UTF8Encoding]::new($false))
+          $bundles = @($env:FILE_ATTESTATIONS, $env:ZIP_ATTESTATION) | ForEach-Object { (Get-Content -LiteralPath $_ -Raw).Trim() }
+          [IO.File]::WriteAllText("$out/attestations.jsonl", ($bundles -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+          Copy-Item -LiteralPath "$env:PACKAGE_PATH/build-info.json" -Destination $out
           Copy-Item -LiteralPath native/VERIFY-BUILD.md -Destination "$out/VERIFY-BUILD.md"
           @"
           ## Windows build from Main
           Source: [$env:GITHUB_SHA]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$env:GITHUB_SHA)
 
-          Download the release-files artifact and extract its inner portable ZIP.
+          [Download $env:PACKAGE_NAME.zip]($env:DOWNLOAD_URL), extract it once, and open the LordlyCaliber folder.
           It contains the editor, Qt/runtime DLLs, N64 export tools, dependency sources and notices.
-          The ZIP and both editor executables have signed build attestations.
+          SHA-256: $env:ZIP_SHA256
+          The download ZIP, file manifest and both editor executables have signed build attestations.
+          The verification-files artifact provides checksum and attestation sidecars; it is optional for running the editor.
           Public tests exclude private-ROM cases; this run is not a game-playthrough check.
           "@ >> $env:GITHUB_STEP_SUMMARY
 
-      - name: Upload release ZIP, checksums and attestations
+      - name: Verify the exact application download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          $out = New-Item -ItemType Directory -Path native/dist/download-check
+          $zip = "$out/$env:PACKAGE_NAME.zip"
+          Invoke-WebRequest -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:ARTIFACT_ID/zip" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } -OutFile $zip
+          Copy-Item -LiteralPath "native/dist/verification-files/$env:PACKAGE_NAME.zip.sha256" -Destination "$zip.sha256"
+          ./native/tools/check-release.ps1 -Zip $zip -ExpectedCommit $env:GITHUB_SHA -RequireClean
+
+      - name: Upload download verification files
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: release-files-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native/dist/release-files/*
+          name: verification-files-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native/dist/verification-files/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -122,12 +167,25 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     steps:
-      - name: Download the verified release files
+      - name: Download the checksum and attestation sidecars
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: release-files-${{ github.run_id }}-${{ github.run_attempt }}
+          name: verification-files-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-files
+
+      - name: Download the exact attested application ZIP without repacking
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+          PACKAGE_NAME: ${{ needs.build.outputs.package-name }}
+        run: |
+          gh api "repos/${GH_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" > "release-files/${PACKAGE_NAME}.zip"
+          cd release-files
+          sha256sum --check "${PACKAGE_NAME}.zip.sha256"
 
       - name: Publish a uniquely named Main prerelease
         shell: bash

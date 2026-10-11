@@ -17,7 +17,7 @@ try {
     $entries = @{}
     foreach ($entry in $archive.Entries) {
         $name = $entry.FullName.Replace('\', '/')
-        if (!$name.StartsWith($packageName + '/', [StringComparison]::Ordinal) -or
+        if ((!$name.StartsWith($packageName + '/', [StringComparison]::Ordinal) -and $name -cne 'attestations.jsonl') -or
             $name -match '(^|/)\.\.?(/|$)|:' -or $entries.ContainsKey($name)) {
             throw "Unexpected release archive path: $name"
         }
