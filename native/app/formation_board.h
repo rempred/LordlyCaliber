@@ -23,10 +23,13 @@ class FormationBoard final : public QWidget {
     void finishUpdate();
     QImage overviewImage();
     void setPixelScale(int scale);
+    void setExternalDragEnabled(bool enabled) { externalDragEnabled_ = enabled; }
+    void setDropCell(int cell) { target_ = cell; update(); }
     QSize sizeHint() const override { return {104 * zoom_, 90 * zoom_}; }
   signals:
     void cellPressed(int cell);
     void cellDragStarted(int cell);
+    void cellDraggedOutside(int cell);
     void cellMoved(int from, int to);
   protected:
     void paintEvent(QPaintEvent *) override;
@@ -52,6 +55,7 @@ class FormationBoard final : public QWidget {
     int pressed_ = -1, target_ = -1;
     QPoint pressPosition_, pointerPosition_;
     bool dragging_ = false;
+    bool externalDragEnabled_ = false;
     bool overview_ = false;
     int zoom_ = 4;
 };

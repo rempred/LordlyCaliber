@@ -198,7 +198,7 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
     actions->addWidget(open);
     actions->addWidget(export_);
     actions->addWidget(restore_);
-    defaultArmy_ = new QPushButton("Use as default army");
+    defaultArmy_ = new QPushButton("Use as Tester Army");
     defaultArmy_->setObjectName("saveDefaultArmy");
     defaultArmy_->setToolTip("Save this army for Testing, then return to the mission list. Story "
                              "progress and loose inventory are supplied by the seeder.");
@@ -414,7 +414,7 @@ bool SaveEditor::editDefaultArmy(const QByteArray &bytes, std::function<void(con
     document_->selectSlot(0);
     defaultArmySink_ = std::move(sink);
     defaultArmy_->show();
-    error_->setText("Editing Testing's default army. Click Use as default army when finished.");
+    error_->setText("Editing the tester army. Click Use as Tester Army when finished.");
     tables_->setCurrentIndex(0);
     return true;
 }

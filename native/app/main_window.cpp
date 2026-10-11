@@ -340,21 +340,31 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     grid->setColumnWidth(1, 200);
     for (int i = 2; i < model->columnCount(); ++i)
         grid->setColumnWidth(i, 130);
+    if (table == Table::Consumables) {
+        grid->resizeColumnsToContents();
+        grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    }
     split->addWidget(grid);
     auto inspector = new QWidget;
     inspector->setMinimumWidth(340);
     auto inspectorLayout = new QVBoxLayout(inspector);
     inspectorLayout->setContentsMargins(0, 0, 0, 0);
-    auto sections = new QComboBox;
-    sections->setObjectName(tableKey(table) + "InspectorSection");
+    QComboBox *sections = nullptr;
     auto inspectorPages = new QStackedWidget;
-    inspectorLayout->addWidget(sections);
+    if (table == Table::Consumables) {
+        inspectorLayout->addWidget(new QLabel("Effects"));
+    } else {
+        sections = new QComboBox;
+        sections->setObjectName(tableKey(table) + "InspectorSection");
+        inspectorLayout->addWidget(sections);
+        connect(sections, &QComboBox::currentIndexChanged, inspectorPages,
+                &QStackedWidget::setCurrentIndex);
+    }
     inspectorLayout->addWidget(inspectorPages, 1);
-    connect(sections, &QComboBox::currentIndexChanged, inspectorPages,
-            &QStackedWidget::setCurrentIndex);
     auto addInspectorPage = [sections, inspectorPages](QWidget *page, const QString &name) {
         inspectorPages->addWidget(page);
-        sections->addItem(name);
+        if (sections)
+            sections->addItem(name);
     };
     split->addWidget(inspector);
     split->setSizes({900, 390});
@@ -466,6 +476,10 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     auto editors = std::make_shared<QVector<ValueEditor *>>();
     QMap<QString, QFormLayout *> groups;
     for (int n = 0; n < fields(table).size(); ++n) {
+        if (table == Table::Consumables) {
+            editors->push_back(nullptr);
+            continue;
+        }
         const auto &f = fields(table)[n];
         if (!groups.contains(f.group)) {
             auto body = new QWidget;
@@ -507,9 +521,16 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     PromotionEditor *promotion = nullptr;
     ConsumableEditor *effects = nullptr;
-    if (table == Table::Consumables && project_->consumableEffects()) {
-        effects = new ConsumableEditor(project_.get(), undo_, [this] { updateStatus(); });
-        addInspectorPage(effects, "Effects");
+    if (table == Table::Consumables) {
+        if (project_->consumableEffects()) {
+            effects = new ConsumableEditor(project_.get(), undo_, [this] { updateStatus(); });
+            addInspectorPage(effects, "Effects");
+        } else {
+            auto unavailable = new QLabel("Effect editing is unavailable for this ROM.");
+            unavailable->setWordWrap(true);
+            unavailable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+            addInspectorPage(unavailable, "Effects");
+        }
     }
     if (table == Table::Classes) {
         promotion = new PromotionEditor(project_.get(), undo_, [this] { updateStatus(); });
@@ -580,20 +601,22 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         refresh();
         updateStatus();
     });
-    auto columns = new QComboBox;
-    columns->addItem("All fields", "");
-    for (auto group = groups.begin(); group != groups.end(); ++group)
-        columns->addItem(group.key() + " columns", group.key());
-    layout->insertWidget(1, columns);
-    connect(columns, &QComboBox::currentIndexChanged, page, [=] {
-        auto group = columns->currentData().toString();
-        for (int i = 0; i < fields(table).size(); ++i)
-            grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
-        const auto section = sections->findText(group);
-        if (section >= 0)
-            sections->setCurrentIndex(section);
-    });
-    columns->setCurrentIndex(columns->findData(table == Table::Consumables ? "Values" : "Stats"));
+    if (table != Table::Consumables) {
+        auto columns = new QComboBox;
+        columns->addItem("All fields", "");
+        for (auto group = groups.begin(); group != groups.end(); ++group)
+            columns->addItem(group.key() + " columns", group.key());
+        layout->insertWidget(1, columns);
+        connect(columns, &QComboBox::currentIndexChanged, page, [=] {
+            auto group = columns->currentData().toString();
+            for (int i = 0; i < fields(table).size(); ++i)
+                grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
+            const auto section = sections->findText(group);
+            if (section >= 0)
+                sections->setCurrentIndex(section);
+        });
+        columns->setCurrentIndex(columns->findData("Stats"));
+    }
     workspaces_->addTab(page, title);
     grid->selectRow(1);
 }

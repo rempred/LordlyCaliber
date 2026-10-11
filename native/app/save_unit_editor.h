@@ -11,12 +11,14 @@ class QTabWidget;
 namespace lordly {
 class FormationBoard;
 class SaveEditor;
+class SaveArmyDrag;
 class SaveUnitEditor final : public QWidget {
   public:
     explicit SaveUnitEditor(SaveEditor *editor);
 
   protected:
     void showEvent(QShowEvent *) override;
+    bool eventFilter(QObject *, QEvent *) override;
 
   private:
     void refresh();
@@ -27,6 +29,8 @@ class SaveUnitEditor final : public QWidget {
     QString memberName(int id) const;
     QImage memberSprite(int id) const;
     void selectLeader(int id);
+    void startMemberDrag(int unit, int member, int id);
+    bool dropMember(const SaveArmyDrag *, QObject *target, QPoint position, bool apply);
     FormationBoard *board_;
     SaveEditor *editor_;
     QListWidget *units_, *members_, *reserves_;

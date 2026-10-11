@@ -71,6 +71,8 @@ game-wide assignments, sharing/move/swap dragging and pool expansion.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
+Consumables always shows all table columns and a fixed Effects inspector, without
+column-group or inspector-section selectors.
 Class attack fields and combat/advanced action selectors open the selected
 action's shared description. Dialogs validate drafts before Save, support Cancel
 and restoring the original, and commit one Undo step. New class IDs use their
@@ -590,9 +592,14 @@ slot 2 survives generated seeds and stale suspend data is disabled. Full-save
 installation preserves the supplied file unchanged. Later routes retain the
 standalone tool's game-testing limits; this port adds file/readback qualification.
 
-**Edit Tester Army** opens the Save Editor tab; **Use as default army** stores that army
+**Edit Tester Army** opens the Save Editor tab; **Use as Tester Army** stores that army
 in per-user app data and returns to Testing. Imported and edited army stats are
 not boosted again. Settings and edited defaults are not shipped with packages.
+
+Save Editor supports dragging squad member icons or formation sprites to Reserve,
+and reserve characters onto an empty formation cell or a squad overview. Dropping
+on an overview uses the first compatible empty cell. These moves use the existing
+atomic transfers and Undo; leader, capacity, legion and pending-draft checks apply.
 
 Main tabs now include **Art and Animation** and a final **Art Library**. Distinct
 outlined buttons enclose the Cutscenes inline red W.I.P label. **Import from ROM**

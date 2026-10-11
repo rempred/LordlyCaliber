@@ -18,6 +18,7 @@
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
 #include "app/save_editor.h"
+#include "app/save_army_drag.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_map_editor.h"
 #include "engine/squad_members.h"
@@ -3976,6 +3977,151 @@ class UiTests : public QObject {
         } catch (const Error &e) {
             QFAIL(e.what());
         }
+    }
+    void saveReserveDragging() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess generator;
+        generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
+                                     .filePath("save-unit-mips.cjs"), work.path()});
+        QVERIFY(generator.waitForFinished(30000));
+        QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+        auto fixture = [&](const QString &name) {
+            QFile payload(work.filePath(name));
+            if (!payload.open(QIODevice::ReadOnly)) return QByteArray{};
+            QByteArray bytes(0x10000, 0);
+            bytes.replace(0x3a, 6180, payload.readAll());
+            if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(bytes.data() + 0x10),
+                                     0x1850, 0, 0)) return QByteArray{};
+            return bytes;
+        };
+        const auto input = fixture("unit-payload.bin");
+        QVERIFY(!input.isEmpty());
+        auto project = Project::fromRom(Rom::open(path));
+        SaveEditor editor(&project);
+        editor.resize(1400, 1000);
+        editor.show();
+        editor.loadBytes(input);
+        auto panel = editor.findChild<QWidget *>("saveSquads");
+        editor.findChild<QTabWidget *>()->setCurrentWidget(panel);
+        auto reserves = editor.findChild<QListWidget *>("saveArmyReserve");
+        auto units = editor.findChild<QListWidget *>("saveUnitList");
+        auto board = editor.findChild<FormationBoard *>("saveUnitCellBoard");
+        QVERIFY(reserves && units && board);
+        QCoreApplication::processEvents();
+        auto drop = [&](QWidget *target, QPoint point, const QMimeData &mime,
+                        Qt::DropActions actions = Qt::MoveAction) {
+            QDragEnterEvent enter(QPointF(point), actions, &mime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(target, &enter);
+            if (!enter.isAccepted()) return false;
+            QDragMoveEvent move(QPointF(point), actions, &mime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(target, &move);
+            QDropEvent finish(point, actions, &mime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(target, &finish);
+            return finish.isAccepted();
+        };
+        const QPoint reserveTarget = reserves->viewport()->rect().center();
+        auto startAndCancel = [&](QWidget *source, QPoint from, QPoint to, int unit, int id) {
+            bool started = false;
+            QTimer::singleShot(0, &editor, [&] {
+                for (auto drag : panel->findChildren<QDrag *>()) {
+                    const auto data = dynamic_cast<const SaveArmyDrag *>(drag->mimeData());
+                    if (data && data->unit == unit && data->id == id && data->owner == panel)
+                        started = true;
+                }
+                QDrag::cancel();
+            });
+            QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, from);
+            QMouseEvent movement(QEvent::MouseMove, to, source->mapToGlobal(to),
+                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(source, &movement);
+            QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, to);
+            QCoreApplication::processEvents();
+            return started;
+        };
+        auto sourceCell = board->cell(4);
+        QVERIFY(startAndCancel(sourceCell, sourceCell->mapFrom(board, board->cellCenter(4)),
+                               sourceCell->mapFrom(board, QPoint(-20, 60)), 0, 2));
+        auto memberIcons = editor.findChild<QListWidget *>("saveUnitMembers");
+        const auto memberPoint = memberIcons->visualItemRect(memberIcons->item(1)).center();
+        QVERIFY(startAndCancel(memberIcons->viewport(), memberPoint, memberPoint + QPoint(25, 0), 0, 2));
+        QCOMPARE(editor.document()->serialize(), input); // Cancelled gestures do not change a save.
+        SaveArmyDrag member(panel, 0, 1, 2), leader(panel, 0, 0, 1);
+        SaveArmyDrag foreign(&editor, 0, 1, 2), stale(panel, 0, 1, 3);
+        QVERIFY(!drop(reserves->viewport(), reserveTarget, foreign));
+        QVERIFY(!drop(reserves->viewport(), reserveTarget, stale));
+        QVERIFY(!drop(reserves->viewport(), reserveTarget, leader));
+        QVERIFY(!drop(reserves->viewport(), reserveTarget, member, Qt::CopyAction));
+        QCOMPARE(editor.document()->serialize(), input);
+        QCOMPARE(editor.undoStack()->count(), 0);
+        auto expected = *editor.document();
+        expected.apply(expected.planToReserve(0, 1, project.classData()), true);
+        QVERIFY(drop(reserves->viewport(), reserveTarget, member));
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        QCOMPARE(editor.undoStack()->count(), 1);
+        QCOMPARE(reserves->count(), 1);
+        QCOMPARE(reserves->item(0)->data(Qt::UserRole).toInt(), 2);
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->serialize(), input);
+        QCOMPARE(reserves->count(), 0);
+        editor.undoStack()->redo();
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        const auto reserved = editor.document()->serialize();
+        const auto reservePoint = reserves->visualItemRect(reserves->item(0)).center();
+        QVERIFY(startAndCancel(reserves->viewport(), reservePoint, reservePoint + QPoint(25, 0), -1, 2));
+        QCOMPARE(editor.document()->serialize(), reserved);
+        SaveArmyDrag reserve(panel, -1, -1, 2);
+        QVERIFY(!drop(board, board->cellCenter(0), reserve)); // Leader occupies this cell.
+        QCOMPARE(editor.document()->serialize(), reserved);
+        auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+        unity->setValue(unity->value() + 1);
+        QVERIFY(editor.hasPendingUnitEdits());
+        QVERIFY(!drop(board, board->cellCenter(4), reserve));
+        QCOMPARE(editor.document()->serialize(), reserved);
+        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
+        reserves->setCurrentRow(0);
+        QCOMPARE(editor.findChild<QTabWidget *>("saveArmyDetails")->currentIndex(), 0);
+        expected.apply(expected.planFromReserve(2, 0, 4, project.classData()), true);
+        QVERIFY(drop(board, board->cellCenter(4), reserve));
+        QCOMPARE(editor.document()->memory(), expected.memory());
+        QCOMPARE(editor.undoStack()->count(), 2);
+        QCOMPARE(reserves->count(), 0);
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->serialize(), reserved);
+        // The overview chooses the first cell accepted by the same save rules.
+        const auto destination = units->item(4);
+        units->scrollToItem(destination);
+        QCoreApplication::processEvents();
+        QVERIFY(drop(units->viewport(), units->visualItemRect(destination).center(), reserve));
+        bool found = false;
+        for (const auto &unit : editor.document()->units())
+            if (unit.index == 5) found = unit.members.contains(2);
+        QVERIFY(found);
+        const auto output = work.filePath("dragged.sra");
+        editor.exportFile(output);
+        QFile reopened(output);
+        QVERIFY(reopened.open(QIODevice::ReadOnly));
+        QCOMPARE(SaveDocument::open(project.rom(), reopened.readAll()).memory(),
+                 editor.document()->memory());
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->serialize(), reserved);
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/save-reserve-drag.png"));
+        // A real full-squad fixture must refuse reserve drops without losing the member.
+        editor.loadBytes(fixture("unit-full-payload.bin"));
+        QVERIFY(editor.moveToReserve(2, 2)); // Member 10 becomes available; squad 5 stays full.
+        const auto full = editor.document()->serialize();
+        SaveArmyDrag extra(panel, -1, -1, 10);
+        const auto fullSquad = units->item(4);
+        units->scrollToItem(fullSquad);
+        QCoreApplication::processEvents();
+        QVERIFY(!drop(units->viewport(), units->visualItemRect(fullSquad).center(), extra));
+        QCOMPARE(editor.document()->serialize(), full);
+        // Existing carrying limits also apply when dragging out of a squad.
+        editor.loadBytes(fixture("unit-capacity-payload.bin"));
+        const auto overloaded = editor.document()->serialize();
+        QVERIFY(!drop(reserves->viewport(), reserveTarget, member));
+        QCOMPARE(editor.document()->serialize(), overloaded);
     }
     void saveSquadEditing() {
         try {
@@ -10143,6 +10289,13 @@ class UiTests : public QObject {
             QVERIFY(window.grab().save(screenshot));
             const auto capturePrefix = QFileInfo(screenshot).absolutePath() + "/" + QFileInfo(screenshot).completeBaseName();
             auto workspaceTabs = qobject_cast<QTabWidget *>(window.centralWidget());
+            for (int i = 0; i < workspaceTabs->count(); ++i)
+                if (workspaceTabs->tabText(i) == "Consumables") {
+                    workspaceTabs->setCurrentIndex(i);
+                    window.resize(1440, 900);
+                    QTest::qWait(50);
+                    QVERIFY(window.grab().save(capturePrefix + "-consumables.png"));
+                }
             for (const auto name : {"encounterEditor", "scenarioEditor"}) {
                 workspaceTabs->setCurrentWidget(window.findChild<QWidget *>(name));
                 for (int width : {1440, 1100}) {

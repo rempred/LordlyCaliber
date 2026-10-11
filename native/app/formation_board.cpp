@@ -211,6 +211,12 @@ bool FormationBoard::pointerEvent(QEvent *event, QWidget *source) {
                 emit cellDragStarted(pressed_);
             }
             pointerPosition_ = point;
+            if (dragging_ && externalDragEnabled_ && !rect().contains(point)) {
+                const int from = pressed_;
+                cancelDrag();
+                emit cellDraggedOutside(from);
+                return true;
+            }
         }
         update(); return true;
     }
