@@ -401,8 +401,12 @@ briefing previews were inspected. These remain offline checks.
 ## Individual peaks (2026-10-11)
 
 Map's **Mountain peaks** tool shows native and generated summits as diamond
-handles. Choose **Change height** to drag vertically, or **Move peak** to drag
-across matching Highlands. **Add peak on map** places a 1.6-unit summit inside
+handles above small oval bases. Drag the diamond vertically to change height,
+or drag its base across matching Highlands to move the peak. Visible shapes take
+priority, then the nearest handle's padded hit area, including at zero height. Cursor feedback
+distinguishes height and position dragging; labels avoid both handles and still
+select only. The separate drag-mode selector is removed.
+**Add peak on map** places a 1.6-unit summit inside
 existing Highlands; **Remove peak** deletes the selected summit. The sidebar
 accepts heights from 0 to 8 world units. **Restore all peaks** restores the
 automatic layout without discarding terrain painting or town edits. Release
@@ -453,3 +457,21 @@ reproduce every artist-authored spur and slope vertex.
 `map_tests automaticMountainRidges` checks a raised connecting crest, moved and
 lowered endpoints, branches, a bent mountain with a deep inlet, a road cut that
 separates the regions, and native key-5 model/movement-height export/reopen.
+
+### Low saddle texture correction
+
+The initial automatic ridge mapping assigned the top texture row to every crest,
+independent of crest height. Joe's key-1 low points at heights 0.066667 and 0.2
+already produced visible mesh heights 0.094371 and 0.235617 (including surface
+offset), but used bright summit texels. Native key-5 connecting vertices at
+Y0.989456/Y1.05942 instead use T41.0931/T44.2806 beside the Y1.52916 summit's
+T63.499. Generated ridge T now follows surface rise divided by the higher
+endpoint's height, including the saddle's dip. Zero-height connections use the
+bottom texture row. Geometry and movement heights are unchanged by this fix.
+
+`map_tests mountainSaddleShading` checks ordinary/snowy low controls, lower
+cross-slopes and higher along-ridge neighbours, zero-height connections, and
+the supplied key-1 project. Both supplied low controls become darker while their
+heights stay fixed; export/reopen reproduces their previews and movement data.
+This makes low controls usable as saddles but remains approximate retail texture
+mapping, not an exact recreation of every original slope panel.

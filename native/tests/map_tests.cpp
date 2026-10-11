@@ -58,6 +58,73 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void mountainSaddleShading() {
+        QByteArray mask(65536, char(-1));
+        for (int z = 40; z <= 80; ++z)
+            for (int x = 30; x <= 100; ++x)
+                mask[z * 256 + x] = 7;
+        const QVector<QVector3D> summits{{40, 2, 60}, {65, .2f, 60}, {90, 2, 60}};
+        for (int type : {7, 14}) {
+            auto region = mask;
+            region.replace(char(7), char(type));
+            const FieldBrushShape shape(region, type, {0, 0, 256, 256}, {}, summits);
+            QVERIFY(std::abs(shape.profile({65, 60}) - .2) < .01);
+            QVERIFY(shape.profile({55, 60}) > .5);
+            QVERIFY(shape.profile({75, 60}) > .5);
+            QVERIFY(shape.profile({65, 64}) < shape.profile({65, 60}));
+            QVERIFY(shape.mountainUv({65, 60}).y() < .15);
+            QVERIFY(shape.mountainUv({40, 60}).y() > .95);
+            QVERIFY(shape.mountainUv({90, 60}).y() > .95);
+            const FieldBrushShape flat(region, type, {0, 0, 256, 256}, {},
+                                       {{40, 0, 60}, {90, 0, 60}});
+            QCOMPARE(flat.mountainUv({65, 60}).y(), 0.);
+        }
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   supplied = qEnvironmentVariable("LORDLY_SADDLE_PROJECT");
+        if (path.isEmpty() || supplied.isEmpty())
+            QSKIP("Private key-1 project required for image/export check");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        project.applyManifest(Project::readProject(supplied));
+        const auto &edits = *project.mapEdits();
+        const auto &source = edits.source(1);
+        const auto b = source.map.bounds;
+        const auto model = edits.model(1);
+        QVERIFY(model.size() < 512 * 1024);
+        const auto field = Battlefield::load(rom, 1, {}, model);
+        auto image = edits.rebuild(rom);
+        Rom::updateChecksum(image);
+        const auto exported = Rom::fromBytes(image);
+        const auto reopened = MapEdits::load(exported);
+        QCOMPARE(reopened.source(1).geometry[0].data, model);
+        QCOMPARE(reopened.source(1).geometry[1].data, editFieldHeight(source, edits.changes(1)));
+        const auto exportField = Battlefield::load(exported, 1);
+        int checked = 0;
+        for (const auto &peak : edits.mountainPeaks(1))
+            if (peak.addedId && peak.height < .3) {
+                const QPointF world(b.left() + peak.position.x() * b.width() / 256,
+                                    b.top() + peak.position.y() * b.height() / 256);
+                const auto h = surfaceHeight(field.surface(), world);
+                QVERIFY(std::abs(h - peak.height) < .06);
+                const QRectF crop(world - QPointF(b.width() * 25 / 256, b.height() * 25 / 256),
+                                  QSizeF(b.width() * 50 / 256, b.height() * 50 / 256));
+                const auto preview = field.render(crop, 768);
+                QCOMPARE(exportField.render(crop, 768), preview);
+                double grey = 0;
+                for (int y = 381; y < 388; ++y)
+                    for (int x = 381; x < 388; ++x)
+                        grey += qGray(preview.pixel(x, y));
+                grey /= 49;
+                qInfo() << "Low saddle" << peak.height << "mesh" << h << "grey" << grey;
+                // The reported bright saddles measured 159 and 168 in this crop;
+                // both controls must now use the dark lower rock rows.
+                QVERIFY(grey < 100);
+                ++checked;
+            }
+        QCOMPARE(checked, 2);
+        QVERIFY(reopened.source(1).map.image->rgba != source.map.image->rgba);
+        QCOMPARE(reopened.source(2).geometry[0].data, edits.source(2).geometry[0].data);
+    }
     void automaticMountainRidges() {
         QByteArray mask(65536, char(-1));
         for (int z = 30; z <= 90; ++z)

@@ -89,7 +89,7 @@ class MapCanvas : public QWidget {
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
     std::function<void(int, double)> heightMoved;
-    bool movingPeaks = false, addingPeak = false;
+    bool addingPeak = false;
     std::function<void(QPointF)> peakPlaced;
     std::function<void()> cancelPeakPlacement;
     std::function<void(QPointF)> place;
@@ -112,8 +112,11 @@ class MapCanvas : public QWidget {
     QRectF boundaryDrag;
     std::function<void(QRectF)> resizedBoundary;
     void cancelDrag() {
+        if (drag_ >= 0 && drag_ < markers.size() && markers[drag_].kind == MapObject::Peak)
+            setCursor(Qt::CrossCursor);
         drag_ = -1;
         dragging_ = false;
+        movingPeak_ = false;
         panning_ = false;
         stroke.clear();
         boundaryCorner = -1;
@@ -134,15 +137,17 @@ class MapCanvas : public QWidget {
     double draggedHeight(int row, QPointF mouse) const {
         return std::clamp(markers[row].peak.height + (press_.y() - mouse.y()) / 24., 0., 8.);
     }
+    QPointF peakBasePixel(int row) const {
+        const auto delta = movingPeak_ && row == drag_ && dragging_ ? mouse_ - press_ : QPointF();
+        return toPixel(*markers[row].position) + delta;
+    }
     QPointF markerPixel(int row) const {
         const auto &m = markers[row];
         if (m.kind == MapObject::Peak) {
-            const double height = row == drag_ && dragging_ && !movingPeaks
+            const double height = row == drag_ && dragging_ && !movingPeak_
                                       ? draggedHeight(row, mouse_)
                                       : m.peak.height;
-            const auto delta =
-                movingPeaks && row == drag_ && dragging_ ? mouse_ - press_ : QPointF();
-            return toPixel(*m.position) + delta - QPointF(0, 12 + height * 24);
+            return peakBasePixel(row) - QPointF(0, 12 + height * 24);
         }
         return row == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
     }
@@ -221,12 +226,13 @@ class MapCanvas : public QWidget {
                 QPen(i == current ? QColor("#fff2a8") : QColor("#0d131a"), i == current ? 3 : 1.5));
             p.setBrush(m.color);
             if (m.kind == MapObject::Peak) {
-                const auto delta =
-                    movingPeaks && i == drag_ && dragging_ ? mouse_ - press_ : QPointF();
-                const auto foot = toPixel(*m.position) + delta;
+                const auto foot = peakBasePixel(i);
+                labelAreas << QRectF(foot - QPointF(10, 8), QSizeF(20, 16));
                 p.setPen(QPen(i == current ? QColor("#fff2a8") : m.color, 2));
                 p.drawLine(foot, center);
-                p.drawLine(foot + QPointF(-4, 0), foot + QPointF(4, 0));
+                p.setBrush(QColor("#263021"));
+                p.drawEllipse(foot, 5., 4.);
+                p.setBrush(m.color);
                 QPolygonF diamond;
                 diamond << center + QPointF(0, -8) << center + QPointF(7, 0)
                         << center + QPointF(0, 8) << center + QPointF(-7, 0);
@@ -261,7 +267,7 @@ class MapCanvas : public QWidget {
                 const QString text =
                     m.label.section(" · ", 0, 0) +
                     (m.kind == MapObject::Peak
-                         ? QString(" · %1").arg(i == drag_ && dragging_ && !movingPeaks
+                         ? QString(" · %1").arg(i == drag_ && dragging_ && !movingPeak_
                                                     ? draggedHeight(i, mouse_)
                                                     : m.peak.height,
                                                 0, 'f', 2)
@@ -369,30 +375,14 @@ class MapCanvas : public QWidget {
                 update();
                 return;
             }
-        int hit = -1;
-        qreal distance = std::numeric_limits<qreal>::max();
-        // Keep a list-selected marker reachable when several share a position.
-        if (current >= 0 && current < markers.size() && markers[current].position &&
-            QLineF(markerPixel(current), press_).length() <=
-                std::max(12., markers[current].radius() + 2))
-            hit = current;
-        else
-            for (int i = 0; i < markers.size(); ++i)
-                if (markers[i].position) {
-                    const auto d = QLineF(markerPixel(i), press_).length();
-                    if ((d <= std::max(12., markers[i].radius() + 2) ||
-                         markers[i].footprint.containsPoint(fromPixel(press_), Qt::OddEvenFill)) &&
-                        (hit < 0 || markers[i].layer() > markers[hit].layer() ||
-                         (markers[i].layer() == markers[hit].layer() && d <= distance))) {
-                        hit = i;
-                        distance = d;
-                    }
-                }
-        current = hit;
+        const auto hit = markerHit(press_);
+        current = hit.row;
         if (selected)
-            selected(hit);
-        drag_ = hit >= 0 && markers[hit].movable() ? hit : -1;
+            selected(current);
+        drag_ = current >= 0 && markers[current].movable() ? current : -1;
+        movingPeak_ = hit.peakBase;
         dragOffset_ = drag_ >= 0 ? press_ - toPixel(*markers[drag_].position) : QPointF();
+        updatePeakCursor();
         update();
     }
     void mouseMoveEvent(QMouseEvent *e) override {
@@ -414,6 +404,7 @@ class MapCanvas : public QWidget {
             extendStroke(fromPixel(mouse_));
         if (drag_ >= 0 && QLineF(press_, mouse_).length() > 3)
             dragging_ = true;
+        updatePeakCursor();
         update();
     }
     void mouseReleaseEvent(QMouseEvent *e) override {
@@ -441,13 +432,17 @@ class MapCanvas : public QWidget {
         }
         const int index = drag_;
         const bool changed = dragging_;
+        const bool heightDrag =
+            index >= 0 && markers[index].kind == MapObject::Peak && !movingPeak_;
         drag_ = -1;
         dragging_ = false;
-        if (changed && index >= 0 && markers[index].kind == MapObject::Peak && !movingPeaks) {
+        movingPeak_ = false;
+        if (changed && heightDrag) {
             if (heightMoved)
                 heightMoved(index, draggedHeight(index, e->position()));
         } else if (changed && moved)
             moved(index, fromPixel(e->position() - dragOffset_));
+        updatePeakCursor();
         update();
     }
     void wheelEvent(QWheelEvent *e) override {
@@ -475,6 +470,57 @@ class MapCanvas : public QWidget {
     }
 
   private:
+    struct MarkerHit {
+        int row = -1;
+        bool peakBase = false;
+    };
+    MarkerHit markerHit(QPointF point) const {
+        MarkerHit hit;
+        qreal nearest = std::numeric_limits<qreal>::max();
+        auto consider = [&](int row, bool footprint) {
+            const auto &m = markers[row];
+            if (!m.position)
+                return false;
+            qreal distance = QLineF(markerPixel(row), point).length();
+            bool base = false;
+            if (m.kind == MapObject::Peak) {
+                const qreal baseDistance = QLineF(peakBasePixel(row), point).length();
+                const auto diamond = point - markerPixel(row), foot = point - peakBasePixel(row);
+                const bool onDiamond = std::abs(diamond.x()) / 7 + std::abs(diamond.y()) / 8 <= 1,
+                           onBase = foot.x() * foot.x() / 25 + foot.y() * foot.y() / 16 <= 1;
+                // Keep the visible diamond's lower tip a height handle even at
+                // zero height. Outside the shapes, use the nearest padded hit.
+                base = !onDiamond && (onBase || (baseDistance <= 9 && baseDistance < distance));
+                if (base)
+                    distance = baseDistance;
+                else if (distance > 11)
+                    return false;
+            } else if (distance > std::max(12., m.radius() + 2) &&
+                       !(footprint && m.footprint.containsPoint(fromPixel(point), Qt::OddEvenFill)))
+                return false;
+            if (hit.row < 0 || m.layer() > markers[hit.row].layer() ||
+                (m.layer() == markers[hit.row].layer() && distance <= nearest)) {
+                hit = {row, base};
+                nearest = distance;
+            }
+            return true;
+        };
+        // Keep the selected marker reachable when handles overlap.
+        if (current >= 0 && current < markers.size() && consider(current, false))
+            return hit;
+        for (int i = 0; i < markers.size(); ++i)
+            consider(i, true);
+        return hit;
+    }
+    void updatePeakCursor() {
+        if (markers.isEmpty() || markers.front().kind != MapObject::Peak || addingPeak || placing ||
+            pickingDestination || panning_)
+            return;
+        const auto hit = drag_ >= 0 ? MarkerHit{drag_, movingPeak_} : markerHit(mouse_);
+        setCursor(hit.row < 0    ? Qt::CrossCursor
+                  : hit.peakBase ? Qt::SizeAllCursor
+                                 : Qt::SizeVerCursor);
+    }
     void extendStroke(QPointF p) {
         if (straightBrush && stroke.size() > 1)
             stroke.last() = p;
@@ -484,7 +530,7 @@ class MapCanvas : public QWidget {
     qreal zoom_ = 1;
     QPointF pan_, mouse_, press_, dragOffset_;
     int drag_ = -1;
-    bool dragging_ = false, panning_ = false;
+    bool dragging_ = false, panning_ = false, movingPeak_ = false;
 };
 class MapWorldCommand final : public QUndoCommand {
   public:
@@ -577,11 +623,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     peakTools_ = new QWidget;
     auto peakToolbar = new QHBoxLayout(peakTools_);
     peakToolbar->setContentsMargins(0, 0, 0, 0);
-    peakToolbar->addWidget(new QLabel("Drag diamonds to"));
-    peakDrag_ = new QComboBox;
-    peakDrag_->setObjectName("mapPeakDrag");
-    peakDrag_->addItems({"Change height", "Move peak"});
-    peakToolbar->addWidget(peakDrag_);
+    peakToolbar->addWidget(new QLabel("Base: move · Diamond: height"));
     addPeak_ = new QPushButton("Add peak on map");
     addPeak_->setObjectName("mapPeakAdd");
     addPeak_->setCheckable(true);
@@ -753,8 +795,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     peakInspector_ = new QWidget;
     auto peakFields = new QVBoxLayout(peakInspector_);
     peakFields->setContentsMargins(0, 0, 0, 0);
-    auto peakHelp = new QLabel("Choose Change height or Move peak above, then drag a diamond. "
-                               "Release to redraw the slopes. Escape cancels the drag.");
+    auto peakHelp =
+        new QLabel("Drag the marker base to move the peak, or the diamond to change height. "
+                   "Release to redraw the slopes. Escape cancels the drag.");
     peakHelp->setWordWrap(true);
     peakFields->addWidget(peakHelp);
     peakFields->addWidget(new QLabel("Height above ground"));
@@ -796,17 +839,12 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
             notice_->setText(QString::fromUtf8(e.what()));
         }
     });
-    connect(peakDrag_, &QComboBox::currentIndexChanged, this, [this](int mode) {
-        canvas_->cancelDrag();
-        canvas_->movingPeaks = mode == 1;
-        addPeak_->setChecked(false);
-        canvas_->update();
-    });
     connect(addPeak_, &QPushButton::toggled, this, [this](bool on) {
         canvas_->cancelDrag();
         canvas_->addingPeak = on;
+        canvas_->setCursor(Qt::CrossCursor);
         notice_->setText(on ? "Click inside Highlands to add a peak. Escape cancels."
-                            : "Choose Change height or Move peak, then drag a diamond.");
+                            : "Drag the base to move the peak, or the diamond to change height.");
         canvas_->update();
     });
     canvas_->cancelPeakPlacement = [this] { addPeak_->setChecked(false); };
@@ -1292,14 +1330,14 @@ void ScenarioMapEditor::refresh(int key) {
                 "Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
                 (map.image ? "\nSeparate briefing overview shown below." : ""));
         }
-        notice_->setText(
-            tool_->currentIndex() == 6
-                ? "Add or move peaks inside Highlands. Choose Change height or Move peak, "
-                  "then drag a diamond. Escape cancels."
-                : "Drag towns, strongholds, squads, waypoints or treasure to set "
-                  "positions. Selecting a point-based squad or waypoint "
-                  "and moving it changes its placement to map coordinates. " +
-                      map.placementNotice);
+        notice_->setText(tool_->currentIndex() == 6
+                             ? "Drag the base to move a peak inside Highlands. Drag the diamond to "
+                               "change height. "
+                               "Escape cancels."
+                             : "Drag towns, strongholds, squads, waypoints or treasure to set "
+                               "positions. Selecting a point-based squad or waypoint "
+                               "and moving it changes its placement to map coordinates. " +
+                                   map.placementNotice);
         artworkWarnings.removeDuplicates();
         if (!artworkWarnings.isEmpty())
             notice_->setText(notice_->text() + "\nSome marker artwork could not be decoded: " +

@@ -208,7 +208,11 @@ class FieldMountain {
                              weight = 1 / std::pow(.25 + nearest, 2);
                 total += weight;
                 u += textureAlong / 4 * weight;
-                profile += t * weight;
+                // A low point between high summits is a saddle, not another
+                // bright summit. Native connecting vertices use lower texture
+                // rows as their height falls below the adjacent summit.
+                const double reference = std::max(ridge.startHeight, ridge.endHeight);
+                profile += (reference > 1e-6 ? crest * t / reference : 0) * weight;
                 height += crest * t * weight;
             }
             return {{u / total, profile / total}, height / total};

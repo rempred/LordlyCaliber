@@ -9041,13 +9041,41 @@ class UiTests : public QObject {
         QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].height, .75);
         restore->click();
         QCOMPARE(project.mapEdits()->json(), original);
+        // At zero height the base and diamond are just 12 pixels apart. They
+        // must still choose different operations, without a mode selector.
+        height->setValue(0);
+        const auto zeroHeight = project.mapEdits()->json();
+        QTest::qWait(20);
+        start = pixel() + QPoint(0, 12);
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QCOMPARE(project.mapEdits()->json(), zeroHeight);
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(8, 4), 20);
+        QCOMPARE(canvas->cursor().shape(), Qt::SizeAllCursor);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(8, 4));
+        QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].height, 0.);
+        QVERIFY(QLineF(project.mapEdits()->mountainPeaks(5)[selected].position, peak.position)
+                    .length() > 1);
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), zeroHeight);
+        // The bottom of the zero-height diamond is closer to the base centre,
+        // but grabbing the visible diamond must still edit height.
+        start = pixel() + QPoint(0, 6);
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(20, -12), 20);
+        QCOMPARE(canvas->cursor().shape(), Qt::SizeVerCursor);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(20, -12));
+        QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].position, peak.position);
+        QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].height, .5);
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), zeroHeight);
         height->setValue(.75);
         const auto heightOnly = project.mapEdits()->json();
         auto add = editor.findChild<QPushButton *>("mapPeakAdd");
         auto remove = editor.findChild<QPushButton *>("mapPeakRemove");
-        auto dragMode = editor.findChild<QComboBox *>("mapPeakDrag");
         auto resetPeaks = editor.findChild<QPushButton *>("mapPeaksRestore");
-        QVERIFY(add && remove && dragMode && resetPeaks);
+        QVERIFY(add && remove && resetPeaks);
+        QVERIFY(!editor.findChild<QComboBox *>("mapPeakDrag"));
         add->click();
         QTest::keyClick(canvas, Qt::Key_Escape);
         QVERIFY(!add->isChecked());
@@ -9087,11 +9115,10 @@ class UiTests : public QObject {
         undo.redo();
         QCOMPARE(project.mapEdits()->json(), addedState);
         objects->setCurrentRow(objects->count() - 1);
-        dragMode->setCurrentText("Move peak");
         QTest::qWait(20);
-        start = (mapPixel(added.position) - QPointF(0, 12 + added.height * 24)).toPoint();
+        start = mapPixel(added.position).toPoint();
         const auto delta =
-            (mapPixel(added.position + QPointF(3, 0)) - mapPixel(added.position)).toPoint();
+            (mapPixel(added.position + QPointF(3, 1)) - mapPixel(added.position)).toPoint();
         const int actions = undo.count();
         QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
         QTest::mouseMove(canvas, start + delta, 20);
@@ -9100,9 +9127,9 @@ class UiTests : public QObject {
         const auto movedPeak = project.mapEdits()->mountainPeaks(5).last();
         QCOMPARE(movedPeak.addedId, added.addedId);
         QCOMPARE(movedPeak.height, added.height);
-        QVERIFY(QLineF(movedPeak.position, added.position + QPointF(3, 0)).length() < .4);
+        QVERIFY(QLineF(movedPeak.position, added.position + QPointF(3, 1)).length() < .4);
         const auto movedState = project.mapEdits()->json();
-        start = (mapPixel(movedPeak.position) - QPointF(0, 12 + movedPeak.height * 24)).toPoint();
+        start = mapPixel(movedPeak.position).toPoint();
         QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
         QTest::mouseMove(canvas, start + QPoint(10, 10), 20);
         QTest::keyClick(canvas, Qt::Key_Escape);

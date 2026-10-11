@@ -58,7 +58,6 @@ class ScenarioMapEditor : public QWidget {
     void commitPeakEdit(const MapEdits &, const QString &,
                         std::optional<MountainPeak> selected = {});
     QWidget *peakTools_;
-    QComboBox *peakDrag_;
     QPushButton *addPeak_, *restorePeaks_;
     QComboBox *cityType_;
     QSpinBox *cityAngle_, *placedCityAngle_;
