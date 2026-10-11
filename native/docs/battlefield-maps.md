@@ -132,8 +132,8 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   Highlands use slope panels aimed toward local summits, with their full 32x64
   native texture mapped from dark foot to light summit using clamped T and
   mirrored S. The former diagonal S/distance-contour T mapping stretched rock
-  into smooth rings. Angular coordinates unwrap per triangle; summit directions
-  blend across ridges. Surviving native summit positions/heights guide rebuilt
+  into smooth rings. Connected peaks use longitudinal ridge panels with rounded
+  caps; isolated peaks retain angular panels. Surviving native summit positions/heights guide rebuilt
   mountains; new regions select separated interior peaks, avoiding narrow
   foothills. Geometry, normals and movement heights share this profile.
   Mountain sampling retains the source material's filtering (key 5 uses point
@@ -425,3 +425,31 @@ round away the chosen height. The movement grid retains its native sampling.
 Export regenerates briefing artwork; terrain type and minimap cells are unchanged
 by height alone. Unedited regions retain their original geometry. Rebuilt slopes
 remain an approximation of the artist's mesh and texture mapping.
+
+## Automatic ridge connections (2026-10-11)
+
+Key 5's long western mountain proves that summit points alone lose native shape.
+The native mesh connects peak 4 (grid 69.9732,82.1529; Y1.06941) and peak 5
+(84.6219,127.477; Y1.52916) through elevated vertices with Y0.989456, 1.05942,
+and 1.50917. This is evidence of a geometric ridge, not a separate ridge-object
+format. These values are world heights; grid positions use the editor's 256-square map.
+
+After applying peak additions/moves/removals/heights, each connected mountain
+builds a nearest-pair spanning tree. Interior paths favour wider cells, forbid
+corner cutting, and simplify raster stair steps only where the segment stays
+inside the contour. A shallow procedural saddle interpolates endpoint heights;
+slopes run from this crest to the dark foot. Ridge texture repeats along the
+crest and turns around its end caps. Single peaks keep their radial slopes.
+Connections never join separate mountain regions or different terrain types.
+
+Two-cell crest samples become explicit mesh vertices alongside edited summits.
+The same profile drives normals, movement heights and briefing regeneration.
+No extra project records are needed: connections regenerate from existing peak
+and terrain edits. Peak sorting keeps height-only changes from reversing texture
+direction. Untouched native regions keep their original geometry. Ridge routing,
+saddle depth, and texture mapping remain procedural approximations; they do not
+reproduce every artist-authored spur and slope vertex.
+
+`map_tests automaticMountainRidges` checks a raised connecting crest, moved and
+lowered endpoints, branches, a bent mountain with a deep inlet, a road cut that
+separates the regions, and native key-5 model/movement-height export/reopen.

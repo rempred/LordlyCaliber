@@ -43,6 +43,10 @@ peaks keeps terrain painting and town edits. Release redraws slopes; Escape
 cancels. Undo/Redo, saved projects and native geometry/movement-height export
 share the same layout. The straight-down preview shows height through shading;
 changing summit height/position leaves the terrain's painted outline in place.
+Peaks in the same mountain automatically join with raised ridges and shallow
+saddles. Connections follow the mountain's interior, recalculate after peak or
+terrain edits, and stop at cuts that separate mountains. Rocky texture follows
+the crest; exported geometry and movement heights share the connected profile.
 
 Map's separate City pieces dropdown adds 19 current-ROM houses, towers, keeps,
 gates and wall pieces from keys 39/47/51, plus cobblestone paving and three road

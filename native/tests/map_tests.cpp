@@ -12,6 +12,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLineF>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -57,6 +58,98 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void automaticMountainRidges() {
+        QByteArray mask(65536, char(-1));
+        for (int z = 30; z <= 90; ++z)
+            for (int x = 25; x <= 105; ++x)
+                mask[z * 256 + x] = 7;
+        const QRectF bounds(0, 0, 256, 256);
+        const QVector<QVector3D> summits{{40, 2, 60}, {90, 2, 60}};
+        const FieldBrushShape joined(mask, 7, bounds, {}, summits);
+        QVERIFY(joined.profile({65, 60}) > 1.5);
+        QVERIFY(joined.profile({65, 60}) > joined.profile({65, 35}) + .5);
+        for (auto p : joined.ridgeVertices()) {
+            QVERIFY(joined.distance(p) > 0);
+            QVERIFY(joined.profile(p) > 1.5);
+        }
+        MountainPeak moved{{40, 42}, 7, 2, 2, {40, 60}};
+        const FieldBrushShape relocated(mask, 7, bounds, {}, summits, {moved});
+        // Interior routing may keep the middle of a broad mountain near its
+        // centre. Moving an endpoint must still lower its old site and raise
+        // the new site, rather than merely changing texture coordinates.
+        QVERIFY(relocated.profile({40, 60}) < joined.profile({40, 60}) - .5);
+        QVERIFY(relocated.profile({40, 42}) > joined.profile({40, 42}) + .5);
+        MountainPeak lowered{{40, 60}, 7, 0, 2, {40, 60}};
+        const FieldBrushShape low(mask, 7, bounds, {}, summits, {lowered});
+        QVERIFY(low.profile({65, 60}) < joined.profile({65, 60}) - .5);
+        const FieldBrushShape branched(mask, 7, bounds, {},
+                                       {{40, 2, 60}, {90, 2, 60}, {65, 3, 42}});
+        for (auto p : branched.ridgeVertices()) {
+            QVERIFY(branched.distance(p) > 0);
+            QVERIFY(std::isfinite(branched.profile(p)));
+            QVERIFY(branched.profile(p) >= 0 && branched.profile(p) <= 3.01);
+        }
+        // A deep inlet forces the connecting crest around the bottom of a U.
+        for (int z = 30; z <= 75; ++z)
+            for (int x = 50; x <= 80; ++x)
+                mask[z * 256 + x] = char(-1);
+        const FieldBrushShape bent(mask, 7, bounds, {}, summits);
+        const auto ridge = bent.ridgeVertices();
+        QVERIFY(!ridge.isEmpty());
+        QVERIFY(std::any_of(ridge.begin(), ridge.end(), [](QPointF p) { return p.y() > 76; }));
+        for (auto p : ridge)
+            QVERIFY(bent.distance(p) > 0);
+        // A road crossing the remaining neck disconnects the two mountains.
+        for (int z = 76; z <= 90; ++z)
+            for (int x = 63; x <= 67; ++x)
+                mask[z * 256 + x] = 1;
+        const FieldBrushShape cut(mask, 7, bounds, {}, summits);
+        QVERIFY(cut.ridgeVertices().isEmpty());
+        QCOMPARE(cut.profile({65, 83}), 0.);
+
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for export check");
+        const auto rom = Rom::open(path);
+        auto edit = MapEdits::load(rom);
+        const auto peaks = edit.mountainPeaks(5);
+        const auto found = std::find_if(peaks.begin(), peaks.end(), [](const auto &p) {
+            return QLineF(p.position, {69.9732, 82.1529}).length() < .01;
+        });
+        QVERIFY(found != peaks.end());
+        const auto peak = *found;
+        const auto &s = edit.source(5);
+        const auto b = s.map.bounds;
+        auto world = [&](QPointF p) {
+            return QPointF(b.left() + b.width() * p.x() / 256, b.top() + b.height() * p.y() / 256);
+        };
+        edit.setPeakHeight(5, peak, peak.height + .01);
+        const auto model = edit.model(5);
+        QVERIFY(model.size() < 512 * 1024);
+        const auto field = Battlefield::load(rom, 5, {}, model);
+        const QPointF saddle = world({73.4485, 106.824});
+        const double nativeHeight = surfaceHeight(s.field.surface(), saddle),
+                     rebuiltHeight = surfaceHeight(field.surface(), saddle);
+        qInfo() << "Native ridge saddle" << nativeHeight << "rebuilt" << rebuiltHeight
+                << "model bytes" << model.size();
+        QVERIFY(nativeHeight > .9);
+        QVERIFY(rebuiltHeight > .75);
+        auto reopened = MapEdits::load(Rom::fromBytes(edit.rebuild(rom)));
+        QCOMPARE(reopened.source(5).geometry[0].data, model);
+        QCOMPARE(reopened.source(5).terrain[0].data, s.terrain[0].data);
+        QCOMPARE(reopened.source(4).geometry[0].data, edit.source(4).geometry[0].data);
+        const auto &grid = reopened.source(5).geometry[1].data;
+        auto f = [&](int at) { return double(std::bit_cast<float>(u32(grid, at))); };
+        const int x = int(std::round((saddle.x() - f(4)) / (f(8) - f(4)) * (u16(grid, 0) - 1))),
+                  z = int(std::round((saddle.y() - f(20)) / (f(24) - f(20)) * (u16(grid, 2) - 1)));
+        QVERIFY(movementHeight(grid, x, z) > .7);
+        auto copy = MapEdits::load(rom);
+        copy.apply(edit.json());
+        QCOMPARE(copy.model(5), model);
+        edit.removePeak(5, peak);
+        QVERIFY(surfaceHeight(Battlefield::load(rom, 5, {}, edit.model(5)).surface(), saddle) <
+                rebuiltHeight - .2);
+    }
     void mountainPeakLayout() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

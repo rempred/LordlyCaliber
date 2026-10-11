@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/field_ridge.h"
 #include <QPointF>
 #include <QVector3D>
 #include <QVector>
@@ -13,6 +14,11 @@ class FieldMountain {
         double radius, height = -1;
     };
     QVector<QVector<Peak>> regions_;
+    struct Ridge {
+        QVector<QPointF> points;
+        double startHeight, endHeight, length = 0;
+    };
+    QVector<QVector<Ridge>> ridges_;
     QVector<int> labels_ = QVector<int>(258 * 258, -1);
 
   public:
@@ -94,6 +100,68 @@ class FieldMountain {
         if (label >= 0)
             regions_[label] << Peak{position, 0, height};
     }
+    void connectRidges(const QVector<float> &distance, double cell) {
+        ridges_ = QVector<QVector<Ridge>>(regions_.size());
+        for (int region = 0; region < regions_.size(); ++region) {
+            auto peaks = regions_[region];
+            std::sort(peaks.begin(), peaks.end(), [](const Peak &a, const Peak &b) {
+                return a.point.x() == b.point.x() ? a.point.y() < b.point.y()
+                                                  : a.point.x() < b.point.x();
+            });
+            struct Edge {
+                int a, b;
+                double length;
+            };
+            QVector<Edge> edges;
+            QVector<int> parents;
+            for (int a = 0; a < peaks.size(); ++a) {
+                parents << a;
+                for (int b = a + 1; b < peaks.size(); ++b) {
+                    const auto d = peaks[b].point - peaks[a].point;
+                    edges << Edge{a, b, std::hypot(d.x(), d.y())};
+                }
+            }
+            std::stable_sort(edges.begin(), edges.end(),
+                             [](auto a, auto b) { return a.length < b.length; });
+            auto root = [&](int a) {
+                while (parents[a] != a)
+                    a = parents[a];
+                return a;
+            };
+            auto height = [&](const Peak &p) {
+                return p.height >= 0 ? p.height : std::min(3.2, p.radius * cell * .7);
+            };
+            for (const auto &edge : edges) {
+                const int a = root(edge.a), b = root(edge.b);
+                if (a == b)
+                    continue;
+                auto path = fieldRidgePath(peaks[edge.a].point, peaks[edge.b].point, distance);
+                if (path.size() < 2)
+                    continue;
+                parents[b] = a;
+                Ridge ridge{path, height(peaks[edge.a]), height(peaks[edge.b])};
+                for (int i = 1; i < path.size(); ++i)
+                    ridge.length +=
+                        std::hypot(path[i].x() - path[i - 1].x(), path[i].y() - path[i - 1].y());
+                if (ridge.length > 1e-6)
+                    ridges_[region] << ridge;
+            }
+        }
+    }
+    QVector<QPointF> ridgeVertices() const {
+        QVector<QPointF> result;
+        for (const auto &region : ridges_)
+            for (const auto &ridge : region) {
+                for (int i = 1; i < ridge.points.size(); ++i) {
+                    const auto a = ridge.points[i - 1], d = ridge.points[i] - a;
+                    const int count = std::max(1, int(std::ceil(std::hypot(d.x(), d.y()) / 2)));
+                    for (int n = 0; n < count; ++n)
+                        result << a + d * (double(n) / count);
+                }
+                result << ridge.points.back();
+            }
+        return result;
+    }
     // Blend the directions toward adjacent summits before assigning the slope
     // panels, avoiding unrelated angular seams through the middle of a ridge.
     Sample sample(QPointF p, double distance, double cell) const {
@@ -106,6 +174,45 @@ class FieldMountain {
                     label = labels_[(y + dy) * 258 + x + dx];
         if (label < 0 || regions_[label].isEmpty())
             return {};
+        if (label < ridges_.size() && !ridges_[label].isEmpty()) {
+            double total = 0, u = 0, profile = 0, height = 0;
+            for (const auto &ridge : ridges_[label]) {
+                double nearest = 1e99, along = 0, offset = 0, textureAlong = 0;
+                for (int i = 1; i < ridge.points.size(); ++i) {
+                    const auto a = ridge.points[i - 1], d = ridge.points[i] - a, q = p - a;
+                    const double squared = QPointF::dotProduct(d, d), length = std::sqrt(squared),
+                                 raw = QPointF::dotProduct(q, d) / squared,
+                                 t = std::clamp(raw, 0., 1.);
+                    const auto v = q - d * t;
+                    const double r = QPointF::dotProduct(v, v);
+                    if (r < nearest) {
+                        nearest = r;
+                        along = offset + length * t;
+                        textureAlong = along;
+                        // Turn the slope panels around rounded ends. Extending
+                        // the straight strip through a cap makes parallel rings.
+                        if ((i == 1 && raw < 0) || (i + 1 == ridge.points.size() && raw > 1)) {
+                            const double outward = length * (raw < 0 ? -raw : raw - 1),
+                                         across = std::abs(q.x() * d.y() - q.y() * d.x()) / length;
+                            textureAlong += (raw < 0 ? -1 : 1) * std::atan2(outward, across) * 16 /
+                                            3.141592653589793;
+                        }
+                    }
+                    offset += length;
+                }
+                const double r = std::sqrt(nearest),
+                             t = distance <= 0 ? 0 : distance / (distance + r),
+                             f = along / ridge.length,
+                             crest = (ridge.startHeight * (1 - f) + ridge.endHeight * f) *
+                                     (1 - .8 * f * (1 - f)),
+                             weight = 1 / std::pow(.25 + nearest, 2);
+                total += weight;
+                u += textureAlong / 4 * weight;
+                profile += t * weight;
+                height += crest * t * weight;
+            }
+            return {{u / total, profile / total}, height / total};
+        }
         double total = 0, s = 0, c = 0, profile = 0, height = 0;
         for (const auto &peak : regions_[label]) {
             const auto d = p - peak.point;

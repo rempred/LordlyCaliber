@@ -1370,7 +1370,8 @@ void ScenarioMapEditor::select(int row) {
         peakHeight_->setValue(m.peak.height);
         restorePeak_->setEnabled(std::abs(m.peak.height - m.peak.defaultHeight) > .00001);
         summary_->setText(
-            "Mountain peak · Add, move or remove summits to reshape the ridge. "
+            "Peaks in the same mountain connect with ridges automatically. "
+            "Add, move, remove or change a peak to reshape them. "
             "This top-down view shows height through shading; the terrain outline stays fixed.");
     } else if (worldObject) {
         world_->selectObject(m.kind == MapObject::Treasure, m.row);

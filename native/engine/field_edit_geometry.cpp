@@ -428,9 +428,22 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
         QVector<BrushPolygon> triangles;
         for (int n = 1; n + 1 < poly.size(); ++n)
             triangles << BrushPolygon{poly[0], poly[n], poly[n + 1]};
-        // A user-set summit must be a real vertex, not a height sampled only
+        QRectF envelope;
+        if (!poly.isEmpty()) {
+            double x0 = poly[0].grid.x(), x1 = x0, z0 = poly[0].grid.y(), z1 = z0;
+            for (const auto &p : poly) {
+                x0 = std::min(x0, p.grid.x());
+                x1 = std::max(x1, p.grid.x());
+                z0 = std::min(z0, p.grid.y());
+                z1 = std::max(z1, p.grid.y());
+            }
+            envelope = QRectF(QPointF(x0, z0), QPointF(x1, z1)).adjusted(-1e-7, -1e-7, 1e-7, 1e-7);
+        }
+        // A summit/ridge must be real vertices, not heights sampled only
         // at neighbouring grid corners. Split both sides when it lies on an edge.
         for (auto p : peakPositions) {
+            if (!envelope.contains(p))
+                continue;
             QVector<BrushPolygon> split;
             for (const auto &t : triangles) {
                 const auto a = t[1].grid - t[0].grid, b = t[2].grid - t[0].grid, q = p - t[0].grid;
@@ -759,7 +772,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
             const FieldBrushShape shape(borders.change.paint, type.key(), source.map.bounds,
                                         borders.native,
                                         mountainSummits(source, surface, type.key()), change.peaks);
-            QVector<QPointF> peakPositions;
+            QVector<QPointF> peakPositions = shape.ridgeVertices();
             for (const auto &peak : change.peaks)
                 if (peak.terrain == type.key() && !peak.removed)
                     peakPositions << peak.position;

@@ -9124,10 +9124,11 @@ class UiTests : public QObject {
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         QVERIFY(!tools.isEmpty());
         const auto result = rebuild(restored, tools, work.path());
-        const auto root = QDir(QFileInfo(path).absolutePath())
-                              .filePath("Test ROMs/mountain-peak-layout-20261011");
+        const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
         QVERIFY(QDir().mkpath(root));
-        const auto candidate = QDir(root).filePath(QFileInfo(path).fileName());
+        QTemporaryDir output(QDir(root).filePath("native-mountain-peaks-XXXXXX"));
+        QVERIFY(output.isValid());
+        const auto candidate = output.filePath(QFileInfo(path).fileName());
         exportRom(restored, result, candidate);
         const auto reopened = MapEdits::load(Rom::open(candidate));
         QCOMPARE(reopened.model(5), project.mapEdits()->model(5));
@@ -9136,6 +9137,8 @@ class UiTests : public QObject {
         auto checksum = result.image;
         Rom::updateChecksum(checksum);
         QCOMPARE(checksum, result.image);
+        output.setAutoRemove(false);
+        qInfo().noquote() << "Peak edit export:" << candidate;
         resetPeaks->click();
         QCOMPARE(project.mapEdits()->json(), original);
         undo.undo();

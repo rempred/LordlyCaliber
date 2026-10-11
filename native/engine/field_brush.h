@@ -98,6 +98,7 @@ class FieldBrushShape {
             for (const auto &p : heights)
                 if (p.terrain == type && !p.removed)
                     mountain_->add(p.position, p.height);
+            mountain_->connectRidges(distance_, cell_);
         }
         if (coverage_) {
             const int band = int(std::ceil(.65 / cell_)) + 1;
@@ -112,6 +113,9 @@ class FieldBrushShape {
     }
     QVector<QVector3D> peaks() const {
         return mountain_ ? mountain_->peaks(cell_) : QVector<QVector3D>{};
+    }
+    QVector<QPointF> ridgeVertices() const {
+        return mountain_ ? mountain_->ridgeVertices() : QVector<QPointF>{};
     }
     QPointF grid(QPointF world) const {
         return {(world.x() - bounds_.left()) * 256 / bounds_.width(),
