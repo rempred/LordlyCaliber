@@ -1,8 +1,8 @@
 # Accepted pure-C library
 
 This directory is a byte-preserved snapshot of every `PURE_C` owner in Decomp's
-passing verification of 2026-10-11 15:51 UTC. The snapshot contains 788 owners,
-829 compiler-recorded functions, 763 producer sources, and 787 source/header
+passing verification of 2026-10-11 19:55 UTC. The snapshot contains 795 owners,
+836 compiler-recorded functions, 770 producer sources, and 794 source/header
 files including their recorded dependencies. Exact hybrid C/assembly sources
 are outside this pure-C snapshot.
 

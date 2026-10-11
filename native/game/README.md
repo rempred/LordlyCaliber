@@ -14,10 +14,27 @@ imports used by active adaptations: updating available source does not silently
 change those implementations. The interest report supports `--all` and searches
 the full library by symbol or source name. See the library README for scope.
 
+## Accepted combat resolution batch — 2026-10-11
+
+The complete seven-function W7 action-resolution wave is imported from accepted
+Decomp commit `3b14cb65416a27e1167feeaf56337a41e735e48e`, CURRENT `B72EB182...`,
+verified at 19:55 UTC with a passing final independent structural review. The
+library now contains 795 pure-C owners and 836 compiler-recorded functions.
+All previously imported sources and dependencies remain unchanged.
+
+These seven original C sources are available for future combat consumers; they
+do not replace the editor's current combat behavior or alter ROM export. In
+particular, `00230A9C` retains its complete body across both physical owners.
+Original ROM data, initializers, tables and runtime services remain dependencies;
+matching source does not independently establish stronger gameplay semantics.
+The interest catalog records this wave as imported, separate from active
+portable adaptations. Decomp's reviewed tooling changes are not copied into
+the editor's build tools.
+
 ## Accepted movement and combat batch — 2026-10-11
 
-The complete library now contains 788 accepted pure-C owners and 829 compiler-
-recorded functions. The refresh adds 30 functions and updates nine existing
+The earlier 15:51 UTC library contained 788 accepted pure-C owners and 829
+compiler-recorded functions. That refresh added 30 functions and updated nine existing
 producers (including the predecessor helper now sharing the pathfinder producer).
 The library manifest records the authenticated source/dependency identities from
 the completed October 11 verification; unfinished upstream work is excluded.

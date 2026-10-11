@@ -3,6 +3,15 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "combat-action-resolution", "priority": 3,
+      "behavior": "Shared combat action resolution",
+      "symbols": ["func_0022F580", "func_00230A9C", "func_002317C8", "func_00231CC0", "func_00232280", "func_00232458", "func_00232D7C"],
+      "editorFiles": ["game/accepted/library-imports.json", "game/accepted/library/src/battle"],
+      "editorUse": "imported",
+      "benefit": "Complete accepted W7 source is available for future combat consumers. No executing editor adaptation is claimed.",
+      "preserve": "Keep all seven complete functions, including A9C's whole multi-owner body. Retain external globals, services, original float data, initializer bytes and shared-table dependencies. Exact matching does not settle uncertain field meanings or runtime storage bounds. Decomp tooling changes remain upstream."
+    },
+    {
       "id": "terrain-route-preview", "priority": 1,
       "behavior": "Terrain-aware planned squad routes",
       "symbols": ["func_00107D60", "func_00107E38"],

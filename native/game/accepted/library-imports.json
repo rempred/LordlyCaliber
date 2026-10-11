@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
-  "revision": "40c82ff175ebde051051c2c7e7bac984ccf2b4bc",
-  "verifiedAt": "2026-10-11T15:51:47.072Z",
+  "revision": "3b14cb65416a27e1167feeaf56337a41e735e48e",
+  "verifiedAt": "2026-10-11T19:55:04.798Z",
   "sourceClass": "PURE_C",
-  "fingerprint": "1E95BD03B45ACD652E3F729391FE76C026C5144F35B6332B2F9C6A0EF0D40DD0",
-  "verificationSha256": "4A18C46AF99A023413685C8334CCFD2BBA783B49E5D58F01165E672832C7B04F",
-  "freshCompilationSha256": "2E9F1E71A8E3D2DC4E90F024B8BD2927EE20B277718AD337BA71688FDF36D1BF",
+  "fingerprint": "B72EB18218EE66180263F7588289A5192251AB7B7B27B048A12044328403EC4B",
+  "verificationSha256": "ABEAE080B21B64748B2560CA5329782410E815E1ACB5A982D9D19F05A432DCB2",
+  "freshCompilationSha256": "5165D16C1D937BC86DF27C0D7907559C3180FE3489519420825B893C3AFF72D3",
   "purpose": "Complete accepted pure-C source library. Source availability is separate from active editor adoption; existing adaptation manifests retain their own baselines.",
   "counts": {
-    "owners": 788,
-    "functions": 829,
-    "producerSources": 763,
-    "sourceAndHeaderFiles": 787
+    "owners": 795,
+    "functions": 836,
+    "producerSources": 770,
+    "sourceAndHeaderFiles": 794
   },
   "imports": [
     {
@@ -1054,6 +1054,125 @@
           "symbol": "func_0022F2BC",
           "functions": [
             "func_0022F2BC"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_0022F580.c",
+      "sourceSha256": "397EDE7F456714A0BC676CD5D181E6C28C706067CCFF96419E2B47BAED78C2C0",
+      "file": "game/accepted/library/src/battle/func_0022F580.c",
+      "symbols": [
+        "func_0022F580"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0022F580",
+          "functions": [
+            "func_0022F580"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00230A9C.c",
+      "sourceSha256": "9F34771CF292FD438EB8EEEA5F169D01F32EFB9864ADB3C83032220AA00180DA",
+      "file": "game/accepted/library/src/battle/func_00230A9C.c",
+      "symbols": [
+        "func_00230A9C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00230A9C",
+          "functions": [
+            "func_00230A9C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_002317C8.c",
+      "sourceSha256": "667863E7FF6B24E7116D3C2D30F29B250E4A41577C668AD54FA1833147DC4A3F",
+      "file": "game/accepted/library/src/battle/func_002317C8.c",
+      "symbols": [
+        "func_002317C8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002317C8",
+          "functions": [
+            "func_002317C8"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00231CC0.c",
+      "sourceSha256": "9ACE4CD1306AFA9F96FAB87A40752326CFF70D064FEB0CA93D2FFBE03EFA6BEF",
+      "file": "game/accepted/library/src/battle/func_00231CC0.c",
+      "symbols": [
+        "func_00231CC0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00231CC0",
+          "functions": [
+            "func_00231CC0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00232280.c",
+      "sourceSha256": "A7E483D43A34FC1F7A177E1BA62CF9A33B17ADFE438325F6084F4BEE9DB7159D",
+      "file": "game/accepted/library/src/battle/func_00232280.c",
+      "symbols": [
+        "func_00232280"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00232280",
+          "functions": [
+            "func_00232280"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00232458.c",
+      "sourceSha256": "66CF86F9C3C9379EED660FC506DFAE73C02C82A2F1C36FB5B6D04960906419E9",
+      "file": "game/accepted/library/src/battle/func_00232458.c",
+      "symbols": [
+        "func_00232458"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00232458",
+          "functions": [
+            "func_00232458"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/battle/func_00232D7C.c",
+      "sourceSha256": "9E5549FC67CFD3426D99309EA550B90A64F3D75E94B8C86340939B9214DE88BA",
+      "file": "game/accepted/library/src/battle/func_00232D7C.c",
+      "symbols": [
+        "func_00232D7C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00232D7C",
+          "functions": [
+            "func_00232D7C"
           ]
         }
       ],
