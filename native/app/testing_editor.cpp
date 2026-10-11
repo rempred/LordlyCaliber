@@ -78,7 +78,7 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
             &TestingEditor::chooseArmy);
     connect(add("Use my save game", "seederUseSave"), &QPushButton::clicked, this,
             &TestingEditor::useSave);
-    connect(add("Edit Default Army", "seederEditArmy"), &QPushButton::clicked, this, [this] {
+    connect(add("Edit Tester Army", "seederEditArmy"), &QPushButton::clicked, this, [this] {
         guarded([&] {
             if (!seeder_)
                 throw Error("Choose a supported ROM first");
