@@ -8,7 +8,7 @@ stocking. No ROM data or machine-specific settings are included.
 
 The native `ScenarioSeeder` embeds these inputs. Story routes, world roads,
 class equipment and save-codec fields are read from the user's selected ROM.
-The default army remains editable through Testing → Edit Default Army → Save.
+The default army remains editable through Testing → Edit Default Army → Save Editor.
 An edited default is stored in per-user app data and does not replace these
 bundled source inputs. Imported armies keep their own statistics.
 

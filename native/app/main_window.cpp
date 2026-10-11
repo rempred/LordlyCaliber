@@ -247,7 +247,9 @@ void MainWindow::installProject(Project project) {
         auto badge = new QLabel("W.I.P");
         badge->setObjectName("cutsceneWipBadge");
         badge->setStyleSheet("QLabel { background: transparent; color: #ff9990; border: none; "
-                             "padding: 0; font-size: 9pt; font-weight: bold; }");
+                             "padding: 0 12px 0 0; font-size: 9pt; font-weight: bold; }");
+        badge->ensurePolished();
+        badge->adjustSize();
         badge->setAttribute(Qt::WA_TransparentForMouseEvents);
         workspaces_->tabBar()->setTabButton(tab, QTabBar::RightSide, badge);
         workspaces_->setTabToolTip(tab, "Cutscenes — work in progress");
@@ -288,7 +290,7 @@ void MainWindow::installProject(Project project) {
         auto save = new SaveEditor(project_.get());
         undoGroup_->addStack(save->undoStack());
         connect(save, &SaveEditor::changed, this, &MainWindow::updateStatus);
-        workspaces_->addTab(save, "Save");
+        workspaces_->addTab(save, "Save Editor");
         if (auto cutscenes = workspaces_->findChild<CutsceneEditor *>())
             cutscenes->setSaveProvider([save]() -> const SaveDocument * {
                 return save->document() ? &*save->document() : nullptr;

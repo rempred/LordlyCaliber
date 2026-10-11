@@ -590,7 +590,7 @@ slot 2 survives generated seeds and stale suspend data is disabled. Full-save
 installation preserves the supplied file unchanged. Later routes retain the
 standalone tool's game-testing limits; this port adds file/readback qualification.
 
-**Edit Default Army** opens the Save tab; **Use as default army** stores that army
+**Edit Default Army** opens the Save Editor tab; **Use as default army** stores that army
 in per-user app data and returns to Testing. Imported and edited army stats are
 not boosted again. Settings and edited defaults are not shipped with packages.
 
