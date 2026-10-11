@@ -30,10 +30,15 @@ class ArmyMemberList : public QListWidget {
   public:
     std::function<void(QListWidgetItem *)> dragMember;
     QPoint dragPosition() const { return pressPosition_; }
+    QPoint doubleClickPosition() const { return doubleClickPosition_; }
   protected:
     void mousePressEvent(QMouseEvent *event) override {
         pressPosition_ = event->position().toPoint();
         QListWidget::mousePressEvent(event);
+    }
+    void mouseDoubleClickEvent(QMouseEvent *event) override {
+        doubleClickPosition_ = event->position().toPoint();
+        QListWidget::mouseDoubleClickEvent(event);
     }
     void startDrag(Qt::DropActions) override {
         if (currentItem() && dragMember)
@@ -41,6 +46,7 @@ class ArmyMemberList : public QListWidget {
     }
   private:
     QPoint pressPosition_;
+    QPoint doubleClickPosition_;
 };
 int overviewCell(const QListWidget *list, const QListWidgetItem *item, QPoint position) {
     const auto hits = item->data(ArmyOverviewHits).value<QImage>();
@@ -441,6 +447,20 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     });
     connect(reserves_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         editor_->selectCharacter(item->data(Qt::UserRole).toInt());
+    });
+    connect(units_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        if (!editor_->document()) return;
+        const int cell = overviewCell(units_, item,
+                                     static_cast<ArmyMemberList *>(units_)->doubleClickPosition());
+        if (cell < 0) return;
+        for (const auto &unit : editor_->document()->units())
+            if (unit.index == item->data(Qt::UserRole).toInt())
+                for (int member = 0; member < unit.members.size(); ++member)
+                    if (unit.members[member] > 0 && unit.members[member] < 100 &&
+                        unit.cells[member] == cell) {
+                        editor_->selectCharacter(unit.members[member]);
+                        return;
+                    }
     });
     connect(members_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         const int row=members_->row(item);

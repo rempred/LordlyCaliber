@@ -4208,6 +4208,53 @@ class UiTests : public QObject {
         QCOMPARE(editor.document()->serialize(), sixPlaces);
         editor.loadBytes(input);
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/save-overview-drag.png"));
+        // Double-click the member under the pointer, including a different squad,
+        // without changing the save or opening empty cells / Soldier records.
+        auto tabs = editor.findChild<QTabWidget *>();
+        auto characters = editor.findChild<QTableView *>("saveCharacters");
+        auto doubleClick = [&](QPoint point) {
+            QTest::mouseClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+            QTest::mouseDClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+            QCoreApplication::processEvents();
+        };
+        for (const auto [unit, cell, id] : {std::tuple{0, 4, 2}, std::tuple{5, 8, 9}}) {
+            tabs->setCurrentWidget(panel);
+            editor.findChild<QLineEdit *>("saveCharactersSearch")->setText("no matching name");
+            doubleClick(overviewPoint(unit, cell));
+            QCOMPARE(tabs->currentIndex(), 0);
+            QCOMPARE(characters->model()->index(characters->currentIndex().row(), 0).data().toInt(), id);
+            QCOMPARE(editor.document()->serialize(), input);
+        }
+        // The selected character's stat and equipment cells edit that record and undo.
+        for (const auto key : {QString("strength"), QString("weapon")}) {
+            const auto fields = editor.document()->fields(SaveTable::Characters);
+            int column = -1;
+            for (int i = 0; i < fields.size(); ++i)
+                if (fields[i].key == key) column = i + 1;
+            QVERIFY(column > 0);
+            const int row = characters->currentIndex().row();
+            const auto index = characters->model()->index(row, column);
+            QVERIFY(index.flags() & Qt::ItemIsEditable);
+            QVERIFY(characters->model()->setData(index, 1, Qt::EditRole));
+            QCOMPARE(editor.document()->value(SaveTable::Characters, 9, key).toInt(), 1);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.selectCharacter(9);
+        }
+        tabs->setCurrentWidget(panel);
+        for (const auto [unit, cell] : {std::pair{0, 2}, std::pair{2, 7}, std::pair{4, 7}}) {
+            doubleClick(overviewPoint(unit, cell));
+            QCOMPARE(tabs->currentWidget(), panel);
+            QCOMPARE(editor.document()->serialize(), input);
+        }
+        doubleClick(nameplate(units->currentItem()));
+        QCOMPARE(tabs->currentWidget(), panel);
+        unity->setValue(unity->value() + 1);
+        doubleClick(overviewPoint(5, 8));
+        QCOMPARE(tabs->currentWidget(), panel);
+        QVERIFY(editor.hasPendingUnitEdits());
+        QCOMPARE(editor.document()->serialize(), input);
+        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
     }
     void saveSquadEditing() {
         try {
@@ -10364,11 +10411,11 @@ class UiTests : public QObject {
             const auto capturePrefix = QFileInfo(screenshot).absolutePath() + "/" + QFileInfo(screenshot).completeBaseName();
             auto workspaceTabs = qobject_cast<QTabWidget *>(window.centralWidget());
             for (int i = 0; i < workspaceTabs->count(); ++i)
-                if (workspaceTabs->tabText(i) == "Consumables") {
+                if (workspaceTabs->tabText(i) == "Consumables" || workspaceTabs->tabText(i) == "Items") {
                     workspaceTabs->setCurrentIndex(i);
                     window.resize(1440, 900);
                     QTest::qWait(50);
-                    QVERIFY(window.grab().save(capturePrefix + "-consumables.png"));
+                    QVERIFY(window.grab().save(capturePrefix + "-" + workspaceTabs->tabText(i).toLower() + ".png"));
                 }
             for (const auto name : {"encounterEditor", "scenarioEditor"}) {
                 workspaceTabs->setCurrentWidget(window.findChild<QWidget *>(name));

@@ -602,20 +602,25 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         updateStatus();
     });
     if (table != Table::Consumables) {
-        auto columns = new QComboBox;
-        columns->addItem("All fields", "");
-        for (auto group = groups.begin(); group != groups.end(); ++group)
-            columns->addItem(group.key() + " columns", group.key());
-        layout->insertWidget(1, columns);
-        connect(columns, &QComboBox::currentIndexChanged, page, [=] {
-            auto group = columns->currentData().toString();
+        const auto showColumns = [=](const QString &group) {
             for (int i = 0; i < fields(table).size(); ++i)
                 grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
             const auto section = sections->findText(group);
             if (section >= 0)
                 sections->setCurrentIndex(section);
-        });
-        columns->setCurrentIndex(columns->findData("Stats"));
+        };
+        if (table == Table::Items) {
+            showColumns("Stats");
+        } else {
+            auto columns = new QComboBox;
+            columns->addItem("All fields", "");
+            for (auto group = groups.begin(); group != groups.end(); ++group)
+                columns->addItem(group.key() + " columns", group.key());
+            layout->insertWidget(1, columns);
+            connect(columns, &QComboBox::currentIndexChanged, page,
+                    [=] { showColumns(columns->currentData().toString()); });
+            columns->setCurrentIndex(columns->findData("Stats"));
+        }
     }
     workspaces_->addTab(page, title);
     grid->selectRow(1);

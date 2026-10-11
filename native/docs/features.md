@@ -606,6 +606,11 @@ member drops swap between squads. A nameplate drop uses the first compatible
 empty cell. These changes use the existing atomic save operations and Undo;
 five-place size limits, large-unit spacing, carried items, leaders, legions and
 pending drafts remain validated for both squads.
+Double-clicking a character on a left squad board opens that character's stats
+and equipment in Save Editor. Empty cells and Soldier groups do not navigate;
+pending squad edits still need to be applied or discarded first.
+The Items table always shows Stats columns, with other field groups available
+in its side panel.
 
 Main tabs now include **Art and Animation** and a final **Art Library**. Distinct
 outlined buttons enclose the Cutscenes inline red W.I.P label. **Import from ROM**
