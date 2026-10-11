@@ -13,6 +13,7 @@ these commands from the repository root:
 
 ```powershell
 native/tools/bootstrap.ps1
+native/tools/bootstrap-n64.ps1
 native/tools/build.ps1
 ```
 
@@ -20,6 +21,10 @@ Run the native checks with `native/tools/build.ps1 -Test -RomPath <source.v64>`.
 See [native dependencies](native/dependencies.json) and the
 [native guide](native/README.md) for toolchain setup and private-ROM checks.
 Supply your own supported ROM; no ROM is included in this repository.
+
+GitHub can build and attest the full Windows ZIP from Main. See
+[release builds](native/docs/releases.md) and
+[download verification](native/VERIFY-BUILD.md).
 
 ## Repository layout
 

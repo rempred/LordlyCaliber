@@ -3739,28 +3739,55 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         QVERIFY_THROWS_EXCEPTION(Error, p.setValue(Table::Classes, knight, str, 65536));
         QCOMPARE(p.rom().bytes(), data);
     }
-    void projectPersistence() {
-        auto rom = Rom::fromBytes(syntheticRom());
-        auto p = Project::fromRom(rom);
+    void projectStorageFormats() {
+        auto p = Project::fromRom(Rom::fromBytes(syntheticRom()));
         p.setValue(Table::Classes, 5, 0, 2);
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         p.saveFolder(dir.path());
         auto saved = Project::readProject(dir.path());
-        saved["extensionExample"] = QJsonObject{{"keep", 42}};
-        auto restored = Project::fromRom(rom);
-        restored.applyManifest(saved);
-        QCOMPARE(restored.value(Table::Classes, 5, 0), 2);
-        QCOMPARE(restored.manifest()["extensionExample"], saved["extensionExample"]);
+        QCOMPARE(saved["format"].toString(), QString("LordlyCaliberProject"));
+        const auto expected = QString(144, '0').replace(8, 2, "02");
+        QCOMPARE(saved["records"].toObject()["classes"].toObject()["5"].toString(), expected);
         auto archive = dir.filePath("share.lcproject");
-        restored.saveArchive(archive);
+        p.saveArchive(archive);
         auto packed = Project::readProject(archive);
         QVERIFY(!packed.contains("sourcePath"));
         QCOMPARE(packed["records"], saved["records"]);
         auto wrong = saved;
         wrong["sourceSha256"] = "wrong";
-        QVERIFY_THROWS_EXCEPTION(Error, restored.applyManifest(wrong));
-        QCOMPARE(restored.value(Table::Classes, 5, 0), 2);
+        QVERIFY_THROWS_EXCEPTION(Error, p.applyManifest(wrong));
+        QCOMPARE(p.value(Table::Classes, 5, 0), 2);
+    }
+    void projectPersistence() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Project reload validates animation resources; a private ROM is required");
+        try {
+            auto rom = Rom::open(path);
+            auto p = Project::fromRom(rom);
+            p.setValue(Table::Classes, 5, 0, 2);
+            QTemporaryDir dir;
+            QVERIFY(dir.isValid());
+            p.saveFolder(dir.path());
+            auto saved = Project::readProject(dir.path());
+            saved["extensionExample"] = QJsonObject{{"keep", 42}};
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(saved);
+            QCOMPARE(restored.value(Table::Classes, 5, 0), 2);
+            QCOMPARE(restored.manifest()["extensionExample"], saved["extensionExample"]);
+            auto archive = dir.filePath("share.lcproject");
+            restored.saveArchive(archive);
+            auto packed = Project::readProject(archive);
+            QVERIFY(!packed.contains("sourcePath"));
+            QCOMPARE(packed["records"], saved["records"]);
+            auto wrong = saved;
+            wrong["sourceSha256"] = "wrong";
+            QVERIFY_THROWS_EXCEPTION(Error, restored.applyManifest(wrong));
+            QCOMPARE(restored.value(Table::Classes, 5, 0), 2);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
     }
     void retailChecksumAndCompiledExport() {
         try {

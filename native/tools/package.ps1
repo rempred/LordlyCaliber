@@ -43,8 +43,17 @@ try {
 } finally { $env:PATH = $priorPath }
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vsRoot = & $vswhere -latest -products '*' -property installationPath
-$redist = Join-Path $vsRoot 'VC\Redist\MSVC\14.51.36231\x64\Microsoft.VC145.CRT'
-if (!(Test-Path -LiteralPath $redist)) { throw 'Required app-local Microsoft redistributable directory is missing.' }
+$redist = $null
+foreach ($version in (Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC/Redist/MSVC') -Directory |
+        Where-Object { $_.Name -match '^\d+\.\d+\.\d+' } | Sort-Object { [version]$_.Name } -Descending)) {
+    $architecture = Join-Path $version.FullName 'x64'
+    if (!(Test-Path -LiteralPath $architecture)) { continue }
+    $candidate = Get-ChildItem -LiteralPath $architecture -Directory -Filter 'Microsoft.VC*.CRT' |
+        Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'vcruntime140.dll')) -and
+                      (Test-Path -LiteralPath (Join-Path $_.FullName 'msvcp140.dll')) } | Select-Object -First 1
+    if ($candidate) { $redist = $candidate.FullName; break }
+}
+if (!$redist) { throw 'Required x64 Microsoft redistributable directory is missing.' }
 Get-ChildItem -LiteralPath $redist -File -Filter '*.dll' | Copy-Item -Destination $Destination
 $toolDest = New-Item -ItemType Directory -Path (Join-Path $Destination 'n64-toolchain') -Force
 foreach ($pin in $pins.tools.PSObject.Properties) { Copy-Item -LiteralPath (Join-Path $N64Tools $pin.Name) -Destination $toolDest }
@@ -53,6 +62,7 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'licenses') -Destination $Destinat
 Copy-Item -LiteralPath (Join-Path (Split-Path $sourceRoot) 'LICENSE') -Destination (Join-Path $Destination 'licenses\LordlyCaliber.txt')
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'README.md') -Destination $Destination
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'THIRD-PARTY.md') -Destination $Destination
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'VERIFY-BUILD.md') -Destination $Destination
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'dependencies.json') -Destination $Destination
 $sources = New-Item -ItemType Directory -Path (Join-Path $Destination 'dependency-sources') -Force
 foreach ($record in (Get-Content -LiteralPath (Join-Path $sourceRoot 'rebuild\dependency-sources.json') -Raw | ConvertFrom-Json)) {
@@ -60,9 +70,15 @@ foreach ($record in (Get-Content -LiteralPath (Join-Path $sourceRoot 'rebuild\de
 }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'rebuild\toolchain-source') -Destination $sources -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'rebuild\dependency-sources.json') -Destination $sources
+foreach ($name in @('toolchain.json', 'toolchain-distribution.json', 'TOOLCHAIN-DISTRIBUTION.md')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "rebuild/$name") -Destination $sources
+}
 Set-Content -LiteralPath (Join-Path $Destination 'qt.conf') -Value "[Paths]`nPrefix=." -Encoding ascii
 if ($Live) { Write-Output "Live editor: $Destination\LordlyCaliber.exe" }
 else {
+    & (Join-Path $PSScriptRoot 'write-package-manifest.ps1') -Package $Destination
     Compress-Archive -LiteralPath $Destination -DestinationPath ($Destination + '.zip') -CompressionLevel Fastest
+    $zipHash = (Get-FileHash -LiteralPath ($Destination + '.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText(($Destination + '.zip.sha256'), "$zipHash  $([IO.Path]::GetFileName($Destination)).zip`n", [Text.UTF8Encoding]::new($false))
     Write-Output "Portable development package: $Destination.zip"
 }

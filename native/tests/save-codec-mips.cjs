@@ -8,7 +8,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 const {Mips} = require('../../tests/lib/mips-interpreter.cjs');
 const filename = process.argv[2] || process.env.LORDLY_TEST_ROM;
-if (!filename) { console.log('SKIP: supply the private Rev 0 ROM'); process.exit(0); }
+if (!filename) { console.log('SKIP: supply the private Rev 0 ROM'); process.exit(77); }
 const rom = fs.readFileSync(filename);
 if (rom.readUInt32BE(0) === 0x37804012) rom.swap16();
 assert.equal(crypto.createHash('sha256').update(rom).digest('hex'),

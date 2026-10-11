@@ -1,0 +1,153 @@
+name: Windows release ZIP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this Main build as a GitHub prerelease
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      QT_QPA_PLATFORM: offscreen
+    outputs:
+      package-name: ${{ steps.names.outputs.package-name }}
+    steps:
+      - name: Check out the exact Main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Name the release package
+        id: names
+        run: |
+          $name = "LordlyCaliber-main-$($env:GITHUB_SHA.Substring(0, 12))-windows-x64"
+          "package-name=$name" >> $env:GITHUB_OUTPUT
+          "PACKAGE_NAME=$name" >> $env:GITHUB_ENV
+          "PACKAGE_PATH=$env:GITHUB_WORKSPACE/native/dist/$name" >> $env:GITHUB_ENV
+          "TOOLS_ROOT=$env:RUNNER_TEMP/lordly-tools" >> $env:GITHUB_ENV
+
+      - name: Install authenticated build dependencies
+        run: |
+          ./native/tools/bootstrap.ps1 -ToolsRoot $env:TOOLS_ROOT
+          ./native/tools/bootstrap-n64.ps1
+
+      - name: Compile the editor and run public tests
+        run: ./native/tools/build.ps1 -ToolsRoot $env:TOOLS_ROOT -Test
+
+      - name: Package the complete portable application
+        run: ./native/tools/package.ps1 -ToolsRoot $env:TOOLS_ROOT -Destination $env:PACKAGE_PATH
+
+      - name: Verify ZIP contents and isolated startup
+        run: ./native/tools/check-release.ps1 -Zip "$env:PACKAGE_PATH.zip" -ExpectedCommit $env:GITHUB_SHA -RequireClean
+
+      - name: Check rejection of damaged dependencies and incomplete packages
+        run: ./native/tests/release-packaging.ps1 -Zip "$env:PACKAGE_PATH.zip"
+
+      - name: Attest the release ZIP and both executables
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            native/dist/${{ env.PACKAGE_NAME }}.zip
+            native/dist/${{ env.PACKAGE_NAME }}/LordlyCaliber.exe
+            native/dist/${{ env.PACKAGE_NAME }}/LordlyCaliber-cli.exe
+
+      - name: Collect verifiable release files
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          $out = New-Item -ItemType Directory -Path native/dist/release-files
+          Copy-Item -LiteralPath "$env:PACKAGE_PATH.zip", "$env:PACKAGE_PATH.zip.sha256" -Destination $out
+          Copy-Item -LiteralPath "$env:PACKAGE_PATH/build-info.json" -Destination $out
+          Copy-Item -LiteralPath $env:ATTESTATION_BUNDLE -Destination "$out/attestations.jsonl"
+          Copy-Item -LiteralPath native/VERIFY-BUILD.md -Destination "$out/VERIFY-BUILD.md"
+          @"
+          ## Windows build from Main
+          Source: [$env:GITHUB_SHA]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$env:GITHUB_SHA)
+
+          Download the release-files artifact and extract its inner portable ZIP.
+          It contains the editor, Qt/runtime DLLs, N64 export tools, dependency sources and notices.
+          The ZIP and both editor executables have signed build attestations.
+          Public tests exclude private-ROM cases; this run is not a game-playthrough check.
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload release ZIP, checksums and attestations
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-files-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native/dist/release-files/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            native/build/Release/*report.txt
+            native/build/Release/*tests.txt
+            native/build/Release/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download the verified release files
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-files-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-files
+
+      - name: Publish a uniquely named Main prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_TAG: native-main-${{ github.run_id }}-${{ github.run_attempt }}
+          RELEASE_TITLE: ${{ needs.build.outputs.package-name }}
+        run: |
+          cat > release-notes.md <<EOF
+          Native Windows development build from Main commit ${SOURCE_SHA}.
+
+          Download and extract the portable ZIP, then run LordlyCaliber.exe.
+          Build logs and tests: ${RUN_URL}
+
+          Checksums, signed attestations and verification instructions accompany the ZIP.
+          Qt and N64 export tools are authenticated binary dependencies; their corresponding sources and notices are included.
+          Private-ROM tests and emulator playthroughs are not part of this public build.
+          EOF
+          gh release create "$RELEASE_TAG" release-files/* --target "$SOURCE_SHA" \
+            --title "$RELEASE_TITLE" --notes-file release-notes.md --prerelease

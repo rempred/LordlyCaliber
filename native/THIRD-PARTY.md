@@ -30,8 +30,9 @@ redistribution terms. Microsoft retains its copyright in these files.
 https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
 
 The application source is available in the Lordly Caliber repository under its
-existing MIT license: https://github.com/rempred/LordlyCaliber . This development
-branch has not been published or released. Recovered game source provenance is
+existing MIT license: https://github.com/rempred/LordlyCaliber . Release ZIPs
+record their source commit and workflow run in `build-info.json`; see
+`VERIFY-BUILD.md` for signed provenance verification. Recovered game source provenance is
 recorded in `game/README.md`; no original ROM or game-art archive is included.
 
 The accepted source library includes game adaptations of LHa for UNIX 1.14c.

@@ -170,7 +170,8 @@ For scripting:
 ```
 
 For development, install Visual Studio's MSVC 2022 14.44 C++ tools and Windows
-SDK, then run `native/tools/bootstrap.ps1` and `native/tools/build.ps1` from
+SDK, then run `native/tools/bootstrap.ps1`, `native/tools/bootstrap-n64.ps1` and
+`native/tools/build.ps1` from
 the repository. The bootstrap downloads authenticated Qt/CMake archives and
 uses Windows tar; Node/Python are not application dependencies. The build uses
 the installed Ninja 1.13.2. `native/dependencies.json` records official source
@@ -182,6 +183,10 @@ Private-ROM cases need the authenticated tools under
 `native/tools/package.ps1` creates a fresh development ZIP. Nothing is published
 by these commands. Qt and other dependency notices, sources and toolchain build
 recipes accompany the ZIP. See `THIRD-PARTY.md`.
+
+The [GitHub release workflow](https://github.com/rempred/LordlyCaliber/blob/main/native/docs/releases.md) builds the full ZIP from Main,
+checks package integrity and isolated startup, and attests the ZIP and both editor
+executables. See [VERIFY-BUILD.md](VERIFY-BUILD.md) for download verification.
 
 The Cutscenes Actions page also adds and removes actions at named script positions.
 Waits preserve native counter spans and adjust later deadlines when possible;
