@@ -378,7 +378,8 @@ QVector<PaintTriangle> bridgeMesh(const QVector<BridgeSpan> &spans, const FieldB
     return result;
 }
 QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brush,
-                            const Surface &surface, bool border) {
+                            const Surface &surface, bool border,
+                            const QVector<QPointF> &peakPositions) {
     QVector<PaintTriangle> result;
     if (shape.cells.isEmpty())
         return result;
@@ -424,11 +425,40 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
         poly = clip(poly, 0, true);
         if (hasBorder)
             poly = clip(poly, shape.edgeWidth(), !border);
-        for (int n = 1; n + 1 < poly.size(); ++n) {
-            const auto a = poly[n].grid - poly[0].grid, b = poly[n + 1].grid - poly[0].grid;
+        QVector<BrushPolygon> triangles;
+        for (int n = 1; n + 1 < poly.size(); ++n)
+            triangles << BrushPolygon{poly[0], poly[n], poly[n + 1]};
+        // A user-set summit must be a real vertex, not a height sampled only
+        // at neighbouring grid corners. Split both sides when it lies on an edge.
+        for (auto p : peakPositions) {
+            QVector<BrushPolygon> split;
+            for (const auto &t : triangles) {
+                const auto a = t[1].grid - t[0].grid, b = t[2].grid - t[0].grid, q = p - t[0].grid;
+                const double det = a.x() * b.y() - a.y() * b.x();
+                if (std::abs(det) < 1e-7)
+                    continue;
+                const double u = (q.x() * b.y() - q.y() * b.x()) / det,
+                             v = (a.x() * q.y() - a.y() * q.x()) / det;
+                const bool atVertex =
+                    std::any_of(t.begin(), t.end(), [&](const BrushPoint &vertex) {
+                        return std::hypot(vertex.grid.x() - p.x(), vertex.grid.y() - p.y()) < 1e-6;
+                    });
+                if (atVertex || u < -1e-7 || v < -1e-7 || u + v > 1.0000001) {
+                    split << t;
+                    continue;
+                }
+                const BrushPoint peak{p, shape.distance(p), shape.influence(p)};
+                for (int i = 0; i < 3; ++i)
+                    split << BrushPolygon{t[i], t[(i + 1) % 3], peak};
+            }
+            triangles = std::move(split);
+        }
+        for (const auto &triangle : triangles) {
+            const auto a = triangle[1].grid - triangle[0].grid,
+                       b = triangle[2].grid - triangle[0].grid;
             if (std::abs(a.x() * b.y() - a.y() * b.x()) < 1e-7)
                 continue;
-            PaintTriangle t{vertex(poly[0]), vertex(poly[n]), vertex(poly[n + 1])};
+            PaintTriangle t{vertex(triangle[0]), vertex(triangle[1]), vertex(triangle[2])};
             if (shape.mountain())
                 for (int i = 1; i < 3; ++i) {
                     const double period = texture.width() * 2.;
@@ -476,6 +506,30 @@ QVector<PaintTriangle> mesh(const FieldBrushShape &shape, const FieldBrush &brus
     return result;
 }
 } // namespace
+QVector<MountainPeak> fieldMountainPeaks(const FieldMapSource &source, const FieldChanges &change) {
+    auto region = source.visualTerrain;
+    for (int i = 0; i < region.size(); ++i)
+        if (u8(change.paint, i) != 255)
+            region[i] = change.paint[i];
+    FieldBorders borders(source, change);
+    for (const auto &t : source.terrainFaces)
+        if (t.terrain == 7 || t.terrain == 14)
+            borders.removed[t.owner].insert(t.face);
+    const Surface ground(source, &borders);
+    QVector<MountainPeak> result;
+    for (int type : {7, 14}) {
+        const FieldBrushShape shape(region, type, source.map.bounds, {},
+                                    mountainSummits(source, ground, type));
+        for (const auto &p : shape.peaks()) {
+            MountainPeak peak{{p.x(), p.z()}, type, p.y(), p.y()};
+            for (const auto &edit : change.peaks)
+                if (edit.terrain == type && edit.position == peak.position)
+                    peak.height = edit.height;
+            result << peak;
+        }
+    }
+    return result;
+}
 QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &change) {
     const auto &original = source.geometry[1].data;
     const FieldBorders borders(source, change);
@@ -485,7 +539,7 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
         if (borders.change.paint.contains(char(type)))
             shapes[type] = std::make_shared<FieldBrushShape>(
                 borders.change.paint, type, source.map.bounds, borders.native,
-                mountainSummits(source, surface, type));
+                mountainSummits(source, surface, type), change.peaks);
     const bool bridges = change.paint.contains(char(2)) || change.paint.contains(char(10));
     if (shapes.isEmpty() && borders.removed.isEmpty() && !bridges)
         return original;
@@ -694,7 +748,11 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         for (auto type = tiles.begin(); type != tiles.end(); ++type) {
             const FieldBrushShape shape(borders.change.paint, type.key(), source.map.bounds,
                                         borders.native,
-                                        mountainSummits(source, surface, type.key()));
+                                        mountainSummits(source, surface, type.key()), change.peaks);
+            QVector<QPointF> peakPositions;
+            for (const auto &peak : change.peaks)
+                if (peak.terrain == type.key())
+                    peakPositions << peak.position;
             for (int pass = 0; pass < (type->border.isNull() ? 1 : 2); ++pass) {
                 const bool border = pass == 1;
                 const auto &image = border ? type->border : type->texture;
@@ -706,7 +764,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 const auto painted =
                     bridge
                         ? bridgeMesh(bridgeSpans(source, change, surface, type.key()), type.value())
-                        : mesh(shape, type.value(), surface, border);
+                        : mesh(shape, type.value(), surface, border, peakPositions);
                 const int w = image.width(), h = image.height(), line = (w * 2 + 7) / 8,
                           ms = int(std::log2(w)), mt = int(std::log2(h));
                 const bool highway = roadPaint(type.key());

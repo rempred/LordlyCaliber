@@ -35,7 +35,8 @@ class FieldBrushShape {
   public:
     QRect cells;
     FieldBrushShape(const QByteArray &paint, int type, QRectF bounds, const QByteArray &native = {},
-                    const QVector<QVector3D> &summits = {})
+                    const QVector<QVector3D> &summits = {},
+                    const QVector<MountainPeak> &heights = {})
         : distance_(size * size), bounds_(bounds), type_(type),
           cell_(std::min(bounds.width(), bounds.height()) / 256) {
         auto region = paint;
@@ -89,8 +90,12 @@ class FieldBrushShape {
         }
         if (coverage_ && road())
             road_ = std::make_shared<FieldRoadUv>(region, type, distance_);
-        if (mountain())
+        if (mountain()) {
             mountain_ = std::make_shared<FieldMountain>(distance_, summits);
+            for (const auto &p : heights)
+                if (p.terrain == type)
+                    mountain_->setHeight(p.position, p.height);
+        }
         if (coverage_) {
             const int band = int(std::ceil(.65 / cell_)) + 1;
             cells = coverage_->cells.isEmpty() ? QRect()
@@ -101,6 +106,9 @@ class FieldBrushShape {
     QPointF world(QPointF grid) const {
         return {bounds_.left() + grid.x() * bounds_.width() / 256,
                 bounds_.top() + grid.y() * bounds_.height() / 256};
+    }
+    QVector<QVector3D> peaks() const {
+        return mountain_ ? mountain_->peaks(cell_) : QVector<QVector3D>{};
     }
     QPointF grid(QPointF world) const {
         return {(world.x() - bounds_.left()) * 256 / bounds_.width(),

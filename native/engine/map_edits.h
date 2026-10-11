@@ -13,11 +13,17 @@ struct FieldMapSource {
     QVector<FieldTriangle> terrainFaces;
     QRectF boundary;
 };
+struct MountainPeak {
+    QPointF position; // 256 by 256 map grid; stable identity within a terrain outline.
+    int terrain = 7;
+    double height = 0, defaultHeight = 0;
+};
 struct FieldChanges {
     QByteArray paint = QByteArray(65536, char(-1));
     QMap<int, QPointF> sites;
     std::optional<QRectF> boundary;
     QVector<CityPlacement> city;
+    QVector<MountainPeak> peaks;
 };
 struct FieldPlan {
     int geometryIndex = 0, terrainIndex = 0, pointIndex = 0;
@@ -33,6 +39,8 @@ class MapEdits {
     bool canMoveSite(int key, int row) const;
     void moveSite(int key, int row, QPointF destination);
     void paint(int key, const QVector<QPointF> &stroke, int terrain, double radius);
+    QVector<MountainPeak> mountainPeaks(int key) const;
+    void setPeakHeight(int key, const MountainPeak &, double height);
     const QVector<CityAsset> &cityAssets() const;
     const CityAsset &cityAsset(const QString &id) const;
     void placeCity(int key, const QString &asset, QPointF position, int rotation = 0);
@@ -69,4 +77,5 @@ class MapEdits {
 QByteArray editFieldModel(const FieldMapSource &, const FieldChanges &,
                           const QMap<int, FieldBrush> &, const QVector<CityAsset> &city = {});
 QByteArray editFieldHeight(const FieldMapSource &, const FieldChanges &);
+QVector<MountainPeak> fieldMountainPeaks(const FieldMapSource &, const FieldChanges &);
 } // namespace lordly

@@ -36,6 +36,11 @@ Brush radius supports half steps, including 1.5. Bridges form straight spans fro
 the ROM's bridge mesh, retaining deck, rails, support faces and atlas mapping;
 the movement-height grid follows the deck.
 
+Mountain heights mode adds selectable peak diamonds. Drag up/down to change one
+peak while keeping its map position, or enter its height in the sidebar. Release
+redraws slopes; Escape cancels. Individual restoration, Undo/Redo, saved projects
+and native geometry/movement-height export share the same peak values.
+
 Map's separate City pieces dropdown adds 19 current-ROM houses, towers, keeps,
 gates and wall pieces from keys 39/47/51, plus cobblestone paving and three road
 brushes. Click placement, dragging, rotation, removal, Undo, projects and native

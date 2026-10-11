@@ -74,6 +74,21 @@ class FieldMountain {
         QPointF uv;
         double height = 0;
     };
+    QVector<QVector3D> peaks(double cell) const {
+        QVector<QVector3D> result;
+        for (const auto &region : regions_)
+            for (const auto &p : region)
+                result << QVector3D(float(p.point.x()),
+                                    float(p.height >= 0 ? p.height : std::min(3.2, p.radius * cell * .7)),
+                                    float(p.point.y()));
+        return result;
+    }
+    void setHeight(QPointF position, double height) {
+        for (auto &region : regions_)
+            for (auto &p : region)
+                if (p.point == position)
+                    p.height = height;
+    }
     // Blend the directions toward adjacent summits before assigning the slope
     // panels, avoiding unrelated angular seams through the middle of a ridge.
     Sample sample(QPointF p, double distance, double cell) const {

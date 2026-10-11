@@ -397,3 +397,23 @@ The full project export and the original minimap texture loop
 pass for its edited terrain. `ui_tests scenarioMapEditing scenarioWorldEditing`
 also pass complete editing/export/reopen and checksum checks. Updated map and
 briefing previews were inspected. These remain offline checks.
+
+## Individual peak heights (2026-10-11)
+
+Map's **Mountain heights** tool shows native and generated summits as diamond
+handles. Dragging vertically changes the selected peak's height above its base,
+with X/Z fixed. Release commits one Undo action and regenerates the slopes;
+Escape cancels. The sidebar accepts precise heights from 0 to 8 world units and
+can restore one peak without discarding other map edits.
+
+Projects store optional `mapEdits.maps.<model>.peaks` entries keyed by grid X/Z
+and terrain (7 or 14), with a height. Peak selection precedes height overrides,
+so changing height cannot move a generated summit or change its neighbours'
+settings. Painting that removes/replaces a generated summit drops its obsolete
+height override. Native regions touched by a height edit use the existing
+border rebuild; geometry, normals and movement heights share the same profile.
+Edited summits become explicit mesh vertices so the two-cell tessellation cannot
+round away the chosen height. The movement grid retains its native sampling.
+Export regenerates briefing artwork; terrain type and minimap cells are unchanged
+by height alone. Unedited regions retain their original geometry. Rebuilt slopes
+remain an approximation of the artist's mesh and texture mapping.

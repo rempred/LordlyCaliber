@@ -62,6 +62,7 @@ struct MapMarker {
     QImage icon;
     bool locked = false;
     QPolygonF footprint;
+    MountainPeak peak;
     qreal radius() const {
         return kind == MapObject::Squad || kind == MapObject::Treasure ? 16.
                : kind == MapObject::Waypoint                           ? 4.
@@ -87,6 +88,7 @@ class MapCanvas : public QWidget {
     QVector<QPair<int, int>> edges;
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
+    std::function<void(int, double)> heightMoved;
     std::function<void(QPointF)> place;
     bool placing = false;
     bool pickingDestination = false;
@@ -125,6 +127,18 @@ class MapCanvas : public QWidget {
     QPointF fromPixel(QPointF p) const {
         const qreal side = std::max(1, std::min(width(), height()) - 72) * zoom_;
         return (p - QPointF(width() / 2., height() / 2.) - pan_) * 256. / side + QPointF(128, 128);
+    }
+    double draggedHeight(int row, QPointF mouse) const {
+        return std::clamp(markers[row].peak.height + (press_.y() - mouse.y()) / 24., 0., 8.);
+    }
+    QPointF markerPixel(int row) const {
+        const auto &m = markers[row];
+        if (m.kind == MapObject::Peak) {
+            const double height =
+                row == drag_ && dragging_ ? draggedHeight(row, mouse_) : m.peak.height;
+            return toPixel(*m.position) - QPointF(0, 12 + height * 24);
+        }
+        return row == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
     }
 
   protected:
@@ -193,15 +207,23 @@ class MapCanvas : public QWidget {
             const auto &m = markers[i];
             if (!m.position)
                 continue;
-            const QPointF center =
-                i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
+            const QPointF center = markerPixel(i);
             const qreal radius = m.radius();
             labelAreas << QRectF(center - QPointF(radius + 3, radius + 3),
                                  QSizeF((radius + 3) * 2, (radius + 3) * 2));
             p.setPen(
                 QPen(i == current ? QColor("#fff2a8") : QColor("#0d131a"), i == current ? 3 : 1.5));
             p.setBrush(m.color);
-            if (!m.icon.isNull()) {
+            if (m.kind == MapObject::Peak) {
+                const auto foot = toPixel(*m.position);
+                p.setPen(QPen(i == current ? QColor("#fff2a8") : m.color, 2));
+                p.drawLine(foot, center);
+                p.drawLine(foot + QPointF(-4, 0), foot + QPointF(4, 0));
+                QPolygonF diamond;
+                diamond << center + QPointF(0, -8) << center + QPointF(7, 0)
+                        << center + QPointF(0, 8) << center + QPointF(-7, 0);
+                p.drawPolygon(diamond);
+            } else if (!m.icon.isNull()) {
                 p.drawImage(QRectF(center - QPointF(16, 16), QSizeF(32, 32)), m.icon);
                 p.setBrush(Qt::NoBrush);
                 p.setPen(QPen(m.color, 2));
@@ -226,10 +248,15 @@ class MapCanvas : public QWidget {
             const auto &m = markers[i];
             if (!m.position)
                 continue;
-            const QPointF center =
-                i == drag_ && dragging_ ? mouse_ - dragOffset_ : toPixel(*m.position);
+            const QPointF center = markerPixel(i);
             if (labels || i == current) {
-                const QString text = m.label.section(" · ", 0, 0);
+                const QString text =
+                    m.label.section(" · ", 0, 0) +
+                    (m.kind == MapObject::Peak
+                         ? QString(" · %1").arg(i == drag_ && dragging_ ? draggedHeight(i, mouse_)
+                                                                        : m.peak.height,
+                                                0, 'f', 2)
+                         : QString());
                 QRectF label(center + QPointF(m.radius() + 6, -10),
                              QSizeF(p.fontMetrics().horizontalAdvance(text) + 8, 20));
                 for (int attempt = 0; attempt < 12; ++attempt) {
@@ -333,13 +360,13 @@ class MapCanvas : public QWidget {
         qreal distance = std::numeric_limits<qreal>::max();
         // Keep a list-selected marker reachable when several share a position.
         if (current >= 0 && current < markers.size() && markers[current].position &&
-            QLineF(toPixel(*markers[current].position), press_).length() <=
+            QLineF(markerPixel(current), press_).length() <=
                 std::max(12., markers[current].radius() + 2))
             hit = current;
         else
             for (int i = 0; i < markers.size(); ++i)
                 if (markers[i].position) {
-                    const auto d = QLineF(toPixel(*markers[i].position), press_).length();
+                    const auto d = QLineF(markerPixel(i), press_).length();
                     if ((d <= std::max(12., markers[i].radius() + 2) ||
                          markers[i].footprint.containsPoint(fromPixel(press_), Qt::OddEvenFill)) &&
                         (hit < 0 || markers[i].layer() > markers[hit].layer() ||
@@ -403,7 +430,10 @@ class MapCanvas : public QWidget {
         const bool changed = dragging_;
         drag_ = -1;
         dragging_ = false;
-        if (changed && moved)
+        if (changed && index >= 0 && markers[index].kind == MapObject::Peak) {
+            if (heightMoved)
+                heightMoved(index, draggedHeight(index, e->position()));
+        } else if (changed && moved)
             moved(index, fromPixel(e->position() - dragOffset_));
         update();
     }
@@ -415,6 +445,11 @@ class MapCanvas : public QWidget {
         e->accept();
     }
     void keyPressEvent(QKeyEvent *e) override {
+        if (e->key() == Qt::Key_Escape && drag_ >= 0) {
+            cancelDrag();
+            update();
+            return;
+        }
         if (e->key() == Qt::Key_Escape && pickingDestination && cancelDestination) {
             cancelDestination();
             return;
@@ -498,7 +533,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     tool_ = new QComboBox;
     tool_->setObjectName("mapTool");
     tool_->addItems({"Select / move", "Paint terrain", "Draw road", "Erase painting",
-                     "Edit boundary", "City pieces"});
+                     "Edit boundary", "City pieces", "Mountain heights"});
     painting->addWidget(tool_);
     paintType_ = new QComboBox;
     paintType_->setObjectName("mapPaintType");
@@ -680,6 +715,36 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
             notice_->setText(QString::fromUtf8(e.what()));
         }
     });
+    peakInspector_ = new QWidget;
+    auto peakFields = new QVBoxLayout(peakInspector_);
+    peakFields->setContentsMargins(0, 0, 0, 0);
+    auto peakHelp = new QLabel("Drag a diamond up or down to change that peak. "
+                               "Release to redraw the slopes. Escape cancels the drag.");
+    peakHelp->setWordWrap(true);
+    peakFields->addWidget(peakHelp);
+    peakFields->addWidget(new QLabel("Height above ground"));
+    peakHeight_ = new QDoubleSpinBox;
+    peakHeight_->setObjectName("mapPeakHeight");
+    peakHeight_->setRange(0, 8);
+    peakHeight_->setDecimals(2);
+    peakHeight_->setSingleStep(.1);
+    peakHeight_->setKeyboardTracking(false);
+    peakFields->addWidget(peakHeight_);
+    restorePeak_ = new QPushButton("Restore peak height");
+    restorePeak_->setObjectName("mapPeakRestore");
+    peakFields->addWidget(restorePeak_);
+    fields->addWidget(peakInspector_);
+    peakInspector_->hide();
+    connect(peakHeight_, &QDoubleSpinBox::valueChanged, this, [this](double height) {
+        if (!loading_)
+            editPeak(objects_->currentRow(), height);
+    });
+    connect(restorePeak_, &QPushButton::clicked, this, [this] {
+        const int row = objects_->currentRow();
+        if (row >= 0 && row < canvas_->markers.size())
+            editPeak(row, canvas_->markers[row].peak.defaultHeight);
+    });
+    canvas_->heightMoved = [this](int row, double height) { editPeak(row, height); };
     coordinates_ = new QWidget;
     auto coords = new QHBoxLayout(coordinates_);
     coords->setContentsMargins(0, 0, 0, 0);
@@ -737,9 +802,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                 canvas_->cancelDrag();
                 canvas_->brushMode = mode < 4 ? mode : 0;
                 cityTools_->setVisible(mode == 5);
-                paintType_->setVisible(mode != 5);
-                brushLabel_->setVisible(mode != 5);
-                brushSize_->setVisible(mode != 5);
+                paintType_->setVisible(mode < 5);
+                brushLabel_->setVisible(mode < 5);
+                brushSize_->setVisible(mode < 5);
                 const int terrain = paintType_->currentData().toInt();
                 canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
                 canvas_->editBoundary = mode == 4 && key_ != 39;
@@ -756,7 +821,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                 else
                     canvas_->cityFootprint.clear();
                 canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
-                canvas_->update();
+                if (!loading_)
+                    refresh(key_);
             });
     paintType_->setEnabled(false);
     connect(paintType_, &QComboBox::currentIndexChanged, this, [this] {
@@ -997,7 +1063,7 @@ void ScenarioMapEditor::refresh(int key) {
                 new QListWidgetItem(label + (position ? "" : " · unresolved placement"), objects_);
             item->setData(Qt::UserRole, int(kind));
             item->setData(Qt::UserRole + 1, row);
-            item->setForeground(color.darker(140));
+            item->setForeground(kind == MapObject::Peak ? QColor("#65431d") : color.darker(140));
             if (!icon.isNull())
                 item->setIcon(QPixmap::fromImage(icon));
             item->setToolTip(item->text());
@@ -1072,6 +1138,20 @@ void ScenarioMapEditor::refresh(int key) {
                     artwork(itemId | (equipment ? 0 : 0x200), false));
             }
         }
+        if (editable && tool_->currentIndex() == 6) {
+            objects_->clear();
+            canvas_->markers.clear();
+            canvas_->edges.clear();
+            const auto peaks = project_->mapEdits()->mountainPeaks(key);
+            for (int i = 0; i < peaks.size(); ++i) {
+                const auto &peak = peaks[i];
+                const QPointF world(
+                    map.bounds.left() + peak.position.x() * map.bounds.width() / 256,
+                    map.bounds.top() + peak.position.y() * map.bounds.height() / 256);
+                add(MapObject::Peak, i, QString("Peak %1").arg(i + 1), world, QColor("#ffe6a3"));
+                canvas_->markers.last().peak = peak;
+            }
+        }
         if (map.image) {
             const auto &r = *map.image;
             QImage image(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width, r.height,
@@ -1119,10 +1199,13 @@ void ScenarioMapEditor::refresh(int key) {
                 "Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
                 (map.image ? "\nSeparate briefing overview shown below." : ""));
         }
-        notice_->setText("Drag towns, strongholds, squads, waypoints or treasure to set "
-                         "positions. Selecting a point-based squad or waypoint "
-                         "and moving it changes its placement to map coordinates. " +
-                         map.placementNotice);
+        notice_->setText(tool_->currentIndex() == 6
+                             ? "Drag a peak diamond up to raise it or down to lower it. "
+                               "Release to redraw; Escape cancels."
+                             : "Drag towns, strongholds, squads, waypoints or treasure to set "
+                               "positions. Selecting a point-based squad or waypoint "
+                               "and moving it changes its placement to map coordinates. " +
+                                   map.placementNotice);
         artworkWarnings.removeDuplicates();
         if (!artworkWarnings.isEmpty())
             notice_->setText(notice_->text() + "\nSome marker artwork could not be decoded: " +
@@ -1146,6 +1229,8 @@ void ScenarioMapEditor::select(int row) {
     const bool valid = row >= 0 && row < canvas_->markers.size();
     const bool movable = valid && canvas_->markers[row].movable();
     const bool city = valid && canvas_->markers[row].kind == MapObject::City;
+    const bool peak = valid && canvas_->markers[row].kind == MapObject::Peak;
+    peakInspector_->setVisible(peak);
     const bool squad = valid && canvas_->markers[row].kind == MapObject::Squad;
     orders_->setVisible(squad);
     orders_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
@@ -1154,10 +1239,12 @@ void ScenarioMapEditor::select(int row) {
                                        canvas_->markers[row].kind == MapObject::Treasure);
     world_->setVisible(worldObject);
     coordinates_->setVisible(
-        valid && (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
+        valid && !peak &&
+        (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
     apply_->setVisible(
-        valid && (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
-    fields_->setVisible(valid && !worldObject && !city);
+        valid && !peak &&
+        (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
+    fields_->setVisible(valid && !worldObject && !city && !peak);
     summary_->setVisible(valid && (!worldObject || canvas_->markers[row].kind == MapObject::Site));
     reference_->setVisible(!worldObject && canvas_->terrain.isNull());
     referenceName_->setVisible(!worldObject);
@@ -1169,12 +1256,22 @@ void ScenarioMapEditor::select(int row) {
     selection_->clear();
     summary_->clear();
     if (!valid) {
-        selection_->setText("Select a squad, waypoint, site, treasure or city piece on the map.");
+        selection_->setText(
+            tool_->currentIndex() == 6
+                ? "Select a peak diamond on the map. Paint Highlands to add a mountain."
+                : "Select a squad, waypoint, site, treasure or city piece on the map.");
         return;
     }
     const auto &m = canvas_->markers[row];
     selection_->setText(m.label.section(" · flag ", 0, 0));
-    if (worldObject) {
+    if (peak) {
+        QSignalBlocker block(peakHeight_);
+        peakHeight_->setValue(m.peak.height);
+        restorePeak_->setEnabled(std::abs(m.peak.height - m.peak.defaultHeight) > .00001);
+        summary_->setText(
+            "Mountain peak · Raising or lowering this peak reshapes its slopes. "
+            "Its map position stays fixed. The generated slopes approximate the original art.");
+    } else if (worldObject) {
         world_->selectObject(m.kind == MapObject::Treasure, m.row);
         if (m.kind == MapObject::Site)
             summary_->setText(movable ? "Drag this building on the map to move its appearance and "
@@ -1210,6 +1307,23 @@ void ScenarioMapEditor::select(int row) {
     } else {
         x_->setValue(128);
         z_->setValue(128);
+    }
+}
+void ScenarioMapEditor::editPeak(int row, double height) {
+    if (row < 0 || row >= canvas_->markers.size() || canvas_->markers[row].kind != MapObject::Peak)
+        return;
+    try {
+        auto next = *project_->mapEdits();
+        const auto before = next.json();
+        next.setPeakHeight(key_, canvas_->markers[row].peak, height);
+        if (before != next.json()) {
+            undo_->push(
+                new FieldEditCommand(project_, before, next.json(), "Change mountain peak height"));
+            refresh(key_);
+        }
+    } catch (const Error &e) {
+        select(row);
+        notice_->setText(QString::fromUtf8(e.what()));
     }
 }
 void ScenarioMapEditor::move(int row, QPoint bytes) {

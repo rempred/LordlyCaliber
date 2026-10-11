@@ -8967,6 +8967,106 @@ class UiTests : public QObject {
         QVERIFY(scroll->viewport()->rect().contains(apply->mapTo(scroll->viewport(), apply->rect().center())));
         QVERIFY(editor.grab().save("scenario-advanced-small.png"));
     }
+    void mountainPeakEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        project.loadWorld();
+        project.loadMapEdits();
+        QUndoStack undo;
+        ScenarioMapEditor editor(
+            &project, &undo, [](const Scenarios &, const QString &) {}, [](MapObject, int) {});
+        editor.resize(1300, 950);
+        editor.refresh(5);
+        editor.show();
+        connect(&undo, &QUndoStack::indexChanged, &editor, [&] { editor.refresh(5); });
+        auto tool = editor.findChild<QComboBox *>("mapTool");
+        tool->setCurrentText("Mountain heights");
+        QTest::qWait(20);
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+        auto height = editor.findChild<QDoubleSpinBox *>("mapPeakHeight");
+        auto restore = editor.findChild<QPushButton *>("mapPeakRestore");
+        QVERIFY(objects && canvas && height && restore);
+        const auto peaks = project.mapEdits()->mountainPeaks(5);
+        QCOMPARE(objects->count(), peaks.size());
+        int selected = -1;
+        for (int i = 0; i < peaks.size(); ++i)
+            if (QRectF(70, 80, 130, 145).contains(peaks[i].position)) {
+                selected = i;
+                break;
+            }
+        QVERIFY(selected >= 0);
+        const auto peak = peaks[selected];
+        auto pixel = [&] {
+            const double side = std::min(canvas->width(), canvas->height()) - 72;
+            const double h = project.mapEdits()->mountainPeaks(5)[selected].height;
+            return (QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                    (peak.position - QPointF(128, 128)) * side / 256. - QPointF(0, 12 + h * 24))
+                .toPoint();
+        };
+        objects->setCurrentRow(selected);
+        QVERIFY(height->isVisible());
+        QVERIFY(!editor.findChild<QPushButton *>("mapApply")->isVisible());
+        const auto original = project.mapEdits()->json();
+        auto start = pixel();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(25, -24), 20);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(25, -24));
+        QCOMPARE(undo.count(), 1);
+        QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].position, peak.position);
+        QVERIFY(std::abs(project.mapEdits()->mountainPeaks(5)[selected].height - peak.height - 1) <
+                .001);
+        const auto raised = project.mapEdits()->json();
+        start = pixel();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(0, 48), 20);
+        QTest::keyClick(canvas, Qt::Key_Escape);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(0, 48));
+        QCOMPARE(project.mapEdits()->json(), raised);
+        QCOMPARE(undo.count(), 1);
+        undo.undo();
+        QCOMPARE(project.mapEdits()->json(), original);
+        undo.redo();
+        QCOMPARE(project.mapEdits()->json(), raised);
+        start = pixel();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(canvas, start + QPoint(0, 24), 20);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, start + QPoint(0, 24));
+        QCOMPARE(project.mapEdits()->json(), original);
+        QCOMPARE(undo.count(), 2);
+        height->setValue(.75);
+        QCOMPARE(project.mapEdits()->mountainPeaks(5)[selected].height, .75);
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
+                                   "/mountain-peak-editor.png"));
+        QTemporaryDir work;
+        project.saveFolder(work.filePath("project"));
+        auto restored = Project::fromRom(Rom::open(path));
+        restored.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(restored.mapEdits()->json(), project.mapEdits()->json());
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        QVERIFY(!tools.isEmpty());
+        const auto result = rebuild(restored, tools, work.path());
+        const auto root =
+            QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/mountain-heights-20261011");
+        QVERIFY(QDir().mkpath(root));
+        const auto candidate = QDir(root).filePath(QFileInfo(path).fileName());
+        exportRom(restored, result, candidate);
+        const auto reopened = MapEdits::load(Rom::open(candidate));
+        QCOMPARE(reopened.model(5), project.mapEdits()->model(5));
+        QCOMPARE(reopened.source(5).geometry[1].data,
+                 editFieldHeight(project.mapEdits()->source(5), project.mapEdits()->changes(5)));
+        auto checksum = result.image;
+        Rom::updateChecksum(checksum);
+        QCOMPARE(checksum, result.image);
+        restore->click();
+        QCOMPARE(project.mapEdits()->json(), original);
+        tool->setCurrentIndex(0);
+        QVERIFY(!height->isVisible());
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
+    }
     void scenarioMapEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

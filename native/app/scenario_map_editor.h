@@ -13,7 +13,7 @@ class QDoubleSpinBox;
 class QPushButton;
 class QUndoStack;
 namespace lordly {
-enum class MapObject { Squad, Waypoint, Site, Treasure, City };
+enum class MapObject { Squad, Waypoint, Site, Treasure, City, Peak };
 class MapCanvas;
 class ScenarioWorldEditor;
 class SquadOrderEditor;
@@ -50,6 +50,10 @@ class ScenarioMapEditor : public QWidget {
     QDoubleSpinBox *brushSize_;
     QLabel *brushLabel_;
     QWidget *cityTools_, *cityInspector_;
+    QWidget *peakInspector_;
+    QDoubleSpinBox *peakHeight_;
+    QPushButton *restorePeak_;
+    void editPeak(int row, double height);
     QComboBox *cityType_;
     QSpinBox *cityAngle_, *placedCityAngle_;
     void updateCityTool();

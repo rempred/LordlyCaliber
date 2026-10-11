@@ -19,11 +19,17 @@ struct FieldBorders {
     }
     FieldBorders(const FieldMapSource &s, const FieldChanges &c)
         : change(c), native(s.visualTerrain) {
+        QSet<int> heightCells;
+        for (const auto &p : c.peaks) {
+            const int at = int(p.position.y()) * 256 + int(p.position.x());
+            if (at >= 0 && at < 65536 && u8(s.visualTerrain, at) == p.terrain)
+                heightCells.insert(at);
+        }
         for (int start = 0; start < 65536; ++start) {
             const int old = u8(s.visualTerrain, start);
             if (!raised(old) || replaced[start])
                 continue;
-            bool touched = false;
+            bool touched = heightCells.contains(start);
             for (int y = std::max(0, start / 256 - 1); y <= std::min(255, start / 256 + 1); ++y)
                 for (int x = std::max(0, start % 256 - 1); x <= std::min(255, start % 256 + 1);
                      ++x) {

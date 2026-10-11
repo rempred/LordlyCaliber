@@ -57,6 +57,120 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void mountainPeakHeights() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto edit = MapEdits::load(rom);
+        const auto original = edit.json();
+        const auto &source = edit.source(5);
+        const auto peaks = edit.mountainPeaks(5);
+        QVERIFY(peaks.size() > 1);
+        const auto selected = std::find_if(peaks.begin(), peaks.end(), [](auto p) {
+            // Inside the movement-height grid, on Joe's central native mountain.
+            return QRectF(116, 116, 92, 116).contains(p.position) && p.height > 1.5;
+        });
+        QVERIFY(selected != peaks.end());
+        const auto peak = *selected;
+        const auto b = source.map.bounds;
+        const QPointF point(b.left() + b.width() * peak.position.x() / 256,
+                            b.top() + b.height() * peak.position.y() / 256);
+        edit.setPeakHeight(5, peak, .5);
+        const auto low = edit.model(5);
+        const auto lowGrid = editFieldHeight(source, edit.changes(5));
+        const double lowY = surfaceHeight(Battlefield::load(rom, 5, {}, low).triangles(), point);
+        edit.setPeakHeight(5, peak, 3.5);
+        const auto high = edit.model(5);
+        const double highY = surfaceHeight(Battlefield::load(rom, 5, {}, high).triangles(), point);
+        qInfo() << "Peak" << peak.position << "low/high Y" << lowY << highY;
+        QVERIFY(highY > lowY + 2.7);
+        QVERIFY(high.size() <= 524288);
+        const auto changedPeaks = edit.mountainPeaks(5);
+        QCOMPARE(changedPeaks.size(), peaks.size());
+        for (int i = 0; i < peaks.size(); ++i) {
+            QCOMPARE(changedPeaks[i].position, peaks[i].position);
+            QCOMPARE(changedPeaks[i].height,
+                     peaks[i].position == peak.position ? 3.5 : peaks[i].height);
+        }
+        QCOMPARE(edit.fineTerrain(5), source.terrain[0].data);
+        QCOMPARE(edit.model(1), edit.source(1).geometry[0].data);
+        const auto saved = edit.json();
+        auto restored = MapEdits::load(rom);
+        restored.apply(saved);
+        QCOMPARE(restored.model(5), high);
+        QVERIFY_THROWS_EXCEPTION(Error, edit.setPeakHeight(5, peak, -1));
+        QVERIFY_THROWS_EXCEPTION(Error, edit.setPeakHeight(5, peak, 8.01));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, edit.setPeakHeight(5, peak, std::numeric_limits<double>::quiet_NaN()));
+        auto invalid = saved;
+        auto maps = invalid["maps"].toObject();
+        auto row = maps[QString::number(source.modelId)].toObject();
+        row["peaks"] = QJsonArray{QJsonObject{{"x", -1}, {"z", 2}, {"terrain", 7}, {"height", 2}}};
+        maps[QString::number(source.modelId)] = row;
+        invalid["maps"] = maps;
+        QVERIFY_THROWS_EXCEPTION(Error, edit.apply(invalid));
+        QCOMPARE(edit.json(), saved);
+        const auto exported = Rom::fromBytes(edit.rebuild(rom));
+        const auto reopened = MapEdits::load(exported);
+        QCOMPARE(reopened.source(5).geometry[0].data, high);
+        QVERIFY(reopened.source(5).map.image->rgba != source.map.image->rgba);
+        const auto &grid = reopened.source(5).geometry[1].data;
+        auto f = [&](int at) { return double(std::bit_cast<float>(u32(grid, at))); };
+        const int heightX =
+                      int(std::round((point.x() - f(4)) / (f(8) - f(4)) * (u16(grid, 0) - 1))),
+                  heightZ =
+                      int(std::round((point.y() - f(20)) / (f(24) - f(20)) * (u16(grid, 2) - 1)));
+        qInfo() << "Movement height low/high" << movementHeight(lowGrid, heightX, heightZ)
+                << movementHeight(grid, heightX, heightZ);
+        QVERIFY(movementHeight(grid, heightX, heightZ) >
+                movementHeight(lowGrid, heightX, heightZ) + .5);
+        edit.setPeakHeight(5, peak, peak.defaultHeight);
+        QCOMPARE(edit.json(), original);
+        QCOMPARE(edit.model(5), source.geometry[0].data);
+        edit.paint(5, {{161.5, 132.5}}, 7, 3); // Same native mountain extension as Joe's project.
+        const auto painted = edit.json();
+        const auto extended = edit.mountainPeaks(5);
+        const auto inside = std::find_if(extended.begin(), extended.end(), [](auto p) {
+            return QRectF(116, 116, 92, 116).contains(p.position);
+        });
+        QVERIFY(inside != extended.end());
+        const auto paintedModel = edit.model(5);
+        edit.setPeakHeight(5, *inside, 3);
+        QVERIFY(edit.model(5) != paintedModel);
+        edit.setPeakHeight(5, *inside, inside->defaultHeight);
+        QCOMPARE(edit.json(), painted);
+        // New ordinary and snowy mountains have independently adjustable generated summits.
+        QPoint center(-1, -1);
+        for (int y = 20; y < 236 && center.x() < 0; y += 4)
+            for (int x = 20; x < 236 && center.x() < 0; x += 4) {
+                bool plain = true;
+                for (int dy = -9; dy <= 9 && plain; ++dy)
+                    for (int dx = -9; dx <= 9; ++dx)
+                        plain &= u8(source.visualTerrain, (y + dy) * 256 + x + dx) == 3;
+                if (plain)
+                    center = {x, y};
+            }
+        QVERIFY(center.x() >= 0);
+        for (int type : {7, 14}) {
+            edit.restore(5);
+            edit.paint(5, {center}, type, 7);
+            const auto added = edit.mountainPeaks(5);
+            const auto found = std::find_if(added.begin(), added.end(), [&](auto p) {
+                return p.terrain == type && QLineF(p.position, center).length() < 5;
+            });
+            QVERIFY(found != added.end());
+            const auto p = *found;
+            const auto before = edit.model(5);
+            edit.setPeakHeight(5, p, 8);
+            QVERIFY(edit.model(5) != before);
+            edit.setPeakHeight(5, p, 0);
+            QVERIFY(edit.model(5) != before);
+            edit.paint(5, {center}, 255, 9);
+            QVERIFY(edit.changes(5).peaks.isEmpty());
+            QCOMPARE(edit.json(), original);
+        }
+    }
     void nativeMountainSlopes() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
