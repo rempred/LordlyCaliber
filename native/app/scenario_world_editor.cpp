@@ -108,6 +108,11 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
         facilityRow->addWidget(check, i / 2, i % 2);
     }
     form->addRow("Facilities", facilityRow);
+    auto facilityHelp = new QLabel(
+        "A town can show Shop or Witch’s den, not both. Apply site changes, export the ROM, "
+        "then enter the mission from the world map. Resuming a suspend save keeps its old facilities.");
+    facilityHelp->setWordWrap(true);
+    form->addRow(facilityHelp);
     shop_ = spin("worldShop", project_->shops()->size() - 1);
     shop_->setSpecialValueText("None");
     form->addRow("Shop ID", shop_);
@@ -195,6 +200,12 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     notice_->setWordWrap(true);
     notice_->setObjectName("worldNotice");
     layout->addWidget(notice_);
+    for (int i = 0; i < 2; ++i)
+        connect(facilities_[i], &QCheckBox::toggled, this, [this, i](bool on) {
+            if (loading_) return;
+            if (on) facilities_[1 - i]->setChecked(false);
+            siteHelp_->setText("Unapplied facility changes — press Apply site changes, then export the ROM.");
+        });
     connect(table_, &QComboBox::currentIndexChanged, this, [this] {
         if (!loading_)
             fillItems();
@@ -220,6 +231,8 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
                 if (facilities_[i]->isChecked())
                     caps |= 1 << i;
             put8(record, 25, quint8(caps));
+            if ((caps & 1) && !shop_->value())
+                throw Error("This shop needs an inventory. Choose a Shop ID or use Create new shop here.");
             put8(record, 26, quint8(type_->currentData().toInt()));
             put8(record, 27, quint8(shop_->value()));
             next.setTown(id, record);

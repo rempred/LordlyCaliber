@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Map labels and town facility selection (2026-10-10)
+
+MapCanvas retains the visible label rectangles after collision layout and uses
+reverse paint order for label hits before marker hits. These select without
+starting an object drag. Paint, boundary, treasure placement and squad destination
+tools retain priority; refreshed marker lists clear stale label hit areas.
+
+The native town menu offers one facility slot. In overlay descriptor 7,
+z64 ROM 0x11D000..0x11D08C reads the selected live site's flags at RAM
+0x801951CC + index*36. Bit 0x0100 copies template 0x801E89A8+108 (Shop,
+callback 0x801B73EC); only when clear does bit 0x0200 copy template +144
+(Witch's den, callback 0x801B6DE8). The editor prevents newly choosing both,
+while preserving loaded metadata on untouched Apply. Shop assignment clears
+the den bit. New shops created at a town receive the ordinary seven consumables.
+
+The initializer at z64 0x127998..0x1279E8 loads town bytes 25/26 plus the
+SCINCSV addend into the live flags. Nonzero RAM 0x801F1038 skips this write on
+resume, explaining why a suspend save retains older facilities. Facilities are
+project edits only after Apply; the UI explicitly identifies unapplied choices.
+The `site-facilities-mips.cjs` check executes these original byte ranges with
+exported records, with menu-copy and story-flag service doubles. It checks fresh
+Shop/den choices, Shop precedence in loaded conflicting metadata, and resume
+preservation; it does not run a complete game session.
+
+`ui_tests scenarioMapLabelSelection scenarioWorldEditing` passes label-only
+selection, no label dragging, destination-tool priority, and existing site/treasure
+editing and Undo. `ui_tests scenarioFacilityExport` passes project/export/reopen,
+checksum, default shop stock, exclusive choices and six original initializer/menu
+cases (5308 ms). The label screenshot was inspected. The initial probe used the
+wrong test-interpreter alias for register 30; corrected to `fp` before acceptance.
+
 ## Map orders and Testing cold boot (2026-10-10)
 
 `SquadOrderEditor` is shared by Map and Orders. Destination picking owns the

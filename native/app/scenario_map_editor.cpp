@@ -83,6 +83,7 @@ class MapCanvas : public QWidget {
         setFocusPolicy(Qt::StrongFocus);
     }
     QVector<MapMarker> markers;
+    QVector<QPair<int, QRectF>> labelHits;
     QVector<QPair<int, int>> edges;
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
@@ -128,6 +129,7 @@ class MapCanvas : public QWidget {
 
   protected:
     void paintEvent(QPaintEvent *) override {
+        labelHits.clear();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         p.fillRect(rect(), QColor("#141e29"));
@@ -237,6 +239,7 @@ class MapCanvas : public QWidget {
                     label.translate(0, 21);
                 }
                 labelAreas << label;
+                labelHits << qMakePair(i, label);
                 p.fillRect(label, QColor(12, 20, 28, 210));
                 p.setPen(Qt::white);
                 p.drawText(label.adjusted(4, 0, 0, 0), Qt::AlignVCenter, text);
@@ -314,6 +317,18 @@ class MapCanvas : public QWidget {
             update();
             return;
         }
+        // Labels are painted over markers. Resolve the topmost visible label
+        // first, including labels displaced to avoid crowded icons. A label
+        // click selects only; dragging the marker still moves the object.
+        for (auto i = labelHits.crbegin(); i != labelHits.crend(); ++i)
+            if (i->second.contains(press_) && i->first >= 0 && i->first < markers.size()) {
+                cancelDrag();
+                current = i->first;
+                if (selected)
+                    selected(current);
+                update();
+                return;
+            }
         int hit = -1;
         qreal distance = std::numeric_limits<qreal>::max();
         // Keep a list-selected marker reachable when several share a position.
@@ -863,6 +878,7 @@ void ScenarioMapEditor::refresh(int key) {
         key_ = key;
         objects_->clear();
         canvas_->markers.clear();
+        canvas_->labelHits.clear();
         canvas_->edges.clear();
         select(-1);
         return;
@@ -878,6 +894,7 @@ void ScenarioMapEditor::refresh(int key) {
     QSignalBlocker block(objects_);
     objects_->clear();
     canvas_->markers.clear();
+    canvas_->labelHits.clear();
     canvas_->edges.clear();
     canvas_->current = -1;
     reference_->clear();

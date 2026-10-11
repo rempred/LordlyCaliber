@@ -62,7 +62,9 @@ void setShop(Project &project, int townId, int shopId) {
         throw Error(
             "Mission objectives cannot open shops. Clear Mission objective in Sites first.");
     put8(town, 27, quint8(shopId));
-    put8(town, 25, quint8((u8(town, 25) & ~1) | (shopId ? 1 : 0)));
+    // The native town menu gives Shop priority over Witch's den. Assigning a
+    // shop replaces that facility; removing a shop preserves other flags.
+    put8(town, 25, quint8((u8(town, 25) & ~(shopId ? 3 : 1)) | (shopId ? 1 : 0)));
     world.setTown(townId, town);
     project.setWorld(world.json());
 }
@@ -72,6 +74,11 @@ int addShop(Project *project, QUndoStack *undo, int townId) {
     next.loadShops();
     auto shops = *next.shops();
     const int id = shops.addShop();
+    if (townId > 0) {
+        ShopStock stock;
+        stock.consumables = {1, 2, 3, 4, 5, 6, 8};
+        shops.setStock(id, stock);
+    }
     next.setShops(shops.json());
     if (townId > 0)
         setShop(next, townId, id);

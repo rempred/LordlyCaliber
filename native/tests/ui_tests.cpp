@@ -8580,6 +8580,140 @@ class UiTests : public QObject {
         QCOMPARE(visible, 1);
         QCOMPARE(sha256(rom.bytes()), before);
     }
+    void scenarioMapLabelSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        auto scenarios = *project.scenarios();
+        const int row = scenarios.addNode(1, 1, project.classData());
+        auto node = scenarios.scenario(1).layout.nodes[row];
+        put8(node, 4, 128); put8(node, 5, 10);
+        scenarios.setNode(1, row, node, project.classData());
+        project.setScenarios(scenarios.json());
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950); editor.show();
+        auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        const auto before = project.manifest();
+        const auto target = [&] {
+            const double side = std::min(canvas->width(), canvas->height()) - 72;
+            return QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                   QPointF(0, -118) * side / 256. + QPointF(30, 0);
+        };
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
+        QTest::qWait(50);
+        canvas->repaint();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, target().toPoint());
+        QVERIFY(objects->currentItem());
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(), int(MapObject::Waypoint));
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole + 1).toInt(), row);
+        QCOMPARE(project.manifest(), before);
+        canvas->repaint();
+        QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, target().toPoint());
+        QTest::mouseMove(canvas, target().toPoint() + QPoint(30, 15), 20);
+        QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, target().toPoint() + QPoint(30, 15));
+        QCOMPARE(project.manifest(), before); // Labels select; only marker drags move.
+        QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
+        auto orders = editor.findChild<QWidget *>("mapSquadOrders");
+        auto command = orders->findChild<QComboBox *>("squadCommand");
+        command->setCurrentIndex(command->findData(int(SquadBehavior::Move)));
+        orders->findChild<QPushButton *>("squadCommandPick")->click();
+        canvas->repaint();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, target().toPoint());
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(), int(MapObject::Squad));
+        QCOMPARE(project.manifest(), before);
+        QVERIFY(selectMapObject(editor, MapObject::Waypoint, row));
+        canvas->repaint();
+        QVERIFY(editor.grab().save("map-label-selection.png"));
+    }
+    void scenarioFacilityExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950); editor.show();
+        auto missions = editor.findChild<QListWidget *>("scenarioList");
+        for (int i = 0; i < missions->count(); ++i)
+            if (missions->item(i)->data(Qt::UserRole).toInt() == 5) missions->setCurrentRow(i);
+        const auto &world = *project.world();
+        int row = -1, id = -1;
+        for (int i = 0; i < world.siteCount(5); ++i) {
+            const int candidate = u16(world.scenario(5).sites, 1 + i * 4);
+            if (world.townName(candidate).startsWith("Quell")) { row = i; id = candidate; break; }
+        }
+        QVERIFY(row >= 0);
+        QVERIFY(selectMapObject(editor, MapObject::Site, row));
+        const auto before = project.manifest();
+        editor.findChild<QPushButton *>("worldShopAdd")->click();
+        const int shop = u8(project.world()->town(id), 27);
+        QVERIFY(shop > 0);
+        QCOMPARE(project.shops()->stock(shop).consumables, QVector<quint16>({1, 2, 3, 4, 5, 6, 8}));
+        editor.findChild<QCheckBox *>("worldFacility1")->setChecked(true);
+        QVERIFY(!editor.findChild<QCheckBox *>("worldFacility0")->isChecked());
+        editor.findChild<QPushButton *>("worldSiteApply")->click();
+        QCOMPARE(u8(project.world()->town(id), 25) & 3, 2);
+        const int shopRow = row == 0 ? 1 : 0;
+        const int shopTown = u16(project.world()->scenario(5).sites, 1 + shopRow * 4);
+        QVERIFY(selectMapObject(editor, MapObject::Site, shopRow));
+        editor.findChild<QCheckBox *>("worldObjective")->setChecked(false);
+        editor.findChild<QCheckBox *>("worldFacility0")->setChecked(true);
+        editor.findChild<QSpinBox *>("worldShop")->setValue(shop);
+        editor.findChild<QPushButton *>("worldSiteApply")->click();
+        QCOMPARE(u8(project.world()->town(shopTown), 25) & 3, 1);
+        const auto after = project.manifest();
+        while (undo.canUndo()) undo.undo();
+        QCOMPARE(project.manifest(), before);
+        while (undo.canRedo()) undo.redo();
+        QCOMPARE(project.manifest(), after);
+        QTemporaryDir work;
+        project.saveFolder(work.filePath("project"));
+        auto restored = Project::fromRom(rom);
+        restored.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(restored.world()->town(id), project.world()->town(id));
+        const auto result = rebuild(restored, tools, work.path());
+        const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+        QVERIFY(QDir().mkpath(root));
+        QTemporaryDir output(QDir(root).filePath("native-site-facilities-XXXXXX"));
+        QVERIFY(output.isValid());
+        const auto candidate = output.filePath(QFileInfo(path).fileName());
+        exportRom(restored, result, candidate);
+        const auto reopenedRom = Rom::open(candidate);
+        const auto reopened = ScenarioWorld::load(reopenedRom);
+        QCOMPARE(reopened.town(id), project.world()->town(id));
+        QCOMPARE(u8(reopened.town(id), 25) & 3, 2);
+        QCOMPARE(u8(reopened.town(shopTown), 25) & 3, 1);
+        QCOMPARE(u8(reopened.town(id), 27), shop);
+        QCOMPARE(Shops::load(reopenedRom).stock(shop), restored.shops()->stock(shop));
+        auto sealed = reopenedRom.bytes();
+        Rom::updateChecksum(sealed);
+        QCOMPARE(sealed.mid(0x10, 8), reopenedRom.bytes().mid(0x10, 8));
+        auto both = reopened.town(id);
+        put8(both, 25, quint8(u8(both, 25) | 3));
+        const auto example = [&](QString name, QByteArray town, int point, QJsonArray menu) {
+            return QJsonObject{{"name", name}, {"town", QString::fromLatin1(town.toHex())},
+                {"addend", u16(reopened.scenario(5).sites, 3 + point * 4)}, {"menu", menu}};
+        };
+        const auto fixture = work.filePath("facilities.json");
+        QFile f(fixture); QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QJsonDocument(QJsonObject{{"rom", candidate}, {"cases", QJsonArray{
+            example("Shop", reopened.town(shopTown), shopRow, {108}),
+            example("Witch's den", reopened.town(id), row, {144}),
+            example("Loaded conflicting flags", both, row, {108})}}}).toJson());
+        f.close();
+        QProcess probe;
+        probe.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("site-facilities-mips.cjs"), fixture});
+        QVERIFY(probe.waitForFinished(30000));
+        const auto errors = probe.readAllStandardError();
+        QVERIFY2(probe.exitCode() == 0, errors.constData());
+        qInfo().noquote() << probe.readAllStandardOutput();
+        output.setAutoRemove(false);
+        qInfo().noquote() << "Facility test ROM:" << candidate;
+    }
     void scenarioMapOrders() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -9244,7 +9378,7 @@ class UiTests : public QObject {
         const auto oldFlags = u8(project.world()->town(id), 25);
         den->setChecked(!(oldFlags & 2));
         button("worldSiteApply")->click();
-        QCOMPARE(u8(project.world()->town(id), 25), quint8(oldFlags ^ 2));
+        QCOMPARE(u8(project.world()->town(id), 25), quint8(oldFlags & 2 ? oldFlags & ~2 : (oldFlags & ~1) | 2));
         undo.undo();
         QCOMPARE(project.manifest(), beforeShop);
         spin("worldPopulation")->setValue(4567);

@@ -55,11 +55,20 @@ other portrait slot when absent. Colored rings retain allegiance and selection;
 icons draw above sites/waypoints. Icons also identify entries in the object list,
 refresh with record edits and Undo, and preserve the grab offset during dragging.
 Selecting a site or treasure opens its editor in the scrolling Map sidebar;
-there is no separate Sites and treasure page or second object picker. Site
+clicking its visible map label also selects it, including labels shifted around
+nearby objects. Labels select without dragging; marker drags still move objects.
+There is no separate Sites and treasure page or second object picker. Site
 metadata/facilities/shops/allegiance and treasure items/coordinates/removal retain
 their Apply, Restore and Undo paths. Squad selections show members and levels;
 waypoints show route context, with links to their full editors. Add treasure on
 map opens the new treasure's inspector immediately.
+
+Town facilities follow the native menu's single facility entry: choosing Shop
+clears Witch's den, and vice versa. Existing loaded metadata remains intact until
+edited. New town shops start with the seven ordinary consumables; Shop ID zero
+cannot be applied as a new shop. The inspector marks unapplied facility choices.
+Apply site changes and export before testing. Fresh mission entry loads the ROM's
+facilities; a suspended mission retains its previous facility flags.
 
 Map encounters combines terrain names, per-terrain chances and the selected
 map's two creature choices. Terrains sharing a pool occupy one row; pool IDs are
