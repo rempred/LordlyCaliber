@@ -97,6 +97,7 @@ class MapCanvas : public QWidget {
     QVector<StepMarker> stepMarkers;
     QVector<int> routeRows;
     QVector<QPair<int,QRectF>> stepHits;
+    QVector<QPair<QString,QRectF>> triggerAreas;
     int selectedStep = -1;
     std::function<void(int)> stepSelected;
     bool routeReached = false;
@@ -214,6 +215,15 @@ class MapCanvas : public QWidget {
                 p.drawText(toPixel({qreal(n), 0}) + QPointF(-8, -10), QString::number(n));
                 p.drawText(toPixel({0, qreal(n)}) + QPointF(-32, 4), QString::number(n));
             }
+        for (int i=0;i<triggerAreas.size();++i) {
+            const auto &[name,region]=triggerAreas[i];
+            const QRectF box(toPixel(region.topLeft()),toPixel(region.bottomRight()));
+            const QColor color=i?QColor("#d9a6ff"):QColor("#6de4ff");
+            p.setPen(QPen(color,2,Qt::DashLine));p.setBrush(QColor(color.red(),color.green(),color.blue(),28));
+            p.drawRect(box);p.fillRect(QRectF(box.topLeft(),QSizeF(p.fontMetrics().horizontalAdvance(name)+10,20)),QColor("#172534"));
+            p.drawText(box.topLeft()+QPointF(5,15),name);
+        }
+        p.setBrush(Qt::NoBrush);
         p.setPen(QPen(QColor("#678b98"), 1.5, Qt::DashLine));
         for (const auto &[a, b] : edges)
             if (markers[a].position && markers[b].position)
@@ -845,18 +855,20 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         }
         canvas_->pickingDestination = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
-        notice_->setText(on ? "Click a destination for this squad. Escape cancels. The squad stays selected." : "");
+        notice_->setText(on ? steps_->pickPrompt() : "");
+        canvas_->update();
     };
     orders_->enableMapPicking([this,beginPicking](bool on){if(on)steps_->cancelPick();beginPicking(on);});
     steps_->picking=[this,beginPicking](bool on){if(on)orders_->cancelPick();beginPicking(on);};
     canvas_->cancelDestination = [this] { orders_->cancelPick();steps_->cancelPick(); };
     canvas_->destinationPicked = [this](QPointF point) {
-        if (point.x() < 1 || point.x() > 255 || point.y() < 1 || point.y() > 255) {
-            notice_->setText("Choose a destination inside the mission map.");
+        const int minimum=steps_->isPickingArea()?0:1;
+        if (point.x() < minimum || point.x() > 255 || point.y() < minimum || point.y() > 255) {
+            notice_->setText("Choose a point inside the mission map.");
             return;
         }
         const QPoint position(qRound(point.x()),qRound(point.y()));
-        if(steps_->findChild<QPushButton *>("squadStepPick")->isChecked())steps_->setDestination(position);
+        if(steps_->isPicking())steps_->setDestination(position);
         else orders_->setDestination(position);
     };
     canvas_->stepSelected=[this](int row){steps_->selectNode(row);};
@@ -1612,6 +1624,7 @@ void ScenarioMapEditor::select(int row) {
 }
 void ScenarioMapEditor::updateRoutePreview(int squad) {
     canvas_->route.clear();
+    canvas_->triggerAreas=squad>=0?steps_->triggerAreas():QVector<QPair<QString,QRectF>>();
     canvas_->stepMarkers.clear();canvas_->stepHits.clear();canvas_->routeRows.clear();canvas_->selectedStep=steps_->selectedNode();
     canvas_->routeReached = false;canvas_->destination.reset();canvas_->draftRoute=false;
     routePreview_->setVisible(squad >= 0);

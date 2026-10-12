@@ -52,6 +52,8 @@ QString kindName(int kind) {
         return "Active source count";
     case 12:
         return "Site state flag";
+    case 16:
+        return "This squad is inside an area";
     default:
         return QString("Original kind %1").arg(kind);
     }
@@ -210,7 +212,7 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     conditionForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
     conditionForm->setSizeConstraint(QLayout::SetMinimumSize);
     conditionKind_ = box("routeConditionKind");
-    for (const int kind : {1, 4, 8, 9, 12})
+    for (const int kind : {1, 4, 8, 9, 12, 16})
         conditionKind_->addItem(kindName(kind), kind);
     conditionForm->addRow("Predicate", conditionKind_);
     for (int at = 2; at < 10; ++at) {
@@ -568,7 +570,7 @@ void ScenarioRouteEditor::showCondition() {
     loading_ = true;
     const auto &c = project_->scenarios()->scenario(key_).layout.conditions[conditionRow_];
     conditionKind_->clear();
-    for (const int kind : {1, 4, 8, 9, 12})
+    for (const int kind : {1, 4, 8, 9, 12, 16})
         conditionKind_->addItem(kindName(kind), kind);
     select(conditionKind_, u8(c, 1));
     for (int i = 0; i < 8; ++i)
@@ -581,7 +583,7 @@ void ScenarioRouteEditor::conditionLabels() {
     const int kind = conditionKind_->currentData().toInt();
     for (int i = 0; i < 8; ++i)
         payloadLabels_[i]->setText(QString("Payload byte %1").arg(i + 2));
-    if (kind == 1 || kind == 8) {
+    if (kind == 1 || kind == 8 || kind == 16) {
         const QStringList labels{"Minimum X", "Minimum Z", "Maximum X", "Maximum Z"};
         for (int i = 0; i < 4; ++i)
             payloadLabels_[i]->setText(labels[i]);

@@ -1,4 +1,5 @@
 #include "engine/scenarios.h"
+#include "engine/squad_route.h"
 #include <QSet>
 
 namespace lordly {
@@ -14,7 +15,7 @@ bool conditionReference(int value, const Eset &e) {
     return value == 0 || (value >= 1 && value <= e.conditions.size());
 }
 bool knownCondition(int kind) {
-    return kind == 1 || kind == 4 || kind == 8 || kind == 9 || kind == 12;
+    return kind == 1 || kind == 4 || kind == 8 || kind == 9 || kind == 12 || kind == 16;
 }
 QVector<int> nodeTargets(const QByteArray &n) {
     QVector<int> values{u8(n, 17)};
@@ -140,7 +141,7 @@ void Scenarios::validateRoutes(const Scenario &s) const {
         if ((before.isEmpty() || before[1] != c[1]) && !knownCondition(kind))
             throw Error("Only understood condition kinds can be created; other original records "
                         "are preserved");
-        if ((kind == 1 || kind == 8) && (before.isEmpty() || c.mid(1, 5) != before.mid(1, 5)) &&
+        if ((kind == 1 || kind == 8 || kind == 16) && (before.isEmpty() || c.mid(1, 5) != before.mid(1, 5)) &&
             (u8(c, 2) > u8(c, 4) || u8(c, 3) > u8(c, 5)))
             throw Error("Condition rectangle minimum must not exceed its maximum");
         if (kind == 9 && (before.isEmpty() || c[6] != before[6]) && (u8(c, 6) < 1 || u8(c, 6) > 30))
@@ -251,6 +252,34 @@ void Scenarios::setCondition(int key, int row, const QByteArray &record, const C
         throw Error("Condition identity is managed by the editor");
     next.layout.conditions[row] = record;
     replace(std::move(next), classes);
+}
+void Scenarios::setStepTrigger(int key, int node, int slot, const QByteArray &record,
+                               const ClassData &classes, bool create) {
+    const auto &e = scenario(key).layout;
+    index(node, e.nodes.size(), "route step");
+    if ((slot != 0 && slot != 1) || SquadRoute::extended(e.nodes[node], &e))
+        throw Error("This mission script needs its original trigger rules.");
+    if (record.size() != 10 || (u8(record, 1) != 9 && u8(record, 1) != 16))
+        throw Error("Choose an area or squad-count trigger.");
+    const int offset = slot ? 12 : 10, id = u8(e.nodes[node], offset);
+    int uses = 0;
+    // Count even inactive slots: switching a gate back on must not change its predicate.
+    for (const auto &n : e.nodes)
+        for (int at : {10, 12, 14}) if (id && u8(n, at) == id) ++uses;
+    auto next = *this;
+    int row = id - 1;
+    if (create || row < 0 || row >= e.conditions.size() ||
+        row < original(key).layout.conditions.size() || uses > 1) {
+        if (e.conditions.size() >= 16)
+            throw Error("All 16 mission trigger slots are in use. This edit needs a separate trigger "
+                        "to protect other steps and mission events. Reuse an existing trigger or free an unused custom trigger in Advanced.");
+        row = next.addCondition(key, u8(record, 1), classes);
+    }
+    auto c = record; put8(c, 0, quint8(row + 1));
+    next.setCondition(key, row, c, classes);
+    auto n = next.scenario(key).layout.nodes[node]; put8(n, offset, quint8(row + 1));
+    next.setNode(key, node, n, classes);
+    *this = std::move(next);
 }
 int Scenarios::addCondition(int key, int kind, const ClassData &classes) {
     auto next = scenario(key);

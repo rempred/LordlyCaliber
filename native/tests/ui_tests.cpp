@@ -9184,6 +9184,134 @@ class UiTests : public QObject {
             undo.undo();undo.undo();QCOMPARE(project.scenarios()->json(),hold);
         } catch(const Error &e){QFAIL(e.what());}
     }
+    void scenarioSidebarTriggers() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            applyEditorTheme(*qApp);
+            auto project=Project::fromRom(Rom::open(path));project.loadScenarios();
+            const auto classes=project.classData();auto model=*project.scenarios();const int key=1;
+            const int first=model.addNode(key,1,classes),other=model.addNode(key,0,classes);
+            auto n=model.scenario(key).layout.nodes[first];put8(n,4,100);put8(n,5,120);put8(n,17,quint8(other+4));model.setNode(key,first,n,classes);
+            auto deployment=model.scenario(key).layout.deployments[0];put8(deployment,6,quint8(first+4));model.setDeployment(key,0,deployment,classes);
+            model.setRouteGroup(key,1,0,0,classes);model.setRouteGroup(key,2,0,0,classes);project.setScenarios(model.json());
+            // A mission with no existing conditions can author its first trigger here.
+            auto emptyProject=Project::fromRom(project.rom());emptyProject.loadScenarios();auto empty=*emptyProject.scenarios();
+            QCOMPARE(empty.scenario(10).layout.conditions.size(),0);
+            empty.setSquadCommand(10,0,{SquadBehavior::Guard},classes);emptyProject.setScenarios(empty.json());
+            SquadRouteSteps emptySteps(&emptyProject,[&](const Scenarios &s,const QString &){emptyProject.setScenarios(s.json());});emptySteps.refresh(10,0);
+            auto emptyWhen=emptySteps.findChild<QComboBox *>("squadStepWhen");emptyWhen->setCurrentIndex(emptyWhen->findData(1));
+            QVERIFY(QMetaObject::invokeMethod(emptyWhen,"activated",Q_ARG(int,emptyWhen->currentIndex())));
+            QCOMPARE(emptyProject.scenarios()->scenario(10).layout.conditions.size(),1);
+            QCOMPARE(u8(emptyProject.scenarios()->scenario(10).layout.conditions[0],1),16);
+            QCOMPARE(u8(emptyProject.scenarios()->scenario(10).layout.nodes[emptySteps.selectedNode()],10),1);
+            QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
+            auto scenarios=editor.findChild<QListWidget *>("scenarioList");
+            for(int i=0;i<scenarios->count();++i)if(scenarios->item(i)->data(Qt::UserRole).toInt()==key)scenarios->setCurrentRow(i);
+            QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+            auto steps=static_cast<SquadRouteSteps *>(editor.findChild<QWidget *>("squadRouteSteps"));QVERIFY(steps);
+            auto activate=[&](const char *name,int value) {
+                auto box=steps->findChild<QComboBox *>(name);QVERIFY(box && box->isEnabled());const int index=box->findData(value);QVERIFY(index>=0);
+                box->setCurrentIndex(index);QVERIFY(QMetaObject::invokeMethod(box,"activated",Q_ARG(int,index)));
+            };
+            auto refresh=[&]{scenarios->currentRowChanged(scenarios->currentRow());QVERIFY(selectMapObject(editor,MapObject::Squad,0));steps->selectNode(first);};
+            activate("squadStepWhen",1);
+            auto newTrigger=steps->findChild<QPushButton *>("squadTriggerANew");QVERIFY(newTrigger && newTrigger->isEnabled());newTrigger->click();
+            const int areaId=u8(project.scenarios()->scenario(key).layout.nodes[first],10);
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.conditions[areaId-1],1),16);
+            const auto beforeArea=project.scenarios()->json();
+            const auto deploymentBeforeArea=project.scenarios()->scenario(key).layout.deployments[0];
+            auto canvas=editor.findChild<QWidget *>("scenarioMapCanvas");QTest::qWait(40);
+            auto clickGrid=[&](QPointF grid) {
+                QTest::qWait(20); // Pick instructions can change the map's available height.
+                const qreal scale=(std::min(canvas->width(),canvas->height())-72)/256.;
+                const auto center=QPointF(canvas->width()/2.,canvas->height()/2.);
+                const auto pixel=(center+(grid-QPointF(128,128))*scale).toPoint();
+                const auto actual=(QPointF(pixel)-center)/scale+QPointF(128,128);
+                QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,pixel);
+                return QPoint(qRound(actual.x()),qRound(actual.y()));
+            };
+            auto pick=steps->findChild<QPushButton *>("squadTriggerAPick");QVERIFY(pick);
+            pick->click();clickGrid({128,144});
+            QCOMPARE(project.scenarios()->json(),beforeArea);QVERIFY(steps->isPickingArea());
+            QTest::keyClick(canvas,Qt::Key_Escape);QVERIFY(!steps->isPicking());QCOMPARE(project.scenarios()->json(),beforeArea);
+            pick->click();const auto corner1=clickGrid({128,144});
+            const auto corner2=clickGrid({80,96});
+            QVERIFY(!steps->isPicking());
+            const auto area=project.scenarios()->scenario(key).layout.conditions[areaId-1];
+            const QRect expectedArea=QRect(corner1,corner2).normalized();
+            QCOMPARE(u8(area,2),expectedArea.left());QCOMPARE(u8(area,3),expectedArea.top());
+            QCOMPARE(u8(area,4),expectedArea.right());QCOMPARE(u8(area,5),expectedArea.bottom());
+            QCOMPARE(project.scenarios()->scenario(key).layout.deployments[0],deploymentBeforeArea);
+            QCOMPARE(steps->selectedNode(),first);QCOMPARE(steps->triggerAreas().size(),1);
+            undo.undo();QCOMPARE(project.scenarios()->json(),beforeArea);undo.redo();
+            // Coordinate edits keep rectangles valid in one Undo operation.
+            auto bound=steps->findChild<QSpinBox *>("squadTriggerABound0");bound->setValue(150);
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.conditions[areaId-1],4),150);undo.undo();
+            // Destination picking, tool changes and squad selection cancel unfinished areas.
+            pick->click();steps->findChild<QPushButton *>("squadStepPick")->click();QVERIFY(!steps->isPickingArea());QVERIFY(steps->isPicking());steps->cancelPick();
+            pick->click();editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(1);QVERIFY(!steps->isPicking());editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(0);
+            pick->click();QVERIFY(selectMapObject(editor,MapObject::Site,0));QVERIFY(!steps->isPicking());QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+            activate("squadStepWhen",2);activate("squadStepConditionB",-9);
+            auto count=steps->findChild<QSpinBox *>("squadTriggerBCount");count->setValue(4);
+            const int countId=u8(project.scenarios()->scenario(key).layout.nodes[first],12);
+            const int conditionCount=project.scenarios()->scenario(key).layout.conditions.size();
+            count->setValue(6);QCOMPARE(project.scenarios()->scenario(key).layout.conditions.size(),conditionCount);undo.undo();
+            const auto edited=project.scenarios()->json();
+            // Changing a private trigger's type reuses its slot; Undo restores all bytes.
+            activate("squadTriggerBType",16);QCOMPARE(project.scenarios()->scenario(key).layout.conditions.size(),conditionCount);undo.undo();QCOMPARE(project.scenarios()->json(),edited);
+            // A shared trigger gets a copy, leaving the other step's original predicate intact.
+            auto shared=*project.scenarios();auto otherNode=shared.scenario(key).layout.nodes[other];put8(otherNode,10,quint8(countId));shared.setNode(key,other,otherNode,classes);
+            project.setScenarios(shared.json());refresh();count->setValue(7);
+            const auto &split=project.scenarios()->scenario(key).layout;
+            QVERIFY(u8(split.nodes[first],12)!=countId);QCOMPARE(u8(split.conditions[countId-1],6),4);QCOMPARE(u8(split.conditions[u8(split.nodes[first],12)-1],6),7);
+            undo.undo();QCOMPARE(project.scenarios()->json(),shared.json());
+            project.setScenarios(edited);undo.clear();refresh();
+            // Native count success is consumed: AND must not test one ID twice.
+            activate("squadStepConditionA",countId);
+            QVERIFY(u8(project.scenarios()->scenario(key).layout.nodes[first],10)!=countId);undo.undo();QCOMPARE(project.scenarios()->json(),edited);
+            // Original predicates are copied even if no other ESET node references them.
+            bool checkedOriginal=false;
+            for(const auto &entry:model.entries()) {
+                for(int c=0;c<model.original(entry.key).layout.conditions.size();++c) {
+                    if(u8(model.original(entry.key).layout.conditions[c],1)!=9 || entry.layout.nodes.size()>=16 || entry.layout.conditions.size()>=16)continue;
+                    auto copy=model;const int row=copy.addNode(entry.key,0,classes);auto node=copy.scenario(entry.key).layout.nodes[row];put8(node,10,quint8(c+1));copy.setNode(entry.key,row,node,classes);
+                    const auto original=copy.scenario(entry.key).layout.conditions[c];auto predicate=original;put8(predicate,6,u8(original,6)==5?6:5);
+                    copy.setStepTrigger(entry.key,row,0,predicate,classes);
+                    QCOMPARE(copy.scenario(entry.key).layout.conditions[c],original);QVERIFY(u8(copy.scenario(entry.key).layout.nodes[row],10)!=c+1);checkedOriginal=true;break;
+                }
+                if(checkedOriginal)break;
+            }
+            QVERIFY(checkedOriginal);
+            // Capacity failure is atomic; a private trigger still edits at capacity.
+            auto full=*project.scenarios();while(full.scenario(key).layout.conditions.size()<16)full.addCondition(key,9,classes);
+            project.setScenarios(full.json());refresh();const auto atCapacity=project.scenarios()->json();activate("squadStepConditionA",-16);
+            QCOMPARE(project.scenarios()->json(),atCapacity);QVERIFY(steps->findChild<QLabel *>("squadStepNotice")->text().contains("16"));
+            steps->findChild<QSpinBox *>("squadTriggerBCount")->setValue(8);QCOMPARE(u8(project.scenarios()->scenario(key).layout.conditions[countId-1],6),8);
+            auto fullShared=*project.scenarios();auto sharedNode=fullShared.scenario(key).layout.nodes[other];put8(sharedNode,10,quint8(countId));fullShared.setNode(key,other,sharedNode,classes);
+            project.setScenarios(fullShared.json());refresh();steps->findChild<QSpinBox *>("squadTriggerBCount")->setValue(9);
+            QCOMPARE(project.scenarios()->json(),fullShared.json());QVERIFY(steps->findChild<QLabel *>("squadStepNotice")->text().contains("protect"));
+            project.setScenarios(edited);undo.clear();refresh();
+            auto invalid=*project.scenarios();auto bad=area;put8(bad,2,200);put8(bad,4,20);
+            QVERIFY_THROWS_EXCEPTION(Error,invalid.setCondition(key,areaId-1,bad,classes));QCOMPARE(invalid.json(),edited);
+            auto scroll=editor.findChild<QScrollArea *>("mapInspectorScroll");scroll->ensureWidgetVisible(steps->findChild<QComboBox *>("squadTriggerAType"));QTest::qWait(40);
+            for(auto box:steps->findChildren<QComboBox *>())if(box->isVisible())QVERIFY(box->height()>=box->sizeHint().height());
+            QVERIFY(editor.grab().save("native/build/sidebar-triggers-area.png"));
+            scroll->ensureWidgetVisible(count);QTest::qWait(40);QVERIFY(editor.grab().save("native/build/sidebar-triggers-count.png"));
+            QTemporaryDir folder,work;project.saveFolder(folder.path());
+            auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));QCOMPARE(loaded.scenarios()->json(),edited);
+            const auto result=rebuild(project,tools,work.path());QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-sidebar-triggers-XXXXXX");QVERIFY(output.isValid());
+            const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(project,result,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadScenarios();QCOMPARE(reopened.scenarios()->json(),edited);
+            auto checksum=reopened.rom().bytes();Rom::updateChecksum(checksum);QCOMPARE(checksum,reopened.rom().bytes());
+            QJsonArray conditions;for(const auto &c:reopened.scenarios()->scenario(key).layout.conditions)conditions<<QString::fromLatin1(c.toHex());
+            QJsonArray nodes;for(const auto &r:reopened.scenarios()->scenario(key).layout.nodes)nodes<<QString::fromLatin1(r.toHex());
+            QFile fixture(output.filePath("sidebar-triggers.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));fixture.write(QJsonDocument(QJsonObject{{"rom",candidate},{"conditions",conditions},{"nodes",nodes},{"first",first+4},{"next",other+4},{"area",areaId},{"count",countId}}).toJson());fixture.close();
+            QProcess process;process.start("node",{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("sidebar-triggers-mips.cjs"),fixture.fileName()});
+            QVERIFY(process.waitForFinished(30000));const auto evidence=process.readAllStandardOutput()+process.readAllStandardError();QVERIFY2(process.exitCode()==0,evidence.constData());qInfo().noquote()<<evidence;
+            output.setAutoRemove(false);qInfo().noquote()<<"Sidebar triggers ROM:"<<candidate;
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void scenarioScriptedContinuation() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();const auto original=*project.scenarios();

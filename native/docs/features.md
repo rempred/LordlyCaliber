@@ -3,16 +3,29 @@
 Map → selected squad → Orders shows an ordered step list with Action,
 Destination, Continue when and Next step. Select a step or its numbered map badge
 to edit it while retaining the squad selection. Actions, named destinations,
-map-picked positions, existing conditions, AND/OR conditions and branch targets
+map-picked positions, triggers, all/any combinations and branch targets
 apply with Undo. Add follow-up inserts a step without losing the previous link;
 loops and branch targets retain their displayed numbers. Plain Guard orders can
 be converted to a step list. Shared steps require enabling shared editing, and
 group followers link to their leader. Multiple native destinations keep separate
 lettered markers; overlapping stops remain selectable. Unknown extended scripts
-and new trigger authoring remain in Advanced. The special terminal action is
+remain in Advanced. The special terminal action is
 explicitly labeled Remove squad from field. A mission retains its native limit
 of 16 orders and 16 conditions. Numbers identify steps, not a guaranteed path
 through conditional branches. Terrain previews retain their existing limits.
+
+Continue when includes inline trigger cards. Create or reuse a trigger, change its
+type and parameters, and combine two triggers with all/any or branching rules.
+Area triggers test this squad's current position; choose two corners on the map
+or edit the inclusive bounds. Highlighted A/B rectangles stay with the selected
+step. Escape, tool changes and selection changes cancel unfinished picks.
+Squad-count triggers test 1 through the chosen limit (1-30), excluding zero and
+the player's army; scenario allies can count. Success is consumed each scheduler
+check. The editor separates duplicate count IDs in an all-triggers gate.
+Changes apply automatically with Undo. Original and shared predicates are copied
+before edits; a private custom trigger edits in place, including type changes.
+Unknown mission events can be reused or replaced with a supported trigger, while
+the original event remains intact. Original special scripts still need Advanced.
 
 Review project changes includes a searchable entry list with before/after details
 and Open selected edit navigation. Record links preserve identity through sorted

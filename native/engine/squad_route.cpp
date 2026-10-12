@@ -86,9 +86,9 @@ QString SquadRoute::conditionName(const Eset &e, int id) {
         name = QString("Area (%1, %2)–(%3, %4) and state")
             .arg(u8(c, 2)).arg(u8(c, 3)).arg(u8(c, 4)).arg(u8(c, 5)); break;
     case 4: name = QString("Target %1 and state").arg(u8(c, 6)); break;
-    case 9: name = QString("Active squad count · threshold %1").arg(u8(c, 6)); break;
+    case 9: name = QString("1–%1 active scenario squads").arg(u8(c, 6)); break;
     case 12: name = QString("Site %1 state flag").arg(u8(c, 6)); break;
-    case 16: name = QString("In area (%1, %2)–(%3, %4)").arg(u8(c,2)).arg(u8(c,3)).arg(u8(c,4)).arg(u8(c,5)); break;
+    case 16: name = QString("This squad is in area (%1, %2)–(%3, %4)").arg(u8(c,2)).arg(u8(c,3)).arg(u8(c,4)).arg(u8(c,5)); break;
     default: name = QString("Original event (kind %1)").arg(u8(c, 1)); break;
     }
     return QString("%1 · %2").arg(id).arg(name);

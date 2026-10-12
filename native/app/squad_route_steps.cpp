@@ -1,7 +1,9 @@
 #include "app/squad_route_steps.h"
+#include "app/squad_trigger_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHideEvent>
 #include <QLabel>
 #include <QListWidget>
@@ -64,12 +66,33 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
     pick_=new QPushButton("Choose destination on map");pick_->setCheckable(true);pick_->setObjectName("squadStepPick");places->addWidget(pick_);
     form->addRow("Destination",place_);
     when_=combo("squadStepWhen");
-    when_->addItem("No extra condition",0);when_->addItem("One condition",1);
-    when_->addItem("Both conditions",2);when_->addItem("Either condition",3);when_->addItem("Choose a branch",4);
+    when_->addItem("No extra trigger",0);when_->addItem("A trigger is true",1);
+    when_->addItem("All triggers are true",2);when_->addItem("Any trigger is true",3);when_->addItem("Branch using triggers",4);
     when_->addItem("Preserved script (Advanced)",-1);form->addRow("Continue when",when_);
-    conditions_=new QWidget;auto conditionForm=new QFormLayout(conditions_);conditionForm->setContentsMargins(0,0,0,0);conditionForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
-    conditionA_=combo("squadStepConditionA");conditionB_=combo("squadStepConditionB");
-    conditionForm->addRow("Condition A",conditionA_);conditionForm->addRow("Condition B",conditionB_);form->addRow(conditions_);
+    conditions_=new QWidget;auto conditionForm=new QVBoxLayout(conditions_);conditionForm->setContentsMargins(0,0,0,0);
+    for(int slot=0;slot<2;++slot) {
+        const auto suffix=QString(slot?"B":"A");
+        auto group=new QGroupBox("Trigger "+suffix);auto content=new QVBoxLayout(group);
+        triggerGroups_[slot]=group;triggers_[slot]=new SquadTriggerEditor(suffix);content->addWidget(triggers_[slot]);conditionForm->addWidget(group);
+        triggers_[slot]->selected=[this,slot](int id) {
+            const int row=selectedNode();
+            change("Choose route trigger",[&](Scenarios &s){
+                auto n=s.scenario(key_).layout.nodes[row];
+                if(u8(n,11)==2 && u8(n,slot?10:12)==id && u8(s.scenario(key_).layout.conditions[id-1],1)==9)
+                    s.setStepTrigger(key_,row,slot,s.scenario(key_).layout.conditions[id-1],project_->classData(),true);
+                else {put8(n,slot?12:10,quint8(id));s.setNode(key_,row,n,project_->classData());}
+            });
+        };
+        triggers_[slot]->create=[this,slot](int kind,bool create){writeTrigger(slot,defaultTrigger(kind),create);};
+        triggers_[slot]->changed=[this,slot](const QByteArray &c){writeTrigger(slot,c);};
+        triggers_[slot]->picking=[this,slot](bool on) {
+            cancelPick();
+            if(on){areaSlot_=slot;triggers_[slot]->setPicking(true);if(picking)picking(true);}
+        };
+    }
+    conditionA_=triggers_[0]->findChild<QComboBox *>("squadTriggerAExisting");conditionA_->setObjectName("squadStepConditionA");
+    conditionB_=triggers_[1]->findChild<QComboBox *>("squadTriggerBExisting");conditionB_->setObjectName("squadStepConditionB");
+    form->addRow(conditions_);
     next_=combo("squadStepNext");form->addRow("Next step",next_);
     branch_=new QWidget;auto branchForm=new QFormLayout(branch_);branchForm->setContentsMargins(0,0,0,0);branchForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
     fork_=combo("squadStepFork");branchForm->addRow("If A is true",fork_);form->addRow(branch_);
@@ -79,8 +102,12 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
     advanced_=new QPushButton("Advanced step and trigger details…");advanced_->setObjectName("squadStepAdvanced");layout->addWidget(advanced_);
     notice_=label();notice_->setObjectName("squadStepNotice");layout->addWidget(notice_);
     connect(steps_,&QListWidget::currentRowChanged,this,[this]{if(!loading_){cancelPick();showStep();}});
-    connect(shared_,&QCheckBox::toggled,this,[this]{if(!loading_)showStep();});
-    connect(pick_,&QPushButton::toggled,this,[this](bool on){pick_->setText(on?"Cancel destination selection":"Choose destination on map");if(picking)picking(on);});
+    connect(shared_,&QCheckBox::toggled,this,[this]{if(!loading_){cancelPick();showStep();}});
+    connect(pick_,&QPushButton::toggled,this,[this](bool on){
+        if(on){areaSlot_=-1;areaCorner_.reset();for(auto t:triggers_)t->setPicking(false);}
+        pick_->setText(on?"Cancel destination selection":"Choose destination on map");if(picking)picking(on);
+        if(stateChanged)stateChanged();
+    });
     connect(advanced_,&QPushButton::clicked,this,[this]{if(advanced)advanced(selectedNode());});
     connect(add_,&QPushButton::clicked,this,&SquadRouteSteps::addStep);
     connect(action_,&QComboBox::activated,this,[this]{
@@ -106,13 +133,24 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
         if(loading_)return;
         const int x=x_->value(),z=z_->value();edit("Move route step",[&](QByteArray &n){put8(n,4,quint8(x));put8(n,5,quint8(z));});
     });
-    for(auto w:{when_,conditionA_,conditionB_})connect(w,&QComboBox::activated,this,&SquadRouteSteps::transition);
+    connect(when_,&QComboBox::activated,this,&SquadRouteSteps::transition);
     for(auto w:{next_,fork_})connect(w,&QComboBox::activated,this,[this,w]{
         const int value=w->currentData().toInt();edit("Change route follow-up",[&](QByteArray &n){put8(n,w==next_?17:16,quint8(value));});
     });
 }
 int SquadRouteSteps::selectedNode() const {return steps_->currentItem()?steps_->currentItem()->data(Qt::UserRole).toInt():-1;}
-void SquadRouteSteps::cancelPick(){pick_->setChecked(false);}
+bool SquadRouteSteps::isPicking() const {return pick_->isChecked() || isPickingArea();}
+QString SquadRouteSteps::pickPrompt() const {
+    if(isPickingArea())return QString("Click the %1 corner of trigger %2's area. Escape cancels; the squad stays selected.")
+        .arg(areaCorner_?"second":"first",areaSlot_?"B":"A");
+    return "Click a destination for this squad. Escape cancels. The squad stays selected.";
+}
+void SquadRouteSteps::cancelPick(){
+    const bool area=isPickingArea();areaSlot_=-1;areaCorner_.reset();
+    pick_->setChecked(false);for(auto t:triggers_)t->setPicking(false);
+    if(area && picking)picking(false);
+    if(area && stateChanged)stateChanged();
+}
 void SquadRouteSteps::hideEvent(QHideEvent *e){cancelPick();QWidget::hideEvent(e);}
 QString SquadRouteSteps::destination(int x,int z) const {
     if(!x)return "No destination";
@@ -195,11 +233,14 @@ void SquadRouteSteps::showStep(){
     for(int i=0;i<pointCount;++i)destination_->addItem(destination(i+1,0),i+1);
     choose(destination_,u8(n,5)?0:u8(n,4));x_->setValue(u8(n,5)?u8(n,4):128);z_->setValue(u8(n,5)?u8(n,5):128);
     place_->setEnabled(u8(n,1)==1);coordinates_->setVisible(!destination_->currentData().toInt());pick_->setVisible(bool(picking));
-    for(auto w:{conditionA_,conditionB_}){w->clear();for(int i=0;i<s.layout.conditions.size();++i) {const int kind=u8(s.layout.conditions[i],1);if(kind!=14 && kind!=20)w->addItem(SquadRoute::conditionName(s.layout,i+1),i+1);}}
-    choose(conditionA_,u8(n,10));choose(conditionB_,u8(n,12));
+    for(int slot=0;slot<2;++slot) {
+        const int id=u8(n,slot?12:10);int uses=0;
+        for(const auto &other:s.layout.nodes)for(int at:{10,12,14})if(id && u8(other,at)==id)++uses;
+        triggers_[slot]->refresh(s.layout,id,id>project_->scenarios()->original(key_).layout.conditions.size() && uses==1);
+    }
     choose(when_,extended?-1:u8(n,11)==1?4:u8(n,11)?u8(n,11):u8(n,10)?1:0);
     const int mode=when_->currentData().toInt();conditions_->setVisible(mode>0);
-    static_cast<QFormLayout *>(conditions_->layout())->setRowVisible(conditionB_,mode>=2);
+    triggerGroups_[1]->setVisible(mode>=2);
     when_->setEnabled(!extended);conditions_->setEnabled(!extended);
     for(auto w:{next_,fork_}){w->clear();for(int id:{0,1,255})w->addItem(nextName(id),id);for(int i=0;i<s.layout.nodes.size();++i)w->addItem(nextName(i+4),i+4);}
     choose(next_,u8(n,17));choose(fork_,u8(n,16));next_->setEnabled(!extended);branch_->setVisible(mode==4);
@@ -211,6 +252,7 @@ void SquadRouteSteps::showStep(){
     if(u8(n,6)||u8(n,8))notes<<"This order has several destinations. The destination controls edit the first; the remaining stops are preserved and numbered on the map.";
     if(!u8(n,17) && (u8(n,10)||u8(n,11)))notes<<"The selected conditions are inactive while Next step is Stay on this step.";
     if(s.layout.nodes.size()>=16)notes<<"All 16 order slots are in use. Existing steps can still be edited.";
+    notes<<QString("Mission triggers: %1 / 16. Reuse a trigger from the list, or choose New to create one.").arg(s.layout.conditions.size());
     notice_->setText(notes.join('\n'));
     if(stateChanged)stateChanged();
 }
@@ -226,22 +268,66 @@ void SquadRouteSteps::edit(const QString &title,const std::function<void(QByteAr
 void SquadRouteSteps::transition(){
     if(loading_)return;
     const int mode=when_->currentData().toInt();if(mode<0)return;
-    int a=conditionA_->currentData().toInt(),b=conditionB_->currentData().toInt();
-    if(mode>0 && (!a || (mode>=2 && !b))){
-        const auto &conditions=project_->scenarios()->scenario(key_).layout.conditions;
-        int first=0;for(int i=0;i<conditions.size();++i){const int kind=u8(conditions[i],1);if(kind!=14 && kind!=20){first=i+1;break;}}
-        if(!first){showStep();notice_->setText("This mission has no ordinary conditions yet. Add a trigger in Advanced, then select it here.");return;}
-        if(!a)a=first;if(!b)b=first;
-    }
-    edit("Change route continuation",[&](QByteArray &n){
-        put8(n,10,quint8(mode?a:0));put8(n,11,quint8(mode==4?1:mode>=2?mode:0));
-        put8(n,12,quint8(mode>=2?b:0));
+    const int row=selectedNode();
+    change("Change route continuation",[&](Scenarios &s){
+        auto n=s.scenario(key_).layout.nodes[row];
+        // Reuse an available mission trigger when enabling a gate; empty missions
+        // receive a real, editable area predicate in the same atomic undo entry.
+        for(int slot=0;slot<(mode>=2?2:mode?1:0);++slot) {
+            const int offset=slot?12:10;
+            if(u8(n,offset)>0 && u8(n,offset)<=s.scenario(key_).layout.conditions.size())continue;
+            int id=0;const auto &conditions=s.scenario(key_).layout.conditions;
+            for(int i=0;i<conditions.size();++i)if(u8(conditions[i],1)!=14 && u8(conditions[i],1)!=20){id=i+1;break;}
+            if(!id){const auto c=defaultTrigger(16);s.setStepTrigger(key_,row,slot,c,project_->classData(),true);id=u8(s.scenario(key_).layout.nodes[row],offset);}
+            put8(n,offset,quint8(id));
+        }
+        if(!mode)put8(n,10,0);
+        put8(n,11,quint8(mode==4?1:mode>=2?mode:0));
         if(mode==4 && !u8(n,16))put8(n,16,u8(n,17)?u8(n,17):1);
+        s.setNode(key_,row,n,project_->classData());
+        // Count predicates consume their success bit. Testing one ID twice for
+        // AND can never succeed; give the second check its own native slot.
+        if(mode==2 && u8(n,10)==u8(n,12) && u8(s.scenario(key_).layout.conditions[u8(n,10)-1],1)==9)
+            s.setStepTrigger(key_,row,1,s.scenario(key_).layout.conditions[u8(n,10)-1],project_->classData(),true);
     });
 }
 void SquadRouteSteps::setDestination(QPoint p){
+    if(isPickingArea()) {
+        if(p.x()<0 || p.x()>255 || p.y()<0 || p.y()>255)return;
+        if(!areaCorner_){areaCorner_=p;triggers_[areaSlot_]->setPicking(true,true);if(picking)picking(true);if(stateChanged)stateChanged();return;}
+        const int slot=areaSlot_;const QRect area=QRect(*areaCorner_,p).normalized();
+        auto c=project_->scenarios()->scenario(key_).layout.conditions[u8(project_->scenarios()->scenario(key_).layout.nodes[selectedNode()],slot?12:10)-1];
+        put8(c,2,quint8(area.left()));put8(c,3,quint8(area.top()));put8(c,4,quint8(area.right()));put8(c,5,quint8(area.bottom()));
+        writeTrigger(slot,c);return;
+    }
     if(p.x()<1 || p.x()>255 || p.y()<1 || p.y()>255)return;
     edit("Move route step",[&](QByteArray &n){put8(n,4,quint8(p.x()));put8(n,5,quint8(p.y()));});
+}
+QByteArray SquadRouteSteps::defaultTrigger(int kind) const {
+    QByteArray c(10,0);put8(c,1,quint8(kind));
+    if(kind==9){put8(c,6,5);return c;}
+    const auto &n=project_->scenarios()->scenario(key_).layout.nodes[selectedNode()];
+    const int x=u8(n,5)?u8(n,4):128,z=u8(n,5)?u8(n,5):128;
+    put8(c,2,quint8(std::max(0,x-8)));put8(c,3,quint8(std::max(0,z-8)));
+    put8(c,4,quint8(std::min(255,x+8)));put8(c,5,quint8(std::min(255,z+8)));return c;
+}
+void SquadRouteSteps::writeTrigger(int slot,const QByteArray &c,bool create){
+    const int row=selectedNode();change("Edit route trigger",[&](Scenarios &s){s.setStepTrigger(key_,row,slot,c,project_->classData(),create);});
+}
+QVector<QPair<QString,QRectF>> SquadRouteSteps::triggerAreas() const {
+    QVector<QPair<QString,QRectF>> areas;
+    if(key_<0 || selectedNode()<0 || !isVisible())return areas;
+    const auto &e=project_->scenarios()->scenario(key_).layout;
+    if(selectedNode()>=e.nodes.size())return areas;
+    const auto &n=e.nodes[selectedNode()];
+    if(SquadRoute::extended(n,&e))return areas;
+    for(int slot=0;slot<(u8(n,11)?2:u8(n,10)?1:0);++slot) {
+        const int id=u8(n,slot?12:10);if(id<1 || id>e.conditions.size())continue;
+        const auto &c=e.conditions[id-1];if(u8(c,1)!=16)continue;
+        areas.append({QString("Trigger %1").arg(slot?"B":"A"),QRectF(u8(c,2),u8(c,3),u8(c,4)-u8(c,2)+1,u8(c,5)-u8(c,3)+1)});
+    }
+    if(areaCorner_)areas.append({"First corner",QRectF(*areaCorner_,QSizeF(1,1))});
+    return areas;
 }
 void SquadRouteSteps::addStep(){
     const int row=selectedNode();

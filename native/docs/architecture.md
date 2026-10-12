@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Sidebar trigger authoring (2026-10-12)
+
+`SquadTriggerEditor` presents existing predicates, new area/count choices, type
+changes and contextual parameters. `Scenarios::setStepTrigger` atomically copies
+original or multiply referenced predicates before changing a step's reference;
+private custom records edit in place. Unchanged payload bytes survive field edits.
+Explicit type replacement resets the payload. Original mission identities are
+never deleted. Capacity or validation failure leaves project and Undo unchanged.
+Native kind16 is added to validation and Advanced's understood-kind list.
+
+Area picking uses the map's existing exclusive pick mode with two corners and no
+project mutation before the second click. Selected area bounds are rendered as
+inclusive normalized grid cells. Cancellation does not retain a partial edit.
+Kind16 evaluates the current squad directly (accepted `func_00123458.c`); it is
+not a latched arrival event. Kind9 uses the normal-source active count and consumes
+its success bit; the sidebar clones duplicate count IDs for AND because a second
+evaluation of one consumed bit cannot succeed. Mission events using other native
+kinds remain reusable and preserved, without invented story-condition labels.
+
+The original descriptor7 transfer at z64 ROM0010ADB8 recomputes kind9 as
+`0 < activeCount <= payload[6]`. `sidebar-triggers-mips.cjs` executes this pass and
+the original evaluator on exported records. It tests area bounds/scaling and
+count consumption/rearming with controlled unit/count inputs, not a full mission.
+Kind24 is deliberately not labeled arrival: its destination-index/count equality
+can be true while a single-destination order is still moving.
+
 ## Main-sidebar squad route steps (2026-10-12)
 
 `SquadRoute` builds a deterministic traversal of the selected movement-group
@@ -32,7 +58,8 @@ The Editor's accepted `func_001237F0.c`, `func_00121F38.c`, `func_00105CC0.c`,
 behavior. Terminal 255 triggers field/member cleanup and is labeled Remove squad
 from field, superseding older UI's ambiguous End route wording. Existing condition
 labels identify their predicate family and known parameters, not inferred story
-events. New trigger payload authoring remains in Advanced.
+events. The sidebar authors verified area/count predicates; other custom payloads
+remain in Advanced.
 Condition kinds 14 and 20 trigger special resolver paths before the ordinary
 gate grammar. Their continuations remain protected even with zero extension
 bytes. Kind 20 is covered using actual original conditions; kind 14 is supported

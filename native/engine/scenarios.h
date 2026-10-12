@@ -41,6 +41,8 @@ class Scenarios {
     void removeNode(int key, int row, const ClassData &classes);
     void setCondition(int key, int row, const QByteArray &record, const ClassData &classes);
     int addCondition(int key, int kind, const ClassData &classes);
+    void setStepTrigger(int key, int node, int slot, const QByteArray &record,
+                        const ClassData &classes, bool create = false);
     void removeCondition(int key, int row, const ClassData &classes);
     void setRouteGroup(int key, int squadRow, int group, int pattern, const ClassData &classes);
     std::optional<SquadCommand> squadCommand(int key, int squadRow) const;
