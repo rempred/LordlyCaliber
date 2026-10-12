@@ -28,11 +28,15 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
     auto layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);
     const QMap<QString,QString> titles{{"clock","Day and night length — all missions"},{"fatigue","Fatigue while moving"},
         {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"},
+        {"goth","Mission completion — Goth"},{"soldierPopulation","Mission completion — Soldier rewards"},{"soldierMinimum","Soldier minimum"},
         {"elements","Element balance"},{"weapons","Magic weapon synergy"},{"resistance","Resistance effects"}};
     for(const auto &group:groups) {
         auto box=new QGroupBox(titles.value(group,group));auto form=new QFormLayout(box);
         auto help=new QLabel(group=="tactics"
             ? "Each kill combines this amount with the character and enemy alignment/level terms. The final change remains capped at −5 to +5. Training keeps its existing exclusion."
+            : group=="goth" ? "Base mission Goth + captured population × distance from 50 Chaos Frame ÷ divisor. Smaller divisors give larger bonuses. Wallet limit stays 9,999,999."
+            : group=="soldierPopulation" ? "Each captured town contributes population × morale ÷ 10,000, scaled here, with the minimum below. Objective towns use morale 50. To disable these rewards, set both contribution and minimum to 0."
+            : group=="soldierMinimum" ? "The game adds town contributions, wraps totals at 256, then fills the Soldier reserve up to 200. Keep large population and minimum settings in mind when tuning this formula."
             : group=="elements" ? "Wind opposes Earth; Flame opposes Water. This shared bonus affects damage context and target resistance. Virtue/Bane alignment terms keep their existing behavior."
             : group=="weapons" ? "Matching elemental weapons strengthen magic; opposed weapons weaken it. Virtue opposes Bane as well as the four natural-element pairs."
             : group=="resistance" ? "100% keeps retail damage reduction. 50% halves its strength; 200% doubles it. Damage still has the game's minimum of 1. Fixed-damage attacks keep their special formulas."

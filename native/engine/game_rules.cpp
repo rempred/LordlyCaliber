@@ -49,6 +49,15 @@ QByteArray resistanceCode(int percent) {
     if(!percent) put32(bytes,16,0x46002086); // mov.s f2,f4: no resistance reduction.
     return bytes;
 }
+QByteArray soldierScale(int percent) {
+    const auto bits=std::bit_cast<quint64>(double(percent)/10000.0);
+    QByteArray bytes(8,0);put32(bytes,0,quint32(bits>>32));put32(bytes,4,quint32(bits));return bytes;
+}
+void soldierMinimum(QByteArray &bytes,int value) {
+    put32(bytes,0xb4,value>1?0x28620000u|quint32(value):0u);
+    put32(bytes,0xb8,value>1?0x54400001u:0x50600001u);
+    put32(bytes,0xbc,0x24030000u|quint32(value));
+}
 QByteArray words(const QByteArray &bytes) {
     QByteArray source;
     for (int i=0;i<bytes.size();i+=4)
@@ -57,7 +66,11 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"elementAffinity", "elements", "Element affinity", "Same element adds this many percentage points; an opposed element subtracts it. Shared by attack, defense, magic context and elemental resistance.",0,25,1,4},
+    return {{"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
+            {"gothHighDivisor", "goth", "Above 50 Chaos Frame: divisor", "Population bonus = (Chaos Frame − 50) × captured population ÷ this value, rounded down. At 50, only the base mission Goth is awarded.",1,1000,1,50},
+            {"soldierPopulationScale", "soldierPopulation", "Population contribution", "Scale the population × morale contribution before applying the minimum per captured town.",0,400,25,100,true},
+            {"soldierMinimum", "soldierMinimum", "Minimum per captured town", "Each captured town contributes at least this many Soldiers, including towns with zero population or morale.",0,20,1,1},
+            {"elementAffinity", "elements", "Element affinity", "Same element adds this many percentage points; an opposed element subtracts it. Shared by attack, defense, magic context and elemental resistance.",0,25,1,4},
             {"weaponAffinity", "weapons", "Magic weapon affinity", "Same-element weapon bonus in percentage points; opposed weapons subtract the same amount. Physical weapons receive no bonus.",0,25,1,2},
             {"resistanceStrength", "resistance", "Resistance strength", "Scale how strongly the final resistance reduces damage. 0% disables that reduction; 100% is retail. Applies to physical and elemental resistance. Fixed-damage and healing rules stay unchanged.",0,400,25,100,true},
             {"dayLength", "clock", "Day length", "Length of 06:00–18:00 relative to retail. Applies to every mission; movement speed stays unchanged.",25,400,25,100,true},
@@ -81,7 +94,29 @@ GameRules GameRules::load(const Rom &rom) {
             const auto site=it->toObject();
             auto bytes=rom.bytes().mid(site["offset"].toInt(),site["size"].toInt());
             auto canonical=bytes;
-            if (name=="elements" || name=="weapons") {
+            if (name=="goth") {
+                if(sha256(bytes)!=site["sha256"].toString().toLatin1()) {
+                    const int low=u16(bytes,26),high=u16(bytes,50);
+                    put16(canonical,26,25);put16(canonical,50,50);
+                    if(sha256(canonical)!=site["authoredSha256"].toString().toLatin1() || low<1 || low>1000 || high<1 || high>1000)
+                        throw Error("Goth formula is unrecognized; its existing code will be preserved.");
+                    result.values_["gothLowDivisor"]=low;result.values_["gothHighDivisor"]=high;
+                }
+            } else if(name=="soldierPopulation") {
+                bool found=false;
+                for(int value=0;value<=400;value+=25) if(bytes==soldierScale(value)) {
+                    result.values_["soldierPopulationScale"]=value;found=true;break;
+                }
+                if(!found) throw Error("Soldier population scale is unrecognized; its existing value will be preserved.");
+            } else if(name=="soldierMinimum") {
+                soldierMinimum(canonical,1);
+                if(sha256(canonical)!=site["sha256"].toString().toLatin1())
+                    throw Error("Soldier formula is unrecognized; its existing code will be preserved.");
+                bool found=false;
+                for(int value=0;value<=20;++value) {auto expected=canonical;soldierMinimum(expected,value);
+                    if(bytes==expected) {result.values_["soldierMinimum"]=value;found=true;break;}}
+                if(!found) throw Error("Soldier minimum is outside the supported range.");
+            } else if (name=="elements" || name=="weapons") {
                 const int width=name=="elements"?5:7,amount=qint8(u8(bytes,width+1));
                 if(amount<0 || amount>25 || bytes!=matchup(width,amount))
                     throw Error("Element matchup table is unrecognized; its existing bytes will be preserved.");
@@ -154,8 +189,17 @@ QVector<RuleBuild> GameRules::builds() const {
         if(!changed) continue;
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
-        RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons"};
-        if(name=="elements" || name=="weapons") {
+        RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons" || name=="soldierPopulation"};
+        if(name=="goth") {
+            const int low=value("gothLowDivisor"),high=value("gothHighDivisor");
+            build.source=low==25 && high==50 ? resource("goth-retail.s") :
+                QString(".set LOW_DIVISOR,%1\n.set HIGH_DIVISOR,%2\n").arg(low).arg(high).toLatin1()+resource("goth-reward.s");
+            build.expected.clear();
+        } else if(name=="soldierPopulation") {
+            build.expected=soldierScale(value("soldierPopulationScale"));
+        } else if(name=="soldierMinimum") {
+            soldierMinimum(build.expected,value("soldierMinimum"));build.source=words(build.expected);
+        } else if(name=="elements" || name=="weapons") {
             build.expected=matchup(name=="elements"?5:7,value(name=="elements"?"elementAffinity":"weaponAffinity"));
         } else if(name=="resistance") {
             build.expected=resistanceCode(value("resistanceStrength"));build.source=words(build.expected);

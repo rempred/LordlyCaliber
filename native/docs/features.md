@@ -760,3 +760,9 @@ percentage points), magic weapon synergy, and final physical/elemental resistanc
 strength (0–400%). Shared affinity also affects target resistance; Virtue/Bane
 alignment terms retain their existing behavior. Fixed-damage branches and minimum
 damage are unchanged. Code and tables rebuild within original allocations.
+
+Mission completion Tools expose separate Goth population-bonus divisors below
+and above Chaos Frame50, Soldier population contribution, and minimum per captured
+town. Wallet/reserve caps and special scenario exclusions remain. Soldier UI
+explains native total wrapping; zero contribution and zero minimum disable the
+Soldier award. Authenticated source recompiles and restores retail byte-for-byte.

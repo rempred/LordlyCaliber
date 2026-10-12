@@ -41,5 +41,24 @@
     "size": 44,
     "address": 2149532308,
     "sha256": "428492d27ba7ad5af607b41f1ff6aed6949d0a3c15bfe8ae245351b860d12ee5"
+  },
+  "goth": {
+    "offset": 1284544,
+    "size": 244,
+    "address": 2149470848,
+    "sha256": "352757bcd5b37bd5f783d8510a2021f6681eb0d38b234bffb16c2f7b90a20170",
+    "authoredSha256": "7ea3d7412f13d6ac1f728ca0ded099c7e40d91a10f33732bf021224a82d23b72"
+  },
+  "soldierPopulation": {
+    "offset": 1322800,
+    "size": 8,
+    "address": 2149509104,
+    "sha256": "57edbf2ac3c1ac66875ab91f95185d11ae8e6829f3c170562c1d942c2ffb0b3e"
+  },
+  "soldierMinimum": {
+    "offset": 1211472,
+    "size": 224,
+    "address": 2149397776,
+    "sha256": "4e6a4e6b332a3936e03bde6ebc443196e005cf02da4f04edaaf572658df96b59"
   }
 }
