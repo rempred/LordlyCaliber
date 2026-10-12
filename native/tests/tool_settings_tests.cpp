@@ -1,5 +1,7 @@
 #include "engine/archive.h"
 #include "engine/project.h"
+#include "engine/squad_members.h"
+#include <QJsonArray>
 #include "engine/resource.h"
 #include "engine/tool_artwork.h"
 #include "rebuild/compiler.h"
@@ -12,6 +14,40 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void trainingExportAndExecution() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadTraining();project.loadScenarios();
+            const auto original=project.training()->json();auto value=original;auto rows=value["opponents"].toArray();
+            int selected=-1;for(int i=0;i<rows.size();++i)if(rows[i].toObject()["node"]==7&&rows[i].toObject()["slot"]==0)selected=i;
+            QVERIFY(selected>=0);auto row=rows[selected].toObject();row["price"]=0;
+            QVector<CustomMember> members{{2,-2,8,{20,30}},{3,-1,0,{21,31}},{5,0,2,{22,32}},{6,1,4,{23,33}},{7,2,6,{24,34}}};
+            const auto squad=editSquadMembers(project.training()->entries()[selected].squad,members);QVERIFY(independentSquad(squad));
+            row["squad"]=QString::fromLatin1(squad.toHex());rows[selected]=row;value["opponents"]=rows;project.setTraining(value);
+            QCOMPARE(Training::fee(20,15),600);QCOMPARE(Training::fee(21,15),615);QCOMPARE(Training::fee(40,15),900);
+            QCOMPARE(Training::fee(41,15),945);QCOMPARE(Training::fee(99,255),60435);QCOMPARE(Training::fee(99,0),0);
+            QTemporaryDir work;project.saveFolder(work.filePath("project"));auto saved=Project::fromRom(rom);
+            saved.applyManifest(Project::readProject(work.filePath("project")));QCOMPARE(saved.training()->json(),value);
+            // Simultaneous scenario edit must survive appending private training squads.
+            auto scenario=project.scenarios()->scenario(1);project.loadScenarios();auto scenarios=*project.scenarios();
+            scenarios.setStartTime(1,22,30,project.classData());project.setScenarios(scenarios.json());
+            project.loadTools();auto settings=project.tools()->json();auto rules=settings["gameRules"].toObject();rules["trainingBonus"]=20;settings["gameRules"]=rules;project.setTools(settings);
+            const auto built=rebuild(project,tools,work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-training-XXXXXX");QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTraining();reopened.loadScenarios();QCOMPARE(reopened.training()->json(),value);
+            reopened.loadTools();QCOMPARE(reopened.tools()->gameRules().value("trainingBonus"),20);
+            QCOMPARE(reopened.scenarios()->scenario(1).layout.startHour(),22);QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            const auto oldEnemies=ScenarioResources::load(rom).enemyData(),newEnemies=ScenarioResources::load(reopened.rom()).enemyData();
+            QCOMPARE(newEnemies.first(oldEnemies.size()),oldEnemies);
+            for(int node=0;node<48;++node){const int at=Training::tableOffset+node*24;QCOMPARE(built.image.mid(at+20,4),rom.bytes().mid(at+20,4));
+                for(int slot=0;slot<5;++slot)QCOMPARE(u8(built.image,at+slot*4+3),u8(rom.bytes(),at+slot*4+3));}
+            QProcess execution;execution.start("node",{QFINDTESTDATA("training-mips.cjs"),candidate,path});
+            QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
+            qInfo().noquote()<<"Training candidate:"<<candidate;
+        } catch(const Error &e){QFAIL(e.what());}
+    }
     void completionRulesExportAndExecution() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

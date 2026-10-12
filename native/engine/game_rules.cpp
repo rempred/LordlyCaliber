@@ -66,7 +66,8 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
+    return {{"trainingBonus", "trainingXp", "Training XP bonus", "Extra XP for each eligible member after a training win. Manual of Warfare doubles this bonus; the total remains capped at 100. Retail gives 0 bonus.",0,100,1,0},
+            {"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
             {"gothHighDivisor", "goth", "Above 50 Chaos Frame: divisor", "Population bonus = (Chaos Frame − 50) × captured population ÷ this value, rounded down. At 50, only the base mission Goth is awarded.",1,1000,1,50},
             {"soldierPopulationScale", "soldierPopulation", "Population contribution", "Scale the population × morale contribution before applying the minimum per captured town.",0,400,25,100,true},
             {"soldierMinimum", "soldierMinimum", "Minimum per captured town", "Each captured town contributes at least this many Soldiers, including towns with zero population or morale.",0,20,1,1},
@@ -94,7 +95,13 @@ GameRules GameRules::load(const Rom &rom) {
             const auto site=it->toObject();
             auto bytes=rom.bytes().mid(site["offset"].toInt(),site["size"].toInt());
             auto canonical=bytes;
-            if (name=="goth") {
+            if(name=="trainingXp") {
+                const quint32 word=u32(bytes,0);
+                const int value=word==0x00008021?0:int(word&65535);
+                if(word!=0x00008021 && ((word&0xffff0000)!=0x24100000 || value>100))
+                    throw Error("Training XP rule is unrecognized; its existing code will be preserved.");
+                result.values_["trainingBonus"]=value;
+            } else if (name=="goth") {
                 if(sha256(bytes)!=site["sha256"].toString().toLatin1()) {
                     const int low=u16(bytes,26),high=u16(bytes,50);
                     put16(canonical,26,25);put16(canonical,50,50);
@@ -190,7 +197,11 @@ QVector<RuleBuild> GameRules::builds() const {
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
         RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons" || name=="soldierPopulation"};
-        if(name=="goth") {
+        if(name=="trainingXp") {
+            const auto bonus=value("trainingBonus");
+            put32(build.expected,0,bonus?0x24100000u|quint32(bonus):0x00008021u);
+            build.source=words(build.expected);
+        } else if(name=="goth") {
             const int low=value("gothLowDivisor"),high=value("gothHighDivisor");
             build.source=low==25 && high==50 ? resource("goth-retail.s") :
                 QString(".set LOW_DIVISOR,%1\n.set HIGH_DIVISOR,%2\n").arg(low).arg(high).toLatin1()+resource("goth-reward.s");

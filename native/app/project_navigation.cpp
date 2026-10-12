@@ -69,6 +69,8 @@ void MainWindow::navigateTo(const EditLocation &location) {
             for (int member = 1; member < assignments.size(); ++member)
                 if (assignments[member].toInt() == id) { navigateTo({"classes", member, -1, "promotionEditor"}); return; }
             destination = findChild<QWidget *>("promotionEditor");
+        } else if (kind == "training") {
+            combo("trainingLocation",id); destination=combo("trainingOpponent",location.child);
         } else if (kind == "shops") {
             clear("shopSearch"); destination = list("shopList", id);
         } else if (kind == "encounters") {

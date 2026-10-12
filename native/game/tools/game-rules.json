@@ -60,5 +60,11 @@
     "size": 224,
     "address": 2149397776,
     "sha256": "4e6a4e6b332a3936e03bde6ebc443196e005cf02da4f04edaaf572658df96b59"
+  },
+  "trainingXp": {
+    "offset": 2200164,
+    "size": 4,
+    "address": 2149408660,
+    "sha256": "63abe774df1d59534ec133efb61806cfd5ed7c4d59815998f0ed1e6d10133e22"
   }
 }

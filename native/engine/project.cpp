@@ -322,6 +322,7 @@ int Project::changedRecords() const {
     if (animationSequences_ && animationSequences_->modified()) ++count;
     if (encounters_)
         count += encounters_->changedRows();
+    if (training_ && training_->modified()) ++count;
     if (scenarios_)
         count += scenarios_->changedScenarios();
     if (world_)
@@ -771,6 +772,10 @@ void Project::setEncounters(const QJsonObject &value) {
     loadEncounters();
     encounters_->apply(value, int(records(Table::Classes).size()));
 }
+void Project::loadTraining() { if(!training_) training_=Training::load(rom_); }
+void Project::setTraining(const QJsonObject &value) {
+    loadTraining(); training_->apply(value,classData(),int(records(Table::Items).size()));
+}
 void Project::loadScenarios() {
     if (!scenarios_)
         scenarios_ = Scenarios::load(rom_);
@@ -1113,6 +1118,8 @@ QJsonObject Project::manifest() const {
         result["scenarios"] = scenarios_->json();
     else
         result.remove("scenarios");
+    if(training_ && training_->modified()) result["training"]=training_->json();
+    else result.remove("training");
     if (world_ && (world_->modified() || oldPatches["scenario"].isObject()))
         result["world"] = world_->json();
     else
@@ -1198,6 +1205,7 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadEncounters();
     if (scenarios_)
         candidate.loadScenarios();
+    if(training_) candidate.loadTraining();
     if (world_)
         candidate.loadWorld();
     if(mapEdits_)candidate.loadMapEdits();
@@ -1420,6 +1428,7 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setScenarios(object["scenarios"].toObject());
     } else
         candidate.importLegacyScenarios(candidate.legacy_);
+    if(object.contains("training")) candidate.setTraining(object["training"].toObject());
     if (object.contains("world")) {
         if (!object["world"].isObject())
             throw Error("Invalid saved scenario world data");

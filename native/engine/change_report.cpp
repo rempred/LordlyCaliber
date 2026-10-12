@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/squad_members.h"
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -517,6 +518,22 @@ ChangeReport Project::changeReport() const {
                                                 ? "Updated private sequence, frames or artwork."
                                                 : "Removed private animation."
                                           : "Created private animation."}, {"combatAnimation", key / 4, key % 4});
+    }
+    if(training_) for(int i=0;i<training_->entries().size();++i) {
+        const auto &row=training_->entries()[i], &before=training_->original(i);
+        if(row.json()==before.json()) continue;
+        QStringList lines;
+        if(row.price!=before.price) lines<<transition("Price factor",number(before.price),number(row.price));
+        const auto oldMembers=squadMembers(before.squad),newMembers=squadMembers(row.squad);
+        for(int m=0;m<std::max(oldMembers.size(),newMembers.size());++m) {
+            auto describe=[&](const QVector<CustomMember> &members) {
+                if(m>=members.size()) return QString("None");
+                const auto &v=members[m];
+                return QString("%1, level %+2, cell %3, equipment %4 / %5").arg(className(v.classId)).arg(v.levelOffset).arg(v.cell+1).arg(v.equipment[0]).arg(v.equipment[1]);
+            };
+            if(describe(oldMembers)!=describe(newMembers)) lines<<transition(QString("Member %1").arg(m+1),describe(oldMembers),describe(newMembers));
+        }
+        add("Training",row.name+QString(" / opponent %1").arg(row.slot+1),lines,{"training",row.node,row.slot});
     }
     for (const auto &asset : sprites_.assets())
         add("Sprite library", asset.name,

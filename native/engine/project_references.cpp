@@ -8,7 +8,7 @@ namespace lordly {
 QVector<ProjectReference> projectReferences(Project p) {
     QVector<ProjectReference> uses;
     if (p.rom().revision() == 0) {
-        p.loadShops(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes();
+        p.loadShops(); p.loadTraining(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes();
     }
     const QMap<QString, int> counts{{"classes", int(p.records(Table::Classes).size())},
         {"items", int(p.records(Table::Items).size())},
@@ -55,6 +55,17 @@ QVector<ProjectReference> projectReferences(Project p) {
             const bool deploymentChanged = squad >= original.layout.deployments.size() || deployment != original.layout.deployments[squad];
             reward(u16(deployment, 11) | (u8(deployment, 10) ? 0x8000 : 0),
                    QString("%1 / squad %2 / dropped item").arg(scenario.name).arg(squad + 1), location, deploymentChanged);
+        }
+    }
+    if(p.training()) for(int i=0;i<p.training()->entries().size();++i) {
+        const auto &row=p.training()->entries()[i];
+        const bool changed=row.squad!=p.training()->original(i).squad;
+        const auto members=squadMembers(row.squad);
+        for(int m=0;m<members.size();++m) {
+            const auto label=QString("%1 / training opponent %2 / member %3").arg(row.name).arg(row.slot+1).arg(m+1);
+            const EditLocation where{"training",row.node,row.slot};
+            add("classes",members[m].classId,label,where,changed);
+            for(int item:members[m].equipment) add("items",item,label,where,changed);
         }
     }
     if (p.world()) {
@@ -163,6 +174,7 @@ QVector<ExportIssue> exportIssues(Project p) {
         try { validate(); } catch (const std::exception &e) { issues << ExportIssue{QString::fromUtf8(e.what()), location, true}; }
     };
     if (!brokenItem) check({"items"}, [&] { p.validateItemReferences(); });
+    check({"training"},[&] { if(p.training()) p.training()->validate(p.classData(),int(p.records(Table::Items).size())); });
     check({"scenarios"}, [&] { if (p.scenarios()) p.scenarios()->validateForExport(p.classData()); });
     check({"Neutral encounters"}, [&] { if (p.encounters()) p.encounters()->customSquads().validateFormations(p.classData()); });
     check({"Animation assignments"}, [&] { p.validateAnimationAssignments(); });

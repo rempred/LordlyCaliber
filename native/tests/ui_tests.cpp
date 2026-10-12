@@ -10030,6 +10030,17 @@ class UiTests : public QObject {
         QTest::qWait(50);
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-commands.png"));
     }
+    void trainingEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ToolsEditor tools(&project,&undo,[]{});
+        tools.resize(1100,780);tools.show();tools.findChild<QTabWidget *>("toolsPages")->setCurrentIndex(1);
+        auto location=tools.findChild<QComboBox *>("trainingLocation");location->setCurrentIndex(location->findData(7));
+        auto price=tools.findChild<QSpinBox *>("trainingPrice");QCOMPARE(price->value(),15);price->setValue(0);
+        QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("0 Goth"));undo.undo();QCOMPARE(price->value(),15);undo.redo();QCOMPARE(price->value(),0);
+        auto preview=tools.findChild<QSpinBox *>("trainingPreviewLevel");preview->setValue(41);price->setValue(20);
+        QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("1260 Goth"));
+        QTest::qWait(30);QVERIFY(tools.grab().save("native/build/training-editor.png"));
+    }
     void gameRulesEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();project.loadTools();

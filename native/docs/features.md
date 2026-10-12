@@ -766,3 +766,12 @@ and above Chaos Frame50, Soldier population contribution, and minimum per captur
 town. Wallet/reserve caps and special scenario exclusions remain. Soldier UI
 explains native total wrapping; zero contribution and zero minimum disable the
 Soldier award. Authenticated source recompiles and restores retail byte-for-byte.
+
+
+Tools / Training edits each available world-map location's five regular opponents,
+price factors and training XP bonus. It previews fees at a chosen player level,
+uses the shared formation/equipment editor and Undo, and preserves special story
+opponents. Private opponent templates append to the shared library without changing
+mission donors; independent members use a source-built constructor in its original
+allocation. Tested with native fee/XP execution and original-versus-authored
+constructor comparisons; complete emulator training remains untested this session.

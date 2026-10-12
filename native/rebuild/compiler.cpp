@@ -828,8 +828,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Compiled accepted class-family C at Army RAM 0x801CF2F0; verified its "
                          "complete 48-byte owner";
     }
-    if (p.scenarios() && p.scenarios()->modified()) {
+    if ((p.scenarios() && p.scenarios()->modified()) || (p.training() && p.training()->modified())) {
+        p.loadScenarios();
         auto plan = p.scenarios()->plan(p.classData());
+        QByteArray trainingTable;
+        if(p.training() && p.training()->modified()) {
+            p.training()->validate(p.classData(),int(p.records(Table::Items).size()));
+            trainingTable=p.training()->plan(plan.enemies);
+        }
         const auto resources = ScenarioResources::load(Rom::fromBytes(result.image));
         // The user-authored library and each scenario compile during this export.
         if (plan.enemies != resources.enemyData())
@@ -844,6 +850,28 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         if (independent) {
             result.image = rebuildScenarioMembers(Rom::fromBytes(result.image), compiler, directory);
             result.report << "Compiled independent scenario members into the original constructor allocation";
+        }
+        if(!trainingTable.isEmpty()) {
+            if(result.image.mid(Training::tableOffset,Training::tableSize)!=p.rom().bytes().mid(Training::tableOffset,Training::tableSize))
+                throw Error("Another owner overlaps the training table");
+            result.image.replace(Training::tableOffset,Training::tableSize,compiler.compileData(trainingTable,directory,"training_opponents"));
+            bool independentTraining=false;
+            for(const auto &row:p.training()->entries()) independentTraining|=independentSquad(row.squad);
+            if(independentTraining) {
+                const QMap<QString,quint32> symbols{{"load_resource",0x8009dbb8},{"resource_size",0x8009daf4},
+                    {"free_resource",0x800712c4},{"load_archive",0x8007acb0},{"copy_bytes",0x80080998},
+                    {"clear_bytes",0x80093380},{"construct_member",0x801d0840},{"prepare_battle",0x80172394},
+                    {"set_mode",0x8017223c},{"release_battle",0x801707f4}};
+                const auto code=compiler.compileModule(readFile(":/game/tools/training-constructor.c"),directory,
+                    "training_constructor",0x801d0a8c,{},symbols).fitOwner(0xa5c);
+                const auto original=result.image.mid(0x23a5ec,0xa5c);
+                if(original!=code && sha256(original)!=QByteArray("0c893885b08c8c8a42810d57327bd7c86fbaca2dbdd286c1599868903563721c"))
+                    throw Error("Training constructor has an unknown modification");
+                result.image.replace(0x23a5ec,0xa5c,code);
+            }
+            if(Training::load(Rom::fromBytes(result.image)).json()!=p.training()->json())
+                throw Error("Training export failed readback");
+            result.report<<"Compiled training opponents and price factors; retained special story entries.";
         }
         result.report << QString("Rebuilt %1 scenarios and %2 squad templates through original "
                                  "resource links; shared scenarios retain independent edits")

@@ -1,6 +1,8 @@
 #include "app/view_position.h"
 #include "app/tools_editor.h"
 #include "app/game_rules_editor.h"
+#include "app/training_editor.h"
+#include <QTabWidget>
 #include <QCheckBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -112,7 +114,9 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     scroll->setFrameShape(QFrame::NoFrame);
     auto content = new QWidget;
     scroll->setWidget(content);
-    outer->addWidget(scroll);
+    auto pages=new QTabWidget; pages->setObjectName("toolsPages");
+    outer->addWidget(pages); pages->addTab(scroll,"Rules and rewards");
+    pages->addTab(new TrainingEditor(project_,undo_,changed_),"Training");
     auto layout = new QVBoxLayout(content);
     layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"tactics", "fatigue", "recovery", "elements", "weapons", "resistance", "goth", "soldierPopulation", "soldierMinimum"}));
     auto box = new QGroupBox("Battle experience");

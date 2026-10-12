@@ -25,6 +25,7 @@
 #include "engine/sprite_library.h"
 #include "engine/text.h"
 #include "engine/tool_settings.h"
+#include "engine/training.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -141,6 +142,9 @@ class Project {
         return encounters_;
     }
     void setEncounters(const QJsonObject &value);
+    void loadTraining();
+    const std::optional<Training> &training() const { return training_; }
+    void setTraining(const QJsonObject &);
     void loadScenarios();
     const std::optional<Scenarios> &scenarios() const {
         return scenarios_;
@@ -253,6 +257,7 @@ class Project {
     std::optional<AnimationSequences> animationSequences_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
+    std::optional<Training> training_;
     std::optional<ScenarioWorld> world_;
     std::optional<MapEdits> mapEdits_;
     std::optional<Dialogues> dialogues_;
