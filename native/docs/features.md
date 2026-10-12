@@ -35,8 +35,16 @@ See [terrain route preview](terrain-route-preview.md).
 
 Scenario section navigation sits directly below the main workspaces, matching
 Encounters and Art. Its shared scenario picker includes the search field and
-retains selection across Map, Squads and Routes. Map opens first. Base-level controls live
-inside Squads; map-to-field navigation also updates the selected section tab.
+retains selection across Map, Squads and Orders. Map opens first. The Scenarios
+button collapses the mission list; the current mission name remains visible.
+The map object list has name search and type filters. Selected squads share an
+Orders / Members and supplies sidebar with a draggable formation board and a
+validated member/equipment popup. Save commits the popup as one Undo step; Cancel
+leaves the project unchanged. Squads remains an overview with Show on map.
+Base level, supplies, side, drops, map coordinates, boundary numbers and city
+rotation apply automatically. Invalid ordinary changes restore the saved values
+and explain the refusal. Placement-point selection remains available. Map edits
+name the scenarios sharing the map. Day/night duration remains explicitly global.
 
 Site inspector fields apply directly to the project with Undo/Redo. Checkboxes
 and choices update immediately; typed numbers commit on Enter or leaving the
@@ -97,8 +105,8 @@ Scenario squads and custom Encounter squads share the same member editor:
 individual class/level/equipment rows, member count, and drag/swap formation board
 with compatible gear choices and large-unit checks. Scenario squads support one
 through five members, including five distinct classes. New, Duplicate and Restore
-loaded squad accompany Apply and Undo; deployment/orders/supplies/drops remain in
-their own details tab. The source-built scenario member constructor reads appended
+loaded squad accompany Undo; formation editing opens a popup from either the map
+or the squad overview, with supplies and drops alongside it. The source-built scenario member constructor reads appended
 individual specifications when a composition exceeds the stock follower cohorts.
 Original Soldier groups retain their cohort format.
 
@@ -127,7 +135,7 @@ Town facilities follow the native menu's single facility entry: choosing Shop
 clears Witch's den, and vice versa. Existing loaded metadata remains intact until
 edited. New town shops start with the seven ordinary consumables; Shop ID zero
 cannot be applied as a new shop. The inspector marks unapplied facility choices.
-Apply site changes and export before testing. Fresh mission entry loads the ROM's
+Site changes apply automatically; export before testing. Fresh mission entry loads the ROM's
 facilities; a suspended mission retains its previous facility flags.
 
 Map encounters combines terrain names, per-terrain chances and the selected
@@ -714,12 +722,20 @@ in its side panel.
 
 Scenario **Orders** now starts with commands: Guard, Intercept nearby enemies,
 Move, Move and attack, Hit and run, Evade, and Retreat. Destinations can be named
-towns/strongholds or map positions, with waypoints movable on Map after Apply.
+towns/strongholds or map positions, with waypoints movable directly on Map.
 These same commands appear in the Map sidebar when a squad is selected. Choose
-destination on map picks a draft target without moving the squad's start or
-changing selection; Apply saves it. Escape or switching objects/tools cancels
-picking. Advanced route controls scroll at smaller window sizes.
-Applying replaces only the selected squad's starting behavior. Shared and gated
+destination on map keeps the squad selected and applies a complete simple order
+without moving its starting position. Replacing a complex script requires the
+explicit Replace scripted orders button. Pending choices survive object selection;
+Discard restores the current order. Escape or switching objects/tools cancels
+picking. A labeled destination diamond, starting-position label and visible route
+legend distinguish placement from orders. Pending script replacements show a
+preview without changing project data. Advanced route controls scroll at smaller
+window sizes; pending step, condition and movement-group fields survive selection
+and have explicit Apply/Discard actions. Underlying record changes invalidate a
+stale advanced draft with an explanation. Readable route steps are shown outside
+Advanced, using town names for known destinations.
+Changing an order replaces only the selected squad's starting behavior. Shared and gated
 routes are retained, and a private simple order is reused for subsequent edits.
 New orders respect the native 16-step capacity; group followers must be made
 independent or commanded through their group leader. Original scripts, route

@@ -5997,3 +5997,41 @@ executes without helper traps. ui_tests ruleStrengthExplanations gameRulesEditin
 passed (4 Qt cases, 1912ms), covering controls, Undo/Redo, live explanations and
 unrecognized-code disabling. Group captures were inspected. This establishes
 exported instruction behavior and desktop editing, not a full-game playthrough.
+
+### Scenario editing workflow (2026-10-12)
+
+ScenarioSquadPanel shares the formation/supplies view between Map and Squads.
+Its member popup uses the existing SquadMembersEditor and editSquadMembers,
+validates through Scenarios::editSquad, and commits one Undo operation. Invalid
+input stays in the popup; Cancel cannot alter the project. Normal supply, side,
+drop, position, base-level, boundary and rotation edits commit directly. Formation
+dragging uses the same size/adjacency checks as the existing member editor.
+Original special-level exclusions, unused bytes, deployment identity and group
+tails remain under the existing model contracts. No game format changes.
+
+Squad selection synchronizes across Map, Squads and Orders only for selection
+events, not while rebuilding lists. This prevents a map refresh from overriding
+a newly created or duplicated squad. Scenario navigation can collapse, map object
+lists filter by name/type, inactive brush controls hide, and shared-map scope
+uses scenario names. Original placement points remain selectable alongside map
+coordinates. A labeled destination and route legend distinguish orders from
+starting positions; unfinished script replacements preview against a temporary
+Scenarios copy and cannot mutate the project.
+
+Simple orders apply once complete. Existing complex routes require an explicit
+replacement. Pending order controls are retained by scenario/source identity;
+advanced step, condition and group fields are retained by scenario/record. Apply
+validates before committing and removes only the applied draft; Discard restores
+the project value. A changed source record invalidates a stale draft with an
+explanation. These are in-session drafts, not saved project changes. Unknown
+script semantics remain in Advanced rather than receiving invented labels.
+
+Focused UI checks exercise popup Save/Cancel and invalid input, five independent
+members, native special cases, formation movement, selection, duplication,
+automatic edits, Undo, retained simple/advanced drafts, original script
+preservation, map picking, label selection and small-window layouts. Map editing
+and mountain peak checks exported real candidate ROMs and reopened their edits;
+checksum and existing preservation checks passed. Town/time and terrain-route
+regressions passed. This is desktop/offline export validation, not a new emulator
+playthrough. Build and test details are in the parent task note
+docs/Plans/task-logs/scenario-workflow-20261012.md.

@@ -18,6 +18,8 @@ class ScenarioRouteEditor : public QWidget {
                         QWidget *parent = nullptr);
     void refresh(int key);
     void selectNode(int row);
+    void selectSquad(int row);
+    std::function<void(int)> squadSelected;
 
   private:
     void showNode();
@@ -27,6 +29,14 @@ class ScenarioRouteEditor : public QWidget {
     void showGroup();
     void nodeControls();
     void conditionLabels();
+    QString draftKey(const QString &kind, int row) const;
+    void rememberDraft(QWidget *, const QString &, int, const QByteArray &, QPushButton *);
+    void restoreDraft(QWidget *, const QString &, int, const QByteArray &, QPushButton *);
+    struct Draft { QByteArray source; QVariantMap values; };
+    QMap<QString,Draft> drafts_;
+    QMap<QString,QVariantMap> baselines_;
+    QPushButton *discardNode_, *discardCondition_, *discardGroup_;
+    QWidget *groupDetails_;
     void applyNode();
     void applyCondition();
     void change(const QString &label, const std::function<void(Scenarios &)> &edit);

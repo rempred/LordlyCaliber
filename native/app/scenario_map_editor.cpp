@@ -1,5 +1,6 @@
 #include "app/scenario_map_editor.h"
 #include "app/squad_order_editor.h"
+#include "app/scenario_squad_panel.h"
 #include "app/scenario_world_editor.h"
 #include "app/view_position.h"
 #include "engine/battlefield.h"
@@ -13,6 +14,9 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLineEdit>
+#include <QTabWidget>
+#include <QScopedValueRollback>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QMouseEvent>
@@ -89,6 +93,8 @@ class MapCanvas : public QWidget {
     QVector<QPair<int, int>> edges;
     QVector<QPointF> route;
     bool routeReached = false;
+    std::optional<QPointF> destination;
+    bool draftRoute = false;
     std::function<void(int)> selected;
     std::function<void(int, QPointF)> moved;
     std::function<void(int, double)> heightMoved;
@@ -224,6 +230,14 @@ class MapCanvas : public QWidget {
                 p.drawLine(tip, tip - unit * 8 + normal * 5);
                 p.drawLine(tip, tip - unit * 8 - normal * 5);
             }
+        }
+        if(destination) {
+            const auto point=toPixel(*destination);p.setPen(QPen(QColor("#6de4ff"),2));p.setBrush(QColor("#263844"));
+            QPolygonF diamond;diamond<<point+QPointF(0,-9)<<point+QPointF(9,0)<<point+QPointF(0,9)<<point+QPointF(-9,0);p.drawPolygon(diamond);
+            p.drawText(point+QPointF(12,-10),draftRoute?"Pending destination":"Order destination");
+        }
+        if(current>=0 && current<markers.size() && markers[current].kind==MapObject::Squad && markers[current].position) {
+            const auto point=toPixel(*markers[current].position);p.setPen(QColor("#fff2a8"));p.drawText(point+QPointF(20,24),"Starting position");
         }
         QVector<QRectF> labelAreas;
         QVector<int> drawOrder;
@@ -639,7 +653,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     brushSize_->setSingleStep(.5);
     brushSize_->setValue(3);
     painting->addWidget(brushSize_);
-    auto restore = new QPushButton("Restore map edits");
+    auto restore = new QPushButton("Restore map from opened ROM");
     restore->setObjectName("mapRestore");
     painting->addWidget(restore);
     painting->addStretch();
@@ -697,14 +711,12 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     for (int i = 0; i < 4; ++i) {
         boundaryLayout->addWidget(new QLabel(edgeNames[i]));
         auto box = new QSpinBox;
-        box->setRange(1, 254);
+        box->setRange(1, 254);box->setKeyboardTracking(false);
         box->setObjectName("mapBoundary" + edgeNames[i]);
         boundaryFields_[i] = box;
         boundaryLayout->addWidget(box);
     }
-    auto applyBoundary = new QPushButton("Apply boundary");
-    applyBoundary->setObjectName("mapBoundaryApply");
-    boundaryLayout->addWidget(applyBoundary);
+
     boundaryLayout->addStretch();
     layout->addWidget(boundaryTools_);
     boundaryTools_->hide();
@@ -727,7 +739,14 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     objects_->setIconSize(QSize(32, 32));
     objects_->setMinimumHeight(90);
     objects_->setMaximumHeight(150);
-    side->addWidget(objects_);
+    objectSearch_=new QLineEdit;objectSearch_->setObjectName("mapObjectSearch");objectSearch_->setPlaceholderText("Find object…");objectSearch_->setClearButtonEnabled(true);
+    objectType_=new QComboBox;objectType_->setObjectName("mapObjectType");objectType_->addItem("All objects",-1);
+    const QStringList types{"Squads","Waypoints","Towns and strongholds","Treasures","City scenery","Mountain peaks"};
+    for(int i=0;i<types.size();++i)objectType_->addItem(types[i],i);
+    auto objectFilter=new QHBoxLayout;objectFilter->addWidget(objectSearch_,1);objectFilter->addWidget(objectType_);
+    side->addLayout(objectFilter);side->addWidget(objects_);
+    connect(objectSearch_,&QLineEdit::textChanged,this,[this]{filterObjects();});
+    connect(objectType_,&QComboBox::currentIndexChanged,this,[this]{filterObjects();});
     auto inspector = new QWidget;
     auto fields = new QVBoxLayout(inspector);
     fields->setContentsMargins(0, 0, 0, 0);
@@ -754,13 +773,18 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     fields->addWidget(summary_);
     orders_ = new SquadOrderEditor(project_, commit_);
     orders_->setObjectName("mapSquadOrders");
-    fields->addWidget(orders_);
-    orders_->hide();
+    squadTabs_=new QTabWidget;squadTabs_->setObjectName("mapSquadTabs");
+    squadTabs_->addTab(orders_,"Orders");
+    squadPanel_=new ScenarioSquadPanel(project_,commit_,"mapSquad");
+    squadTabs_->addTab(squadPanel_,"Members and supplies");fields->addWidget(squadTabs_);squadTabs_->hide();
+    orders_->selectLeader=[this](int row){selectSquad(row);};
     routePreview_ = new QLabel;
     routePreview_->setObjectName("mapTerrainRoute");
     routePreview_->setWordWrap(true);
     routePreview_->setTextFormat(Qt::PlainText);
-    fields->addWidget(routePreview_);
+    static_cast<QVBoxLayout *>(orders_->layout())->addWidget(routePreview_);
+    auto legend=new QLabel("Gold: planned route · Orange: partial route · Blue diamond: destination · Dashed: scripted order links");
+    legend->setWordWrap(true);legend->setObjectName("mapRouteLegend");static_cast<QVBoxLayout *>(orders_->layout())->addWidget(legend);
     routePreview_->hide();
     orders_->enableMapPicking([this, addTreasure](bool on) {
         if (on) {
@@ -791,14 +815,13 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     placedCityAngle_->setSingleStep(15);
     placedCityAngle_->setSuffix("°");
     cityFields->addWidget(placedCityAngle_);
-    auto rotateCity = new QPushButton("Apply"), removeCity = new QPushButton("Remove piece");
-    rotateCity->setObjectName("mapCityRotate");
+    auto removeCity = new QPushButton("Remove piece");placedCityAngle_->setKeyboardTracking(false);
     removeCity->setObjectName("mapCityRemove");
-    cityFields->addWidget(rotateCity);
     cityFields->addWidget(removeCity);
     fields->addWidget(cityInspector_);
     cityInspector_->hide();
-    connect(rotateCity, &QPushButton::clicked, this, [this] {
+    connect(placedCityAngle_, &QSpinBox::valueChanged, this, [this] {
+        if(loading_)return;
         const int row = objects_->currentRow();
         if (row < 0 || row >= canvas_->markers.size() ||
             canvas_->markers[row].kind != MapObject::City)
@@ -906,10 +929,23 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     coords->addWidget(x_);
     coords->addWidget(new QLabel("Z"));
     coords->addWidget(z_);
-    fields->addWidget(coordinates_);
-    apply_ = new QPushButton("Set map coordinates");
-    apply_->setObjectName("mapApply");
-    fields->addWidget(apply_);
+    positionLabel_=new QLabel;positionLabel_->setWordWrap(true);fields->addWidget(positionLabel_);
+    startPoint_=new QComboBox;startPoint_->setObjectName("mapPlacementPoint");fields->addWidget(startPoint_);
+    connect(startPoint_,&QComboBox::activated,this,[this]{
+        if(loading_ || key_<0)return;
+        const int row=objects_->currentRow();if(row<0 || row>=canvas_->markers.size())return;
+        const auto marker=canvas_->markers[row];const int point=startPoint_->currentData().toInt();
+        if(!point){move(row,{x_->value(),z_->value()});return;}
+        try {
+            auto next=*project_->scenarios();const bool squad=marker.kind==MapObject::Squad;
+            auto record=squad?next.scenario(key_).layout.deployments[marker.row]:next.scenario(key_).layout.nodes[marker.row];
+            put8(record,squad?3:4,point);put8(record,squad?4:5,0);
+            if(squad)next.setDeployment(key_,marker.row,record,project_->classData());else next.setNode(key_,marker.row,record,project_->classData());
+            commit_(next,"Change scenario placement point");
+        } catch(const Error &e){const auto message=QString::fromUtf8(e.what());select(row);notice_->setText(message);}
+    });
+    fields->addWidget(coordinates_);x_->setKeyboardTracking(false);z_->setKeyboardTracking(false);
+
     fields_ = new QPushButton("Edit selected fields");
     fields_->setObjectName("mapEditFields");
     fields->addWidget(fields_);
@@ -925,7 +961,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     reference_->setAlignment(Qt::AlignCenter);
     fields->addWidget(reference_);
     fields->addStretch();
-    sidebar->setMinimumWidth(330);
+    sidebar->setMinimumWidth(300);
     split->addWidget(sidebar);
     split->setSizes({700, 370});
     layout->addWidget(split, 1);
@@ -934,7 +970,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
     canvas_->resizedBoundary = [this](QRectF b) { changeBoundary(b); };
-    connect(applyBoundary, &QPushButton::clicked, this, [this] {
+    for(auto box:boundaryFields_)connect(box, &QSpinBox::valueChanged, this, [this] {
+        if(loading_)return;
         changeBoundary(QRectF(QPointF(boundaryFields_[0]->value(), boundaryFields_[1]->value()),
                               QPointF(boundaryFields_[2]->value(), boundaryFields_[3]->value())));
     });
@@ -952,9 +989,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                 cityTools_->setVisible(mode == 5);
                 peakTools_->setVisible(mode == 6);
                 addPeak_->setChecked(false);
-                paintType_->setVisible(mode < 5);
-                brushLabel_->setVisible(mode < 5);
-                brushSize_->setVisible(mode < 5);
+                paintType_->setVisible(mode == 1);
+                brushLabel_->setVisible(mode > 0 && mode < 4);
+                brushSize_->setVisible(mode > 0 && mode < 4);
                 const int terrain = paintType_->currentData().toInt();
                 canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
                 canvas_->editBoundary = mode == 4 && key_ != 39;
@@ -974,7 +1011,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                 if (!loading_)
                     refresh(key_);
             });
-    paintType_->setEnabled(false);
+    paintType_->setEnabled(false);paintType_->hide();brushLabel_->hide();brushSize_->hide();
     connect(paintType_, &QComboBox::currentIndexChanged, this, [this] {
         canvas_->cancelDrag();
         const int terrain = paintType_->currentData().toInt();
@@ -1002,7 +1039,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
             notice_->setText(QString::fromUtf8(e.what()));
         }
     });
-    canvas_->selected = [this](int row) { objects_->setCurrentRow(row); };
+    canvas_->selected = [this](int row) {
+        if(row>=0 && row<objects_->count() && objects_->item(row)->isHidden()){objectSearch_->clear();objectType_->setCurrentIndex(0);}
+        objects_->setCurrentRow(row);
+    };
     canvas_->moved = [this](int row, QPointF position) {
         if (row < 0 || row >= canvas_->markers.size() || !maps_.contains(key_))
             return;
@@ -1075,9 +1115,15 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         canvas_->labels = value;
         canvas_->update();
     });
-    connect(objects_, &QListWidget::currentRowChanged, this, [this](int row) { select(row); });
-    connect(apply_, &QPushButton::clicked, this,
-            [this] { move(objects_->currentRow(), {x_->value(), z_->value()}); });
+    connect(objects_, &QListWidget::currentRowChanged, this, [this](int row) {
+        if(loading_)return;select(row);
+        if(row>=0 && row<canvas_->markers.size() && canvas_->markers[row].kind==MapObject::Squad && squadSelected)squadSelected(canvas_->markers[row].row);
+    });
+    for(auto box:{x_,z_})connect(box,&QSpinBox::valueChanged,this,[this]{if(!loading_)move(objects_->currentRow(),{x_->value(),z_->value()});});
+    orders_->stateChanged=[this]{
+        if(loading_)return;const int row=objects_->currentRow();
+        if(row>=0 && row<canvas_->markers.size() && canvas_->markers[row].kind==MapObject::Squad)updateRoutePreview(canvas_->markers[row].row);
+    };
     connect(fields_, &QPushButton::clicked, this, [this] {
         const int row = objects_->currentRow();
         if (row >= 0) {
@@ -1189,10 +1235,8 @@ void ScenarioMapEditor::refresh(int key) {
                 boundaryFields_[i]->setValue(int(values[i]));
             QStringList keys;
             for (int k : project_->mapEdits()->sharedScenarios(key))
-                keys << QString::number(k);
-            mapScope_->setText("Map edits affect runtime keys " + keys.join(", ") +
-                               ". Highlands raise the ground. Export also updates the briefing "
-                               "image and minimap.");
+                keys << (project_->scenarios()->entries().contains(k)?project_->scenarios()->scenario(k).name:QString("Scenario %1").arg(k));
+            mapScope_->setText((keys.size()>1?"Shared map: ":"This mission's map: ")+keys.join(", ")+". Export updates the briefing image and minimap.");
             if (key == 39) {
                 canvas_->boundary = {};
                 mapScope_->setText(mapScope_->text() +
@@ -1386,13 +1430,25 @@ void ScenarioMapEditor::refresh(int key) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
     loading_ = false;
-    select(objects_->currentRow());
+    filterObjects();select(objects_->currentRow());
     updateCityTool();
     canvas_->update();
+}
+void ScenarioMapEditor::filterObjects() {
+    for(int row=0;row<objects_->count();++row) {
+        auto item=objects_->item(row);item->setHidden((objectType_->currentData().toInt()>=0 && item->data(Qt::UserRole).toInt()!=objectType_->currentData().toInt()) || !item->text().contains(objectSearch_->text(),Qt::CaseInsensitive));
+    }
+}
+void ScenarioMapEditor::selectSquad(int row) {
+    for(int i=0;i<canvas_->markers.size();++i)if(canvas_->markers[i].kind==MapObject::Squad && canvas_->markers[i].row==row) {
+        if(objects_->item(i)->isHidden()){objectSearch_->clear();objectType_->setCurrentIndex(0);}
+        objects_->setCurrentRow(i);return;
+    }
 }
 void ScenarioMapEditor::select(int row) {
     if (loading_)
         return;
+    const QScopedValueRollback<bool> guard(loading_,true);
     canvas_->current = row;
     canvas_->update();
     const bool valid = row >= 0 && row < canvas_->markers.size();
@@ -1401,7 +1457,8 @@ void ScenarioMapEditor::select(int row) {
     const bool peak = valid && canvas_->markers[row].kind == MapObject::Peak;
     peakInspector_->setVisible(peak);
     const bool squad = valid && canvas_->markers[row].kind == MapObject::Squad;
-    orders_->setVisible(squad);
+    squadTabs_->setVisible(squad);
+    squadPanel_->refresh(squad?key_:-1,squad?canvas_->markers[row].row:-1);
     orders_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
     updateRoutePreview(squad ? canvas_->markers[row].row : -1);
     cityInspector_->setVisible(city);
@@ -1411,17 +1468,28 @@ void ScenarioMapEditor::select(int row) {
     coordinates_->setVisible(
         valid && !peak &&
         (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
-    apply_->setVisible(
-        valid && !peak &&
-        (!worldObject || (canvas_->markers[row].kind == MapObject::Site && movable)));
-    fields_->setVisible(valid && !worldObject && !city && !peak);
-    summary_->setVisible(valid && (!worldObject || canvas_->markers[row].kind == MapObject::Site));
+    positionLabel_->setVisible(valid && !peak && (!worldObject || (canvas_->markers[row].kind==MapObject::Site && movable)));
+    startPoint_->setVisible(valid && (squad || canvas_->markers[row].kind==MapObject::Waypoint));
+    startPoint_->clear();startPoint_->addItem("Map coordinates",0);
+    if(valid && (squad || canvas_->markers[row].kind==MapObject::Waypoint)) {
+        const auto &m=canvas_->markers[row];const auto &scenario=project_->scenarios()->scenario(key_);
+        const auto record=squad?scenario.layout.deployments[m.row]:scenario.layout.nodes[m.row];
+        const int point=u8(record,squad?4:5)?0:u8(record,squad?3:4);
+        for(int i=0;i<maps_[key_].points.size();++i){
+            QString name=QString("Placement point %1").arg(i+1);
+            if(project_->world() && i<project_->world()->siteCount(key_))name=project_->world()->townName(u16(project_->world()->scenario(key_).sites,1+i*4));
+            startPoint_->addItem(name,i+1);
+        }
+        if(startPoint_->findData(point)<0)startPoint_->addItem(QString("Original placement point %1").arg(point),point);
+        startPoint_->setCurrentIndex(startPoint_->findData(point));
+    }
+    fields_->setVisible(valid && !worldObject && !city && !peak && !squad);
+    summary_->setVisible(valid && !squad && (!worldObject || canvas_->markers[row].kind == MapObject::Site));
     reference_->setVisible(!worldObject && canvas_->terrain.isNull());
     referenceName_->setVisible(!worldObject);
     x_->setEnabled(movable);
     z_->setEnabled(movable);
-    apply_->setEnabled(movable);
-    apply_->setText(squad ? "Set squad starting position" : "Set map coordinates");
+    positionLabel_->setText(squad ? "Starting position · Drag the squad or edit coordinates. This is separate from its order destination." : "Map position · Changes apply automatically.");
     fields_->setEnabled(valid);
     selection_->clear();
     summary_->clear();
@@ -1482,16 +1550,23 @@ void ScenarioMapEditor::select(int row) {
 }
 void ScenarioMapEditor::updateRoutePreview(int squad) {
     canvas_->route.clear();
-    canvas_->routeReached = false;
+    canvas_->routeReached = false;canvas_->destination.reset();canvas_->draftRoute=false;
     routePreview_->setVisible(squad >= 0);
     routePreview_->clear();
     if (squad >= 0 && project_->mapEdits()) {
-        const auto preview = RoutePreview::squad(project_->rom(), *project_->scenarios(),
-            project_->classData(), *project_->mapEdits(), key_, squad);
-        canvas_->route = preview.points;
-        canvas_->routeReached = preview.reachable;
-        routePreview_->setText(preview.message + "\n" + preview.detail);
-        routePreview_->setToolTip("Gold line: planned terrain route. Dashed lines: order connections.");
+        auto scenarios=*project_->scenarios();const auto draft=orders_->previewCommand();
+        try {
+            if(draft){scenarios.setSquadCommand(key_,squad,*draft,project_->classData());canvas_->draftRoute=true;}
+            const auto command=draft?draft:scenarios.squadCommand(key_,squad);
+            if(command && int(command->behavior)>=int(SquadBehavior::Move)) {
+                const auto &map=maps_[key_];const auto world=map.placement(command->x,command->z);
+                if(world)canvas_->destination=QPointF((world->x()-map.bounds.left())*256/map.bounds.width(),(world->y()-map.bounds.top())*256/map.bounds.height());
+            }
+            const auto preview=RoutePreview::squad(project_->rom(),scenarios,project_->classData(),*project_->mapEdits(),key_,squad);
+            canvas_->route=preview.points;canvas_->routeReached=preview.reachable;
+            routePreview_->setText((draft?"Pending order preview — not applied\n":"")+preview.message+"\n"+preview.detail);
+            routePreview_->setToolTip("Gold line: planned terrain route. Dashed lines: order connections.");
+        } catch(const Error &e){routePreview_->setText("Order preview unavailable: "+QString::fromUtf8(e.what()));}
     } else if (squad >= 0) routePreview_->setText("Terrain route preview is unavailable for this map.");
     canvas_->update();
 }
@@ -1575,7 +1650,7 @@ void ScenarioMapEditor::move(int row, QPoint bytes) {
             commit_(next, squad ? "Move squad on map" : "Move waypoint on map");
         }
     } catch (const Error &e) {
-        notice_->setText(QString::fromUtf8(e.what()));
+        const auto message=QString::fromUtf8(e.what());select(row);notice_->setText(message);
     }
     canvas_->update();
 }
@@ -1592,7 +1667,7 @@ void ScenarioMapEditor::changeBoundary(QRectF b) {
             refresh(key_);
         }
     } catch (const Error &e) {
-        notice_->setText(QString::fromUtf8(e.what()));
+        const auto message=QString::fromUtf8(e.what());refresh(key_);notice_->setText(message);
     }
 }
 void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
@@ -1679,7 +1754,7 @@ void ScenarioMapEditor::editCity(int row, QPointF position, int rotation) {
             refresh(key_);
         }
     } catch (const Error &e) {
-        notice_->setText(QString::fromUtf8(e.what()));
+        const auto message=QString::fromUtf8(e.what());select(objects_->currentRow());notice_->setText(message);
     }
 }
 } // namespace lordly

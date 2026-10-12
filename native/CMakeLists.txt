@@ -182,7 +182,7 @@ endif()
 qt_add_executable(LordlyCaliber app/main.cpp app/main_window.cpp app/record_model.cpp app/text_workspace.cpp app/promotion_editor.cpp)
 target_sources(LordlyCaliber PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h app/squad_members_editor.cpp app/squad_members_editor.h)
 target_sources(LordlyCaliber PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp)
-target_sources(LordlyCaliber PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp app/squad_order_editor.cpp)
+target_sources(LordlyCaliber PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp app/squad_order_editor.cpp app/scenario_squad_panel.cpp)
 target_sources(LordlyCaliber PRIVATE app/scenario_world_editor.cpp app/scenario_map_editor.cpp)
 target_sources(LordlyCaliber PRIVATE app/cutscene_editor.cpp app/scene_command_editor.cpp app/scene_event_editor.cpp app/dialogue_inspector.cpp)
 target_sources(LordlyCaliber PRIVATE app/dialogue_preview.cpp)
@@ -376,7 +376,7 @@ if(BUILD_TESTING)
   endif()
   target_sources(ui_tests PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h app/squad_members_editor.cpp app/squad_members_editor.h)
   target_sources(ui_tests PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp)
-  target_sources(ui_tests PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp app/squad_order_editor.cpp)
+  target_sources(ui_tests PRIVATE app/scenario_editor.cpp app/scenario_route_editor.cpp app/squad_order_editor.cpp app/scenario_squad_panel.cpp)
   target_sources(ui_tests PRIVATE app/scenario_world_editor.cpp app/scenario_map_editor.cpp)
   target_sources(ui_tests PRIVATE app/cutscene_editor.cpp app/scene_command_editor.cpp app/scene_event_editor.cpp app/dialogue_inspector.cpp)
   target_sources(ui_tests PRIVATE app/actor_pose_editor.cpp)
@@ -424,3 +424,10 @@ qt_add_resources(lordly_engine scenario_member_sources PREFIX "/" BASE . FILES
   game/scenarios/squad-member.c game/scenarios/squad-member.json)
 
 qt_add_resources(lordly_engine category_tab_source PREFIX "/" BASE . FILES game/promotion/category-tabs.c)
+
+# Qml supplies QJSEngine; this Widgets application has no QML imports. Avoid
+# scanning the portable packages/dependency sources once for every test target.
+get_property(lordly_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(lordly_target IN LISTS lordly_targets)
+  set_property(TARGET ${lordly_target} PROPERTY QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+endforeach()

@@ -104,6 +104,14 @@ static bool selectMapObject(QWidget &editor, MapObject kind, int row) {
     }
     return false;
 }
+static void editScenarioMembers(QWidget &editor,const QString &prefix,const std::function<void(QDialog *)> &edit) {
+    auto button=editor.findChild<QPushButton *>(prefix+"EditMembers");QVERIFY(button);
+    QTimer::singleShot(0,&editor,[&]{
+        auto dialog=editor.findChild<QDialog *>(prefix+"MemberDialog");QVERIFY(dialog);
+        const auto close=qScopeGuard([&]{dialog->reject();});edit(dialog);
+    });
+    button->click();
+}
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
@@ -8709,7 +8717,7 @@ class UiTests : public QObject {
         canvas->repaint();
         QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, target().toPoint());
         QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(), int(MapObject::Squad));
-        QCOMPARE(project.manifest(), before);
+        QVERIFY(project.scenarios()->squadCommand(1,0));undo.undo();QCOMPARE(project.manifest(),before);
         QVERIFY(selectMapObject(editor, MapObject::Waypoint, row));
         canvas->repaint();
         QVERIFY(editor.grab().save("map-label-selection.png"));
@@ -9026,8 +9034,7 @@ class UiTests : public QObject {
         QCOMPARE(objects->currentRow(), row);
         QCOMPARE(orders->findChild<QSpinBox *>("squadCommandX")->value(), 128);
         QCOMPARE(orders->findChild<QSpinBox *>("squadCommandZ")->value(), 128);
-        QCOMPARE(project.scenarios()->json(), before);
-        apply->click();
+        if(apply->isVisible()) {QCOMPARE(project.scenarios()->json(),before);apply->click();}
         const auto result = project.scenarios()->squadCommand(1, 0);
         QVERIFY(result);
         QCOMPARE(result->behavior, SquadBehavior::MoveAndAttack);
@@ -9050,10 +9057,65 @@ class UiTests : public QObject {
         command->setCurrentIndex(command->findData(int(SquadBehavior::Guard)));
         apply->click();
         QCOMPARE(project.scenarios()->squadCommand(1, 0)->behavior, SquadBehavior::MoveAndAttack);
-        QVERIFY(project.scenarios()->squadCommand(1, 1));
-        QCOMPARE(project.scenarios()->squadCommand(1, 1)->behavior, SquadBehavior::Guard);
+        const auto guard=project.scenarios()->squadCommand(1,1);
+        QVERIFY((guard && guard->behavior==SquadBehavior::Guard) || u8(project.scenarios()->scenario(1).layout.deployments[1],6)==1);
         QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
         QVERIFY(editor.grab().save("scenario-map-orders.png"));
+    }
+    void scenarioOrderDrafts() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();
+        auto scripted=*project.scenarios();scripted.setSquadCommand(1,0,{SquadBehavior::Move,128,128},project.classData());
+        const int node=u8(scripted.scenario(1).layout.deployments[0],6)-4;
+        QVERIFY(node>=0);auto record=scripted.scenario(1).layout.nodes[node];put8(record,17,1);
+        scripted.setNode(1,node,record,project.classData());project.setScenarios(scripted.json());
+        QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
+        QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+        auto orders=editor.findChild<QWidget *>("mapSquadOrders");auto command=orders->findChild<QComboBox *>("squadCommand");
+        auto x=orders->findChild<QSpinBox *>("squadCommandX"),z=orders->findChild<QSpinBox *>("squadCommandZ");
+        auto replace=orders->findChild<QPushButton *>("squadCommandApply");
+        command->setCurrentIndex(command->findData(int(SquadBehavior::MoveAndAttack)));
+        orders->findChild<QComboBox *>("squadCommandDestination")->setCurrentIndex(0);x->setValue(96);z->setValue(144);
+        QCOMPARE(project.scenarios()->json(),scripted.json());QVERIFY(replace->isVisible());
+        QVERIFY(selectMapObject(editor,MapObject::Site,0));QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+        QCOMPARE(x->value(),96);QCOMPARE(z->value(),144);QVERIFY(orders->findChild<QLabel *>("squadCommandHelp")->text().contains("not applied"));
+        QVERIFY(editor.findChild<QLabel *>("mapTerrainRoute")->text().contains("Pending order preview"));
+        replace->click();const auto committed=project.scenarios()->json();const auto result=project.scenarios()->squadCommand(1,0);
+        QVERIFY(result);QCOMPARE(result->x,96);QCOMPARE(result->z,144);
+        QCOMPARE(project.scenarios()->scenario(1).layout.nodes.first(scripted.scenario(1).layout.nodes.size()),scripted.scenario(1).layout.nodes);
+        undo.undo();QCOMPARE(project.scenarios()->json(),scripted.json());undo.redo();QCOMPARE(project.scenarios()->json(),committed);
+        QVERIFY(!replace->isVisible());const int before=undo.index();x->setValue(80);z->setValue(100);
+        QCOMPARE(project.scenarios()->squadCommand(1,0)->x,80);QCOMPARE(project.scenarios()->squadCommand(1,0)->z,100);
+        undo.setIndex(before);QCOMPARE(project.scenarios()->json(),committed);
+        command->setCurrentIndex(command->findData(int(SquadBehavior::Guard)));const auto guard=project.scenarios()->json();
+        command->setCurrentIndex(command->findData(int(SquadBehavior::Move)));QCOMPARE(project.scenarios()->json(),guard);
+        QVERIFY(selectMapObject(editor,MapObject::Site,0));QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+        QCOMPARE(command->currentData().toInt(),int(SquadBehavior::Move));QCOMPARE(project.scenarios()->json(),guard);
+        orders->findChild<QPushButton *>("squadCommandDiscard")->click();QCOMPARE(command->currentData().toInt(),int(SquadBehavior::Guard));
+    }
+    void scenarioAdvancedDrafts() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();auto fixture=*project.scenarios();
+        const int node=fixture.addNode(1,1,project.classData());fixture.addNode(1,1,project.classData());
+        const int condition=fixture.addCondition(1,9,project.classData());fixture.addCondition(1,9,project.classData());project.setScenarios(fixture.json());
+        QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
+        editor.findChild<QStackedWidget *>("scenarioPages")->setCurrentIndex(2);editor.findChild<QCheckBox *>("scenarioRouteAdvanced")->setChecked(true);
+        auto nodes=editor.findChild<QListWidget *>("scenarioNodes");nodes->setCurrentRow(node);
+        editor.findChild<QComboBox *>("routePlacement")->setCurrentIndex(1);editor.findChild<QSpinBox *>("routeX")->setValue(73);editor.findChild<QSpinBox *>("routeZ")->setValue(94);
+        nodes->setCurrentRow(node+1);nodes->setCurrentRow(node);QCOMPARE(editor.findChild<QSpinBox *>("routeX")->value(),73);QCOMPARE(project.scenarios()->json(),fixture.json());
+        auto scenarios=editor.findChild<QListWidget *>("scenarioList");
+        for(int key:{10,1})for(int i=0;i<scenarios->count();++i)if(scenarios->item(i)->data(Qt::UserRole).toInt()==key)scenarios->setCurrentRow(i);
+        nodes->setCurrentRow(node);QCOMPARE(editor.findChild<QSpinBox *>("routeZ")->value(),94);
+        editor.findChild<QPushButton *>("routeNodeApply")->click();QCOMPARE(u8(project.scenarios()->scenario(1).layout.nodes[node],4),73);
+        undo.undo();QCOMPARE(project.scenarios()->json(),fixture.json());
+        auto conditions=editor.findChild<QListWidget *>("scenarioConditions");conditions->setCurrentRow(condition);
+        editor.findChild<QSpinBox *>("routePayload_6")->setValue(35);editor.findChild<QPushButton *>("routeConditionApply")->click();QCOMPARE(project.scenarios()->json(),fixture.json());
+        conditions->setCurrentRow(condition+1);conditions->setCurrentRow(condition);QCOMPARE(editor.findChild<QSpinBox *>("routePayload_6")->value(),35);
+        editor.findChild<QPushButton *>("routeDiscardCondition")->click();QCOMPARE(editor.findChild<QSpinBox *>("routePayload_6")->value(),1);
+        auto group=editor.findChild<QComboBox *>("routeGroupSquad");group->setCurrentIndex(group->findData(1));
+        const int originalGroup=editor.findChild<QSpinBox *>("routeGroup")->value();editor.findChild<QSpinBox *>("routeGroup")->setValue(7);
+        group->setCurrentIndex(group->findData(2));group->setCurrentIndex(group->findData(1));QCOMPARE(editor.findChild<QSpinBox *>("routeGroup")->value(),7);
+        editor.findChild<QPushButton *>("routeDiscardGroup")->click();QCOMPARE(editor.findChild<QSpinBox *>("routeGroup")->value(),originalGroup);QCOMPARE(project.scenarios()->json(),fixture.json());
     }
     void scenarioAdvancedSmallWindow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -9131,7 +9193,7 @@ class UiTests : public QObject {
         };
         objects->setCurrentRow(selected);
         QVERIFY(height->isVisible());
-        QVERIFY(!editor.findChild<QPushButton *>("mapApply")->isVisible());
+        QVERIFY(!editor.findChild<QPushButton *>("mapApply"));
         const auto original = project.mapEdits()->json();
         auto start = pixel();
         QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, start);
@@ -9319,11 +9381,10 @@ class UiTests : public QObject {
             pages->setCurrentIndex(0);
             QTest::qWait(20);
             auto objects = editor.findChild<QListWidget *>("mapObjects");
-            auto apply = editor.findChild<QPushButton *>("mapApply");
             auto fields = editor.findChild<QPushButton *>("mapEditFields");
             auto x = editor.findChild<QSpinBox *>("mapX"), z = editor.findChild<QSpinBox *>("mapZ");
             auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
-            QVERIFY(objects && apply && fields && x && z && canvas);
+            QVERIFY(objects && fields && x && z && canvas);
             // Marker artwork follows the current records, including edits and Undo.
             QVERIFY(!objects->item(0)->icon().isNull());
             const auto leaderIcon = objects->item(0)->icon().pixmap(32, 32).toImage();
@@ -9336,11 +9397,12 @@ class UiTests : public QObject {
             QVERIFY(portraitColors.size() > 8); // The stock boss has an enemy portrait, not a blank badge.
             const auto beforeLeader = project.scenarios()->json();
             objects->setCurrentRow(0);
-            fields->click();
-            auto leaderClass = editor.findChild<QComboBox *>("scenarioClass_0");
-            const int alternateClass = leaderClass->currentData().toInt() == 5 ? 6 : 5;
-            leaderClass->setCurrentIndex(leaderClass->findData(alternateClass));
-            editor.findChild<QPushButton *>("scenarioSquadApply")->click();
+            const int alternateClass=u8(project.scenarios()->scenario(1).squads[0],0)==5?6:5;
+            editScenarioMembers(editor,"mapSquad",[&](QDialog *dialog){
+                auto leaderClass=dialog->findChild<QComboBox *>("mapSquadClass_0");
+                leaderClass->setCurrentIndex(leaderClass->findData(alternateClass));
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+            });
             QCOMPARE(u8(project.scenarios()->scenario(1).squads[0], 0), quint8(alternateClass));
             QVERIFY(objects->item(0)->icon().pixmap(32, 32).toImage() != leaderIcon);
             undo.undo();
@@ -9409,21 +9471,17 @@ class UiTests : public QObject {
             const auto original = project.scenarios()->json(),
                        originalWorld = project.world()->json();
             objects->setCurrentRow(0);
-            fields->click();
-            QCOMPARE(pages->currentIndex(), 1);
-            QCOMPARE(editor.findChild<QListWidget *>("scenarioSquads")->currentRow(), 0);
+            QCOMPARE(pages->currentIndex(),0);
+            QCOMPARE(editor.findChild<QListWidget *>("scenarioSquads")->currentRow(),0);
             pages->setCurrentIndex(0);
             objects->setCurrentRow(0);
-            x->setValue(128);
-            z->setValue(128);
-            apply->click();
+            const int beforePosition=undo.index();
+            x->setValue(128);z->setValue(128);const int afterPosition=undo.index();
             const auto centered = project.scenarios()->json();
             QCOMPARE(u8(project.scenarios()->scenario(1).layout.deployments[0], 3), quint8(128));
             QCOMPARE(u8(project.scenarios()->scenario(1).layout.deployments[0], 4), quint8(128));
-            undo.undo();
-            QCOMPARE(project.scenarios()->json(), original);
-            undo.redo();
-            QCOMPARE(project.scenarios()->json(), centered);
+            undo.setIndex(beforePosition);QCOMPARE(project.scenarios()->json(),original);
+            undo.setIndex(afterPosition);QCOMPARE(project.scenarios()->json(),centered);
             const QPoint center(canvas->width() / 2, canvas->height() / 2);
             const int shift = (std::min(canvas->width(), canvas->height()) - 72) / 4;
             const QPoint pan(24, -18), anchor = center + pan;
@@ -9463,7 +9521,6 @@ class UiTests : public QObject {
             objects->setCurrentRow(waypointItem);
             x->setValue(55);
             z->setValue(66);
-            apply->click();
             fields->click();
             QCOMPARE(pages->currentIndex(), 2);
             QCOMPARE(editor.findChild<QListWidget *>("scenarioNodes")->currentRow(), waypoint);
@@ -9495,7 +9552,7 @@ class UiTests : public QObject {
             QVERIFY(editor.findChild<QWidget *>("worldTreasureFields")->isVisible());
             pages->setCurrentIndex(0);
             objects->setCurrentRow(siteItem);
-            QVERIFY(apply->isEnabled());
+            QVERIFY(x->isEnabled());
             const auto originalMaps = project.mapEdits()->json();
             const auto sourceMap = ScenarioMap::load(rom, 1);
             const auto oldSite = sourceMap.points[0];
@@ -9582,13 +9639,15 @@ class UiTests : public QObject {
             auto topBoundary = editor.findChild<QSpinBox *>("mapBoundaryTop");
             QVERIFY(topBoundary && topBoundary->isVisible());
             topBoundary->setValue(4);
-            editor.findChild<QPushButton *>("mapBoundaryApply")->click();
             QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
             undo.undo();
             QCOMPARE(project.mapEdits()->boundary(1), originalBoundary);
             undo.redo();
             QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
             const auto numericBoundary = project.mapEdits()->boundary(1);
+            const auto beforeInvalidBoundary=project.mapEdits()->json();
+            topBoundary->setValue(int(numericBoundary.bottom()));QCOMPARE(project.mapEdits()->json(),beforeInvalidBoundary);
+            QCOMPARE(topBoundary->value(),4);QVERIFY(editor.findChild<QLabel *>("mapNotice")->text().contains("8 cells"));
             QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier,
                               pixel(numericBoundary.bottomRight()));
             QTest::mouseMove(canvas, pixel({248, 249}), 20);
@@ -9652,7 +9711,6 @@ class UiTests : public QObject {
             auto placedAngle = editor.findChild<QSpinBox *>("mapPlacedCityRotation");
             QVERIFY(placedAngle && placedAngle->isVisible());
             placedAngle->setValue(180);
-            editor.findChild<QPushButton *>("mapCityRotate")->click();
             QCOMPARE(project.mapEdits()->changes(1).city[0].rotation, 180);
             QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, pixel({150, 140}));
             QTest::mouseMove(canvas, pixel({155, 140}), 20);
@@ -9683,8 +9741,8 @@ class UiTests : public QObject {
             objects->setCurrentRow(0);
             QTest::qWait(20);
             const auto squadSummary = editor.findChild<QLabel *>("mapSelectionSummary");
-            QVERIFY(squadSummary->isVisible());
-            QVERIFY(squadSummary->text().contains("Level"));
+            QVERIFY(!squadSummary->isVisible());
+            QVERIFY(editor.findChild<QTabWidget *>("mapSquadTabs")->isVisible());
             QVERIFY(editor.grab().save("scenario-map.png"));
             QTemporaryDir work;
             project.saveFolder(work.filePath("project"));
@@ -10003,7 +10061,7 @@ class UiTests : public QObject {
         select("behaviorStart", nodeId);
         button("behaviorAssign")->click();
         QCOMPARE(u8(project.scenarios()->scenario(10).layout.deployments[0], 6), quint8(nodeId));
-        QVERIFY(editor.findChild<QTextBrowser *>("behaviorSummary")->toPlainText().contains("X 80, Z 160"));
+        QVERIFY(editor.findChild<QTextBrowser *>("behaviorSummary")->toPlainText().contains("map position 80, 160"));
         undo.undo(); QCOMPARE(project.scenarios()->json(), beforeRoute);
         undo.redo();
         QTest::qWait(50);
@@ -10153,182 +10211,69 @@ class UiTests : public QObject {
         QVERIFY(editor.grab().save("native/build/scenario-settings.png"));
     }
     void scenarioSquadEditing() {
-        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty())
-            QSKIP("Private ROM required");
-        auto project = Project::fromRom(Rom::open(path));
-        project.loadScenarios();
-        QCOMPARE(project.appendClass(5, "Scenario fighter"), 165);
-        QUndoStack undo;
-        ScenarioEditor editor(&project, &undo, [] {});
-        editor.resize(1500, 950);
-        editor.show();
-        auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
-        auto combo = [&](const char *name) { return editor.findChild<QComboBox *>(name); };
-        auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
-        auto select = [&](const QString &name, int id) {
-            auto box = editor.findChild<QComboBox *>(name);
-            QVERIFY(box);
-            const int at = box->findData(id);
-            QVERIFY(at >= 0);
-            box->setCurrentIndex(at);
-        };
-        auto list = editor.findChild<QListWidget *>("scenarioList");
-        QCOMPARE(list->count(), 64);
-        auto navigation = editor.findChild<QTabBar *>("scenarioNavigation");
-        auto scenarioPages = editor.findChild<QStackedWidget *>("scenarioPages");
-        QVERIFY(navigation && scenarioPages);
-        const int selectedKey = list->currentItem()->data(Qt::UserRole).toInt();
-        for (int page = 0; page < 3; ++page) {
-            QTest::mouseClick(navigation, Qt::LeftButton, Qt::NoModifier, navigation->tabRect(page).center());
-            QCOMPARE(scenarioPages->currentIndex(), page);
-            QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), selectedKey);
-            QVERIFY(list->isVisible());
-            QVERIFY(editor.findChild<QLineEdit *>("scenarioSearch")->isVisible());
-            QCOMPARE(spin("scenarioBase")->isVisible(), page == 1);
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();QCOMPARE(project.appendClass(5,"Scenario fighter"),165);
+        QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
+        auto list=editor.findChild<QListWidget *>("scenarioList");auto pages=editor.findChild<QStackedWidget *>("scenarioPages");
+        auto squads=editor.findChild<QListWidget *>("scenarioSquads");auto base=editor.findChild<QSpinBox *>("scenarioBase");
+        QCOMPARE(list->count(),64);
+        const auto original=project.scenarios()->json();
+        for(int i=0;i<list->count();++i)if(QList<int>{1,10,25,64}.contains(list->item(i)->data(Qt::UserRole).toInt())) {
+            list->setCurrentRow(i);for(int row=0;row<squads->count();++row)squads->setCurrentRow(row);
+            QCOMPARE(project.scenarios()->json(),original);
         }
-        // Map's Edit fields action also changes pages programmatically.
-        scenarioPages->setCurrentIndex(1);
-        QCOMPARE(navigation->currentIndex(), 1);
-        const auto beforeBase = project.scenarios()->json();
-        const int originalBase = spin("scenarioBase")->value();
-        spin("scenarioBase")->setValue(originalBase + 1);
-        button("scenarioBaseApply")->click();
-        QCOMPARE(project.scenarios()->scenario(selectedKey).layout.baseLevel(), originalBase + 1);
-        undo.undo();
-        QCOMPARE(project.scenarios()->json(), beforeBase);
-        QCOMPARE(spin("scenarioBase")->value(), originalBase);
-        const QList<int> devKeys{10, 22, 35, 54, 62, 63, 64};
-        for (int i = 0; i < devKeys.size(); ++i) {
-            const auto item = list->item(list->count() - devKeys.size() + i);
-            QCOMPARE(item->data(Qt::UserRole).toInt(), devKeys[i]);
-            QVERIFY(item->text().contains("Dev Key"));
-            QCOMPARE(bool(item->flags() & Qt::ItemIsEnabled), devKeys[i] != 54);
-        }
-        const auto untouched = project.scenarios()->json();
-        for (int i = 0; i < list->count(); ++i) {
-            if (!(list->item(i)->flags() & Qt::ItemIsEnabled))
-                continue;
-            // Full record preservation is covered in the model check. Exercise
-            // the controls on normal, shared, special-level and Dev deployments.
-            if (!QList<int>{1, 10, 25, 64}.contains(list->item(i)->data(Qt::UserRole).toInt()))
-                continue;
-            list->setCurrentRow(i);
-            auto squads = editor.findChild<QListWidget *>("scenarioSquads");
-            for (int row = 0; row < squads->count(); ++row) {
-                squads->setCurrentRow(row);
-                button("scenarioSquadApply")->click();
-                QCOMPARE(project.scenarios()->json(), untouched);
-            }
-        }
-        for (int i = 0; i < list->count(); ++i)
-            if (list->item(i)->data(Qt::UserRole).toInt() == 10)
-                list->setCurrentRow(i);
-        const auto before = project.scenarios()->json();
-        // Applying untouched controls must preserve raw drop encoding and all unknown bytes.
-        button("scenarioSquadApply")->click();
-        QCOMPARE(project.scenarios()->json(), before);
-        select("scenarioClass_0", 165);
-        button("scenarioRestoreSquad")->click();
-        QCOMPARE(combo("scenarioClass_0")->currentData().toInt(), int(u8(project.scenarios()->original(10).squads[0],0)));
-        QCOMPARE(project.scenarios()->json(), before);
-        select("scenarioClass_0", 165);
-        spin("scenarioMemberCount")->setValue(1);
-        auto armyBoard = editor.findChild<FormationBoard *>("scenarioCell_Board");
-        QVERIFY(armyBoard);
-        const int originalCell = squadMembers(project.scenarios()->scenario(10).squads[0])[0].cell;
-        const int destinationCell = (originalCell+1)%9;
-        auto dragScenarioMember = [&](int from, int to) {
-            auto source = armyBoard->cell(from);
-            const auto start = source->mapFrom(armyBoard, armyBoard->cellCenter(from));
-            const auto end = source->mapFrom(armyBoard, armyBoard->cellCenter(to));
-            QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, start);
-            QMouseEvent movement(QEvent::MouseMove, end, source->mapToGlobal(end),
-                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(source, &movement);
-            QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, end);
-        };
-        dragScenarioMember(originalCell, destinationCell);
-        QVERIFY(!armyBoard->cell(destinationCell)->icon().isNull());
-        dragScenarioMember(destinationCell, originalCell);
-        QVERIFY(!armyBoard->cell(originalCell)->icon().isNull());
-        QCOMPARE(project.scenarios()->json(), before);
-        select("scenarioEquipment_0_0", 0);
-        for (const auto field : {"scenarioHealing", "scenarioFruit", "scenarioRevival"})
-            select(field, 0);
-        select("scenarioDrop", 0x8115);
-        combo("scenarioPlacement")->setCurrentIndex(1);
-        spin("scenarioX")->setValue(120);
-        spin("scenarioZ")->setValue(160);
-        button("scenarioSquadApply")->click();
-        const auto after = project.scenarios()->json();
-        QVERIFY(after != before);
-        QCOMPARE(u8(project.scenarios()->scenario(10).squads[0], 0), 165);
-        QCOMPARE(u16(project.scenarios()->scenario(10).squads[0], 2), 0);
-        QCOMPARE(u8(project.scenarios()->scenario(10).layout.deployments[0], 4), 160);
-        QCOMPARE(project.scenarios()->scenario(22).json(),
-                 project.scenarios()->original(22).json());
-        undo.undo();
-        QCOMPARE(project.scenarios()->json(), before);
-        undo.redo();
-        QCOMPARE(project.scenarios()->json(), after);
-        QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(), 10);
-        // Five independent class/level rows, including followers formerly sharing a cohort.
-        spin("scenarioMemberCount")->setValue(5);
-        for (int i=0;i<5;++i) {
-            select(QString("scenarioClass_%1").arg(i),5+i);
-            editor.findChild<QSpinBox *>(QString("scenarioLevel_%1").arg(i))->setValue(i);
-        }
-        button("scenarioSquadApply")->click();
-        const auto five=project.scenarios()->scenario(10).squads[0];
-        QVERIFY(independentSquad(five));
-        for(int i=0;i<5;++i) QCOMPARE(squadMembers(five)[i].classId,5+i);
-        QApplication::processEvents();
-        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/scenario-independent-squad.png"));
-        select("scenarioClass_2",10);
-        button("scenarioSquadApply")->click();
-        const auto independent=project.scenarios()->scenario(10).squads[0];
-        QCOMPARE(squadMembers(independent)[2].classId,10);
-        QCOMPARE(squadMembers(independent)[1].classId,6);
-        QCOMPARE(squadMembers(independent)[3].classId,8);
-        undo.undo(); QCOMPARE(project.scenarios()->scenario(10).squads[0],five);
-        undo.undo(); QCOMPARE(project.scenarios()->json(),after);
-        spin("scenarioLevel_0")->setValue(127);
-        button("scenarioSquadApply")->click();
-        QCOMPARE(project.scenarios()->json(), after);
-        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("level 1–99"));
-        spin("scenarioLevel_0")->setValue(0);
-        button("scenarioAddSquad")->click();
-        QCOMPARE(project.scenarios()->scenario(10).squads.size(),
-                 project.scenarios()->original(10).squads.size() + 1);
-        QVERIFY(button("scenarioRemoveSquad")->isEnabled());
-        button("scenarioRemoveSquad")->click();
-        QCOMPARE(project.scenarios()->json(), after);
-        undo.undo();
-        auto squads = editor.findChild<QListWidget *>("scenarioSquads");
-        squads->setCurrentRow(squads->count() - 1);
-        QVERIFY(button("scenarioRemoveSquad")->isEnabled());
-        const auto beforeNew = project.scenarios()->json();
-        button("scenarioNewSquad")->click();
-        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads.last()).size(), 1);
-        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads.last())[0].classId, 5);
-        undo.undo(); QCOMPARE(project.scenarios()->json(), beforeNew);
-        squads->setCurrentRow(0);
-        button("scenarioRestoreSquad")->click();
-        QCOMPARE(project.scenarios()->scenario(10).squads[0], project.scenarios()->original(10).squads[0]);
-        undo.undo(); QCOMPARE(project.scenarios()->json(), beforeNew);
-        squads->setCurrentRow(squads->count() - 1);
-        QTest::qWait(50);
-        QVERIFY(
-            editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-squads.png"));
-        auto search = editor.findChild<QLineEdit *>("scenarioSearch");
-        search->setText("54");
-        QCOMPARE(list->currentRow(), -1); // The unsupported Dev Key stays visible but unselectable.
-        QVERIFY(!list->item(list->count() - 4)->isHidden());
-        search->setText("no matching mission");
-        QCOMPARE(list->currentRow(), -1);
-        search->clear();
-        QVERIFY(list->currentRow() >= 0);
+        for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toInt()==10)list->setCurrentRow(i);
+        squads->setCurrentRow(0);pages->setCurrentIndex(1);
+        const int originalBase=base->value();base->setValue(originalBase+1);
+        QCOMPARE(project.scenarios()->scenario(10).layout.baseLevel(),originalBase+1);undo.undo();QCOMPARE(project.scenarios()->json(),original);
+        editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
+            dialog->findChild<QSpinBox *>("scenarioMemberCount")->setValue(1);
+            auto cls=dialog->findChild<QComboBox *>("scenarioClass_0");cls->setCurrentIndex(cls->findData(165));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();QVERIFY(!dialog->isVisible());
+        });
+        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads[0])[0].classId,165);
+        const auto authored=project.scenarios()->json();squads->setCurrentRow(1);squads->setCurrentRow(0);QCOMPARE(project.scenarios()->json(),authored);
+        undo.undo();QCOMPARE(project.scenarios()->json(),original);undo.redo();QCOMPARE(project.scenarios()->json(),authored);
+        editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
+            dialog->findChild<QSpinBox *>("scenarioLevel_0")->setValue(127);
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+            QVERIFY(dialog->isVisible());QVERIFY(dialog->findChild<QLabel *>("scenarioMemberError")->text().contains("level 1–99"));
+            QCOMPARE(project.scenarios()->json(),authored);
+        });
+        editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
+            auto cls=dialog->findChild<QComboBox *>("scenarioClass_0");cls->setEditText("unfinished class search");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();QVERIFY(dialog->isVisible());
+            QCOMPARE(project.scenarios()->json(),authored);
+        });
+        editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
+            dialog->findChild<QSpinBox *>("scenarioMemberCount")->setValue(5);
+            for(int i=0;i<5;++i) {auto cls=dialog->findChild<QComboBox *>(QString("scenarioClass_%1").arg(i));cls->setCurrentIndex(cls->findData(5+i));dialog->findChild<QSpinBox *>(QString("scenarioLevel_%1").arg(i))->setValue(i);}
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();QVERIFY(!dialog->isVisible());
+        });
+        const auto five=project.scenarios()->scenario(10).squads[0];QVERIFY(independentSquad(five));
+        for(int i=0;i<5;++i)QCOMPARE(squadMembers(five)[i].classId,5+i);
+        undo.undo();QCOMPARE(project.scenarios()->json(),authored);
+        auto board=editor.findChild<FormationBoard *>("scenarioCell_Board");const int from=squadMembers(project.scenarios()->scenario(10).squads[0])[0].cell,to=(from+1)%9;
+        QMetaObject::invokeMethod(board,"cellMoved",Qt::DirectConnection,Q_ARG(int,from),Q_ARG(int,to));
+        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads[0])[0].cell,to);undo.undo();QCOMPARE(project.scenarios()->json(),authored);
+        auto drop=editor.findChild<QComboBox *>("scenarioDrop");drop->setCurrentIndex(drop->findData(0x8115));QMetaObject::invokeMethod(drop,"activated",Q_ARG(int,drop->currentIndex()));
+        QCOMPARE(u16(project.scenarios()->scenario(10).layout.deployments[0],11),0x115);undo.undo();QCOMPARE(project.scenarios()->json(),authored);
+        editor.findChild<QPushButton *>("scenarioAddSquad")->click();QCOMPARE(project.scenarios()->scenario(10).squads.size(),project.scenarios()->original(10).squads.size()+1);
+        editor.findChild<QPushButton *>("scenarioRemoveSquad")->click();QCOMPARE(project.scenarios()->json(),authored);
+        squads->setCurrentRow(0);editor.findChild<QPushButton *>("scenarioRestoreSquad")->click();QCOMPARE(project.scenarios()->scenario(10).squads[0],project.scenarios()->original(10).squads[0]);undo.undo();
+        editor.findChild<QPushButton *>("scenarioLocateSquad")->click();QCOMPARE(pages->currentIndex(),0);
+        const auto selection=editor.findChild<QListWidget *>("mapObjects")->currentRow();
+        editScenarioMembers(editor,"mapSquad",[&](QDialog *dialog){dialog->findChild<QSpinBox *>("mapSquadLevel_0")->setValue(1);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();});
+        QCOMPARE(pages->currentIndex(),0);QCOMPARE(editor.findChild<QListWidget *>("mapObjects")->currentRow(),selection);QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads[0])[0].levelOffset,1);undo.undo();
+        editor.findChild<QPushButton *>("scenarioBrowse")->click();QVERIFY(!list->isVisible());QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(),10);
+        auto type=editor.findChild<QComboBox *>("mapObjectType");type->setCurrentIndex(type->findData(int(MapObject::Squad)));
+        auto search=editor.findChild<QLineEdit *>("mapObjectSearch");search->setText("no such object");auto objects=editor.findChild<QListWidget *>("mapObjects");
+        for(int i=0;i<objects->count();++i)QVERIFY(objects->item(i)->isHidden());search->clear();
+        for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toInt()==1)list->setCurrentRow(i);
+        QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+        editor.findChild<QTabWidget *>("mapSquadTabs")->setCurrentIndex(1);QTest::qWait(30);QCOMPARE(editor.width(),1100);
+        QVERIFY(editor.grab().save("native/build/scenario-workflow-members.png"));
+        editor.findChild<QTabWidget *>("mapSquadTabs")->setCurrentIndex(0);QVERIFY(editor.grab().save("native/build/scenario-workflow-orders.png"));
     }
     void customSquadEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -12,20 +12,26 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QPushButton;
 class QUndoStack;
+class QLineEdit;
+class QTabWidget;
 namespace lordly {
 enum class MapObject { Squad, Waypoint, Site, Treasure, City, Peak };
 class MapCanvas;
 class ScenarioWorldEditor;
 class SquadOrderEditor;
+class ScenarioSquadPanel;
 class ScenarioMapEditor : public QWidget {
   public:
     ScenarioMapEditor(Project *project, QUndoStack *undo,
                       std::function<void(const Scenarios &, const QString &)> commit,
                       std::function<void(MapObject, int)> editFields, QWidget *parent = nullptr);
     void refresh(int key);
+    void selectSquad(int row);
+    std::function<void(int)> squadSelected;
 
   private:
     void select(int row);
+    void filterObjects();
     void move(int row, QPoint bytes);
     Project *project_;
     QUndoStack *undo_;
@@ -42,8 +48,13 @@ class ScenarioMapEditor : public QWidget {
     QWidget *coordinates_;
     ScenarioWorldEditor *world_;
     SquadOrderEditor *orders_;
+    ScenarioSquadPanel *squadPanel_;
+    QTabWidget *squadTabs_;
+    QLineEdit *objectSearch_;
+    QComboBox *objectType_, *startPoint_;
+    QLabel *positionLabel_;
     QSpinBox *x_, *z_;
-    QPushButton *apply_, *fields_;
+    QPushButton *fields_;
     QCheckBox *terrain_;
     QWidget *paintTools_, *boundaryTools_;
     std::array<QSpinBox *, 4> boundaryFields_;
