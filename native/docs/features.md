@@ -762,8 +762,8 @@ Tools schema5. Exports authenticate code owners, assemble in original allocation
 check exact output, update CRC and reopen. Unknown modified owners are preserved
 and their controls disabled.
 
-Element balance in Tools separates the shared natural-element affinity (same/opposed
-percentage points), magic weapon synergy, and final physical/elemental resistance
+Tools separates Character elemental affinity (same/opposed percentage points),
+Weapon bonus to spells, and final physical/elemental resistance
 strength (0–400%). Shared affinity also affects target resistance; Virtue/Bane
 alignment terms retain their existing behavior. Fixed-damage branches and minimum
 damage are unchanged. Code and tables rebuild within original allocations.
@@ -772,6 +772,9 @@ factor to 102% for a match or 98% for an opposed weapon. Element affinity 4
 changes a neutral factor to 104%/96% and adds/subtracts 4 target resistance points.
 These are contributions to the damage calculation, not guaranteed final-damage
 percentages. The examples update when their controls change.
+The shared Flame-character/Flame-weapon/Flame-spell example explains how both
+bonuses can affect one spell, while the target's element and resistance affect
+the final damage. Weapon bonus to spells does not boost physical weapon damage.
 
 Mission completion Tools expose separate Goth population-bonus divisors below
 and above Chaos Frame50, Soldier population contribution, and minimum per captured

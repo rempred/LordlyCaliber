@@ -30,7 +30,7 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
     const QMap<QString,QString> titles{{"deployment","Mission deployment"},{"reserve","Reserve experience — Expansion Pak required (8 MiB RAM)"},{"trainingXp","Training experience"},{"clock","Day and night length — all missions"},{"fatigue","Fatigue while moving"},
         {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"},
         {"goth","Mission completion — Goth"},{"soldierPopulation","Mission completion — Soldier rewards"},{"soldierMinimum","Soldier minimum"},
-        {"elements","Element balance"},{"weapons","Magic weapon synergy"},{"resistance","Resistance effects"}};
+        {"elements","Character elemental affinity"},{"weapons","Weapon bonus to spells"},{"resistance","Resistance effects"}};
     for(const auto &group:groups) {
         auto box=new QGroupBox(titles.value(group,group));box->setObjectName("ruleGroup_"+group);auto form=new QFormLayout(box);
         auto help=new QLabel(group=="tactics"
@@ -42,7 +42,7 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
             : group=="soldierPopulation" ? "Each captured town contributes population × morale ÷ 10,000, scaled here, with the minimum below. Objective towns use morale 50. To disable these rewards, set both contribution and minimum to 0."
             : group=="soldierMinimum" ? "The game adds town contributions, wraps totals at 256, then fills the Soldier reserve up to 200. Keep large population and minimum settings in mind when tuning this formula."
             : group=="elements" ? "Compares an attack's element with the character's own element. Matching elements add the amount below; opposed elements subtract it; other pairings add 0. Opposed pairs: Wind / Earth and Flame / Water. This affects attack and defense factors, plus the target's resistance. Virtue/Bane alignment effects keep their own rules."
-            : group=="weapons" ? "Compares a spell's element with the caster's weapon element. Matching elements add the amount below to the magic attack factor; opposed elements subtract it. Opposed pairs: Wind / Earth, Flame / Water, Virtue / Bane. Physical and unrelated elements add 0."
+            : group=="weapons" ? "Compares a spell's element with the caster's weapon element. Matching elements add the amount below to the magic attack factor; opposed elements subtract it. Opposed pairs: Wind / Earth, Flame / Water, Virtue / Bane. Physical and unrelated elements add 0. This setting affects spells, not the weapon's physical damage."
             : group=="recovery" ? "Rest recovery controls how often both fatigue and HP recover: 200% gives roughly twice as many cycles; 50% gives half as many. Each cycle removes up to 2 fatigue and restores the HP amount below. Night and Healing Censer bonuses remain. Living, non-petrified characters heal up to maximum HP; Soldier groups keep their native recovery stages."
             : group=="resistance" ? "100% keeps retail damage reduction. 50% halves its strength; 200% doubles it. Damage still has the game's minimum of 1. Fixed-damage attacks keep their special formulas."
             : group=="clock" ? "100% keeps retail timing. 200% lasts twice as long; 50% lasts half as long. These settings affect every mission."
@@ -98,7 +98,8 @@ void GameRulesEditor::refresh() {
     const int affinity=rules.value("elementAffinity"), weapon=rules.value("weaponAffinity");
     example("elements",QString("At %1 points, a matching element changes a neutral 100% factor to %2%; an opposed element changes it to %3%. The target also gets +%1 matching resistance points or −%1 opposed resistance points, within the normal 0–100 resistance range. Final damage combines these factors with stats, equipment and other modifiers.")
         .arg(affinity).arg(100+affinity).arg(100-affinity));
-    example("weapons",QString("At %1 points, a matching weapon changes a neutral 100% magic attack factor to %2%; an opposed weapon changes it to %3%. For example, a Flame weapon helps a Flame spell and weakens a Water spell. Raising 2 to 10 increases this adjustment fivefold; final damage also depends on defense and resistance.")
+    example("weapons",QString("At %1 points, a matching weapon changes a neutral 100% magic attack factor to %2%; an opposed weapon changes it to %3%. Raising 2 to 10 increases this adjustment fivefold.\n\n"
+        "How they work together: a Flame character holding a Flame weapon casts a Flame spell. Their innate Flame element gives the bonus controlled by Character elemental affinity. Their Flame weapon gives the additional bonus controlled by Weapon bonus to spells. Both can affect the same spell. The target's element and resistance also affect the final damage.")
         .arg(weapon).arg(100+weapon).arg(100-weapon));
     const int hp=rules.value("restHealing"), rate=rules.value("recoveryRate");
     example("recovery",hp ? QString("Current settings: %1 HP per eligible member per cycle at %2% cycle speed — about %3× retail HP healing over the same resting time, until the native HP limits are reached.")
