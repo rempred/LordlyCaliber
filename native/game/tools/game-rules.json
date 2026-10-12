@@ -66,5 +66,30 @@
     "size": 4,
     "address": 2149408660,
     "sha256": "63abe774df1d59534ec133efb61806cfd5ed7c4d59815998f0ed1e6d10133e22"
+  },
+  "reserve": {
+    "offset": 41705472,
+    "size": 4096,
+    "address": 2152464384,
+    "authoredSha256": "51d5234926b0a796d3a325cb237e614c353a063b10db88158c006b0ed75c189c",
+    "bootstrapSha256": "4fc3a6494cf424cb269b0c2b483e38b73e4861f3a43b6386e6a93d19a67e597b"
+  },
+  "deployment": {
+    "offset": 1102464,
+    "size": 4,
+    "address": 2149288768,
+    "sha256": "24e59d9d961305f419939bb7f9792c18965000b719872b33b23fd86a15c03f82"
+  },
+  "deploymentMenu": {
+    "offset": 1102680,
+    "size": 4,
+    "address": 2149288984,
+    "sha256": "11cfbf6619da9c457212288bd4415d122330b0b1675f626aefe965105a393b8a"
+  },
+  "deploymentMessage": {
+    "offset": 1180072,
+    "size": 4,
+    "address": 2149366376,
+    "sha256": "35ec0e5a714783b6af466cec9520061e51dcf4196e34a43ac1e8250f877d6a0f"
   }
 }

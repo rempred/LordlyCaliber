@@ -5917,3 +5917,38 @@ early-frame sample passes in1253ms. The first three cases previously passed
 in12685ms. A scene completing before the original250-step sample was a test
 assumption, corrected by sampling at50 too. The final world-scene capture was
 inspected. These are native desktop playback checks, not natural-game runs.
+
+
+### Training, completion and deployment rules (2026-10-12)
+
+Training's five ordinary rotation records per available world node use z64
+0x86A70 + (node-1)*24 + slot*4. The sixth special-story entry and byte3 stay intact.
+Byte2 is the price factor, read by the original menu fee calculation and payment.
+The squad resource is shared with scenarios; private training records append to
+Scenarios::plan's library before one ScenarioResources rebuild. Training's
+constructor owns z64 0x23A5EC..0x23B048 / RAM 0x801D0A8C..0x801D14E8, a separate
+loaded slab (delta0x7FF964A0), and adapts accepted C to LS independent members.
+The ordinary constructor and item/level initialization calls remain native.
+Training bonus at z64 0x219264 runs only on the training-mode predicate; Manual
+of Warfare and the final cap remain downstream. Story-only bonus exclusion is
+unchanged. The five regular opponents remain independent of the sixth story route.
+
+Reserve XP's source module reserves z64 0x027C6000..0x027C7000 and Expansion Pak
+RAM 0x804C0000..0x804C1000, separate from existing optional tool modules. The
+bootstrap uses bytes80..244 released by the complete Goth formula replacement
+at z64 0x1399C0. Settlement's item call at0x139AFC enters it; native key54 and
+completion-state guards stay in place. Cache invalidation and synchronous PI
+loading precede the wrapper, which calls the original item award and then uses
+the scenario's persistent player-squad membership to exclude assigned members.
+Character progression delegates to resident RAM0x8016EBA4. Full owner hashes,
+parameter normalization, cross-owner readback and foreign-allocation refusal
+protect reopens/edits. Unrecognized reserve code also disables Goth editing when
+its call still targets this bootstrap. Turning the feature off restores stock
+bytes when other rule values are retail. 8MiB RAM is required when enabled.
+
+Deployment capacity is the immediate at z64 0x10D280, 0x10D358 and0x1201A8
+(descriptor7 delta0x800AB8C0). Original0x10D1E8 counts active, present player
+source IDs below30 and returns max(0,limit-count). The menu duplicates the count;
+the Legion confirmation compares the whole group's size and formats remaining
+and used slots. All three values must agree. The existing 50 runtime objects
+cover30 player and20 non-player sources; no Legion-array capacity changes.

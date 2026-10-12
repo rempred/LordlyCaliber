@@ -66,7 +66,9 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"trainingBonus", "trainingXp", "Training XP bonus", "Extra XP for each eligible member after a training win. Manual of Warfare doubles this bonus; the total remains capped at 100. Retail gives 0 bonus.",0,100,1,0},
+    return {{"deploymentLimit", "deployment", "Maximum deployed squads", "Player squads allowed on a mission at once. Retail allows 10; the saved army has 30 squad slots. Each squad in a Legion counts separately. Existing story deployments are retained.",1,30,1,10},
+            {"reserveXp", "reserve", "XP per reserve member", "Award this much XP once at normal mission completion. 0 disables it. Reaching 100 uses normal class/equipment growth, resets XP to 0, and gains at most one level. Requires an Expansion Pak (8 MiB RAM).",0,100,1,0},
+            {"trainingBonus", "trainingXp", "Training XP bonus", "Extra XP for each eligible member after a training win. Manual of Warfare doubles this bonus; the total remains capped at 100. Retail gives 0 bonus.",0,100,1,0},
             {"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
             {"gothHighDivisor", "goth", "Above 50 Chaos Frame: divisor", "Population bonus = (Chaos Frame − 50) × captured population ÷ this value, rounded down. At 50, only the base mission Goth is awarded.",1,1000,1,50},
             {"soldierPopulationScale", "soldierPopulation", "Population contribution", "Scale the population × morale contribution before applying the minimum per captured town.",0,400,25,100,true},
@@ -95,7 +97,26 @@ GameRules GameRules::load(const Rom &rom) {
             const auto site=it->toObject();
             auto bytes=rom.bytes().mid(site["offset"].toInt(),site["size"].toInt());
             auto canonical=bytes;
-            if(name=="trainingXp") {
+            if(name.startsWith("deployment")) {
+                const int value=u16(bytes,2);const auto prefix=name=="deployment"?0x24020000u:name=="deploymentMenu"?0x24030000u:0x24040000u;
+                if((u32(bytes,0)&0xffff0000u)!=prefix || value<1 || value>30)
+                    throw Error("Deployment limit code is unrecognized; its existing value will be preserved.");
+                if(name!="deployment" && result.value("deploymentLimit")!=value)
+                    throw Error("Deployment limit checks disagree; their existing values will be preserved.");
+                result.values_["deploymentLimit"]=value;
+            } else if(name=="reserve") {
+                const auto hook=rom.bytes().mid(0x139afc,4);
+                int amount=0;
+                if(bytes!=QByteArray(4096,char(-1))) {
+                    amount=int(u32(bytes,8));put32(canonical,8,0);
+                    if(bytes.first(8)!="LCRESXP1" || amount<1 || amount>100 ||
+                       sha256(canonical)!=site["authoredSha256"].toString().toLatin1() ||
+                       hook!=QByteArray::fromHex("0c0794b4") ||
+                       sha256(rom.bytes().mid(0x139a10,164))!=site["bootstrapSha256"].toString().toLatin1())
+                        throw Error("Reserve XP installation is unrecognized; its bytes will be preserved.");
+                } else if(hook!=QByteArray::fromHex("0c0771c8")) throw Error("Mission reward call has an unknown modification.");
+                result.values_["reserveXp"]=amount;result.owners_["reserveHook"]=hook;
+            } else if(name=="trainingXp") {
                 const quint32 word=u32(bytes,0);
                 const int value=word==0x00008021?0:int(word&65535);
                 if(word!=0x00008021 && ((word&0xffff0000)!=0x24100000 || value>100))
@@ -105,6 +126,9 @@ GameRules GameRules::load(const Rom &rom) {
                 if(sha256(bytes)!=site["sha256"].toString().toLatin1()) {
                     const int low=u16(bytes,26),high=u16(bytes,50);
                     put16(canonical,26,25);put16(canonical,50,50);
+                    if(rom.bytes().mid(0x27c6000,8)=="LCRESXP1" &&
+                       sha256(canonical.mid(80))==sites["reserve"].toObject()["bootstrapSha256"].toString().toLatin1())
+                        canonical.replace(80,164,QByteArray(164,0));
                     if(sha256(canonical)!=site["authoredSha256"].toString().toLatin1() || low<1 || low>1000 || high<1 || high>1000)
                         throw Error("Goth formula is unrecognized; its existing code will be preserved.");
                     result.values_["gothLowDivisor"]=low;result.values_["gothHighDivisor"]=high;
@@ -165,6 +189,12 @@ GameRules GameRules::load(const Rom &rom) {
             result.owners_[name]=bytes;
         } catch (const Error &e) { result.unavailable_[name]=QString::fromUtf8(e.what()); }
     }
+    for(const auto &name:{QString("deploymentMenu"),QString("deploymentMessage")})
+        if(!result.unavailable(name).isEmpty()) result.unavailable_["deployment"]=result.unavailable(name);
+    // A recognized loader may still point to an unrecognized module. Do not
+    // remove that loader while editing an otherwise recognized Goth formula.
+    if(!result.unavailable("reserve").isEmpty() && rom.bytes().mid(0x139afc,4)!=QByteArray::fromHex("0c0771c8"))
+        result.unavailable_["goth"]=result.unavailable("reserve");
     result.originals_=result.values_;
     return result;
 }
@@ -193,18 +223,29 @@ QVector<RuleBuild> GameRules::builds() const {
     for(auto it=sites.begin();it!=sites.end();++it) {
         const auto name=it.key(); bool changed=false;
         for(const auto &rule:definitions()) if(rule.group==name) changed|=value(rule.key)!=loaded(rule.key);
+        if(name.startsWith("deployment")) changed|=value("deploymentLimit")!=loaded("deploymentLimit");
+        if(name=="goth") changed|=value("reserveXp")!=loaded("reserveXp");
         if(!changed) continue;
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
         RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons" || name=="soldierPopulation"};
-        if(name=="trainingXp") {
+        if(name.startsWith("deployment")) {
+            put16(build.expected,2,quint16(value("deploymentLimit")));build.source=words(build.expected);
+        } else if(name=="reserve") {
+            if(value("reserveXp")) {
+                build.source=QString(".set RESERVE_XP,%1\n").arg(value("reserveXp")).toLatin1()+resource("reserve-xp.s");
+                build.expected.clear();
+            } else {build.expected=QByteArray(4096,char(-1));build.data=true;}
+        } else if(name=="trainingXp") {
             const auto bonus=value("trainingBonus");
             put32(build.expected,0,bonus?0x24100000u|quint32(bonus):0x00008021u);
             build.source=words(build.expected);
         } else if(name=="goth") {
             const int low=value("gothLowDivisor"),high=value("gothHighDivisor");
-            build.source=low==25 && high==50 ? resource("goth-retail.s") :
-                QString(".set LOW_DIVISOR,%1\n.set HIGH_DIVISOR,%2\n").arg(low).arg(high).toLatin1()+resource("goth-reward.s");
+            auto goth=resource("goth-reward.s");
+            if(value("reserveXp")) goth.replace(".org 0xf4",resource("reserve-bootstrap.s")+"\n.org 0xf4");
+            build.source=low==25 && high==50 && !value("reserveXp") ? resource("goth-retail.s") :
+                QString(".set LOW_DIVISOR,%1\n.set HIGH_DIVISOR,%2\n").arg(low).arg(high).toLatin1()+goth;
             build.expected.clear();
         } else if(name=="soldierPopulation") {
             build.expected=soldierScale(value("soldierPopulationScale"));
@@ -227,7 +268,15 @@ QVector<RuleBuild> GameRules::builds() const {
             period(build.expected,name,cycle(value(name=="fatigue"?"fatigueRate":"recoveryRate")));
             build.source=words(build.expected);
         }
+        if(name=="goth" || name=="reserve") build.symbols={{"RESERVE_INVALIDATE_I",0x800900c0},
+            {"RESERVE_INVALIDATE_D",0x80090010},{"RESERVE_ENTRY",0x804c0010},
+            {"RESERVE_ITEM",0x801dc720},{"RESERVE_GROW",0x8016eba4}};
         result<<build;
+    }
+    if(value("reserveXp")!=loaded("reserveXp")) {
+        if(!unavailable("reserve").isEmpty())throw Error(unavailable("reserve"));
+        const auto expected=QByteArray::fromHex(value("reserveXp")?"0c0794b4":"0c0771c8");
+        result<<RuleBuild{"reserveHook",0x139afc,4,0x801e53bc,words(expected),expected,{},false};
     }
     return result;
 }

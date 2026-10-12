@@ -775,3 +775,13 @@ opponents. Private opponent templates append to the shared library without chang
 mission donors; independent members use a source-built constructor in its original
 allocation. Tested with native fee/XP execution and original-versus-authored
 constructor comparisons; complete emulator training remains untested this session.
+
+
+Tools also offers a player deployment limit (1–30, retail 10), consistently used
+by the deployment menu, available-slot count, Legion check and refusal message.
+Reserve XP grants a fixed 0–100 at normal mission completion (off by default).
+Assigned, fallen, petrified, Soldier and level-99 characters are excluded; native
+class/equipment growth handles one level-up and XP resets to zero. This optional
+feature requires 8 MiB RAM. Offline instruction tests cover settlement calls,
+member exclusions, register/record preservation, loading bounds and coexistence
+with Goth rewards. Complete emulator mission completion remains untested.

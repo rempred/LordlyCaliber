@@ -14,6 +14,58 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void deploymentLimitsExportAndExecution() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadTools();const auto baseline=project.tools()->json();
+            QTemporaryDir work,output(QFileInfo(path).absolutePath()+"/Test ROMs/native-deployment-XXXXXX");QVERIFY(output.isValid());output.setAutoRemove(false);
+            for(int limit:{1,10,30}) {
+                auto settings=baseline;auto values=settings["gameRules"].toObject();values["deploymentLimit"]=limit;settings["gameRules"]=values;project.setTools(settings);
+                const auto built=rebuild(project,tools,work.path());const auto folder=output.filePath(QString::number(limit));QDir().mkpath(folder);
+                const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
+                auto preserved=built.image;for(const auto &owner:project.tools()->gameRules().builds())preserved.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+                Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
+                QProcess execution;execution.start("node",{QFINDTESTDATA("deployment-mips.cjs"),candidate,QString::number(limit)});
+                QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
+                reopened.setTools(baseline);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            }
+            qInfo().noquote()<<"Deployment candidates:"<<output.path();
+        } catch(const Error &e){QFAIL(e.what());}
+    }
+    void reserveExperienceExportAndExecution() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadTools();const auto baseline=project.tools()->json();
+            QTemporaryDir work,output(QFileInfo(path).absolutePath()+"/Test ROMs/native-reserve-xp-XXXXXX");QVERIFY(output.isValid());output.setAutoRemove(false);
+            for(int amount:{25,100}) {
+                auto settings=baseline;auto rules=settings["gameRules"].toObject();rules["reserveXp"]=amount;settings["gameRules"]=rules;project.setTools(settings);
+                const auto built=rebuild(project,tools,work.path());const auto folder=output.filePath(QString::number(amount));QDir().mkpath(folder);
+                const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
+                auto preserved=built.image;for(const auto &owner:project.tools()->gameRules().builds())preserved.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+                Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
+                QProcess execution;execution.start("node",{QFINDTESTDATA("reserve-xp-mips.cjs"),candidate,QString::number(amount)});
+                QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
+                auto damaged=built.image;damaged[0x27c6060]=char(u8(damaged,0x27c6060)^1);
+                auto unknown=Project::fromRom(Rom::fromBytes(damaged));unknown.loadTools();
+                auto unsupported=unknown.tools()->json();auto invalidRules=unsupported["gameRules"].toObject();
+                invalidRules["gothLowDivisor"]=12;unsupported["gameRules"]=invalidRules;
+                QVERIFY_THROWS_EXCEPTION(Error,unknown.setTools(unsupported));
+                // Reserve on/off composes with independent Goth formula edits.
+                auto other=settings;auto changed=other["gameRules"].toObject();changed["gothLowDivisor"]=10;other["gameRules"]=changed;reopened.setTools(other);
+                const auto combined=rebuild(reopened,tools,work.path());auto next=Project::fromRom(Rom::fromBytes(combined.image));next.loadTools();QCOMPARE(next.tools()->json(),other);
+                next.setTools(baseline);QCOMPARE(rebuild(next,tools,work.path()).image,rom.bytes());
+            }
+            // Foreign cartridge data in the module allocation must never be overwritten.
+            auto foreign=rom.bytes();foreign[0x27c6000]=0;auto protectedProject=Project::fromRom(Rom::fromBytes(foreign));protectedProject.loadTools();
+            auto setting=protectedProject.tools()->json();auto values=setting["gameRules"].toObject();values["reserveXp"]=25;setting["gameRules"]=values;
+            QVERIFY_THROWS_EXCEPTION(Error,protectedProject.setTools(setting));
+            qInfo().noquote()<<"Reserve XP candidates:"<<output.path();
+        } catch(const Error &e){QFAIL(e.what());}
+    }
     void trainingExportAndExecution() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
