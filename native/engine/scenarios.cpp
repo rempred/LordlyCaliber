@@ -119,6 +119,9 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
         throw Error("Scenario supports up to 20 squads, 16 movement nodes and 16 conditions");
     if (e.baseLevel() < 1 || e.baseLevel() > 99)
         throw Error("Scenario base level must be 1–99");
+    if (e.header.mid(11, 2) != base.layout.header.mid(11, 2) &&
+        (e.startHour() > 23 || e.startMinute() > 59))
+        throw Error("Starting time must be between 00:00 and 23:59");
     e.encode();
     validateRoutes(s);
     QSet<int> sources;
@@ -197,6 +200,11 @@ void Scenarios::replace(Scenario value, const ClassData &classes) {
     // Canonicalize dependent framing, including the final row's shared tail.
     value.layout = Eset::decode(value.layout.encode());
     rows_[value.key] = std::move(value);
+}
+void Scenarios::setStartTime(int key, int hour, int minute, const ClassData &classes) {
+    auto next = scenario(key);
+    next.layout.setStartTime(hour, minute);
+    replace(std::move(next), classes);
 }
 void Scenarios::setBaseLevel(int key, int level, const ClassData &classes) {
     auto next = scenario(key);

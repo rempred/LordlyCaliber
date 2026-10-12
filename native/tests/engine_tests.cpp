@@ -59,6 +59,63 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioStartingTimeAndRewards() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios(); project.loadWorld();
+            auto model = *project.scenarios();
+            const auto before = model.json();
+            model.setStartTime(1, 23, 59, project.classData());
+            QCOMPARE(model.scenario(1).layout.startHour(), 23);
+            QCOMPARE(model.scenario(1).layout.startMinute(), 59);
+            QVERIFY_THROWS_EXCEPTION(Error, model.setStartTime(1, 24, 0, project.classData()));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setStartTime(1, 0, 60, project.classData()));
+            auto expectedHeader = model.original(1).layout.header;
+            put8(expectedHeader, 11, 23); put8(expectedHeader, 12, 59);
+            QCOMPARE(model.scenario(1).layout.header, expectedHeader);
+            for (int key : model.entries().keys()) if (key != 1)
+                QCOMPARE(model.scenario(key).json(), model.original(key).json());
+            bool found = false;
+            for (int row = 0; row < model.scenario(1).layout.deployments.size(); ++row) {
+                auto deployment = model.scenario(1).layout.deployments[row];
+                if ((u8(deployment, 0) & 127) != 30) continue;
+                put8(deployment, 10, 1); put16(deployment, 11, 277);
+                model.setDeployment(1, row, deployment, project.classData());
+                found = true; break;
+            }
+            QVERIFY(found);
+            project.setScenarios(model.json());
+            auto world = *project.world();
+            const int townId = u16(world.scenario(1).sites, 1);
+            auto town = world.town(townId), expectedTown = town;
+            expectedTown.replace(1, 20, QByteArray("Test Town") + QByteArray(11, 0));
+            put16(expectedTown, 22, 1234);
+            world.setTown(townId, expectedTown); project.setWorld(world.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenarios()->json(), project.scenarios()->json());
+            QCOMPARE(restored.world()->town(townId), expectedTown);
+            const auto build = rebuild(project, tools, work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/native-scenario-settings-XXXXXX");
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, build, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios(); reopened.loadWorld();
+            QCOMPARE(reopened.scenarios()->json(), model.json());
+            QCOMPARE(reopened.world()->town(townId), expectedTown);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, build.image);
+            auto check = build.image; Rom::updateChecksum(check); QCOMPARE(check, build.image);
+            for (int id = 1; id <= ScenarioWorld::townCount; ++id)
+                if (id != townId) QCOMPARE(reopened.world()->town(id), project.world()->town(id));
+            qInfo().noquote() << "Scenario settings candidate:" << candidate;
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void scenarioIndependentMembers() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");

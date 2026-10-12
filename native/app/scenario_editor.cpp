@@ -4,6 +4,8 @@
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include <QCheckBox>
+#include <QTimeEdit>
+#include <QGroupBox>
 #include <QComboBox>
 #include <QCompleter>
 #include <QFile>
@@ -148,6 +150,61 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     addPage(map_, "Map");
     addPage(squadPage, "Squads");
     addPage(routes_, "Orders");
+    auto settingsPage = new QWidget;
+    settingsPage->setObjectName("scenarioSettings");
+    auto settingsLayout = new QVBoxLayout(settingsPage);
+    auto clockBox = new QGroupBox("Mission starting time");
+    auto clockForm = new QFormLayout(clockBox);
+    missionTime_ = new QTimeEdit;
+    missionTime_->setDisplayFormat("HH:mm");
+    missionTime_->setKeyboardTracking(false);
+    missionTime_->setObjectName("scenarioStartingTime");
+    clockForm->addRow("Start at", missionTime_);
+    auto timeHelp = new QLabel("Applies when entering this mission from the world map. A suspended mission keeps its saved clock. Daylight runs from 06:00 to 18:00.");
+    timeHelp->setWordWrap(true);
+    clockForm->addRow(timeHelp);
+    settingsLayout->addWidget(clockBox);
+    auto rewardBox = new QGroupBox("Completion item reward");
+    auto rewardForm = new QFormLayout(rewardBox);
+    auto rewardHelp = new QLabel("The completion screen awards the primary boss item. If that item was already collected or is None, it uses the fallback boss item. These choices also update the corresponding squad's drop.");
+    rewardHelp->setWordWrap(true);
+    rewardForm->addRow(rewardHelp);
+    for (int i = 0; i < 2; ++i) {
+        missionRewards_[i] = choice(QString("scenarioMissionReward%1").arg(i));
+        rewardForm->addRow(i ? "Fallback boss item" : "Primary boss item", missionRewards_[i]);
+        connect(missionRewards_[i], &QComboBox::activated, this, [this, i] {
+            if (loading_ || key() < 0) return;
+            change("Change completion item reward", [this, i](Scenarios &next) {
+                const int value = selected(missionRewards_[i]);
+                const auto rows = next.scenario(key()).layout.deployments;
+                for (int row = 0; row < rows.size(); ++row) {
+                    if ((u8(rows[row], 0) & 127) != 30 + i) continue;
+                    auto record = rows[row];
+                    put8(record, 10, (value & 0x8000) ? 1 : 0);
+                    put16(record, 11, quint16(value & 0x7fff));
+                    next.setDeployment(key(), row, record, project_->classData());
+                    return;
+                }
+            });
+        });
+    }
+    settingsLayout->addWidget(rewardBox);
+    auto townsHelp = new QLabel("Town names and populations: open Map, then select a town marker or its label. Changes apply automatically and affect every scenario that uses that town.");
+    townsHelp->setWordWrap(true);
+    settingsLayout->addWidget(townsHelp);
+    settingsLayout->addStretch();
+    auto settingsScroll = new QScrollArea;
+    settingsScroll->setWidgetResizable(true);
+    settingsScroll->setFrameShape(QFrame::NoFrame);
+    settingsLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    settingsScroll->setWidget(settingsPage);
+    addPage(settingsScroll, "Settings");
+    connect(missionTime_, &QTimeEdit::timeChanged, this, [this](QTime time) {
+        if (loading_ || key() < 0) return;
+        change("Change mission starting time", [this, time](Scenarios &next) {
+            next.setStartTime(key(), time.hour(), time.minute(), project_->classData());
+        });
+    });
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);
@@ -391,6 +448,12 @@ void ScenarioEditor::refresh() {
                                    .arg(r.name),
                                r.id | (kind == Table::Items ? 0x8000 : 0));
     }
+    for (auto box : missionRewards_) {
+        const QSignalBlocker blocker(box);
+        box->clear();
+        for (int i = 0; i < drop_->count(); ++i)
+            box->addItem(drop_->itemText(i), drop_->itemData(i));
+    }
     loading_ = false;
     filter();
     showScenario();
@@ -424,6 +487,24 @@ void ScenarioEditor::showScenario() {
         editingRow_ = 0;
     editingKey_ = key();
     base_->setValue(s.layout.baseLevel());
+    {
+        const QSignalBlocker blocker(missionTime_);
+        missionTime_->setTime(QTime(s.layout.startHour(), s.layout.startMinute()));
+    }
+    for (int i = 0; i < 2; ++i) {
+        auto box = missionRewards_[i];
+        const QSignalBlocker blocker(box);
+        bool found = false;
+        for (const auto &row : s.layout.deployments) {
+            if ((u8(row, 0) & 127) != 30 + i) continue;
+            selectValue(box, u16(row, 11) | (u8(row, 10) ? 0x8000 : 0));
+            found = true;
+            break;
+        }
+        if (!found) box->setCurrentIndex(-1);
+        box->setEnabled(found);
+        box->setToolTip(found ? "Shared with this boss squad's drop" : "This scenario has no corresponding boss squad");
+    }
     squads_->clear();
     for (int i = 0; i < s.squads.size(); ++i) {
         const int id = u8(s.squads[i], 0);

@@ -28,6 +28,7 @@ class Scenarios {
     }
     const Scenario &scenario(int key) const;
     const Scenario &original(int key) const;
+    void setStartTime(int key, int hour, int minute, const ClassData &classes);
     void setBaseLevel(int key, int level, const ClassData &classes);
     void setSquad(int key, int row, const QByteArray &record, const ClassData &classes);
     void setDeployment(int key, int row, const QByteArray &record, const ClassData &classes);

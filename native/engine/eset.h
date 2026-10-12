@@ -11,6 +11,9 @@ struct Eset {
     bool conditionsPresent = false;
     static Eset decode(const QByteArray &data);
     QByteArray encode() const;
+    int startHour() const { return u8(header, 11); }
+    int startMinute() const { return u8(header, 12); }
+    void setStartTime(int hour, int minute);
     int baseLevel() const;
     void setBaseLevel(int level);
 };

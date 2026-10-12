@@ -313,6 +313,13 @@ ChangeReport Project::changeReport() const {
             if (a.layout.baseLevel() != s.layout.baseLevel())
                 lines << transition("Base level", number(a.layout.baseLevel()),
                                     number(s.layout.baseLevel()));
+            if (a.layout.header.mid(11, 2) != s.layout.header.mid(11, 2)) {
+                auto time = [](const Eset &e) {
+                    return QString("%1:%2").arg(e.startHour(), 2, 10, QLatin1Char('0'))
+                                          .arg(e.startMinute(), 2, 10, QLatin1Char('0'));
+                };
+                lines << transition("Starting time", time(a.layout), time(s.layout));
+            }
             lines << rowChanges(a.squads, s.squads, "squad")
                   << rowChanges(a.layout.deployments, s.layout.deployments, "deployment")
                   << rowChanges(a.layout.nodes, s.layout.nodes, "movement node")

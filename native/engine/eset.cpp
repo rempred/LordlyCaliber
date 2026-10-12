@@ -69,6 +69,12 @@ QByteArray Eset::encode() const {
     data += tail;
     return data;
 }
+void Eset::setStartTime(int hour, int minute) {
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
+        throw Error("Starting time must be between 00:00 and 23:59");
+    put8(header, 11, quint8(hour));
+    put8(header, 12, quint8(minute));
+}
 int Eset::baseLevel() const {
     return u8(header, 8);
 }

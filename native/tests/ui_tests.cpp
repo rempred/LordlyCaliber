@@ -46,6 +46,7 @@
 #include <QAbstractProxyModel>
 #include <QApplication>
 #include <QCheckBox>
+#include <QTimeEdit>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -10028,6 +10029,38 @@ class UiTests : public QObject {
         QCOMPARE(townCommand->z, 0);
         QTest::qWait(50);
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-commands.png"));
+    }
+    void scenarioSettingsEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path)); project.loadScenarios();
+        const auto initial = project.scenarios()->json();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1100, 780); editor.show();
+        auto list = editor.findChild<QListWidget *>("scenarioList");
+        for (int i=0;i<list->count();++i) if(list->item(i)->data(Qt::UserRole).toInt()==1) list->setCurrentRow(i);
+        auto tabs = editor.findChild<QTabBar *>("scenarioNavigation");
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(3).center());
+        auto clock = editor.findChild<QTimeEdit *>("scenarioStartingTime");
+        auto reward = editor.findChild<QComboBox *>("scenarioMissionReward0");
+        QVERIFY(clock && clock->isVisible() && reward && reward->isEnabled());
+        clock->setTime(QTime(23, 59));
+        QCOMPARE(project.scenarios()->scenario(1).layout.startHour(), 23);
+        QCOMPARE(project.scenarios()->scenario(1).layout.startMinute(), 59);
+        const auto timeOnly = project.scenarios()->json();
+        reward->setCurrentIndex(reward->findData(0x8000 | 277));
+        QVERIFY(QMetaObject::invokeMethod(reward, "activated", Q_ARG(int, reward->currentIndex())));
+        bool found = false;
+        for (const auto &row : project.scenarios()->scenario(1).layout.deployments)
+            if ((u8(row, 0) & 127) == 30) { QCOMPARE(u8(row, 10), 1); QCOMPARE(u16(row, 11), 277); found = true; }
+        QVERIFY(found);
+        undo.undo(); QCOMPARE(project.scenarios()->json(), timeOnly);
+        undo.undo(); QCOMPARE(project.scenarios()->json(), initial);
+        undo.redo(); QCOMPARE(clock->time(), QTime(23, 59));
+        undo.redo(); QCOMPARE(reward->currentData().toInt(), 0x8000 | 277);
+        QTest::qWait(20);
+        QVERIFY(editor.grab().save("native/build/scenario-settings.png"));
     }
     void scenarioSquadEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

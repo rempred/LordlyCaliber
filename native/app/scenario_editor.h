@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <functional>
 class QUndoStack;
+class QTimeEdit;
 class QListWidget;
 class QLineEdit;
 class QSpinBox;
@@ -37,6 +38,8 @@ class ScenarioEditor : public QWidget {
     QLineEdit *search_;
     QListWidget *scenarios_, *squads_;
     QWidget *details_, *squadDetails_;
+    QTimeEdit *missionTime_;
+    QComboBox *missionRewards_[2]{};
     QSpinBox *base_, *x_, *z_, *phase_;
     QComboBox *placement_, *start_, *healing_, *fruit_, *revival_, *drop_;
     QCheckBox *allied_;

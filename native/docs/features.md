@@ -734,3 +734,11 @@ sprites, and scene images into the reusable library. A bounded resource-key
 loader also accepts native sprite containers; resources needing external palettes
 must use their actor/pose selector. Imports retain pixels and independent pose
 layers with Undo and project persistence. Game assignments remain separate.
+
+### Scenario starting time and completion items
+
+Scenario Settings edits the native ESET starting hour/minute and the primary
+and fallback boss drops used by the completion screen. Changes apply immediately
+and share Undo with squad edits. Starting time applies on mission entry; suspended
+missions retain their saved clock. Map site selection already edits shared town
+names/populations automatically. Export preserves unknown ESET/town bytes.
