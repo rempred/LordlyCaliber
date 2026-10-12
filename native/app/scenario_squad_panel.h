@@ -20,8 +20,8 @@ class ScenarioSquadPanel : public QWidget {
     std::function<void(const Scenarios &, const QString &)> commit_;
     QString prefix_;
     FormationBoard *board_;
-    QLabel *summary_, *notice_;
-    QComboBox *side_, *facing_, *healing_, *fruit_, *revival_, *drop_;
+    QLabel *summary_, *notice_, *strategyHelp_;
+    QComboBox *side_, *strategy_, *facing_, *healing_, *fruit_, *revival_, *drop_;
     QPushButton *edit_, *restore_;
     int key_ = -1, row_ = -1;
     bool loading_ = false;

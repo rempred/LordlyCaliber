@@ -38,6 +38,11 @@ ScenarioSquadPanel::ScenarioSquadPanel(Project *project,
         return box;
     };
     side_=choice("Side","Side",{"Enemy","Allied"});
+    strategy_=choice("Strategy","Battle strategy",{});
+    strategyHelp_=new QLabel;
+    strategyHelp_->setObjectName(prefix+"StrategyHelp");
+    strategyHelp_->setWordWrap(true);
+    form->addRow(strategyHelp_);
     facing_=choice("Facing","Facing phase",{});
     for(int i=1;i<=8;++i) facing_->addItem(QString("Direction %1").arg(i),i);
     // Direction numbers are the original eight phase values; retain any other loaded phase.
@@ -81,6 +86,23 @@ void ScenarioSquadPanel::refresh(int key,int row) {
             board_->setUnit(m.cell,m.classId,name);names<<QString("%1%2 · Level %3").arg(name,i?"":" (Leader)").arg(s.layout.baseLevel()+m.levelOffset);}
         summary_->setText(names.join('\n'));edit_->setEnabled(members.size()<=5);
         auto choose=[](QComboBox *box,int value){if(box->findData(value)<0)box->addItem(QString("Original value %1").arg(value),value);box->setCurrentIndex(box->findData(value));};
+        strategy_->clear();
+        const QStringList strategies{"Autonomous", "Attack Strongest", "Attack Leader", "Attack Weakest"};
+        const QStringList descriptions{
+            "In combat, each attack chooses a random eligible target.",
+            "In combat, attacks prefer the eligible target with the highest current HP.",
+            "In combat, attacks prefer the enemy leader. If the leader cannot be targeted, an eligible target is chosen at random.",
+            "In combat, attacks prefer the eligible target expected to take the most damage. This does not simply mean the lowest HP."};
+        for(int i=0;i<strategies.size();++i) {
+            strategy_->addItem(strategies[i],i+1);
+            strategy_->setItemData(i,descriptions[i],Qt::ToolTipRole);
+        }
+        const int strategy=u8(d,8);
+        if(strategy_->findData(strategy)<0)
+            strategy_->addItem(QString("Keep unknown (%1)").arg(strategy),strategy);
+        strategy_->setCurrentIndex(strategy_->findData(strategy));
+        strategyHelp_->setText(strategy>=1 && strategy<=4 ? descriptions[strategy-1]
+            : "This squad has an unknown strategy. It is preserved until you choose a supported strategy.");
         choose(side_,bool(u8(d,0)&128));choose(facing_,u8(d,5));choose(healing_,u8(d,13));choose(fruit_,u8(d,14));choose(revival_,u8(d,15));choose(drop_,u16(d,11)|(u8(d,10)?0x8000:0));
         bool original=false;for(const auto &r:project_->scenarios()->original(key).layout.deployments)original|=(u8(r,0)&127)==(u8(d,0)&127);
         restore_->setEnabled(original);
@@ -92,10 +114,13 @@ void ScenarioSquadPanel::changeDeployment() {
     try {
         auto next=*project_->scenarios();auto d=next.scenario(key_).layout.deployments[row_];
         put8(d,0,(u8(d,0)&127)|(side_->currentData().toInt()?128:0));put8(d,5,facing_->currentData().toInt());
+        put8(d,8,strategy_->currentData().toInt());
         put8(d,13,healing_->currentData().toInt());put8(d,14,fruit_->currentData().toInt());put8(d,15,revival_->currentData().toInt());
         const int drop=drop_->currentData().toInt();
         if(drop!=(u16(d,11)|(u8(d,10)?0x8000:0))){put8(d,10,bool(drop&0x8000));put16(d,11,drop&0x7fff);}
-        next.setDeployment(key_,row_,d,project_->classData());commit_(next,"Change squad deployment and supplies");
+        const bool strategyChanged=d[8]!=next.scenario(key_).layout.deployments[row_][8];
+        next.setDeployment(key_,row_,d,project_->classData());
+        commit_(next,strategyChanged?"Change squad battle strategy":"Change squad deployment and supplies");
     } catch(const Error &e) {const auto message=QString::fromUtf8(e.what());refresh(key_,row_);notice_->setText(message);}
 }
 void ScenarioSquadPanel::moveMember(int from,int to) {

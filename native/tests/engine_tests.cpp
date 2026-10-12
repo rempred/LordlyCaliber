@@ -564,13 +564,19 @@ class EngineTests : public QObject {
             record[6] = 9;
             auto deployment = model.scenario(10).layout.deployments[0];
             deployment.replace(13, 3, QByteArray(3, 0));
+            deployment[8] = 4; // Copy a non-default strategy; fresh squads still use 1.
             model.setDeployment(10, 0, deployment, classes);
             model.setSquad(10, 0, record, classes);
             const auto beforeAdd = model.json();
             const int row = model.addSquad(10, 0, classes);
+            QCOMPARE(u8(model.scenario(10).layout.deployments[row], 8), u8(deployment, 8));
             QCOMPARE(model.scenario(10).layout.deployments[row - 1].right(2), QByteArray(2, 0));
             QCOMPARE(model.scenario(10).squads[row], record);
             model.removeSquad(10, row, classes);
+            QCOMPARE(model.json(), beforeAdd);
+            const int freshRow = model.addSquad(10, -1, classes);
+            QCOMPARE(u8(model.scenario(10).layout.deployments[freshRow], 8), 1);
+            model.removeSquad(10, freshRow, classes);
             QCOMPARE(model.json(), beforeAdd);
             QVERIFY_THROWS_EXCEPTION(Error, model.removeSquad(10, 0, classes));
             deployment = model.scenario(10).layout.deployments[0];

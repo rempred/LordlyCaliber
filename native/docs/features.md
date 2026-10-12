@@ -1,5 +1,12 @@
 # Feature inventory and completion tracking
 
+Scenario → Squads and Map → selected squad → Members and supplies include
+Battle strategy: Autonomous, Attack Strongest, Attack Leader or Attack Weakest.
+The selected strategy has a short targeting explanation. Changes apply immediately
+with Undo/Redo and survive project saves and ROM export. Fresh squads start with
+Autonomous; copied squads retain their strategy. Unknown loaded values remain
+visible and preserved until replaced. Save Editor retains its existing Tactic control.
+
 Map → selected squad → Orders shows an ordered step list with Action,
 Destination, Continue when and Next step. Select a step or its numbered map badge
 to edit it while retaining the squad selection. Actions, named destinations,

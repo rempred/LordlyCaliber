@@ -10494,6 +10494,169 @@ class UiTests : public QObject {
         QTest::qWait(20);
         QVERIFY(editor.grab().save("native/build/scenario-settings.png"));
     }
+    void scenarioBattleStrategies() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            const auto original = project.scenarios()->json();
+            QUndoStack undo;
+            ScenarioEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 800);
+            editor.show();
+            auto scenarios = editor.findChild<QListWidget *>("scenarioList");
+            auto squads = editor.findChild<QListWidget *>("scenarioSquads");
+            auto pages = editor.findChild<QStackedWidget *>("scenarioPages");
+            auto strategy = editor.findChild<QComboBox *>("scenarioStrategy");
+            auto mapStrategy = editor.findChild<QComboBox *>("mapSquadStrategy");
+            QVERIFY(strategy);
+            QVERIFY(mapStrategy);
+            auto selectKey = [&](int key) {
+                for (int i = 0; i < scenarios->count(); ++i)
+                    if (scenarios->item(i)->data(Qt::UserRole).toInt() == key)
+                        scenarios->setCurrentRow(i);
+            };
+            auto choose = [](QComboBox *box, int value) {
+                box->setCurrentIndex(box->findData(value));
+                QMetaObject::invokeMethod(box, "activated", Q_ARG(int, box->currentIndex()));
+            };
+            // Opening original enemy/allied squads must not normalize their data.
+            for (int key : {1, 4, 10, 64}) {
+                selectKey(key);
+                for (int row = 0; row < squads->count(); ++row) {
+                    squads->setCurrentRow(row);
+                    QCOMPARE(strategy->count(), 4);
+                    QCOMPARE(
+                        strategy->currentData().toInt(),
+                        int(u8(project.scenarios()->scenario(key).layout.deployments[row], 8)));
+                }
+            }
+            QCOMPARE(project.scenarios()->json(), original);
+            QCOMPARE(undo.count(), 0);
+            selectKey(10);
+            squads->setCurrentRow(0);
+            pages->setCurrentIndex(1);
+            const auto originalRow = project.scenarios()->scenario(10).layout.deployments[0];
+            QCOMPARE(u8(originalRow, 8), 1);
+            for (int value : {2, 3, 4, 1}) {
+                const auto before = project.scenarios()->json();
+                const int oldValue = strategy->currentData().toInt(), index = undo.index();
+                choose(strategy, value);
+                QCOMPARE(undo.index(), index + 1);
+                auto expected = originalRow;
+                expected[8] = char(value);
+                // Project serialization clears managed template IDs; export assigns
+                // them again. All authored bytes must be unchanged except strategy.
+                auto actual = project.scenarios()->scenario(10).layout.deployments[0];
+                expected.replace(1, 2, QByteArray(2, 0));
+                actual.replace(1, 2, QByteArray(2, 0));
+                QCOMPARE(actual, expected);
+                QCOMPARE(project.scenarios()->scenario(10).squads,
+                         project.scenarios()->original(10).squads);
+                QCOMPARE(project.scenarios()->scenario(10).layout.nodes,
+                         project.scenarios()->original(10).layout.nodes);
+                QCOMPARE(project.scenarios()->scenario(22).json(),
+                         project.scenarios()->original(22).json());
+                undo.undo();
+                QCOMPARE(project.scenarios()->json(), before);
+                QCOMPARE(strategy->currentData().toInt(), oldValue);
+                undo.redo();
+                QCOMPARE(strategy->currentData().toInt(), value);
+            }
+            editor.findChild<QPushButton *>("scenarioLocateSquad")->click();
+            auto squadTabs = editor.findChild<QTabWidget *>("mapSquadTabs");
+            squadTabs->setCurrentIndex(1);
+            QCOMPARE(pages->currentIndex(), 0);
+            QCOMPARE(mapStrategy->currentData().toInt(), 1);
+            const int selection = editor.findChild<QListWidget *>("mapObjects")->currentRow();
+            choose(mapStrategy, 4);
+            QCOMPARE(strategy->currentData().toInt(), 4);
+            QCOMPARE(editor.findChild<QListWidget *>("mapObjects")->currentRow(), selection);
+            QCOMPARE(pages->currentIndex(), 0);
+            QVERIFY(
+                editor.findChild<QLabel *>("mapSquadStrategyHelp")->text().contains("most damage"));
+            undo.undo();
+            QCOMPARE(mapStrategy->currentData().toInt(), 1);
+            undo.redo();
+            QCOMPARE(mapStrategy->currentData().toInt(), 4);
+            auto scroll = editor.findChild<QScrollArea *>("mapInspectorScroll");
+            scroll->ensureWidgetVisible(mapStrategy);
+            QTest::qWait(40);
+            QVERIFY(mapStrategy->isVisible());
+            QVERIFY(mapStrategy->height() >= mapStrategy->sizeHint().height());
+            QVERIFY(editor.grab().save("native/build/squad-strategy-sidebar.png"));
+            // Restore includes the strategy; undo restores the authored choice.
+            editor.findChild<QPushButton *>("mapSquadRestoreSquad")->click();
+            QCOMPARE(mapStrategy->currentData().toInt(), 1);
+            undo.undo();
+            QCOMPARE(mapStrategy->currentData().toInt(), 4);
+            // Put all four settings into one source-built candidate.
+            selectKey(1);
+            pages->setCurrentIndex(1);
+            for (int value = 1; value <= 4; ++value) {
+                squads->setCurrentRow(value - 1);
+                choose(strategy, value);
+            }
+            const auto edited = project.scenarios()->json();
+            QTemporaryDir folder, work;
+            project.saveFolder(folder.path());
+            auto loaded = Project::fromRom(rom);
+            loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.scenarios()->json(), edited);
+            const auto result = rebuild(loaded, tools, work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-squad-strategies-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(loaded, result, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios();
+            QCOMPARE(reopened.scenarios()->json(), edited);
+            for (int value = 1; value <= 4; ++value) {
+                auto expected = project.scenarios()->original(1).layout.deployments[value - 1];
+                expected[8] = char(value);
+                QCOMPARE(reopened.scenarios()->scenario(1).layout.deployments[value - 1], expected);
+            }
+            QCOMPARE(reopened.scenarios()->scenario(22).json(),
+                     project.scenarios()->original(22).json());
+            auto checksum = reopened.rom().bytes();
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Squad strategy ROM:" << candidate;
+            // Existing unsupported bytes survive unrelated editing, with no stale
+            // unknown option offered when switching back to a normal squad.
+            auto unknown = *project.scenarios();
+            auto row = unknown.scenario(1).layout.deployments[0];
+            row[8] = 0;
+            unknown.setDeployment(1, 0, row, project.classData());
+            project.setScenarios(unknown.json());
+            undo.clear();
+            scenarios->currentRowChanged(scenarios->currentRow());
+            squads->setCurrentRow(0);
+            QCOMPARE(strategy->currentData().toInt(), 0);
+            QVERIFY(strategy->currentText().contains("Keep unknown"));
+            auto facing = editor.findChild<QComboBox *>("scenarioFacing");
+            const int direction = u8(row, 5) == 1 ? 2 : 1;
+            choose(facing, direction);
+            row[5] = char(direction);
+            QCOMPARE(project.scenarios()->scenario(1).layout.deployments[0], row);
+            squads->setCurrentRow(1);
+            QCOMPARE(strategy->count(), 4);
+            squads->setCurrentRow(0);
+            choose(strategy, 2);
+            QCOMPARE(u8(project.scenarios()->scenario(1).layout.deployments[0], 8), 2);
+            undo.undo();
+            QCOMPARE(strategy->currentData().toInt(), 0);
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void scenarioSquadEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();QCOMPARE(project.appendClass(5,"Scenario fighter"),165);

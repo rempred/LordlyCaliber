@@ -251,6 +251,8 @@ int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
     put8(row, 0, quint8(source));
     put16(row, 1, 0);
     put8(row, 6, 1); // Original built-in hold-position node.
+    if (templateRow < 0)
+        put8(row, 8, 1); // Autonomous; deployment tactics are one-based.
     row.replace(10, 8, QByteArray(8, 0));
     if (!next.layout.deployments.isEmpty())
         next.layout.deployments.last().replace(16, 2, QByteArray(2, 0));

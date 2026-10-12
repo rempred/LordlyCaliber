@@ -1,5 +1,18 @@
 # Native Lordly Caliber
 
+## Scenario battle strategies (2026-10-12)
+
+The shared `ScenarioSquadPanel` exposes Section 1 deployment byte 8 in both the
+Squads page and Map inspector. Values 1..4 map to Autonomous, Attack Strongest,
+Attack Leader and Attack Weakest. Accepted `func_001960A8.c` subtracts one before
+storing the runtime tactic at squad-record offset 0x17. The original battle reader
+at z64 ROM 0x20D814 consumes that enemy squad field. This uses existing ESET
+serialization and export without new game code or project schema. Other deployment
+bytes, composition and route nodes remain intact. Unknown loaded values are
+preserved; only the selected squad's current unknown value appears in its picker.
+`Scenarios::addSquad` initializes a fresh row to stored value 1 and retains a copied
+row's strategy. Save Editor already uses the runtime zero-based tactic encoding.
+
 ## Sidebar trigger authoring (2026-10-12)
 
 `SquadTriggerEditor` presents existing predicates, new area/count choices, type
