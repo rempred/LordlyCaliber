@@ -225,7 +225,7 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
                 [this, name = entry.second] { findChild<QPushButton *>(name)->click(); });
     }
     connect(preview_, &ActorPoseEditor::frameArtworkMoved, this,
-            [this](QPoint offset) { guarded([&] { moveFrameArtwork(offset); }); });
+            [this](QPoint offset, int layer) { guarded([&] { moveFrameArtwork(offset, layer); }); });
     frameStatus_ = new QLabel;
     frameStatus_->setWordWrap(true);
     frameStatus_->setObjectName("sequenceFrameStatus");
@@ -253,7 +253,8 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
             [this, speed] { preview_->setPlaybackRate(speed->currentData().toDouble()); });
     connect(onion_, &QCheckBox::toggled, this, [this] { updateFrameTools(); });
     previewLayout->addLayout(options);
-    auto note = new QLabel("Drag the preview artwork to move it in the selected frames. "
+    auto note = new QLabel("Align standing feet with the ground line; the cross marks the fixed origin. "
+                          "Drag artwork to move it in the selected frames. "
                           "Drag the background or use the middle mouse button to pan. "
                           "Scroll to zoom; Escape cancels a move.");
     note->setWordWrap(true);
@@ -491,10 +492,10 @@ void AnimationSequenceEditor::moveVisibleFrame(int from, int to) {
         throw;
     }
 }
-void AnimationSequenceEditor::moveFrameArtwork(QPoint offset) {
+void AnimationSequenceEditor::moveFrameArtwork(QPoint offset, int layer) {
     const auto selected = selectedFrameRecords();
     if (selected.isEmpty())
         return;
-    translateFrames({{poses_->currentData().toInt(), selected}}, offset, -1, true);
+    translateFrames({{poses_->currentData().toInt(), selected}}, offset, layer, true);
 }
 } // namespace lordly

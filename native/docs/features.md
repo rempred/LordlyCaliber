@@ -175,6 +175,11 @@ Duration changes apply immediately; the previous-frame overlay helps with alignm
 Delete and Ctrl+D work while the frame grid has focus. Playback speed is adjustable;
 a green outline follows the playing frame without changing the editing selection.
 
+A fixed ground line and origin cross keep standing feet aligned between frames.
+The preview defaults to moving Everything; choose a thumbnail-labelled body or
+equipment layer to position it independently. Other layers fade for clarity and
+stay fixed. The layer number applies across the selected frames.
+
 The first frame edit creates an independent copy in the same Undo action. Canceling
 painting or import does not leave an unused copy. Paint, Layers, Add frame and Copy
 artwork are beside the frame tools; Animation tools holds whole-animation copying,

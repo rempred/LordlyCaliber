@@ -42,6 +42,7 @@ class ActorArt {
     bool isBody() const {
         return body_;
     }
+    int imageKind(int art) const { return u8(imageKinds_, art); }
     const BodyAnimationData::Pointer &bodyAnimations() const { return bodyData_; }
     int sourceClass() const {
         return sourceClass_;

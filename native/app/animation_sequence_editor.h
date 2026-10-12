@@ -51,7 +51,7 @@ class AnimationSequenceEditor : public QWidget {
     void changeFrameDuration(int);
     void duplicateVisibleFrames();
     void removeVisibleFrames();
-    void moveFrameArtwork(QPoint);
+    void moveFrameArtwork(QPoint, int layer = -1);
     QSet<int> selectedFrameRecords() const;
     int selectedClass() const;
     int owner(int classId) const;

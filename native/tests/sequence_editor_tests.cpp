@@ -226,10 +226,11 @@ class SequenceEditorTests : public QObject {
             QCOMPARE(qint16(u16(resultFrame, 4)), qint16(u16(scaledFrame, 4)) + 6);
             QCOMPARE(qint16(u16(resultFrame, 6)), qint16(u16(scaledFrame, 6)) - 1);
             auto canvas = editor.findChild<QGraphicsView *>("actorCanvas");
-            const auto artPoint = [&]() {
+            const auto artPoint = [&](int onlyLayer = -1) {
                 for (auto item : canvas->scene()->items()) {
                     auto image = dynamic_cast<QGraphicsPixmapItem *>(item);
-                    if (!image || !(image->flags() & QGraphicsItem::ItemIsSelectable)) continue;
+                    if (!image || !(image->flags() & QGraphicsItem::ItemIsSelectable) ||
+                        (onlyLayer >= 0 && image->zValue() != onlyLayer)) continue;
                     const auto pixels = image->pixmap().toImage();
                     for (int y = 0; y < pixels.height(); ++y)
                         for (int x = 0; x < pixels.width(); ++x) if (pixels.pixelColor(x, y).alpha() > 0) {
@@ -293,6 +294,45 @@ class SequenceEditorTests : public QObject {
             auto scene = editor.findChild<QGraphicsView *>("actorCanvas")->scene();
             bool ghost = false; for (auto item : scene->items()) ghost |= qFuzzyCompare(item->opacity(), .25);
             QVERIFY(ghost);
+            auto positionLayer = editor.findChild<QComboBox *>("actorPositionLayer");
+            QVERIFY(positionLayer && positionLayer->isVisible());
+            QCOMPARE(positionLayer->currentData().toInt(), -1);
+            QVERIFY(positionLayer->findData(1) >= 0);
+            positionLayer->setCurrentIndex(positionLayer->findData(1));
+            button("actorFit")->click();
+            const auto origin = canvas->mapFromScene(QPointF(0, 0));
+            QVERIFY(canvas->viewport()->rect().contains(origin));
+            const auto originColor = canvas->viewport()->grab().toImage().pixelColor(origin);
+            QVERIFY(originColor.red() > 220 && originColor.green() > 190);
+            const auto layerBefore = *project.animationSequences()->find(2, 0);
+            const auto layerFrame = layerBefore.frame(token(layerBefore.poses().effective(40).records[row]));
+            canvas->setTransform(QTransform::fromScale(4, 4));
+            const auto fixedOrigin = canvas->mapFromScene(QPointF(0, 0));
+            const auto layerStart = artPoint(1); QVERIFY(layerStart.x() >= 0);
+            QMap<QGraphicsItem *, QPointF> positions;
+            for (auto item : canvas->scene()->items()) positions[item] = item->pos();
+            QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, layerStart);
+            QTest::mouseMove(canvas->viewport(), layerStart + QPoint(16, 8));
+            for (auto item : canvas->scene()->items())
+                if (item->zValue() != 1) QCOMPARE(item->pos(), positions[item]);
+            QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, layerStart + QPoint(16, 8));
+            QCOMPARE(canvas->mapFromScene(QPointF(0, 0)), fixedOrigin);
+            const auto layerAfter = *project.animationSequences()->find(2, 0);
+            const auto movedLayerFrame = layerAfter.frame(token(layerAfter.poses().effective(40).records[row]));
+            for (int i = 0; i < u16(layerFrame, 0); ++i) {
+                const int at = 2 + i * 16;
+                if (i != 1) QCOMPARE(movedLayerFrame.mid(at, 16), layerFrame.mid(at, 16));
+                else {
+                    QCOMPARE(qint16(u16(movedLayerFrame, at + 2)), qint16(u16(layerFrame, at + 2)) + qRound(4. * 1024 / u16(layerFrame, at + 12)));
+                    QCOMPARE(qint16(u16(movedLayerFrame, at + 4)), qint16(u16(layerFrame, at + 4)) + qRound(2. * 1024 / u16(layerFrame, at + 14)));
+                }
+            }
+            undo.undo();
+            // Compare the descriptor: the surrounding project contains other animation routes.
+            QCOMPARE(project.animationSequences()->find(2, 0)->json(), layerBefore.json());
+            undo.redo(); QCOMPARE(project.animationSequences()->find(2, 0)->json(), layerAfter.json());
+            positionLayer->setCurrentIndex(0);
+            button("actorFit")->click();
             QTest::qWait(30);
             QCOMPARE(editor.size(), QSize(1100, 780));
             QVERIFY(frames->viewport()->height() > 150);

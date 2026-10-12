@@ -70,12 +70,31 @@ class PoseView : public QGraphicsView {
   public:
     using QGraphicsView::QGraphicsView;
     std::function<void(QPoint)> artworkMoved;
+    bool groundGuides = false;
     void setArtwork(const QVector<QGraphicsPixmapItem *> &items) {
         cancelMove();
         artwork_ = items;
     }
 
   protected:
+    void drawForeground(QPainter *painter, const QRectF &rect) override {
+        if (!groundGuides) return;
+        painter->save();
+        QPen ground(QColor("#e5c775"), 1, Qt::DashLine);
+        ground.setCosmetic(true);
+        painter->setPen(ground);
+        painter->drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0));
+        ground.setColor(QColor("#8b939f"));
+        painter->setPen(ground);
+        painter->drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()));
+        const auto origin = painter->worldTransform().map(QPointF(0, 0));
+        painter->resetTransform();
+        painter->setPen(QPen(QColor("#ffeab5"), 2));
+        painter->drawLine(origin + QPointF(-6, 0), origin + QPointF(6, 0));
+        painter->drawLine(origin + QPointF(0, -6), origin + QPointF(0, 6));
+        painter->drawText(origin + QPointF(9, 17), "Ground / origin");
+        painter->restore();
+    }
     void mousePressEvent(QMouseEvent *event) override {
         if (event->button() == Qt::MiddleButton) {
             cancelMove();
@@ -142,6 +161,8 @@ class PoseView : public QGraphicsView {
     }
     void focusOutEvent(QFocusEvent *event) override {
         cancelMove();
+        panning_ = false;
+        viewport()->setCursor(Qt::OpenHandCursor);
         QGraphicsView::focusOutEvent(event);
     }
     void wheelEvent(QWheelEvent *event) override {
@@ -294,6 +315,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     controls->addWidget(speed_);
     controls->addWidget(sepia_);
     controls->addStretch();
+    fit->setObjectName("actorFit");
     controls->addWidget(fit);
     controls->addWidget(actual);
     automaticFit_ = new QCheckBox("Automatic fit");
@@ -398,13 +420,26 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
         cameraDistance_->setValue(previewCameras_[index][2]);
         draw();
     });
+    positionControls_ = new QWidget;
+    auto positioning = new QHBoxLayout(positionControls_);
+    positioning->setContentsMargins(0, 0, 0, 0);
+    positioning->addWidget(new QLabel("Move"));
+    positionLayer_ = new QComboBox;
+    positionLayer_->setObjectName("actorPositionLayer");
+    positionLayer_->setIconSize(QSize(32, 32));
+    positionLayer_->addItem("Everything", -1);
+    positionLayer_->setToolTip("Choose the artwork to drag. A layer number applies to every selected frame; other layers stay in place.");
+    positioning->addWidget(positionLayer_, 1);
+    positionControls_->hide();
+    layout->addWidget(positionControls_);
+    connect(positionLayer_, &QComboBox::currentIndexChanged, this, [this] { draw(); });
     auto split = new QSplitter;
     canvas_ = new QGraphicsScene(this);
     view_ = new PoseView(canvas_);
     static_cast<PoseView *>(view_)->artworkMoved = [this](QPoint offset) {
         // Project refresh updates the bounds, but must not zoom/recenter a positioning gesture.
         committingArtworkMove_ = true;
-        emit frameArtworkMoved(offset);
+        emit frameArtworkMoved(offset, positionLayer_->currentData().toInt());
         draw(); // Also restore the original artwork if validation rejected the move.
         fit_ = false;
         committingArtworkMove_ = false;
@@ -815,6 +850,9 @@ void ActorPoseEditor::showFrame(int frame) {
 }
 void ActorPoseEditor::setFrameEditing(bool enabled) {
     frameEditing_ = enabled;
+    positionControls_->setVisible(enabled);
+    static_cast<PoseView *>(view_)->groundGuides = enabled;
+    view_->viewport()->update();
     if (!enabled) static_cast<PoseView *>(view_)->setArtwork({});
     for (auto widget : inspectionControls_) widget->setVisible(!enabled);
     if (enabled) {
@@ -859,6 +897,11 @@ void ActorPoseEditor::draw() {
                                 : art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked(),
                                               {}, artwork_.value(art_->descriptorKey()));
         QRectF bounds = frameEditing_ ? editingBounds_ : QRectF{};
+        if (frameEditing_) bounds |= QRectF(-10, -4, 20, 12);
+        const QSignalBlocker positionBlock(positionLayer_);
+        const int positionLayer = positionLayer_->currentData().toInt();
+        positionLayer_->clear();
+        positionLayer_->addItem("Everything", -1);
         if (frameEditing_ && selectedFrame_ && previousFrame_ && body) {
             const auto previous = art_->bodyFrame(rom_, *previousFrame_, *body, false,
                                                   artwork_.value(art_->descriptorKey()));
@@ -891,6 +934,8 @@ void ActorPoseEditor::draw() {
             item->setZValue(i);
             item->setFlag(QGraphicsItem::ItemIsSelectable);
             items_ << item;
+            const QString role = body ? (art_->imageKind(m.art) ? "Equipment" : "Body") : "Artwork";
+            positionLayer_->addItem(QIcon(pixmap), QString("%1 · layer %2").arg(role).arg(i + 1), i);
             bounds |= item->mapRectToScene(QRectF(0, 0, m.width, m.height));
             auto row = new QListWidgetItem(QString("Layer %1 · art %2").arg(i).arg(m.art), layers_);
             row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
@@ -937,7 +982,17 @@ void ActorPoseEditor::draw() {
         if (frameEditing_)
             status_->setText(selectedFrame_ ? "Selected artwork · drag to position"
                                            : "Animation preview · select a frame to position its artwork");
-        if (frameEditing_ && selectedFrame_) static_cast<PoseView *>(view_)->setArtwork(items_);
+        positionLayer_->setCurrentIndex(qMax(0, positionLayer_->findData(positionLayer)));
+        positionLayer_->setEnabled(frameEditing_ && selectedFrame_.has_value());
+        const int selectedLayer = positionLayer_->currentData().toInt();
+        if (frameEditing_ && selectedFrame_) {
+            if (selectedLayer < 0) static_cast<PoseView *>(view_)->setArtwork(items_);
+            else if (selectedLayer < items_.size()) {
+                static_cast<PoseView *>(view_)->setArtwork({items_[selectedLayer]});
+                for (int i = 0; i < items_.size(); ++i)
+                    if (i != selectedLayer) items_[i]->setOpacity(.35);
+            }
+        }
         setProperty("poseCursor", a.cursor);
         setProperty("poseDelay", a.delay);
         setProperty("poseX", a.x);

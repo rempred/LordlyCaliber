@@ -38,7 +38,7 @@ class ActorPoseEditor : public QWidget {
 
   signals:
     void framePresented(int state, int record, int token, bool playback);
-    void frameArtworkMoved(QPoint offset);
+    void frameArtworkMoved(QPoint offset, int layer);
 
   private:
     void loadSources();
@@ -75,6 +75,8 @@ class ActorPoseEditor : public QWidget {
     QCheckBox *sepia_;
     QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
     QComboBox *equipment_;
+    QComboBox *positionLayer_;
+    QWidget *positionControls_;
     QSpinBox *bodyPalette_;
     QWidget *bodyControls_;
     BodyAppearance defaultAppearance_;
