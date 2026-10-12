@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <cmath>
+#include <bit>
 namespace lordly {
 namespace {
 QByteArray resource(const QString &name) {
@@ -22,6 +23,32 @@ void period(QByteArray &bytes, const QString &name, int amount) {
         put16(bytes, 0x1fc + 2, quint16(amount));
     }
 }
+QByteArray matchup(int width, int amount) {
+    QByteArray bytes(width * width, 0);
+    for (int i=1;i<width;++i) put8(bytes,i*width+i,quint8(amount));
+    for (auto pair : {qMakePair(1,3),qMakePair(2,4),qMakePair(5,6)}) {
+        if (pair.second>=width) continue;
+        put8(bytes,pair.first*width+pair.second,quint8(-amount));
+        put8(bytes,pair.second*width+pair.first,quint8(-amount));
+    }
+    return bytes;
+}
+QByteArray resistanceCode(int percent) {
+    const quint32 original[]{0x461ac001,0x3c0142c8,0x44812000,0,0x46142081,0x46160000,
+                             0x46020002,0x46040003,0x46060002,0x4600008d,0x44101000};
+    QByteArray bytes(44,0);
+    for(int i=0;i<11;++i) put32(bytes,i*4,original[i]);
+    if(percent==100) return bytes;
+    // Reuse the original NOP for the first subtraction, preserving the MTC1
+    // dependency delay while fitting a complete float constant in the owner.
+    const auto bits=std::bit_cast<quint32>(float(percent ? 10000.0/percent : 100.0));
+    put32(bytes,0,0x3c010000 | (bits>>16));
+    put32(bytes,4,0x34210000 | (bits&65535));
+    put32(bytes,8,0x44812000);
+    put32(bytes,12,0x461ac001);
+    if(!percent) put32(bytes,16,0x46002086); // mov.s f2,f4: no resistance reduction.
+    return bytes;
+}
 QByteArray words(const QByteArray &bytes) {
     QByteArray source;
     for (int i=0;i<bytes.size();i+=4)
@@ -30,7 +57,10 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"dayLength", "clock", "Day length", "Length of 06:00–18:00 relative to retail. Applies to every mission; movement speed stays unchanged.",25,400,25,100,true},
+    return {{"elementAffinity", "elements", "Element affinity", "Same element adds this many percentage points; an opposed element subtracts it. Shared by attack, defense, magic context and elemental resistance.",0,25,1,4},
+            {"weaponAffinity", "weapons", "Magic weapon affinity", "Same-element weapon bonus in percentage points; opposed weapons subtract the same amount. Physical weapons receive no bonus.",0,25,1,2},
+            {"resistanceStrength", "resistance", "Resistance strength", "Scale how strongly the final resistance reduces damage. 0% disables that reduction; 100% is retail. Applies to physical and elemental resistance. Fixed-damage and healing rules stay unchanged.",0,400,25,100,true},
+            {"dayLength", "clock", "Day length", "Length of 06:00–18:00 relative to retail. Applies to every mission; movement speed stays unchanged.",25,400,25,100,true},
             {"nightLength", "clock", "Night length", "Length of 18:00–06:00 relative to retail. The clock still uses 24 hours and 60 minutes.",25,400,25,100,true},
             {"fatigueRate", "fatigue", "Fatigue buildup", "Higher values shorten the movement cycle between fatigue gains. Existing terrain, night and equipment modifiers remain.",25,400,25,100,true},
             {"recoveryRate", "recovery", "Rest recovery", "Higher values shorten rest cycles for fatigue and HP recovery. Night and Healing Censer bonuses remain. The first cycle keeps its saved progress.",25,400,25,100,true},
@@ -51,7 +81,18 @@ GameRules GameRules::load(const Rom &rom) {
             const auto site=it->toObject();
             auto bytes=rom.bytes().mid(site["offset"].toInt(),site["size"].toInt());
             auto canonical=bytes;
-            if (name == "clock") {
+            if (name=="elements" || name=="weapons") {
+                const int width=name=="elements"?5:7,amount=qint8(u8(bytes,width+1));
+                if(amount<0 || amount>25 || bytes!=matchup(width,amount))
+                    throw Error("Element matchup table is unrecognized; its existing bytes will be preserved.");
+                result.values_[name=="elements"?"elementAffinity":"weaponAffinity"]=amount;
+            } else if(name=="resistance") {
+                bool found=false;
+                for(int value=0;value<=400;value+=25) if(bytes==resistanceCode(value)) {
+                    result.values_["resistanceStrength"]=value;found=true;break;
+                }
+                if(!found) throw Error("Resistance calculation is unrecognized; its existing code will be preserved.");
+            } else if (name == "clock") {
                 if (sha256(bytes) != site["sha256"].toString().toLatin1()) {
                     const int night=u16(bytes,66),day=u16(bytes,78);
                     put16(canonical,66,60);put16(canonical,78,60);
@@ -90,9 +131,11 @@ QJsonObject GameRules::json() const {
     return result;
 }
 void GameRules::apply(const QJsonObject &settings) {
-    if(settings.size()!=values_.size()) throw Error("Incomplete game rules");
+    for(auto it=settings.begin();it!=settings.end();++it)
+        if(!values_.contains(it.key())) throw Error("Unknown game rule: " + it.key());
     auto next=values_;
     for(const auto &rule:definitions()) {
+        if(!settings.contains(rule.key)) continue; // Earlier projects preserve newly introduced rules.
         const auto value=settings[rule.key]; const double number=value.toDouble(-9999);
         if(!value.isDouble() || !std::isfinite(number) || number!=std::floor(number) ||
            number<rule.minimum || number>rule.maximum || (int(number)-rule.minimum)%rule.step)
@@ -111,8 +154,12 @@ QVector<RuleBuild> GameRules::builds() const {
         if(!changed) continue;
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
-        RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics"};
-        if(name=="clock") {
+        RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons"};
+        if(name=="elements" || name=="weapons") {
+            build.expected=matchup(name=="elements"?5:7,value(name=="elements"?"elementAffinity":"weaponAffinity"));
+        } else if(name=="resistance") {
+            build.expected=resistanceCode(value("resistanceStrength"));build.source=words(build.expected);
+        } else if(name=="clock") {
             const int day=value("dayLength")*60/100,night=value("nightLength")*60/100;
             if(day==60 && night==60) build.source=resource("clock-retail.s");
             else build.source=QString(".set DAY_SECONDS,%1\n.set NIGHT_SECONDS,%2\n").arg(day).arg(night).toLatin1()+resource("clock.s");

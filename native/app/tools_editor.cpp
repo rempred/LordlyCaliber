@@ -114,7 +114,7 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     scroll->setWidget(content);
     outer->addWidget(scroll);
     auto layout = new QVBoxLayout(content);
-    layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"tactics", "fatigue", "recovery"}));
+    layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"tactics", "fatigue", "recovery", "elements", "weapons", "resistance"}));
     auto box = new QGroupBox("Battle experience");
     auto fields = new QVBoxLayout(box);
     auto description = new QLabel("Scale the size weight applied to every reward source. "

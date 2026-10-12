@@ -23,5 +23,23 @@
     "size": 4,
     "address": 2149542400,
     "sha256": "fcac58980f5053b60bc41f02af0a17a9003f5377edfaed7735cd433452f09069"
+  },
+  "elements": {
+    "offset": 2333924,
+    "size": 25,
+    "address": 2149542420,
+    "sha256": "751dc5283ffa0f6d584d011684f5f67a1d3907fef1cc7a5936085bd1d30757f3"
+  },
+  "weapons": {
+    "offset": 2333972,
+    "size": 49,
+    "address": 2149542468,
+    "sha256": "3dbcb62b246bcb4b54ff551f6cd5ae9ab62469a4e2537e530e92661b2978c0b2"
+  },
+  "resistance": {
+    "offset": 2323812,
+    "size": 44,
+    "address": 2149532308,
+    "sha256": "428492d27ba7ad5af607b41f1ff6aed6949d0a3c15bfe8ae245351b860d12ee5"
   }
 }

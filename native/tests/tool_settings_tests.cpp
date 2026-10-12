@@ -12,6 +12,39 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void elementRulesExportAndExecution() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadTools();
+            const auto baseline=project.tools()->json();QTemporaryDir work;
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-element-rules-XXXXXX");
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            for(int strength:{0,175,400}) {
+                auto settings=project.tools()->json();auto rules=settings["gameRules"].toObject();
+                rules["elementAffinity"]=9;rules["weaponAffinity"]=3;rules["resistanceStrength"]=strength;
+                settings["gameRules"]=rules;project.setTools(settings);
+                const auto built=rebuild(project,tools,work.path());
+                const auto folder=output.filePath(QString::number(strength));QDir().mkpath(folder);
+                const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
+                auto untouched=built.image;
+                for(const auto &owner:project.tools()->gameRules().builds())
+                    untouched.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+                Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
+                QProcess execution;execution.start("node",{QFINDTESTDATA("element-rules-mips.cjs"),candidate,QString::number(strength)});
+                QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
+                qInfo().noquote()<<execution.readAllStandardOutput();
+                reopened.setTools(baseline);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            }
+            // Earlier gameRules objects need not contain later element settings.
+            auto earlier=baseline;auto prior=baseline["gameRules"].toObject();
+            prior.remove("elementAffinity");prior.remove("weaponAffinity");prior.remove("resistanceStrength");
+            earlier["gameRules"]=prior;project.setTools(earlier);
+            QCOMPARE(project.tools()->gameRules().value("resistanceStrength"),400);
+            qInfo().noquote()<<"Element candidates:"<<output.path();
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void gameRulesExportAndExecution() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

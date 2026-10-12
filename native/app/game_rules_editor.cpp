@@ -27,11 +27,15 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
     project_->loadTools();
     auto layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);
     const QMap<QString,QString> titles{{"clock","Day and night length — all missions"},{"fatigue","Fatigue while moving"},
-        {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"}};
+        {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"},
+        {"elements","Element balance"},{"weapons","Magic weapon synergy"},{"resistance","Resistance effects"}};
     for(const auto &group:groups) {
         auto box=new QGroupBox(titles.value(group,group));auto form=new QFormLayout(box);
         auto help=new QLabel(group=="tactics"
             ? "Each kill combines this amount with the character and enemy alignment/level terms. The final change remains capped at −5 to +5. Training keeps its existing exclusion."
+            : group=="elements" ? "Wind opposes Earth; Flame opposes Water. This shared bonus affects damage context and target resistance. Virtue/Bane alignment terms keep their existing behavior."
+            : group=="weapons" ? "Matching elemental weapons strengthen magic; opposed weapons weaken it. Virtue opposes Bane as well as the four natural-element pairs."
+            : group=="resistance" ? "100% keeps retail damage reduction. 50% halves its strength; 200% doubles it. Damage still has the game's minimum of 1. Fixed-damage attacks keep their special formulas."
             : group=="clock" ? "100% keeps retail timing. 200% lasts twice as long; 50% lasts half as long. These settings affect every mission."
             : "100% keeps retail timing. 200% gives roughly twice as many cycles; 50% gives half as many. Existing eligibility and maximums remain.");
         help->setWordWrap(true);form->addRow(help);

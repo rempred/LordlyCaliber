@@ -754,3 +754,9 @@ All controls apply immediately, support Undo and a Retail reset, and persist in
 Tools schema5. Exports authenticate code owners, assemble in original allocations,
 check exact output, update CRC and reopen. Unknown modified owners are preserved
 and their controls disabled.
+
+Element balance in Tools separates the shared natural-element affinity (same/opposed
+percentage points), magic weapon synergy, and final physical/elemental resistance
+strength (0–400%). Shared affinity also affects target resistance; Virtue/Bane
+alignment terms retain their existing behavior. Fixed-damage branches and minimum
+damage are unchanged. Code and tables rebuild within original allocations.
