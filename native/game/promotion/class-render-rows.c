@@ -17,7 +17,15 @@ void lc_class_render_rows(u8 *matrices) {
     u8 *owner = lc_army_owner;
     u32 flags = *(u16 *)(owner + 0x130) & 0x300;
     u32 x, y;
+#if LC_CLASS_COUNT > 81
+    /* Expanded modes share one list and one pass. Keeping an unreachable
+     * second pass here makes Project64's x86 recompiler join incompatible
+     * constant-register states while opening Army Management.
+     */
+    if (flags) {
+#else
     while (flags) {
+#endif
         u32 index = 0;
         u32 count;
 #if LC_CLASS_COUNT > 81
@@ -25,7 +33,6 @@ void lc_class_render_rows(u8 *matrices) {
          * the old class-change mode's 21 rows; draw the bounded window once.
          */
         count = *(u16 *)(owner + 0x1BFC);
-        flags = 0;
 #else
         if (flags & 0x100) {
             count = 21;
@@ -36,7 +43,7 @@ void lc_class_render_rows(u8 *matrices) {
         }
 #endif
         if (count > LC_CLASS_COUNT)
-            break;
+            return;
 #if LC_CLASS_COUNT > 81
         /* At most the retail full-list budget. Keep complete four-row columns
          * before the selected column, without relocating the visible coordinates.

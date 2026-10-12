@@ -28,6 +28,7 @@ class ScenarioSeeder {
     static bool project64Running();
 
   private:
+    static SaveDocument expanded(SaveDocument);
     static SaveDocument patch(SaveDocument, const QByteArray &memory);
     SaveDocument withArmy(SaveDocument, const SaveDocument &) const;
     Rom rom_;

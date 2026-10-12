@@ -71,3 +71,23 @@ are doubles; these checks do not constitute an emulator playthrough or RDP image
 comparison. `ui_tests categoryIconEditingAndNavigation promotionControlsAndUndo`
 checks painting/Undo, creation and assignment, invalid names, replacement and the
 family-to-artwork shortcut, with an offscreen small-window capture.
+
+## Army Management loading repair (2026-10-11)
+
+Joe's 166-class ROM reproduced Project64's x86 `SyncRegState` assertion at
+`x86RecompilerOps.cpp:8973` on opening Army Management. The triggering block
+was the expanded class-row renderer at Army RAM 0x801B830C (z64 ROM 0xA4D6C),
+not the category-count helper. Expanded modes already shared one list/pass,
+but the compiled C retained a never-taken outer loop edge. Expressing that
+path as a single conditional removes the edge and the assertion. The retail
+81-class path retains its two-mode loop and its existing compiled identity.
+
+`class_menu_mips.cjs` passes 144 retail renderer comparisons, 1,821 expanded
+renderer cases and the existing selection/count/style checks. In an isolated
+copy of Joe's Project64 recompiler, the original state reproduced the failure;
+a run-owned state copy with only its ROM identification header updated loaded
+the corrected Army overlay naturally and entered Army Management. All 364
+bytes of the loaded replacement matched the exported ROM. List Classes opened,
+and Joe confirmed the custom Elf tab, artwork and counts in the game. This
+qualifies the affected overlay-load path, not every combat/menu flow or a full
+new-game playthrough. Existing edited ROMs receive the repair on re-export.

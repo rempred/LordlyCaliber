@@ -139,6 +139,60 @@ class SaveDocumentTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void scenarioSeederExpandedInstallation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (ScenarioSeeder::project64Running()) QSKIP("Leave the user's emulator alone");
+        try {
+            const auto rom = Rom::open(path);
+            ScenarioSeeder seeder(rom);
+            auto swap = [](QByteArray bytes) {
+                for (int i=0; i<bytes.size(); i+=4) {
+                    std::swap(bytes[i],bytes[i+3]); std::swap(bytes[i+1],bytes[i+2]);
+                }
+                return bytes;
+            };
+            auto native = swap(seeder.seed(0));
+            const int first = lc_save_record_offset(0,0), second = lc_save_record_offset(1,0);
+            native.replace(second,LC_SAVE_NORMAL_BYTES,native.mid(first,LC_SAVE_NORMAL_BYTES));
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(native.data()+second),
+                                        LC_SAVE_NORMAL_BYTES,1,0));
+            auto originalTarget = SaveDocument::open(rom,swap(native));
+            originalTarget.selectSlot(1);
+            originalTarget.apply(originalTarget.planEdit(SaveTable::Characters,1,"luck",37),true);
+            native = swap(originalTarget.serialize());
+            const auto legacy = native;
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(native.data()),unsigned(native.size())));
+            auto expanded = SaveDocument::open(rom,swap(native));
+            expanded.selectSlot(1);
+            QCOMPARE(expanded.value(SaveTable::Characters,1,"luck").toInt(),37);
+            const auto donorSeed = seeder.seed(5,&expanded);
+            QVERIFY(SaveDocument::open(rom,donorSeed).expanded());
+            QCOMPARE(SaveDocument::open(rom,donorSeed).value(SaveTable::Characters,1,"luck").toInt(),37);
+            QTemporaryDir dir; QVERIFY(dir.isValid());
+            const auto destination = dir.filePath("test.sra");
+            for (bool expandedTarget : {true,false}) {
+                const auto initial = swap(expandedTarget ? native : legacy);
+                QFile target(destination); QVERIFY(target.open(QIODevice::WriteOnly));
+                QCOMPARE(target.write(initial),initial.size()); target.close();
+                for (const auto &seed : {expandedTarget ? seeder.seed(5) : donorSeed,seeder.seed(0)}) {
+                    QVERIFY(target.open(QIODevice::ReadOnly)); const auto before=target.readAll(); target.close();
+                    const auto backup = ScenarioSeeder::install(rom,seed,destination,true);
+                    QFile savedBackup(backup); QVERIFY(savedBackup.open(QIODevice::ReadOnly));
+                    QCOMPARE(savedBackup.readAll(),before);
+                    QVERIFY(target.open(QIODevice::ReadOnly)); const auto actual=target.readAll(); target.close();
+                    auto reopened=SaveDocument::open(rom,actual); QVERIFY(reopened.expanded());
+                    reopened.selectSlot(0); QCOMPARE(reopened.memory(),SaveDocument::open(rom,seed).memory());
+                    reopened.selectSlot(1); QCOMPARE(reopened.memory(),expanded.memory());
+                    const auto normalized=swap(actual);
+                    QCOMPARE(normalized.mid(lc_save_record_offset(1,1),LC_SAVE_EXPANDED_NORMAL_BYTES),
+                             native.mid(lc_save_record_offset(1,1),LC_SAVE_EXPANDED_NORMAL_BYTES));
+                    QCOMPARE(normalized.first(16),native.first(16));
+                    QVERIFY(!reopened.saveSlots()[2].valid);
+                }
+            }
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void characterInitialization() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

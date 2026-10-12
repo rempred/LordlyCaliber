@@ -650,7 +650,9 @@ to flush, installs that row's save, then starts the selected ROM. Selecting a ro
 alone does not write a save. Imported full saves get their own launch row.
 Generated world-entry saves retain normal story roads and use the game's
 normal entry initialization. Existing saves are backed up before atomic replacement;
-slot 2 survives generated seeds and stale suspend data is disabled. Full-save
+slot 2 survives generated seeds and stale suspend data is disabled. Retail seeds
+can be installed into expanded saves; either side is upgraded when needed using
+the game's save converter. Expanded saves can also supply the tester army. Full-save
 installation preserves the supplied file unchanged. Later routes retain the
 standalone tool's game-testing limits; this port adds file/readback qualification.
 

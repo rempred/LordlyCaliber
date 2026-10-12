@@ -42,6 +42,18 @@ QByteArray wordSwap(QByteArray b) {
     return b;
 }
 } // namespace
+SaveDocument ScenarioSeeder::expanded(SaveDocument source) {
+    if (!source.battery())
+        throw Error("Choose a battery save");
+    if (!source.expanded_) {
+        if (!lc_save_expand_image(reinterpret_cast<unsigned char *>(source.data_.data()),
+                                  unsigned(source.data_.size())))
+            throw Error("Cannot convert the battery save to the expanded layout");
+        source.expanded_ = true;
+        source.selectSlot(source.slot_);
+    }
+    return source;
+}
 SaveDocument ScenarioSeeder::patch(SaveDocument source, const QByteArray &memory) {
     if (!source.battery() || source.memory().size() != memory.size())
         throw Error("Choose a compatible battery save");
@@ -83,8 +95,10 @@ SaveDocument ScenarioSeeder::patch(SaveDocument source, const QByteArray &memory
     return source;
 }
 SaveDocument ScenarioSeeder::withArmy(SaveDocument base, const SaveDocument &donor) const {
-    if (!donor.battery() || donor.expanded() != base.expanded())
-        throw Error("Army and seed use different save layouts");
+    if (!donor.battery())
+        throw Error("Choose a battery save for the tester army");
+    if (donor.expanded())
+        base = expanded(std::move(base));
     auto memory = base.memory();
     const auto &army = donor.memory();
     const QVector<QPair<int, int>> ranges{{0x193ab0, 0x193ab6}, // Saved legion display order.
@@ -389,8 +403,12 @@ QString ScenarioSeeder::install(const Rom &rom, const QByteArray &raw, const QSt
                            (old == QByteArray(0x8000, 0) || old == QByteArray(0x8000, char(-1)));
         if (exists && !blank) {
             auto target = SaveDocument::open(rom, old);
-            if (!target.battery() || target.expanded() != source.expanded())
-                throw Error("Destination and seed save layouts differ");
+            if (!target.battery())
+                throw Error("The destination is not a battery save");
+            if (source.expanded() || target.expanded()) {
+                source = expanded(std::move(source));
+                target = expanded(std::move(target));
+            }
             const int at = int(lc_save_record_offset(0, source.expanded_)),
                       size = int(lc_save_record_size(0, source.expanded_));
             target.data_.replace(at, size, source.data_.mid(at, size));
