@@ -76,6 +76,7 @@
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QTableView>
+#include <QTreeWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTextBrowser>
@@ -1794,13 +1795,36 @@ class UiTests : public QObject {
             QFile saved(output); QVERIFY(saved.open(QIODevice::ReadOnly));
             QCOMPARE(saved.readAll(), expected.toUtf8());
             QCOMPARE(project.manifest(), before);
+            auto entries = dialog.findChild<QTreeWidget *>("changeReportEntries");
+            QVERIFY(entries && entries->topLevelItemCount() > 0);
+            QTreeWidgetItem *classChange = nullptr;
+            for (int i = 0; i < entries->topLevelItemCount(); ++i) {
+                const auto row = entries->topLevelItem(i);
+                const auto target = row->data(0, Qt::UserRole).value<EditLocation>();
+                if (target.editor == "classes" && target.id == 2) classChange = row;
+            }
+            QVERIFY(classChange); entries->setCurrentItem(classChange);
             QVERIFY(dialog.grab().save("project-changes.png"));
+            QSignalSpy jump(&dialog, &ChangeReportDialog::editRequested);
+            dialog.findChild<QPushButton *>("openChangeEdit")->click();
+            QCOMPARE(jump.count(), 1);
+            QCOMPARE(jump.at(0).at(0).value<EditLocation>().id, 2);
             dialog.close();
             MainWindow window;
             auto action = window.findChild<QAction *>("reviewProjectChanges");
             QVERIFY(action); QVERIFY(!action->isEnabled());
             window.loadRom(source);
             QTRY_VERIFY_WITH_TIMEOUT(action->isEnabled(), 10000);
+            window.show();
+            auto classes = window.findChild<QTableView *>("classesTable");
+            classes->sortByColumn(1, Qt::DescendingOrder);
+            window.navigateTo({"classes", 2});
+            QVERIFY(classes->isVisible());
+            QCOMPARE(classes->currentIndex().siblingAtColumn(0).data(Qt::EditRole).toInt(), 2);
+            window.navigateTo({"shops", 35});
+            auto shops = window.findChild<QListWidget *>("shopList");
+            QVERIFY(shops->isVisible());
+            QCOMPARE(shops->currentItem()->data(Qt::UserRole).toInt(), 35);
             bool opened = false;
             QTimer::singleShot(0, &window, [&] {
                 const auto review = window.findChild<ChangeReportDialog *>("projectChanges");

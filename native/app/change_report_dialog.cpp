@@ -11,6 +11,9 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTextCursor>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QSplitter>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 
@@ -28,11 +31,40 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
     search->setObjectName("changeReportSearch");
     search->setPlaceholderText("Find in report… (Enter for next match)");
     layout->addWidget(search);
+    auto split = new QSplitter;
+    entries_ = new QTreeWidget;
+    entries_->setObjectName("changeReportEntries");
+    entries_->setHeaderLabels({"Area", "Edit"});
+    entries_->setRootIsDecorated(false);
+    entries_->setUniformRowHeights(true);
+    entries_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    entries_->setColumnWidth(0, 140);
+    split->addWidget(entries_);
     text_ = new QPlainTextEdit;
     text_->setObjectName("changeReportText");
     text_->setReadOnly(true);
-    layout->addWidget(text_, 1);
+    split->addWidget(text_);
+    split->setSizes({380, 620});
+    layout->addWidget(split, 1);
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto jump = buttons->addButton("Open selected edit", QDialogButtonBox::ActionRole);
+    jump->setObjectName("openChangeEdit");
+    jump->setEnabled(false);
+    const auto open = [this] {
+        const auto row = entries_->currentItem();
+        if (!row) return;
+        const auto location = row->data(0, Qt::UserRole).value<EditLocation>();
+        accept();
+        emit editRequested(location);
+    };
+    connect(jump, &QPushButton::clicked, this, open);
+    connect(entries_, &QTreeWidget::itemDoubleClicked, this, [open] { open(); });
+    connect(entries_, &QTreeWidget::currentItemChanged, this, [this, jump](QTreeWidgetItem *row) {
+        jump->setEnabled(row != nullptr);
+        if (!row) return;
+        text_->moveCursor(QTextCursor::Start);
+        text_->find(row->text(1));
+    });
     auto copy = buttons->addButton("Copy report", QDialogButtonBox::ActionRole);
     copy->setObjectName("copyChangeReport");
     auto save = buttons->addButton("Save text…", QDialogButtonBox::ActionRole);
@@ -63,7 +95,11 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
         }
     };
     connect(search, &QLineEdit::returnPressed, this, find);
-    connect(search, &QLineEdit::textChanged, this, [this, find] {
+    connect(search, &QLineEdit::textChanged, this, [this, find, search] {
+        for (int i = 0; i < entries_->topLevelItemCount(); ++i) {
+            const auto row = entries_->topLevelItem(i);
+            row->setHidden(!row->data(0, Qt::UserRole + 1).toString().contains(search->text(), Qt::CaseInsensitive));
+        }
         text_->moveCursor(QTextCursor::Start);
         find();
     });
@@ -81,9 +117,17 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
             return;
         }
         text_->setPlainText(result.report.text());
+        report_ = result.report;
+        for (const auto &entry : report_.entries) {
+            auto row = new QTreeWidgetItem(entries_, {entry.area, entry.subject});
+            row->setData(0, Qt::UserRole, QVariant::fromValue(entry.location));
+            row->setData(0, Qt::UserRole + 1, entry.area + " " + entry.subject + " " + entry.details.join(" "));
+            row->setToolTip(1, entry.details.join('\n'));
+        }
         text_->moveCursor(QTextCursor::Start);
         status->setText(
-            QString("Report entries: %1").arg(result.report.entries.size()));
+            QString("%1 changed entries · compared with %2. Select an entry to review or open it.")
+                .arg(result.report.entries.size()).arg(result.report.source));
         ready_ = true;
         copy->setEnabled(true);
         save->setEnabled(true);

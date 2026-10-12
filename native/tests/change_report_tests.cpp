@@ -32,7 +32,10 @@ class ChangeReportTests : public QObject {
             project.setValue(Table::Items, 1, field(Table::Items, "str"), -7);
             project.setValue(Table::Items, 1, field(Table::Items, "growthInt"), 3);
             project.setValue(Table::Items, 1, field(Table::Items, "price"), 4321);
-            const auto text = project.changeReport().text();
+            const auto changes = project.changeReport();
+            QCOMPARE(changes.entries.first().location.editor, QString("items"));
+            QCOMPARE(changes.entries.first().location.id, 1);
+            const auto text = changes.text();
             QVERIFY(text.contains(QString("Stats / STR: %1 → -7").arg(qint8(original[10]))));
             QVERIFY(text.contains(
                 QString("Growth / INT: %1 → 3").arg((quint8(original[24]) >> 2) & 3)));
@@ -147,7 +150,14 @@ class ChangeReportTests : public QObject {
                 QVERIFY2(report.contains(area), area);
             QVERIFY(report.contains("Experience Scale Percent: 100 → 137"));
             QVERIFY(report.contains("Report scene"));
-            QVERIFY(report.contains("Pool 45"));
+            bool encounterLinked = false;
+            for (const auto &change : project.changeReport().entries)
+                if (change.location.editor == "encounters" && change.location.id == 45) {
+                    encounterLinked = true;
+                    QVERIFY(change.details.join(" ").contains("Slot 10 / member 1"));
+                    QVERIFY(change.details.join(" ").contains("164"));
+                }
+            QVERIFY(encounterLinked);
             QVERIFY(report.contains("Primary archive 0 / entry 0"));
             scenes.removeScene(authored);
             project.setScenePrograms(scenes.json());

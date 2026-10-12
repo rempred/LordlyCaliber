@@ -114,6 +114,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto review = file->addAction("Review project &changes…", this, [this] {
         if (project_) {
             ChangeReportDialog dialog(*project_, this);
+            connect(&dialog, &ChangeReportDialog::editRequested, this, &MainWindow::navigateTo);
             dialog.exec();
         }
     });
@@ -321,6 +322,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     auto layout = new QVBoxLayout(page);
     auto search = new QLineEdit;
     search->setPlaceholderText("Search names, IDs, and values…");
+    search->setObjectName(tableKey(table) + "Search");
     search->setClearButtonEnabled(true);
     layout->addWidget(search);
     auto split = new QSplitter;

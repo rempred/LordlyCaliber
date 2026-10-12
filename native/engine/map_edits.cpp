@@ -166,6 +166,12 @@ const FieldChanges &MapEdits::changes(int key) const {
     const auto i = edits_.constFind(modelId(key));
     return i == edits_.cend() ? empty : i.value();
 }
+int MapEdits::scenarioForModel(int model) const {
+    for (int key = 1; key <= 64; ++key)
+        if (key != 54 && model >= 4 && model <= 44 &&
+            u8(rom_.bytes(), 0x654a0 + key * 9 + 3) == model) return key;
+    return -1;
+}
 QVector<int> MapEdits::sharedScenarios(int key) const {
     const int id = modelId(key);
     QVector<int> out;

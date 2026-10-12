@@ -1,5 +1,10 @@
 # Feature inventory and completion tracking
 
+Review project changes includes a searchable entry list with before/after details
+and Open selected edit navigation. Record links preserve identity through sorted
+tables; town reports show name, population, morale, facility and shop values.
+The comparison is explicitly against the loaded source ROM.
+
 Art and Animation → UI and Icons groups Item icons and Class category icons.
 The category editor reads all eight original List Classes symbols from the ROM.
 Create or copy an icon, paint pixels, replace it from an image, or export a PNG;

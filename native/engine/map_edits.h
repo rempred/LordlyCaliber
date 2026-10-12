@@ -42,6 +42,7 @@ class MapEdits {
     const FieldMapSource &source(int key) const;
     const FieldChanges &changes(int key) const;
     QVector<int> sharedScenarios(int key) const;
+    int scenarioForModel(int model) const;
     QVector<QPointF> points(int key) const;
     bool canMoveSite(int key, int row) const;
     void moveSite(int key, int row, QPointF destination);

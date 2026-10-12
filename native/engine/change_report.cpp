@@ -101,9 +101,10 @@ ChangeReport Project::changeReport() const {
     report.source = QFileInfo(rom_.sourcePath()).fileName();
     if (report.source.isEmpty())
         report.source = "Loaded ROM";
-    auto add = [&](QString area, QString title, QStringList details) {
+    auto add = [&](QString area, QString title, QStringList details, EditLocation location = {}) {
+        if (location.editor.isEmpty()) location.editor = area;
         if (!details.isEmpty())
-            report.entries << ProjectChange{area, title, details};
+            report.entries << ProjectChange{area, title, details, location};
     };
     auto className = [&](int id) {
         return id >= 0 && id < records(Table::Classes).size()
@@ -162,7 +163,7 @@ ChangeReport Project::changeReport() const {
                                                  choice(field, after, false)));
                 }
             }
-            add(area, QString("%1 (ID %2)").arg(row.name).arg(row.id), lines);
+            add(area, QString("%1 (ID %2)").arg(row.name).arg(row.id), lines, {tableKey(table), row.id});
         }
     }
     for (const auto &bank : texts_) {
@@ -175,16 +176,17 @@ ChangeReport Project::changeReport() const {
             if (entry.bytes == entry.original && !added)
                 continue;
             QString subject = bank.spec.label + QString(" %1").arg(id);
+            int recordId = id;
             for (const auto table : {Table::Classes, Table::Items, Table::Consumables})
                 if (tableKey(table) == bank.spec.id)
                     for (const auto &row : records(table))
                         if ((table == Table::Classes ? classDescriptionIndex(row.id) : row.id) ==
                             id)
-                            subject = row.name + " description";
+                            { subject = row.name + " description"; recordId = row.id; }
             add("Descriptions", subject,
                 {added ? "Added: " + quoted(decodeText(entry.bytes))
                        : transition("Text", quoted(decodeText(entry.original)),
-                                    quoted(decodeText(entry.bytes)))});
+                                    quoted(decodeText(entry.bytes)))}, {bank.spec.id, recordId, -1, "description"});
         }
     }
     if (promotion_ && promotion_->modified()) {
@@ -223,7 +225,7 @@ ChangeReport Project::changeReport() const {
                         added ? "Not present"
                               : QString("0x%1").arg(u8(part.second.first, id), 2, 16, QChar('0')),
                         QString("0x%1").arg(u8(part.second.second, id), 2, 16, QChar('0')));
-            add("Class promotion", className(id), lines);
+            add("Class promotion", className(id), lines, {"classes", id, -1, "promotionEditor"});
         }
         const auto original = p.originalFamilies["families"].toArray();
         for (const auto &entry : p.families["families"].toArray()) {
@@ -234,7 +236,7 @@ ChangeReport Project::changeReport() const {
                     before = old;
             QStringList lines;
             settings(lines, before, family);
-            add("Class families", family["name"].toString(), lines);
+            add("Class families", family["name"].toString(), lines, {"family", family["id"].toInt()});
         }
     }
     if (shops_ && shops_->modified()) {
@@ -253,7 +255,7 @@ ChangeReport Project::changeReport() const {
                 lines << transition("Consumables", stockText(a.consumables, true),
                                     stockText(b.consumables, true));
             add("Shops", QString("Shop %1 · %2").arg(id).arg(shops_->locations(id).join(", ")),
-                lines);
+                lines, {"shops", id});
         }
     }
     if (consumableEffects_ && consumableEffects_->modified()) {
@@ -283,7 +285,7 @@ ChangeReport Project::changeReport() const {
                             QString("Slot %1 / member %2").arg(slot + 1).arg(side + 1),
                             className(a), className(b));
                 }
-            add("Neutral encounters", encounters_->label(p), lines);
+            add("Neutral encounters", encounters_->label(p), lines, {"encounters", p});
         }
         for (int t = 0; t < Encounters::terrainCount; ++t) {
             QStringList lines;
@@ -317,15 +319,29 @@ ChangeReport Project::changeReport() const {
                   << rowChanges(a.layout.conditions, s.layout.conditions, "condition");
             if (lines.isEmpty())
                 lines << "Updated scenario layout.";
-            add("Scenarios", QString("%1 (key %2)").arg(s.name).arg(s.key), lines);
+            add("Scenarios", QString("%1 (key %2)").arg(s.name).arg(s.key), lines, {"scenarios", s.key});
         }
     }
     if (world_ && world_->modified()) {
         const auto original = ScenarioWorld::load(rom_);
-        for (int id = 1; id <= ScenarioWorld::townCount; ++id)
-            if (original.town(id) != world_->town(id))
-                add("Sites and treasures", world_->townName(id) + QString(" (site %1)").arg(id),
-                    {"Updated site metadata."});
+        for (int id = 1; id <= ScenarioWorld::townCount; ++id) {
+            const auto a = original.town(id), b = world_->town(id);
+            if (a == b) continue;
+            QStringList lines;
+            if (original.townName(id) != world_->townName(id))
+                lines << transition("Name", quoted(original.townName(id)), quoted(world_->townName(id)));
+            for (const auto &field : {qMakePair(QString("Population"), 22),
+                                      qMakePair(QString("Morale / objective"), 24),
+                                      qMakePair(QString("Facilities"), 25),
+                                      qMakePair(QString("Stronghold type"), 26),
+                                      qMakePair(QString("Shop"), 27)}) {
+                const int old = field.second == 22 ? u16(a, 22) : u8(a, field.second);
+                const int value = field.second == 22 ? u16(b, 22) : u8(b, field.second);
+                if (old != value) lines << transition(field.first, number(old), number(value));
+            }
+            add("Sites and treasures", world_->townName(id) + QString(" (site %1)").arg(id),
+                lines, {"town", id});
+        }
         const auto rows = world_->json()["scenarios"].toObject();
         for (auto it = rows.begin(); it != rows.end(); ++it) {
             const int key = it.key().toInt();
@@ -338,7 +354,7 @@ ChangeReport Project::changeReport() const {
                                     number(ScenarioWorld::treasureCount(a.treasures)),
                                     number(ScenarioWorld::treasureCount(b.treasures)))
                       << "Updated treasure placement or contents.";
-            add("Sites and treasures", "Scenario key " + it.key(), lines);
+            add("Sites and treasures", "Scenario key " + it.key(), lines, {"map", key});
         }
     }
     if(mapEdits_ && mapEdits_->modified()){
@@ -359,7 +375,7 @@ ChangeReport Project::changeReport() const {
                              .arg(edge[2].toInt())
                              .arg(edge[3].toInt());
             }
-            add("Maps", "Battlefield " + it.key(), lines);
+            add("Maps", "Battlefield " + it.key(), lines, {"battlefield", it.key().toInt()});
         }
     }
     if (scenePrograms_ && scenePrograms_->modified()) {
@@ -369,7 +385,7 @@ ChangeReport Project::changeReport() const {
             add("Cutscenes",
                 "Scene " + QString::number(it.key(), 16).rightJustified(8, '0').toUpper(),
                 {transition("Commands", number(int(before)), number(int(after))),
-                 "Updated scene commands."});
+                 "Updated scene commands."}, {"scene", int(it.key())});
         }
         const auto original = ScenePrograms::load(rom_).authoredScenes();
         auto ids = original.keys();
@@ -429,12 +445,12 @@ ChangeReport Project::changeReport() const {
     if (icons_ && icons_->modified())
         for (const auto &id : icons_->json()["icons"].toObject().keys())
             add("Item icons", itemName(id.toInt() & 0x1ff, (id.toInt() & 0x200) != 0),
-                {"Edited icon pixels."});
+                {"Edited icon pixels."}, {"icon", id.toInt()});
     if (avatars_ && avatars_->modified())
         for (const auto &value : avatars_->json()["portraits"].toArray()) {
             const auto row = value.toObject();
             add("Portraits", className(row["classId"].toInt()),
-                {QString("Edited portrait %1.").arg(row["selector"].toInt() + 1)});
+                {QString("Edited portrait %1.").arg(row["selector"].toInt() + 1)}, {"portrait", row["classId"].toInt(), row["selector"].toInt()});
         }
     if (army_ && army_->modified()) {
         for (int atlas = 0; atlas < ArmyArtwork::specs().size(); ++atlas)
@@ -442,17 +458,17 @@ ChangeReport Project::changeReport() const {
                 if (army_->modified(atlas, model))
                     add("Army sprites",
                         ArmyArtwork::specs()[atlas].label + QString(" / model %1").arg(model),
-                        {"Edited sprite pixels."});
+                        {"Edited sprite pixels."}, {"army", atlas, model});
         for (auto it = army_->routes().begin(); it != army_->routes().end(); ++it)
             add("Army sprites", className(it.key()),
-                {QString("Assigned lane %1, model %2.").arg(it->lane).arg(it->model)});
+                {QString("Assigned lane %1, model %2.").arg(it->lane).arg(it->model)}, {"armyClass", it.key()});
     }
     if (combat_ && combat_->modified()) {
         const auto bindings = combat_->json()["bindings"].toObject();
         for (auto it = bindings.begin(); it != bindings.end(); ++it)
             for (const auto &child : it.value().toObject()["children"].toObject().keys())
                 add("Combat sprites", QString("Sprite %1 / child %2").arg(it.key(), child),
-                    {"Edited sprite color or opacity."});
+                    {"Edited sprite color or opacity."}, {"combatSprite", -1, child.toInt(), it.key()});
     }
     if (animationRoutes_ && animationRoutes_->modified()) {
         const auto original = AnimationRoutes::load(rom_);
@@ -462,7 +478,7 @@ ChangeReport Project::changeReport() const {
              ++it)
             if (it.key() >= baseline.rowCount() || it.value() != baseline.entry(it.key()))
                 add("Animation assignments", className(it.key()),
-                    {"Updated body routes, speeds, attack selectors or visual policies."});
+                    {"Updated body routes, speeds, attack selectors or visual policies."}, {"animation", it.key()});
     }
     if (animationOverrides_ && animationOverrides_->modified()) {
         const auto originalRoutes = AnimationRoutes::load(rom_);
@@ -493,14 +509,14 @@ ChangeReport Project::changeReport() const {
                     {before.contains(key) ? after.contains(key)
                                                 ? "Updated private sequence, frames or artwork."
                                                 : "Removed private animation."
-                                          : "Created private animation."});
+                                          : "Created private animation."}, {"combatAnimation", key / 4, key % 4});
     }
     for (const auto &asset : sprites_.assets())
         add("Sprite library", asset.name,
             {QString("%1 × %2; %3 frames. Project asset; game assignments are listed separately.")
                  .arg(asset.size.width())
                  .arg(asset.size.height())
-                 .arg(asset.frames.size())});
+                 .arg(asset.frames.size())}, {"sprites", -1, -1, asset.id});
     for (const auto &section : pendingLegacySections())
         add("Imported project data", friendly(section),
             {"Retained browser data awaiting native conversion; not a verified ROM edit."});

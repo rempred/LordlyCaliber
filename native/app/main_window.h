@@ -13,6 +13,7 @@ class MainWindow : public QMainWindow {
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
     void loadRom(const QString &path);
+    void navigateTo(const EditLocation &);
 
   protected:
     void closeEvent(QCloseEvent *event) override;
