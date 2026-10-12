@@ -1835,6 +1835,12 @@ class UiTests : public QObject {
             QFile saved(output); QVERIFY(saved.open(QIODevice::ReadOnly));
             QCOMPARE(saved.readAll(), expected.toUtf8());
             QCOMPARE(project.manifest(), before);
+            dialog.compareWithRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(copy->isEnabled(),30000);
+            QVERIFY(text->toPlainText().contains("Review Fighter"));
+            QVERIFY_THROWS_EXCEPTION(Error,dialog.saveReport(path));
+            dialog.compareWithRom({});QTRY_VERIFY_WITH_TIMEOUT(copy->isEnabled(),30000);
+            QCOMPARE(text->toPlainText(),expected);
             auto entries = dialog.findChild<QTreeWidget *>("changeReportEntries");
             QVERIFY(entries && entries->topLevelItemCount() > 0);
             QTreeWidgetItem *classChange = nullptr;
@@ -1865,6 +1871,13 @@ class UiTests : public QObject {
             auto shops = window.findChild<QListWidget *>("shopList");
             QVERIFY(shops->isVisible());
             QCOMPARE(shops->currentItem()->data(Qt::UserRole).toInt(), 35);
+            window.navigateTo({"scenarioSettings",1});
+            QVERIFY(window.findChild<QTimeEdit *>("scenarioStartingTime")->isVisible());
+            window.navigateTo({"rule",-1,-1,"dayLength"});
+            QVERIFY(window.findChild<QSpinBox *>("rule_dayLength")->isVisible());
+            window.navigateTo({"rule",-1,-1,"reserveXp"});
+            QVERIFY(window.findChild<QSpinBox *>("rule_reserveXp")->isVisible());
+            window.navigateTo({"shops",35});
             bool usesOpened = false;
             QTimer::singleShot(0, &window, [&] {
                 if (auto uses = window.findChild<ProjectReviewDialog *>("projectUses")) {
@@ -10056,10 +10069,21 @@ class UiTests : public QObject {
         auto day=scenario.findChild<QSpinBox *>("rule_dayLength");QVERIFY(day);day->setValue(150);
         QCOMPARE(project.tools()->gameRules().value("dayLength"),150);
         undo.undo();QCOMPARE(day->value(),100);undo.redo();QCOMPARE(day->value(),150);
+        auto reserve=tools.findChild<QSpinBox *>("rule_reserveXp");
+        auto deployment=tools.findChild<QSpinBox *>("rule_deploymentLimit");
+        QVERIFY(reserve && deployment); reserve->setValue(25); deployment->setValue(30);
+        QCOMPARE(project.tools()->gameRules().value("reserveXp"),25);
+        QCOMPARE(project.tools()->gameRules().value("deploymentLimit"),30);
+        undo.undo(); QCOMPARE(deployment->value(),10); undo.undo(); QCOMPARE(reserve->value(),0);
+        undo.redo(); undo.redo();
+        tools.findChild<QPushButton *>("ruleReset_reserveXp")->click(); QCOMPARE(reserve->value(),0);
+        tools.findChild<QPushButton *>("ruleReset_deploymentLimit")->click(); QCOMPARE(deployment->value(),10);
         tools.findChild<QPushButton *>("ruleReset_tacticLeader")->click();
         QCOMPARE(project.tools()->gameRules().value("tacticLeader"),1);
         QTest::qWait(20);QVERIFY(scenario.grab().save("native/build/scenario-clock-rules.png"));
         QVERIFY(tools.grab().save("native/build/tools-game-rules.png"));
+        tools.findChild<QTabWidget *>("toolsPages")->setCurrentIndex(2);QTest::qWait(20);
+        QVERIFY(tools.grab().save("native/build/tools-mission-rewards.png"));
     }
     void scenarioSettingsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

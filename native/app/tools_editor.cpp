@@ -115,10 +115,18 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     auto content = new QWidget;
     scroll->setWidget(content);
     auto pages=new QTabWidget; pages->setObjectName("toolsPages");
-    outer->addWidget(pages); pages->addTab(scroll,"Rules and rewards");
+    outer->addWidget(pages); pages->addTab(scroll,"Battle and squads");
     pages->addTab(new TrainingEditor(project_,undo_,changed_),"Training");
     auto layout = new QVBoxLayout(content);
-    layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"tactics", "fatigue", "recovery", "elements", "weapons", "resistance", "goth", "soldierPopulation", "soldierMinimum", "reserve", "deployment"}));
+    layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"deployment", "tactics", "fatigue", "recovery", "elements", "weapons", "resistance"}));
+    auto page=[pages](const QString &name) {
+        auto scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
+        auto body=new QWidget;scroll->setWidget(body);pages->addTab(scroll,name);return new QVBoxLayout(body);
+    };
+    auto rewards=page("Mission rewards");
+    rewards->addWidget(new GameRulesEditor(project_,undo_,changed_,{"goth","soldierPopulation","soldierMinimum","reserve"}));
+    rewards->addStretch();
+    auto extras=page("Display and options");
     auto box = new QGroupBox("Battle experience");
     auto fields = new QVBoxLayout(box);
     auto description = new QLabel("Scale the size weight applied to every reward source. "
@@ -163,7 +171,7 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     chaosRestore_ = new QPushButton("Restore loaded counter setting");
     chaosRestore_->setObjectName("chaosRestore");
     chaosLayout->addWidget(chaosRestore_, 0, Qt::AlignLeft);
-    layout->addWidget(chaosBox);
+    extras->addWidget(chaosBox);
     auto displayBox = new QGroupBox("Additional values — Expansion Pak required (8 MiB RAM)");
     auto displayLayout = new QVBoxLayout(displayBox);
     for (int i = 0; i < 2; ++i) {
@@ -186,7 +194,7 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
             setDisplay(kind, project_->tools()->displayTool(kind).loadedEnabled());
         });
     }
-    layout->addWidget(displayBox);
+    extras->addWidget(displayBox);
     auto highBox = new QGroupBox("High Attack — experimental");
     auto highLayout = new QVBoxLayout(highBox);
     highAttack_ = new QCheckBox("Expand battle action streams");
@@ -199,11 +207,12 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     highLayout->addWidget(highAttack_);
     highLayout->addWidget(highAttackNotice_);
     highLayout->addWidget(highAttackRestore_, 0, Qt::AlignLeft);
-    layout->addWidget(highBox);
+    extras->addWidget(highBox);
     connect(highAttack_, &QCheckBox::toggled, this, &ToolsEditor::setHighAttack);
     connect(highAttackRestore_, &QPushButton::clicked, this,
             [this] { setHighAttack(project_->tools()->highAttack().loadedEnabled()); });
     layout->addStretch();
+    extras->addStretch();
     connect(percent_, &QSpinBox::valueChanged, this, &ToolsEditor::setPercent);
     connect(restore_, &QPushButton::clicked, this,
             [this] { setPercent(project_->tools()->loadedExperiencePercent()); });

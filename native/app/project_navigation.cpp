@@ -1,6 +1,10 @@
 #include "app/main_window.h"
 #include "app/scenario_map_editor.h"
 #include "app/text_workspace.h"
+#include "app/dialogue_inspector.h"
+#include "app/army_editor.h"
+#include <QTabBar>
+#include <QScrollArea>
 #include "app/project_review_dialog.h"
 #include <QComboBox>
 #include <QLineEdit>
@@ -69,6 +73,14 @@ void MainWindow::navigateTo(const EditLocation &location) {
             for (int member = 1; member < assignments.size(); ++member)
                 if (assignments[member].toInt() == id) { navigateTo({"classes", member, -1, "promotionEditor"}); return; }
             destination = findChild<QWidget *>("promotionEditor");
+        } else if (kind == "rule") {
+            destination=findChild<QWidget *>("rule_"+location.key);
+        } else if (kind == "categoryIcon") {
+            destination=list("categoryIcons",id);
+        } else if (kind == "dialogue") {
+            if (auto inspector=findChild<DialogueInspector *>()) {
+                inspector->selectEntry(id&65535,location.child|((id&65536) ? 0x8000 : 0)); destination=inspector;
+            }
         } else if (kind == "training") {
             combo("trainingLocation",id); destination=combo("trainingOpponent",location.child);
         } else if (kind == "shops") {
@@ -79,7 +91,7 @@ void MainWindow::navigateTo(const EditLocation &location) {
             clear("rewardSearch"); destination = list("rewardClasses", id);
         } else if (kind == "customEncounter") {
             clear("customSearch"); destination = list("customSquadList", CustomSquads::key(id, location.child));
-        } else if (kind == "scenarios" || kind == "map" || kind == "town" || kind == "battlefield") {
+        } else if (kind == "scenarios" || kind == "scenarioSettings" || kind == "map" || kind == "town" || kind == "battlefield") {
             int siteRow = -1;
             if (kind == "battlefield") { project_->loadMapEdits(); id = project_->mapEdits()->scenarioForModel(id); }
             if (kind == "town") {
@@ -92,7 +104,8 @@ void MainWindow::navigateTo(const EditLocation &location) {
                         }
             }
             clear("scenarioSearch"); destination = list("scenarioList", id);
-            if (auto pages = findChild<QStackedWidget *>("scenarioPages")) pages->setCurrentIndex(kind == "scenarios" ? 1 : 0);
+            if (auto tabs = findChild<QTabBar *>("scenarioNavigation")) tabs->setCurrentIndex(kind == "scenarioSettings" ? 3 : kind == "scenarios" ? 1 : 0);
+            if (kind == "scenarioSettings") destination=findChild<QWidget *>("scenarioStartingTime");
             if (kind == "scenarios" && location.child >= 0) {
                 if (auto squads = findChild<QListWidget *>("scenarioSquads")) {
                     squads->setCurrentRow(location.child); destination = squads;
@@ -112,11 +125,16 @@ void MainWindow::navigateTo(const EditLocation &location) {
                 combo("combatAnimationVariant", location.child >> 1);
             }
         } else if (kind == "animation") destination = combo("animationClass", id);
-        else if (kind == "portrait") { clear("portraitSearch"); destination = list("portraitClasses", id); }
+        else if (kind == "portrait") {
+            clear("portraitSearch"); destination = list("portraitClasses", id);
+            if(location.child>=0) if(auto variant=findChild<QComboBox *>("portraitVariant")) variant->setCurrentIndex(location.child);
+        }
         else if (kind == "army" || kind == "armyClass") {
             clear("armySearch");
-            if (kind == "army") { combo("armyAtlas", id); destination = list("armyModels", location.child); }
-            else destination = list("armyModels", id, Qt::UserRole + 1);
+            if (kind == "army") {
+                if(auto mode=findChild<QComboBox *>("armyViewMode")) mode->setCurrentIndex(1);
+                combo("armyAtlas", id); destination = list("armyModels", location.child);
+            } else if(auto editor=findChild<ArmyEditor *>()) {editor->selectClass(id);destination=editor;}
         } else if (kind == "sprites") destination = list("spriteAssets", location.key);
         else if (kind == "combatSprite") {
             clear("combatSearch");
@@ -144,6 +162,8 @@ void MainWindow::navigateTo(const EditLocation &location) {
         }
         if (!destination) throw Error("This change has no editable record in the current workspace.");
         reveal(destination);
+        for (auto parent=destination->parentWidget();parent;parent=parent->parentWidget())
+            if (auto scroll=qobject_cast<QScrollArea *>(parent)) scroll->ensureWidgetVisible(destination);
         if (location.key == "description")
             editDescription(this, project_.get(), undo_, kind,
                             kind == "classes" ? project_->classDescriptionIndex(id) : id,
@@ -177,6 +197,11 @@ void MainWindow::showUses() {
             const int id = icons->currentItem()->data(Qt::UserRole).toInt();
             query = {id & 0x200 ? "consumables" : "items", id & 0x1ff};
         }
+    }
+    if (query.editor.isEmpty()) {
+        auto models=findChild<QListWidget *>("armyModels"); auto atlas=findChild<QComboBox *>("armyAtlas");
+        if(models && atlas && models->isVisible() && models->currentItem())
+            query={"armySprite",atlas->currentIndex(),-1,models->currentItem()->data(Qt::UserRole).toString()};
     }
     if (query.editor.isEmpty()) {
         report("Select a class, item, shop or sprite, then click ? to find where it is used.");

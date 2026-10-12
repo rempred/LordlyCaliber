@@ -5952,3 +5952,11 @@ source IDs below30 and returns max(0,limit-count). The menu duplicates the count
 the Legion confirmation compares the whole group's size and formats remaining
 and used slots. All three values must agree. The existing 50 runtime objects
 cover30 player and20 non-player sources; no Legion-array capacity changes.
+
+
+Reference-ROM review loads a separate Project snapshot and compares semantic rows,
+resource contents and resolved artwork. It does not rebase or apply a sparse project
+manifest onto retail, which would lose inherited source edits. Native compressed
+sprite members are compared before SpriteObject interpretation because not every
+member uses an editable sprite format. The original source-ROM report remains the
+export-delta view. Both comparisons exclude relocation-only name pointer changes.

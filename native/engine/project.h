@@ -69,7 +69,8 @@ class Project {
     void setValue(Table table, int row, int field, int value);
     void replaceBytes(Table table, int row, const QByteArray &bytes);
     int changedRecords() const;
-    ChangeReport changeReport() const;
+    ChangeReport changeReport(const Project *reference = nullptr) const;
+    ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
     void applyManifest(const QJsonObject &object);
     void importLegacy(const QJsonObject &object);

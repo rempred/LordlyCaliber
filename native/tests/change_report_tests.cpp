@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <algorithm>
 using namespace lordly;
 class ChangeReportTests : public QObject {
     Q_OBJECT
@@ -22,6 +23,41 @@ class ChangeReportTests : public QObject {
         throw Error("Missing test field");
     }
   private slots:
+    void referenceRomComparison() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto retail=Rom::open(path); auto clean=Project::fromRom(retail,catalog());
+            QVERIFY(clean.compareWithRom(retail).entries.isEmpty());
+            auto inherited=retail.bytes();
+            put16(inherited,clean.record(Table::Items,1).romOffset+8,4321);
+            put8(inherited,0x239cd2,quint8(-3));
+            put8(inherited,Training::tableOffset+6*24+2,0);
+            Rom::updateChecksum(inherited);
+            auto project=Project::fromRom(Rom::fromBytes(inherited,"edited.z64"),catalog());
+            QVERIFY(project.changeReport().entries.isEmpty());
+            project.setValue(Table::Items,1,field(Table::Items,"str"),-7);
+            const auto before=project.manifest(); const auto report=project.compareWithRom(retail);
+            bool item=false,tactic=false,training=false;
+            for(const auto &row:report.entries) {
+                if(row.location.editor=="items" && row.location.id==1) {
+                    item=true; QVERIFY(row.details.join(" ").contains("4321")); QVERIFY(row.details.join(" ").contains("-7"));
+                }
+                tactic |= row.location.editor=="rule" && row.location.key=="tacticLeader" && row.details.join(" ").contains("-3");
+                training |= row.location.editor=="training" && row.location.id==7 && row.location.child==0;
+            }
+            QVERIFY(item);QVERIFY(tactic);QVERIFY(training);QCOMPARE(project.manifest(),before);
+            QCOMPARE(report.entries.size(),3); // Relocation, unedited art and data must not become phantom changes.
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
+    void trainingClassSizeValidation() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadTraining();
+        auto classes=project.classData(); project.training()->validate(classes,int(project.records(Table::Items).size()));
+        for(int id=1;id<classes.entries().size();++id) {
+            auto entry=classes.entries()[id];put8(entry.record,ClassData::unitSizeOffset,2);classes.set(id,entry);
+        }
+        QVERIFY_THROWS_EXCEPTION(Error,project.training()->validate(classes,int(project.records(Table::Items).size())));
+    }
     void referenceInspection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -63,6 +99,16 @@ class ChangeReportTests : public QObject {
             for (const auto &use : findProjectUses(project, "combatSprite", -1, binding))
                 spriteUse |= use.location.editor == "combatAnimation" && use.location.id == 2;
             QVERIFY(spriteUse);
+            const int added=project.appendClass(2,"Army reference copy");project.loadArmyArtwork();
+            const auto classes=project.classData();const int atlas=ArmyArtwork::classLane(classes.entries()[2])*2;
+            const int model=ArmyArtwork::classModel(classes.entries()[2]);
+            auto usesArmy=[&](int model,int cls) {
+                const auto uses=findProjectUses(project,"armySprite",atlas,QString::number(model));
+                return std::any_of(uses.begin(),uses.end(),[&](const auto &use){return use.location.id==cls;});
+            };
+            QVERIFY(usesArmy(model,2));QVERIFY(usesArmy(model,added));
+            auto army=*project.armyArtwork();const int copy=army.isolateClass(classes,added);QVERIFY(copy!=model);
+            project.setArmyArtwork(army.json());QVERIFY(!usesArmy(model,added));QVERIFY(usesArmy(copy,added));
             QTemporaryDir dir; project.saveFolder(dir.filePath("project"));
             auto reopened = Project::fromRom(project.rom(), catalog());
             reopened.applyManifest(Project::readProject(dir.filePath("project")));

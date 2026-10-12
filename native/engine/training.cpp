@@ -11,6 +11,7 @@ Training Training::load(const Rom &rom) {
     if(rom.revision()) throw Error("Training editing requires US revision zero.");
     Training result;
     result.table_=rom.bytes().mid(tableOffset,tableSize);
+    for(const auto &entry:ClassData::load(rom).entries()) result.classSizes_+=entry.record[ClassData::unitSizeOffset];
     const auto enemies=ScenarioResources::load(rom).enemyData();
     const auto nodes=StoryRoutes(rom).nodes;
     for(int node=1;node<=48;++node) for(int slot=0;slot<5;++slot) {
@@ -35,9 +36,12 @@ bool Training::modified() const {
     return false;
 }
 void Training::validate(const ClassData &classes,int itemCount) const {
+    bool sizesChanged=classes.entries().size()<classSizes_.size();
+    for(int id=0;id<std::min(classes.entries().size(),classSizes_.size());++id)
+        sizesChanged|=classes.entries()[id].record[ClassData::unitSizeOffset]!=classSizes_[id];
     for(int i=0;i<rows_.size();++i) {
         const auto &row=rows_[i];
-        if(row.json()==originals_[i].json()) continue;
+        if(!sizesChanged && row.json()==originals_[i].json()) continue;
         if(row.price<0 || row.price>255) throw Error("Training price factor must be 0–255.");
         const auto members=squadMembers(row.squad);
         validateSquadFormation(members,classes);

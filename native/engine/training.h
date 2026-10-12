@@ -21,6 +21,6 @@ class Training {
     static int fee(int level, int price);
   private:
     QVector<TrainingOpponent> rows_, originals_;
-    QByteArray table_;
+    QByteArray table_, classSizes_;
 };
 }

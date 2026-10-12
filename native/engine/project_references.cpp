@@ -135,6 +135,14 @@ QVector<ProjectChange> findProjectUses(Project p, const QString &kind, int id, c
                 {"combatAnimation", asset.provenance["classId"].toInt(), asset.provenance["bodyFlags"].toInt()}};
         return result;
     }
+    if (kind == "armySprite") {
+        p.loadArmyArtwork(); bool valid=false; const int model=key.toInt(&valid);
+        if(!valid) throw Error("Choose an army sprite model.");
+        for(int cls:p.armyArtwork()->consumers(p.classData(),id,model))
+            result << ProjectChange{"Army artwork",p.record(Table::Classes,cls).name,
+                {QString("Uses %1 / model %2. Shared pixel edits affect these classes until a class receives an independent copy.").arg(ArmyArtwork::specs()[id].label).arg(model)}, {"armyClass",cls}};
+        return result;
+    }
     if (kind == "combatSprite") {
         p.loadCombatArtwork();
         const auto &binding = p.combatArtwork()->binding(key);

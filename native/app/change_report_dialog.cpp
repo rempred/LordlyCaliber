@@ -18,13 +18,13 @@
 #include <QtConcurrent>
 
 namespace lordly {
-ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDialog(parent) {
-    sourcePath_ = snapshot.rom().sourcePath();
+ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDialog(parent), snapshot_(std::move(snapshot)) {
+    sourcePath_ = snapshot_.rom().sourcePath();
     setObjectName("projectChanges");
     setWindowTitle("Review project changes");
     resize(1020, 720);
     auto layout = new QVBoxLayout(this);
-    auto status = new QLabel("Collecting project changes…");
+    auto status = status_ = new QLabel("Collecting project changes…");
     status->setObjectName("changeReportStatus");
     layout->addWidget(status);
     auto search = new QLineEdit;
@@ -54,20 +54,21 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
         const auto row = entries_->currentItem();
         if (!row) return;
         const auto location = row->data(0, Qt::UserRole).value<EditLocation>();
+        if (location.editor.isEmpty()) return;
         accept();
         emit editRequested(location);
     };
     connect(jump, &QPushButton::clicked, this, open);
     connect(entries_, &QTreeWidget::itemDoubleClicked, this, [open] { open(); });
     connect(entries_, &QTreeWidget::currentItemChanged, this, [this, jump](QTreeWidgetItem *row) {
-        jump->setEnabled(row != nullptr);
+        jump->setEnabled(row && !row->data(0, Qt::UserRole).value<EditLocation>().editor.isEmpty());
         if (!row) return;
         text_->moveCursor(QTextCursor::Start);
         text_->find(row->text(1));
     });
-    auto copy = buttons->addButton("Copy report", QDialogButtonBox::ActionRole);
+    auto copy = copy_ = buttons->addButton("Copy report", QDialogButtonBox::ActionRole);
     copy->setObjectName("copyChangeReport");
-    auto save = buttons->addButton("Save text…", QDialogButtonBox::ActionRole);
+    auto save = save_ = buttons->addButton("Save text…", QDialogButtonBox::ActionRole);
     save->setObjectName("saveChangeReport");
     copy->setEnabled(false);
     save->setEnabled(false);
@@ -100,19 +101,41 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
             const auto row = entries_->topLevelItem(i);
             row->setHidden(!row->data(0, Qt::UserRole + 1).toString().contains(search->text(), Qt::CaseInsensitive));
         }
+        if (entries_->currentItem() && entries_->currentItem()->isHidden()) entries_->setCurrentItem(nullptr);
         text_->moveCursor(QTextCursor::Start);
         find();
     });
+    compare_ = buttons->addButton("Compare with retail ROM…", QDialogButtonBox::ActionRole);
+    compare_->setObjectName("compareRetailRom");
+    compare_->setToolTip("Include edits already present in the opened ROM by comparing with your unmodified ROM. Neither file is changed.");
+    source_ = buttons->addButton("Use opened ROM", QDialogButtonBox::ActionRole);
+    source_->setObjectName("compareSourceRom");
+    connect(compare_, &QPushButton::clicked, this, [this] {
+        const auto path=QFileDialog::getOpenFileName(this,"Choose an unmodified comparison ROM",{},"Nintendo 64 ROM (*.v64 *.z64 *.n64)");
+        if (!path.isEmpty()) compareWithRom(path);
+    });
+    connect(source_, &QPushButton::clicked, this, [this] { compareWithRom({}); });
+    compareWithRom({});
+}
+void ChangeReportDialog::compareWithRom(const QString &path) {
+    if (property("collecting").toBool()) return;
+    setProperty("collecting",true); ready_=false;
+    comparisonPath_=path;
+    copy_->setEnabled(false); save_->setEnabled(false); compare_->setEnabled(false); source_->setEnabled(false);
+    entries_->clear(); text_->clear();
+    findChild<QLineEdit *>("changeReportSearch")->clear();
+    status_->setText(path.isEmpty() ? "Collecting project changes…" : "Comparing editable data and artwork with the reference ROM…");
     struct Result {
         ChangeReport report;
         QString error;
     };
     auto watcher = new QFutureWatcher<Result>(this);
-    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, status, copy, save] {
+    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher] {
+        setProperty("collecting",false); compare_->setEnabled(true); source_->setEnabled(!comparisonPath_.isEmpty());
         const auto result = watcher->result();
         watcher->deleteLater();
         if (!result.error.isEmpty()) {
-            status->setText("Could not collect project changes.");
+            status_->setText("Could not collect project changes.");
             text_->setPlainText(result.error);
             return;
         }
@@ -125,16 +148,16 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
             row->setToolTip(1, entry.details.join('\n'));
         }
         text_->moveCursor(QTextCursor::Start);
-        status->setText(
+        status_->setText(
             QString("%1 changed entries · compared with %2. Select an entry to review or open it.")
                 .arg(result.report.entries.size()).arg(result.report.source));
         ready_ = true;
-        copy->setEnabled(true);
-        save->setEnabled(true);
+        copy_->setEnabled(true);
+        save_->setEnabled(true);
     });
-    watcher->setFuture(QtConcurrent::run([snapshot = std::move(snapshot)] {
+    watcher->setFuture(QtConcurrent::run([snapshot = snapshot_, path] {
         try {
-            return Result{snapshot.changeReport(), {}};
+            return Result{path.isEmpty() ? snapshot.changeReport() : snapshot.compareWithRom(Rom::open(path)), {}};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
         }
@@ -144,6 +167,8 @@ void ChangeReportDialog::saveReport(const QString &path) const {
     if (!ready_)
         throw Error("Wait for the report to finish before saving");
     const QFileInfo target(path), source(sourcePath_);
+    if (!comparisonPath_.isEmpty() && (target.absoluteFilePath().compare(QFileInfo(comparisonPath_).absoluteFilePath(), Qt::CaseInsensitive)==0 || (!target.canonicalFilePath().isEmpty() && target.canonicalFilePath().compare(QFileInfo(comparisonPath_).canonicalFilePath(),Qt::CaseInsensitive)==0)))
+        throw Error("Choose a report path separate from the comparison ROM");
     if (!sourcePath_.isEmpty() &&
         (target.absoluteFilePath().compare(source.absoluteFilePath(), Qt::CaseInsensitive) == 0 ||
          (!target.canonicalFilePath().isEmpty() &&

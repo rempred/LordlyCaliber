@@ -785,3 +785,17 @@ class/equipment growth handles one level-up and XP resets to zero. This optional
 feature requires 8 MiB RAM. Offline instruction tests cover settlement calls,
 member exclusions, register/record preservation, loading bounds and coexistence
 with Goth rewards. Complete emulator mission completion remains untested.
+
+
+Project changes can compare with the opened ROM or a separately chosen retail ROM.
+The latter includes supported edits already baked into an edited source, as well
+as current project edits. Reports compare decoded artwork and semantic records;
+relocated name pointers are not changes. Unknown code/data and the separate Save
+Editor document are not interpreted in this report. Comparison never rewrites either
+ROM. Named rule, scenario time/reward, training opponent, dialogue and art entries
+open their editing controls. The ? lookup also lists consumers of shared army-board
+sprites; an independent class copy stops appearing as a user of the old sprite.
+
+Tools groups controls into Battle and squads, Training, Mission rewards, and Display
+and options. Training formations are checked again when a class size changes, even
+if the opponent record itself is untouched.
