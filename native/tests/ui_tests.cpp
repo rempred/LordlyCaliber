@@ -22,6 +22,7 @@
 #include "app/save_army_drag.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_map_editor.h"
+#include "app/squad_route_steps.h"
 #include "engine/squad_members.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_action_editor.h"
@@ -9062,6 +9063,160 @@ class UiTests : public QObject {
         QVERIFY(selectMapObject(editor, MapObject::Squad, 0));
         QVERIFY(editor.grab().save("scenario-map-orders.png"));
     }
+    void scenarioRouteSteps() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            applyEditorTheme(*qApp);
+            auto project=Project::fromRom(Rom::open(path));project.loadScenarios();
+            const auto classes=project.classData();auto model=*project.scenarios();
+            const int key=1;
+            const int first=model.addNode(key,1,classes),second=model.addNode(key,1,classes),third=model.addNode(key,0,classes);
+            const int ca=model.addCondition(key,9,classes)+1,cb=model.addCondition(key,9,classes)+1;
+            for(int row:{first,second,third}) {
+                auto n=model.scenario(key).layout.nodes[row];
+                put8(n,4,quint8(row==first?64:160));put8(n,5,quint8(row==first?80:128));
+                put8(n,17,quint8(row==first?second+4:row==second?third+4:0));
+                model.setNode(key,row,n,classes);
+            }
+            auto deployment=model.scenario(key).layout.deployments[0];put8(deployment,6,quint8(first+4));
+            model.setDeployment(key,0,deployment,classes);model.setRouteGroup(key,1,0,0,classes);model.setRouteGroup(key,2,0,0,classes);
+            project.setScenarios(model.json());const auto original=model.json();
+            QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
+            auto scenarios=editor.findChild<QListWidget *>("scenarioList");
+            for(int i=0;i<scenarios->count();++i)if(scenarios->item(i)->data(Qt::UserRole).toInt()==key)scenarios->setCurrentRow(i);
+            QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+            auto steps=static_cast<SquadRouteSteps *>(editor.findChild<QWidget *>("squadRouteSteps"));QVERIFY(steps && steps->isVisible());
+            auto list=steps->findChild<QListWidget *>("squadSteps");QCOMPARE(list->count(),3);
+            QCOMPARE(steps->route().rows,QVector<int>({first,second,third}));
+            QVERIFY(list->item(0)->text().contains("Next step: Step 2"));
+            auto activate=[&](const char *name,int value) {
+                auto box=steps->findChild<QComboBox *>(name);QVERIFY(box);const int index=box->findData(value);QVERIFY(index>=0);
+                box->setCurrentIndex(index);QVERIFY(QMetaObject::invokeMethod(box,"activated",Q_ARG(int,index)));
+            };
+            activate("squadStepAction",int(SquadBehavior::MoveAndAttack));
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[first],3),1);
+            QCOMPARE(project.scenarios()->scenario(key).layout.nodes[first].mid(10),model.scenario(key).layout.nodes[first].mid(10));
+            undo.undo();QCOMPARE(project.scenarios()->json(),original);undo.redo();
+            // Clicking a numbered marker selects its step without moving or deselecting the squad.
+            auto canvas=editor.findChild<QWidget *>("scenarioMapCanvas");QTest::qWait(60);canvas->repaint();
+            QVERIFY(editor.grab().save("native/build/route-steps-sidebar.png"));
+            const auto beforeClick=project.scenarios()->json();
+            const double scale=(std::min(canvas->width(),canvas->height())-72)/256.;
+            const QPoint badge=(QPointF(canvas->width()/2.,canvas->height()/2.)+QPointF(32,0)*scale+QPointF(21,-20)).toPoint();
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,badge);
+            QCOMPARE(steps->selectedNode(),second);QCOMPARE(project.scenarios()->json(),beforeClick);
+            auto objects=editor.findChild<QListWidget *>("mapObjects");QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(),int(MapObject::Squad));
+            const auto start=project.scenarios()->scenario(key).layout.deployments[0];
+            auto pick=steps->findChild<QPushButton *>("squadStepPick");pick->click();QVERIFY(pick->isChecked());
+            const auto click=canvas->rect().center();
+            const qreal clickScale=(std::min(canvas->width(),canvas->height())-72)/256.;
+            const int expectedX=qRound(128+(click.x()-canvas->width()/2.)/clickScale);
+            const int expectedZ=qRound(128+(click.y()-canvas->height()/2.)/clickScale);
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,click);
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[second],4),expectedX);
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[second],5),expectedZ);
+            QCOMPARE(project.scenarios()->scenario(key).layout.deployments[0],start);
+            QVERIFY(!pick->isChecked());QCOMPARE(steps->selectedNode(),second);
+            pick->click();QTest::keyClick(canvas,Qt::Key_Escape);QVERIFY(!pick->isChecked());
+            pick->click();editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(1);QVERIFY(!pick->isChecked());
+            editor.findChild<QComboBox *>("mapTool")->setCurrentIndex(0);
+            QVERIFY(selectMapObject(editor,MapObject::Site,0));QVERIFY(selectMapObject(editor,MapObject::Squad,0));QCOMPARE(steps->selectedNode(),second);
+            // Adding a step inserts it and retains the existing follow-up; undo restores exact records.
+            const auto beforeAdd=project.scenarios()->json();steps->findChild<QPushButton *>("squadStepAdd")->click();
+            QCOMPARE(list->count(),4);const int added=steps->selectedNode();
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[second],17),added+4);
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[added],17),third+4);
+            undo.undo();QCOMPARE(project.scenarios()->json(),beforeAdd);
+            steps->selectNode(third);activate("squadStepNext",first+4);QCOMPARE(list->count(),3); // loop, no infinite traversal
+            steps->selectNode(first);activate("squadStepWhen",4);activate("squadStepConditionA",ca);activate("squadStepConditionB",cb);
+            activate("squadStepFork",second+4);activate("squadStepNext",third+4);
+            const auto branch=project.scenarios()->json();
+            QVERIFY(list->item(0)->text().contains("A → Step 2; B → Step 3"));
+            QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[first],11),1);
+            const auto nodesBefore=project.scenarios()->scenario(key).layout.nodes;
+            // Other squads sharing this graph cannot be changed silently.
+            auto shared=*project.scenarios();auto other=shared.scenario(key).layout.deployments[2];put8(other,6,quint8(first+4));shared.setDeployment(key,2,other,classes);
+            project.setScenarios(shared.json());scenarios->currentRowChanged(scenarios->currentRow());QVERIFY(selectMapObject(editor,MapObject::Squad,0));steps->selectNode(first);
+            QVERIFY(!steps->findChild<QComboBox *>("squadStepAction")->isEnabled());
+            auto consent=steps->findChild<QCheckBox *>("squadStepShared");QVERIFY(consent->isVisible());consent->setChecked(true);
+            QVERIFY(steps->findChild<QComboBox *>("squadStepAction")->isEnabled());
+            project.setScenarios(branch);scenarios->currentRowChanged(scenarios->currentRow());
+            // Extended original payloads and all hidden destination pairs survive ordinary edits.
+            auto extended=*project.scenarios();auto n=extended.scenario(key).layout.nodes[first];put8(n,13,2);put8(n,14,quint8(ca));put8(n,6,90);put8(n,7,100);
+            extended.setNode(key,first,n,classes);project.setScenarios(extended.json());scenarios->currentRowChanged(scenarios->currentRow());steps->selectNode(first);
+            QVERIFY(!steps->findChild<QComboBox *>("squadStepWhen")->isEnabled());QVERIFY(!steps->findChild<QComboBox *>("squadStepNext")->isEnabled());
+            activate("squadStepAction",int(SquadBehavior::Evade));
+            QCOMPARE(project.scenarios()->scenario(key).layout.nodes[first].mid(6),n.mid(6));
+            project.setScenarios(branch);undo.clear();scenarios->currentRowChanged(scenarios->currentRow());steps->selectNode(first);
+            // A group follower sees its leader's route, but edits stay with the leader.
+            auto grouped=*project.scenarios();grouped.setRouteGroup(key,1,7,5,classes);grouped.setRouteGroup(key,2,7,5,classes);
+            auto leader=grouped.scenario(key).layout.deployments[1];put8(leader,6,quint8(first+4));grouped.setDeployment(key,1,leader,classes);
+            project.setScenarios(grouped.json());scenarios->currentRowChanged(scenarios->currentRow());QVERIFY(selectMapObject(editor,MapObject::Squad,2));
+            QCOMPARE(steps->route().leader,1);QVERIFY(!steps->findChild<QComboBox *>("squadStepAction")->isEnabled());
+            steps->findChild<QPushButton *>("squadStepLeader")->click();QCOMPARE(objects->currentItem()->data(Qt::UserRole+1).toInt(),1);
+            project.setScenarios(branch);scenarios->currentRowChanged(scenarios->currentRow());QVERIFY(selectMapObject(editor,MapObject::Squad,0));steps->selectNode(first);
+            auto scroll=editor.findChild<QScrollArea *>("mapInspectorScroll");scroll->verticalScrollBar()->setValue(0);QTest::qWait(50);
+            QCOMPARE(editor.size(),QSize(1100,800));
+            for(auto box:steps->findChildren<QComboBox *>())if(box->isVisible())QVERIFY(box->height()>=box->sizeHint().height());
+            QVERIFY(editor.grab().save("native/build/route-steps-sidebar.png"));
+            scroll->ensureWidgetVisible(steps->findChild<QComboBox *>("squadStepNext"));QTest::qWait(40);QVERIFY(editor.grab().save("native/build/route-steps-details.png"));
+            QTemporaryDir folder,work;project.saveFolder(folder.path());
+            auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));QCOMPARE(loaded.scenarios()->json(),branch);
+            const auto result=rebuild(project,tools,work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-route-steps-XXXXXX");QVERIFY(output.isValid());
+            const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(project,result,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadScenarios();QCOMPARE(reopened.scenarios()->json(),branch);
+            auto checksum=reopened.rom().bytes();Rom::updateChecksum(checksum);QCOMPARE(checksum,reopened.rom().bytes());
+            const auto &exported=reopened.scenarios()->scenario(key).layout;
+            QJsonArray nativeNodes,nativeConditions;for(const auto &r:exported.nodes)nativeNodes<<QString::fromLatin1(r.toHex());for(const auto &r:exported.conditions)nativeConditions<<QString::fromLatin1(r.toHex());
+            QFile fixture(output.filePath("route-steps.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
+            fixture.write(QJsonDocument(QJsonObject{{"rom",candidate},{"nodes",nativeNodes},{"conditions",nativeConditions},{"first",first+4},{"second",second+4},{"third",third+4},{"conditionA",ca},{"conditionB",cb}}).toJson());fixture.close();
+            QProcess process;process.start("node",{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("route-steps-mips.cjs"),fixture.fileName()});
+            QVERIFY(process.waitForFinished(30000));const auto evidence=process.readAllStandardOutput()+process.readAllStandardError();QVERIFY2(process.exitCode()==0,evidence.constData());qInfo().noquote()<<evidence;
+            output.setAutoRemove(false);qInfo().noquote()<<"Route steps ROM:"<<candidate;
+            // A native hold order can become an editable route, with exact Undo back to its sentinel.
+            model.restore(key);project.setScenarios(model.json());undo.clear();scenarios->currentRowChanged(scenarios->currentRow());
+            QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+            auto create=editor.findChild<QPushButton *>("mapCreateRoute");QVERIFY(create->isVisible());
+            const auto hold=project.scenarios()->json();create->click();QCOMPARE(list->count(),1);
+            steps->findChild<QPushButton *>("squadStepAdd")->click();QCOMPARE(list->count(),2);
+            undo.undo();undo.undo();QCOMPARE(project.scenarios()->json(),hold);
+        } catch(const Error &e){QFAIL(e.what());}
+    }
+    void scenarioScriptedContinuation() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();const auto original=*project.scenarios();
+        QSet<int> checked;
+        for(const auto &scenario:original.entries()) {
+            if(scenario.layout.nodes.isEmpty() || scenario.layout.deployments.isEmpty())continue;
+            for(const auto &condition:scenario.layout.conditions) {
+                const int kind=u8(condition,1);if((kind!=14 && kind!=20) || checked.contains(kind))continue;
+                auto next=original;auto n=scenario.layout.nodes[0];
+                put8(n,10,u8(condition,0));for(int at:{11,12,13,14,15,16})put8(n,at,0);put8(n,17,1);
+                next.setNode(scenario.key,0,n,project.classData());auto d=scenario.layout.deployments[0];put8(d,6,4);
+                next.setDeployment(scenario.key,0,d,project.classData());project.setScenarios(next.json());
+                const auto before=project.scenarios()->json();
+                SquadRouteSteps widget(&project,[&](const Scenarios &edited,const QString &){project.setScenarios(edited.json());});
+                widget.refresh(scenario.key,0);widget.findChild<QCheckBox *>("squadStepShared")->setChecked(true);
+                QVERIFY(!widget.findChild<QComboBox *>("squadStepWhen")->isEnabled());
+                QVERIFY(!widget.findChild<QComboBox *>("squadStepNext")->isEnabled());
+                QCOMPARE(project.scenarios()->json(),before);
+                auto action=widget.findChild<QComboBox *>("squadStepAction");QVERIFY(action->isEnabled());
+                const int index=action->findData(int(SquadBehavior::MoveAndAttack));action->setCurrentIndex(index);
+                QVERIFY(QMetaObject::invokeMethod(action,"activated",Q_ARG(int,index)));
+                QCOMPARE(project.scenarios()->scenario(scenario.key).layout.nodes[0].mid(10),n.mid(10));
+                QCOMPARE(project.scenarios()->scenario(scenario.key).layout.conditions,scenario.layout.conditions);
+                checked.insert(kind);
+            }
+        }
+        QVERIFY(checked.contains(20));
+        // The retail resolver also supports kind 14, absent from this ROM's condition corpus.
+        // Its special routing must be recognized from condition context even with zero extension bytes.
+        Eset context;QByteArray predicate(10,0);put8(predicate,0,1);put8(predicate,1,14);context.conditions<<predicate;
+        QByteArray n(18,0);put8(n,0,4);put8(n,10,1);put8(n,17,5);
+        QVERIFY(!SquadRoute::extended(n));QVERIFY(SquadRoute::extended(n,&context));
+    }
     void scenarioOrderDrafts() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();
@@ -9071,6 +9226,7 @@ class UiTests : public QObject {
         scripted.setNode(1,node,record,project.classData());project.setScenarios(scripted.json());
         QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
         QVERIFY(selectMapObject(editor,MapObject::Squad,0));
+        editor.findChild<QCheckBox *>("mapReplaceRoute")->setChecked(true);
         auto orders=editor.findChild<QWidget *>("mapSquadOrders");auto command=orders->findChild<QComboBox *>("squadCommand");
         auto x=orders->findChild<QSpinBox *>("squadCommandX"),z=orders->findChild<QSpinBox *>("squadCommandZ");
         auto replace=orders->findChild<QPushButton *>("squadCommandApply");

@@ -19,6 +19,7 @@ enum class MapObject { Squad, Waypoint, Site, Treasure, City, Peak };
 class MapCanvas;
 class ScenarioWorldEditor;
 class SquadOrderEditor;
+class SquadRouteSteps;
 class ScenarioSquadPanel;
 class ScenarioMapEditor : public QWidget {
   public:
@@ -48,6 +49,9 @@ class ScenarioMapEditor : public QWidget {
     QWidget *coordinates_;
     ScenarioWorldEditor *world_;
     SquadOrderEditor *orders_;
+    SquadRouteSteps *steps_;
+    QCheckBox *replaceOrders_;
+    QPushButton *createRoute_;
     ScenarioSquadPanel *squadPanel_;
     QTabWidget *squadTabs_;
     QLineEdit *objectSearch_;

@@ -1,5 +1,6 @@
 #include "app/scenario_map_editor.h"
 #include "app/squad_order_editor.h"
+#include "app/squad_route_steps.h"
 #include "app/scenario_squad_panel.h"
 #include "app/scenario_world_editor.h"
 #include "app/view_position.h"
@@ -92,6 +93,12 @@ class MapCanvas : public QWidget {
     QVector<QPair<int, QRectF>> labelHits;
     QVector<QPair<int, int>> edges;
     QVector<QPointF> route;
+    struct StepMarker { int row; QString number; QPointF position; };
+    QVector<StepMarker> stepMarkers;
+    QVector<int> routeRows;
+    QVector<QPair<int,QRectF>> stepHits;
+    int selectedStep = -1;
+    std::function<void(int)> stepSelected;
     bool routeReached = false;
     std::optional<QPointF> destination;
     bool draftRoute = false;
@@ -164,6 +171,7 @@ class MapCanvas : public QWidget {
   protected:
     void paintEvent(QPaintEvent *) override {
         labelHits.clear();
+        stepHits.clear();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         p.fillRect(rect(), QColor("#141e29"));
@@ -298,6 +306,7 @@ class MapCanvas : public QWidget {
         }
         for (int i : drawOrder) {
             const auto &m = markers[i];
+            if(m.kind==MapObject::Waypoint && routeRows.contains(m.row))continue;
             if (!m.position)
                 continue;
             const QPointF center = markerPixel(i);
@@ -360,6 +369,25 @@ class MapCanvas : public QWidget {
                     QRectF(mouse_ - QPointF(radius, radius), QSizeF(radius * 2, radius * 2)));
             p.restore();
         }
+        // Route badges sit above ordinary labels and select a step without leaving its squad.
+        QVector<QRectF> badgeAreas;
+        for(const auto &step:stepMarkers) {
+            const auto anchor=toPixel(step.position);
+            if(!rect().adjusted(-15,-15,15,15).contains(anchor.toPoint()))continue;
+            const qreal width=std::max(24,p.fontMetrics().horizontalAdvance(step.number)+12);
+            QRectF badge;
+            for(int attempt=0;attempt<48;++attempt){
+                const qreal dy=(attempt%2?-1:1)*((attempt+1)/2)*27;
+                badge=QRectF(QPointF(std::clamp(anchor.x()+9,4.,this->width()-width-4),
+                                    std::clamp(anchor.y()-32+dy,4.,qreal(height()-54))),QSizeF(width,24));
+                if(std::none_of(badgeAreas.begin(),badgeAreas.end(),[&](const QRectF &r){return r.intersects(badge);}))break;
+            }
+            badgeAreas<<badge;stepHits<<qMakePair(step.row,badge);
+            p.setPen(QPen(QColor("#6de4ff"),1.5));p.drawLine(anchor,badge.center());
+            p.setBrush(step.row==selectedStep?QColor("#fff2a8"):QColor("#263844"));
+            p.drawRoundedRect(badge,5,5);p.setPen(step.row==selectedStep?QColor("#241c10"):QColor("#ffffff"));
+            p.drawText(badge,Qt::AlignCenter,step.number);
+        }
         p.setPen(QColor("#bdd0dc"));
         p.drawText(QRect(10, height() - 25, width() - 20, 20),
                    "X →   Z ↓     Wheel: zoom · Right-drag: pan");
@@ -404,6 +432,8 @@ class MapCanvas : public QWidget {
         // Labels are painted over markers. Resolve the topmost visible label
         // first, including labels displaced to avoid crowded icons. A label
         // click selects only; dragging the marker still moves the object.
+        for(auto i=stepHits.crbegin();i!=stepHits.crend();++i)
+            if(i->second.contains(press_)){cancelDrag();if(stepSelected)stepSelected(i->first);update();return;}
         for (auto i = labelHits.crbegin(); i != labelHits.crend(); ++i)
             if (i->second.contains(press_) && i->first >= 0 && i->first < markers.size()) {
                 cancelDrag();
@@ -771,10 +801,30 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     summary_->setTextFormat(Qt::PlainText);
     summary_->setWordWrap(true);
     fields->addWidget(summary_);
+    auto ordersPage = new QWidget; ordersPage->setObjectName("mapSquadOrders");
+    auto ordersLayout = new QVBoxLayout(ordersPage); ordersLayout->setContentsMargins(0,0,0,0);
+    ordersLayout->setAlignment(Qt::AlignTop);
+    steps_=new SquadRouteSteps(project_,commit_);ordersLayout->addWidget(steps_);
+    steps_->advanced=[this](int row){editFields_(MapObject::Waypoint,row);};
+    steps_->selectLeader=[this](int row){selectSquad(row);};
+    replaceOrders_=new QCheckBox("Replace entire route with one command…");
+    replaceOrders_->setObjectName("mapReplaceRoute");ordersLayout->addWidget(replaceOrders_);
     orders_ = new SquadOrderEditor(project_, commit_);
-    orders_->setObjectName("mapSquadOrders");
+    orders_->setObjectName("mapSimpleOrders");ordersLayout->addWidget(orders_);
+    createRoute_=new QPushButton("Create step list from current order");createRoute_->setObjectName("mapCreateRoute");ordersLayout->addWidget(createRoute_);
+    connect(createRoute_,&QPushButton::clicked,this,[this]{
+        const int selected=objects_->currentRow();
+        if(selected<0 || canvas_->markers[selected].kind!=MapObject::Squad)return;
+        const int squad=canvas_->markers[selected].row;
+        try {
+            auto next=*project_->scenarios();
+            next.setSquadCommand(key_,squad,{SquadBehavior::Guard},project_->classData());
+            commit_(next,"Create squad route steps");
+        } catch(const Error &e){notice_->setText(QString::fromUtf8(e.what()));}
+    });
+    connect(replaceOrders_,&QCheckBox::toggled,this,[this](bool on){orders_->setVisible(on || steps_->route().rows.isEmpty());});
     squadTabs_=new QTabWidget;squadTabs_->setObjectName("mapSquadTabs");
-    squadTabs_->addTab(orders_,"Orders");
+    squadTabs_->addTab(ordersPage,"Orders");
     squadPanel_=new ScenarioSquadPanel(project_,commit_,"mapSquad");
     squadTabs_->addTab(squadPanel_,"Members and supplies");fields->addWidget(squadTabs_);squadTabs_->hide();
     orders_->selectLeader=[this](int row){selectSquad(row);};
@@ -782,11 +832,11 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     routePreview_->setObjectName("mapTerrainRoute");
     routePreview_->setWordWrap(true);
     routePreview_->setTextFormat(Qt::PlainText);
-    static_cast<QVBoxLayout *>(orders_->layout())->addWidget(routePreview_);
-    auto legend=new QLabel("Gold: planned route · Orange: partial route · Blue diamond: destination · Dashed: scripted order links");
-    legend->setWordWrap(true);legend->setObjectName("mapRouteLegend");static_cast<QVBoxLayout *>(orders_->layout())->addWidget(legend);
+    ordersLayout->addWidget(routePreview_);
+    auto legend=new QLabel("Numbers: route steps · Gold: planned route · Orange: partial route · Dashed: scripted links. Repeated numbers show possible positions after different branches.");
+    legend->setWordWrap(true);legend->setObjectName("mapRouteLegend");ordersLayout->addWidget(legend);
     routePreview_->hide();
-    orders_->enableMapPicking([this, addTreasure](bool on) {
+    auto beginPicking=[this, addTreasure](bool on) {
         if (on) {
             addTreasure->setChecked(false);
             tool_->setCurrentIndex(0);
@@ -796,15 +846,20 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         canvas_->pickingDestination = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
         notice_->setText(on ? "Click a destination for this squad. Escape cancels. The squad stays selected." : "");
-    });
-    canvas_->cancelDestination = [this] { orders_->cancelPick(); };
+    };
+    orders_->enableMapPicking([this,beginPicking](bool on){if(on)steps_->cancelPick();beginPicking(on);});
+    steps_->picking=[this,beginPicking](bool on){if(on)orders_->cancelPick();beginPicking(on);};
+    canvas_->cancelDestination = [this] { orders_->cancelPick();steps_->cancelPick(); };
     canvas_->destinationPicked = [this](QPointF point) {
         if (point.x() < 1 || point.x() > 255 || point.y() < 1 || point.y() > 255) {
             notice_->setText("Choose a destination inside the mission map.");
             return;
         }
-        orders_->setDestination(QPoint(qRound(point.x()), qRound(point.y())));
+        const QPoint position(qRound(point.x()),qRound(point.y()));
+        if(steps_->findChild<QPushButton *>("squadStepPick")->isChecked())steps_->setDestination(position);
+        else orders_->setDestination(position);
     };
+    canvas_->stepSelected=[this](int row){steps_->selectNode(row);};
     cityInspector_ = new QWidget;
     auto cityFields = new QHBoxLayout(cityInspector_);
     cityFields->setContentsMargins(0, 0, 0, 0);
@@ -982,8 +1037,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
     connect(tool_, &QComboBox::currentIndexChanged, this,
             [this, addTreasure, boundaryToggle](int mode) {
-                if (mode)
-                    orders_->cancelPick();
+                if (mode) { orders_->cancelPick();steps_->cancelPick(); }
                 canvas_->cancelDrag();
                 canvas_->brushMode = mode < 4 ? mode : 0;
                 cityTools_->setVisible(mode == 5);
@@ -1063,7 +1117,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     };
     connect(addTreasure, &QPushButton::toggled, this, [this](bool on) {
         if (on) {
-            orders_->cancelPick();
+            orders_->cancelPick();steps_->cancelPick();
             tool_->setCurrentIndex(0);
         }
         canvas_->placing = on;
@@ -1124,6 +1178,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         if(loading_)return;const int row=objects_->currentRow();
         if(row>=0 && row<canvas_->markers.size() && canvas_->markers[row].kind==MapObject::Squad)updateRoutePreview(canvas_->markers[row].row);
     };
+    steps_->stateChanged=orders_->stateChanged;
     connect(fields_, &QPushButton::clicked, this, [this] {
         const int row = objects_->currentRow();
         if (row >= 0) {
@@ -1134,6 +1189,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
 }
 void ScenarioMapEditor::refresh(int key) {
     orders_->cancelPick();
+    steps_->cancelPick();
     const ViewPosition keepView(this, key_ == key);
     world_->refresh(key);
     if (key < 1) {
@@ -1460,6 +1516,12 @@ void ScenarioMapEditor::select(int row) {
     squadTabs_->setVisible(squad);
     squadPanel_->refresh(squad?key_:-1,squad?canvas_->markers[row].row:-1);
     orders_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
+    steps_->refresh(squad ? key_ : -1, squad ? canvas_->markers[row].row : -1);
+    replaceOrders_->setVisible(!steps_->route().rows.isEmpty());
+    orders_->setVisible(steps_->route().rows.isEmpty() || replaceOrders_->isChecked());
+    createRoute_->setVisible(squad && steps_->route().rows.isEmpty() &&
+        u8(project_->scenarios()->scenario(key_).layout.deployments[canvas_->markers[row].row],6)==1 &&
+        steps_->route().leader==canvas_->markers[row].row);
     updateRoutePreview(squad ? canvas_->markers[row].row : -1);
     cityInspector_->setVisible(city);
     const bool worldObject = valid && (canvas_->markers[row].kind == MapObject::Site ||
@@ -1550,6 +1612,7 @@ void ScenarioMapEditor::select(int row) {
 }
 void ScenarioMapEditor::updateRoutePreview(int squad) {
     canvas_->route.clear();
+    canvas_->stepMarkers.clear();canvas_->stepHits.clear();canvas_->routeRows.clear();canvas_->selectedStep=steps_->selectedNode();
     canvas_->routeReached = false;canvas_->destination.reset();canvas_->draftRoute=false;
     routePreview_->setVisible(squad >= 0);
     routePreview_->clear();
@@ -1558,7 +1621,7 @@ void ScenarioMapEditor::updateRoutePreview(int squad) {
         try {
             if(draft){scenarios.setSquadCommand(key_,squad,*draft,project_->classData());canvas_->draftRoute=true;}
             const auto command=draft?draft:scenarios.squadCommand(key_,squad);
-            if(command && int(command->behavior)>=int(SquadBehavior::Move)) {
+            if(command && int(command->behavior)>=int(SquadBehavior::Move) && (draft || steps_->route().rows.isEmpty())) {
                 const auto &map=maps_[key_];const auto world=map.placement(command->x,command->z);
                 if(world)canvas_->destination=QPointF((world->x()-map.bounds.left())*256/map.bounds.width(),(world->y()-map.bounds.top())*256/map.bounds.height());
             }
@@ -1566,6 +1629,39 @@ void ScenarioMapEditor::updateRoutePreview(int squad) {
             canvas_->route=preview.points;canvas_->routeReached=preview.reachable;
             routePreview_->setText((draft?"Pending order preview — not applied\n":"")+preview.message+"\n"+preview.detail);
             routePreview_->setToolTip("Gold line: planned terrain route. Dashed lines: order connections.");
+            const auto &s=project_->scenarios()->scenario(key_);const auto &route=steps_->route();const auto &map=maps_[key_];
+            if(route.leader>=0 && !route.rows.isEmpty()) {
+                canvas_->routeRows=route.rows;
+                auto position=[&](int x,int z)->std::optional<QPointF>{
+                    const auto p=map.placement(x,z);if(!p)return {};
+                    return QPointF((p->x()-map.bounds.left())*256/map.bounds.width(),(p->y()-map.bounds.top())*256/map.bounds.height());
+                };
+                struct Visit{int id;std::optional<QPointF> at;};
+                const auto &d=s.layout.deployments[route.leader];
+                QList<Visit> pending{{u8(d,6),position(u8(d,3),u8(d,4))}};
+                QSet<QString> seen,badges;
+                while(!pending.isEmpty()) {
+                    const auto visit=pending.takeFirst();const int row=visit.id-4;
+                    if(!route.rows.contains(row))continue;
+                    const QString identity=QString("%1:%2:%3").arg(row).arg(visit.at?visit.at->x():-1).arg(visit.at?visit.at->y():-1);
+                    if(seen.contains(identity))continue;seen.insert(identity);
+                    const auto &n=s.layout.nodes[row];auto at=visit.at;
+                    auto badge=[&](std::optional<QPointF> p,QString number){
+                        if(!p)return;const QString key=number+QString(":%1:%2").arg(p->x()).arg(p->y());
+                        if(!badges.contains(key)){badges.insert(key);canvas_->stepMarkers<<MapCanvas::StepMarker{row,number,*p};}
+                    };
+                    if(u8(n,1)==1) {
+                        for(int offset:{4,6,8}) {
+                            if(!u8(n,offset))break;at=position(u8(n,offset),u8(n,offset+1));
+                            const QString suffix=u8(n,6)?QString(QChar('a'+(offset-4)/2)):QString();
+                            badge(at,QString::number(route.number(visit.id))+suffix);
+                        }
+                    } else badge(at,QString::number(route.number(visit.id)));
+                    // An extended script can choose destinations not modeled here.
+                    if(SquadRoute::extended(n,&s.layout))at.reset();
+                    for(int next:SquadRoute::targets(n,&s.layout))pending<<Visit{next,at};
+                }
+            }
         } catch(const Error &e){routePreview_->setText("Order preview unavailable: "+QString::fromUtf8(e.what()));}
     } else if (squad >= 0) routePreview_->setText("Terrain route preview is unavailable for this map.");
     canvas_->update();

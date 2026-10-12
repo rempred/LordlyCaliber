@@ -1,5 +1,19 @@
 # Feature inventory and completion tracking
 
+Map → selected squad → Orders shows an ordered step list with Action,
+Destination, Continue when and Next step. Select a step or its numbered map badge
+to edit it while retaining the squad selection. Actions, named destinations,
+map-picked positions, existing conditions, AND/OR conditions and branch targets
+apply with Undo. Add follow-up inserts a step without losing the previous link;
+loops and branch targets retain their displayed numbers. Plain Guard orders can
+be converted to a step list. Shared steps require enabling shared editing, and
+group followers link to their leader. Multiple native destinations keep separate
+lettered markers; overlapping stops remain selectable. Unknown extended scripts
+and new trigger authoring remain in Advanced. The special terminal action is
+explicitly labeled Remove squad from field. A mission retains its native limit
+of 16 orders and 16 conditions. Numbers identify steps, not a guaranteed path
+through conditional branches. Terrain previews retain their existing limits.
+
 Review project changes includes a searchable entry list with before/after details
 and Open selected edit navigation. Record links preserve identity through sorted
 tables; town reports show name, population, morale, facility and shop values.

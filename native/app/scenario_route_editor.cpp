@@ -404,7 +404,7 @@ void ScenarioRouteEditor::refresh(int key) {
         input->clear();
         input->addItem("No transition", 0);
         input->addItem("Hold position", 1);
-        input->addItem("Terminal (255)", 255);
+        input->addItem("Remove squad from field (255)", 255);
         for (const auto &n : s.layout.nodes)
             input->addItem(QString("Node %1").arg(u8(n, 0)), u8(n, 0));
     }
@@ -439,7 +439,7 @@ void ScenarioRouteEditor::showSquadRoute() {
     auto target = [](int id) {
         return id == 0     ? QString("wait here")
                : id == 1   ? QString("hold position")
-               : id == 255 ? QString("end route")
+               : id == 255 ? QString("remove squad from field")
                            : QString("<a href=\"%1\">step %1</a>").arg(id);
     };
     QString html = "<b>" + routeSquad_->currentText().toHtmlEscaped() + "</b> starts with " +

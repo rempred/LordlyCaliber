@@ -1,5 +1,45 @@
 # Native Lordly Caliber
 
+## Main-sidebar squad route steps (2026-10-12)
+
+`SquadRoute` builds a deterministic traversal of the selected movement-group
+leader's native order graph, retaining node IDs and a separate display-number
+mapping. It detects other squad/script entrances for shared-edit scope. A zero
+fallback disables the native resolver, including branch A; an extended gate is
+displayed as preserved rather than flattened into an inferred condition.
+
+`SquadRouteSteps` edits a copied `Scenarios` through existing validation and one
+Undo commit per completed change. Action edits retain gate/edge bytes; destination
+edits retain secondary stops. Adding a follow-up inserts a node and rewires only
+the selected ordinary successor, preserving the former continuation. Shared
+steps require explicit shared-edit consent; group followers select their leader.
+No game format or project schema changes are needed. Existing single-command
+replacement is a secondary Map control; Advanced retains raw condition authoring
+and unusual scripts. Internal event keys without editable battlefields can still
+display orders and scenario-point choices.
+
+MapCanvas renders numbered badges after ordinary labels and handles their hits
+before ordinary object selection. Badge clicks retain the squad and select its
+sidebar step. Multi-destination orders use lettered stops; inherited stationary
+positions are propagated along known edges, with repeated numbers at different
+possible branch arrivals. Unknown script transitions do not invent stationary
+locations. Numbered markers represent planned order locations, not simulated
+enemy pursuit or runtime position. Marker selection, map picks, Escape and tool
+changes preserve the existing interaction priority.
+
+The Editor's accepted `func_001237F0.c`, `func_00121F38.c`, `func_00105CC0.c`,
+`func_00121DA8.c` and `func_0012A958.c` establish the gate, publication and terminal
+behavior. Terminal 255 triggers field/member cleanup and is labeled Remove squad
+from field, superseding older UI's ambiguous End route wording. Existing condition
+labels identify their predicate family and known parameters, not inferred story
+events. New trigger payload authoring remains in Advanced.
+Condition kinds 14 and 20 trigger special resolver paths before the ordinary
+gate grammar. Their continuations remain protected even with zero extension
+bytes. Kind 20 is covered using actual original conditions; kind 14 is supported
+by the native resolver but absent from the tested ROM's condition corpus and has
+a synthetic context-recognition check. Shared-reference detection is conservative
+around unknown extended payloads.
+
 ## Treasure edits, ground preservation and shop Cancel (2026-10-10)
 
 Treasure coordinates and item choices now commit independently through the
