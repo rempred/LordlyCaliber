@@ -742,3 +742,15 @@ and fallback boss drops used by the completion screen. Changes apply immediately
 and share Undo with squad edits. Starting time applies on mission entry; suspended
 missions retain their saved clock. Map site selection already edits shared town
 names/populations automatically. Export preserves unknown ESET/town bytes.
+
+### Clock and battle rule controls
+
+Scenario Settings has independent day/night duration percentages, global to all
+missions (25–400%,25-point steps). Tools has named tactic alignment contributions
+(−5..+5 per kill), movement fatigue and rest recovery rates (25–400%). Eligibility,
+night/equipment modifiers, fatigue/HP caps and the native calendar remain. Cycle
+rates are rounded to whole native update intervals; they are not real-time timers.
+All controls apply immediately, support Undo and a Retail reset, and persist in
+Tools schema5. Exports authenticate code owners, assemble in original allocations,
+check exact output, update CRC and reopen. Unknown modified owners are preserved
+and their controls disabled.

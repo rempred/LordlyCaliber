@@ -10030,6 +10030,26 @@ class UiTests : public QObject {
         QTest::qWait(50);
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-commands.png"));
     }
+    void gameRulesEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();project.loadTools();
+        const auto before=project.tools()->json();QUndoStack undo;
+        ToolsEditor tools(&project,&undo,[]{});tools.resize(1100,780);tools.show();
+        auto tactic=tools.findChild<QSpinBox *>("rule_tacticLeader");QVERIFY(tactic);tactic->setValue(-3);
+        QCOMPARE(project.tools()->gameRules().value("tacticLeader"),-3);
+        auto fatigue=tools.findChild<QSpinBox *>("rule_fatigueRate");fatigue->setValue(200);
+        QCOMPARE(project.tools()->gameRules().value("fatigueRate"),200);
+        undo.undo();undo.undo();QCOMPARE(project.tools()->json(),before);undo.redo();undo.redo();
+        ScenarioEditor scenario(&project,&undo,[]{});scenario.resize(1100,780);scenario.show();
+        scenario.findChild<QTabBar *>("scenarioNavigation")->setCurrentIndex(3);
+        auto day=scenario.findChild<QSpinBox *>("rule_dayLength");QVERIFY(day);day->setValue(150);
+        QCOMPARE(project.tools()->gameRules().value("dayLength"),150);
+        undo.undo();QCOMPARE(day->value(),100);undo.redo();QCOMPARE(day->value(),150);
+        tools.findChild<QPushButton *>("ruleReset_tacticLeader")->click();
+        QCOMPARE(project.tools()->gameRules().value("tacticLeader"),1);
+        QTest::qWait(20);QVERIFY(scenario.grab().save("native/build/scenario-clock-rules.png"));
+        QVERIFY(tools.grab().save("native/build/tools-game-rules.png"));
+    }
     void scenarioSettingsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

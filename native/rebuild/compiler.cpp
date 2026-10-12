@@ -1018,6 +1018,27 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);
+    if (p.tools() && p.tools()->gameRules().modified()) {
+        for (const auto &owner : p.tools()->gameRules().builds()) {
+            if (result.image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
+                throw Error("Another rebuild owner overlaps the " + owner.name + " rule");
+            const auto bytes = owner.data
+                ? compiler.compileData(owner.expected, directory, "rule_" + owner.name)
+                : compiler.assembleOwner(owner.source, directory, "rule_" + owner.name,
+                                         owner.address, owner.symbols, true);
+            if (bytes.size() != owner.size || (!owner.expected.isEmpty() && bytes != owner.expected))
+                throw Error("Compiled game rule exceeds or differs from its authored allocation: " + owner.name);
+            result.image.replace(owner.offset, owner.size, bytes);
+            result.report << "Compiled " + owner.name + " rule within its original allocation";
+        }
+        const auto reopenedRules = GameRules::load(Rom::fromBytes(result.image));
+        if (reopenedRules.json() != p.tools()->gameRules().json())
+            throw Error("Rebuilt game rules differ from the project");
+        for (const auto &rule : GameRules::definitions())
+            if (p.tools()->gameRules().value(rule.key) != p.tools()->gameRules().loaded(rule.key) &&
+                !reopenedRules.unavailable(rule.group).isEmpty())
+                throw Error("Rebuilt game rule failed authentication: " + rule.label);
+    }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());

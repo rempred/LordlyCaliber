@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/scenario_editor.h"
+#include "app/game_rules_editor.h"
 #include "app/squad_members_editor.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
@@ -164,6 +165,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     timeHelp->setWordWrap(true);
     clockForm->addRow(timeHelp);
     settingsLayout->addWidget(clockBox);
+    settingsLayout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"clock"}));
     auto rewardBox = new QGroupBox("Completion item reward");
     auto rewardForm = new QFormLayout(rewardBox);
     auto rewardHelp = new QLabel("The completion screen awards the primary boss item. If that item was already collected or is None, it uses the fallback boss item. These choices also update the corresponding squad's drop.");

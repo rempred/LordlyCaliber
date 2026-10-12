@@ -1,0 +1,68 @@
+#include "app/game_rules_editor.h"
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QLabel>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QSpinBox>
+#include <QVBoxLayout>
+#include <cmath>
+namespace lordly {
+namespace {
+class RuleCommand final : public QUndoCommand {
+  public:
+    RuleCommand(Project *p, const QString &key, int value, const QString &label)
+      : QUndoCommand("Change " + label), p_(p), before_(p->tools()->json()), after_(before_) {
+        auto rules=after_["gameRules"].toObject(); rules[key]=value; after_["gameRules"]=rules;
+    }
+    void undo() override { p_->setTools(before_); }
+    void redo() override { p_->setTools(after_); }
+  private:
+    Project *p_; QJsonObject before_,after_;
+};
+}
+GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void()> changed,
+                               const QStringList &groups,QWidget *parent):QWidget(parent),project_(p) {
+    project_->loadTools();
+    auto layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);
+    const QMap<QString,QString> titles{{"clock","Day and night length — all missions"},{"fatigue","Fatigue while moving"},
+        {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"}};
+    for(const auto &group:groups) {
+        auto box=new QGroupBox(titles.value(group,group));auto form=new QFormLayout(box);
+        auto help=new QLabel(group=="tactics"
+            ? "Each kill combines this amount with the character and enemy alignment/level terms. The final change remains capped at −5 to +5. Training keeps its existing exclusion."
+            : group=="clock" ? "100% keeps retail timing. 200% lasts twice as long; 50% lasts half as long. These settings affect every mission."
+            : "100% keeps retail timing. 200% gives roughly twice as many cycles; 50% gives half as many. Existing eligibility and maximums remain.");
+        help->setWordWrap(true);form->addRow(help);
+        for(const auto &rule:GameRules::definitions()) if(rule.group==group) {
+            auto row=new QWidget;auto horizontal=new QHBoxLayout(row);horizontal->setContentsMargins(0,0,0,0);
+            auto spin=new QSpinBox;spin->setObjectName("rule_"+rule.key);spin->setRange(rule.minimum,rule.maximum);
+            spin->setSingleStep(rule.step);spin->setKeyboardTracking(false);spin->setToolTip(rule.help);
+            if(rule.percent) spin->setSuffix(" %");
+            horizontal->addWidget(spin,1);fields_[rule.key]=spin;
+            auto reset=new QPushButton("Retail");reset->setObjectName("ruleReset_"+rule.key);reset->setToolTip("Reset this setting to retail");
+            horizontal->addWidget(reset);form->addRow(rule.label,row);
+            connect(reset,&QPushButton::clicked,spin,[spin,rule]{spin->setValue(rule.retail);});
+            connect(spin,&QSpinBox::valueChanged,this,[this,undo,spin,rule](int value){
+                const int rounded=rule.minimum+int(std::round(double(value-rule.minimum)/rule.step))*rule.step;
+                if(value!=rounded) {const QSignalBlocker block(spin);spin->setValue(rounded);}
+                if(rounded==project_->tools()->gameRules().value(rule.key)) return;
+                auto check=project_->tools()->gameRules();auto settings=check.json();settings[rule.key]=rounded;
+                try {check.apply(settings);} catch(const Error &e) {QMessageBox::warning(this,"Game rules",e.what());refresh();return;}
+                undo->push(new RuleCommand(project_,rule.key,rounded,rule.label));
+            });
+        }
+        const auto problem=project_->tools()->gameRules().unavailable(group);
+        if(!problem.isEmpty()) {auto notice=new QLabel(problem);notice->setWordWrap(true);form->addRow(notice);box->setEnabled(false);}
+        layout->addWidget(box);
+    }
+    connect(undo,&QUndoStack::indexChanged,this,[this,changed]{refresh();changed();});
+    refresh();
+}
+void GameRulesEditor::refresh() {
+    for(auto it=fields_.begin();it!=fields_.end();++it) {
+        const QSignalBlocker block(it.value());it.value()->setValue(project_->tools()->gameRules().value(it.key()));
+    }
+}
+}

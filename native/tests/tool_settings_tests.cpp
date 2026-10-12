@@ -12,6 +12,51 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void gameRulesExportAndExecution() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path); auto project=Project::fromRom(rom); project.loadTools();
+            for(const auto &rule:GameRules::definitions()) {
+                QVERIFY2(project.tools()->gameRules().unavailable(rule.group).isEmpty(),qPrintable(project.tools()->gameRules().unavailable(rule.group)));
+                QCOMPARE(project.tools()->gameRules().value(rule.key),rule.retail);
+            }
+            const auto retail=project.tools()->json();
+            auto settings=retail; auto rules=settings["gameRules"].toObject();
+            rules["dayLength"]=150;rules["nightLength"]=50;rules["fatigueRate"]=200;rules["recoveryRate"]=50;
+            rules["tacticAuto"]=-5;rules["tacticStrong"]=2;rules["tacticLeader"]=5;rules["tacticWeak"]=-2;
+            settings["gameRules"]=rules;project.setTools(settings);
+            auto invalid=settings;auto bad=rules;bad["dayLength"]=112;invalid["gameRules"]=bad;
+            QVERIFY_THROWS_EXCEPTION(Error,project.setTools(invalid));QCOMPARE(project.tools()->json(),settings);
+            QTemporaryDir work; project.saveFolder(work.filePath("project"));
+            auto restored=Project::fromRom(rom);restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.tools()->json(),settings);
+            const auto built=rebuild(project,tools,work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-game-rules-XXXXXX");
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();
+            QCOMPARE(reopened.tools()->json(),settings);QVERIFY(!reopened.tools()->modified());
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            auto untouched=built.image;
+            for(const auto &owner:project.tools()->gameRules().builds())
+                untouched.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+            Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
+            QProcess execute;
+            execute.start("node",{QFINDTESTDATA("game-rules-mips.cjs"),candidate,path});
+            QVERIFY(execute.waitForFinished(60000));
+            QVERIFY2(execute.exitCode()==0,execute.readAllStandardError().constData());
+            qInfo().noquote()<<execute.readAllStandardOutput();
+            reopened.setTools(retail);
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            auto foreign=rom.bytes();foreign[0x133944]^=1;
+            auto unknown=Project::fromRom(Rom::fromBytes(foreign));unknown.loadTools();
+            QVERIFY(!unknown.tools()->gameRules().unavailable("fatigue").isEmpty());
+            QCOMPARE(rebuild(unknown,tools,work.path()).image,foreign);
+            QVERIFY_THROWS_EXCEPTION(Error,unknown.setTools(settings));
+            qInfo().noquote()<<"Game rules candidate:"<<candidate;
+        } catch(const Error &e) {QFAIL(e.what());}
+    }
     void highAttackProjectsAndExports() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

@@ -1,0 +1,27 @@
+{
+  "clock": {
+    "offset": 272156,
+    "size": 228,
+    "address": 2148976668,
+    "sha256": "767e68af70e9701e4af1c2e415b3fd6ec5dbbae5c3609b015069b005dd461746",
+    "authoredSha256": "29f6b72171c3ead788dbe2e7d5b02cf48a6dc16faf2a03c0791183210f010eb7"
+  },
+  "fatigue": {
+    "offset": 1259844,
+    "size": 328,
+    "address": 2149446148,
+    "sha256": "9d7898dcebea9b83b5e38b98dabb0ce12d243002af2811a44886327fafd6065a"
+  },
+  "recovery": {
+    "offset": 1259264,
+    "size": 580,
+    "address": 2149445568,
+    "sha256": "df79ce148417b959d56c937ae082561939b9504b4a799de45171fab1698b6102"
+  },
+  "tactics": {
+    "offset": 2333904,
+    "size": 4,
+    "address": 2149542400,
+    "sha256": "fcac58980f5053b60bc41f02af0a17a9003f5377edfaed7735cd433452f09069"
+  }
+}

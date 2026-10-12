@@ -2,6 +2,7 @@
 #include "engine/chaos_counter.h"
 #include "engine/display_tool.h"
 #include "engine/high_attack.h"
+#include "engine/game_rules.h"
 #include "engine/rom.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -24,7 +25,7 @@ class ToolSettings {
     }
     bool modified() const {
         return experienceModified() || chaos_.modified() || luck_.modified() ||
-               alignment_.modified() || highAttack_.modified();
+               alignment_.modified() || highAttack_.modified() || rules_.modified();
     }
     bool experienceModified() const {
         return percent_ != original_;
@@ -38,9 +39,11 @@ class ToolSettings {
     const HighAttack &highAttack() const {
         return highAttack_;
     }
+    const GameRules &gameRules() const { return rules_; }
     void setExperiencePercent(int);
     QJsonObject json() const {
-        return {{"version", 4},
+        return {{"version", 5},
+                {"gameRules", rules_.json()},
                 {"experienceScalePercent", percent_},
                 {"chaosFrameCounter", chaos_.enabled()},
                 {"characterCardLuck", luck_.enabled()},
@@ -57,5 +60,6 @@ class ToolSettings {
     ChaosCounter chaos_;
     DisplayTool luck_, alignment_;
     HighAttack highAttack_;
+    GameRules rules_;
 };
 } // namespace lordly

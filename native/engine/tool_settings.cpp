@@ -35,6 +35,7 @@ ToolSettings ToolSettings::load(const Rom &rom) {
     result.luck_ = DisplayTool::load(rom, ToolLabel::Luck);
     result.alignment_ = DisplayTool::load(rom, ToolLabel::Alignment);
     result.highAttack_ = HighAttack::load(rom);
+    result.rules_ = GameRules::load(rom);
     try {
         rom.requireSupported();
         if (rom.revision())
@@ -73,7 +74,14 @@ void ToolSettings::setExperiencePercent(int value) {
         throw Error("Experience scale must be between 0% and 300%");
     percent_ = value;
 }
-void ToolSettings::apply(const QJsonObject &object) {
+void ToolSettings::apply(const QJsonObject &input) {
+    auto object = input;
+    const bool hasRules = object.contains("gameRules");
+    if ((object["version"] == 5 && !hasRules) ||
+        (hasRules && !object["gameRules"].isObject()))
+        throw Error("Invalid game rules settings");
+    const auto rules = object.take("gameRules").toObject();
+    if (object["version"] == 5) object["version"] = 4;
     const auto value = object["experienceScalePercent"];
     const auto number = value.toDouble(-1);
     const bool old = object["version"] == 1 && object.size() == 2;
@@ -89,6 +97,7 @@ void ToolSettings::apply(const QJsonObject &object) {
         number != std::floor(number) || number < 0 || number > 300)
         throw Error("Invalid Tools project settings");
     auto candidate = *this;
+    if (hasRules) candidate.rules_.apply(rules);
     if (candidate.percent_ != int(number))
         candidate.setExperiencePercent(int(number));
     if ((counter || displays) && object["chaosFrameCounter"].toBool() != candidate.chaos_.enabled())
