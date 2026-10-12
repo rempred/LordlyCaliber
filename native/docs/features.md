@@ -750,6 +750,13 @@ missions (25–400%,25-point steps). Tools has named tactic alignment contributi
 (−5..+5 per kill), movement fatigue and rest recovery rates (25–400%). Eligibility,
 night/equipment modifiers, fatigue/HP caps and the native calendar remain. Cycle
 rates are rounded to whole native update intervals; they are not real-time timers.
+The final alignment limit is independently editable from 0 to 100 points per
+credited kill (retail 5), after the tactic, alignment and level terms combine.
+Zero disables kill-based changes; total Alignment still stays within 0–100.
+Resting restores a separate 0–999 HP per eligible member per cycle (retail 1).
+Zero disables HP healing while fatigue recovers. Ordinary maximum HP and native
+Soldier recovery stages remain. Live examples show the combined healing amount
+and cycle rate: 5 HP at 200% is roughly ten times retail healing before caps.
 All controls apply immediately, support Undo and a Retail reset, and persist in
 Tools schema5. Exports authenticate code owners, assemble in original allocations,
 check exact output, update CRC and reopen. Unknown modified owners are preserved
@@ -760,6 +767,11 @@ percentage points), magic weapon synergy, and final physical/elemental resistanc
 strength (0–400%). Shared affinity also affects target resistance; Virtue/Bane
 alignment terms retain their existing behavior. Fixed-damage branches and minimum
 damage are unchanged. Code and tables rebuild within original allocations.
+Live examples explain units: weapon affinity 2 changes a neutral magic attack
+factor to 102% for a match or 98% for an opposed weapon. Element affinity 4
+changes a neutral factor to 104%/96% and adds/subtracts 4 target resistance points.
+These are contributions to the damage calculation, not guaranteed final-damage
+percentages. The examples update when their controls change.
 
 Mission completion Tools expose separate Goth population-bonus divisors below
 and above Chaos Frame50, Soldier population contribution, and minimum per captured

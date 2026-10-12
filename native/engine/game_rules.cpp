@@ -12,6 +12,18 @@ QByteArray resource(const QString &name) {
 }
 QJsonObject catalog() { return QJsonDocument::fromJson(resource("game-rules.json")).object(); }
 int cycle(int percent) { return int(std::round(18000. / percent)); }
+void alignmentCap(QByteArray &bytes, int cap) {
+    put16(bytes,0x156,quint16(cap+1));
+    put16(bytes,0x15e,quint16(cap));
+    put16(bytes,0x162,quint16(-cap));
+    put16(bytes,0x16a,quint16(-cap));
+}
+void restHealing(QByteArray &bytes, int amount) {
+    for(int at:{0x10c,0x138,0x164,0x278}) put16(bytes,at+2,quint16(amount));
+    // Keep the full sum until the existing maximum-HP comparison. Truncating
+    // before that comparison would wrap a large heal across 65535 to low HP.
+    for(int at:{0x114,0x140,0x284}) put32(bytes,at,amount>1 ? 0u : 0x3042ffffu);
+}
 void period(QByteArray &bytes, const QString &name, int amount) {
     if (name == "fatigue") {
         put16(bytes, 0xac + 2, quint16(amount + 1));
@@ -80,10 +92,12 @@ QVector<GameRule> GameRules::definitions() {
             {"nightLength", "clock", "Night length", "Length of 18:00–06:00 relative to retail. The clock still uses 24 hours and 60 minutes.",25,400,25,100,true},
             {"fatigueRate", "fatigue", "Fatigue buildup", "Higher values shorten the movement cycle between fatigue gains. Existing terrain, night and equipment modifiers remain.",25,400,25,100,true},
             {"recoveryRate", "recovery", "Rest recovery", "Higher values shorten rest cycles for fatigue and HP recovery. Night and Healing Censer bonuses remain. The first cycle keeps its saved progress.",25,400,25,100,true},
+            {"restHealing", "restHealing", "HP restored per rest cycle", "HP gained by each eligible member on a rest cycle. Retail restores 1. Zero disables HP healing while fatigue still recovers. Maximum HP and native Soldier-group recovery stages remain.",0,999,1,1},
             {"tacticAuto", "tactics", "Autonomous", "Alignment contribution per kill when using Autonomous (random targeting).",-5,5,1,-1},
             {"tacticStrong", "tactics", "Attack Strongest", "Alignment contribution per kill when targeting greatest current HP.",-5,5,1,0},
             {"tacticLeader", "tactics", "Attack Leader", "Alignment contribution per kill when targeting the leader.",-5,5,1,1},
-            {"tacticWeak", "tactics", "Attack Weakest", "Alignment contribution per kill when targeting greatest estimated damage.",-5,5,1,0}};
+            {"tacticWeak", "tactics", "Attack Weakest", "Alignment contribution per kill when targeting greatest estimated damage.",-5,5,1,0},
+            {"alignmentCap", "alignmentCap", "Maximum alignment change per kill", "Maximum gain or loss after combining the tactic, alignment and level terms. Retail is 5. Zero disables kill-based alignment changes. Alignment itself stays within 0–100; other alignment effects keep their rules.",0,100,1,5}};
 }
 GameRules GameRules::load(const Rom &rom) {
     GameRules result;
@@ -97,7 +111,18 @@ GameRules GameRules::load(const Rom &rom) {
             const auto site=it->toObject();
             auto bytes=rom.bytes().mid(site["offset"].toInt(),site["size"].toInt());
             auto canonical=bytes;
-            if(name.startsWith("deployment")) {
+            if(name=="alignmentCap" || name=="restHealing") {
+                const bool alignment=name=="alignmentCap";
+                const int amount=u16(bytes,alignment ? 0x15e : 0x27a);
+                if(amount>(alignment ? 100 : 999)) throw Error("This rule is outside the supported range.");
+                if(alignment) alignmentCap(canonical,5); else restHealing(canonical,1);
+                if(sha256(canonical)!=site["sha256"].toString().toLatin1())
+                    throw Error("This rule's code is unrecognized; its existing bytes will be preserved.");
+                auto expected=canonical;
+                if(alignment) alignmentCap(expected,amount); else restHealing(expected,amount);
+                if(expected!=bytes) throw Error("This rule's checks disagree; its existing code will be preserved.");
+                result.values_[name]=amount;
+            } else if(name.startsWith("deployment")) {
                 const int value=u16(bytes,2);const auto prefix=name=="deployment"?0x24020000u:name=="deploymentMenu"?0x24030000u:0x24040000u;
                 if((u32(bytes,0)&0xffff0000u)!=prefix || value<1 || value>30)
                     throw Error("Deployment limit code is unrecognized; its existing value will be preserved.");
@@ -229,7 +254,10 @@ QVector<RuleBuild> GameRules::builds() const {
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
         RuleBuild build{name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),{},owners_[name],{},name=="tactics" || name=="elements" || name=="weapons" || name=="soldierPopulation"};
-        if(name.startsWith("deployment")) {
+        if(name=="alignmentCap" || name=="restHealing") {
+            if(name=="alignmentCap") alignmentCap(build.expected,value(name)); else restHealing(build.expected,value(name));
+            build.source=words(build.expected);
+        } else if(name.startsWith("deployment")) {
             put16(build.expected,2,quint16(value("deploymentLimit")));build.source=words(build.expected);
         } else if(name=="reserve") {
             if(value("reserveXp")) {

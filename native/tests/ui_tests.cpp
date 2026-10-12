@@ -10054,6 +10054,41 @@ class UiTests : public QObject {
         QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("1260 Goth"));
         QTest::qWait(30);QVERIFY(tools.grab().save("native/build/training-editor.png"));
     }
+    void ruleStrengthExplanations() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        ToolsEditor tools(&project,&undo,[]{});tools.resize(1100,850);tools.show();
+        auto spin=[&](const char *key){return tools.findChild<QSpinBox *>(QString("rule_")+key);};
+        auto example=[&](const char *group){return tools.findChild<QLabel *>(QString("ruleExample_")+group)->text();};
+        QVERIFY(spin("alignmentCap") && spin("restHealing"));
+        QCOMPARE(spin("alignmentCap")->value(),5);QCOMPARE(spin("restHealing")->value(),1);
+        spin("alignmentCap")->setValue(10);QCOMPARE(project.tools()->gameRules().value("alignmentCap"),10);
+        QVERIFY(example("tactics").contains("+8 becomes +8"));
+        spin("alignmentCap")->setValue(0);QVERIFY(example("tactics").contains("disabled"));
+        tools.findChild<QPushButton *>("ruleReset_alignmentCap")->click();QCOMPARE(spin("alignmentCap")->value(),5);
+        undo.undo();QCOMPARE(spin("alignmentCap")->value(),0);undo.redo();QCOMPARE(spin("alignmentCap")->value(),5);
+        spin("weaponAffinity")->setValue(10);QVERIFY(example("weapons").contains("110%"));QVERIFY(example("weapons").contains("90%"));
+        undo.undo();QVERIFY(example("weapons").contains("102%"));QVERIFY(example("weapons").contains("98%"));
+        spin("elementAffinity")->setValue(8);QVERIFY(example("elements").contains("108%"));QVERIFY(example("elements").contains("92%"));
+        QCOMPARE(spin("elementAffinity")->suffix(),QString(" points"));
+        spin("restHealing")->setValue(5);spin("recoveryRate")->setValue(200);
+        QCOMPARE(project.tools()->gameRules().value("restHealing"),5);QVERIFY(example("recovery").contains("10×"));
+        spin("restHealing")->setValue(0);QVERIFY(example("recovery").contains("HP healing is disabled"));
+        undo.undo();QCOMPARE(spin("restHealing")->value(),5);QVERIFY(example("recovery").contains("10×"));
+        tools.findChild<QPushButton *>("ruleReset_restHealing")->click();QCOMPARE(spin("restHealing")->value(),1);
+        QTest::qWait(30);QVERIFY(tools.grab().save("native/build/rule-strength-tools.png"));
+        for(const auto group:{"tactics","elements","weapons","recovery"}) {
+            auto box=tools.findChild<QWidget *>(QString("ruleGroup_")+group);QVERIFY(box);
+            QVERIFY(box->grab().save(QString("native/build/rule-strength-%1.png").arg(group)));
+        }
+        auto foreign=project.rom().bytes();foreign[0x23336e]^=1;foreign[0x133bee]^=1;
+        auto unknown=Project::fromRom(Rom::fromBytes(foreign));QUndoStack unknownUndo;
+        ToolsEditor unavailable(&unknown,&unknownUndo,[]{});
+        QVERIFY(!unavailable.findChild<QSpinBox *>("rule_alignmentCap")->isEnabled());
+        QVERIFY(!unavailable.findChild<QSpinBox *>("rule_restHealing")->isEnabled());
+        QVERIFY(unavailable.findChild<QLabel *>("ruleExample_tactics")->text().contains("unavailable"));
+        QVERIFY(unavailable.findChild<QLabel *>("ruleExample_recovery")->text().contains("unavailable"));
+    }
     void gameRulesEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();project.loadTools();

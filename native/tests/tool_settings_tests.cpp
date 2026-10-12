@@ -6,6 +6,7 @@
 #include "engine/tool_artwork.h"
 #include "rebuild/compiler.h"
 #include <QFile>
+#include <QDir>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -14,6 +15,53 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void alignmentCapAndRestHealing() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);
+            QTemporaryDir work, output(QFileInfo(path).absolutePath()+"/Test ROMs/native-alignment-rest-XXXXXX");
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            for(const auto values:{qMakePair(0,0),qMakePair(2,5),qMakePair(5,1),qMakePair(10,999),qMakePair(100,5)}) {
+                auto project=Project::fromRom(rom);project.loadTools();const auto defaults=project.tools()->json();
+                auto settings=defaults, rules=settings["gameRules"].toObject();
+                rules["alignmentCap"]=values.first;rules["restHealing"]=values.second;
+                settings["gameRules"]=rules;project.setTools(settings);
+                project.saveFolder(work.filePath("project"));auto restored=Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(work.filePath("project")));
+                restored.loadTools();
+                QCOMPARE(restored.tools()->json(),settings);
+                for(const auto key:{"alignmentCap","restHealing"}) {
+                    auto invalid=settings, bad=rules;bad[key]=QString(key)=="alignmentCap"?101:1000;invalid["gameRules"]=bad;
+                    QVERIFY_THROWS_EXCEPTION(Error,project.setTools(invalid));QCOMPARE(project.tools()->json(),settings);
+                }
+                const auto built=rebuild(project,tools,work.path());
+                const auto folder=output.filePath(QString::number(values.first));QVERIFY(QDir().mkpath(folder));
+                const auto candidate=folder+"/"+QFileInfo(path).fileName();exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
+                QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+                auto unchanged=built.image;
+                for(const auto &owner:project.tools()->gameRules().builds()) unchanged.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+                Rom::updateChecksum(unchanged);QCOMPARE(unchanged,rom.bytes());
+                QProcess execution;execution.start("node",{QFINDTESTDATA("alignment-rest-mips.cjs"),candidate,path,QString::number(values.first),QString::number(values.second)});
+                QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
+                qInfo().noquote()<<execution.readAllStandardOutput();
+                // Old project files preserve new settings already loaded from an edited ROM.
+                auto legacy=settings, oldRules=rules;oldRules.remove("alignmentCap");oldRules.remove("restHealing");legacy["gameRules"]=oldRules;
+                reopened.setTools(legacy);QCOMPARE(reopened.tools()->json(),settings);
+                reopened.setTools(defaults);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            }
+            for(const auto part:{qMakePair(QString("alignmentCap"),0x23336e),qMakePair(QString("restHealing"),0x133bee)}) {
+                auto foreign=rom.bytes();foreign[part.second]^=1;
+                auto unknown=Project::fromRom(Rom::fromBytes(foreign));unknown.loadTools();
+                QVERIFY(!unknown.tools()->gameRules().unavailable(part.first).isEmpty());
+                QCOMPARE(rebuild(unknown,tools,work.path()).image,foreign);
+                auto settings=unknown.tools()->json(), rules=settings["gameRules"].toObject();rules[part.first]=2;settings["gameRules"]=rules;
+                QVERIFY_THROWS_EXCEPTION(Error,unknown.setTools(settings));
+            }
+            qInfo().noquote()<<"Alignment/rest candidates:"<<output.path();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void deploymentLimitsExportAndExecution() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

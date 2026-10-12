@@ -5960,3 +5960,40 @@ manifest onto retail, which would lose inherited source edits. Native compressed
 sprite members are compared before SpriteObject interpretation because not every
 member uses an editable sprite format. The original source-ROM report remains the
 export-delta view. Both comparisons exclude relocation-only name pointer changes.
+
+### Alignment limit and resting HP (2026-10-12)
+
+GameRules authenticates two additional complete original owners: the kill-alignment
+calculator at z64 0x233210..0x2333B4 / RAM 0x801EFF40..0x801F00E4, and the rest
+member update at z64 0x133BE0..0x133EA0 / RAM 0x801DF4A0..0x801DF760. End addresses
+are exclusive. Normalizing each setting must recover the catalog's retail hash;
+regenerating the loaded value must reproduce every byte. Inconsistent checks or
+unrecognized code disable only that owner and preserve its source bytes.
+
+alignmentCap edits four clamp immediates, supports 0..100 (retail 5), and leaves
+eligibility, tactic/level/alignment terms and the final 0..100 total unchanged.
+restHealing edits all four HP increments, supports 0..999 (retail 1), and leaves
+fatigue, ordinary-character eligibility and Soldier staged caps unchanged. For
+amounts greater than one, three intermediate halfword masks become NOPs so a
+large increment retains its full sum until the existing maximum-HP clamp. The
+default reproduces the entire retail owner, including retail's artificial
+Soldier HP=65535 wrap case. No new allocation or resource references are needed.
+Both owners rebuild as assembly in their original bounds. Missing keys in old
+project settings retain the values read from their source ROM.
+
+The Tools panel groups the cap with tactics and HP amount with recovery frequency.
+Immediate edits, Undo, Retail resets and project review use the existing rule
+model. Dynamic explanations show signed caps, elemental percentage points and
+approximate combined HP healing strength; unavailable owners do not show a
+default as though it were the loaded value.
+
+tool_settings_tests alignmentCapAndRestHealing gameRulesExportAndExecution passed
+(4 Qt cases, 14387ms): five actual ROM exports/reopens, checksum and whole-image
+preservation outside owners, project persistence, foreign-code refusal, exact
+retail restoration, 85,242 complete alignment calculations/exclusions and 2,016
+complete rest updates. Existing 288 clock and 400 cycle checks also pass. The
+offline alignment runner controls unchanged eligibility helpers; the rest owner
+executes without helper traps. ui_tests ruleStrengthExplanations gameRulesEditing
+passed (4 Qt cases, 1912ms), covering controls, Undo/Redo, live explanations and
+unrecognized-code disabling. Group captures were inspected. This establishes
+exported instruction behavior and desktop editing, not a full-game playthrough.

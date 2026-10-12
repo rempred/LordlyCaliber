@@ -91,5 +91,17 @@
     "size": 4,
     "address": 2149366376,
     "sha256": "35ec0e5a714783b6af466cec9520061e51dcf4196e34a43ac1e8250f877d6a0f"
+  },
+  "alignmentCap": {
+    "offset": 2306576,
+    "size": 420,
+    "address": 2149515072,
+    "sha256": "adef45faeaf3c191f792417b3564044c1c3d75235063786351fe158df06613bc"
+  },
+  "restHealing": {
+    "offset": 1260512,
+    "size": 704,
+    "address": 2149446816,
+    "sha256": "f81abb2a1075459d6eafd3f526c38ccb731cf489bdb307bab8908f418a59f3f1"
   }
 }
