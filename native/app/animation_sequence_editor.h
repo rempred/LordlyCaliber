@@ -9,6 +9,9 @@ class QSpinBox;
 class QTableWidget;
 class QUndoStack;
 class QPushButton;
+class QListWidget;
+class QCheckBox;
+class QSplitter;
 namespace lordly {
 class ActorPoseEditor;
 class AnimationSequenceEditor : public QWidget {
@@ -25,6 +28,7 @@ class AnimationSequenceEditor : public QWidget {
     void setContext(int classId, int flags, int pose);
     void setGuided(bool);
     void assignAnimation(int action, bool blocked, int pose);
+    void moveVisibleFrame(int from, int to);
 
   private:
     void refresh();
@@ -39,6 +43,16 @@ class AnimationSequenceEditor : public QWidget {
     void publish(const Project &, const QString &);
     void refreshAssignments();
     void edit(const QString &, const std::function<void(PoseBank &, int, int)> &);
+    AnimationSequences editableSequences();
+    void buildFrameWorkspace();
+    void refreshFrames();
+    void selectVisibleFrames();
+    void updateFrameTools();
+    void changeFrameDuration(int);
+    void duplicateVisibleFrames();
+    void removeVisibleFrames();
+    void moveFrameArtwork(QPoint);
+    QSet<int> selectedFrameRecords() const;
     int selectedClass() const;
     int owner(int classId) const;
     AnimationDescriptor descriptor() const;
@@ -60,5 +74,16 @@ class AnimationSequenceEditor : public QWidget {
     ActorPoseEditor *preview_ = nullptr;
     QVector<QWidget *> advanced_;
     QWidget *assignmentControls_ = nullptr;
+    bool guided_ = false, durationTyped_ = false;
+    QWidget *rawWorkspace_ = nullptr, *frameWorkspace_ = nullptr, *frameTools_ = nullptr;
+    QWidget *framePreviewHost_ = nullptr;
+    QSplitter *rawSplit_ = nullptr;
+    QListWidget *frames_ = nullptr;
+    QSpinBox *duration_ = nullptr;
+    QLabel *frameHeading_ = nullptr, *frameSelection_ = nullptr, *frameStatus_ = nullptr;
+    QCheckBox *onion_ = nullptr;
+    QPushButton *earlier_ = nullptr, *later_ = nullptr, *paint_ = nullptr, *layersButton_ = nullptr;
+    QString frameContext_;
+    int pendingRecord_ = -1;
 };
 } // namespace lordly

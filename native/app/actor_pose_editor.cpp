@@ -186,7 +186,8 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     controls->addWidget(play_);
     controls->addWidget(next);
     controls->addWidget(reset);
-    controls->addWidget(new QLabel("Step"));
+    auto stepLabel = new QLabel("Step");
+    controls->addWidget(stepLabel);
     controls->addWidget(position_);
     controls->addWidget(speed_);
     controls->addWidget(sepia_);
@@ -197,6 +198,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     automaticFit_->setObjectName("actorAutomaticFit");
     automaticFit_->setToolTip("Follow each frame's bounds. Leave unchecked to keep a stable sprite origin and scale.");
     controls->addWidget(automaticFit_);
+    inspectionControls_ << stepLabel << position_ << speed_ << sepia_ << automaticFit_;
     layout->addLayout(controls);
     projected_ = new QCheckBox("Projected placement");
     projected_->setObjectName("actorProjected");
@@ -336,6 +338,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
         }
     });
     split->addWidget(layerPanel);
+    inspectionControls_ << bodyControls_ << projected_ << placementControls_ << layerPanel;
     split->setStretchFactor(0, 4);
     split->setStretchFactor(1, 1);
     layout->addWidget(split, 1);
@@ -348,6 +351,11 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     connect(timer_, &QTimer::timeout, this, &ActorPoseEditor::step);
     connect(play_, &QPushButton::toggled, this, [this](bool playing) {
         if (playing && player_) {
+            if (frameEditing_ && selectedFrame_) {
+                restart();
+                const QSignalBlocker block(play_);
+                play_->setChecked(true);
+            }
             timer_->start(qMax(1, qRound(1000. / speed_->value())));
             play_->setText("Pause");
         } else {
@@ -695,6 +703,27 @@ void ActorPoseEditor::showFrame(int frame) {
     selectedFrame_ = frame;
     draw();
 }
+void ActorPoseEditor::setFrameEditing(bool enabled) {
+    frameEditing_ = enabled;
+    for (auto widget : inspectionControls_) widget->setVisible(!enabled);
+    if (enabled) {
+        projected_->setChecked(false);
+        placementControls_->hide();
+        play_->setToolTip("Play the animation from the beginning after choosing a frame. Pause and Play resume playback.");
+    } else placementControls_->setVisible(projected_->isChecked());
+}
+void ActorPoseEditor::setPreviousFrame(std::optional<int> frame) {
+    if (previousFrame_ == frame) return;
+    previousFrame_ = frame;
+    draw();
+}
+void ActorPoseEditor::setFrameBounds(const QRectF &bounds) {
+    if (editingBounds_ == bounds) return;
+    editingBounds_ = bounds;
+    fit_ = true;
+    draw();
+}
+void ActorPoseEditor::setPlaybackRate(double rate) { speed_->setValue(qRound(30 * rate)); }
 void ActorPoseEditor::draw() {
     // Drop observers before deleting selected scene items (selectionChanged is synchronous).
     items_.clear();
@@ -711,12 +740,28 @@ void ActorPoseEditor::draw() {
         }
         auto a = preview(*player_);
         if (selectedFrame_) a.frame = *selectedFrame_;
+        if (frameEditing_ && selectedFrame_) { a.x = a.y = 0; a.material.fill(char(-1)); }
         const auto body = appearance();
         const auto frame = body ? art_->bodyFrame(rom_, a.frame, *body, sepia_->isChecked(),
                                                   artwork_.value(art_->descriptorKey()))
                                 : art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked(),
                                               {}, artwork_.value(art_->descriptorKey()));
-        QRectF bounds;
+        QRectF bounds = frameEditing_ ? editingBounds_ : QRectF{};
+        if (frameEditing_ && selectedFrame_ && previousFrame_ && body) {
+            const auto previous = art_->bodyFrame(rom_, *previousFrame_, *body, false,
+                                                  artwork_.value(art_->descriptorKey()));
+            for (const auto &layer : previous) {
+                const auto &pixels = layer.pixels.image;
+                auto item = canvas_->addPixmap(QPixmap::fromImage(QImage(
+                    reinterpret_cast<const uchar *>(pixels.rgba.constData()), pixels.width,
+                    pixels.height, pixels.width * 4, QImage::Format_RGBA8888)));
+                const auto &m = layer.metadata;
+                item->setPos(m.origin.x() * m.scaleX / 1024., m.origin.y() * m.scaleY / 1024.);
+                item->setTransform(QTransform::fromScale(m.scaleX / 1024., m.scaleY / 1024.));
+                item->setOpacity(.25); item->setZValue(-1);
+                bounds |= item->sceneBoundingRect();
+            }
+        }
         int fallbacks = 0;
         for (int i = 0; i < frame.size(); ++i) {
             const auto &layer = frame[i];
@@ -777,10 +822,14 @@ void ActorPoseEditor::draw() {
                 .arg(a.audio));
         setProperty("frameToken", a.frame);
         if (selectedFrame_) status_->setText(QString("Selected frame %1 · Play resumes sequence playback").arg(a.frame));
+        if (frameEditing_)
+            status_->setText(selectedFrame_ ? "Selected artwork · scroll to zoom, drag to pan"
+                                           : "Animation preview · sound is not played");
         setProperty("poseCursor", a.cursor);
         setProperty("poseDelay", a.delay);
         setProperty("poseX", a.x);
         setProperty("poseY", a.y);
+        emit framePresented(a.state, a.cursor, a.frame, !selectedFrame_);
     } catch (const Error &e) {
         stop();
         status_->setText(QString::fromUtf8(e.what()));

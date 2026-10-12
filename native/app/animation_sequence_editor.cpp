@@ -67,25 +67,29 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
                                                  std::function<void()> changed, QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("animationSequenceEditor");
-    auto layout = new QVBoxLayout(this);
+    auto outer = new QVBoxLayout(this);
     auto title = new QLabel("<b>Private class sequences</b>");
-    layout->addWidget(title);
+    outer->addWidget(title);
     auto description = new QLabel(
         "Create an independent copy for a class and body route. Edit frame timing and order while "
         "retaining the pose's control instructions. The preview uses the current project.");
     description->setWordWrap(true);
-    layout->addWidget(description);
+    outer->addWidget(description);
     advanced_ << title << description;
     notice_ = new QLabel;
     notice_->setObjectName("sequenceNotice");
     notice_->setWordWrap(true);
-    layout->addWidget(notice_);
+    outer->addWidget(notice_);
     try {
         project_->loadAnimationRoutes();
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what()));
         return;
     }
+    rawWorkspace_ = new QWidget;
+    outer->addWidget(rawWorkspace_, 1);
+    auto layout = new QVBoxLayout(rawWorkspace_);
+    layout->setContentsMargins(0, 0, 0, 0);
     auto choices = new QHBoxLayout;
     classes_ = new QComboBox;
     classes_->setObjectName("sequenceClass");
@@ -150,7 +154,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     }
     tools->addStretch();
     layout->addLayout(tools);
-    auto split = new QSplitter;
+    auto split = rawSplit_ = new QSplitter;
     auto left = new QWidget;
     auto panel = new QVBoxLayout(left);
     panel->setContentsMargins(0, 0, 0, 0);
@@ -369,12 +373,21 @@ void AnimationSequenceEditor::setContext(int id, int flags, int pose) {
     refresh();
 }
 void AnimationSequenceEditor::setGuided(bool value) {
+    guided_ = value;
+    if (value && !frameWorkspace_) buildFrameWorkspace();
+    rawWorkspace_->setVisible(!value);
+    if (frameWorkspace_) frameWorkspace_->setVisible(value);
+    if (value && preview_->parentWidget() != framePreviewHost_)
+        qobject_cast<QVBoxLayout *>(framePreviewHost_->layout())->insertWidget(1, preview_, 1);
+    if (!value) rawSplit_->addWidget(preview_);
+    preview_->setFrameEditing(value);
     for (auto widget : advanced_) widget->setVisible(!value);
     if (assignmentControls_) assignmentControls_->setVisible(!value);
     create_->setText(value ? "Enable frame and sprite editing" : "Make private copy");
     create_->setToolTip("Creates an independent animation set for this class, side and artwork variant. Other classes keep their artwork.");
     remove_->setText(value ? "Restore this animation set" : "Remove private copy");
     remove_->setToolTip("Restores all animations and assignments in this class, side and artwork variant. Undo can recover the edits.");
+    if (value) refresh();
 }
 void AnimationSequenceEditor::assignAnimation(int action, bool blocked, int pose) {
     const int id = selectedClass(), flags = routes_->currentIndex();
@@ -482,7 +495,7 @@ void AnimationSequenceEditor::refreshAssignments() {
 void AnimationSequenceEditor::edit(const QString &label,
                                    const std::function<void(PoseBank &, int, int)> &action) {
     const int id = selectedClass(), flags = routes_->currentIndex();
-    auto next = *project_->animationSequences();
+    auto next = editableSequences();
     const auto *current = next.find(id, flags);
     if (!current)
         throw Error("Make a private copy before editing a sequence");
@@ -502,11 +515,23 @@ void AnimationSequenceEditor::selectRecord() {
     frame_->setValue(token(records[row]));
     ticks_->setValue(u8(records[row].operands, records[row].operands.size() - 1));
     preview_->showFrame(token(records[row]));
+    if (guided_) updateFrameTools();
+}
+AnimationSequences AnimationSequenceEditor::editableSequences() {
+    auto next = *project_->animationSequences();
+    if (!next.find(selectedClass(), routes_->currentIndex())) {
+        if (!guided_) throw Error("Make a private copy before editing a sequence");
+        project_->loadCombatArtwork();
+        next.create(selectedClass(), routes_->currentIndex(), *project_->animationRoutes(),
+                    project_->combatArtwork()->previewEdits());
+    }
+    return next;
 }
 void AnimationSequenceEditor::editLayers() {
     const int id = selectedClass(), flags = routes_->currentIndex(),
               state = poses_->currentData().toInt(), index = records_->currentRow();
-    const auto *original = project_->animationSequences()->find(id, flags);
+    auto next = editableSequences();
+    const auto *original = next.find(id, flags);
     if (!original)
         throw Error("Make a private copy before editing frame layers");
     auto snapshot = *original;
@@ -547,7 +572,6 @@ void AnimationSequenceEditor::editLayers() {
     const int replacement = snapshot.appendFrame(*result);
     bank.setFrame(state, index, replacement, u8(record.operands, record.operands.size() - 1));
     snapshot.setPoses(bank);
-    auto next = *project_->animationSequences();
     next.setDescriptor(id, flags, snapshot);
     apply(std::move(next), "Edit private frame layers");
 }
@@ -601,7 +625,8 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
     const int id = selectedClass(), flags = routes_->currentIndex(),
               state = poses_->currentData().toInt(), index = std::max(0, records_->currentRow()),
               ticks = ticks_->value();
-    const auto *original = project_->animationSequences()->find(id, flags);
+    auto next = editableSequences();
+    const auto *original = next.find(id, flags);
     if (!original)
         throw Error("Make a private copy before importing a frame");
     auto snapshot = *original;
@@ -650,7 +675,6 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
     const int frame = snapshot.appendFrame(row);
     bank.insertFrame(state, index, frame, ticks);
     snapshot.setPoses(bank);
-    auto next = *project_->animationSequences();
     next.setDescriptor(id, flags, snapshot);
     apply(std::move(next), "Import private sequence frame");
 }
@@ -668,7 +692,7 @@ void AnimationSequenceEditor::refresh() {
             library_->setCurrentIndex(at);
         const int selected = classes_->currentIndex() < 0 ? 2 : classes_->currentData().toInt(),
                   pose = preferredPose_,
-                  row = records_->currentRow();
+                  row = pendingRecord_ >= 0 ? pendingRecord_ : records_->currentRow();
         classes_->clear();
         for (const auto &value : project_->records(Table::Classes))
             if (value.id > 0)
@@ -684,7 +708,7 @@ void AnimationSequenceEditor::refresh() {
             project_->animationSequences()->find(selectedClass(), routes_->currentIndex());
         create_->setEnabled(!owned);
         remove_->setEnabled(owned);
-        edits_->setEnabled(owned);
+        edits_->setEnabled(owned || guided_);
         frame_->setRange(0, data.frameCount() - 1);
         const auto &records = bank.effective(poses_->currentData().toInt()).records;
         records_->setRowCount(records.size());
@@ -716,6 +740,7 @@ void AnimationSequenceEditor::refresh() {
             preview_->setArtwork(project_->combatArtwork()->previewEdits());
         preview_->selectPrivateSequence(selectedClass(), routes_->currentIndex(),
                                         poses_->currentData().toInt());
+        if (guided_) refreshFrames();
         selectRecord();
         refreshAssignments();
     });

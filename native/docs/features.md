@@ -163,6 +163,23 @@ users need no Decomp checkout. See `game/README.md` for adaptation boundaries.
 
 ## Current checkpoint — 2026-10-07
 
+Combat frame editing shows a numbered thumbnail for every authored frame, including
+repeated artwork. The grid wraps and scrolls beside a large preview, beneath the
+existing class/action/side/mode/variant assignment controls. Click a card to inspect
+it; double-click to paint. Drag one card or use Earlier/Later to reorder. Ctrl/Shift
+selects multiple frames for timing, duplicate/delete and one-pixel artwork nudges.
+Duration changes apply immediately; the previous-frame overlay helps with alignment.
+Delete and Ctrl+D work while the frame grid has focus. Playback speed is adjustable;
+a green outline follows the playing frame without changing the editing selection.
+
+The first frame edit creates an independent copy in the same Undo action. Canceling
+painting or import does not leave an unused copy. Paint, Layers, Add frame and Copy
+artwork are beside the frame tools; Animation tools holds whole-animation copying,
+comparison, Art Library transfer and restoring the side/variant's animation set.
+Thumbnails and the static preview use common sprite bounds. Playback follows the
+original movement, waits and loops; thumbnails show authored order, and sound is
+not played. The detailed instruction editor remains under Advanced animations.
+
 Combat animations now provides class, assigned action, player/enemy side, mode,
 artwork variant and animation selectors, an explicit Assign button, playback,
 frame timing/order/layers and per-frame sprite painting. Existing detailed editors

@@ -134,7 +134,7 @@ void AnimationSequenceEditor::copyFrame(int sourceClass, int sourceRoute, int so
     const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
     const auto art = body(*project_, sourceClass, sourceRoute);
     const auto source = sourceDescriptor(*project_, sourceClass, sourceRoute, art);
-    auto next = *project_->animationSequences();
+    auto next = editableSequences();
     if (!next.find(id, flags)) throw Error("Make a private copy before replacing frame art");
     next.setDescriptor(id, flags, copyAnimationFrame(project_->rom(), *next.find(id, flags), state, records_->currentRow(),
                                                     source, art, sourcePose, sourceRecord, duration));
@@ -143,7 +143,7 @@ void AnimationSequenceEditor::copyFrame(int sourceClass, int sourceRoute, int so
 void AnimationSequenceEditor::translateFrames(const QMap<int, QSet<int>> &records, QPoint offset, int layer) {
     if (offset.isNull() || records.isEmpty()) return;
     const int id = selectedClass(), flags = routes_->currentIndex();
-    auto next = *project_->animationSequences();
+    auto next = editableSequences();
     const auto original = next.find(id, flags);
     if (!original) throw Error("Make a private copy before translating its frames");
     next.setDescriptor(id, flags, translateAnimationFrames(*original, records, offset, layer));

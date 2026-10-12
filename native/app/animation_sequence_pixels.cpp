@@ -16,7 +16,8 @@ namespace lordly {
 void AnimationSequenceEditor::editSprite() {
     const int id = selectedClass(), flags = routes_->currentIndex(),
               state = poses_->currentData().toInt(), row = records_->currentRow();
-    const auto original = project_->animationSequences()->find(id, flags);
+    auto next = editableSequences();
+    const auto original = next.find(id, flags);
     if (!original) throw Error("Enable frame and sprite editing first");
     auto snapshot = *original;
     auto bank = snapshot.poses();
@@ -122,7 +123,7 @@ void AnimationSequenceEditor::editSprite() {
     }
     bank.setFrame(state, row, snapshot.appendFrame(frame), u8(record.operands, record.operands.size() - 1));
     snapshot.setPoses(bank);
-    auto next = *project_->animationSequences(); next.setDescriptor(id, flags, snapshot);
+    next.setDescriptor(id, flags, snapshot);
     apply(std::move(next), "Paint private animation frame sprite");
 }
 } // namespace lordly

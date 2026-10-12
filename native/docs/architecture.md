@@ -201,6 +201,29 @@ identity; copy/restore and project data continue to use that same row.
 
 ## Class artwork identity and combat animation authoring
 
+`AnimationSequenceEditor` uses a visual workspace in guided combat mode. Each
+thumbnail keeps its original PoseBank record index, so repeated art is independently
+selectable and the existing frame edits retain/remap native controls and jumps.
+The raw instruction editor stays available in Advanced animations. The assignment
+header remains owned by `CombatAnimationEditor` and is unchanged.
+
+Guided mutation obtains an editable snapshot without publishing it. Automatic
+class/route isolation and the requested change publish together as one SequenceCommand;
+modal cancellation leaves the project untouched. Batch duration, duplicate/delete,
+reorder and nudges use the same validated engine operations. Multi-selection is
+retained across refresh; Ctrl-deselect cannot leave painting aimed at an unselected
+card. A mixed duration commits an explicitly typed value even when it equals the
+first selected frame, but focus changes alone never commit. Dragging uses a custom
+QDrag lifecycle so Qt does not remove source rows after the project rebuilds them.
+
+ActorPoseEditor exposes a compact frame-editing mode: common authored bounds,
+static full-opacity artwork, optional previous-frame ghost, and existing native
+playback with a non-selecting card indicator. Inspection/camera/equipment controls
+remain in the detailed preview. Tests exercise actual thumbnail clicks and timing
+keystrokes, isolation/cancellation, batch edits, selection, playback indication,
+Undo, imports and export/reopening. Offscreen captures at1100×780 and1440×900 were
+inspected; this change does not add full battle playback or a new emulator test.
+
 The guided Combat animations page uses the existing AnimationSequences,
 AnimationOverrides and ActorPoseEditor owners. Selecting an animation previews it;
 Assign commits one undoable class/side/art-variant assignment. Existing OBSO Normal

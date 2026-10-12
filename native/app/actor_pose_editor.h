@@ -29,8 +29,15 @@ class ActorPoseEditor : public QWidget {
     void setBodyAnimations(BodyAnimationData::Pointer);
     void selectPrivateSequence(int classId,int flags,int state);
     void showFrame(int frame);
+    void setFrameEditing(bool);
+    void setPreviousFrame(std::optional<int>);
+    void setFrameBounds(const QRectF &);
+    void setPlaybackRate(double);
     void setSpriteLibrary(std::function<void(SpriteAsset)>);
     SpriteAsset poseAsset() const;
+
+  signals:
+    void framePresented(int state, int record, int token, bool playback);
 
   private:
     void loadSources();
@@ -83,5 +90,9 @@ class ActorPoseEditor : public QWidget {
     bool fit_ = true;
     int step_ = 0;
     std::optional<int> selectedFrame_;
+    std::optional<int> previousFrame_;
+    bool frameEditing_ = false;
+    QVector<QWidget *> inspectionControls_;
+    QRectF editingBounds_;
 };
 } // namespace lordly

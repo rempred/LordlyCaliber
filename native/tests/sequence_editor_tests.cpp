@@ -20,6 +20,7 @@
 #include <QGraphicsView>
 #include <QLabel>
 #include <QListWidget>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QSlider>
@@ -107,6 +108,133 @@ class SequenceEditorTests : public QObject {
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }
+    }
+    void visualCombatFrames() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            applyEditorTheme(*qApp);
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 780); editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            classes->setCurrentIndex(classes->findData(2));
+            auto choice = editor.findChild<QComboBox *>("combatAnimationChoice");
+            QVERIFY(choice->findData(40) >= 0); choice->setCurrentIndex(choice->findData(40));
+            auto sequence = editor.findChild<AnimationSequenceEditor *>();
+            auto frames = editor.findChild<QListWidget *>("sequenceFrames");
+            auto ticks = editor.findChild<QSpinBox *>("sequenceDuration");
+            auto preview = editor.findChild<QWidget *>("sequencePreview");
+            const auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
+            const auto art = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto original = AnimationDescriptor::load(project.rom(), art.descriptorKey());
+            const auto originalRecords = original.poses().effective(40).records;
+            QVector<int> frameRows;
+            const auto token = [](const PoseRecord &r) { return u8(r.operands, 0) + (r.opcode == 21 ? 256 * u8(r.operands, 1) : 0); };
+            for (int i = 0; i < originalRecords.size(); ++i)
+                if (originalRecords[i].opcode == 1 || originalRecords[i].opcode == 21) frameRows << i;
+            QCOMPARE(frames->count(), frameRows.size()); QVERIFY(frames->count() > 2);
+            QTest::qWait(30);
+            QVERIFY(frames->isVisible()); QVERIFY(!editor.findChild<QTableWidget *>("sequenceRecords")->isVisible());
+            QVERIFY(editor.grab().save("native/build/combat-frames-initial.png"));
+            const auto initial = project.animationSequences()->json();
+            for (int i = 0; i < frames->count(); ++i) {
+                frames->scrollToItem(frames->item(i));
+                QTest::mouseClick(frames->viewport(), Qt::LeftButton, Qt::NoModifier, frames->visualItemRect(frames->item(i)).center());
+                QCOMPARE(frames->selectedItems().size(), 1);
+                QCOMPARE(preview->property("frameToken").toInt(), token(originalRecords[frameRows[i]]));
+                QCOMPARE(ticks->value(), int(u8(originalRecords[frameRows[i]].operands, originalRecords[frameRows[i]].operands.size() - 1)));
+                QVERIFY(!frames->item(i)->icon().isNull());
+            }
+            QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
+            frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect);
+            // Cancel the first painting operation: even automatic isolation must be atomic.
+            bool painterOpened = false;
+            QTimer::singleShot(30, [&] {
+                if (auto dialog = editor.findChild<QDialog *>("sequenceSpriteDialog")) { painterOpened = true; dialog->reject(); }
+            });
+            button("sequencePaint")->click(); QVERIFY(painterOpened);
+            QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
+            const int editedTicks = (ticks->value() + 5) % 255 + 1;
+            ticks->setValue(editedTicks);
+            QVERIFY2(project.animationSequences()->find(2, 0), qPrintable(editor.findChild<QLabel *>("sequenceNotice")->text()));
+            QCOMPARE(undo.count(), 1);
+            QVERIFY(!project.animationSequences()->find(3, 0)); QVERIFY(!project.animationSequences()->find(2, 1));
+            const auto afterTiming = project.animationSequences()->json();
+            auto records = project.animationSequences()->find(2, 0)->poses().effective(40).records;
+            QCOMPARE(int(u8(records[frameRows[0]].operands, records[frameRows[0]].operands.size() - 1)), editedTicks);
+            for (int i = 0; i < records.size(); ++i) if (i != frameRows[0]) {
+                QCOMPARE(records[i].opcode, originalRecords[i].opcode); QCOMPARE(records[i].operands, originalRecords[i].operands);
+            }
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), initial);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), afterTiming);
+            frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect); frames->item(1)->setSelected(true);
+            QCOMPARE(frames->selectedItems().size(), 2);
+            QCOMPARE(ticks->value(), editedTicks);
+            ticks->setFocus(); frames->setFocus();
+            QCOMPARE(project.animationSequences()->json(), afterTiming);
+            ticks->setFocus();
+            ticks->findChild<QLineEdit *>()->selectAll();
+            QTest::keyClicks(ticks, QString::number(editedTicks));
+            QTest::keyClick(ticks, Qt::Key_Return);
+            QCOMPARE(undo.count(), 2); QCOMPARE(frames->selectedItems().size(), 2);
+            records = project.animationSequences()->find(2, 0)->poses().effective(40).records;
+            for (int i : {0, 1}) QCOMPARE(int(u8(records[frameRows[i]].operands, records[frameRows[i]].operands.size() - 1)), editedTicks);
+            const auto afterBatch = project.animationSequences()->json();
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), afterTiming);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), afterBatch);
+            frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect);
+            const QPoint secondCard = frames->visualItemRect(frames->item(1)).center();
+            QTest::mouseClick(frames->viewport(), Qt::LeftButton, Qt::ControlModifier, secondCard);
+            QTest::mouseClick(frames->viewport(), Qt::LeftButton, Qt::ControlModifier, secondCard);
+            QCOMPARE(frames->selectedItems().size(), 1);
+            QCOMPARE(frames->currentRow(), 0);
+            QVERIFY(button("sequencePaint")->isEnabled());
+            QCOMPARE(project.animationSequences()->json(), afterBatch);
+            const int count = frames->count();
+            button("sequenceDuplicate")->click(); QCOMPARE(frames->count(), count + 1);
+            QCOMPARE(frames->currentRow(), 1);
+            const auto beforeMove = project.animationSequences()->json();
+            QVector<int> order;
+            for (int i = 0; i < frames->count(); ++i) order << frames->item(i)->data(Qt::UserRole + 2).toInt();
+            sequence->moveVisibleFrame(1, count); order.move(1, count);
+            for (int i = 0; i < frames->count(); ++i) QCOMPARE(frames->item(i)->data(Qt::UserRole + 2).toInt(), order[i]);
+            QCOMPARE(frames->currentRow(), count);
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), beforeMove); undo.redo();
+            button("sequenceDelete")->click(); QCOMPARE(frames->count(), count);
+            frames->setCurrentRow(1, QItemSelectionModel::ClearAndSelect);
+            const int row = frames->currentItem()->data(Qt::UserRole).toInt();
+            const auto beforeNudge = *project.animationSequences()->find(2, 0);
+            const int oldToken = token(beforeNudge.poses().effective(40).records[row]);
+            const auto oldFrame = beforeNudge.frame(oldToken);
+            button("sequenceNudge1_0")->click();
+            const auto nudged = *project.animationSequences()->find(2, 0);
+            const auto newFrame = nudged.frame(token(nudged.poses().effective(40).records[row]));
+            QCOMPARE(nudged.frame(oldToken), oldFrame);
+            for (int i = 0; i < u16(oldFrame, 0); ++i) QCOMPARE(qint16(u16(newFrame, 4 + i * 16)), qint16(u16(oldFrame, 4 + i * 16)) + 1);
+            auto onion = editor.findChild<QCheckBox *>("sequenceOnionSkin"); onion->setChecked(true);
+            auto scene = editor.findChild<QGraphicsView *>("actorCanvas")->scene();
+            bool ghost = false; for (auto item : scene->items()) ghost |= qFuzzyCompare(item->opacity(), .25);
+            QVERIFY(ghost);
+            QTest::qWait(30);
+            QCOMPARE(editor.size(), QSize(1100, 780));
+            QVERIFY(frames->viewport()->height() > 150);
+            QVERIFY(editor.grab().save("native/build/combat-frames-1100.png"));
+            editor.resize(1440, 900); QTest::qWait(30);
+            QVERIFY(editor.grab().save("native/build/combat-frames-1440.png"));
+            frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect);
+            const auto beforePlayback = project.animationSequences()->json();
+            button("actorRestart")->click(); button("actorStep")->click();
+            bool highlighted = false;
+            for (int i = 0; i < frames->count(); ++i) highlighted |= frames->item(i)->data(Qt::UserRole + 1).toBool();
+            QVERIFY(highlighted); QCOMPARE(frames->currentRow(), 0);
+            QCOMPARE(project.animationSequences()->json(), beforePlayback);
+            // Selecting every card cannot delete the complete playable animation.
+            frames->selectAll(); const auto beforeDeleteAll = project.animationSequences()->json();
+            button("sequenceDelete")->click(); QCOMPARE(project.animationSequences()->json(), beforeDeleteAll);
+            QVERIFY(editor.findChild<QLabel *>("sequenceNotice")->text().contains("at least one frame"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void guidedCombatWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
