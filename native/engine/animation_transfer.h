@@ -11,5 +11,7 @@ AnimationDescriptor copyAnimationFrame(const Rom &, AnimationDescriptor destinat
                                        int destinationRecord, const AnimationDescriptor &source,
                                        const ActorArt &, int sourcePose, int sourceRecord, bool copyDuration);
 AnimationDescriptor translateAnimationFrames(AnimationDescriptor, const QMap<int, QSet<int>> &records,
-                                               QPoint offset, int layer = -1);
+                                               QPoint offset, int layer = -1, bool sceneSpace = false);
+// Convert a preview-space move to the integer origins stored by each scaled layer.
+QPoint animationLayerTranslation(QPoint sceneOffset, int scaleX, int scaleY);
 } // namespace lordly

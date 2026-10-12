@@ -140,13 +140,13 @@ void AnimationSequenceEditor::copyFrame(int sourceClass, int sourceRoute, int so
                                                     source, art, sourcePose, sourceRecord, duration));
     apply(std::move(next), duration ? "Copy frame art and duration" : "Copy frame art");
 }
-void AnimationSequenceEditor::translateFrames(const QMap<int, QSet<int>> &records, QPoint offset, int layer) {
+void AnimationSequenceEditor::translateFrames(const QMap<int, QSet<int>> &records, QPoint offset, int layer, bool sceneSpace) {
     if (offset.isNull() || records.isEmpty()) return;
     const int id = selectedClass(), flags = routes_->currentIndex();
     auto next = editableSequences();
     const auto original = next.find(id, flags);
     if (!original) throw Error("Make a private copy before translating its frames");
-    next.setDescriptor(id, flags, translateAnimationFrames(*original, records, offset, layer));
+    next.setDescriptor(id, flags, translateAnimationFrames(*original, records, offset, layer, sceneSpace));
     apply(std::move(next), "Translate animation frame layers");
 }
 void AnimationSequenceEditor::chooseSource(bool compare, int destinationRecord, bool duration) {

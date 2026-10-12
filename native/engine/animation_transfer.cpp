@@ -97,8 +97,12 @@ AnimationDescriptor copyAnimationFrame(const Rom &rom, AnimationDescriptor targe
     target.setPoses(bank);
     return target;
 }
+QPoint animationLayerTranslation(QPoint offset, int scaleX, int scaleY) {
+    return {scaleX ? qRound(offset.x() * 1024. / scaleX) : 0,
+            scaleY ? qRound(offset.y() * 1024. / scaleY) : 0};
+}
 AnimationDescriptor translateAnimationFrames(AnimationDescriptor target, const QMap<int, QSet<int>> &selected,
-                                               QPoint offset, int layer) {
+                                               QPoint offset, int layer, bool sceneSpace) {
     auto bank = target.poses();
     for (auto pose = selected.cbegin(); pose != selected.cend(); ++pose) {
         auto records = bank.effective(pose.key()).records;
@@ -111,7 +115,8 @@ AnimationDescriptor translateAnimationFrames(AnimationDescriptor target, const Q
             if (layer >= u16(row, 0)) throw Error("The selected layer is absent from a selected frame");
             for (int i = 0; i < u16(row, 0); ++i) if (layer < 0 || layer == i) {
                 const int at = 2 + i * 16;
-                const int x = qint16(u16(row, at + 2)) + offset.x(), y = qint16(u16(row, at + 4)) + offset.y();
+                const auto delta = sceneSpace ? animationLayerTranslation(offset, u16(row, at + 12), u16(row, at + 14)) : offset;
+                const int x = qint16(u16(row, at + 2)) + delta.x(), y = qint16(u16(row, at + 4)) + delta.y();
                 if (x < -32768 || x > 32767 || y < -32768 || y > 32767)
                     throw Error("Translated layer exceeds signed sprite coordinates");
                 put16(row, at + 2, quint16(x)); put16(row, at + 4, quint16(y));

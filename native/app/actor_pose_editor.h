@@ -38,6 +38,7 @@ class ActorPoseEditor : public QWidget {
 
   signals:
     void framePresented(int state, int record, int token, bool playback);
+    void frameArtworkMoved(QPoint offset);
 
   private:
     void loadSources();
@@ -92,6 +93,7 @@ class ActorPoseEditor : public QWidget {
     std::optional<int> selectedFrame_;
     std::optional<int> previousFrame_;
     bool frameEditing_ = false;
+    bool committingArtworkMove_ = false;
     QVector<QWidget *> inspectionControls_;
     QRectF editingBounds_;
 };

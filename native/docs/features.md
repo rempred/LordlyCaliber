@@ -167,7 +167,10 @@ Combat frame editing shows a numbered thumbnail for every authored frame, includ
 repeated artwork. The grid wraps and scrolls beside a large preview, beneath the
 existing class/action/side/mode/variant assignment controls. Click a card to inspect
 it; double-click to paint. Drag one card or use Earlier/Later to reorder. Ctrl/Shift
-selects multiple frames for timing, duplicate/delete and one-pixel artwork nudges.
+selects multiple frames for timing, duplicate/delete and artwork positioning.
+Drag the artwork in the preview to position the selected frames together. Each
+drag is one Undo step; Escape cancels it. The background or middle mouse button
+pans, and the wheel zooms. The previous-frame overlay stays fixed while dragging.
 Duration changes apply immediately; the previous-frame overlay helps with alignment.
 Delete and Ctrl+D work while the frame grid has focus. Playback speed is adjustable;
 a green outline follows the playing frame without changing the editing selection.

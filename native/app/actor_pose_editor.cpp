@@ -2,6 +2,7 @@
 #include "engine/sprite_sources.h"
 #include "engine/actor_materials.h"
 #include "engine/class_data.h"
+#include "engine/animation_transfer.h"
 #include "engine/scene_transforms.h"
 #include "engine/text.h"
 #include <QCheckBox>
@@ -13,10 +14,13 @@
 #include <QGraphicsView>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QListWidget>
 #include <QPainter>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
@@ -65,15 +69,113 @@ PreviewPose preview(const std::variant<ActorPosePlayer, SpritePosePlayer> &playe
 class PoseView : public QGraphicsView {
   public:
     using QGraphicsView::QGraphicsView;
+    std::function<void(QPoint)> artworkMoved;
+    void setArtwork(const QVector<QGraphicsPixmapItem *> &items) {
+        cancelMove();
+        artwork_ = items;
+    }
 
   protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::MiddleButton) {
+            cancelMove();
+            panning_ = true;
+            panPosition_ = event->pos();
+            viewport()->setCursor(Qt::ClosedHandCursor);
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::LeftButton) {
+            for (auto item : artwork_) {
+                if (!item->contains(item->mapFromScene(mapToScene(event->pos())))) continue;
+                setFocus(Qt::MouseFocusReason);
+                dragging_ = true;
+                start_ = event->pos();
+                startScene_ = mapToScene(start_);
+                positions_.clear();
+                for (auto layer : artwork_) positions_ << layer->pos();
+                viewport()->setCursor(Qt::SizeAllCursor);
+                event->accept();
+                return;
+            }
+        }
+        QGraphicsView::mousePressEvent(event);
+    }
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (panning_) {
+            const auto delta = event->pos() - panPosition_;
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+            panPosition_ = event->pos();
+        } else if (dragging_) updateMove(event->pos());
+        else {
+            QGraphicsView::mouseMoveEvent(event);
+            return;
+        }
+        event->accept();
+    }
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::MiddleButton && panning_) {
+            panning_ = false;
+            viewport()->setCursor(Qt::OpenHandCursor);
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::LeftButton && dragging_) {
+            updateMove(event->pos());
+            const auto offset = offset_;
+            // Restore transient positions before publishing; refresh can destroy these items.
+            cancelMove();
+            event->accept();
+            if (!offset.isNull() && artworkMoved) artworkMoved(offset);
+            return;
+        }
+        QGraphicsView::mouseReleaseEvent(event);
+    }
+    void keyPressEvent(QKeyEvent *event) override {
+        if (event->key() == Qt::Key_Escape && dragging_) {
+            cancelMove();
+            event->accept();
+            return;
+        }
+        QGraphicsView::keyPressEvent(event);
+    }
+    void focusOutEvent(QFocusEvent *event) override {
+        cancelMove();
+        QGraphicsView::focusOutEvent(event);
+    }
     void wheelEvent(QWheelEvent *event) override {
+        if (dragging_ || panning_) { event->accept(); return; }
         const double factor = event->angleDelta().y() > 0 ? 1.2 : 1 / 1.2;
         const double next = transform().m11() * factor;
         if (next >= .05 && next <= 64)
             scale(factor, factor);
         event->accept();
     }
+  private:
+    void updateMove(QPoint position) {
+        if ((position - start_).manhattanLength() < 3 && offset_.isNull()) return;
+        offset_ = (mapToScene(position) - startScene_).toPoint();
+        for (int i = 0; i < artwork_.size(); ++i) {
+            const auto transform = artwork_[i]->transform();
+            const auto local = animationLayerTranslation(offset_, qRound(transform.m11() * 1024),
+                                                        qRound(transform.m22() * 1024));
+            artwork_[i]->setPos(positions_[i] + transform.map(QPointF(local)));
+        }
+    }
+    void cancelMove() {
+        if (!dragging_) return;
+        for (int i = 0; i < artwork_.size(); ++i) artwork_[i]->setPos(positions_[i]);
+        dragging_ = false;
+        positions_.clear();
+        offset_ = {};
+        viewport()->setCursor(Qt::OpenHandCursor);
+    }
+    QVector<QGraphicsPixmapItem *> artwork_;
+    QVector<QPointF> positions_;
+    bool dragging_ = false, panning_ = false;
+    QPoint start_, offset_, panPosition_;
+    QPointF startScene_;
 };
 } // namespace
 ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
@@ -299,6 +401,14 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     auto split = new QSplitter;
     canvas_ = new QGraphicsScene(this);
     view_ = new PoseView(canvas_);
+    static_cast<PoseView *>(view_)->artworkMoved = [this](QPoint offset) {
+        // Project refresh updates the bounds, but must not zoom/recenter a positioning gesture.
+        committingArtworkMove_ = true;
+        emit frameArtworkMoved(offset);
+        draw(); // Also restore the original artwork if validation rejected the move.
+        fit_ = false;
+        committingArtworkMove_ = false;
+    };
     view_->setObjectName("actorCanvas");
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     view_->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
@@ -705,6 +815,7 @@ void ActorPoseEditor::showFrame(int frame) {
 }
 void ActorPoseEditor::setFrameEditing(bool enabled) {
     frameEditing_ = enabled;
+    if (!enabled) static_cast<PoseView *>(view_)->setArtwork({});
     for (auto widget : inspectionControls_) widget->setVisible(!enabled);
     if (enabled) {
         projected_->setChecked(false);
@@ -726,6 +837,7 @@ void ActorPoseEditor::setFrameBounds(const QRectF &bounds) {
 void ActorPoseEditor::setPlaybackRate(double rate) { speed_->setValue(qRound(30 * rate)); }
 void ActorPoseEditor::draw() {
     // Drop observers before deleting selected scene items (selectionChanged is synchronous).
+    static_cast<PoseView *>(view_)->setArtwork({});
     items_.clear();
     canvas_->clear();
     layers_->clear();
@@ -800,7 +912,7 @@ void ActorPoseEditor::draw() {
                     .arg(fallback ? " (fallback)" : "")
                     .arg(i < 16 ? QString::number(u8(a.material, i)) : QString("unmapped")));
         }
-        if (fit_ || automaticFit_->isChecked()) {
+        if (!committingArtworkMove_ && (fit_ || automaticFit_->isChecked())) {
             canvas_->setSceneRect(bounds.isEmpty() ? QRectF(-32, -32, 64, 64)
                                                    : bounds.adjusted(-8, -8, 8, 8));
             view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
@@ -823,8 +935,9 @@ void ActorPoseEditor::draw() {
         setProperty("frameToken", a.frame);
         if (selectedFrame_) status_->setText(QString("Selected frame %1 · Play resumes sequence playback").arg(a.frame));
         if (frameEditing_)
-            status_->setText(selectedFrame_ ? "Selected artwork · scroll to zoom, drag to pan"
-                                           : "Animation preview · sound is not played");
+            status_->setText(selectedFrame_ ? "Selected artwork · drag to position"
+                                           : "Animation preview · select a frame to position its artwork");
+        if (frameEditing_ && selectedFrame_) static_cast<PoseView *>(view_)->setArtwork(items_);
         setProperty("poseCursor", a.cursor);
         setProperty("poseDelay", a.delay);
         setProperty("poseX", a.x);

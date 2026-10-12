@@ -210,7 +210,7 @@ header remains owned by `CombatAnimationEditor` and is unchanged.
 Guided mutation obtains an editable snapshot without publishing it. Automatic
 class/route isolation and the requested change publish together as one SequenceCommand;
 modal cancellation leaves the project untouched. Batch duration, duplicate/delete,
-reorder and nudges use the same validated engine operations. Multi-selection is
+reorder and positioning use the same validated engine operations. Multi-selection is
 retained across refresh; Ctrl-deselect cannot leave painting aimed at an unselected
 card. A mixed duration commits an explicitly typed value even when it equals the
 first selected frame, but focus changes alone never commit. Dragging uses a custom
@@ -219,7 +219,11 @@ QDrag lifecycle so Qt does not remove source rows after the project rebuilds the
 ActorPoseEditor exposes a compact frame-editing mode: common authored bounds,
 static full-opacity artwork, optional previous-frame ghost, and existing native
 playback with a non-selecting card indicator. Inspection/camera/equipment controls
-remain in the detailed preview. Tests exercise actual thumbnail clicks and timing
+remain in the detailed preview. Preview artwork drags are transient until release;
+layer origins account for each layer's scale and quantize to native integer coordinates.
+The project publishes one atomic move across the selected frames, preserving the
+view transform and pan. Escape/focus loss cancel; background/middle drag pans.
+Tests exercise actual thumbnail clicks and timing
 keystrokes, isolation/cancellation, batch edits, selection, playback indication,
 Undo, imports and export/reopening. Offscreen captures at1100×780 and1440×900 were
 inspected; this change does not add full battle playback or a new emulator test.

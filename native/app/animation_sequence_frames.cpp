@@ -224,21 +224,8 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
         connect(shortcut, &QShortcut::activated, this,
                 [this, name = entry.second] { findChild<QPushButton *>(name)->click(); });
     }
-    auto nudge = new QHBoxLayout;
-    nudge->addWidget(new QLabel("Move artwork"));
-    for (const auto &entry :
-         {qMakePair(QString("←"), QPoint(-1, 0)), qMakePair(QString("→"), QPoint(1, 0)),
-          qMakePair(QString("↑"), QPoint(0, -1)), qMakePair(QString("↓"), QPoint(0, 1))}) {
-        auto b = new QPushButton(entry.first);
-        b->setMaximumWidth(42);
-        b->setObjectName(QString("sequenceNudge%1_%2").arg(entry.second.x()).arg(entry.second.y()));
-        b->setToolTip("Move artwork in the selected frames by one pixel");
-        connect(b, &QPushButton::clicked, this,
-                [this, offset = entry.second] { guarded([&] { moveFrameArtwork(offset); }); });
-        nudge->addWidget(b);
-    }
-    nudge->addStretch();
-    column->addLayout(nudge);
+    connect(preview_, &ActorPoseEditor::frameArtworkMoved, this,
+            [this](QPoint offset) { guarded([&] { moveFrameArtwork(offset); }); });
     frameStatus_ = new QLabel;
     frameStatus_->setWordWrap(true);
     frameStatus_->setObjectName("sequenceFrameStatus");
@@ -266,8 +253,9 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
             [this, speed] { preview_->setPlaybackRate(speed->currentData().toDouble()); });
     connect(onion_, &QCheckBox::toggled, this, [this] { updateFrameTools(); });
     previewLayout->addLayout(options);
-    auto note = new QLabel("Thumbnails show the authored frames in order. Playback also follows "
-                           "the animation's movement, pauses and loops.");
+    auto note = new QLabel("Drag the preview artwork to move it in the selected frames. "
+                          "Drag the background or use the middle mouse button to pan. "
+                          "Scroll to zoom; Escape cancels a move.");
     note->setWordWrap(true);
     previewLayout->addWidget(note);
     split->addWidget(right);
@@ -507,6 +495,6 @@ void AnimationSequenceEditor::moveFrameArtwork(QPoint offset) {
     const auto selected = selectedFrameRecords();
     if (selected.isEmpty())
         return;
-    translateFrames({{poses_->currentData().toInt(), selected}}, offset);
+    translateFrames({{poses_->currentData().toInt(), selected}}, offset, -1, true);
 }
 } // namespace lordly

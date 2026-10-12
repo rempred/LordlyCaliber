@@ -255,8 +255,6 @@ void MainWindow::installProject(Project project) {
         workspaces_->tabBar()->setTabButton(tab, QTabBar::RightSide, badge);
         workspaces_->setTabToolTip(tab, "Cutscenes — work in progress");
     }
-    workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Tools");
     if (project_->rom().revision() == 0) {
         auto artwork = new QTabWidget;
         artwork->setObjectName("artWorkspace");
@@ -292,6 +290,8 @@ void MainWindow::installProject(Project project) {
         });
         workspaces_->addTab(artwork, "Art and Animation");
     }
+    workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Tools");
     if (project_->rom().revision() == 0) {
         auto save = new SaveEditor(project_.get());
         undoGroup_->addStack(save->undoStack());

@@ -24,7 +24,7 @@ class AnimationSequenceEditor : public QWidget {
     void importSequence(const SpriteAsset &);
     void copySequence(int sourceClass, int sourceRoute, int sourcePose, bool controls = true);
     void copyFrame(int sourceClass, int sourceRoute, int sourcePose, int sourceRecord, bool duration);
-    void translateFrames(const QMap<int, QSet<int>> &, QPoint, int layer = -1);
+    void translateFrames(const QMap<int, QSet<int>> &, QPoint, int layer = -1, bool sceneSpace = false);
     void setContext(int classId, int flags, int pose);
     void setGuided(bool);
     void assignAnimation(int action, bool blocked, int pose);

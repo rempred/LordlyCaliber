@@ -149,6 +149,11 @@ class SequenceEditorTests : public QObject {
             }
             QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
             frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect);
+            // A click is navigation only, even before this class has a private copy.
+            auto untouchedCanvas = editor.findChild<QGraphicsView *>("actorCanvas");
+            QTest::mouseClick(untouchedCanvas->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              untouchedCanvas->viewport()->rect().center());
+            QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
             // Cancel the first painting operation: even automatic isolation must be atomic.
             bool painterOpened = false;
             QTimer::singleShot(30, [&] {
@@ -208,11 +213,82 @@ class SequenceEditorTests : public QObject {
             const auto beforeNudge = *project.animationSequences()->find(2, 0);
             const int oldToken = token(beforeNudge.poses().effective(40).records[row]);
             const auto oldFrame = beforeNudge.frame(oldToken);
-            button("sequenceNudge1_0")->click();
+            // Non-default layer scales use scene-space displacement without changing the
+            // existing advanced editor's native-coordinate translation behavior.
+            auto scaled = beforeNudge;
+            auto scaledFrame = oldFrame;
+            put16(scaledFrame, 14, 512); put16(scaledFrame, 16, 2048);
+            const int scaledToken = scaled.appendFrame(scaledFrame);
+            auto scaledBank = scaled.poses(); scaledBank.setFrame(40, row, scaledToken, 4);
+            scaled.setPoses(scaledBank);
+            const auto scaledResult = translateAnimationFrames(scaled, {{40, {row}}}, {3, -2}, -1, true);
+            const auto resultFrame = scaledResult.frame(token(scaledResult.poses().effective(40).records[row]));
+            QCOMPARE(qint16(u16(resultFrame, 4)), qint16(u16(scaledFrame, 4)) + 6);
+            QCOMPARE(qint16(u16(resultFrame, 6)), qint16(u16(scaledFrame, 6)) - 1);
+            auto canvas = editor.findChild<QGraphicsView *>("actorCanvas");
+            const auto artPoint = [&]() {
+                for (auto item : canvas->scene()->items()) {
+                    auto image = dynamic_cast<QGraphicsPixmapItem *>(item);
+                    if (!image || !(image->flags() & QGraphicsItem::ItemIsSelectable)) continue;
+                    const auto pixels = image->pixmap().toImage();
+                    for (int y = 0; y < pixels.height(); ++y)
+                        for (int x = 0; x < pixels.width(); ++x) if (pixels.pixelColor(x, y).alpha() > 0) {
+                            const auto point = canvas->mapFromScene(image->mapToScene(QPointF(x + .5, y + .5)));
+                            if (canvas->viewport()->rect().contains(point)) return point;
+                        }
+                }
+                return QPoint(-1, -1);
+            };
+            canvas->setTransform(QTransform::fromScale(4, 4));
+            const QPoint start = artPoint(); QVERIFY(start.x() >= 0);
+            const auto beforeDrag = project.animationSequences()->json();
+            const int undoIndex = undo.index();
+            QTest::mouseClick(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+            QCOMPARE(project.animationSequences()->json(), beforeDrag);
+            QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+            QTest::mouseMove(canvas->viewport(), start + QPoint(12, -8));
+            QCOMPARE(project.animationSequences()->json(), beforeDrag); // Only a live preview so far.
+            QTest::keyClick(canvas, Qt::Key_Escape);
+            QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start + QPoint(12, -8));
+            QCOMPARE(project.animationSequences()->json(), beforeDrag); QCOMPARE(undo.index(), undoIndex);
+            QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+            QTest::mouseMove(canvas->viewport(), start + QPoint(12, -8));
+            QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start + QPoint(12, -8));
+            QCOMPARE(undo.index(), undoIndex + 1);
+            QCOMPARE(canvas->transform().m11(), 4.);
             const auto nudged = *project.animationSequences()->find(2, 0);
             const auto newFrame = nudged.frame(token(nudged.poses().effective(40).records[row]));
             QCOMPARE(nudged.frame(oldToken), oldFrame);
-            for (int i = 0; i < u16(oldFrame, 0); ++i) QCOMPARE(qint16(u16(newFrame, 4 + i * 16)), qint16(u16(oldFrame, 4 + i * 16)) + 1);
+            for (int i = 0; i < u16(oldFrame, 0); ++i) {
+                const int at = 2 + i * 16;
+                QCOMPARE(qint16(u16(newFrame, at + 2)), qint16(u16(oldFrame, at + 2)) + qRound(3. * 1024 / u16(oldFrame, at + 12)));
+                QCOMPARE(qint16(u16(newFrame, at + 4)), qint16(u16(oldFrame, at + 4)) + qRound(-2. * 1024 / u16(oldFrame, at + 14)));
+            }
+            const auto afterDrag = project.animationSequences()->json();
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), beforeDrag);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), afterDrag);
+            // A second zoom level must produce the same world-space move, and multi-selection
+            // must move each selected frame rather than a shared frame used elsewhere.
+            frames->item(2)->setSelected(true);
+            canvas->setTransform(QTransform::fromScale(2, 2));
+            const auto start2 = artPoint(); QVERIFY(start2.x() >= 0);
+            const auto batchBefore = *project.animationSequences()->find(2, 0);
+            QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start2);
+            QTest::mouseMove(canvas->viewport(), start2 + QPoint(-6, 4));
+            QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start2 + QPoint(-6, 4));
+            QCOMPARE(canvas->transform().m11(), 2.);
+            const auto batchAfter = *project.animationSequences()->find(2, 0);
+            for (int selected : {1, 2}) {
+                const int record = frames->item(selected)->data(Qt::UserRole).toInt();
+                const auto previous = batchBefore.frame(token(batchBefore.poses().effective(40).records[record]));
+                const auto moved = batchAfter.frame(token(batchAfter.poses().effective(40).records[record]));
+                for (int i = 0; i < u16(previous, 0); ++i) {
+                    const int at = 2 + i * 16;
+                    QCOMPARE(qint16(u16(moved, at + 2)), qint16(u16(previous, at + 2)) + qRound(-3. * 1024 / u16(previous, at + 12)));
+                    QCOMPARE(qint16(u16(moved, at + 4)), qint16(u16(previous, at + 4)) + qRound(2. * 1024 / u16(previous, at + 14)));
+                }
+            }
+            frames->setCurrentRow(1, QItemSelectionModel::ClearAndSelect);
             auto onion = editor.findChild<QCheckBox *>("sequenceOnionSkin"); onion->setChecked(true);
             auto scene = editor.findChild<QGraphicsView *>("actorCanvas")->scene();
             bool ghost = false; for (auto item : scene->items()) ghost |= qFuzzyCompare(item->opacity(), .25);
