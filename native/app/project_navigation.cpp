@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/scenario_map_editor.h"
 #include "app/text_workspace.h"
+#include "app/project_review_dialog.h"
 #include <QComboBox>
 #include <QLineEdit>
 #include <QJsonArray>
@@ -72,6 +73,10 @@ void MainWindow::navigateTo(const EditLocation &location) {
             clear("shopSearch"); destination = list("shopList", id);
         } else if (kind == "encounters") {
             clear("encounterSearch"); destination = list("encounterPools", id);
+        } else if (kind == "encounterReward") {
+            clear("rewardSearch"); destination = list("rewardClasses", id);
+        } else if (kind == "customEncounter") {
+            clear("customSearch"); destination = list("customSquadList", CustomSquads::key(id, location.child));
         } else if (kind == "scenarios" || kind == "map" || kind == "town" || kind == "battlefield") {
             int siteRow = -1;
             if (kind == "battlefield") { project_->loadMapEdits(); id = project_->mapEdits()->scenarioForModel(id); }
@@ -142,5 +147,41 @@ void MainWindow::navigateTo(const EditLocation &location) {
                             kind == "classes" ? project_->classDescriptionIndex(id) : id,
                             [this] { updateStatus(); });
     } catch (const std::exception &e) { report(QString::fromUtf8(e.what())); }
+}
+void MainWindow::showUses() {
+    if (!project_ || loading_) return;
+    EditLocation query;
+    for (const auto &kind : {QString("classes"), QString("items"), QString("consumables")}) {
+        auto table = findChild<QTableView *>(kind + "Table");
+        if (table && table->isVisible() && table->currentIndex().isValid()) {
+            query = {kind, table->currentIndex().siblingAtColumn(0).data(Qt::EditRole).toInt()};
+            break;
+        }
+    }
+    for (const auto &pair : {qMakePair(QString("shopList"), QString("shops")),
+                            qMakePair(QString("spriteAssets"), QString("sprites")),
+                            qMakePair(QString("combatMembers"), QString("combatSprite")),
+                            qMakePair(QString("portraitClasses"), QString("classes"))}) {
+        auto rows = findChild<QListWidget *>(pair.first);
+        if (rows && rows->isVisible() && rows->currentItem()) {
+            const auto value = rows->currentItem()->data(Qt::UserRole);
+            query = {pair.second, value.toInt(), -1, value.toString()}; break;
+        }
+    }
+    if (query.editor.isEmpty()) {
+        if (auto classes = findChild<QComboBox *>("combatAnimationClass"); classes && classes->isVisible())
+            query = {"classes", classes->currentData().toInt()};
+        if (auto icons = findChild<QListWidget *>("artIcons"); icons && icons->isVisible() && icons->currentItem()) {
+            const int id = icons->currentItem()->data(Qt::UserRole).toInt();
+            query = {id & 0x200 ? "consumables" : "items", id & 0x1ff};
+        }
+    }
+    if (query.editor.isEmpty()) {
+        report("Select a class, item, shop or sprite, then click ? to find where it is used.");
+        return;
+    }
+    ProjectReviewDialog dialog(*project_, query, this);
+    connect(&dialog, &ProjectReviewDialog::editRequested, this, &MainWindow::navigateTo);
+    dialog.exec();
 }
 } // namespace lordly

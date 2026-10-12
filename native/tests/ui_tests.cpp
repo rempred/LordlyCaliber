@@ -1,5 +1,6 @@
 #include "app/actor_pose_editor.h"
 #include "app/change_report_dialog.h"
+#include "app/project_review_dialog.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/army_editor.h"
@@ -1766,6 +1767,44 @@ class UiTests : public QObject {
             QVERIFY(editor.grab().save("native-background-selection.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
+    void exportReferenceReview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            auto original = project.record(Table::Classes, 2).bytes;
+            auto broken = original; put16(broken, 46, 999);
+            project.replaceBytes(Table::Classes, 2, broken);
+            ProjectReviewDialog review(project);
+            review.show();
+            QTRY_VERIFY_WITH_TIMEOUT(review.property("reviewReady").toBool(), 30000);
+            QVERIFY(!review.findChild<QPushButton *>("confirmRomExport")->isEnabled());
+            auto rows = review.findChild<QTreeWidget *>("projectReviewEntries");
+            QTreeWidgetItem *problem = nullptr;
+            for (int i = 0; i < rows->topLevelItemCount(); ++i) {
+                auto row = rows->topLevelItem(i);
+                const auto target = row->data(0, Qt::UserRole).value<EditLocation>();
+                if (target.editor == "classes" && target.id == 2 && row->text(1).contains("999")) problem = row;
+            }
+            QVERIFY(problem); rows->setCurrentItem(problem);
+            QSignalSpy jump(&review, &ProjectReviewDialog::editRequested);
+            QVERIFY(review.grab().save("native/build/export-reference-problem.png"));
+            review.findChild<QPushButton *>("openReviewEdit")->click();
+            QCOMPARE(review.result(), int(QDialog::Rejected)); QCOMPARE(jump.count(), 1);
+            QCOMPARE(jump.at(0).at(0).value<EditLocation>().id, 2);
+            project.replaceBytes(Table::Classes, 2, original);
+            ProjectReviewDialog fixed(project); fixed.show();
+            QTRY_VERIFY_WITH_TIMEOUT(fixed.property("reviewReady").toBool(), 30000);
+            QVERIFY(fixed.findChild<QPushButton *>("confirmRomExport")->isEnabled());
+            fixed.reject();
+            const int item = u16(original, 46);
+            ProjectReviewDialog uses(project, {"items", item}); uses.show();
+            QTRY_VERIFY_WITH_TIMEOUT(uses.property("reviewReady").toBool(), 30000);
+            QVERIFY(uses.findChild<QTreeWidget *>("projectReviewEntries")->topLevelItemCount() > 0);
+            QVERIFY(!uses.findChild<QPushButton *>("confirmRomExport"));
+            uses.reject();
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void projectChangeReview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -1825,6 +1864,14 @@ class UiTests : public QObject {
             auto shops = window.findChild<QListWidget *>("shopList");
             QVERIFY(shops->isVisible());
             QCOMPARE(shops->currentItem()->data(Qt::UserRole).toInt(), 35);
+            bool usesOpened = false;
+            QTimer::singleShot(0, &window, [&] {
+                if (auto uses = window.findChild<ProjectReviewDialog *>("projectUses")) {
+                    usesOpened = true; uses->reject();
+                }
+            });
+            window.findChild<QAction *>("whereUsed")->trigger();
+            QVERIFY(usesOpened);
             bool opened = false;
             QTimer::singleShot(0, &window, [&] {
                 const auto review = window.findChild<ChangeReportDialog *>("projectChanges");

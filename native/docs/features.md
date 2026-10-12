@@ -4,6 +4,14 @@ Review project changes includes a searchable entry list with before/after detail
 and Open selected edit navigation. Record links preserve identity through sorted
 tables; town reports show name, population, morale, facility and shop values.
 The comparison is explicitly against the loaded source ROM.
+The project toolbar's ? button finds known uses of a selected class, item, shop,
+Art Library asset or shared combat sprite and opens the consuming editor. Searches
+include class fields, inventory, squads, encounters, treasures and art assignments;
+story-computed IDs and untracked independent artwork copies are not live references.
+Export now opens a summary before the output picker, highlights missing references
+with edit links, and refuses to continue while blocking problems remain. The None
+class's sentinel values are excluded. Compilation retains the existing final bounds,
+resource and checksum checks.
 
 Art and Animation → UI and Icons groups Item icons and Class category icons.
 The category editor reads all eight original List Classes symbols from the ROM.

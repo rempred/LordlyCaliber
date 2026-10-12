@@ -5,6 +5,7 @@
 #include "app/army_editor.h"
 #include "app/art_editor.h"
 #include "app/change_report_dialog.h"
+#include "app/project_review_dialog.h"
 #include "app/combat_editor.h"
 #include "app/combat_animation_editor.h"
 #include "app/consumable_editor.h"
@@ -138,6 +139,9 @@ MainWindow::MainWindow(QWidget *parent)
     toolbar->addAction(save);
     toolbar->addAction(build);
     toolbar->addAction(review);
+    auto uses = toolbar->addAction("?", this, &MainWindow::showUses);
+    uses->setObjectName("whereUsed");
+    uses->setToolTip("Where is this used? Select a class, item, shop or sprite first.");
     menuBar()->setCornerWidget(toolbar, Qt::TopRightCorner);
     statusBar()->addPermanentWidget(summary_);
     auto welcome =
@@ -720,6 +724,9 @@ void MainWindow::buildRom() {
         report("Correct invalid text input before building.");
         return;
     }
+    ProjectReviewDialog review(*project_, {}, this);
+    connect(&review, &ProjectReviewDialog::editRequested, this, &MainWindow::navigateTo);
+    if (review.exec() != QDialog::Accepted) return;
     auto path = QFileDialog::getSaveFileName(this, "Export rebuilt ROM",
                                              "Ogre Battle 64-edited." + project_->rom().extension(),
                                              "N64 ROM (*.v64 *.z64 *.n64)");
@@ -766,6 +773,7 @@ void MainWindow::buildRom() {
 }
 void MainWindow::updateStatus() {
     findChild<QAction *>("reviewProjectChanges")->setEnabled(bool(project_));
+    findChild<QAction *>("whereUsed")->setEnabled(bool(project_));
     summary_->setText(project_ ? QString("  US Rev %1  ·  %2 changed records")
                                      .arg(project_->rom().revision())
                                      .arg(project_->changedRecords())

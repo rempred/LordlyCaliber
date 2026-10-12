@@ -26,6 +26,7 @@ class MainWindow : public QMainWindow {
     void openProject();
     void saveProject(bool archive);
     void buildRom();
+    void showUses();
     void updateStatus();
     bool invalidEdits() const;
     void report(const QString &text);

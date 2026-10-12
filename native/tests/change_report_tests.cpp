@@ -1,4 +1,6 @@
 #include "engine/project.h"
+#include "engine/project_references.h"
+#include "engine/actor_art.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,6 +22,53 @@ class ChangeReportTests : public QObject {
         throw Error("Missing test field");
     }
   private slots:
+    void referenceInspection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path), catalog());
+            const auto before = project.manifest();
+            const auto stockIssues = exportIssues(project);
+            QVERIFY(stockIssues.isEmpty());
+            for (const auto &issue : stockIssues) QVERIFY2(!issue.blocking, qPrintable(issue.message));
+            QCOMPARE(project.manifest(), before);
+            project.setValue(Table::Classes, 2, field(Table::Classes, "equipment0"), 277);
+            project.loadShops();
+            auto shops = *project.shops(); shops.setStock(35, {{277}, {1}});
+            project.setShops(shops.json());
+            const auto uses = findProjectUses(project, "items", 277);
+            bool fighter = false, shop = false;
+            for (const auto &use : uses) {
+                fighter |= use.location.editor == "classes" && use.location.id == 2 && use.details.join(" ").contains("277");
+                shop |= use.location.editor == "shops" && use.location.id == 35;
+            }
+            QVERIFY(fighter); QVERIFY(shop);
+            project.setValue(Table::Classes, 2, field(Table::Classes, "equipment0"), 999);
+            const auto issues = exportIssues(project);
+            bool linked = false;
+            for (const auto &issue : issues)
+                linked |= issue.blocking && issue.location.editor == "classes" && issue.location.id == 2 && issue.message.contains("999");
+            QVERIFY(linked);
+            for (const auto &use : findProjectUses(project, "items", 277))
+                QVERIFY(!(use.location.editor == "classes" && use.location.id == 2 && use.subject.endsWith("Weapon")));
+            project.setValue(Table::Classes, 2, field(Table::Classes, "equipment0"), 277);
+            for (const auto &issue : exportIssues(project)) QVERIFY2(!issue.blocking, qPrintable(issue.message));
+            project.loadCombatArtwork();
+            const auto art = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            QString binding;
+            for (const auto &candidate : project.combatArtwork()->bindings())
+                if (candidate.descriptorKey == art.descriptorKey()) { binding = candidate.id; break; }
+            QVERIFY(!binding.isEmpty());
+            bool spriteUse = false;
+            for (const auto &use : findProjectUses(project, "combatSprite", -1, binding))
+                spriteUse |= use.location.editor == "combatAnimation" && use.location.id == 2;
+            QVERIFY(spriteUse);
+            QTemporaryDir dir; project.saveFolder(dir.filePath("project"));
+            auto reopened = Project::fromRom(project.rom(), catalog());
+            reopened.applyManifest(Project::readProject(dir.filePath("project")));
+            QCOMPARE(findProjectUses(reopened, "items", 277).size(), findProjectUses(project, "items", 277).size());
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void recordsAndPersistence() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
