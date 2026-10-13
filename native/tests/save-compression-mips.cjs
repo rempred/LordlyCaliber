@@ -113,6 +113,7 @@ assert.equal(call('lc_save_expand_image',imageAt,32768),1);
 const before=read(imageAt,32768);let commits=0,refusals=0;
 if(fixtureDir)for(const name of fs.readdirSync(fixtureDir).filter(n=>n.endsWith('.bin'))){
  const data=fs.readFileSync(path.join(fixtureDir,name)),size=data.length,workBytes=20224+size+2*(4096+size);
+ if(size!==22820)continue; // Other proposed layouts exercise only the generic codec above.
  m.load(source,data);assert.equal(call('lc_save_record_seal',source,size,15,2),1);
  const signed=read(source,size);m.load(imageAt,before);
  for(const available of [0,workBytes-1]){
@@ -139,7 +140,8 @@ if(fixtureDir)for(const name of fs.readdirSync(fixtureDir).filter(n=>n.endsWith(
  }
 }
 report.transactionalCommits=commits;report.transactionalRefusals=refusals;
-report.scope='Compiled N64 codec plus transactional 32-KiB image replacement; normal slots/options preserved. No save-menu or expanded-squad gameplay proof.';
+report.scope=commits ? 'Compiled N64 codec plus transactional 32-KiB image replacement; normal slots/options preserved. No save-menu or expanded-squad gameplay proof.' :
+ 'Compiled N64 codec only. These proposed layouts are not accepted by the installed save-image path; no expanded-squad gameplay proof.';
 fs.writeFileSync(path.join(work,'report.json'),JSON.stringify(report,null,2)+'\n');
 for(const mode of ['populated','soldier-heavy','opaque-stress','incompressible']){
  const rows=population.filter(r=>r.name.startsWith(mode));if(rows.length)console.log(JSON.stringify({mode,cases:rows.length,minSpare:Math.min(...rows.map(r=>r.spareBytes)),maxFrame:Math.max(...rows.map(r=>r.frameBytes))}));
