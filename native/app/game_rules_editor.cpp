@@ -45,7 +45,7 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
             : group=="elements" ? "Applies to elemental weapon hits and spells. Compares the attack's element with the character's own element: matching adds points; opposed subtracts them; other pairings add 0. Opposed pairs: Wind / Earth and Flame / Water. Virtue/Bane keep their alignment-based rules."
             : group=="weapons" ? "Applies when casting a spell with an elemental weapon equipped. Works with swords, spears and other weapons as well as staves. Compares the spell's element with the weapon's element: matching adds points to the magic attack factor; opposed subtracts them. Normal weapon hits get no bonus from this setting."
             : group=="recovery" ? "Rest recovery controls how often both fatigue and HP recover: 200% gives roughly twice as many cycles; 50% gives half as many. Each cycle removes up to 2 fatigue and restores the HP amount below. Night and Healing Censer bonuses remain. Living, non-petrified characters heal up to maximum HP; Soldier groups keep their native recovery stages."
-            : group=="resistance" ? "100% keeps retail damage reduction. 50% halves its strength; 200% doubles it. Damage still has the game's minimum of 1. Fixed-damage attacks keep their special formulas."
+            : group=="resistance" ? "Controls how much physical and elemental resistance reduces incoming damage. Higher values make resistance more protective; lower values make attacks hurt more. 100% keeps retail strength; 0% removes this reduction. The character's listed resistance does not change."
             : group=="clock" ? "100% keeps retail timing. 200% lasts twice as long; 50% lasts half as long. These settings affect every mission."
             : "100% keeps retail timing. 200% gives roughly twice as many cycles; 50% gives half as many. Existing eligibility and maximums remain.");
         help->setWordWrap(true);form->addRow(help);
@@ -80,7 +80,7 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
                 undo->push(new RuleCommand(project_,rule.key,rounded,rule.label));
             });
         }
-        if(group=="tactics" || group=="elements" || group=="weapons" || group=="recovery") {
+        if(group=="tactics" || group=="elements" || group=="weapons" || group=="recovery" || group=="resistance") {
             auto example=new QLabel;example->setObjectName("ruleExample_"+group);
             example->setWordWrap(true);example->setTextInteractionFlags(Qt::TextSelectableByMouse);
             form->addRow(example);
@@ -131,6 +131,10 @@ void GameRulesEditor::refresh() {
     example("weapons",QString("At %1 points: a matching weapon changes a neutral 100% magic attack factor to %2%; an opposed weapon changes it to %3%. Opposed pairs: Wind / Earth, Flame / Water, Virtue / Bane. Non-elemental and unrelated pairings add 0.\n\n"
         "Together: a Flame character holding a Flame sword or staff casts a Flame spell: +%4 character affinity +%1 weapon bonus = +%5 points (100% → %6% before other modifiers). A normal sword hit uses only Character elemental affinity. Final damage also depends on the target's defense and resistance.")
         .arg(weapon).arg(100+weapon).arg(100-weapon).arg(affinity).arg(affinity+weapon).arg(100+affinity+weapon));
+    const int resistance=rules.value("resistanceStrength");
+    example("resistance",QString("Example: a hit worth 100 damage before resistance, against 40 resistance. At 50% strength it deals 80 damage; at retail 100%, 60 damage; at 200%, 20 damage.\n\n"
+        "Current setting (%1%): about %2 damage in this example. Other modifiers and random variation are held fixed. Damage stays at least 1; healing and fixed-damage attacks keep their own rules.")
+        .arg(resistance).arg(std::max(1,100-40*resistance/100)));
     const int hp=rules.value("restHealing"), rate=rules.value("recoveryRate");
     example("recovery",hp ? QString("Current settings: %1 HP per eligible member per cycle at %2% cycle speed — about %3× retail HP healing over the same resting time, until the native HP limits are reached.")
         .arg(hp).arg(rate).arg(QString::number(double(hp)*rate/100.,'g',4))

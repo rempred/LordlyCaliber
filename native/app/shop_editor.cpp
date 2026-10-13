@@ -236,9 +236,9 @@ QWidget *ShopEditor::makeInventory(bool equipment) {
 }
 QString ShopEditor::itemName(bool equipment, int id) const {
     if (equipment)
-        return project_->record(Table::Items, id).name;
+        return project_->record(Table::Items, id).name.simplified();
     return project_->catalog()["CONSUMABLE_NAMES"].toObject()[QString::number(id)].toString(
-        QString("Consumable %1").arg(id));
+        QString("Consumable %1").arg(id)).simplified();
 }
 int ShopEditor::selected() const {
     return shops_->currentItem() ? shops_->currentItem()->data(Qt::UserRole).toInt() : -1;

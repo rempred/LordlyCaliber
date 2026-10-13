@@ -1,6 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/encounter_editor.h"
+#include "app/encounter_labels.h"
 #include "app/custom_squad_editor.h"
 #include "app/terrain_assignments.h"
 #include <algorithm>
@@ -350,6 +351,7 @@ void EncounterEditor::refresh() {
         tile->setData(Qt::UserRole, encounters.lookup(t));
         tile->setBackground(encounters.lookup(t) ? palette().brush(QPalette::Highlight) : QBrush(Qt::transparent));
         tile->setForeground(palette().brush(encounters.lookup(t) ? QPalette::HighlightedText : QPalette::Text));
+        terrainTable_->setRowHeight(t, std::max(2, int(tile->text().count('\n')) + 1) * fontMetrics().lineSpacing() + 18);
     }
     terrainContext_->setText(pool >= 1 ? "Creature preview: " + encounters.label(pool)
                                       : "Select a map in Map encounters to preview creatures.");
@@ -386,17 +388,10 @@ void EncounterEditor::refreshPoolRows() {
         }
         if (terrainNames.isEmpty()) states << "No terrain assigned";
         else if (!anyChance) states << "Terrain chance is zero";
-        bool custom = false;
-        const auto keys = selected() >= 1 ? encounters.scenarioKeys(selected()) : QVector<int>{};
-        for (int key : keys) {
-            const auto profile = encounters.customSquads().profiles().constFind(CustomSquads::key(key, slot));
-            if (profile != encounters.customSquads().profiles().cend() && profile->enabled) {
-                custom = true;
-                states << QString("Custom squad on runtime key %1").arg(key);
-            }
-        }
-        if (selected() >= 1 && !encounters.classAt(selected(), slot, 0) && !encounters.classAt(selected(), slot, 1))
-            states << (custom ? "No base creatures assigned" : "No creatures assigned");
+        const auto squads = squadSummaries(slot);
+        states << squads;
+        if (squads.isEmpty() && selected() >= 1 && !encounters.classAt(selected(), slot, 0) && !encounters.classAt(selected(), slot, 1))
+            states << "No creatures assigned";
         const auto terrainText = terrainNames.isEmpty() ? QString("Unassigned terrain") : terrainNames.join(" / ");
         const auto subtitle = QString("Pool %1").arg(slot + 1) +
             (terrainNames.size() > 1 ? " · Shared creature choices" : "");
@@ -466,7 +461,7 @@ void EncounterEditor::refreshPoolRows() {
         auto tile = new QListWidgetItem(QString("Pool %1\n%2").arg(slot + 1).arg(poolContents(slot)), poolTiles_);
         tile->setData(Qt::UserRole, slot + 1); tile->setToolTip(encounters.poolSlotLabel(slot));
         tile->setToolTip(tile->text() + "\n" + encounters.poolSlotLabel(slot));
-        tile->setSizeHint(QSize(260, fontMetrics().lineSpacing() * 3 + 14)); tile->setBackground(palette().brush(QPalette::Highlight));
+        tile->setSizeHint(QSize(260, fontMetrics().lineSpacing() * std::max(3, int(tile->text().count('\n')) + 2) + 14)); tile->setBackground(palette().brush(QPalette::Highlight));
         tile->setForeground(palette().brush(QPalette::HighlightedText));
     }
     poolTiles_->setCurrentRow(qBound(0, selected, count - 1));
@@ -478,11 +473,25 @@ QString EncounterEditor::poolContents(int slot) const {
     const int first = encounters.classAt(selected(), slot, 0), second = encounters.classAt(selected(), slot, 1);
     auto name = [this](int id) { return id ? QString(project_->record(Table::Classes, id).name).replace('\n', ' ') : QString("None"); };
     QString result = !first && !second ? "No creatures assigned" : first == second ? name(first) : name(first) + " / " + name(second);
-    for (int key : encounters.scenarioKeys(selected())) {
+    const auto squads = squadSummaries(slot);
+    if (!squads.isEmpty()) {
+        if (squads.size() == encounters.scenarioKeys(selected()).size()) return squads.join('\n');
+        return squads.join('\n') + "\nOther map keys: " + result;
+    }
+    return result;
+}
+QStringList EncounterEditor::squadSummaries(int slot) const {
+    QStringList result;
+    if (selected() < 1) return result;
+    const auto &encounters = *project_->encounters();
+    const auto keys = encounters.scenarioKeys(selected());
+    for (int key : keys) {
         const auto profile = encounters.customSquads().profiles().constFind(CustomSquads::key(key, slot));
         if (profile != encounters.customSquads().profiles().cend() && profile->enabled) {
-            result += " · Custom squad override";
-            break;
+            auto summary = QString("Assigned squad: %1 · %2 members")
+                .arg(encounterSquadName(*project_, profile.key())).arg(profile->members.size());
+            if (keys.size() > 1) summary += QString(" (key %1)").arg(key);
+            result << summary;
         }
     }
     return result;

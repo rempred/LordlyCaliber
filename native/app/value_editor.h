@@ -30,7 +30,7 @@ class ValueEditor : public QWidget {
                 bool ok = false;
                 auto id = it.key().toInt(&ok);
                 if (ok && it.value().isString() && id >= field.minimum() && id <= field.maximum())
-                    sorted[id] = it.value().toString();
+                    sorted[id] = it.value().toString().simplified();
             }
             for (auto it = sorted.begin(); it != sorted.end(); ++it)
                 choice_->addItem(it.value(), it.key());
@@ -62,7 +62,7 @@ class ValueEditor : public QWidget {
             bool ok = false;
             const auto id = it.key().toInt(&ok);
             if (ok && it.value().isString() && id >= spin_->minimum() && id <= spin_->maximum())
-                sorted[id] = it.value().toString();
+                sorted[id] = it.value().toString().simplified();
         }
         for (auto it = sorted.begin(); it != sorted.end(); ++it)
             choice_->addItem(it.value(), it.key());

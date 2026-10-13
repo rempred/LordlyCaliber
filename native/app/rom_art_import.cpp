@@ -142,14 +142,14 @@ RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink
                 const auto records = Project::fromRom(rom, QJsonObject()).records(table);
                 for (const auto &r : records)
                     if (r.id)
-                        add(QString("%1 · %2").arg(r.id).arg(r.name),
+                        add(QString("%1 · %2").arg(r.id).arg(r.name.simplified()),
                             r.id | (category->currentIndex() ? 512 : 0));
             } else if (category->currentIndex() == 2) {
                 for (int i = 1; i < classes.entries().size(); ++i)
                     for (int s = 0; s < 2; ++s)
                         add(QString("%1 · %2 · portrait %3")
                                 .arg(i)
-                                .arg(decodeText(classes.entries()[i].name))
+                                .arg(decodeText(classes.entries()[i].name).simplified())
                                 .arg(s + 1),
                             i * 2 + s);
             } else if (category->currentIndex() == 3) {

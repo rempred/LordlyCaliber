@@ -58,7 +58,7 @@ ScenarioSquadPanel::ScenarioSquadPanel(Project *project,
         }
     });
     for(const auto table:{Table::Consumables,Table::Items}) for(const auto &r:project_->records(table))
-        drop_->addItem(QString("%1 · %2").arg(table==Table::Items?"Equipment":"Consumable",r.name),r.id|(table==Table::Items?0x8000:0));
+        drop_->addItem(QString("%1 · %2").arg(table==Table::Items?"Equipment":"Consumable",r.name.simplified()),r.id|(table==Table::Items?0x8000:0));
     layout->addLayout(form);
     restore_=new QPushButton("Restore this squad from opened ROM");restore_->setObjectName(prefix+"RestoreSquad");
     layout->addWidget(restore_);
@@ -80,7 +80,7 @@ void ScenarioSquadPanel::refresh(int key,int row) {
         const auto &s=project_->scenarios()->scenario(key);const auto &d=s.layout.deployments[row];
         drop_->clear();
         for(const auto table:{Table::Consumables,Table::Items})for(const auto &r:project_->records(table))
-            drop_->addItem(QString("%1 · %2").arg(table==Table::Items?"Equipment":"Consumable",r.name),r.id|(table==Table::Items?0x8000:0));
+            drop_->addItem(QString("%1 · %2").arg(table==Table::Items?"Equipment":"Consumable",r.name.simplified()),r.id|(table==Table::Items?0x8000:0));
         const auto members=squadMembers(s.squads[row]);QStringList names;
         for(int i=0;i<members.size();++i) {const auto &m=members[i];const auto name=QString(project_->record(Table::Classes,m.classId).name).replace('\n',' ');
             board_->setUnit(m.cell,m.classId,name);names<<QString("%1%2 · Level %3").arg(name,i?"":" (Leader)").arg(s.layout.baseLevel()+m.levelOffset);}

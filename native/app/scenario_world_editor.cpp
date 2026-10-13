@@ -361,7 +361,7 @@ void ScenarioWorldEditor::fillItems() {
     if (table != 1 && table != 2)
         return;
     for (const auto &r : project_->records(table == 1 ? Table::Items : Table::Consumables))
-        item_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
+        item_->addItem(QString("%1 · %2").arg(r.id).arg(r.name.simplified()), r.id);
 }
 void ScenarioWorldEditor::editTreasure(const QString &label,
                                       const std::function<void(QByteArray &)> &edit) {

@@ -1,5 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/promotion_editor.h"
+#include <QDialog>
+#include <QDialogButtonBox>
 #include "app/view_position.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -15,6 +17,16 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 namespace lordly {
+namespace {
+const QStringList compatibilityNames{"Male", "Female", "Angels / undead", "Hawkmen / other small creatures",
+                                     "Dragons", "Beasts", "Golems", "Goblins / ogres / Gorgon"};
+QString compatibilityName(int mask) {
+    QStringList names;
+    for (int bit=0;bit<compatibilityNames.size();++bit)
+        if (mask & (1<<bit)) names << compatibilityNames[bit];
+    return names.isEmpty() ? QString("None") : names.join(" + ");
+}
+}
 class PromotionCommand final : public QUndoCommand {
   public:
     PromotionCommand(Project *project, const QString &label, QJsonObject before, QJsonObject after,
@@ -129,17 +141,39 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
             edit("Edit promotion requirement", [=, this](Promotion &p) { p.setGate(id_, n, v); });
         });
     }
-    mask_ = new QSpinBox;
-    mask_->setRange(0, 255);
-    mask_->setDisplayIntegerBase(16);
-    mask_->setPrefix("0x");
-    mask_->setKeyboardTracking(false);
+    mask_ = new QComboBox;
+    mask_->setMinimumContentsLength(18);
+    mask_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     mask_->setObjectName("compatibilityMask");
-    mask_->setToolTip("Advanced category bits used by roster grouping, discovery and class-change "
-                      "compatibility. A shared bit does not by itself permit promotion.");
-    form->addRow("Compatibility mask", mask_);
-    connect(mask_, &QSpinBox::valueChanged, this, [this](int v) {
-        edit("Edit compatibility mask", [=, this](Promotion &p) { p.setMask(id_, v); });
+    mask_->setToolTip("Existing List Classes categories and class-change compatibility. "
+                      "A matching category does not by itself permit a class change.");
+    form->addRow("Compatibility category", mask_);
+    auto categoryHelp = new QLabel("Separate from Class family above. New classes start with family None and category Male. "
+        "A family with its own icon uses its own List Classes tab.");
+    categoryHelp->setWordWrap(true);form->addRow(categoryHelp);
+    connect(mask_, &QComboBox::currentIndexChanged, this, [this] {
+        if (refreshing_ || mask_->currentIndex()<0) return;
+        int value=mask_->currentData().toInt();
+        if (value<0) {
+            QDialog dialog(this);dialog.setObjectName("compatibilityCategoryDialog");
+            dialog.setWindowTitle("Choose compatibility categories");
+            auto layout=new QVBoxLayout(&dialog);
+            QVector<QCheckBox *> bits;
+            const int current=u8(project_->promotion()->masks,id_);
+            for (int bit=0;bit<compatibilityNames.size();++bit) {
+                auto check=new QCheckBox(compatibilityNames[bit]);
+                check->setObjectName(QString("compatibilityBit_%1").arg(1<<bit));
+                check->setChecked(current & (1<<bit));bits << check;layout->addWidget(check);
+            }
+            auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+            layout->addWidget(buttons);
+            connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+            connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+            if (dialog.exec()!=QDialog::Accepted) {refresh();return;}
+            value=0;for (int bit=0;bit<bits.size();++bit) if(bits[bit]->isChecked())value|=1<<bit;
+        }
+        edit("Edit compatibility category", [=, this](Promotion &p) { p.setMask(id_, value); });
+        refresh();
     });
     equipmentSets_ = new QCheckBox("Available after discovery");
     equipmentSets_->setObjectName("standardEquipmentList");
@@ -267,7 +301,12 @@ void PromotionEditor::refresh() {
                 families_->findData(p.families["assignments"].toArray()[id_].toInt()));
             for (int n = 0; n < gates_.size(); ++n)
                 gates_[n]->setValue(u8(p.gates, id_ * 8 + n));
-            mask_->setValue(u8(p.masks, id_));
+            const int mask=u8(p.masks,id_);
+            mask_->clear();
+            for (int value : {0,1,2,3,4,8,16,32,64,128}) mask_->addItem(compatibilityName(value),value);
+            if(mask_->findData(mask)<0)mask_->addItem(compatibilityName(mask),mask);
+            mask_->addItem("Custom combination…",-1);
+            mask_->setCurrentIndex(mask_->findData(mask));
             equipmentSets_->setChecked((u8(p.flags, id_) & 0x80) != 0);
         }
     }

@@ -82,7 +82,7 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
     if (i.column() == 1 && role == Qt::EditRole && table_ == Table::Classes && project_->hasClassData())
         return decodeText(project_->classNameBytes(i.row()));
     if (i.column() == 1)
-        return r.name;
+        return role == Qt::DisplayRole ? r.name.simplified() : r.name;
     const auto &f = fields(table_)[i.column() - 2];
     int value = project_->value(table_, i.row(), i.column() - 2);
     if (role == Qt::ToolTipRole)
@@ -95,7 +95,7 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
         auto names = project_->catalog().value(f.choices).toObject();
         auto label = names.value(QString::number(value)).toString();
         if (!label.isEmpty())
-            return QString("%1 · %2").arg(value).arg(label);
+            return QString("%1 · %2").arg(value).arg(label.simplified());
     }
     return value;
 }

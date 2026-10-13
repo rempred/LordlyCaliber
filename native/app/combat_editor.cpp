@@ -250,7 +250,7 @@ CombatEditor::CombatEditor(Project *project, QUndoStack *undo, std::function<voi
         for (const auto &value : referenceClasses[QString::number(it.key(), 16)].toArray()) {
             const int id = value.toInt(-1);
             if (id >= 0 && id < project_->records(Table::Classes).size())
-                names << project_->record(Table::Classes, id).name;
+                names << project_->record(Table::Classes, id).name.simplified();
         }
         descriptors_->addItem(
             QString("%1 · Handle %2")

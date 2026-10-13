@@ -72,6 +72,7 @@
 #include <QPushButton>
 #include <QProcess>
 #include <QScopeGuard>
+#include <QSortFilterProxyModel>
 #include <QScrollBar>
 #include <QScrollArea>
 #include <QSpinBox>
@@ -5004,6 +5005,31 @@ class UiTests : public QObject {
         } catch (const Error &error) {
             QFAIL(error.what());
         }
+    }
+    void recordNamesOnOneLine() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        const auto before=project.manifest();
+        for (auto table : {Table::Classes,Table::Items,Table::Consumables}) {
+            RecordModel model(&project,table,&undo);
+            QSortFilterProxyModel search;search.setSourceModel(&model);search.setFilterKeyColumn(1);
+            int multiline=0;
+            for(const auto &record:project.records(table)) {
+                if(!record.name.contains('\n'))continue;
+                ++multiline;const auto index=model.index(record.id,1);
+                QVERIFY(!index.data().toString().contains('\n'));
+                QCOMPARE(index.data(Qt::EditRole).toString(),record.name);
+                search.setFilterFixedString(record.name.simplified());
+                QVERIFY(search.mapFromSource(index).isValid());
+            }
+            QVERIFY(multiline>0);
+            if(table==Table::Consumables) {
+                QTableView view;view.setModel(&model);view.resize(900,680);view.setColumnWidth(0,55);view.setColumnWidth(1,700);
+                view.show();QTest::qWait(30);
+                QVERIFY(view.grab().save("native/build/full-consumable-names.png"));
+            }
+        }
+        QCOMPARE(project.manifest(),before);QVERIFY(undo.isClean());
     }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));
@@ -10413,13 +10439,19 @@ class UiTests : public QObject {
         undo.undo();QVERIFY(example("weapons").contains("102%"));QVERIFY(example("weapons").contains("98%"));
         spin("elementAffinity")->setValue(8);QVERIFY(example("elements").contains("108%"));QVERIFY(example("elements").contains("92%"));
         QCOMPARE(spin("elementAffinity")->suffix(),QString(" points"));
+        spin("resistanceStrength")->setValue(0);QVERIFY(example("resistance").contains("Current setting (0%): about 100 damage"));
+        spin("resistanceStrength")->setValue(200);QVERIFY(example("resistance").contains("Current setting (200%): about 20 damage"));
+        spin("resistanceStrength")->setValue(400);QVERIFY(example("resistance").contains("Current setting (400%): about 1 damage"));
+        undo.undo();QVERIFY(example("resistance").contains("Current setting (200%): about 20 damage"));
+        tools.findChild<QPushButton *>("ruleReset_resistanceStrength")->click();
+        QVERIFY(example("resistance").contains("Current setting (100%): about 60 damage"));
         spin("restHealing")->setValue(5);spin("recoveryRate")->setValue(200);
         QCOMPARE(project.tools()->gameRules().value("restHealing"),5);QVERIFY(example("recovery").contains("10×"));
         spin("restHealing")->setValue(0);QVERIFY(example("recovery").contains("HP healing is disabled"));
         undo.undo();QCOMPARE(spin("restHealing")->value(),5);QVERIFY(example("recovery").contains("10×"));
         tools.findChild<QPushButton *>("ruleReset_restHealing")->click();QCOMPARE(spin("restHealing")->value(),1);
         QTest::qWait(30);QVERIFY(tools.grab().save("native/build/rule-strength-tools.png"));
-        for(const auto group:{"tactics","elements","weapons","recovery"}) {
+        for(const auto group:{"tactics","elements","weapons","recovery","resistance"}) {
             auto box=tools.findChild<QWidget *>(QString("ruleGroup_")+group);QVERIFY(box);
             QVERIFY(box->grab().save(QString("native/build/rule-strength-%1.png").arg(group)));
         }
@@ -11191,6 +11223,25 @@ class UiTests : public QObject {
         emptyFirst->setCurrentIndex(emptyFirst->findData(0));
         emptySecond->setCurrentIndex(emptySecond->findData(0));
         QVERIFY(mapPairs->item(0, 0)->text().contains("No creatures assigned"));
+        // A squad replacing an empty creature pair must be visible on both pages.
+        editor.findChild<QPushButton *>("customNew")->click();
+        auto customScenario=editor.findChild<QComboBox *>("customScenario");
+        auto customTerrain=editor.findChild<QComboBox *>("customTerrain");
+        customScenario->setCurrentIndex(customScenario->findData(14));
+        customTerrain->setCurrentIndex(customTerrain->findData(0));
+        editor.findChild<QPushButton *>("customApply")->click();
+        QVERIFY(tiles->item(0)->text().contains("Assigned squad: Knight Squad"));
+        QVERIFY(tiles->item(0)->text().contains("2 members"));
+        QVERIFY(!tiles->item(0)->text().contains("No creatures assigned"));
+        QVERIFY(assignments->item(1,2)->text().contains("Assigned squad: Knight Squad"));
+        QVERIFY(mapPairs->item(0,0)->text().contains("Assigned squad: Knight Squad"));
+        editor.findChild<QCheckBox *>("customEnabled")->setChecked(false);
+        editor.findChild<QPushButton *>("customApply")->click();
+        QVERIFY(tiles->item(0)->text().contains("No creatures assigned"));
+        undo.undo();QVERIFY(tiles->item(0)->text().contains("Assigned squad:"));
+        mapTabs->setCurrentIndex(1);QApplication::processEvents();
+        QVERIFY(editor.grab().save("native/build/assigned-encounter-squad.png"));
+        undo.undo();QVERIFY(!tiles->item(0)->text().contains("Assigned squad:"));
         assignments->assign(-1, 3, 1);
         assignments->assign(-1, 8, 2);
         editor.findChild<QPushButton *>("encounterBackToMap")->click();
@@ -11481,10 +11532,12 @@ class UiTests : public QObject {
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
         QTRY_COMPARE(project.record(Table::Classes, 164).name, QString("Ancient\nBahamut"));
         auto combo = choice.findChild<QComboBox *>();
-        QCOMPARE(combo->itemText(combo->findData(164)), QString("Ancient\nBahamut"));
+        QCOMPARE(combo->itemText(combo->findData(164)), QString("Ancient Bahamut"));
+        QCOMPARE(index.data().toString(),QString("Ancient Bahamut"));
+        QCOMPARE(index.data(Qt::EditRole).toString(),QString("Ancient\nBahamut"));
         undo.undo();
         QCOMPARE(project.classNameBytes(164), original);
-        QCOMPARE(combo->itemText(combo->findData(164)), QString("Death\nBahamut"));
+        QCOMPARE(combo->itemText(combo->findData(164)), QString("Death Bahamut"));
         undo.redo();
         QCOMPARE(project.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
         QSignalSpy rejected(&model, &RecordModel::editRejected);
@@ -11972,6 +12025,21 @@ class UiTests : public QObject {
         PromotionEditor editor(&project, &undo, [] {});
         editor.selectClass(5);
         auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
+        auto category=editor.findChild<QComboBox *>("compatibilityMask");QVERIFY(category);
+        QCOMPARE(category->currentText(),QString("Male"));
+        category->setCurrentIndex(category->findData(2));
+        QCOMPARE(u8(project.promotion()->masks,5),quint8(2));
+        QCOMPARE(project.promotion()->families,project.promotion()->originalFamilies);
+        undo.undo();QCOMPARE(category->currentText(),QString("Male"));
+        QTimer::singleShot(0,&editor,[&] {
+            auto dialog=editor.findChild<QDialog *>("compatibilityCategoryDialog");QVERIFY(dialog);
+            dialog->findChild<QCheckBox *>("compatibilityBit_128")->setChecked(true);dialog->accept();
+        });
+        category->setCurrentIndex(category->findData(-1));
+        QCOMPARE(u8(project.promotion()->masks,5),quint8(129));
+        QVERIFY(category->currentText().contains("Male + Goblins"));
+        undo.undo();QCOMPARE(project.promotion()->json(),original);
+        undo.redo();QCOMPARE(category->currentData().toInt(),129);undo.undo();
         QVERIFY(equipment);
         const auto originalFlags = u8(project.promotion()->flags, 5);
         equipment->setChecked(!(originalFlags & 0x80));
@@ -12045,6 +12113,16 @@ class UiTests : public QObject {
         QCOMPARE(project.promotion()->families["assignments"].toArray()[165], previousFamily);
         undo.redo();
         QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 17);
+        QCOMPARE(model.createClass("Blank class"),166);editor.selectClass(166);
+        QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(),0);
+        QCOMPARE(category->currentText(),QString("Male"));
+        QScrollArea inspector;inspector.setWidgetResizable(true);inspector.setWidget(&editor);
+        const auto detach=qScopeGuard([&]{inspector.takeWidget();});
+        inspector.resize(520,760);inspector.show();QTest::qWait(30);
+        inspector.ensureWidgetVisible(category);
+        for(auto label:editor.findChildren<QLabel *>())
+            if(label->wordWrap())QVERIFY2(label->height()>=label->heightForWidth(label->width()),qPrintable(label->text()));
+        QVERIFY(inspector.grab().save("native/build/named-compatibility-category.png"));
     }
 };
 QTEST_MAIN(UiTests)

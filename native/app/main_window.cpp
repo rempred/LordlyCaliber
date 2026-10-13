@@ -398,7 +398,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     };
     QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr, *newItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
-        addClass = new QPushButton("Copy Class");
+        addClass = new QPushButton("Copy class…");
         addClass->setObjectName("addClass");
         newClass = new QPushButton("New class…");
         newClass->setObjectName("newClass");
@@ -413,6 +413,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 QInputDialog::getText(this, "New class",
                                       "New class name\nStarts with 1 HP and 1 in each base stat, "
                                       "no equipment, attacks or family."
+                                      "\nCompatibility category starts as Male."
                                       "\nKnight artwork and animations are assigned initially; "
                                       "change them in Art Library.",
                                       QLineEdit::Normal, "New class", &accepted);
@@ -430,7 +431,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                     return;
                 bool accepted = false;
                 const auto name = QInputDialog::getText(
-                    this, "Add class", "New class name", QLineEdit::Normal,
+                    this, "Copy class", "New class name", QLineEdit::Normal,
                     decodeText(project_->classNameBytes(*selected)).replace('\n', ' ') +
                         " copy",
                     &accepted);
@@ -444,17 +445,17 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             });
     }
     if (table == Table::Items && project_->hasItemData()) {
-        addItem = new QPushButton("Add item from selected…");
+        addItem = new QPushButton("Copy item…");
         addItem->setObjectName("addItem");
         addItem->setToolTip("Create a new item ID using the selected item's stats, description and "
                             "ROM artwork as a starting point.");
         auto actions = new QHBoxLayout;
-        actions->addWidget(addItem);
         newItem = new QPushButton("New item…");
         newItem->setObjectName("newItem");
         newItem->setToolTip("Create a blank accessory with zero stats and no artwork or effects. "
                             "Set its equipment type and other fields after creation.");
         actions->addWidget(newItem);
+        actions->addWidget(addItem);
         connect(newItem, &QPushButton::clicked, page, [this, model, proxy, grid, search] {
             bool accepted = false;
             const auto name = QInputDialog::getText(this, "New item", "Item name",
@@ -474,8 +475,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 return;
             bool accepted = false;
             const auto name = QInputDialog::getText(
-                this, "Add item", "New item name", QLineEdit::Normal,
-                project_->record(Table::Items, *selected).name + " copy", &accepted);
+                this, "Copy item", "New item name", QLineEdit::Normal,
+                project_->record(Table::Items, *selected).name.simplified() + " copy", &accepted);
             if (!accepted)
                 return;
             const int id = model->appendItem(*selected, name);

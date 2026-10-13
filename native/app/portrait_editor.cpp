@@ -320,7 +320,7 @@ void PortraitEditor::refresh() {
     for (int id = 0; id < classData.entries().size(); ++id) {
         auto item = new QListWidgetItem(QString("%1 · %2%3")
                                             .arg(id)
-                                            .arg(project_->record(Table::Classes, id).name)
+                                            .arg(project_->record(Table::Classes, id).name.simplified())
                                             .arg(project_->avatarArtwork()->modified(id, 0) ||
                                                          project_->avatarArtwork()->modified(id, 1)
                                                      ? " *"

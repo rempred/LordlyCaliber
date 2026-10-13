@@ -336,7 +336,7 @@ void ScenarioEditor::refresh() {
     for(auto box:missionRewards_) {
         const QSignalBlocker blocker(box);box->clear();
         for(const auto kind:{Table::Consumables,Table::Items})for(const auto &r:project_->records(kind))
-            box->addItem(QString("%1 %2 · %3").arg(kind==Table::Items?"Equipment":"Consumable").arg(r.id).arg(r.name),r.id|(kind==Table::Items?0x8000:0));
+            box->addItem(QString("%1 %2 · %3").arg(kind==Table::Items?"Equipment":"Consumable").arg(r.id).arg(r.name.simplified()),r.id|(kind==Table::Items?0x8000:0));
     }
     loading_ = false;
     filter();

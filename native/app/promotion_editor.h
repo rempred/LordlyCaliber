@@ -29,7 +29,7 @@ class PromotionEditor : public QWidget {
     int id_ = -1;
     bool refreshing_ = false;
     QVector<QSpinBox *> gates_;
-    QSpinBox *mask_;
+    QComboBox *mask_;
     QCheckBox *equipmentSets_;
     QComboBox *families_, *rules_, *familyIcon_;
     QLabel *familyIconPreview_;

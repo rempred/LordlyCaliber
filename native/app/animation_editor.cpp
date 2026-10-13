@@ -120,7 +120,7 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
     searchable(equipmentArt_);
     equipmentArt_->addItem("Use equipped item", -1);
     for (const auto &record : project_->records(Table::Items))
-        equipmentArt_->addItem(QString("%1 · %2").arg(record.id).arg(record.name), record.id);
+        equipmentArt_->addItem(QString("%1 · %2").arg(record.id).arg(record.name.simplified()), record.id);
     bodyForm->addRow("Equipment artwork", equipmentArt_);
     equipmentChildren_ = new QCheckBox("Use equipment variants for item-colored layers");
     equipmentChildren_->setObjectName("animationEquipmentChildren");
@@ -349,14 +349,14 @@ void AnimationEditor::refresh() {
     equipmentArt_->clear();
     equipmentArt_->addItem("Use equipped item", -1);
     for (const auto &r : project_->records(Table::Items))
-        equipmentArt_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
+        equipmentArt_->addItem(QString("%1 · %2").arg(r.id).arg(r.name.simplified()), r.id);
     const auto source = sources_->currentData().toInt();
     classes_->clear();
     sources_->clear();
     const auto &records = project_->records(Table::Classes);
     selected_ = std::clamp(selected_, 1, int(records.size()) - 1);
     for (int id = 1; id < records.size(); ++id) {
-        const auto label = QString("%1 · %2").arg(id).arg(records[id].name);
+        const auto label = QString("%1 · %2").arg(id).arg(records[id].name.simplified());
         classes_->addItem(label, id);
         if (!project_->animationRoutes()->pending().contains(id)) {
             try {

@@ -80,7 +80,7 @@ class SaveModel final : public QAbstractTableModel {
         if (catalog)
             for (const auto &record : editor_->project()->records(*catalog))
                 result.append(QString("%1 — %2").arg(record.id).arg(
-                    record.id ? record.name : QString("Default / none")));
+                    record.id ? record.name.simplified() : QString("Default / none")));
         return result;
     }
     QVariant data(const QModelIndex &index, int role) const override {

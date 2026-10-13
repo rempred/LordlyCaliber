@@ -26,6 +26,7 @@ class EncounterEditor : public QWidget {
     void refreshPoolRows();
     void editTerrainRules(int slot);
     QString poolContents(int slot) const;
+    QStringList squadSummaries(int slot) const;
     void applyGlobalRate(bool restore);
     QWidget *createRewardsPage();
     void refreshRewardClasses();

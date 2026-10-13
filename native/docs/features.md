@@ -193,11 +193,17 @@ empty creature pairs, and identify active custom-squad overrides. Edit rules
 opens the corresponding row under Terrain rules · All maps. That page previews
 the selected map's creatures on assigned/available pool tiles while retaining
 game-wide assignments, sharing/move/swap dragging and pool expansion.
+Active custom squads now appear by the same squad name used in Custom squads,
+with member counts, on both pages. They replace the misleading empty-creature
+summary. Shared map groups identify which runtime keys have a squad override.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
 Consumables always shows all table columns and a fixed Effects inspector, without
 column-group or inspector-section selectors.
+Record tables and one-line name pickers display game line breaks as spaces;
+the stored names and multiline class-name editor retain their original text.
+Classes and Items use matching New… / Copy… button order and dialog titles.
 Class attack fields and combat/advanced action selectors open the selected
 action's shared description. Dialogs validate drafts before Save, support Cancel
 and restoring the original, and commit one Undo step. New class IDs use their
@@ -500,6 +506,11 @@ direct-loader OBSG-v2 export, reads its actual requirements, and migrates an
 edited table to the source-built family resource. Unchanged exports retain the
 existing bytes. OBSG-v1 shared-DMA redirects remain unsupported and are explicitly
 rejected by the promotion loader; it does not silently show retail requirements.
+The Compatibility category dropdown names the original category bits separately
+from Class family. Common combinations include Male + Female; Custom combination
+edits all eight bits by name and preserves uncommon combinations with Undo.
+New class starts with family None and Male compatibility, stated in the dialog.
+Assigning a family's own icon still selects its independent List Classes tab.
 
 ## Additional native capabilities
 
@@ -841,6 +852,9 @@ spellcasting (character affinity plus weapon bonus). The combined spell example
 shows the current sum and resulting neutral attack factor. Swords, spears and
 other elemental weapons qualify as well as staves; normal weapon hits receive
 no weapon-to-spell bonus. Target defense/resistance still affect final damage.
+Resistance effects includes a live damage example: 100 pre-resistance damage
+against 40 resistance becomes 80/60/20 damage at 50%/100%/200% strength. The current
+setting updates the example, including zero strength and the one-damage minimum.
 
 Mission completion Tools expose separate Goth population-bonus divisors below
 and above Chaos Frame50, Soldier population contribution, and minimum per captured

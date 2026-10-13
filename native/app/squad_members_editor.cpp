@@ -159,7 +159,7 @@ void SquadMembersEditor::equipmentChoices(int member, const std::array<int,2> &v
         QSignalBlocker block(box);
         box->clear(); box->addItem("None — keep class default",0);
         for (const auto &item : project_->records(Table::Items))
-            if (item.id && types.contains(u8(item.bytes,4))) box->addItem(QString("%1 · %2").arg(item.id).arg(item.name),item.id);
+            if (item.id && types.contains(u8(item.bytes,4))) box->addItem(QString("%1 · %2").arg(item.id).arg(item.name.simplified()),item.id);
         if (box->findData(values[e]) < 0) {
             box->addItem(QString("%1 · existing incompatible choice").arg(values[e]),values[e]);
             qobject_cast<QStandardItemModel *>(box->model())->item(box->count()-1)->setEnabled(false);

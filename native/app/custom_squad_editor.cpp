@@ -294,7 +294,7 @@ void CustomSquadEditor::refresh() {
                 box->addItem(QString("%1 %2 · %3")
                                  .arg(kind == Table::Items ? "Equipment" : "Consumable")
                                  .arg(id)
-                                 .arg(project_->record(kind, id).name),
+                                 .arg(project_->record(kind, id).name.simplified()),
                              (kind == Table::Items ? 0x8000 : 0) | id);
     }
     for (auto box : bonusClasses_) {

@@ -407,7 +407,7 @@ void ArmyEditor::refresh() {
     models_->clear();
     const auto append = [&](int model, int classId) {
         const bool present = project_->armyArtwork()->present(atlas_, model);
-        const auto label = classId >= 0 ? QString("%1 · %2").arg(classId).arg(project_->record(Table::Classes, classId).name)
+        const auto label = classId >= 0 ? QString("%1 · %2").arg(classId).arg(project_->record(Table::Classes, classId).name.simplified())
                                        : QString("0x%1 · %2").arg(model, 2, 16, QChar('0')).arg(modelName(model));
         auto item = new QListWidgetItem(
             QString("%1%2%3")
@@ -423,7 +423,7 @@ void ArmyEditor::refresh() {
                                    .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation)));
         QStringList names;
         for (const auto id : project_->armyArtwork()->consumers(classes, atlas_, model))
-            names << project_->record(Table::Classes, id).name;
+            names << project_->record(Table::Classes, id).name.simplified();
         item->setToolTip(item->text() + "\n" + names.join(", "));
         item->setHidden(!item->toolTip().contains(search_->text(), Qt::CaseInsensitive));
         if (classId >= 0 ? classId == class_ : model == model_)
@@ -451,7 +451,7 @@ void ArmyEditor::refresh() {
         QSignalBlocker blocker(routeClass_);
         routeClass_->clear();
         for (const auto &row : project_->records(Table::Classes))
-            routeClass_->addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
+            routeClass_->addItem(QString("%1 · %2").arg(row.id).arg(row.name.simplified()), row.id);
         routeClass_->setCurrentIndex(std::max(0, routeClass_->findData(selectedClass)));
     }
     const auto old = library_->currentData().toString();
