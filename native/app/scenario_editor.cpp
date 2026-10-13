@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/scenario_editor.h"
 #include "app/game_rules_editor.h"
@@ -276,7 +277,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
             next.removeSquad(key(), squads_->currentRow(), project_->classData());
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

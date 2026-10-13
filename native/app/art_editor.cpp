@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/art_editor.h"
 #include "app/art_image_assignment.h"
@@ -263,7 +264,7 @@ ArtEditor::ArtEditor(Project *project, QUndoStack *undo, std::function<void()> c
             icons_->item(i)->setHidden(
                 !icons_->item(i)->text().contains(search_->text(), Qt::CaseInsensitive));
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

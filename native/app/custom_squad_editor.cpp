@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/custom_squad_editor.h"
 #include "app/squad_members_editor.h"
 #include "app/encounter_labels.h"
@@ -252,7 +253,7 @@ CustomSquadEditor::CustomSquadEditor(
     connect(persuasion_, &QComboBox::currentIndexChanged, this, [this] { preview(); });
     connect(chance_, &QSpinBox::valueChanged, this, [this] { preview(); });
     connect(retreat_, &QSpinBox::valueChanged, this, [this] { preview(); });
-    connect(undo, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo, this, [this] { refresh(); });
     loading_ = false;
     refresh();
 }

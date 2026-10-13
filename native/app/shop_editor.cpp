@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/shop_editor.h"
 #include "app/item_picker.h"
@@ -194,7 +195,7 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
         if (selected() > 0)
             edit("Restore shop stock", project_->shops()->originalStock(selected()));
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

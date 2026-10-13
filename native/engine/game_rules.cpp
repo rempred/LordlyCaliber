@@ -78,7 +78,7 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"deploymentLimit", "deployment", "Maximum deployed squads", "Player squads allowed on a mission at once. Retail allows 10; the saved army has 30 squad slots. Each squad in a Legion counts separately. Existing story deployments are retained.",1,30,1,10},
+    return {{"deploymentLimit", "deployment", "Maximum deployed squads", "Player squads allowed on a mission at once, up to 20. Retail allows 10; all 30 organized squad slots remain saved. Each squad in a Legion counts separately. Existing story deployments are retained.",1,20,1,10},
             {"reserveXp", "reserve", "XP per reserve member", "Award this much XP once at normal mission completion. 0 disables it. Reaching 100 uses normal class/equipment growth, resets XP to 0, and gains at most one level. Requires an Expansion Pak (8 MiB RAM).",0,100,1,0},
             {"trainingBonus", "trainingXp", "Training XP bonus", "Extra XP for each eligible member after a training win. Manual of Warfare doubles this bonus; the total remains capped at 100. Retail gives 0 bonus.",0,100,1,0},
             {"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
@@ -234,8 +234,11 @@ void GameRules::apply(const QJsonObject &settings) {
     for(const auto &rule:definitions()) {
         if(!settings.contains(rule.key)) continue; // Earlier projects preserve newly introduced rules.
         const auto value=settings[rule.key]; const double number=value.toDouble(-9999);
+        // Keep older projects readable so their previous 21–30 setting can be
+        // corrected with Undo. New UI edits stop at 20; export rejects above 20.
+        const int readableMaximum=rule.key=="deploymentLimit"?30:rule.maximum;
         if(!value.isDouble() || !std::isfinite(number) || number!=std::floor(number) ||
-           number<rule.minimum || number>rule.maximum || (int(number)-rule.minimum)%rule.step)
+           number<rule.minimum || number>readableMaximum || (int(number)-rule.minimum)%rule.step)
             throw Error("Invalid value for " + rule.label);
         if(int(number)!=values_[rule.key] && !unavailable(rule.group).isEmpty())
             throw Error(unavailable(rule.group));

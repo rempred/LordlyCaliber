@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/consumable_editor.h"
 #include <QCheckBox>
 #include <QFormLayout>
@@ -61,7 +62,7 @@ ConsumableEditor::ConsumableEditor(Project *project, QUndoStack *undo,
     layout->addStretch();
     connect(apply_, &QPushButton::clicked, this, [this] { apply(false); });
     connect(restore_, &QPushButton::clicked, this, [this] { apply(true); });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/encounter_editor.h"
 #include "app/custom_squad_editor.h"
@@ -303,7 +304,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
                          int(project_->records(Table::Classes).size()));
         commit(next, "Restore encounter pool");
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         filter();
         changed_();

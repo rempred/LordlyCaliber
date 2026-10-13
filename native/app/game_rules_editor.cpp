@@ -1,4 +1,5 @@
 #include "app/game_rules_editor.h"
+#include "app/content_refresh.h"
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -11,10 +12,10 @@
 #include <algorithm>
 namespace lordly {
 namespace {
-class RuleCommand final : public QUndoCommand {
+class RuleCommand final : public GameRuleUndoCommand {
   public:
     RuleCommand(Project *p, const QString &key, int value, const QString &label)
-      : QUndoCommand("Change " + label), p_(p), before_(p->tools()->json()), after_(before_) {
+      : GameRuleUndoCommand("Change " + label), p_(p), before_(p->tools()->json()), after_(before_) {
         auto rules=after_["gameRules"].toObject(); rules[key]=value; after_["gameRules"]=rules;
     }
     void undo() override { p_->setTools(before_); }
@@ -35,7 +36,7 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
         auto box=new QGroupBox(titles.value(group,group));box->setObjectName("ruleGroup_"+group);auto form=new QFormLayout(box);
         auto help=new QLabel(group=="tactics"
             ? "Each credited kill combines the selected tactic's amount with the character and enemy alignment/level terms. The maximum below limits the total gain or loss. Training keeps its existing exclusion."
-            : group=="deployment" ? "Limits newly deployed player squads. Every squad in a Legion uses a slot, so a Legion must fit as a whole. Already deployed squads stay on the map if you lower the limit."
+            : group=="deployment" ? "Choose a limit from 1 to 20 newly deployed player squads. Every squad in a Legion uses a slot, so a Legion must fit as a whole. Already deployed squads stay on the map if you lower the limit."
             : group=="reserve" ? "Once per completed mission, unassigned reserve characters gain the XP below. Assigned squad members, fallen or petrified characters, Soldiers and level-99 characters are excluded. 0 keeps retail behavior."
             : group=="trainingXp" ? "Adds a configurable bonus to the usual defeated-enemy XP after winning training. Fallen, petrified, Soldier and level-99 members keep their normal exclusions. Losses give no XP."
             : group=="goth" ? "Base mission Goth + captured population × distance from 50 Chaos Frame ÷ divisor. Smaller divisors give larger bonuses. Wallet limit stays 9,999,999."
@@ -58,6 +59,13 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
             else if(rule.key=="restHealing") spin->setSuffix(" HP");
             else if(rule.group=="elements" || rule.group=="weapons" || rule.group=="alignmentCap") spin->setSuffix(" points");
             horizontal->addWidget(spin,1);fields_[rule.key]=spin;
+            if(rule.key=="deploymentLimit") {
+                auto fix=new QPushButton("Use 20");fix->setObjectName("ruleFix_deploymentLimit");
+                horizontal->addWidget(fix);
+                connect(fix,&QPushButton::clicked,this,[this,undo,rule]{
+                    undo->push(new RuleCommand(project_,rule.key,20,rule.label));
+                });
+            }
             auto reset=new QPushButton("Retail");reset->setObjectName("ruleReset_"+rule.key);reset->setToolTip("Reset this setting to retail");
             horizontal->addWidget(reset);form->addRow(rule.label,row);
             const auto unavailable=project_->tools()->gameRules().unavailable(rule.group);
@@ -92,14 +100,23 @@ void GameRulesEditor::refresh() {
     const auto &rules=project_->tools()->gameRules();
     for(auto it=fields_.begin();it!=fields_.end();++it) {
         const QSignalBlocker block(it.value());
-        if(it.key()=="deploymentLimit")
-            it.value()->setMaximum(project_->expandedArmies()?std::max(20,rules.value(it.key())):30);
+        if(it.key()=="deploymentLimit") {
+            const bool unsupported=rules.value(it.key())>20;
+            // Show the real imported value, but only allow correction rather
+            // than new edits above the supported limit.
+            it.value()->setMaximum(std::max(20,rules.value(it.key())));
+            it.value()->setEnabled(!unsupported && rules.unavailable("deployment").isEmpty());
+            if(auto fix=findChild<QPushButton *>("ruleFix_deploymentLimit")) {
+                fix->setVisible(unsupported);fix->setEnabled(rules.unavailable("deployment").isEmpty());
+            }
+        }
         it.value()->setValue(rules.value(it.key()));
     }
     if(auto notice=findChild<QLabel *>("expandedArmyLimit")) {
-        notice->setVisible(project_->expandedArmies());
-        notice->setText("Expanded armies allow up to 20 deployed player squads and 30 enemy/allied squads. All 30 organized player squads, the 99-member roster and reserves remain saved."
-            +QString(rules.value("deploymentLimit")>20?" Lower Maximum deployed squads to 20 or less before exporting.":""));
+        notice->setText("All 30 organized player squads, the 99-member roster and reserves remain saved."
+            +(rules.value("deploymentLimit")>20
+                ?QString(" This ROM or project has a limit of %1, above the supported maximum. Export is blocked. Choose Use 20 or Retail to correct it.").arg(rules.value("deploymentLimit"))
+                :QString()));
     }
     auto example=[this](const QString &group,const QString &text) {
         if(auto label=findChild<QLabel *>("ruleExample_"+group)) label->setText(text);

@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/training_editor.h"
 #include "app/game_rules_editor.h"
 #include "app/squad_members_editor.h"
@@ -57,7 +58,7 @@ TrainingEditor::TrainingEditor(Project *p,QUndoStack *undo,std::function<void()>
         rows[row()]=project_->training()->original(row()).json();value["opponents"]=rows;
         if(value!=project_->training()->json())undo_->push(new TrainingCommand(project_,value));
     });
-    connect(undo_,&QUndoStack::indexChanged,this,[this]{refresh();if(changed_)changed_();});
+    watchContentChanges(undo_, this,[this]{refresh();if(changed_)changed_();});
     refresh();
 }
 int TrainingEditor::row() const {

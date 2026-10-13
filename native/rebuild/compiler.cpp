@@ -501,11 +501,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     BuildResult result{p.rom().bytes(), {}};
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
-    if(expandedArmies) {
-        p.loadTools();
-        if(p.tools()->gameRules().value("deploymentLimit")>20)
-            throw Error("Expanded enemy armies support at most 20 deployed player squads. Set Maximum deployed squads to 20 or less in Tools; all 30 organized squads remain saved.");
-    }
+    const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
+    if(deploymentRules.value("deploymentLimit")>20)
+        throw Error("At most 20 player squads may be deployed. Set Maximum deployed squads to 20 or less in Tools before exporting; all 30 organized squads remain saved.");
     if(p.rom().revision()==0)p.loadAnimationOverrides();
     for (const auto &r : p.records(Table::Classes))
         if (r.original.size() == r.bytes.size() &&

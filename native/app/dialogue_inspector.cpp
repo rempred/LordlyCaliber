@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
 #include <QComboBox>
@@ -109,7 +110,7 @@ DialogueInspector::DialogueInspector(Project *project, QUndoStack *undo,
             "Edits enter the project as you type. Use @n for game line breaks and retain native "
             "control sequences. Nonprintable bytes use backslash-x plus two hexadecimal digits; "
             "a literal backslash is doubled. Playback uses the edited text.");
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         if (!editing_)
             loadArchive(entries_->currentRow());
         if (changed_)

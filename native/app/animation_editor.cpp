@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/animation_editor.h"
 #include "app/text_workspace.h"
@@ -297,7 +298,7 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
             });
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         guarded([this] { refresh(); });
         changed_();
     });

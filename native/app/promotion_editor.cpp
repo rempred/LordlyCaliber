@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/promotion_editor.h"
 #include "app/view_position.h"
 #include <QCheckBox>
@@ -112,7 +113,7 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
             notice_->setText(QString::fromUtf8(e.what()));
         }
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo_, this, [this] { refresh(); });
     const QStringList labels = {"Strength", "Vitality",  "Intelligence",      "Mentality",
                                 "Agility",  "Dexterity", "Alignment minimum", "Alignment maximum"};
     for (int n = 0; n < labels.size(); ++n) {

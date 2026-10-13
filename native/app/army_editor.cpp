@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/army_editor.h"
 #include "app/art_image_assignment.h"
@@ -344,7 +345,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
                              .composite(frame_->value() - 1));
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

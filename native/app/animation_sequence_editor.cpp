@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/animation_sequence_editor.h"
 #include "app/actor_pose_editor.h"
@@ -359,7 +360,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
             publish(candidate, "Remove private animation copy");
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo_, this, [this] { refresh(); });
     refresh();
 }
 void AnimationSequenceEditor::setContext(int id, int flags, int pose) {

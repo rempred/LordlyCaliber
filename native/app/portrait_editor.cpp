@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/portrait_editor.h"
 #include "app/art_image_assignment.h"
@@ -271,7 +272,7 @@ PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function
                              .composite(frame_->value() - 1));
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

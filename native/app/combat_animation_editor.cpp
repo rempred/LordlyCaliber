@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/combat_animation_editor.h"
 #include "app/animation_sequence_editor.h"
 #include "engine/actor_art.h"
@@ -93,7 +94,7 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
             refresh(true);
         } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); notice_->show(); }
     });
-    connect(undo, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo, this, [this] { refresh(); });
     refresh(true);
 }
 int CombatAnimationEditor::classId() const {

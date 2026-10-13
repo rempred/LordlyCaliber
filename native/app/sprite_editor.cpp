@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/sprite_editor.h"
 #include "app/rom_art_import.h"
@@ -518,7 +519,7 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
                 list[list.size() - 1 - layers_->currentRow()].visible = show;
             });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

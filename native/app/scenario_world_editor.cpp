@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/scenario_world_editor.h"
 #include "app/shop_editor.h"
 #include <QCheckBox>
@@ -243,7 +244,7 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
         change("Restore scenario world data",
                [this](ScenarioWorld &next) { next.restoreScenario(key_); });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh(key_);
         changed_();
     });

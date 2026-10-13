@@ -39,6 +39,17 @@ unchanged rebuild, relocated player source inspection and full save dispatcher
 roundtrips. These tests do not emulate a complete console or prove a universal
 compression bound. Keep the authored cap at30 and player deployment at20.
 
+The 20-player deployment policy applies to every export, independent of whether
+expanded enemy storage is needed. GameRules still reads older 21..30 values so
+existing projects/ROMs can open and be corrected without silently changing data.
+Tools displays these values disabled with an undoable Use 20 correction; ordinary
+editing is capped at 20. The compiler validates even when Tools has not been loaded.
+
+GameRuleUndoCommand identifies commands that only change Tools game rules.
+Content editors use watchContentChanges to skip their expensive rebuilds for
+these commands; Tools, dirty state and Undo/Redo notifications remain immediate.
+Ordinary edits, mixed undo ranges and cleared history still refresh content.
+
 ## Scenario battle strategies (2026-10-12)
 
 The shared `ScenarioSquadPanel` exposes Section 1 deployment byte 8 in both the

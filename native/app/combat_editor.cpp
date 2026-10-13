@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/combat_editor.h"
 #include "app/art_image_assignment.h"
@@ -365,7 +366,7 @@ CombatEditor::CombatEditor(Project *project, QUndoStack *undo, std::function<voi
                              .composite(libraryFrame_->value() - 1));
         });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         guarded([this] { refresh(); });
         changed_();
     });

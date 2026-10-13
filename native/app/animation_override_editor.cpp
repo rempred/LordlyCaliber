@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/text_workspace.h"
 #include "app/animation_override_editor.h"
@@ -168,7 +169,7 @@ AnimationOverrideEditor::AnimationOverrideEditor(Project *project, QUndoStack *u
         if (!refreshing_)
             guarded([this] { selectRow(); });
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         guarded([this] { refresh(); });
         changed_();
     });

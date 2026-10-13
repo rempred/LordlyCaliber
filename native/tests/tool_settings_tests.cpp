@@ -68,7 +68,7 @@ class ToolSettingsTests : public QObject {
             if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
             const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadTools();const auto baseline=project.tools()->json();
             QTemporaryDir work,output(QFileInfo(path).absolutePath()+"/Test ROMs/native-deployment-XXXXXX");QVERIFY(output.isValid());output.setAutoRemove(false);
-            for(int limit:{1,10,30}) {
+            for(int limit:{1,10,20}) {
                 auto settings=baseline;auto values=settings["gameRules"].toObject();values["deploymentLimit"]=limit;settings["gameRules"]=values;project.setTools(settings);
                 const auto built=rebuild(project,tools,work.path());const auto folder=output.filePath(QString::number(limit));QDir().mkpath(folder);
                 const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
@@ -78,6 +78,22 @@ class ToolSettingsTests : public QObject {
                 QProcess execution;execution.start("node",{QFINDTESTDATA("deployment-mips.cjs"),candidate,QString::number(limit)});
                 QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
                 reopened.setTools(baseline);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            }
+            for(int limit:{21,23,30}) {
+                auto settings=baseline;auto values=settings["gameRules"].toObject();
+                values["deploymentLimit"]=limit;settings["gameRules"]=values;project.setTools(settings);
+                QVERIFY(!project.expandedArmies());
+                const auto manifest=project.manifest();auto restored=Project::fromRom(rom);
+                restored.applyManifest(manifest);restored.loadTools();
+                QCOMPARE(restored.tools()->gameRules().value("deploymentLimit"),limit);
+                QVERIFY_THROWS_EXCEPTION(Error,rebuild(restored,tools,work.path()));
+                // An already exported older ROM must also be caught when the
+                // user has never opened Tools in this session.
+                auto older=rom.bytes();for(int at:{0x10d282,0x10d35a,0x1201aa})put16(older,at,quint16(limit));
+                Rom::updateChecksum(older);auto imported=Project::fromRom(Rom::fromBytes(older));
+                QVERIFY(!imported.tools());QVERIFY_THROWS_EXCEPTION(Error,rebuild(imported,tools,work.path()));
+                imported.loadTools();QCOMPARE(imported.tools()->gameRules().value("deploymentLimit"),limit);
+                imported.setTools(baseline);QCOMPARE(rebuild(imported,tools,work.path()).image,rom.bytes());
             }
             qInfo().noquote()<<"Deployment candidates:"<<output.path();
         } catch(const Error &e){QFAIL(e.what());}

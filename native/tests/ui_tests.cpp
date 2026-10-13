@@ -10431,6 +10431,25 @@ class UiTests : public QObject {
         QVERIFY(unavailable.findChild<QLabel *>("ruleExample_tactics")->text().contains("unavailable"));
         QVERIFY(unavailable.findChild<QLabel *>("ruleExample_recovery")->text().contains("unavailable"));
     }
+    void gameRulesFullWorkspaceSteps() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        MainWindow window;window.resize(1100,780);window.loadRom(path);window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QSpinBox *>("rule_deploymentLimit"),60000);
+        auto navigation=window.findChild<QTabBar *>("workspaceNavigation");QVERIFY(navigation);
+        for(int i=0;i<navigation->count();++i)if(navigation->tabText(i)=="Tools")navigation->setCurrentIndex(i);
+        auto spin=window.findChild<QSpinBox *>("rule_deploymentLimit");QVERIFY(spin);
+        auto scenarios=window.findChild<QListWidget *>("scenarioList");QVERIFY(scenarios);
+        QSignalSpy resets(scenarios->model(),&QAbstractItemModel::modelReset);
+        spin->setFocus();QElapsedTimer elapsed;elapsed.start();
+        for(int i=0;i<10;++i)QTest::keyClick(spin,Qt::Key_Up);
+        qInfo()<<"Ten deployment arrow presses:"<<elapsed.elapsed()<<"ms; unrelated scenario resets:"<<resets.count();
+        QCOMPARE(spin->value(),20);
+        auto undo=window.findChild<QUndoStack *>();QVERIFY(undo);
+        undo->undo();QCOMPARE(spin->value(),19);undo->redo();QCOMPARE(spin->value(),20);
+        QCOMPARE(resets.count(),0);
+        undo->setClean();
+    }
     void gameRulesEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();project.loadTools();
@@ -10450,7 +10469,8 @@ class UiTests : public QObject {
         auto deployment=tools.findChild<QSpinBox *>("rule_deploymentLimit");
         QVERIFY(reserve && deployment); reserve->setValue(25); deployment->setValue(30);
         QCOMPARE(project.tools()->gameRules().value("reserveXp"),25);
-        QCOMPARE(project.tools()->gameRules().value("deploymentLimit"),30);
+        QCOMPARE(deployment->maximum(),20);
+        QCOMPARE(project.tools()->gameRules().value("deploymentLimit"),20);
         undo.undo(); QCOMPARE(deployment->value(),10); undo.undo(); QCOMPARE(reserve->value(),0);
         undo.redo(); undo.redo();
         tools.findChild<QPushButton *>("ruleReset_reserveXp")->click(); QCOMPARE(reserve->value(),0);
@@ -10469,6 +10489,17 @@ class UiTests : public QObject {
         QCOMPARE(capped->maximum(),20);capped->setValue(30);
         QCOMPARE(project.tools()->gameRules().value("deploymentLimit"),20);
         undo.undo();QCOMPARE(capped->value(),10);undo.redo();QCOMPARE(capped->value(),20);
+        // Older settings remain visible and recoverable, but cannot be edited
+        // above20. Correcting them is an explicit undoable action.
+        auto legacy=project.tools()->json(),legacyRules=legacy["gameRules"].toObject();
+        legacyRules["deploymentLimit"]=23;legacy["gameRules"]=legacyRules;project.setTools(legacy);
+        QUndoStack legacyUndo;ToolsEditor legacyTools(&project,&legacyUndo,[]{});
+        auto oldLimit=legacyTools.findChild<QSpinBox *>("rule_deploymentLimit");QVERIFY(oldLimit);
+        QCOMPARE(oldLimit->value(),23);QVERIFY(!oldLimit->isEnabled());
+        auto correction=legacyTools.findChild<QPushButton *>("ruleFix_deploymentLimit");QVERIFY(correction);
+        correction->click();QCOMPARE(oldLimit->value(),20);QCOMPARE(oldLimit->maximum(),20);QVERIFY(oldLimit->isEnabled());
+        legacyUndo.undo();QCOMPARE(oldLimit->value(),23);QVERIFY(!oldLimit->isEnabled());
+        legacyUndo.redo();QCOMPARE(oldLimit->value(),20);QVERIFY(oldLimit->isEnabled());
     }
     void scenarioSettingsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

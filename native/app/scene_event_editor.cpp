@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/scene_event_editor.h"
 #include <QComboBox>
@@ -87,7 +88,7 @@ SceneEventEditor::SceneEventEditor(Project *project, QUndoStack *undo,
     connect(sites_, &QTableWidget::currentCellChanged, this, [this] { select(); });
     connect(assign_, &QPushButton::clicked, this, [this] { apply(false); });
     connect(restore_, &QPushButton::clicked, this, [this] { apply(true); });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo_, this, [this] { refresh(); });
     try {
         project_->loadSceneEvents();
         refresh();

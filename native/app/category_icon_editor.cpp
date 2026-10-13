@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/category_icon_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
@@ -207,7 +208,7 @@ CategoryIconEditor::CategoryIconEditor(Project *project, QUndoStack *undo,
             refresh();
         }
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+    watchContentChanges(undo_, this, [this] {
         refresh();
         changed_();
     });

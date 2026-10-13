@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/scene_action_editor.h"
 #include "app/scene_command_editor.h"
 #include "engine/actor_art.h"
@@ -157,7 +158,7 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
         if (changed_)
             changed_();
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] { refreshClassChoices(); });
+    watchContentChanges(undo_, this, [this] { refreshClassChoices(); });
 }
 void SceneActionEditor::validity(bool valid) {
     const bool wasInvalid = property("invalidEdits").toBool();

@@ -1,8 +1,10 @@
 # Feature inventory and completion tracking
 
 Scenario authoring supports up to 30 enemy/allied squads combined (150 members).
-Maps using the expanded army storage support up to 20 deployed player squads;
-Tools shows this limit and export rejects a larger setting. The player roster
+All maps support a configurable maximum of 20 deployed player squads. Tools
+enforces this limit and export rejects larger settings, including older projects
+and already edited ROMs. Older values remain visible with an undoable Use 20
+correction. Game-rule edits avoid refreshing unrelated content editors. The player roster
 remains 99 ordinary characters, with all 30 organized squads and reserves kept.
 A separate temporary slot protects player/map squads during wild encounters.
 Waiting enemy squads and groups can activate up to the expanded30-squad limit.
@@ -854,7 +856,7 @@ allocation. Tested with native fee/XP execution and original-versus-authored
 constructor comparisons; complete emulator training remains untested this session.
 
 
-Tools also offers a player deployment limit (1–30, retail 10), consistently used
+Tools also offers a player deployment limit (1–20, retail 10), consistently used
 by the deployment menu, available-slot count, Legion check and refusal message.
 Reserve XP grants a fixed 0–100 at normal mission completion (off by default).
 Assigned, fallen, petrified, Soldier and level-99 characters are excluded; native

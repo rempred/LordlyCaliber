@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/scene_command_editor.h"
 #include <QComboBox>
 #include <QCompleter>
@@ -104,7 +105,7 @@ SceneCommandEditor::SceneCommandEditor(Project *project, QUndoStack *undo,
     actions->addWidget(discard_);
     actions->addStretch();
     layout->addLayout(actions);
-    connect(undo_, &QUndoStack::indexChanged, this,
+    watchContentChanges(undo_, this,
             [this, previous = project_->scenePrograms()->json()]() mutable {
         const auto next = project_->scenePrograms()->json();
         const bool changedProgram = next != previous;

@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/text_workspace.h"
 #include "app/view_position.h"
 #include <QCheckBox>
@@ -153,7 +154,7 @@ QPushButton *createActionDescriptionButton(QComboBox *actions, Project *project,
     };
     QObject::connect(actions, &QComboBox::currentIndexChanged, button, refresh);
     QObject::connect(actions, &QComboBox::editTextChanged, button, refresh);
-    QObject::connect(undo, &QUndoStack::indexChanged, button, refresh);
+    watchContentChanges(undo, button, refresh);
     QObject::connect(button, &QPushButton::clicked, button, [=] {
         editDescription(button, project, undo, "actions", actions->currentData().toInt(), changed);
     });
@@ -178,7 +179,7 @@ DescriptionPanel::DescriptionPanel(Project *project, QUndoStack *undo,
     connect(edit_, &QPushButton::clicked, this, [=, this] {
         editDescription(this, project_, undo, kind_, entry_, changed);
     });
-    connect(undo, &QUndoStack::indexChanged, this, [this] { refresh(); });
+    watchContentChanges(undo, this, [this] { refresh(); });
     refresh();
 }
 void DescriptionPanel::selectDescription(const QString &kind, int entry) {
@@ -330,7 +331,7 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
         filter(sameBank);
     };
     QObject::connect(banks, &QComboBox::currentIndexChanged, page, [=] { selectBank(); });
-    QObject::connect(undo, &QUndoStack::indexChanged, page, [=] {
+    watchContentChanges(undo, page, [=] {
         if (!selected->editing)
             selectBank();
     });

@@ -1,3 +1,4 @@
+#include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/cutscene_editor.h"
 #include "app/scene_action_editor.h"
@@ -265,7 +266,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 {"combat",
                  project->combatArtwork() ? project->combatArtwork()->json() : QJsonObject{}}};
         };
-        connect(undo_, &QUndoStack::indexChanged, this,
+        watchContentChanges(undo_, this,
                 [this, signature, artwork, actorInspector, previous = signature()]() mutable {
                     const auto next = signature();
                     if (next != previous) {
@@ -326,7 +327,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             });
     if (project_) {
         pages->addTab(new SceneEventEditor(project_, undo_, changed), "Event launches");
-        connect(undo_, &QUndoStack::indexChanged, this,
+        watchContentChanges(undo_, this,
                 [this, previous = project_->sceneEvents()->json()]() mutable {
                     const auto next = project_->sceneEvents()->json();
                     if (next == previous)
