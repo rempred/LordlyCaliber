@@ -42,7 +42,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
     if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
-        (u32(header, 8) < 1 || u32(header, 8) > 4) ||
+        (u32(header, 8) < 1 || u32(header, 8) > 5) ||
         header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
             QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
         u32(header, 92) != crc32(header.first(92)))
@@ -100,13 +100,18 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
         const auto tableBytes = u32(rom.bytes(), 0x1f3ca84);
         const auto manifest = document.object();
         if (u32(header, 8) >= 3 &&
-            (manifest.size() != (u32(header, 8) == 4 ? 3 : 2) || !manifest["authored"].isArray() ||
+            (manifest.size() != (u32(header, 8) == 5 ? 4 : u32(header, 8) == 4 ? 3 : 2) || !manifest["authored"].isArray() ||
              !manifest["eventBindings"].isObject()))
             throw Error("Invalid scene allocation metadata");
-        if (u32(header, 8) == 4) {
+        if (u32(header, 8) >= 4) {
             if (!manifest["legacyArenaRetired"].isBool())
                 throw Error("Invalid browser arena retirement metadata");
             result.legacyArenaRetired = manifest["legacyArenaRetired"].toBool();
+        }
+        if (u32(header, 8) >= 5) {
+            if (!manifest["eventFlags"].isObject()) throw Error("Invalid event flag metadata");
+            result.eventFlags = manifest["eventFlags"].toObject();
+            result.eventRows = SceneEvents::flagRows(result.eventFlags);
         }
         if (!count && !result.legacyArenaRetired)
             throw Error("An empty scene allocation has no retired browser arena");
@@ -154,7 +159,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
             const auto &member = result.members[owner];
             const auto decoded = decodeLzss(data.mid(member.offset + 8, member.size - 8),
                                             u32(data, member.offset + 4));
-            if (decoded != SceneEvents::bindRow(SceneEvents::retailRow(rom, eventRow), eventRow,
+            if (decoded != SceneEvents::bindRow(SceneEvents::flagRow(SceneEvents::retailRow(rom, eventRow), eventRow, result.eventFlags), eventRow,
                                                 result.eventBindings))
                 throw Error("Event bindings differ from the rebuilt program");
         }
@@ -330,7 +335,8 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     const auto eventBindings = events  ? events->bindings
                                : prior ? prior->eventBindings
                                        : QMap<QString, int>{};
-    QSet<int> eventRows;
+    const auto eventFlags = events ? events->flags : prior ? prior->eventFlags : QJsonObject{};
+    QSet<int> eventRows = SceneEvents::flagRows(eventFlags);
     QJsonObject bindingMetadata;
     for (auto it = eventBindings.cbegin(); it != eventBindings.cend(); ++it) {
         const auto &site = SceneEvents::site(it.key());
@@ -350,8 +356,10 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         // Restore any recognized old binding, including a browser-owned row. Its allocation remains
         // untouched.
         const auto oldEvents = SceneEvents::load(rom);
-        for (auto it = oldEvents.bindings().cbegin(); it != oldEvents.bindings().cend(); ++it) {
-            const auto row = SceneEvents::site(it.key()).row;
+        QSet<int> oldRows = SceneEvents::flagRows(oldEvents.flagEdits());
+        for (auto it = oldEvents.bindings().cbegin(); it != oldEvents.bindings().cend(); ++it)
+            oldRows.insert(SceneEvents::site(it.key()).row);
+        for (int row : oldRows) {
             if (!eventRows.contains(row)) {
                 const auto owner = SceneEvents::directory + 4 + quint32(row) * 4;
                 members.remove(owner);
@@ -360,7 +368,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         }
         for (auto it = events->rows.cbegin(); it != events->rows.cend(); ++it) {
             const auto original = SceneEvents::retailRow(rom, it.key());
-            if (it.value() != SceneEvents::bindRow(original, it.key(), eventBindings))
+            if (it.value() != SceneEvents::bindRow(SceneEvents::flagRow(original, it.key(), eventFlags), it.key(), eventBindings))
                 throw Error("Compiled event program differs from its binding plan");
             const auto owner = SceneEvents::directory + 4 + quint32(it.key()) * 4;
             const auto key = u32(rom.bytes(), owner), at = base + key, size = u32(rom.bytes(), at);
@@ -390,10 +398,11 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         image.replace(descriptorOffset, descriptorSize, QByteArray(descriptorSize, char(-1)));
         return image;
     }
-    const auto metadata = QJsonDocument(QJsonObject{{"authored", manifest},
+    auto allocationMetadata = QJsonObject{{"authored", manifest},
                                                     {"eventBindings", bindingMetadata},
-                                                    {"legacyArenaRetired", legacyRetired}})
-                              .toJson(QJsonDocument::Compact);
+                                                    {"legacyArenaRetired", legacyRetired}};
+    if (!eventFlags.isEmpty()) allocationMetadata["eventFlags"] = eventFlags;
+    const auto metadata = QJsonDocument(allocationMetadata).toJson(QJsonDocument::Compact);
     quint32 refsSize = 0;
     for (const auto &member : members)
         refsSize += quint32(member.references.size() * 4);
@@ -441,7 +450,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     }
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, 4);
+    put32(header, 8, eventFlags.isEmpty() ? 4 : 5);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));

@@ -21,6 +21,8 @@
 #include "app/save_editor.h"
 #include "app/save_army_drag.h"
 #include "app/scenario_editor.h"
+#include "app/scenario_event_editor.h"
+#include "engine/event_script.h"
 #include "app/scenario_map_editor.h"
 #include "app/squad_route_steps.h"
 #include "engine/squad_members.h"
@@ -1883,6 +1885,11 @@ class UiTests : public QObject {
             QCOMPARE(shops->currentItem()->data(Qt::UserRole).toInt(), 35);
             window.navigateTo({"scenarioSettings",1});
             QVERIFY(window.findChild<QTimeEdit *>("scenarioStartingTime")->isVisible());
+            window.navigateTo({"scenario-event",4,0x2f0});
+            auto eventSteps = window.findChild<QTreeWidget *>("scenarioEventSteps");
+            QVERIFY(eventSteps && eventSteps->isVisible() && eventSteps->currentItem());
+            QCOMPARE(window.findChild<QComboBox *>("scenarioEventRow")->currentData().toInt(), 4);
+            QCOMPARE(eventSteps->currentItem()->data(0, Qt::UserRole).toInt(), 0x2f0);
             window.navigateTo({"rule",-1,-1,"dayLength"});
             QVERIFY(window.findChild<QSpinBox *>("rule_dayLength")->isVisible());
             window.navigateTo({"rule",-1,-1,"reserveXp"});
@@ -10532,6 +10539,64 @@ class UiTests : public QObject {
         correction->click();QCOMPARE(oldLimit->value(),20);QCOMPARE(oldLimit->maximum(),20);QVERIFY(oldLimit->isEnabled());
         legacyUndo.undo();QCOMPARE(oldLimit->value(),23);QVERIFY(!oldLimit->isEnabled());
         legacyUndo.redo();QCOMPARE(oldLimit->value(),20);QVERIFY(oldLimit->isEnabled());
+    }
+    void scenarioEventFlags() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+        auto project = Project::fromRom(Rom::open(path)); project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {}); editor.resize(1300, 800); editor.show();
+        auto list = editor.findChild<QListWidget *>("scenarioList");
+        for (int i = 0; i < list->count(); ++i) if (list->item(i)->data(Qt::UserRole).toInt() == 1) list->setCurrentRow(i);
+        editor.findChild<QTabBar *>("scenarioNavigation")->setCurrentIndex(4);
+        QApplication::processEvents();
+        auto rows = editor.findChild<QComboBox *>("scenarioEventRow");
+        QVERIFY(rows); QCOMPARE(rows->currentData().toInt(), 4); QCOMPARE(rows->count(), 2);
+        auto tree = editor.findChild<QTreeWidget *>("scenarioEventSteps");
+        auto select = [&](int offset) {
+            for (int h = 0; h < tree->topLevelItemCount(); ++h)
+                for (int n = 0; n < tree->topLevelItem(h)->childCount(); ++n) {
+                    auto item = tree->topLevelItem(h)->child(n);
+                    if (item->data(0, Qt::UserRole).toInt() == offset) { tree->setCurrentItem(item); tree->scrollToItem(item); return true; }
+                }
+            return false;
+        };
+        const auto original = project.sceneEvents()->json();
+        QVERIFY(select(0x2f0)); QVERIFY(tree->currentItem()->text(1).contains("Tenne Plains completed"));
+        auto flags = editor.findChild<QComboBox *>("scenarioEventFlag");
+        auto action = editor.findChild<QComboBox *>("scenarioEventAction");
+        flags->setCurrentIndex(flags->findData(250)); action->setCurrentIndex(action->findData(false));
+        editor.findChild<QPushButton *>("scenarioEventApply")->click();
+        QCOMPARE(u8(project.sceneEvents()->program(4), 0x2f1), quint8(250));
+        QCOMPARE(u8(project.sceneEvents()->program(4), 0x2f3), quint8(0));
+        QVERIFY(tree->currentItem()->text(1).contains("Clear Flag 250"));
+        undo.undo(); QCOMPARE(project.sceneEvents()->json(), original);
+        undo.redo(); QVERIFY(select(0x2f0));
+        editor.findChild<QPushButton *>("scenarioEventRestore")->click(); QCOMPARE(project.sceneEvents()->json(), original);
+        undo.undo(); QCOMPARE(flags->currentData().toInt(), 250);
+        flags->setEditText("not a valid flag");
+        const int count = undo.index(); editor.findChild<QPushButton *>("scenarioEventApply")->click(); QCOMPARE(undo.index(), count);
+        QVERIFY(editor.findChild<QLabel *>("scenarioEventNotice")->text().contains("Choose a listed flag"));
+        QVERIFY(select(0x2f0));
+        // A real conditional check changes only its branch sense, not its destination.
+        const auto controls = EventScript::flagSteps(SceneEvents::retailRow(project.rom(), 4));
+        int check = -1;
+        for (auto it = controls.begin(); it != controls.end(); ++it) if (it->check) { check = it.key(); break; }
+        QVERIFY(check >= 0); QVERIFY(select(check));
+        const auto before = project.sceneEvents()->program(4);
+        action->setCurrentIndex(action->findData(!controls[check].value));
+        editor.findChild<QPushButton *>("scenarioEventApply")->click();
+        QCOMPARE(u8(project.sceneEvents()->program(4), check + 5), u8(before, check + 5));
+        QVERIFY(u8(project.sceneEvents()->program(4), check + 4) != u8(before, check + 4));
+        editor.findChild<QPushButton *>("scenarioEventJump")->click();
+        QCOMPARE(tree->currentItem()->data(0, Qt::UserRole).toInt(), controls[check].target);
+        editor.findChild<QCheckBox *>("scenarioEventAll")->setChecked(false);
+        QVERIFY(select(0x2f0)); QApplication::processEvents();
+        QVERIFY(editor.grab().save("native/build/scenario-events.png"));
+        rows->setCurrentIndex(rows->findData(71)); QVERIFY(tree->topLevelItemCount() > 0);
+        while (undo.index()) undo.undo(); QCOMPARE(project.sceneEvents()->json(), original);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void scenarioSettingsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

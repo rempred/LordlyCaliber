@@ -13,6 +13,7 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTreeWidget>
 
 namespace lordly {
 namespace {
@@ -91,6 +92,27 @@ void MainWindow::navigateTo(const EditLocation &location) {
             clear("rewardSearch"); destination = list("rewardClasses", id);
         } else if (kind == "customEncounter") {
             clear("customSearch"); destination = list("customSquadList", CustomSquads::key(id, location.child));
+        } else if (kind == "scenario-event") {
+            project_->loadSceneEvents();
+            const auto bytes = SceneEvents::retailRow(project_->rom(), id);
+            int scenario = -1;
+            for (int at = 0; at + 5 < bytes.size(); at += 2)
+                if (u8(bytes, at) == 0x68 && bytes.mid(at + 2, 4) == QByteArray::fromHex("70e970e7")) {
+                    scenario = u8(bytes, at + 1); break;
+                }
+            if (scenario >= 0) {
+                clear("scenarioSearch"); reveal(list("scenarioList", scenario));
+                destination = findChild<QWidget *>("scenarioEvents"); reveal(destination);
+                combo("scenarioEventRow", id);
+                auto steps = findChild<QTreeWidget *>("scenarioEventSteps");
+                if (steps) for (int h = 0; h < steps->topLevelItemCount(); ++h)
+                    for (int n = 0; n < steps->topLevelItem(h)->childCount(); ++n) {
+                        auto step = steps->topLevelItem(h)->child(n);
+                        if (step->data(0, Qt::UserRole).toInt() == location.child) {
+                            steps->setCurrentItem(step); steps->scrollToItem(step);
+                        }
+                    }
+            }
         } else if (kind == "scenarios" || kind == "scenarioSettings" || kind == "map" || kind == "town" || kind == "battlefield") {
             int siteRow = -1;
             if (kind == "battlefield") { project_->loadMapEdits(); id = project_->mapEdits()->scenarioForModel(id); }

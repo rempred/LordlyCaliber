@@ -187,6 +187,7 @@ QVector<ExportIssue> exportIssues(Project p) {
     check({"Neutral encounters"}, [&] { if (p.encounters()) p.encounters()->customSquads().validateFormations(p.classData()); });
     check({"Animation assignments"}, [&] { p.validateAnimationAssignments(); });
     check({"Cutscenes"}, [&] { if (p.scenePrograms()) p.scenePrograms()->validateReferences(p.rom(), p.dialogues() ? &*p.dialogues() : nullptr); });
+    check({"Scenario events"}, [&] { if (p.sceneEvents() && p.scenePrograms()) p.sceneEvents()->validate(*p.scenePrograms()); });
     return issues;
 }
 } // namespace lordly

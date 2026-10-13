@@ -964,7 +964,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored,
                                                       &eventPlan);
         result.report
-            << QString("Compiled and rebuilt %1 event launch rows").arg(eventPlan.rows.size());
+            << QString("Compiled and rebuilt %1 event script rows").arg(eventPlan.rows.size());
         result.report
             << QString("Compiled and rebuilt %1 scene programs through original resource links")
                    .arg(plan.size());

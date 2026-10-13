@@ -225,7 +225,9 @@ ImportedScenes importBrowserScenes(const Rom &rom, ScenePrograms programs, Scene
                 throw Error("Unknown imported event target kind");
             bindings[id] = selector;
         }
-        events.apply({{"version", 1}, {"bindings", bindings}}, programs);
+        auto eventValue = events.json();
+        eventValue["bindings"] = bindings;
+        events.apply(eventValue, programs);
     }
     events.validate(programs);
     return {std::move(programs), std::move(events)};

@@ -30,6 +30,13 @@ class SceneEvents {
     int target(const QString &) const;
     void bind(const QString &, int selector, const ScenePrograms &);
     void restore(const QString &);
+    QByteArray program(int row) const;
+    QVector<int> scenarioRows(int key) const;
+    void editFlag(int row, int offset, int flag, bool value);
+    void restoreFlags(int row);
+    const QJsonObject &flagEdits() const { return flags_; }
+    static QByteArray flagRow(const QByteArray &, int row, const QJsonObject &);
+    static QSet<int> flagRows(const QJsonObject &);
     void validate(const ScenePrograms &) const;
     QJsonObject json() const;
     void apply(const QJsonObject &, const ScenePrograms &);
@@ -38,7 +45,7 @@ class SceneEvents {
         return bindings_;
     }
     bool modified() const {
-        return bindings_ != original_;
+        return bindings_ != original_ || flags_ != originalFlags_;
     }
     int changedSites() const;
 
@@ -46,5 +53,6 @@ class SceneEvents {
     explicit SceneEvents(Rom rom) : rom_(std::move(rom)) {}
     Rom rom_;
     QMap<QString, int> bindings_, original_;
+    QJsonObject flags_, originalFlags_;
 };
 } // namespace lordly

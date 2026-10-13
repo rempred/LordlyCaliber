@@ -5,6 +5,7 @@
 #include "app/scenario_squad_panel.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
+#include "app/scenario_event_editor.h"
 #include <QCheckBox>
 #include <QTimeEdit>
 #include <QGroupBox>
@@ -206,6 +207,8 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     settingsLayout->setSizeConstraint(QLayout::SetMinimumSize);
     settingsScroll->setWidget(settingsPage);
     addPage(settingsScroll, "Settings");
+    events_ = new ScenarioEventEditor(project_, undo_, changed_);
+    addPage(events_, "Events");
     connect(missionTime_, &QTimeEdit::timeChanged, this, [this](QTime time) {
         if (loading_ || key() < 0) return;
         change("Change mission starting time", [this, time](Scenarios &next) {
@@ -363,6 +366,7 @@ void ScenarioEditor::showScenario() {
         editingRow_ = -1;
         routes_->refresh(-1);
         map_->refresh(-1);
+        events_->selectScenario(-1);
         return;
     }
     QSignalBlocker block(squads_);
@@ -407,6 +411,7 @@ void ScenarioEditor::showScenario() {
     showSquad();
     routes_->refresh(key());
     map_->refresh(key());
+    events_->selectScenario(key());
 }
 void ScenarioEditor::showSquad() {
     if(loading_) return;

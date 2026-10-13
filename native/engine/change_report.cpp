@@ -1,5 +1,6 @@
 #include "engine/project.h"
 #include "engine/squad_members.h"
+#include "engine/event_script.h"
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -482,6 +483,28 @@ ChangeReport Project::changeReport(const Project *reference) const {
                 add("Cutscene events", site.mission + " · " + site.name + " / " + site.role,
                     {transition("Scene selector", number(original.target(site.id)),
                                 number(sceneEvents_->target(site.id)))});
+        auto rows = SceneEvents::flagRows(sceneEvents_->flagEdits());
+        rows.unite(SceneEvents::flagRows(original.flagEdits()));
+        for (int row : rows) {
+            const auto controls = EventScript::flagSteps(SceneEvents::retailRow(baseRom, row));
+            const auto before = original.flagEdits()[QString::number(row)].toObject();
+            const auto after = sceneEvents_->flagEdits()[QString::number(row)].toObject();
+            auto offsets = before.keys();
+            for (const auto &offset : after.keys()) if (!offsets.contains(offset)) offsets << offset;
+            for (const auto &offset : offsets)
+                if (before[offset] != after[offset]) {
+                    const auto step = controls.value(offset.toInt());
+                    auto describe = [&](const QJsonObject &edits) {
+                        const auto edit = edits[offset].toObject();
+                        const int flag = edit.isEmpty() ? step.flag : edit["flag"].toInt();
+                        const bool value = edit.isEmpty() ? step.value : edit["value"].toBool();
+                        return QString("%1 %2%3").arg(step.check ? "Check" : value ? "Set" : "Clear",
+                            EventScript::flagName(flag), step.check ? value ? " is ON" : " is OFF" : "");
+                    };
+                    add("Scenario events", QString("Event row %1 · instruction @%2").arg(row).arg(offset.toInt(), 4, 16, QChar('0')),
+                        {describe(before) + " → " + describe(after)}, {"scenario-event", row, offset.toInt()});
+                }
+        }
     }
     if (!reference && dialogues_ && dialogues_->modified()) {
         const auto archives = dialogues_->json()["archives"].toObject();

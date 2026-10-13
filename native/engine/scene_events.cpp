@@ -1,4 +1,5 @@
 #include "engine/scene_events.h"
+#include "engine/event_script.h"
 #include "engine/legacy_scene_arena.h"
 #include <QFile>
 #include <QJsonArray>
@@ -196,8 +197,10 @@ SceneEvents SceneEvents::load(Rom rom) {
     const auto placement = SceneProgramResources::placement(rom);
     if (!placement || !placement->legacyArenaRetired)
         LegacySceneArena::read(rom);
-    if (placement)
+    if (placement) {
         result.bindings_ = placement->eventBindings;
+        result.flags_ = placement->eventFlags;
+    }
     for (int row = 0; row < 115; ++row) {
         const auto info = catalog()["rows"].toArray()[row];
         const auto key = u32(rom.bytes(), directory + 4 + row * 4);
@@ -210,7 +213,53 @@ SceneEvents SceneEvents::load(Rom rom) {
             result.bindings_[it.key()] = it.value();
     }
     result.original_ = result.bindings_;
+    result.originalFlags_ = result.flags_;
     return result;
+}
+QSet<int> SceneEvents::flagRows(const QJsonObject &flags) {
+    QSet<int> rows;
+    for (auto it = flags.begin(); it != flags.end(); ++it) {
+        bool ok; const int row = it.key().toInt(&ok);
+        if (!ok || QString::number(row) != it.key() || row < 0 || row >= 115 ||
+            !it.value().isObject() || it.value().toObject().isEmpty())
+            throw Error("Invalid event flag row");
+        rows.insert(row);
+    }
+    return rows;
+}
+QByteArray SceneEvents::flagRow(const QByteArray &retail, int row, const QJsonObject &flags) {
+    return EventScript::apply(retail, flags[QString::number(row)].toObject());
+}
+QByteArray SceneEvents::program(int row) const {
+    return bindRow(flagRow(retailRow(rom_, row), row, flags_), row, bindings_);
+}
+QVector<int> SceneEvents::scenarioRows(int key) const {
+    QVector<int> result;
+    if (key < 0 || key > 255) return result;
+    auto match = QByteArray::fromHex("680070e970e7"); match[1] = char(key);
+    for (int row = 4; row < 115; ++row) {
+        if (!catalog()["rows"].toArray()[row].isObject()) continue;
+        const auto bytes = retailRow(rom_, row);
+        for (int at = 0; at + match.size() <= bytes.size(); at += 2)
+            if (bytes.mid(at, match.size()) == match) { result << row; break; }
+    }
+    return result;
+}
+void SceneEvents::editFlag(int row, int offset, int flag, bool value) {
+    const auto retail = retailRow(rom_, row);
+    const auto controls = EventScript::flagSteps(retail);
+    if (!controls.contains(offset)) throw Error("This event command is not an editable flag control");
+    auto edits = flags_.value(QString::number(row)).toObject();
+    if (controls[offset].flag == flag && controls[offset].value == value) edits.remove(QString::number(offset));
+    else edits[QString::number(offset)] = QJsonObject{{"flag", flag}, {"value", value}};
+    EventScript::apply(retail, edits);
+    if (edits.isEmpty()) flags_.remove(QString::number(row));
+    else flags_[QString::number(row)] = edits;
+}
+void SceneEvents::restoreFlags(int row) {
+    const auto original = originalFlags_.value(QString::number(row));
+    if (original.isUndefined()) flags_.remove(QString::number(row));
+    else flags_[QString::number(row)] = original;
 }
 int SceneEvents::target(const QString &id) const {
     return bindings_.value(id, site(id).selector);
@@ -230,6 +279,7 @@ void SceneEvents::restore(const QString &id) {
     bindings_.remove(id);
 }
 void SceneEvents::validate(const ScenePrograms &scenes) const {
+    for (int row : flagRows(flags_)) flagRow(retailRow(rom_, row), row, flags_);
     QSet<int> selectors;
     for (const auto &id : scenes.scenes())
         for (const auto selector : scenes.resource(id).selectors)
@@ -246,12 +296,16 @@ QJsonObject SceneEvents::json() const {
     QJsonObject bindings;
     for (auto it = bindings_.cbegin(); it != bindings_.cend(); ++it)
         bindings[it.key()] = it.value();
-    return {{"version", 1}, {"bindings", bindings}};
+    if (flags_.isEmpty()) return {{"version", 1}, {"bindings", bindings}};
+    return {{"version", 2}, {"bindings", bindings}, {"flags", flags_}};
 }
 void SceneEvents::apply(const QJsonObject &value, const ScenePrograms &scenes) {
-    if (value["version"] != 1 || !value["bindings"].isObject())
+    if ((value["version"] != 1 && value["version"] != 2) || !value["bindings"].isObject() ||
+        (value["version"] == 2 && !value["flags"].isObject()) ||
+        (value["version"] == 1 && value.contains("flags")))
         throw Error("Invalid saved event bindings");
     auto next = *this;
+    next.flags_ = value["flags"].toObject();
     next.bindings_.clear();
     const auto values = value["bindings"].toObject();
     for (auto it = values.cbegin(); it != values.cend(); ++it) {
@@ -267,10 +321,12 @@ void SceneEvents::apply(const QJsonObject &value, const ScenePrograms &scenes) {
 SceneEventBuild SceneEvents::plan() const {
     SceneEventBuild result;
     result.bindings = bindings_;
+    result.flags = flags_;
+    for (int row : flagRows(flags_)) result.rows[row] = program(row);
     for (auto it = bindings_.cbegin(); it != bindings_.cend(); ++it) {
         const auto row = site(it.key()).row;
         if (!result.rows.contains(row))
-            result.rows[row] = bindRow(retailRow(rom_, row), row, bindings_);
+            result.rows[row] = program(row);
     }
     return result;
 }
@@ -283,6 +339,13 @@ int SceneEvents::changedSites() const {
     int count = 0;
     for (const auto &id : keys)
         count += bindings_.value(id, site(id).selector) != original_.value(id, site(id).selector);
+    auto rows = flagRows(flags_); rows.unite(flagRows(originalFlags_));
+    for (int row : rows) {
+        const auto before = originalFlags_[QString::number(row)].toObject(), after = flags_[QString::number(row)].toObject();
+        auto offsets = before.keys();
+        for (const auto &key : after.keys()) if (!offsets.contains(key)) offsets << key;
+        for (const auto &offset : offsets) count += before[offset] != after[offset];
+    }
     return count;
 }
 } // namespace lordly

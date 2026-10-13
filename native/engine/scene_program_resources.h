@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/director.h"
+#include <QJsonObject>
 #include <optional>
 namespace lordly {
 struct SceneProgramMember {
@@ -14,6 +15,7 @@ struct AuthoredSceneBuild {
 struct SceneEventBuild {
     QMap<int, QByteArray> rows;
     QMap<QString, int> bindings;
+    QJsonObject flags;
 };
 struct SceneProgramPlacement {
     quint32 offset = 0, allocation = 0;
@@ -21,6 +23,7 @@ struct SceneProgramPlacement {
     QVector<AuthoredSceneBuild> authored;
     QMap<QString, int> eventBindings;
     QSet<int> eventRows;
+    QJsonObject eventFlags;
     bool legacyArenaRetired = false;
 };
 class SceneProgramResources {

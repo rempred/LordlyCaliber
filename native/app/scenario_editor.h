@@ -16,6 +16,7 @@ namespace lordly {
 class ScenarioSquadPanel;
 class ScenarioRouteEditor;
 class ScenarioMapEditor;
+class ScenarioEventEditor;
 class ScenarioEditor : public QWidget {
   public:
     ScenarioEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
@@ -43,6 +44,7 @@ class ScenarioEditor : public QWidget {
     QPushButton *remove_;
     ScenarioRouteEditor *routes_ = nullptr;
     ScenarioMapEditor *map_ = nullptr;
+    ScenarioEventEditor *events_ = nullptr;
     int editingKey_ = -1, editingRow_ = -1;
     bool loading_ = true;
 };

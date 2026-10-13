@@ -1,5 +1,12 @@
 # Feature inventory and completion tracking
 
+Scenario → Events lists the selected mission's story and investigation scripts,
+with named flags where confirmed and numeric IDs elsewhere. Existing Boolean
+writes and recognized checks edit through flag and Set/Clear/Check dropdowns;
+branch destinations and unsupported commands are preserved. Edits support Undo,
+project persistence, change summaries and compiled ROM export/readback. See
+[Scenario event instructions](scenario-events.md) for supported controls and scope.
+
 Scenario authoring supports up to 30 enemy/allied squads combined (150 members).
 All maps support a configurable maximum of 20 deployed player squads. Tools
 enforces this limit and export rejects larger settings, including older projects
