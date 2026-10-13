@@ -836,9 +836,11 @@ factor to 102% for a match or 98% for an opposed weapon. Element affinity 4
 changes a neutral factor to 104%/96% and adds/subtracts 4 target resistance points.
 These are contributions to the damage calculation, not guaranteed final-damage
 percentages. The examples update when their controls change.
-The shared Flame-character/Flame-weapon/Flame-spell example explains how both
-bonuses can affect one spell, while the target's element and resistance affect
-the final damage. Weapon bonus to spells does not boost physical weapon damage.
+The Flame sword example separates normal weapon hits (character affinity) from
+spellcasting (character affinity plus weapon bonus). The combined spell example
+shows the current sum and resulting neutral attack factor. Swords, spears and
+other elemental weapons qualify as well as staves; normal weapon hits receive
+no weapon-to-spell bonus. Target defense/resistance still affect final damage.
 
 Mission completion Tools expose separate Goth population-bonus divisors below
 and above Chaos Frame50, Soldier population contribution, and minimum per captured
