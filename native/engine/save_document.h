@@ -114,6 +114,9 @@ class SaveDocument {
     void readCodec(const Rom &);
     QByteArray decode(int slot) const;
     bool validSlot(int slot) const;
+    int slotSize(int slot) const;
+    int slotFormat(int slot) const;
+    void clearSuspend();
     int address(SaveTable, int row) const;
     Format format_ = Format::Ram;
     QByteArray original_, data_, originalData_, ram_, blob_;
@@ -121,6 +124,8 @@ class SaveDocument {
     QVector<Cell> codec_;
     int classCount_ = 165, slot_ = -1, chunkSize_ = 0x20000;
     bool swapped_ = false, expanded_ = false;
+    bool compressed_ = false;
+    int compressedSuspendSize_ = 0;
     int daysInMonth(unsigned year, unsigned month) const;
     SaveChange planBytes(int address, const QByteArray &replacement) const;
     SaveChange difference(const QByteArray &next, int first, int size) const;

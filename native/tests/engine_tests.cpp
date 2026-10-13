@@ -3532,8 +3532,12 @@ class EngineTests : public QObject {
         Compiler compiler(tools);
         compiler.authenticate();
         const auto runtime = buildClassRuntime(classes, compiler, work.path(), 0x2800000);
-        QCOMPARE(runtime.compiledData, result.bytes);
-        QCOMPARE(runtime.data.layout.end, result.layout.end);
+        QCOMPARE(runtime.compiledData.first(result.bytes.size()), result.bytes);
+        QVERIFY(runtime.saves.has_value());
+        const auto &codec = runtime.saves->compression;
+        QVERIFY(codec.address >= result.layout.end);
+        QVERIFY(codec.address + codec.bytes.size() <= runtime.data.layout.end);
+        QCOMPARE(runtime.compiledData.mid(codec.address - result.layout.indexBase, codec.bytes.size()), codec.bytes);
         QCOMPARE(runtime.dataRomOffset, quint32(0x2800000));
         QCOMPARE(runtime.code.entries.size(), 3);
         QVERIFY(runtime.code.entries.contains("lc_boot_classes"));
@@ -4109,7 +4113,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                              originalDescriptions[id].bytes);
                 const auto placed = ClassPlacement::read(reopened.rom());
                 QVERIFY(placed->descriptionEntry);
-                QCOMPARE(placed->saves.version, 3U);
+                QCOMPARE(placed->saves.version, 4U);
                 auto checksum = result.image;
                 Rom::updateChecksum(checksum);
                 QCOMPARE(checksum, result.image);

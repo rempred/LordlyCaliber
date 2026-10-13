@@ -3,7 +3,7 @@
 #include <QJsonArray>
 namespace lordly {
 SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
-                                  const QString &directory) {
+                                  const QString &directory, quint32 compressionAddress) {
     auto source = [](const QString &name) {
         QFile file(":/game/classes/" + name);
         if (!file.open(QIODevice::ReadOnly))
@@ -11,11 +11,10 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
         return file.readAll();
     };
     SaveRuntimeBuild result;
-    result.code = compiler.compileModule(source("save-format.c") + "\n" + source("save-runtime.c"),
-                                         directory, "save_runtime", SavePlacement::ramAddress,
-                                         {{"save_format.h", source("save_format.h")},
-                                          {"save_checksums.h", source("save_checksums.h")}},
-                                         {{"lc_save_cache", 0x800a83b8},
+    result.compression = compiler.compileModule(source("save-compression.c"), directory,
+                                                "save_compression", compressionAddress,
+                                                {{"save_compression.h", source("save_compression.h")}}, {});
+    QMap<QString, quint32> services = {{"lc_save_cache", 0x800a83b8},
                                           {"lc_save_dirty", 0x800a83bc},
                                           {"lc_discovery_flags", discovery},
                                           {"lc_legacy_discovery", 0x80196a76},
@@ -28,10 +27,28 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
                                           {"lc_native_options_init", 0x8016cd90},
                                           {"lc_native_options_load", 0x8016cdcc},
                                           {"lc_native_options_save", 0x8016cdf4},
-                                          {"lc_native_clear", 0x80093380}});
+                                          {"lc_native_clear", 0x80093380}};
+    for (const auto &name : {QString("lc_save_frame_encode"), QString("lc_save_frame_decode"),
+                             QString("lc_save_data_crc")}) {
+        if (!result.compression.entries.contains(name)) throw Error("Missing save compression service");
+        services.insert(name, result.compression.entries.value(name));
+    }
+    services.insert("lc_native_invalidate_code", 0x800900c0);
+    services.insert("lc_native_class_dma", 0x8009da50);
+    const QByteArray prepareCode = "\nvoid lc_native_invalidate_code(void *, unsigned int);\n"
+        "void lc_native_class_dma(unsigned int, void *, unsigned int);\n"
+        "void lc_save_load_data(unsigned int rom, void *data, unsigned int size) {\n"
+        "    lc_native_class_dma(rom, data, size);\n"
+        "    lc_native_invalidate_code(data, size);\n}\n";
+    result.code = compiler.compileModule(source("save-format.c") + "\n" + source("save-image.c") + "\n" + source("save-runtime.c") + prepareCode,
+                                         directory, "save_runtime", SavePlacement::ramAddress,
+                                         {{"save_format.h", source("save_format.h")},
+                                          {"save_compression.h", source("save_compression.h")},
+                                          {"save_checksums.h", source("save_checksums.h")}},
+                                         services);
     result.placement.codeBytes = quint32(result.code.bytes.size());
     result.placement.codeChecksum = crc32(result.code.bytes);
-    result.placement.version = 3;
+    result.placement.version = 4;
     result.placement.validate();
     for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
         const auto row = value.toObject();
@@ -85,6 +102,13 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
                 row["retailSha256"].toString().toLatin1())
                 throw Error("Unrecognized new-game reset owner");
         }
+    if (prior.version < 4)
+        for (const auto value : catalog["suspendMenuOwners"].toArray()) {
+            const auto row = value.toObject();
+            if (sha256(rom.mid(row["start"].toInt(), row["size"].toInt())) !=
+                row["retailSha256"].toString().toLatin1())
+                throw Error("Unrecognized suspend menu owner");
+        }
     auto entry = [&](const QString &name) {
         if (!build.code.entries.contains(name))
             throw Error("Missing save entry " + name);
@@ -116,6 +140,11 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
         const auto row = value.toObject();
         put32(rom, row["call"].toInt(),
               0x0c000000U | ((entry(row["symbol"].toString()) >> 2) & 0x3ffffffU));
+    }
+    for (const auto value : catalog["suspendMenuOwners"].toArray()) {
+        const auto row = value.toObject();
+        put32(rom, row["call"].toInt(), 0x0c000000U | ((entry(row["symbol"].toString()) >> 2) & 0x3ffffffU));
+        put32(rom, row["resultDelay"].toInt(), 0);
     }
     next.ownerChecksum = saveRuntimeOwnerChecksum(rom, next.version);
     next.verify(rom);

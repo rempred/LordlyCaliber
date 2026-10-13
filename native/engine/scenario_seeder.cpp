@@ -88,8 +88,8 @@ SaveDocument ScenarioSeeder::patch(SaveDocument source, const QByteArray &memory
         if (memory[i] != source.ram_[i] && !mapped.contains(i))
             throw Error("Requested seed field is not persisted by this ROM");
     if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(source.data_.data() + base),
-                             lc_save_record_size(source.slot_, source.expanded_), source.slot_,
-                             source.expanded_))
+                             source.slotSize(source.slot_), source.slot_,
+                             source.slotFormat(source.slot_)))
         throw Error("Cannot sign seed data");
     source.selectSlot(source.slot_);
     return source;
@@ -330,8 +330,9 @@ QByteArray ScenarioSeeder::seed(int index, const SaveDocument *army) const {
     if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(source.data_.data() + at), size, 0,
                              source.expanded_))
         throw Error("Cannot sign seeded save");
-    put32(source.data_, lc_save_record_offset(15, source.expanded_), 0);
-    return wordSwap(source.data_);
+    source.clearSuspend();
+    const auto encoded = source.serialize();
+    return source.swapped_ ? encoded : wordSwap(encoded);
 }
 QString ScenarioSeeder::batteryPath(const Rom &rom, const QString &exe) {
     QFileInfo file(exe);
@@ -398,7 +399,7 @@ QString ScenarioSeeder::install(const Rom &rom, const QByteArray &raw, const QSt
     auto output = raw;
     if (mergeSeed) {
         source.selectSlot(0);
-        put32(source.data_, lc_save_record_offset(15, source.expanded_), 0);
+        source.clearSuspend();
         const bool blank = old.size() == 0x8000 &&
                            (old == QByteArray(0x8000, 0) || old == QByteArray(0x8000, char(-1)));
         if (exists && !blank) {
@@ -412,10 +413,13 @@ QString ScenarioSeeder::install(const Rom &rom, const QByteArray &raw, const QSt
             const int at = int(lc_save_record_offset(0, source.expanded_)),
                       size = int(lc_save_record_size(0, source.expanded_));
             target.data_.replace(at, size, source.data_.mid(at, size));
-            put32(target.data_, lc_save_record_offset(15, target.expanded_), 0);
-            output = wordSwap(target.data_);
-        } else
-            output = wordSwap(source.data_);
+            target.clearSuspend();
+            output = target.serialize();
+            if (!target.swapped_) output = wordSwap(output);
+        } else {
+            output = source.serialize();
+            if (!source.swapped_) output = wordSwap(output);
+        }
     }
     auto verify = SaveDocument::open(rom, output);
     if (mergeSeed)

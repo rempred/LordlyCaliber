@@ -26,7 +26,14 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
     }
     if (expandedSaves || result.data.layout.count > 165) {
-        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory);
+        const quint32 codecAddress = (result.data.layout.end + 15U) & ~15U;
+        result.data.bytes += QByteArray(codecAddress - result.data.layout.end, 0);
+        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory, codecAddress);
+        result.data.bytes += result.saves->compression.bytes;
+        while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        if (result.data.layout.end > 0x80400000U)
+            throw Error("Save compression exceeds permanent class storage");
         result.placement.saves = result.saves->placement;
     }
     auto reclaimStart =
@@ -66,7 +73,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                                          {{"lc_original_heap_init", 0x80070c60},
                                           {"lc_original_pool_add", 0x80070d20},
                                           {"lc_original_secondary_reset", 0x80070f14},
-                                          {"lc_dma_read", 0x8009da50}});
+                                          {"lc_dma_read", result.saves ? result.saves->code.entries.value("lc_save_load_data") : 0x8009da50}});
     if (result.code.bytes.size() > ClassPlacement::codeCapacity ||
         result.code.entries.size() != 3 || !result.code.entries.contains("lc_heap_reset") ||
         !result.code.entries.contains("lc_secondary_reset") ||

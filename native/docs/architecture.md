@@ -6115,3 +6115,35 @@ checksum and existing preservation checks passed. Town/time and terrain-route
 regressions passed. This is desktop/offline export validation, not a new emulator
 playthrough. Build and test details are in the parent task note
 docs/Plans/task-logs/scenario-workflow-20261012.md.
+
+## Compressed suspend storage (capacity work in progress)
+
+Save runtime version4 keeps the physical SRAM image at32768 bytes and retains
+options plus both6256-byte normal slots at their existing addresses. A suspend
+uses an LC06ZSV1 frame at0x30F0, bounded by the LC06SRA2 marker at0x7FF0. Frames
+carry logical/stored sizes and independent header, stored and logical CRC32s.
+The portable codec uses the game's LZSS token grammar; raw fallback is allowed
+only when it fits. Unknown logical bytes are retained.
+
+Encoding and complete readback happen in private scratch. Only a successful
+byte comparison publishes the frame/marker to the SRAM cache. Allocation,
+oversize and validation failures retain the prior cached suspend. The field
+menu preserves the save result and resumes play on failure. This is RAM-side
+transactionality, not power-loss journaling of the original whole-image DMA.
+A user-visible save-failure explanation and crowded-mission heap testing remain.
+
+Compression code is appended to permanent class data, inside its checked data
+extent and CRC. The boot DMA goes through a resident wrapper that invalidates
+instruction cache after loading that extent. Heap resets reserve the entire
+extent. This keeps the small original class bootstrap/description allocation
+unchanged. SaveDocument works on a virtual decoded suspend and recompresses a
+private physical image on output; undo restores original file bytes. Tester
+seeding retains the second normal slot and handles compressed suspend clearing.
+
+Compiled N64 checks cover original-decoder parity, bounded output, malformed
+frames, exact readback, scratch-allocation failure/retry, cartridge-cache I/O,
+installed boot/heap instructions and the field-menu continuation. Desktop checks
+cover byte order, undo, damaged-suspend preservation and Tester merging. Export,
+checksum and reopen checks pass with166/256 classes. These checks do not establish
+60-squad gameplay or a universal worst-case compression bound: source/map arrays,
+member handles and expanded mission callbacks still require implementation.

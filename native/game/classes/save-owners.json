@@ -139,5 +139,16 @@
       "original": 2148086656,
       "retailSha256": "39aa5f19b1e8653b32c483740bcbfe4572a197f2fffb2dcf9a847eec17c090de"
     }
+  ],
+  "suspendMenuOwners": [
+    {
+      "start": 968404,
+      "size": 228,
+      "call": 968512,
+      "resultDelay": 968524,
+      "delta": 2148217504,
+      "symbol": "lc_save_suspend_menu",
+      "retailSha256": "77a6cf1922af57a0c04cc6d11427e82744bf083b2f08d5ff8b7b46e240f020f0"
+    }
   ]
 }

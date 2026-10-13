@@ -6,6 +6,7 @@
  * no desktop path, external Decomp tree, or Expansion Pak address is required.
  */
 #include "save_format.h"
+#include "save_compression.h"
 typedef unsigned char SaveByte;
 typedef unsigned int SaveWord;
 extern SaveByte *volatile lc_save_cache;
@@ -57,18 +58,32 @@ static int read_save_record(SaveWord slot, SaveByte *record)
     if (!record || !size) return 0;
     cache = save_cache();
     if (!cache) return 0;
+    if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2)
+        return lc_save_read_compressed(cache, LC_SAVE_IMAGE_BYTES, record, size) == size;
     copy_save_bytes(record, cache + lc_save_record_offset(slot, 1), size);
     return lc_save_record_valid(record, size, slot, 1);
 }
-static void write_save_record(SaveWord slot, const SaveByte *record)
+static int write_save_record(SaveWord slot, const SaveByte *record)
 {
     SaveWord size = lc_save_record_size(slot, 1);
-    SaveByte *cache;
-    if (!record || !size) return;
+    SaveByte *cache, *scratch;
+    int result;
+    if (!record || !size) return 0;
     cache = save_cache();
-    if (!cache) return;
+    if (!cache) return 0;
+    if (slot == 15) {
+        scratch = (SaveByte *)lc_native_save_alloc(LC_SAVE_PACK_COMMIT_WORK_BYTES(size));
+        if (!scratch) return 0;
+        result = lc_save_commit_compressed(cache, LC_SAVE_IMAGE_BYTES, record, size,
+                                          scratch, LC_SAVE_PACK_COMMIT_WORK_BYTES(size));
+        lc_native_save_free(scratch);
+        if (!result) return 0;
+        lc_save_dirty = 1;
+        return 1;
+    }
     copy_save_bytes(cache + lc_save_record_offset(slot, 1), record, size);
     lc_save_dirty = 1;
+    return 1;
 }
 int lc_save_read_normal(SaveWord slot, SaveByte *record)
 {
@@ -80,7 +95,7 @@ void lc_save_write_normal(SaveWord slot, const SaveByte *record)
 {
     if (slot < 2) write_save_record(slot, record);
 }
-void lc_save_write_suspend(const SaveByte *record) { write_save_record(15, record); }
+int lc_save_write_suspend(const SaveByte *record) { return write_save_record(15, record); }
 void lc_save_write_options(const SaveByte *record) { write_save_record(14, record); }
 void lc_save_copy(SaveByte *record, SaveWord offset, SaveWord size)
 {
@@ -159,6 +174,7 @@ int lc_save_headers_missing(void)
     SaveByte *cache = save_cache(), *record;
     SaveWord i, slot, a, b;
     if (!cache) return 0; /* Damaged layout: all mutation remains blocked. */
+    if (lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) return 0;
     for (i = 0; i < 4; ++i) {
         slot = i < 2 ? i : i == 2 ? 15 : 14;
         record = cache + lc_save_record_offset(slot, 1);
@@ -174,6 +190,17 @@ void lc_save_initialize_slot(SaveWord slot)
     SaveByte *record, *cache;
     if (!size || !(cache = save_cache())) return;
     if (slot == 15) {
+        if (lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+            record = (SaveByte *)lc_native_save_alloc(size);
+            if (!record) return;
+            /* Preserve a damaged/unsupported compressed save for recovery. */
+            if (read_save_record(15, record)) {
+                save_put_word(record, 0);
+                write_save_record(15, record);
+            }
+            lc_native_save_free(record);
+            return;
+        }
         /* Clearing suspend changes only its twelve-byte header, as before. */
         record = cache + lc_save_record_offset(slot, 1);
         save_put_word(record, 0);
@@ -193,18 +220,26 @@ void lc_save_initialize_slot(SaveWord slot)
 int lc_save_check_slot(SaveWord slot)
 {
     SaveWord size = lc_save_record_size(slot, 1);
-    SaveByte *cache = save_cache();
+    SaveByte *cache = save_cache(), *record;
     int valid;
     if (!cache || !size) return 0;
+    if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+        record = (SaveByte *)lc_native_save_alloc(size);
+        if (!record) return 0;
+        valid = read_save_record(slot, record);
+        lc_native_save_free(record);
+        return valid;
+    }
     valid = lc_save_record_valid(cache + lc_save_record_offset(slot, 1), size, slot, 1);
     if (!valid) lc_save_initialize_slot(slot);
     return valid;
 }
-static void save_game_slot(SaveWord slot)
+static int save_game_slot(SaveWord slot)
 {
     SaveWord size = lc_save_record_size(slot, 1), counter = 0;
     SaveByte *record, *cache;
-    if (!size || !(cache = save_cache())) return;
+    int result;
+    if (!size || !(cache = save_cache())) return 0;
     if (slot < 2) {
         /* The counter comes from the prior record, never recycled heap bytes. */
         if (lc_save_record_valid(cache + lc_save_record_offset(slot, 1), size, slot, 1))
@@ -213,7 +248,7 @@ static void save_game_slot(SaveWord slot)
         if (!counter) counter = ~0U;
     }
     record = (SaveByte *)lc_native_save_alloc(size);
-    if (!record) return;
+    if (!record) return 0;
     clear_save_bytes(record, size);
     if (slot == 14) lc_native_options_save(record + 12);
     else {
@@ -222,8 +257,9 @@ static void save_game_slot(SaveWord slot)
         if (slot == 15) dispatch_save_callbacks(record, 2, 1);
     }
     lc_save_sign(slot, record);
-    write_save_record(slot, record);
+    result = write_save_record(slot, record);
     lc_native_save_free(record);
+    return result;
 }
 static void load_game_slot(SaveWord slot)
 {
@@ -241,13 +277,18 @@ static void load_game_slot(SaveWord slot)
     }
     lc_native_save_free(record);
 }
-void lc_save_suspend(void) { save_game_slot(15); }
+int lc_save_suspend(void) { return save_game_slot(15); }
 void lc_load_suspend(void) { load_game_slot(15); }
-void lc_save_game(SaveWord slot)
+int lc_save_game(SaveWord slot)
 {
-    save_game_slot(slot);
+    int result = save_game_slot(slot);
     lc_native_save_cleanup(0x37081383U);
+    return result;
 }
+/* The field-menu continuation uses -3 to exit and -2 to resume gameplay.
+ * Its patched call preserves this result instead of unconditionally exiting.
+ */
+int lc_save_suspend_menu(void) { return lc_save_game(15) ? 0xFFFDU : 0xFFFEU; }
 void lc_load_game(SaveWord slot)
 {
     load_game_slot(slot);
@@ -255,14 +296,20 @@ void lc_load_game(SaveWord slot)
 }
 SaveByte *lc_save_summary(SaveWord slot)
 {
-    SaveByte *cache, *record, *summary = 0;
+    SaveByte *cache, *record, *summary = 0, *temporary = 0;
     SaveWord size = lc_save_record_size(slot, 1);
     if ((slot < 2 || slot == 15) && (cache = save_cache())) {
         record = cache + lc_save_record_offset(slot, 1);
-        if (lc_save_record_valid(record, size, slot, 1) && save_word(record + (slot == 15 ? 0 : 12))) {
+        if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+            temporary = (SaveByte *)lc_native_save_alloc(size);
+            record = temporary;
+            if (record && !read_save_record(slot, record)) { lc_native_save_free(record); record = 0; temporary = 0; }
+        }
+        if (record && lc_save_record_valid(record, size, slot, 1) && save_word(record + (slot == 15 ? 0 : 12))) {
             summary = (SaveByte *)lc_native_save_alloc(26);
             if (summary) copy_save_bytes(summary, record + 12 + lc_save_callbacks[0].offset, 26);
         }
+        if (temporary) lc_native_save_free(temporary);
     }
     lc_native_save_cleanup(0x37081383U);
     return summary;

@@ -30,6 +30,15 @@ const pakOwners=[
 const lifecycleOwners=[{start:0x5AC70,size:0x380,call:0x5ADA8,symbol:'lc_clear_game_state',original:0x80093380}]
   .map(row=>({...row,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
 for(const row of lifecycleOwners)if(rom.readUInt32BE(row.call)!==(0x0C000000|((row.original>>>2)&0x3FFFFFF)))throw Error('Unexpected new-game clear call');
+// Native descriptor3: ROM EBBB0 -> RAM8019EE50. The field menu currently
+// overwrites the save result with FFFD (exit). FFFE is its existing cancel
+// result; preserve the source-built success/failure result in this branch.
+const suspendMenuOwners=[{start:0xEC6D4,size:0xE4,call:0xEC740,resultDelay:0xEC74C,
+  delta:0x800B32A0,symbol:'lc_save_suspend_menu'}]
+  .map(row=>({...row,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
+for(const row of suspendMenuOwners)
+  if(rom.readUInt32BE(row.call)!==0x0C01D217 || rom.readUInt32BE(row.resultDelay)!==0x3402FFFD)
+    throw Error('Unexpected suspend exit continuation');
 fs.writeFileSync(path.join(__dirname,'../game/classes/save-owners.json'),JSON.stringify({
-  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks,pakOwners,lifecycleOwners
+  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks,pakOwners,lifecycleOwners,suspendMenuOwners
 },null,2)+'\n');

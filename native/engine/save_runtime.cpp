@@ -20,6 +20,9 @@ quint32 saveRuntimeOwnerChecksum(const QByteArray &rom, quint32 version) {
     if (version >= 3)
         for (const auto value : catalog["lifecycleOwners"].toArray())
             ranges.append(value);
+    if (version >= 4)
+        for (const auto value : catalog["suspendMenuOwners"].toArray())
+            ranges.append(value);
     QByteArray data;
     for (const auto value : ranges) {
         const auto row = value.toObject();
@@ -32,7 +35,7 @@ quint32 saveRuntimeOwnerChecksum(const QByteArray &rom, quint32 version) {
 }
 void SavePlacement::validate() const {
     if ((!codeBytes && (codeChecksum || ownerChecksum || version)) || codeBytes > capacity ||
-        codeBytes % 4 || (codeBytes && (version < 1 || version > 3)))
+        codeBytes % 4 || (codeBytes && (version < 1 || version > 4)))
         throw Error("Unsupported expanded save code allocation");
 }
 void SavePlacement::verify(const QByteArray &rom) const {
@@ -81,6 +84,14 @@ void SavePlacement::verify(const QByteArray &rom) const {
             const auto word = u32(rom, value.toObject()["call"].toInt());
             if (word >> 26 != 3)
                 throw Error("Invalid expanded new-game reset call");
+            entry(0x80000000U | ((word & 0x3ffffffU) << 2));
+        }
+    if (version >= 4)
+        for (const auto value : catalog["suspendMenuOwners"].toArray()) {
+            const auto row = value.toObject();
+            const auto word = u32(rom, row["call"].toInt());
+            if (word >> 26 != 3 || u32(rom, row["resultDelay"].toInt()))
+                throw Error("Invalid suspend save-failure guard");
             entry(0x80000000U | ((word & 0x3ffffffU) << 2));
         }
 }

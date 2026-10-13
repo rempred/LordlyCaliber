@@ -1,5 +1,6 @@
 #include "save_format.h"
 #include "save_checksums.h"
+#include "save_compression.h"
 typedef unsigned char u8;
 typedef unsigned int u32;
 
@@ -13,7 +14,7 @@ static void put32(u8 *p, u32 value)
 }
 u32 lc_save_record_offset(u32 slot, u32 expanded)
 {
-    if (expanded > 1) return ~0U;
+    if (expanded > 2) return ~0U;
     if (slot == 14) return 0;
     if (slot == 15) return expanded ? 0x30F0U : 0x30B0U;
     if (slot < 2) return 16U + slot * (expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES);
@@ -21,9 +22,9 @@ u32 lc_save_record_offset(u32 slot, u32 expanded)
 }
 u32 lc_save_record_size(u32 slot, u32 expanded)
 {
-    if (expanded > 1) return 0;
+    if (expanded > 2) return 0;
     if (slot == 14) return 16;
-    if (slot == 15) return expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
+    if (slot == 15) return expanded == 2 ? LC_SAVE_LARGE_SUSPEND_BYTES : expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
     if (slot < 2) return expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES;
     return 0;
 }
@@ -40,7 +41,7 @@ int lc_save_record_seal(u8 *record, u32 capacity, u32 slot, u32 expanded)
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
     put32(record, checksums(record, length, lc_save_record_offset(slot, expanded)));
-    put32(record + 4, expanded && slot != 14 ? 0x4C433035U : 0x51756573U);
+    put32(record + 4, expanded == 2 && slot == 15 ? 0x4C433036U : expanded && slot != 14 ? 0x4C433035U : 0x51756573U);
     put32(record + 8, expanded && slot != 14 ? 0x4F473321U : 0x744F4733U);
     return 1;
 }
@@ -51,7 +52,7 @@ int lc_save_record_valid(const u8 *record, u32 capacity, u32 slot, u32 expanded)
      */
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
-    if (get32(record + 4) != (expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||
+    if (get32(record + 4) != (expanded == 2 && slot == 15 ? 0x4C433036U : expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||
         get32(record + 8) != (expanded && slot != 14 ? 0x4F473321U : 0x744F4733U)) return 0;
     /* The game uses a signed but zero-checksum suspend record as 'no suspend'. */
     if (slot == 15 && get32(record) == 0) return 1;
@@ -97,6 +98,17 @@ int lc_save_image_version(const u8 *image, u32 capacity)
     const u8 *marker, *record;
     u32 i, slot;
     if (!image || capacity < LC_SAVE_IMAGE_BYTES) return -1;
+    marker = image + LC_SAVE_PACK_IMAGE_MARKER;
+    if (get32(marker) == 0x4C433036U) {
+        if (get32(marker + 4) != 0x53524132U || get32(marker + 8) != 0x00020020U ||
+            get32(marker + 12) != marker_crc(marker)) return -1;
+        return 2;
+    }
+    /* A compressed record without its complete marker is an interrupted or
+     * damaged image. Never migrate it as retail or silently clear its data.
+     */
+    if (get32(image + LC_SAVE_PACK_SUSPEND_OFFSET) == 0x4C433036U &&
+        get32(image + LC_SAVE_PACK_SUSPEND_OFFSET + 4) == 0x5A535631U) return -1;
     marker = image + LC_SAVE_IMAGE_MARKER;
     if (get32(marker) == 0x4C433035U) {
         if (get32(marker + 4) != 0x53524131U || get32(marker + 8) != 0x00010020U ||
@@ -121,7 +133,7 @@ int lc_save_expand_image(u8 *image, u32 capacity)
     u32 n, slot, oldOffset, offset, oldSize, size, i;
     u8 *record, *marker;
     if (version < 0) return 0;
-    if (version == 1) return 1;
+    if (version == 1 || version == 2) return 1;
     /* Move later records first so no unread legacy payload is overwritten. */
     for (n = 3; n; --n) {
         slot = n == 3 ? 15 : n - 1;

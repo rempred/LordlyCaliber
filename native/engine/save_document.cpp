@@ -5,6 +5,7 @@
 #include "game/army/character.h"
 #include "game/army/soldier_reserve.h"
 #include "game/classes/save_format.h"
+#include "game/classes/save_compression.h"
 #include <QSet>
 #include <QtEndian>
 #include <QtZlib/zlib.h>
@@ -57,9 +58,6 @@ QString name(const QByteArray &ram, int at, bool packed) {
 }
 int recordOffset(int slot, bool expanded) {
     return int(lc_save_record_offset(slot, expanded));
-}
-int recordSize(int slot, bool expanded) {
-    return int(lc_save_record_size(slot, expanded));
 }
 } // namespace
 void SaveDocument::readCodec(const Rom &rom) {
@@ -127,6 +125,8 @@ SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int cla
         result.format_ = Format::Battery;
         result.data_ = bytes;
         const auto hasMagic = [](const QByteArray &b) {
+            if (b.mid(LC_SAVE_PACK_SUSPEND_OFFSET, 8) == "LC06ZSV1" ||
+                b.mid(LC_SAVE_PACK_IMAGE_MARKER, 8) == "LC06SRA2") return true;
             for (int at : {0x14, 0x1864, 0x1884, 0x30b4, 0x30f4})
                 if (b.mid(at, 8) == "QuestOG3" || b.mid(at, 8) == "LC05OG3!")
                     return true;
@@ -143,7 +143,22 @@ SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int cla
                                   unsigned(result.data_.size()));
         if (version < 0)
             throw Error("Incomplete or unrecognized expanded battery-save layout");
-        result.expanded_ = version == 1;
+        result.expanded_ = version != 0;
+        result.compressed_ = version == 2;
+        if (result.compressed_) {
+            QByteArray logical(LC_SAVE_PACK_MAX_BYTES, 0);
+            const auto size = lc_save_read_compressed(
+                reinterpret_cast<const unsigned char *>(result.data_.constData()), unsigned(result.data_.size()),
+                reinterpret_cast<unsigned char *>(logical.data()), unsigned(logical.size()));
+            if (size) {
+                result.compressedSuspendSize_ = int(size);
+                if (result.data_.size() < LC_SAVE_PACK_SUSPEND_OFFSET + size)
+                    result.data_.resize(LC_SAVE_PACK_SUSPEND_OFFSET + size);
+                result.data_.replace(LC_SAVE_PACK_SUSPEND_OFFSET, size, logical.constData(), size);
+            }
+            // A corrupt suspend stays byte-for-byte in the source image while
+            // valid normal slots remain available for recovery and editing.
+        }
         for (const auto &slot : result.saveSlots())
             if (slot.valid) {
                 result.selectSlot(slot.id);
@@ -387,15 +402,32 @@ QByteArray SaveDocument::decode(int slot) const {
     return ram;
 }
 bool SaveDocument::validSlot(int slot) const {
-    const int at = recordOffset(slot, expanded_), size = recordSize(slot, expanded_);
+    if (slot == 15 && compressed_ && !compressedSuspendSize_) return false;
+    const int at = recordOffset(slot, expanded_), size = slotSize(slot);
     if (at < 0 || !size || at + size > data_.size())
         return false;
     if (!lc_save_record_valid(reinterpret_cast<const unsigned char *>(data_.constData() + at), size,
-                              slot, expanded_))
+                              slot, slotFormat(slot)))
         return false;
     if (u8(data_, at + 12) == 255 || (slot == 15 && !u32(data_, at)))
         return false;
     return rosterPresent(decode(slot));
+}
+int SaveDocument::slotFormat(int slot) const {
+    return slot == 15 && compressedSuspendSize_ == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : int(expanded_);
+}
+int SaveDocument::slotSize(int slot) const {
+    return int(lc_save_record_size(slot, slotFormat(slot)));
+}
+void SaveDocument::clearSuspend() {
+    const int at = recordOffset(15, expanded_);
+    if (compressed_ && !compressedSuspendSize_) {
+        compressedSuspendSize_ = LC_SAVE_EXPANDED_SUSPEND_BYTES;
+        data_.replace(at, compressedSuspendSize_, QByteArray(compressedSuspendSize_, 0));
+        lc_save_record_seal(reinterpret_cast<unsigned char *>(data_.data() + at),
+                            compressedSuspendSize_, 15, 1);
+    }
+    put32(data_, at, 0);
 }
 QVector<SaveSlot> SaveDocument::saveSlots() const {
     if (!battery())
@@ -425,7 +457,7 @@ QString SaveDocument::formatName() const {
     if (battery())
         return QString("%1 · %2 layout")
             .arg(swapped_ ? "Word-swapped SRAM" : "Native SRAM")
-            .arg(expanded_ ? "expanded Classes" : "retail");
+            .arg(compressed_ ? "compressed missions" : expanded_ ? "expanded Classes" : "retail");
     return format_ == Format::Ram    ? "Native RDRAM"
            : format_ == Format::Rzip ? "RetroArch RZIP state"
                                      : "Raw libretro state";
@@ -604,7 +636,7 @@ SaveChange SaveDocument::planCharacterClassEdit(int row, const QString &key, con
     if (!affected.isEmpty())
         candidate.apply(candidate.planMembershipChange(affected, classes, false), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const {
     SaveChange result;
@@ -640,9 +672,9 @@ SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const 
             if (!mapped[i] && replacement[i] != ram_[at + i])
                 throw Error("Field byte is not persisted by this save format");
         first = recordOffset(slot_, expanded_);
-        size = recordSize(slot_, expanded_);
+        size = slotSize(slot_);
         if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(next.data() + first), size,
-                                 slot_, expanded_))
+                                 slot_, slotFormat(slot_)))
             throw Error("Cannot sign edited save");
     } else
         next.replace(at, width, replacement);
@@ -739,7 +771,7 @@ SaveChange SaveDocument::planDisbandLegion(int index) const {
         bytes[i] = char(order[i]);
     candidate.apply(candidate.planBytes(0x193ab0, bytes), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planDetachLegionUnit(int index, int unit) const {
     auto legion = editableLegion(index);
@@ -838,7 +870,7 @@ SaveChange SaveDocument::planCreateLegion(int unit, const ClassData &classes) co
     order[count] = char(index);
     candidate.apply(candidate.planBytes(0x193ab0, order), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 int SaveDocument::legionCapacity(int index) const {
     const auto legion = editableLegion(index);
@@ -1131,7 +1163,7 @@ SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
     candidate.apply(candidate.planBytes(roster + id * stride, record), true);
     candidate.apply(candidate.planEdit(SaveTable::Characters, id, "name", name), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planRemoveCharacter(int id) const {
     if (!canEditUnits())
@@ -1223,7 +1255,7 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
     // Persistent order is rank indexed by saved record, not a list of record IDs.
     candidate.apply(candidate.planBytes(0x1977d8 + index, QByteArray(1, char(list.size()))), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planRecruitUnit(int classId, const QString &name, int cell,
                                         const ClassData &classes, quint32 seed, int level,
@@ -1235,7 +1267,7 @@ SaveChange SaveDocument::planRecruitUnit(int classId, const QString &name, int c
     // Validate both operations before changing the loaded save; one Undo restores
     // the character, assignment, squad number and Army ordering together.
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planDisbandUnit(int index) const {
     if (!canEditUnits())
@@ -1306,7 +1338,7 @@ SaveChange SaveDocument::planDisbandUnit(int index) const {
     // Owned consumables already include carried copies. Clearing membership
     // releases their assignment on the next native inventory rebuild.
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 int SaveDocument::reserveSoldiers() const {
     return u8(ram_, 0x190f81);
@@ -1361,7 +1393,7 @@ SaveChange SaveDocument::planSoldierGroup(int toUnit, int cell, const ClassData 
                     true);
     candidate.apply(candidate.planMembershipChange({to}, classes, false), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 QPair<int, int> SaveDocument::memberClasses(int id) const {
     if (id <= 0 || id >= 220)
@@ -1510,7 +1542,7 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     candidate.apply(candidate.planBytes(newAt, QByteArray(1, char(u8(ram_, newAt) | 2))), true);
     candidate.updateLegionsForUnits({index}, classes);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 void SaveDocument::validateTransferMember(int id, const QVector<SaveUnit> &list) const {
     if (id < 1 || id >= 220)
@@ -1613,7 +1645,7 @@ SaveChange SaveDocument::planToReserve(int fromUnit, int fromMember,
     candidate.apply(candidate.planBytes(0x191074 + id - 100, QByteArray(1, 0)), true);
     candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(pool + count))), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 SaveChange SaveDocument::planFromReserve(int member, int toUnit, int cell,
                                          const ClassData &classes) const {
@@ -1682,7 +1714,7 @@ SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
         affected << unit.index;
     candidate.updateLegionsForUnits(affected, classes);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
-                      recordSize(slot_, expanded_));
+                      slotSize(slot_));
 }
 void SaveDocument::apply(const SaveChange &change, bool forward) {
     for (const auto &span : change.spans) {
@@ -1704,6 +1736,19 @@ void SaveDocument::apply(const SaveChange &change, bool forward) {
 QByteArray SaveDocument::serialize() const {
     if (data_ == originalData_)
         return original_;
+    if (battery() && compressed_) {
+        auto physical = swapped_ ? swapWords(original_) : original_;
+        physical.replace(0, LC_SAVE_PACK_SUSPEND_OFFSET, data_.first(LC_SAVE_PACK_SUSPEND_OFFSET));
+        const int size = compressedSuspendSize_;
+        if (size && data_.mid(LC_SAVE_PACK_SUSPEND_OFFSET, size) != originalData_.mid(LC_SAVE_PACK_SUSPEND_OFFSET, size)) {
+            QVector<quint16> scratch((LC_SAVE_PACK_COMMIT_WORK_BYTES(unsigned(size)) + 1) / 2);
+            if (!lc_save_commit_compressed(reinterpret_cast<unsigned char *>(physical.data()), unsigned(physical.size()),
+                    reinterpret_cast<const unsigned char *>(data_.constData() + LC_SAVE_PACK_SUSPEND_OFFSET), unsigned(size),
+                    reinterpret_cast<unsigned char *>(scratch.data()), unsigned(scratch.size() * 2)))
+                throw Error("The edited mission save does not fit in 32 KB. The existing file has not been changed.");
+        }
+        return swapped_ ? swapWords(physical) : physical;
+    }
     if (battery())
         return swapped_ ? swapWords(data_) : data_;
     if (format_ == Format::Ram)

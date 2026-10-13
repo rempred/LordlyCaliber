@@ -85,9 +85,10 @@ for (const [file,expected] of Object.entries(pins.tools))
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(tools,file))).digest('hex'),expected);
 fs.mkdirSync(path.join(native,'build'),{recursive:true});
 const work = fs.mkdtempSync(path.join(native,'build/save-format-'));
-for (const file of ['save-format.c','save_format.h','save_checksums.h'])
+for (const file of ['save-format.c','save_format.h','save_checksums.h','save_compression.h'])
   fs.copyFileSync(path.join(native,'game/classes',file),path.join(work,file));
-fs.appendFileSync(path.join(work,'save-format.c'),'\n'+fs.readFileSync(path.join(native,'game/classes/save-runtime.c'),'utf8'));
+for(const file of ['save-compression.c','save-image.c','save-runtime.c'])
+  fs.appendFileSync(path.join(work,'save-format.c'),'\n'+fs.readFileSync(path.join(native,'game/classes',file),'utf8'));
 const run = (tool,args) => cp.execFileSync(path.join(tools,tool),args,{cwd:work,encoding:'utf8'});
 run('cpp.exe',['-P','-undef','-nostdinc','save-format.c','save-format.i']);
 run('cc1.exe',['-quiet','-O2','-meb','-mips3','-mgp32','-mfp32','-G','0','-fno-PIC','-mno-abicalls','-fno-builtin','-funsigned-char','save-format.i','-o','save-format.s']);
@@ -281,12 +282,12 @@ console.log(JSON.stringify({runtimeCacheReads:3,explicitSaveFlushes:1,highDiscov
 // Execute the complete new dispatch with independent callback payloads, guarded
 // allocations and the original cleanup/flush. This detects old record strides,
 // overlap with suspend-only data, stale discovery bits and invalid-slot writes.
-let runtimeFlags=0x80250000;
+let runtimeFlags=0x80250000, installedSuspendMenu;
 if(process.argv[3]) {
   const candidate=fs.readFileSync(process.argv[3]);
   if(candidate.readUInt32BE(0)===0x37804012)candidate.swap16();
   const header=candidate.subarray(0x5DC80,0x5DD00);
-  assert.equal(header.toString('ascii',0,8),'LC05CLAS');assert([2,3].includes(header.readUInt32BE(8)));
+  assert.equal(header.toString('ascii',0,8),'LC05CLAS');assert([2,3,4,5].includes(header.readUInt32BE(8)));
   runtimeFlags=header.readUInt32BE(44);
   const codeEnd=0x80187F00+header.readUInt32BE(84),pools=[],heaps=[],cacheRanges=[];
   m.load(0x80070C00,candidate.subarray(0x1000,0x3A000));
@@ -299,6 +300,11 @@ if(process.argv[3]) {
   m.trap(0x80070F14,()=>{});
   call(header.readUInt32BE(60),0x80243DB0,0x1BC250);
   assert.deepEqual(heaps,[[header.readUInt32BE(48),0x80400000-header.readUInt32BE(48)]]);
+  if(header.readUInt32BE(96)>=4) {
+    assert.equal(cacheRanges.length,2);
+    assert.deepEqual(cacheRanges[1],[0x80243db0,header.readUInt32BE(48)-0x80243db0]);
+    assert.deepEqual(read(0x80243db0,cacheRanges[1][1]),candidate.subarray(header.readUInt32BE(12),header.readUInt32BE(12)+cacheRanges[1][1]));
+  }
   const reclaimed=(codeEnd+15)&~15;
   assert.deepEqual(pools,[[reclaimed>>>0,0x8018AA70-(reclaimed>>>0)],[0x8018ECE0,0x3D0],[0x8018FEC0,0x4B0]]);
   for(const entry of ['heap','secondary']) {
@@ -307,7 +313,14 @@ if(process.argv[3]) {
     assert.equal(pools[0][0],reclaimed>>>0);
   }
   const catalog=JSON.parse(fs.readFileSync(path.join(native,'game/classes/save-owners.json')));
+  if(header.readUInt32BE(96)>=4) {
+    const owner=catalog.suspendMenuOwners[0];
+    m.load(owner.delta+owner.start,candidate.subarray(owner.start,owner.start+owner.size));
+    entries.lc_save_suspend_menu=(0x80000000|((candidate.readUInt32BE(owner.call)&0x3ffffff)<<2))>>>0;
+    installedSuspendMenu=owner.delta+owner.call;
+  }
   if(header.readUInt32BE(96)>=3) {
+    const guards=[0x80196A57,0x80196AEC,runtimeFlags-1,runtimeFlags+32].map(at=>[at,m.r8(at)]);
     m.load(0x80196A57,Buffer.alloc(0x96,0xA6));
     m.load(runtimeFlags-1,Buffer.alloc(34,0xA6));m.load(runtimeFlags,Buffer.alloc(32,0xFF));
     m.trap(0x80093380,c=>{
@@ -318,6 +331,7 @@ if(process.argv[3]) {
     assert.deepEqual(read(0x80196A58,0x94),Buffer.alloc(0x94));
     assert.deepEqual(read(runtimeFlags,32),Buffer.alloc(32));
     for(const at of [0x80196A57,0x80196AEC,runtimeFlags-1,runtimeFlags+32])assert.equal(m.r8(at),0xA6);
+    for(const [at,value] of guards)m.w8(at,value);
   }
   for(const owner of catalog.owners)entries[owner.symbol]=0x8006FC00+owner.start;
   if(header.readUInt32BE(96)>=2)for(const owner of catalog.pakOwners) {
@@ -346,10 +360,13 @@ if(process.argv[3]) {
   console.log(JSON.stringify({installedSaveCodeBytes:header.readUInt32BE(84),
     sourceBuiltBootAndHeapResets:true,instructionCacheEnd:codeEnd.toString(16),scope:'actual candidate instructions in isolated 4 MiB RAM'}));
 }
-const live=new Map(),recordBuffer=0x80370000,summaryBuffer=0x8037F000;
+const live=new Map(),recordBuffer=0x80370000,summaryBuffer=0x8037F000,compressionWork=0x803a0000;
+const compressionWorkBytes=20224+0x4b08+2*(4096+0x4b08);
+let failAllocationSize=0;
 m.trap(0x80070F30,c=>{
-  const size=c.get('a0'),address=size===0x8000?cache:size===26?summaryBuffer:size===16?flushWork:recordBuffer;
-  assert([16,26,0x1870,0x4B08,0x8000].includes(size));assert(!live.has(address));
+  const size=c.get('a0');if(size===failAllocationSize){c.set('v0',0);return;}
+  const address=size===0x8000?cache:size===26?summaryBuffer:size===16?flushWork:size===compressionWorkBytes?compressionWork:recordBuffer;
+  assert([16,26,0x1870,0x4B08,0x8000,compressionWorkBytes].includes(size));assert(!live.has(address));
   live.set(address,size);c.load(address-16,Buffer.alloc(size+32,0xA6));c.set('v0',address);
 });
 m.trap(0x800712C4,c=>{
@@ -388,7 +405,11 @@ call(0x80074BF0,0x37081383);assert.equal(live.size,0);
 for(const slot of [0,1,15]) {
   m.load(runtimeFlags,flags);call('lc_save_game',slot);assert.equal(live.size,0);
   const offset=slot===15?0x30F0:16+slot*0x1870;
-  assert.deepEqual(cartridge.subarray(offset+0x1850,offset+0x1870),flags);
+  if(slot===15){
+    assert.equal(call('lc_save_read_suspend',output),1);
+    assert.deepEqual(read(output+0x1850,32),flags);
+    call(0x80074BF0,0x37081383);
+  }else assert.deepEqual(cartridge.subarray(offset+0x1850,offset+0x1870),flags);
   m.load(runtimeFlags,Buffer.alloc(32));callbackLog.length=0;loadedQuick=null;
   call('lc_load_game',slot);assert.equal(live.size,0);
   assert.deepEqual(loadedMain,mainPayload);assert.deepEqual(read(runtimeFlags,32),flags);
@@ -400,9 +421,12 @@ for(const slot of [0,1,15]) {
 assert.equal(cartridge.readUInt32BE(16+12),1);assert.equal(cartridge.readUInt32BE(0x1880+12),1);
 call('lc_save_game',1);assert.equal(cartridge.readUInt32BE(0x1880+12),2);
 call('lc_save_game',14);call('lc_load_game',14);assert.deepEqual(loadedOptions,Buffer.from([5,6,7,8]));
-const beforeClear=Buffer.from(cartridge);call('lc_save_initialize_slot',15);call(0x80074BF0,0x37081383);
-assert.equal(cartridge.readUInt32BE(0x30F0),0);
-assert.deepEqual(cartridge.subarray(0x30FC),beforeClear.subarray(0x30FC),'clear suspend preserves payload');
+assert.equal(call('lc_save_read_suspend',output),1);const beforeClear=read(output,0x4b08);call(0x80074BF0,0x37081383);
+call('lc_save_initialize_slot',15);call(0x80074BF0,0x37081383);
+assert.equal(call('lc_save_read_suspend',output),1);
+assert.equal(m.r32(output),0);
+assert.deepEqual(read(output+12,0x4b08-12),beforeClear.subarray(12),'clear suspend preserves logical payload');
+call(0x80074BF0,0x37081383);
 callbackLog.length=0;call('lc_load_game',15);assert.deepEqual(callbackLog,[]);
 assert.equal(call('lc_save_summary',15),0);
 const beforeRepair=Buffer.from(cartridge);cartridge[0x1880+0x300]^=1;
@@ -447,7 +471,25 @@ for(const legacy of [false,true])for(const slot of [0,1]) {
 }
 console.log(JSON.stringify({pakRoundTrips,pakRejections,pakFileBytes:0x1900,
   originalChecksumComparison:true,scope:'source-built Pak conversion with synthetic files; device UI installation checked separately'}));
-cartridge[0x7C07]^=1;const damaged=Buffer.from(cartridge),writesBefore=io.filter(x=>x[1]).length;
+// A failed suspend keeps all bytes and returns the existing cancel result;
+// a subsequent retry succeeds. Simulated allocation failure is deterministic.
+const beforeFailure=Buffer.from(cartridge);failAllocationSize=compressionWorkBytes;
+assert.equal(call('lc_save_suspend_menu'),0xfffe);assert.deepEqual(cartridge,beforeFailure);assert.equal(live.size,0);
+failAllocationSize=0;assert.equal(call('lc_save_suspend_menu'),0xfffd);assert.equal(live.size,0);
+if(installedSuspendMenu) {
+  m.trap(0x80079618,c=>assert.equal(c.get('a0'),0xffffffef));
+  for(const fails of [true,false]) {
+    const prior=Buffer.from(cartridge),stack=m.get('sp');
+    failAllocationSize=fails?compressionWorkBytes:0;
+    m.set('sp',stack-24);m.w32(stack-8,0x80000100);
+    call(installedSuspendMenu);
+    assert.equal(m.get('sp'),stack);
+    assert.equal(m.r16(0x800c4c26),fails?0xfffe:0xfffd);
+    if(fails)assert.deepEqual(cartridge,prior);
+    assert.equal(live.size,0);
+  }
+}
+cartridge[0x7FFF]^=1;const damaged=Buffer.from(cartridge),writesBefore=io.filter(x=>x[1]).length;
 assert.equal(call('lc_save_headers_missing'),0);
 for(const slot of [0,1,14,15]){assert.equal(call('lc_save_check_slot',slot),0);call('lc_save_initialize_slot',slot);}
 call('lc_save_game',0);call('lc_load_game',0);

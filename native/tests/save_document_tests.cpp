@@ -2,6 +2,7 @@
 #include "engine/save_document.h"
 #include "engine/scenario_seeder.h"
 #include "game/classes/save_format.h"
+#include "game/classes/save_compression.h"
 #include "game/army/soldier_reserve.h"
 #include "game/army/leader.h"
 #include "game/army/character.h"
@@ -171,8 +172,16 @@ class SaveDocumentTests : public QObject {
             QCOMPARE(SaveDocument::open(rom,donorSeed).value(SaveTable::Characters,1,"luck").toInt(),37);
             QTemporaryDir dir; QVERIFY(dir.isValid());
             const auto destination = dir.filePath("test.sra");
-            for (bool expandedTarget : {true,false}) {
-                const auto initial = swap(expandedTarget ? native : legacy);
+            auto compressedTarget = native;
+            const auto logical = native.mid(LC_SAVE_PACK_SUSPEND_OFFSET, LC_SAVE_EXPANDED_SUSPEND_BYTES);
+            const auto workBytes = LC_SAVE_PACK_COMMIT_WORK_BYTES(unsigned(logical.size()));
+            QVector<quint16> scratch(int((workBytes+1)/2));
+            QVERIFY(lc_save_commit_compressed(reinterpret_cast<unsigned char *>(compressedTarget.data()),unsigned(compressedTarget.size()),
+                                              reinterpret_cast<const unsigned char *>(logical.constData()),unsigned(logical.size()),
+                                              reinterpret_cast<unsigned char *>(scratch.data()),workBytes));
+            for (int targetFormat : {0,1,2}) {
+                const bool expandedTarget = targetFormat != 0;
+                const auto initial = swap(targetFormat == 2 ? compressedTarget : expandedTarget ? native : legacy);
                 QFile target(destination); QVERIFY(target.open(QIODevice::WriteOnly));
                 QCOMPARE(target.write(initial),initial.size()); target.close();
                 for (const auto &seed : {expandedTarget ? seeder.seed(5) : donorSeed,seeder.seed(0)}) {
@@ -189,6 +198,8 @@ class SaveDocumentTests : public QObject {
                              native.mid(lc_save_record_offset(1,1),LC_SAVE_EXPANDED_NORMAL_BYTES));
                     QCOMPARE(normalized.first(16),native.first(16));
                     QVERIFY(!reopened.saveSlots()[2].valid);
+                    if (targetFormat == 2)
+                        QCOMPARE(lc_save_image_version(reinterpret_cast<const unsigned char *>(normalized.constData()),unsigned(normalized.size())),2);
                 }
             }
         } catch (const std::exception &e) { QFAIL(e.what()); }
@@ -3197,7 +3208,26 @@ class SaveDocumentTests : public QObject {
             QByteArray expanded = battery;
             QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
                                          unsigned(expanded.size())));
-            for (const auto &input : {battery, swapped(battery.first(0x8000)), expanded}) {
+            auto compress = [&](int logicalSize) {
+                auto image = expanded.first(0x8000);
+                auto logical = expanded.mid(LC_SAVE_PACK_SUSPEND_OFFSET, LC_SAVE_EXPANDED_SUSPEND_BYTES);
+                if (logicalSize > logical.size()) logical.append(QByteArray(logicalSize-logical.size(), char(0x73)));
+                const int format = logicalSize == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
+                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(logical.data()),
+                                         unsigned(logical.size()), 15, format))
+                    throw Error("Cannot seal compression fixture");
+                const auto workBytes = LC_SAVE_PACK_COMMIT_WORK_BYTES(unsigned(logical.size()));
+                QVector<quint16> scratch(int((workBytes+1)/2));
+                if (!lc_save_commit_compressed(reinterpret_cast<unsigned char *>(image.data()), unsigned(image.size()),
+                                               reinterpret_cast<const unsigned char *>(logical.constData()), unsigned(logical.size()),
+                                               reinterpret_cast<unsigned char *>(scratch.data()), workBytes))
+                    throw Error("Cannot compress fixture");
+                return image;
+            };
+            const auto compressed = compress(LC_SAVE_EXPANDED_SUSPEND_BYTES);
+            const auto largeCompressed = compress(LC_SAVE_LARGE_SUSPEND_BYTES);
+            for (const auto &input : {battery, swapped(battery.first(0x8000)), expanded,
+                                      compressed, swapped(compressed), largeCompressed, swapped(largeCompressed)}) {
                 auto doc = SaveDocument::open(rom, input, 256);
                 QCOMPARE(doc.serialize(), input);
                 QCOMPARE(doc.saveSlots().size(), 3);
@@ -3247,6 +3277,19 @@ class SaveDocumentTests : public QObject {
                     Error, doc.planEdit(SaveTable::Characters, 1, "name", "ThirteenChars"));
                 QCOMPARE(doc.serialize(), snapshot);
             }
+            // A broken mission does not prevent recovery of either normal slot.
+            auto damagedCompressed = compressed;
+            damagedCompressed[LC_SAVE_PACK_SUSPEND_OFFSET+32] ^= 1;
+            auto recover = SaveDocument::open(rom,damagedCompressed,256);
+            QVERIFY(recover.saveSlots()[0].valid);
+            QVERIFY(recover.saveSlots()[1].valid);
+            QVERIFY(!recover.saveSlots()[2].valid);
+            QCOMPARE(recover.serialize(),damagedCompressed);
+            recover.apply(recover.planEdit(SaveTable::Characters,1,"luck",37),true);
+            const auto recovered = recover.serialize();
+            QCOMPARE(recovered.mid(LC_SAVE_PACK_SUSPEND_OFFSET),damagedCompressed.mid(LC_SAVE_PACK_SUSPEND_OFFSET));
+            QCOMPARE(recovered.mid(0x1880,6256),damagedCompressed.mid(0x1880,6256));
+            QCOMPARE(SaveDocument::open(rom,recovered,256).value(SaveTable::Characters,1,"luck").toUInt(),37U);
             auto doc = SaveDocument::open(rom, battery, 256);
             // Inventory edits keep existing identities and unknown bytes intact.
             auto inventory = doc;
