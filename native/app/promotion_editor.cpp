@@ -76,6 +76,10 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     families_ = new QComboBox;
     families_->setObjectName("classFamily");
     form->addRow("Class family", families_);
+    auto familyHelp = new QLabel("Groups classes for the class-change menu. Choose Male here to put a class in the Male family. "
+                                 "Character compatibility below is a separate eligibility filter.");
+    familyHelp->setWordWrap(true);
+    form->addRow(familyHelp);
     auto iconRow = new QWidget;
     auto iconLayout = new QHBoxLayout(iconRow);
     iconLayout->setContentsMargins(0, 0, 0, 0);
@@ -145,11 +149,12 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     mask_->setMinimumContentsLength(18);
     mask_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     mask_->setObjectName("compatibilityMask");
-    mask_->setToolTip("Existing List Classes categories and class-change compatibility. "
-                      "A matching category does not by itself permit a class change.");
-    form->addRow("Compatibility category", mask_);
-    auto categoryHelp = new QLabel("Separate from Class family above. New classes start with family None and category Male. "
-        "A family with its own icon uses its own List Classes tab.");
+    mask_->setToolTip("A separate character-category filter for class-change eligibility and the original List Classes tabs. "
+                      "It does not assign a class family or guarantee a class change.");
+    form->addRow("Character compatibility", mask_);
+    auto categoryHelp = new QLabel("Filters which character categories can be compatible with this class; family rules, stats, equipment and other conditions still apply. "
+        "This does not assign Class family. For example, Lich has family None and Male + Female compatibility for its special class-change routes. "
+        "New classes start with family None and Male compatibility. This filter also supplies the original List Classes categories unless the family has its own tab icon.");
     categoryHelp->setWordWrap(true);form->addRow(categoryHelp);
     connect(mask_, &QComboBox::currentIndexChanged, this, [this] {
         if (refreshing_ || mask_->currentIndex()<0) return;
@@ -210,7 +215,7 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     });
     auto linkHelp =
         new QLabel("Links work in both directions, including through other linked families. They "
-                   "add destinations to the manual class-change menu; compatibility masks, each "
+                   "add destinations to the manual class-change menu; character compatibility, each "
                    "family's manual-change policy, discovery, stats and equipment still apply. "
                    "Family None cannot be linked.");
     linkHelp->setWordWrap(true);
@@ -293,7 +298,7 @@ void PromotionEditor::refresh() {
         for (auto f : p.families["families"].toArray()) {
             auto o = f.toObject();
             auto id = o["id"].toInt();
-            auto label = QString("%1 · %2").arg(id).arg(o["name"].toString());
+            auto label = QString("%1 · %2").arg(id).arg(Promotion::familyName(o));
             families_->addItem(label, id);
         }
         if (editable) {
@@ -334,7 +339,7 @@ void PromotionEditor::refresh() {
     familyIcon_->setEnabled(editable && family > 0 && project_->categoryIcons().has_value());
     findChild<QPushButton *>("createFamilyIcon")->setEnabled(familyIcon_->isEnabled());
     findChild<QPushButton *>("editFamilyIcon")->setEnabled(project_->categoryIcons().has_value());
-    linksTitle_->setText(QString("Link Family %1 to other families — shares manual class-change destinations. The current family is omitted.").arg(family));
+    linksTitle_->setText(QString("Link %1 to other families — shares manual class-change destinations. The current family is omitted.").arg(families_->currentText()));
     links_->setEnabled(editable && family != 0);
     findChild<QPushButton *>("applyFamilyLinks")->setEnabled(editable && family != 0);
     if (available && editable) {
@@ -354,7 +359,7 @@ void PromotionEditor::refresh() {
             auto row =
                 new QListWidgetItem(QString("%1 · %2%3")
                                         .arg(id)
-                                        .arg(f["name"].toString(),
+                                        .arg(Promotion::familyName(f),
                                              examples.isEmpty() ? "" : " — " + examples.join(", ")),
                                     links_);
             row->setData(Qt::UserRole, id);

@@ -18,6 +18,7 @@ class CustomSquadEditor : public QWidget {
     CustomSquadEditor(Project *project, QUndoStack *undo,
                       std::function<void(const Encounters &, const QString &)> commit,
                       QWidget *parent = nullptr);
+    void editAssignment(int scenarioKey, int slot);
 
   private:
     void refresh();

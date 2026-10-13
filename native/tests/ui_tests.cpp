@@ -11161,159 +11161,174 @@ class UiTests : public QObject {
         undo.undo();
         QCOMPARE(project.encounters()->globalRate().normalPassCount(), quint32(700));
         auto tabs = editor.findChild<QTabWidget *>();
-        tabs->setCurrentIndex(2);
+        tabs->setCurrentIndex(1);
         QApplication::processEvents();
         QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/global-rates.png"));
     }
     void encounterEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty())
-            QSKIP("Private ROM required");
+        if (path.isEmpty()) QSKIP("Private ROM required");
         auto project = Project::fromRom(Rom::open(path));
         project.loadEncounters();
         project.appendClass(1, "Encounter tester");
         QUndoStack undo;
         EncounterEditor editor(&project, &undo, [] {});
-        editor.resize(1350, 750);
-        editor.show();
+        editor.resize(1350, 800); editor.show();
         auto list = editor.findChild<QListWidget *>("encounterPools");
-        QCOMPARE(list->count(), 45);
-        auto mapPairs = editor.findChild<QTableWidget *>("encounterPairs");
-        auto mapTabs = editor.findChild<QTabWidget *>("encounterTabs");
+        auto rows = editor.findChild<QTableWidget *>("encounterPairs");
+        auto tabs = editor.findChild<QTabWidget *>("encounterTabs");
         auto assignments = static_cast<TerrainAssignments *>(editor.findChild<QTableWidget *>("terrainAssignments"));
         auto tiles = editor.findChild<QListWidget *>("encounterPoolTiles");
-        QCOMPARE(mapPairs->columnCount(), 4);
-        QCOMPARE(mapTabs->tabText(0), QString("Map encounters"));
-        const auto beforeSharing = project.encounters()->json();
-        for (int row = 0; row < list->count(); ++row)
-            if (project.encounters()->scenarioKeys(list->item(row)->data(Qt::UserRole).toInt()).contains(14))
-                list->setCurrentRow(row);
-        const int map = list->currentItem()->data(Qt::UserRole).toInt();
-        QCOMPARE(mapPairs->item(2, 0)->text().section('\n', 0, 0), QString("Barrens"));
-        const auto barrens = QString(project.record(Table::Classes, project.encounters()->classAt(map, 2, 0)).name).replace('\n', ' ');
-        QVERIFY(tiles->item(2)->text().contains(barrens));
-        QVERIFY(editor.findChild<QLabel *>("terrainMapContext")->text().contains("Sable Lowlands"));
-        assignments->assign(-1, 3, 1); // Highway and Plain now share the same editable pair.
-        assignments->assign(-1, 2, 1); // A zero-rate Bridge can share it without enabling encounters.
-        QVERIFY(mapPairs->item(0, 0)->text().contains("Highway / Bridge / Plain"));
-        auto sharedChance = editor.findChild<QLabel *>("encounterTerrainChance_0");
-        QVERIFY(sharedChance->text().contains("Highway: 10%"));
-        QVERIFY(sharedChance->text().contains("Bridge: 0%"));
-        QVERIFY(sharedChance->text().contains("Plain: 15%"));
-        editor.findChild<QPushButton *>("encounterTerrainRules_0")->click();
-        QCOMPARE(mapTabs->currentIndex(), 1);
-        QCOMPARE(assignments->currentRow(), 1);
-        QCOMPARE(tiles->currentItem()->data(Qt::UserRole).toInt(), 1);
-        auto highwayRate = editor.findChild<QSpinBox *>("encounterRate_1");
-        highwayRate->setValue(0);
-        auto plainRate = editor.findChild<QSpinBox *>("encounterRate_3");
-        plainRate->setValue(0);
-        QVERIFY(mapPairs->item(0, 0)->text().contains("Terrain chance is zero"));
-        undo.undo();
-        QVERIFY(!mapPairs->item(0, 0)->text().contains("Terrain chance is zero"));
-        undo.undo();
-        auto sharedCreature = editor.findChild<QComboBox *>("encounterClass_0_0");
-        sharedCreature->setCurrentIndex(sharedCreature->findData(165));
-        QVERIFY(tiles->item(0)->text().contains("Encounter tester"));
-        for (int t : {1, 2, 3}) QVERIFY(assignments->item(t, 2)->text().contains("Encounter tester"));
-        undo.undo(); undo.undo(); undo.undo();
-        QCOMPARE(project.encounters()->json(), beforeSharing);
-        auto emptyFirst = editor.findChild<QComboBox *>("encounterClass_0_0");
-        auto emptySecond = editor.findChild<QComboBox *>("encounterClass_0_1");
-        emptyFirst->setCurrentIndex(emptyFirst->findData(0));
-        emptySecond->setCurrentIndex(emptySecond->findData(0));
-        QVERIFY(mapPairs->item(0, 0)->text().contains("No creatures assigned"));
-        // A squad replacing an empty creature pair must be visible on both pages.
-        editor.findChild<QPushButton *>("customNew")->click();
-        auto customScenario=editor.findChild<QComboBox *>("customScenario");
-        auto customTerrain=editor.findChild<QComboBox *>("customTerrain");
-        customScenario->setCurrentIndex(customScenario->findData(14));
-        customTerrain->setCurrentIndex(customTerrain->findData(0));
-        editor.findChild<QPushButton *>("customApply")->click();
-        QVERIFY(tiles->item(0)->text().contains("Assigned squad: Knight Squad"));
-        QVERIFY(tiles->item(0)->text().contains("2 members"));
-        QVERIFY(!tiles->item(0)->text().contains("No creatures assigned"));
-        QVERIFY(assignments->item(1,2)->text().contains("Assigned squad: Knight Squad"));
-        QVERIFY(mapPairs->item(0,0)->text().contains("Assigned squad: Knight Squad"));
-        editor.findChild<QCheckBox *>("customEnabled")->setChecked(false);
-        editor.findChild<QPushButton *>("customApply")->click();
-        QVERIFY(tiles->item(0)->text().contains("No creatures assigned"));
-        undo.undo();QVERIFY(tiles->item(0)->text().contains("Assigned squad:"));
-        mapTabs->setCurrentIndex(1);QApplication::processEvents();
-        QVERIFY(editor.grab().save("native/build/assigned-encounter-squad.png"));
-        undo.undo();QVERIFY(!tiles->item(0)->text().contains("Assigned squad:"));
-        assignments->assign(-1, 3, 1);
-        assignments->assign(-1, 8, 2);
-        editor.findChild<QPushButton *>("encounterBackToMap")->click();
-        QCOMPARE(mapTabs->currentIndex(), 0);
-        QApplication::processEvents();
-        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/map-encounters.png"));
-        mapTabs->setCurrentIndex(1);
-        QApplication::processEvents();
-        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/terrain-rules.png"));
-        while (undo.index()) undo.undo();
-        QCOMPARE(project.encounters()->json(), beforeSharing);
-        list->setCurrentRow(44);
+        auto mapKey = editor.findChild<QComboBox *>("encounterMapKey");
+        QCOMPARE(list->count(), 45); QCOMPARE(rows->rowCount(), 32);
+        auto selectMap = [&](int key) {
+            for (int row = 0; row < list->count(); ++row)
+                if (project.encounters()->scenarioKeys(list->item(row)->data(Qt::UserRole).toInt()).contains(key)) list->setCurrentRow(row);
+            mapKey->setCurrentIndex(mapKey->findData(key));
+        };
+        selectMap(14);
+        const int group = list->currentItem()->data(Qt::UserRole).toInt();
+        QCOMPARE(mapKey->currentData().toInt(), 14);
         const auto original = project.encounters()->json();
-        auto first = editor.findChild<QComboBox *>("encounterClass_9_0");
-        first->setCurrentIndex(first->findData(165));
-        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
-        undo.undo();
-        QCOMPARE(project.encounters()->json(), original);
+        rows->setCurrentCell(1, 0);
+        auto creatures = [&](int first, int second, bool accept = true) {
+            QTimer::singleShot(0, &editor, [&, first, second, accept] {
+                auto dialog = editor.findChild<QDialog *>("encounterCreatureDialog"); QVERIFY(dialog);
+                for (int side = 0; side < 2; ++side) {
+                    auto choice = dialog->findChild<QComboBox *>(QString("encounterCreature_%1").arg(side));
+                    choice->setCurrentIndex(choice->findData(side ? second : first));
+                }
+                if (accept) dialog->accept(); else dialog->reject();
+            });
+            editor.findChild<QPushButton *>("encounterChooseCreatures")->click();
+        };
+        creatures(165, 165, false); QCOMPARE(project.encounters()->json(), original);
+        creatures(165, 165);
+        QCOMPARE(project.encounters()->classAt(group, 0, 0), 165);
+        QVERIFY(rows->item(1, 2)->text().contains("Encounter tester"));
+        assignments->assign(-1, 3, 1); // Shared terrain rows show the same active encounter.
+        QVERIFY(rows->item(3, 2)->text().contains("Encounter tester"));
+        undo.undo(); undo.undo(); QCOMPARE(project.encounters()->json(), original);
+        // Create directly from the selected map/terrain; Apply must not choose another map.
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<QDialog *>("encounterSquadDialog"); QVERIFY(dialog); dialog->accept();
+        });
+        editor.findChild<QPushButton *>("encounterAssignSquad")->click();
+        QCOMPARE(editor.findChild<QComboBox *>("customScenario")->currentData().toInt(), 14);
+        QCOMPARE(editor.findChild<QComboBox *>("customTerrain")->currentData().toInt(), 0);
+        editor.findChild<QLineEdit *>("customLabel")->setText("Road guard");
+        editor.findChild<QSpinBox *>("customChance")->setValue(43);
+        editor.findChild<QSpinBox *>("customRetreat")->setValue(17);
+        editor.findChild<QSpinBox *>("customLevel_1")->setValue(3);
+        auto equipmentChoice = editor.findChild<QComboBox *>("customEquipment_0_0");
+        equipmentChoice->setCurrentIndex(equipmentChoice->findData(2));
+        auto rewardChoice = editor.findChild<QComboBox *>("customReward_0");
+        rewardChoice->setCurrentIndex(rewardChoice->findData(44));
+        editor.findChild<QTableWidget *>("customMembers")->setCurrentCell(0, 0);
+        editor.findChild<QPushButton *>("customCell_4")->click();
+        editor.findChild<QPushButton *>("customApply")->click();
+        const auto squad = project.encounters()->customSquads().profiles().value(CustomSquads::key(14, 0));
+        QCOMPARE(squad.members.size(), 2);
+        QCOMPARE(squad.chance, 43); QCOMPARE(squad.members[0].cell, 4);
+        QCOMPARE(squad.members[0].equipment[0], 2); QCOMPARE(squad.rewards.outcomes[0], 44);
+        QVERIFY(rows->item(1, 2)->text().contains("Squad: Knight Squad"));
+        QVERIFY(tiles->item(0)->text().contains("Assigned squad:"));
+        const auto assigned = project.encounters()->json();
+        tabs->setCurrentIndex(0);
+        creatures(165, 165);
+        QVERIFY(!project.encounters()->customSquads().profiles().value(CustomSquads::key(14, 0)).enabled);
+        QVERIFY(rows->item(1, 2)->text().contains("Creature: Encounter tester"));
+        undo.undo(); QCOMPARE(project.encounters()->json(), assigned);
+        undo.redo(); undo.undo();
+        // Assign an independent copy to a different map, preserving every squad field.
+        selectMap(1); rows->setCurrentCell(1, 0);
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<QDialog *>("encounterSquadDialog"); QVERIFY(dialog);
+            auto choice = dialog->findChild<QComboBox *>("encounterSquadChoice");
+            choice->setCurrentIndex(choice->findData(CustomSquads::key(14, 0))); dialog->accept();
+        });
+        editor.findChild<QPushButton *>("encounterAssignSquad")->click();
+        auto expected = squad; expected.scenarioKey = 1;
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 0)).json(), expected.json());
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(14, 0)).json(), squad.json());
+        // Copying creatures alone keeps destination squads; inclusive copy replaces them.
+        const auto targetWithSquad = project.encounters()->json();
+        auto copyFrom = [&](int sourceGroup, int sourceKey, bool include, bool accept = true) {
+            QTimer::singleShot(0, &editor, [&, sourceGroup, sourceKey, include, accept] {
+                auto dialog = editor.findChild<QDialog *>("encounterCopyDialog"); QVERIFY(dialog);
+                auto source = dialog->findChild<QComboBox *>("encounterCopySource");
+                source->setCurrentIndex(source->findData(sourceGroup));
+                auto key = dialog->findChild<QComboBox *>("encounterCopyMapKey"); key->setCurrentIndex(key->findData(sourceKey));
+                dialog->findChild<QCheckBox *>("encounterCopySquads")->setChecked(include);
+                if (accept) dialog->accept(); else dialog->reject();
+            });
+            editor.findChild<QPushButton *>("encounterCopy")->click();
+        };
+        copyFrom(group, 14, true, false); QCOMPARE(project.encounters()->json(), targetWithSquad);
+        copyFrom(group, 14, false);
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 0)).json(), expected.json());
+        // Add a destination-only squad so inclusive copy must remove its stale assignment.
+        rows->setCurrentCell(3, 0);
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<QDialog *>("encounterSquadDialog");
+            auto choice = dialog->findChild<QComboBox *>("encounterSquadChoice");
+            choice->setCurrentIndex(choice->findData(CustomSquads::key(14, 0))); dialog->accept();
+        });
+        editor.findChild<QPushButton *>("encounterAssignSquad")->click();
+        const auto beforeCopy = project.encounters()->json();
+        copyFrom(group, 14, true);
+        QVERIFY(!project.encounters()->customSquads().profiles().contains(CustomSquads::key(1, 1)));
+        QCOMPARE(project.encounters()->customSquads().profiles().value(CustomSquads::key(1, 0)).json(), expected.json());
+        undo.undo(); QCOMPARE(project.encounters()->json(), beforeCopy);
         undo.redo();
-        QCOMPARE(first->currentData().toInt(), 165);
-        editor.findChild<QComboBox *>("encounterCopySource")->setCurrentIndex(0);
-        editor.findChild<QPushButton *>("encounterCopy")->click();
-        for (int s = 0; s < 10; ++s)
-            for (int side = 0; side < 2; ++side)
-                QCOMPARE(project.encounters()->classAt(45, s, side),
-                         project.encounters()->classAt(1, s, side));
-        undo.undo();
-        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
-        editor.findChild<QPushButton *>("encounterRestore")->click();
-        QCOMPARE(project.encounters()->json(), original);
-        undo.undo();
-        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
-        auto table = static_cast<TerrainAssignments *>(editor.findChild<QTableWidget *>("terrainAssignments"));
-        auto rate = editor.findChild<QSpinBox *>("encounterRate_31");
-        QVERIFY(!rate->isEnabled());
-        table->assign(-1, 31, 10);
-        QVERIFY(rate->isEnabled()); rate->setValue(100);
+        const auto retail = Encounters::load(project.rom(), 166);
+        for (int t = 0; t < 32; ++t) {
+            QCOMPARE(project.encounters()->lookup(t), retail.lookup(t));
+            QCOMPARE(project.encounters()->rate(t), retail.rate(t));
+        }
+        rows->setCurrentCell(1, 0); QApplication::processEvents();
+        QVERIFY(editor.grab().save("native/build/map-encounter-workflow.png"));
+        // Map versions can share creature choices, but must retain separate squad assignments.
+        QVector<int> sharedKeys;
+        for (int row = 0; row < list->count() && sharedKeys.isEmpty(); ++row) {
+            const auto keys = project.encounters()->scenarioKeys(list->item(row)->data(Qt::UserRole).toInt());
+            if (keys.size() > 1) sharedKeys = keys;
+        }
+        QVERIFY(sharedKeys.size() > 1);
+        selectMap(sharedKeys[0]); rows->setCurrentCell(1, 0);
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<QDialog *>("encounterSquadDialog"); QVERIFY(dialog);
+            auto choice = dialog->findChild<QComboBox *>("encounterSquadChoice");
+            choice->setCurrentIndex(choice->findData(CustomSquads::key(14, 0))); dialog->accept();
+        });
+        editor.findChild<QPushButton *>("encounterAssignSquad")->click();
+        QVERIFY(rows->item(1, 2)->text().startsWith("Squad:"));
+        mapKey->setCurrentIndex(mapKey->findData(sharedKeys[1]));
+        QVERIFY(!rows->item(1, 2)->text().startsWith("Squad:"));
+        QVERIFY(!project.encounters()->customSquads().profiles().contains(CustomSquads::key(sharedKeys[1], 0)));
+        while (undo.index()) undo.undo(); QCOMPARE(project.encounters()->json(), original);
+        // Advanced retains shared assignments, rates, new pools, DnD and Undo.
+        editor.findChild<QPushButton *>("encounterAdvancedTerrain")->click();
+        auto advanced = editor.findChild<QDialog *>("encounterTerrainDialog"); QVERIFY(advanced->isVisible());
+        auto rate = editor.findChild<QSpinBox *>("encounterRate_31"); QVERIFY(!rate->isEnabled());
+        assignments->assign(-1, 31, 10); rate->setValue(100);
         QCOMPARE(project.encounters()->rate(31), 100);
-        table->assign(31, 2, 10);
-        QCOMPARE(project.encounters()->lookup(2), 10);
-        QCOMPARE(project.encounters()->lookup(31), 0);
-        QCOMPARE(project.encounters()->rate(31), 0);
+        assignments->assign(31, 2, 10);
+        QCOMPARE(project.encounters()->lookup(2), 10); QCOMPARE(project.encounters()->lookup(31), 0);
         undo.undo(); QCOMPARE(rate->value(), 100);
-        table->setCurrentCell(24, 2);
-        editor.findChild<QPushButton *>("encounterAddPool")->click();
-        QCOMPARE(project.encounters()->slotsPerPool(), 11);
-        QCOMPARE(project.encounters()->lookup(24), 11);
-        auto pairs = editor.findChild<QTableWidget *>("encounterPairs");
-        QVERIFY(pairs->item(10, 0)->text().contains("Malefic Woods"));
-        table->assign(24, 3, 11); // Swap, preserving both pools.
-        QCOMPARE(project.encounters()->lookup(3), 11);
-        QCOMPARE(project.encounters()->lookup(24), 2);
-        undo.undo(); undo.undo();
-        QCOMPARE(project.encounters()->slotsPerPool(), 10);
-        undo.redo(); QCOMPARE(pairs->rowCount(), 11);
-        editor.findChild<QTabWidget *>()->setCurrentIndex(1);
-        QApplication::processEvents();
-        table->scrollToItem(table->item(2, 2));
-        const QPoint target = table->visualItemRect(table->item(2, 2)).center();
+        assignments->setCurrentCell(24, 2); editor.findChild<QPushButton *>("encounterAddPool")->click();
+        QCOMPARE(project.encounters()->slotsPerPool(), 11); QCOMPARE(project.encounters()->lookup(24), 11);
+        QApplication::processEvents(); assignments->scrollToItem(assignments->item(2, 2));
+        const QPoint target = assignments->visualItemRect(assignments->item(2, 2)).center();
         QMimeData mime; mime.setData(poolMime, "11:24");
         QDragEnterEvent enter(QPointF(target), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(table->viewport(), &enter); QVERIFY(enter.isAccepted());
+        QApplication::sendEvent(assignments->viewport(), &enter); QVERIFY(enter.isAccepted());
         QDragMoveEvent move(QPointF(target), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(table->viewport(), &move);
+        QApplication::sendEvent(assignments->viewport(), &move);
         QDropEvent drop(target, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(table->viewport(), &drop);
-        QCOMPARE(project.encounters()->lookup(2), 11);
-        QVERIFY(pairs->item(10, 0)->text().contains("Bridge"));
-        editor.findChild<QLineEdit *>("encounterSearch")->setText("Encounter tester");
-        QVERIFY(!list->item(44)->isHidden());
-        QApplication::processEvents();
-        editor.grab().save(QCoreApplication::applicationDirPath() + "/encounters.png");
+        QApplication::sendEvent(assignments->viewport(), &drop); QCOMPARE(project.encounters()->lookup(2), 11);
+        editor.findChild<QPushButton *>("encounterBackToMap")->click(); QVERIFY(!advanced->isVisible());
+        while (undo.index()) undo.undo(); QCOMPARE(project.encounters()->json(), original);
     }
     void consumableEffectEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -12026,6 +12041,13 @@ class UiTests : public QObject {
         editor.selectClass(5);
         auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
         auto category=editor.findChild<QComboBox *>("compatibilityMask");QVERIFY(category);
+        auto family = editor.findChild<QComboBox *>("classFamily");
+        QCOMPARE(family->currentText(), QString("1 · Male"));
+        editor.selectClass(38); // Lich uses both compatibility bits, but family None.
+        QCOMPARE(category->currentData().toInt(), 3);
+        QCOMPARE(family->currentData().toInt(), 0);
+        editor.selectClass(5);
+        QCOMPARE(project.promotion()->json(), original); // Labels alone never rewrite a project.
         QCOMPARE(category->currentText(),QString("Male"));
         category->setCurrentIndex(category->findData(2));
         QCOMPARE(u8(project.promotion()->masks,5),quint8(2));
@@ -12073,6 +12095,7 @@ class UiTests : public QObject {
         QCOMPARE(project.promotion()->families, project.promotion()->originalFamilies);
         undo.redo();
         QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 16);
+        QVERIFY(family->currentText().contains("Order of Dawn"));
         auto links = editor.findChild<QListWidget *>("familyLinks");
         for (int row = 0; row < links->count(); ++row)
             if (links->item(row)->data(Qt::UserRole).toInt() == 1) links->item(row)->setCheckState(Qt::Checked);

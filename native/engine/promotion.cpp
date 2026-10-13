@@ -30,6 +30,15 @@ QJsonObject promotionOwners() {
         throw Error("Missing promotion source manifest");
     return QJsonDocument::fromJson(file.readAll()).object();
 }
+QString Promotion::familyName(const QJsonObject &family) {
+    static const QStringList names{"None", "Male", "Female", "Angels", "Undead", "Hawkmen",
+                                   "Dragons", "Wyrms", "Griffins", "Hellhounds", "Golems"};
+    const int id = family["id"].toInt(-1);
+    const auto name = family["name"].toString();
+    // Display meaningful retail labels in both old projects and newly opened ROMs.
+    // Preserve the saved catalog and every user-authored name.
+    return id > 0 && id < names.size() && name == QString("Family %1").arg(id) ? names[id] : name;
+}
 static int integer(const QJsonValue &v, int minimum, int maximum) {
     auto d = v.toDouble(-1);
     if (!v.isDouble() || !std::isfinite(d) || std::floor(d) != d || d < minimum || d > maximum)

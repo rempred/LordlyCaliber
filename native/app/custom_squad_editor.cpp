@@ -340,6 +340,28 @@ void CustomSquadEditor::showSelected() {
     else
         notice_->setText("Create a squad, or select one from the list.");
 }
+void CustomSquadEditor::editAssignment(int scenarioKey, int slot) {
+    search_->clear();
+    const int key = CustomSquads::key(scenarioKey, slot);
+    for (int row = 0; row < list_->count(); ++row)
+        if (list_->item(row)->data(Qt::UserRole).toInt() == key) {
+            list_->setCurrentRow(row);
+            showSelected();
+            return;
+        }
+    CustomSquad squad;
+    squad.scenarioKey = scenarioKey;
+    squad.terrainSlot = slot;
+    editing_ = -1;
+    QSignalBlocker block(list_);
+    list_->setCurrentRow(-1);
+    details_->setEnabled(true);
+    copy_->setEnabled(false);
+    remove_->setEnabled(false);
+    restore_->setEnabled(false);
+    display(squad);
+    notice_->setText("New squad for the selected map and terrain — Apply squad assigns it.");
+}
 void CustomSquadEditor::display(const CustomSquad &s) {
     loading_ = true;
     scenario_->setCurrentIndex(scenario_->findData(s.scenarioKey));

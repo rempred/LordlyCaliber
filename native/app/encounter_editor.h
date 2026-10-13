@@ -11,6 +11,7 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QCheckBox;
 class QTableWidget;
+class QDialog;
 namespace lordly {
 class EncounterEditor : public QWidget {
   public:
@@ -20,7 +21,13 @@ class EncounterEditor : public QWidget {
   private:
     void refresh();
     void filter();
-    void changePair(int slot);
+    void chooseCreatures();
+    void assignSquad();
+    void editSquad();
+    void copyEncounters();
+    void showTerrain();
+    int selectedKey() const;
+    int selectedSlot() const;
     void changeTerrain(int terrain);
     void showGlobalRatio();
     void refreshPoolRows();
@@ -48,8 +55,9 @@ class EncounterEditor : public QWidget {
     QListWidget *pools_;
     QLineEdit *search_;
     QLabel *heading_, *notice_, *terrainContext_;
-    QComboBox *copyFrom_;
-    QVector<QComboBox *> pairs_;
+    QComboBox *mapKey_;
+    QLabel *selection_, *scope_;
+    QDialog *terrainDialog_;
     QTableWidget *pairTable_, *terrainTable_, *estimates_ = nullptr;
     QListWidget *poolTiles_;
     QSpinBox *deployed_;

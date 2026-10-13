@@ -10,6 +10,8 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QDoubleSpinBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -60,37 +62,68 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     pools_ = new QListWidget;
     pools_->setObjectName("encounterPools");
     pools_->setMinimumWidth(220);
+    pools_->setWordWrap(true);
+    pools_->setTextElideMode(Qt::ElideNone);
+    pools_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     split->addWidget(pools_);
     auto details = new QWidget;
     auto detail = new QVBoxLayout(details);
     heading_ = new QLabel;
     heading_->setWordWrap(true);
     detail->addWidget(heading_);
-    auto explanation = new QLabel("Edit creatures for the selected map. Terrains grouped together share these choices. "
-        "Each outcome has a 50/50 chance after the rate checks; None produces no encounter. "
-        "Terrain chances and assignments apply to all maps.");
+    auto explanation = new QLabel("Choose a map, select a terrain, then choose creatures or assign a squad. "
+        "Encounter contents belong to the selected map; terrain chances and shared terrain groups are global.");
     explanation->setWordWrap(true);
     detail->addWidget(explanation);
-    pairTable_ = new QTableWidget(0, 4);
+    mapKey_ = new QComboBox;
+    mapKey_->setObjectName("encounterMapKey");
+    auto context = new QHBoxLayout;
+    context->addWidget(new QLabel("Map version"));
+    context->addWidget(mapKey_, 1);
+    auto advanced = new QPushButton("Advanced terrain rules…");
+    advanced->setObjectName("encounterAdvancedTerrain");
+    context->addWidget(advanced);
+    detail->addLayout(context);
+    auto showUnassigned = new QCheckBox("Show unassigned terrains");
+    showUnassigned->setObjectName("encounterShowUnassigned");
+    detail->addWidget(showUnassigned);
+    pairTable_ = new QTableWidget(Encounters::terrainCount, 3);
     pairTable_->setObjectName("encounterPairs");
-    pairTable_->setHorizontalHeaderLabels({"Terrain · shared creature choices", "Terrain chance · all maps", "First creature", "Second creature"});
+    pairTable_->setHorizontalHeaderLabels({"Terrain", "Chance · all maps", "Encounter on this map"});
     pairTable_->verticalHeader()->hide();
     pairTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    pairTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
-    pairTable_->setColumnWidth(1, 175);
+    pairTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    pairTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    pairTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     pairTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    pairTable_->setWordWrap(true);
+    for (int t = 0; t < Encounters::terrainCount; ++t)
+        for (int col = 0; col < 3; ++col) pairTable_->setItem(t, col, new QTableWidgetItem);
     detail->addWidget(pairTable_, 1);
+    selection_ = new QLabel;
+    selection_->setObjectName("encounterSelection");
+    selection_->setWordWrap(true);
+    detail->addWidget(selection_);
+    scope_ = new QLabel;
+    scope_->setWordWrap(true);
+    detail->addWidget(scope_);
+    auto encounterActions = new QHBoxLayout;
+    for (const auto &entry : {qMakePair("Choose creatures…", "encounterChooseCreatures"),
+                              qMakePair("Assign squad…", "encounterAssignSquad"),
+                              qMakePair("Edit assigned squad…", "encounterEditSquad")}) {
+        auto button = new QPushButton(entry.first);
+        button->setObjectName(entry.second);
+        encounterActions->addWidget(button);
+    }
+    detail->addLayout(encounterActions);
     auto actions = new QHBoxLayout;
-    auto copy = new QPushButton("Copy encounters from…");
+    auto copy = new QPushButton("Copy from map…");
     copy->setObjectName("encounterCopy");
-    copyFrom_ = new QComboBox;
-    copyFrom_->setObjectName("encounterCopySource");
-    copyFrom_->setMinimumContentsLength(20);
-    copyFrom_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    auto restore = new QPushButton("Restore loaded encounters");
+    auto restore = new QPushButton("Restore loaded creatures");
     restore->setObjectName("encounterRestore");
+    restore->setToolTip("Restore creature choices for this map group. Assigned squads are kept.");
     actions->addWidget(copy);
-    actions->addWidget(copyFrom_, 1);
+    actions->addStretch();
     actions->addWidget(restore);
     detail->addLayout(actions);
     notice_ = new QLabel;
@@ -99,7 +132,11 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     split->addWidget(details);
     split->setSizes({300, 900});
     tabs->addTab(poolPage, "Map encounters");
-    auto ratePage = new QWidget;
+    terrainDialog_ = new QDialog(this);
+    terrainDialog_->setObjectName("encounterTerrainDialog");
+    terrainDialog_->setWindowTitle("Advanced terrain rules · All maps");
+    terrainDialog_->resize(1100, 700);
+    auto ratePage = terrainDialog_;
     auto rateLayout = new QVBoxLayout(ratePage);
     auto rateExplanation = new QLabel(
         "These chances and terrain assignments affect ALL maps. Creature previews below follow the map selected in Map encounters. "
@@ -114,7 +151,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     auto back = new QPushButton("Back to map encounters");
     back->setObjectName("encounterBackToMap");
     contextRow->addWidget(back);
-    connect(back, &QPushButton::clicked, tabs, [tabs] { tabs->setCurrentIndex(0); });
+    connect(back, &QPushButton::clicked, terrainDialog_, &QDialog::hide);
     rateLayout->addLayout(contextRow);
     auto rateSplit = new QSplitter;
     auto rateTable = new TerrainAssignments;
@@ -182,7 +219,13 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     });
     rateSplit->addWidget(palette); rateSplit->setSizes({900, 320});
     rateLayout->addWidget(rateSplit, 1);
-    tabs->addTab(ratePage, "Terrain rules · All maps");
+    connect(advanced, &QPushButton::clicked, this, [this] { editTerrainRules(selectedSlot()); });
+    connect(pairTable_, &QTableWidget::currentCellChanged, this, [this] { showTerrain(); });
+    connect(mapKey_, &QComboBox::currentIndexChanged, this, [this] { refreshPoolRows(); });
+    connect(showUnassigned, &QCheckBox::toggled, this, [this] { refreshPoolRows(); });
+    connect(findChild<QPushButton *>("encounterChooseCreatures"), &QPushButton::clicked, this, &EncounterEditor::chooseCreatures);
+    connect(findChild<QPushButton *>("encounterAssignSquad"), &QPushButton::clicked, this, &EncounterEditor::assignSquad);
+    connect(findChild<QPushButton *>("encounterEditSquad"), &QPushButton::clicked, this, &EncounterEditor::editSquad);
     auto globalPage = new QWidget;
     auto globalLayout = new QVBoxLayout(globalPage);
     auto globalExplanation = new QLabel(
@@ -278,21 +321,11 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
         auto item = new QListWidgetItem(project_->encounters()->label(id), pools_);
         item->setToolTip(item->text());
         item->setData(Qt::UserRole, id);
-        copyFrom_->addItem(item->text(), id);
+
     }
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
     connect(pools_, &QListWidget::currentRowChanged, this, [this] { refresh(); });
-    connect(copy, &QPushButton::clicked, this, [this] {
-        if (selected() < 1)
-            return;
-        auto next = *project_->encounters();
-        const int source = copyFrom_->currentData().toInt();
-        for (int slot = 0; slot < project_->encounters()->slotsPerPool(); ++slot)
-            next.setPair(selected(), slot, next.classAt(source, slot, 0),
-                         next.classAt(source, slot, 1),
-                         int(project_->records(Table::Classes).size()));
-        commit(next, "Copy encounter pool");
-    });
+    connect(copy, &QPushButton::clicked, this, &EncounterEditor::copyEncounters);
     connect(restore, &QPushButton::clicked, this, [this] {
         if (selected() < 1)
             return;
@@ -310,6 +343,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
         filter();
         changed_();
     });
+    pairTable_->setCurrentCell(1, 0);
     pools_->setCurrentRow(0);
     refresh();
 }
@@ -319,27 +353,19 @@ int EncounterEditor::selected() const {
 void EncounterEditor::refresh() {
     const ViewPosition keepView(this);
     const auto &encounters = *project_->encounters();
-    refreshPoolRows();
     const int pool = selected();
-    if (pool >= 1) {
-        heading_->setText(encounters.label(pool) +
-                          (encounters.scenarioKeys(pool).isEmpty()
-                               ? "\nNo scenario references in the loaded metadata."
-                               : QString()));
-        for (int slot = 0; slot < project_->encounters()->slotsPerPool(); ++slot)
-            for (int side = 0; side < 2; ++side) {
-                auto combo = pairs_[slot * 2 + side];
-                QSignalBlocker block(combo);
-                combo->clear();
-                combo->addItem("0 · None", 0);
-                for (int id = 1; id < project_->records(Table::Classes).size(); ++id)
-                    combo->addItem(
-                        QString("%1 · %2").arg(id).arg(
-                            QString(project_->record(Table::Classes, id).name).replace('\n', ' ')),
-                        id);
-                combo->setCurrentIndex(combo->findData(encounters.classAt(pool, slot, side)));
-            }
+    const int previousKey = selectedKey();
+    {
+        QSignalBlocker block(mapKey_);
+        mapKey_->clear();
+        if (pool >= 1)
+            for (int key : encounters.scenarioKeys(pool))
+                mapKey_->addItem(QString("%1 · %2").arg(key).arg(encounters.scenarioLabel(key)), key);
+        mapKey_->setCurrentIndex(qMax(0, mapKey_->findData(previousKey)));
+        mapKey_->setEnabled(mapKey_->count() > 1);
     }
+    heading_->setText(pool >= 1 ? encounters.label(pool) : "Choose a map");
+    refreshPoolRows();
     for (int t = 0; t < Encounters::terrainCount; ++t) {
         QSignalBlocker rateBlock(rates_[t]);
         rates_[t]->setValue(encounters.rate(t));
@@ -373,88 +399,37 @@ void EncounterEditor::refresh() {
 void EncounterEditor::refreshPoolRows() {
     const auto &encounters = *project_->encounters();
     const int count = encounters.slotsPerPool();
-    while (pairs_.size() > count * 2) pairs_.removeLast();
-    pairTable_->setRowCount(count);
-    for (int slot = 0; slot < count; ++slot) {
-        if (!pairTable_->item(slot, 0)) pairTable_->setItem(slot, 0, new QTableWidgetItem);
-        QStringList terrainNames, chances, states;
-        bool anyChance = false;
-        for (int t = 0; t < Encounters::terrainCount; ++t) {
-            if (encounters.lookup(t) != slot + 1) continue;
-            const auto name = Encounters::mapTerrainName(t);
-            terrainNames << name;
-            chances << QString("%1: %2%").arg(name).arg(encounters.rate(t));
-            anyChance |= encounters.rate(t) > 0;
+    for (int t = 0; t < Encounters::terrainCount; ++t) {
+        const int slot = encounters.lookup(t) - 1;
+        pairTable_->setRowHidden(t, slot < 0 && !findChild<QCheckBox *>("encounterShowUnassigned")->isChecked());
+        pairTable_->item(t, 0)->setText(Encounters::mapTerrainName(t));
+        pairTable_->item(t, 1)->setText(slot < 0 ? "Disabled" : QString("%1%").arg(encounters.rate(t)));
+        QString summary = "Disabled — no terrain group assigned";
+        if (slot >= 0 && selected() >= 1) {
+            const auto &profiles = encounters.customSquads().profiles();
+            const int key = selectedKey() < 0 ? -1 : CustomSquads::key(selectedKey(), slot);
+            auto it = profiles.constFind(key);
+            if (it != profiles.cend() && it->enabled)
+                summary = QString("Squad: %1 · %2 members").arg(encounterSquadName(*project_, key)).arg(it->members.size());
+            else {
+                const int first = encounters.classAt(selected(), slot, 0), second = encounters.classAt(selected(), slot, 1);
+                auto name = [this](int id) { return id ? project_->record(Table::Classes, id).name.simplified() : QString("None"); };
+                summary = !first && !second ? "No encounter assigned" : first == second ? "Creature: " + name(first)
+                    : QString("Creatures: %1 / %2 (50/50)").arg(name(first), name(second));
+                if (it != profiles.cend()) summary += "\nSaved squad is disabled";
+            }
+            if (!encounters.rate(t)) summary += "\nDisabled — terrain chance is 0%";
         }
-        if (terrainNames.isEmpty()) states << "No terrain assigned";
-        else if (!anyChance) states << "Terrain chance is zero";
-        const auto squads = squadSummaries(slot);
-        states << squads;
-        if (squads.isEmpty() && selected() >= 1 && !encounters.classAt(selected(), slot, 0) && !encounters.classAt(selected(), slot, 1))
-            states << "No creatures assigned";
-        const auto terrainText = terrainNames.isEmpty() ? QString("Unassigned terrain") : terrainNames.join(" / ");
-        const auto subtitle = QString("Pool %1").arg(slot + 1) +
-            (terrainNames.size() > 1 ? " · Shared creature choices" : "");
-        auto item = pairTable_->item(slot, 0);
-        item->setFlags(Qt::ItemIsEnabled);
-        item->setText(terrainText + "\n" + subtitle + (states.isEmpty() ? "" : "\n" + states.join("\n")));
-        item->setForeground(Qt::transparent); // The rich label paints this cell's visible text.
-        item->setToolTip(encounters.poolSlotLabel(slot) + "\n" + states.join("\n"));
-        auto terrainLabel = qobject_cast<QLabel *>(pairTable_->cellWidget(slot, 0));
-        if (!terrainLabel) {
-            terrainLabel = new QLabel;
-            terrainLabel->setMargin(7);
-            terrainLabel->setWordWrap(true);
-            pairTable_->setCellWidget(slot, 0, terrainLabel);
-        }
-        terrainLabel->setText("<b>" + terrainText.toHtmlEscaped() + "</b><br/><small>" +
-            subtitle.toHtmlEscaped() + "</small>" + (states.isEmpty() ? "" : "<br/>" + states.join("\n").toHtmlEscaped().replace('\n', "<br/>")));
-        terrainLabel->setToolTip(item->toolTip());
-        auto chanceCell = pairTable_->cellWidget(slot, 1);
-        if (!chanceCell) {
-            chanceCell = new QWidget;
-            auto chanceLayout = new QVBoxLayout(chanceCell);
-            chanceLayout->setContentsMargins(4, 4, 4, 4);
-            chanceLayout->setSpacing(4);
-            chanceLayout->addStretch();
-            auto chanceText = new QLabel;
-            chanceText->setObjectName(QString("encounterTerrainChance_%1").arg(slot));
-            chanceText->setAlignment(Qt::AlignCenter);
-            chanceText->setWordWrap(true);
-            chanceLayout->addWidget(chanceText);
-            auto rules = new QPushButton("Edit rules…");
-            rules->setObjectName(QString("encounterTerrainRules_%1").arg(slot));
-            rules->setToolTip("Edit terrain chances and assignments. Changes affect all maps.");
-            chanceLayout->addWidget(rules, 0, Qt::AlignHCenter);
-            chanceLayout->addStretch();
-            pairTable_->setCellWidget(slot, 1, chanceCell);
-            connect(rules, &QPushButton::clicked, this, [this, slot] { editTerrainRules(slot); });
-        }
-        if (chances.size() == 1) chances[0] = chances[0].section(": ", -1);
-        if (!chances.isEmpty() && !anyChance) chances << "Disabled";
-        chanceCell->findChild<QLabel *>()->setText(chances.isEmpty() ? "Unassigned" : chances.join('\n'));
-        pairTable_->setRowHeight(slot, std::max(3 + int(states.size()), int(chances.size()) + 2) * fontMetrics().lineSpacing() + 14);
-        if (pairs_.size() > slot * 2) continue;
-        for (int side = 0; side < 2; ++side) {
-            auto choice = new QComboBox;
-            choice->setObjectName(QString("encounterClass_%1_%2").arg(slot).arg(side));
-            choice->setMinimumContentsLength(12);
-            choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-            choice->setEditable(true); choice->setInsertPolicy(QComboBox::NoInsert);
-            choice->completer()->setCompletionMode(QCompleter::PopupCompletion);
-            choice->completer()->setFilterMode(Qt::MatchContains);
-            choice->completer()->setCaseSensitivity(Qt::CaseInsensitive);
-            auto cell = new QWidget;
-            auto cellLayout = new QVBoxLayout(cell);
-            cellLayout->setContentsMargins(5, 3, 5, 3);
-            cellLayout->addStretch();
-            cellLayout->addWidget(choice);
-            cellLayout->addStretch();
-            pairTable_->setCellWidget(slot, side + 2, cell);
-            pairs_ << choice;
-            connect(choice, &QComboBox::currentIndexChanged, this, [this, slot] { changePair(slot); });
-        }
+        pairTable_->item(t, 2)->setText(summary);
+        pairTable_->item(t, 2)->setToolTip(summary);
     }
+    pairTable_->resizeRowsToContents();
+    for (int t = 0; t < Encounters::terrainCount; ++t)
+        pairTable_->setRowHeight(t, qMax(42, pairTable_->rowHeight(t)));
+    if (pairTable_->currentRow() < 0 || pairTable_->isRowHidden(pairTable_->currentRow()))
+        for (int t = 0; t < Encounters::terrainCount; ++t)
+            if (!pairTable_->isRowHidden(t)) { pairTable_->setCurrentCell(t, 0); break; }
+    showTerrain();
     const int selected = poolTiles_->currentRow();
     poolTiles_->clear();
     for (int slot = 0; slot < count; ++slot) {
@@ -497,8 +472,9 @@ QStringList EncounterEditor::squadSummaries(int slot) const {
     return result;
 }
 void EncounterEditor::editTerrainRules(int slot) {
-    findChild<QTabWidget *>("encounterTabs")->setCurrentIndex(1);
-    poolTiles_->setCurrentRow(slot);
+    terrainDialog_->show();
+    terrainDialog_->raise();
+    poolTiles_->setCurrentRow(qMax(0, slot));
     poolTiles_->scrollToItem(poolTiles_->currentItem());
     for (int t = 0; t < Encounters::terrainCount; ++t)
         if (project_->encounters()->lookup(t) == slot + 1) {
@@ -506,6 +482,173 @@ void EncounterEditor::editTerrainRules(int slot) {
             terrainTable_->scrollToItem(terrainTable_->item(t, 2));
             break;
         }
+}
+int EncounterEditor::selectedKey() const {
+    return mapKey_->currentIndex() >= 0 ? mapKey_->currentData().toInt() : -1;
+}
+int EncounterEditor::selectedSlot() const {
+    const int terrain = pairTable_->currentRow();
+    return terrain >= 0 ? project_->encounters()->lookup(terrain) - 1 : -1;
+}
+void EncounterEditor::showTerrain() {
+    const int slot = selectedSlot(), terrain = pairTable_->currentRow();
+    const bool valid = selected() >= 1 && slot >= 0;
+    findChild<QPushButton *>("encounterChooseCreatures")->setEnabled(valid);
+    findChild<QPushButton *>("encounterAssignSquad")->setEnabled(valid && selectedKey() >= 0);
+    const bool hasSquad = valid && selectedKey() >= 0 && project_->encounters()->customSquads().profiles().contains(CustomSquads::key(selectedKey(), slot));
+    findChild<QPushButton *>("encounterEditSquad")->setEnabled(hasSquad);
+    selection_->setText(terrain < 0 ? "Select a terrain" : Encounters::mapTerrainName(terrain) + " — " + pairTable_->item(terrain, 2)->text());
+    if (!valid) {
+        scope_->setText("Enable this terrain in Advanced terrain rules. Those rules affect all maps.");
+        return;
+    }
+    QStringList terrains;
+    for (int t = 0; t < Encounters::terrainCount; ++t)
+        if (project_->encounters()->lookup(t) == slot + 1) terrains << Encounters::mapTerrainName(t);
+    scope_->setText("Applies to: " + terrains.join(", ") + ". " +
+        (project_->encounters()->scenarioKeys(selected()).size() > 1
+            ? "Creature choices are shared by every map version in this group. Squads apply only to the selected version."
+            : "Creature choices and squads apply to this map.") +
+        " Terrain chance is one of several encounter checks; it is not the overall encounter frequency.");
+}
+void EncounterEditor::chooseCreatures() {
+    const int slot = selectedSlot(), group = selected(), map = selectedKey();
+    if (slot < 0 || group < 1) return;
+    QDialog dialog(this);
+    dialog.setObjectName("encounterCreatureDialog");
+    dialog.setWindowTitle("Choose creatures");
+    dialog.resize(560, 220);
+    auto layout = new QVBoxLayout(&dialog);
+    auto help = new QLabel(scope_->text() + "\nEach choice has a 50/50 chance after the encounter checks. Choose the same creature twice for one guaranteed choice; None means no encounter.");
+    help->setWordWrap(true); layout->addWidget(help);
+    QComboBox *choices[2];
+    auto form = new QFormLayout;
+    for (int side = 0; side < 2; ++side) {
+        auto choice = choices[side] = new QComboBox;
+        choice->setObjectName(QString("encounterCreature_%1").arg(side));
+        choice->setEditable(true); choice->setInsertPolicy(QComboBox::NoInsert);
+        choice->completer()->setCompletionMode(QCompleter::PopupCompletion);
+        choice->completer()->setFilterMode(Qt::MatchContains);
+        choice->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+        for (int id = 0; id < project_->records(Table::Classes).size(); ++id)
+            choice->addItem(QString("%1 · %2").arg(id).arg(id ? project_->record(Table::Classes, id).name.simplified() : "None"), id);
+        choice->setCurrentIndex(choice->findData(project_->encounters()->classAt(group, slot, side)));
+        form->addRow(side ? "Second choice" : "First choice", choice);
+    }
+    layout->addLayout(form);
+    auto useCreatures = new QCheckBox("Use these creatures instead of the assigned squad on this map version");
+    useCreatures->setObjectName("encounterUseCreatures");
+    const bool hasSquad = map >= 0 && project_->encounters()->customSquads().profiles().contains(CustomSquads::key(map, slot));
+    useCreatures->setVisible(hasSquad); useCreatures->setChecked(hasSquad);
+    layout->addWidget(useCreatures);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return;
+    try {
+        auto next = *project_->encounters();
+        next.setPair(group, slot, choices[0]->currentData().toInt(), choices[1]->currentData().toInt(), int(project_->records(Table::Classes).size()));
+        if (hasSquad && useCreatures->isChecked()) {
+            auto squad = next.customSquads().profiles().value(CustomSquads::key(map, slot));
+            squad.enabled = false;
+            next.setCustomSquad(squad, int(project_->records(Table::Classes).size()));
+        }
+        commit(next, "Choose map encounter creatures");
+    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
+}
+void EncounterEditor::editSquad() {
+    if (selectedSlot() < 0 || selectedKey() < 0) return;
+    auto editor = static_cast<CustomSquadEditor *>(findChild<QWidget *>("customSquadsPage"));
+    editor->editAssignment(selectedKey(), selectedSlot());
+    findChild<QTabWidget *>("encounterTabs")->setCurrentWidget(editor);
+}
+void EncounterEditor::assignSquad() {
+    const int slot = selectedSlot(), map = selectedKey();
+    if (slot < 0 || map < 0) return;
+    QDialog dialog(this);
+    dialog.setObjectName("encounterSquadDialog");
+    dialog.setWindowTitle("Assign a squad to this map");
+    dialog.resize(600, 220);
+    auto layout = new QVBoxLayout(&dialog);
+    auto help = new QLabel(scope_->text() + "\nAn assigned squad replaces the two creature choices. Copying a squad creates an independent assignment here, including its formation, equipment and rewards.");
+    help->setWordWrap(true); layout->addWidget(help);
+    auto choice = new QComboBox;
+    choice->setObjectName("encounterSquadChoice");
+    choice->addItem("Create / edit squad for this map…", -1);
+    const auto &profiles = project_->encounters()->customSquads().profiles();
+    for (auto it = profiles.cbegin(); it != profiles.cend(); ++it)
+        choice->addItem(QString("%1 · %2 members · map %3 · %4%5")
+            .arg(encounterSquadName(*project_, it.key())).arg(it->members.size()).arg(it->scenarioKey)
+            .arg(project_->encounters()->poolSlotLabel(it->terrainSlot), it->enabled ? "" : " · disabled at source"), it.key());
+    layout->addWidget(choice);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return;
+    if (choice->currentData().toInt() < 0) { editSquad(); return; }
+    try {
+        auto next = *project_->encounters();
+        auto squad = next.customSquads().profiles().value(choice->currentData().toInt());
+        squad.scenarioKey = map; squad.terrainSlot = slot; squad.enabled = true;
+        next.setCustomSquad(squad, int(project_->records(Table::Classes).size()));
+        next.customSquads().validateFormations(project_->classData());
+        commit(next, "Assign encounter squad to map");
+    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
+}
+void EncounterEditor::copyEncounters() {
+    const int destination = selected(), targetKey = selectedKey();
+    if (destination < 1) return;
+    QDialog dialog(this);
+    dialog.setObjectName("encounterCopyDialog");
+    dialog.setWindowTitle("Copy encounters from map");
+    dialog.resize(600, 230);
+    auto layout = new QVBoxLayout(&dialog);
+    auto source = new QComboBox;
+    source->setObjectName("encounterCopySource");
+    for (int id = 1; id <= Encounters::poolCount; ++id) source->addItem(project_->encounters()->label(id), id);
+    layout->addWidget(new QLabel("Copy creature choices from:")); layout->addWidget(source);
+    auto include = new QCheckBox("Include squads — replace this map version's squad assignments too");
+    include->setObjectName("encounterCopySquads");
+    include->setEnabled(targetKey >= 0);
+    layout->addWidget(include);
+    auto sourceKey = new QComboBox;
+    sourceKey->setObjectName("encounterCopyMapKey"); sourceKey->setEnabled(false);
+    auto populate = [this, source, sourceKey] {
+        sourceKey->clear();
+        for (int key : project_->encounters()->scenarioKeys(source->currentData().toInt()))
+            sourceKey->addItem(QString("%1 · %2").arg(key).arg(project_->encounters()->scenarioLabel(key)), key);
+    };
+    connect(source, &QComboBox::currentIndexChanged, &dialog, populate); populate();
+    connect(include, &QCheckBox::toggled, sourceKey, &QComboBox::setEnabled);
+    layout->addWidget(sourceKey);
+    auto help = new QLabel("Unchecked: copy creatures and keep existing squads.\nChecked: copy squads from the selected source version; terrains without a source squad lose their destination squad. Formation, equipment, enabled state and rewards are copied.\nCreature choices update every map version in the destination group. Global terrain rules and rates stay unchanged.");
+    help->setWordWrap(true); layout->addWidget(help);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    auto valid = [=] { buttons->button(QDialogButtonBox::Ok)->setEnabled(!include->isChecked() || sourceKey->currentIndex() >= 0); };
+    connect(sourceKey, &QComboBox::currentIndexChanged, &dialog, valid);
+    connect(include, &QCheckBox::toggled, &dialog, valid);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return;
+    try {
+        const auto before = *project_->encounters();
+        auto next = before;
+        for (int slot = 0; slot < next.slotsPerPool(); ++slot) {
+            next.setPair(destination, slot, before.classAt(source->currentData().toInt(), slot, 0), before.classAt(source->currentData().toInt(), slot, 1), int(project_->records(Table::Classes).size()));
+            if (include->isChecked()) {
+                const auto it = before.customSquads().profiles().constFind(CustomSquads::key(sourceKey->currentData().toInt(), slot));
+                next.removeCustomSquad(targetKey, slot);
+                if (it != before.customSquads().profiles().cend()) {
+                    auto squad = it.value(); squad.scenarioKey = targetKey;
+                    next.setCustomSquad(squad, int(project_->records(Table::Classes).size()));
+                }
+            }
+        }
+        commit(next, include->isChecked() ? "Copy map creatures and squads" : "Copy map creatures");
+    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
 }
 void EncounterEditor::showGlobalRatio() {
     // Construction sets ranges before the remaining controls exist.
@@ -579,20 +722,6 @@ void EncounterEditor::commit(const Encounters &next, const QString &label) {
     const auto before = project_->encounters()->json(), after = next.json();
     if (before != after)
         undo_->push(new EncounterCommand(project_, label, before, after));
-}
-void EncounterEditor::changePair(int slot) {
-    if (selected() < 1 || pairs_[slot * 2]->currentIndex() < 0 ||
-        pairs_[slot * 2 + 1]->currentIndex() < 0)
-        return;
-    try {
-        auto next = *project_->encounters();
-        next.setPair(selected(), slot, pairs_[slot * 2]->currentData().toInt(),
-                     pairs_[slot * 2 + 1]->currentData().toInt(),
-                     int(project_->records(Table::Classes).size()));
-        commit(next, "Edit encounter pair");
-    } catch (const std::exception &e) {
-        notice_->setText(QString::fromUtf8(e.what()));
-    }
 }
 void EncounterEditor::changeTerrain(int terrain) {
     try {

@@ -246,9 +246,9 @@ void CategoryIconEditor::refresh() {
             const int id = f["id"].toInt();
             if (!id)
                 continue;
-            family_->addItem(f["name"].toString(), id);
+            family_->addItem(Promotion::familyName(f), id);
             if (project_->categoryIcons()->familyIcon(id) == selected_)
-                assigned << f["name"].toString();
+                assigned << Promotion::familyName(f);
         }
     if (family_->findData(priorFamily) >= 0)
         family_->setCurrentIndex(family_->findData(priorFamily));
@@ -270,7 +270,7 @@ void CategoryIconEditor::refresh() {
             for (const auto &v : project_->promotion()->families["families"].toArray()) {
                 const auto f = v.toObject();
                 if (project_->categoryIcons()->familyIcon(f["id"].toInt()) == i)
-                    users << f["name"].toString();
+                    users << Promotion::familyName(f);
             }
         item->setToolTip(users.isEmpty() ? "Not assigned to a family"
                                          : "Used by: " + users.join(", "));

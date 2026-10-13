@@ -413,7 +413,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 QInputDialog::getText(this, "New class",
                                       "New class name\nStarts with 1 HP and 1 in each base stat, "
                                       "no equipment, attacks or family."
-                                      "\nCompatibility category starts as Male."
+                                      "\nCharacter compatibility starts as Male; this does not assign the Male family."
                                       "\nKnight artwork and animations are assigned initially; "
                                       "change them in Art Library.",
                                       QLineEdit::Normal, "New class", &accepted);

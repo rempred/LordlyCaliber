@@ -186,16 +186,18 @@ cannot be applied as a new shop. The inspector marks unapplied facility choices.
 Site changes apply automatically; export before testing. Fresh mission entry loads the ROM's
 facilities; a suspended mission retains its previous facility flags.
 
-Map encounters combines terrain names, per-terrain chances and the selected
-map's two creature choices. Terrains sharing a pool occupy one row; pool IDs are
-secondary labels. Rows explain missing assignments, zero terrain chances and
-empty creature pairs, and identify active custom-squad overrides. Edit rules
-opens the corresponding row under Terrain rules · All maps. That page previews
-the selected map's creatures on assigned/available pool tiles while retaining
-game-wide assignments, sharing/move/swap dragging and pool expansion.
-Active custom squads now appear by the same squad name used in Custom squads,
-with member counts, on both pages. They replace the misleading empty-creature
-summary. Shared map groups identify which runtime keys have a squad override.
+Map encounters follows map → terrain → encounter. Each terrain row shows its
+active creature choices or named squad and member count. Choose creatures,
+Assign squad and Edit assigned squad act on the selected row. Creating a squad
+from here starts its draft on the selected map version and terrain group.
+Choosing creatures can disable the existing squad without deleting its data.
+Copy from map explicitly includes or excludes squads; inclusive copies replace
+the selected map version's assignments, including clearing absent source squads.
+Creature choices remain shared across map versions in the same native group,
+while squads apply to the selected version. The page explains shared terrains
+and versions before edits. Global terrain mappings, rates and pool expansion
+are in an Advanced dialog instead of a second main tab. Dragging to share,
+move or swap pools remains available there, with all-map scope explicit.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
@@ -510,6 +512,13 @@ The Compatibility category dropdown names the original category bits separately
 from Class family. Common combinations include Male + Female; Custom combination
 edits all eight bits by name and preserves uncommon combinations with Undo.
 New class starts with family None and Male compatibility, stated in the dialog.
+Character compatibility is explicitly described as a separate eligibility filter,
+not family assignment, with Lich's family None / Male + Female example.
+Retail family numbers display descriptive names (Male, Female, Angels, Undead,
+Hawkmen, Dragons, Wyrms, Griffins, Hellhounds and Golems) in Classes, UI and Icons,
+and change summaries. Generic labels in older projects resolve the same way;
+stored catalogs, family IDs and user-authored names remain unchanged. Lich is
+the only retail class with combined Male + Female compatibility; it has family None.
 Assigning a family's own icon still selects its independent List Classes tab.
 
 ## Additional native capabilities

@@ -221,7 +221,7 @@ ChangeReport Project::changeReport(const Project *reference) const {
         auto familyName = [](const QJsonObject &catalog, int id) {
             for (const auto &entry : catalog["families"].toArray())
                 if (entry.toObject()["id"].toInt() == id)
-                    return entry.toObject()["name"].toString();
+                    return Promotion::familyName(entry.toObject());
             return QString("Family %1").arg(id);
         };
         const QStringList gates{

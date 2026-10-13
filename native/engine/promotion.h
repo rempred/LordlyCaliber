@@ -41,6 +41,7 @@ class Promotion {
     PromotionData buildExpandedData() const;
     void applyExpandedData(const QByteArray &bytes, int count);
     static QJsonObject validateFamilies(const QJsonObject &value);
+    static QString familyName(const QJsonObject &family);
     void apply(const QJsonObject &value);
     QJsonObject json() const;
     bool modified() const;
