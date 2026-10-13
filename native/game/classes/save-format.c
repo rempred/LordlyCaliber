@@ -14,7 +14,7 @@ static void put32(u8 *p, u32 value)
 }
 u32 lc_save_record_offset(u32 slot, u32 expanded)
 {
-    if (expanded > 2) return ~0U;
+    if (expanded > 3) return ~0U;
     if (slot == 14) return 0;
     if (slot == 15) return expanded ? 0x30F0U : 0x30B0U;
     if (slot < 2) return 16U + slot * (expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES);
@@ -22,9 +22,9 @@ u32 lc_save_record_offset(u32 slot, u32 expanded)
 }
 u32 lc_save_record_size(u32 slot, u32 expanded)
 {
-    if (expanded > 2) return 0;
+    if (expanded > 3) return 0;
     if (slot == 14) return 16;
-    if (slot == 15) return expanded == 2 ? LC_SAVE_LARGE_SUSPEND_BYTES : expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
+    if (slot == 15) return expanded == 3 ? LC_SAVE_CAPACITY_SUSPEND_BYTES : expanded == 2 ? LC_SAVE_LARGE_SUSPEND_BYTES : expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
     if (slot < 2) return expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES;
     return 0;
 }
@@ -41,7 +41,7 @@ int lc_save_record_seal(u8 *record, u32 capacity, u32 slot, u32 expanded)
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
     put32(record, checksums(record, length, lc_save_record_offset(slot, expanded)));
-    put32(record + 4, expanded == 2 && slot == 15 ? 0x4C433036U : expanded && slot != 14 ? 0x4C433035U : 0x51756573U);
+    put32(record + 4, expanded >= 2 && slot == 15 ? 0x4C433034U + expanded : expanded && slot != 14 ? 0x4C433035U : 0x51756573U);
     put32(record + 8, expanded && slot != 14 ? 0x4F473321U : 0x744F4733U);
     return 1;
 }
@@ -52,7 +52,7 @@ int lc_save_record_valid(const u8 *record, u32 capacity, u32 slot, u32 expanded)
      */
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
-    if (get32(record + 4) != (expanded == 2 && slot == 15 ? 0x4C433036U : expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||
+    if (get32(record + 4) != (expanded >= 2 && slot == 15 ? 0x4C433034U + expanded : expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||
         get32(record + 8) != (expanded && slot != 14 ? 0x4F473321U : 0x744F4733U)) return 0;
     /* The game uses a signed but zero-checksum suspend record as 'no suspend'. */
     if (slot == 15 && get32(record) == 0) return 1;

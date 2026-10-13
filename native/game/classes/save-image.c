@@ -17,11 +17,11 @@ int lc_save_commit_compressed(ImageByte *image, ImageWord capacity,
     unsigned short *work;
     int version;
     if (!image || !source || !scratch || capacity < LC_SAVE_PACK_IMAGE_BYTES ||
-        (size != LC_SAVE_EXPANDED_SUSPEND_BYTES && size != LC_SAVE_LARGE_SUSPEND_BYTES) ||
+        (size != LC_SAVE_EXPANDED_SUSPEND_BYTES && size != LC_SAVE_LARGE_SUSPEND_BYTES && size != LC_SAVE_CAPACITY_SUSPEND_BYTES) ||
         scratch_size < LC_SAVE_PACK_COMMIT_WORK_BYTES(size)) return 0;
     version = lc_save_image_version(image, capacity);
     if (version != 1 && version != 2) return 0;
-    format = size == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
+    format = size == LC_SAVE_CAPACITY_SUSPEND_BYTES ? 3 : size == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
     if (!lc_save_record_valid(source, size, 15, format)) return 0;
     decoded = scratch + LC_SAVE_PACK_SUSPEND_CAPACITY;
     work = (unsigned short *)(decoded + ((size + 1U) & ~1U));
@@ -43,7 +43,7 @@ ImageWord lc_save_read_compressed(const ImageByte *image, ImageWord capacity,
     ImageWord size, format;
     if (!image || !output || capacity < LC_SAVE_PACK_IMAGE_BYTES || lc_save_image_version(image, capacity) != 2) return 0;
     size = lc_save_frame_decode(output, output_capacity, image + LC_SAVE_PACK_SUSPEND_OFFSET, LC_SAVE_PACK_SUSPEND_CAPACITY);
-    if (size != LC_SAVE_EXPANDED_SUSPEND_BYTES && size != LC_SAVE_LARGE_SUSPEND_BYTES) return 0;
-    format = size == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
+    if (size != LC_SAVE_EXPANDED_SUSPEND_BYTES && size != LC_SAVE_LARGE_SUSPEND_BYTES && size != LC_SAVE_CAPACITY_SUSPEND_BYTES) return 0;
+    format = size == LC_SAVE_CAPACITY_SUSPEND_BYTES ? 3 : size == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
     return lc_save_record_valid(output, size, 15, format) ? size : 0;
 }

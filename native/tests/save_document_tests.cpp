@@ -3212,7 +3212,7 @@ class SaveDocumentTests : public QObject {
                 auto image = expanded.first(0x8000);
                 auto logical = expanded.mid(LC_SAVE_PACK_SUSPEND_OFFSET, LC_SAVE_EXPANDED_SUSPEND_BYTES);
                 if (logicalSize > logical.size()) logical.append(QByteArray(logicalSize-logical.size(), char(0x73)));
-                const int format = logicalSize == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
+                const int format = logicalSize == LC_SAVE_CAPACITY_SUSPEND_BYTES ? 3 : logicalSize == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
                 if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(logical.data()),
                                          unsigned(logical.size()), 15, format))
                     throw Error("Cannot seal compression fixture");
@@ -3226,8 +3226,10 @@ class SaveDocumentTests : public QObject {
             };
             const auto compressed = compress(LC_SAVE_EXPANDED_SUSPEND_BYTES);
             const auto largeCompressed = compress(LC_SAVE_LARGE_SUSPEND_BYTES);
+            const auto capacityCompressed = compress(LC_SAVE_CAPACITY_SUSPEND_BYTES);
             for (const auto &input : {battery, swapped(battery.first(0x8000)), expanded,
-                                      compressed, swapped(compressed), largeCompressed, swapped(largeCompressed)}) {
+                                      compressed, swapped(compressed), largeCompressed, swapped(largeCompressed),
+                                      capacityCompressed, swapped(capacityCompressed)}) {
                 auto doc = SaveDocument::open(rom, input, 256);
                 QCOMPARE(doc.serialize(), input);
                 QCOMPARE(doc.saveSlots().size(), 3);

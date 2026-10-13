@@ -1,0 +1,2480 @@
+{
+  "generator": "native/tools/generate-capacity-save-catalog.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "start": 372744,
+      "size": 2140,
+      "address": 2149077256,
+      "retailSha256": "c368a1c61cfcd6302ede2fdf6614b222a608583dda769c2d09abf76ca03e295d",
+      "patches": [
+        {
+          "site": 372772,
+          "expected": 604110898,
+          "kind": "mapCount",
+          "addend": 0
+        },
+        {
+          "site": 372812,
+          "expected": 687996948,
+          "kind": "enemyCount",
+          "addend": 0
+        },
+        {
+          "site": 372836,
+          "expected": 2359427112,
+          "kind": "snapshotOffset",
+          "addend": 0
+        },
+        {
+          "site": 372852,
+          "expected": 2359427116,
+          "kind": "snapshotOffset",
+          "addend": 4
+        },
+        {
+          "site": 372868,
+          "expected": 2359427120,
+          "kind": "snapshotOffset",
+          "addend": 8
+        },
+        {
+          "site": 372884,
+          "expected": 2359427124,
+          "kind": "snapshotOffset",
+          "addend": 12
+        },
+        {
+          "site": 372900,
+          "expected": 2359427128,
+          "kind": "snapshotOffset",
+          "addend": 16
+        },
+        {
+          "site": 372916,
+          "expected": 2359427132,
+          "kind": "snapshotOffset",
+          "addend": 20
+        },
+        {
+          "site": 372932,
+          "expected": 2359427136,
+          "kind": "snapshotOffset",
+          "addend": 24
+        },
+        {
+          "site": 372948,
+          "expected": 2359427140,
+          "kind": "snapshotOffset",
+          "addend": 28
+        },
+        {
+          "site": 372964,
+          "expected": 2359427144,
+          "kind": "snapshotOffset",
+          "addend": 32
+        },
+        {
+          "site": 372980,
+          "expected": 2359427148,
+          "kind": "snapshotOffset",
+          "addend": 36
+        },
+        {
+          "site": 372996,
+          "expected": 2359427152,
+          "kind": "snapshotOffset",
+          "addend": 40
+        },
+        {
+          "site": 373012,
+          "expected": 2359427156,
+          "kind": "snapshotOffset",
+          "addend": 44
+        },
+        {
+          "site": 373028,
+          "expected": 2359427160,
+          "kind": "snapshotOffset",
+          "addend": 48
+        },
+        {
+          "site": 373044,
+          "expected": 2359427164,
+          "kind": "snapshotOffset",
+          "addend": 52
+        },
+        {
+          "site": 373060,
+          "expected": 2359427168,
+          "kind": "snapshotOffset",
+          "addend": 56
+        },
+        {
+          "site": 373076,
+          "expected": 2359427172,
+          "kind": "snapshotOffset",
+          "addend": 60
+        },
+        {
+          "site": 373092,
+          "expected": 3298820200,
+          "kind": "snapshotOffset",
+          "addend": 64
+        },
+        {
+          "site": 373108,
+          "expected": 3298820204,
+          "kind": "snapshotOffset",
+          "addend": 68
+        },
+        {
+          "site": 373124,
+          "expected": 3298820208,
+          "kind": "snapshotOffset",
+          "addend": 72
+        },
+        {
+          "site": 373140,
+          "expected": 3298820212,
+          "kind": "snapshotOffset",
+          "addend": 76
+        },
+        {
+          "site": 373156,
+          "expected": 3298820216,
+          "kind": "snapshotOffset",
+          "addend": 80
+        },
+        {
+          "site": 373172,
+          "expected": 3298820220,
+          "kind": "snapshotOffset",
+          "addend": 84
+        },
+        {
+          "site": 373188,
+          "expected": 3298820224,
+          "kind": "snapshotOffset",
+          "addend": 88
+        },
+        {
+          "site": 373204,
+          "expected": 3298820228,
+          "kind": "snapshotOffset",
+          "addend": 92
+        },
+        {
+          "site": 373220,
+          "expected": 3298820232,
+          "kind": "snapshotOffset",
+          "addend": 96
+        },
+        {
+          "site": 373236,
+          "expected": 3298820236,
+          "kind": "snapshotOffset",
+          "addend": 100
+        },
+        {
+          "site": 373252,
+          "expected": 3298820240,
+          "kind": "snapshotOffset",
+          "addend": 104
+        },
+        {
+          "site": 373268,
+          "expected": 3298820244,
+          "kind": "snapshotOffset",
+          "addend": 108
+        },
+        {
+          "site": 373284,
+          "expected": 3298820248,
+          "kind": "snapshotOffset",
+          "addend": 112
+        },
+        {
+          "site": 373300,
+          "expected": 3298820252,
+          "kind": "snapshotOffset",
+          "addend": 116
+        },
+        {
+          "site": 373316,
+          "expected": 3298820256,
+          "kind": "snapshotOffset",
+          "addend": 120
+        },
+        {
+          "site": 373332,
+          "expected": 3298820260,
+          "kind": "snapshotOffset",
+          "addend": 124
+        },
+        {
+          "site": 373348,
+          "expected": 3298820264,
+          "kind": "snapshotOffset",
+          "addend": 128
+        },
+        {
+          "site": 373364,
+          "expected": 3298820268,
+          "kind": "snapshotOffset",
+          "addend": 132
+        },
+        {
+          "site": 373380,
+          "expected": 3298820272,
+          "kind": "snapshotOffset",
+          "addend": 136
+        },
+        {
+          "site": 373396,
+          "expected": 3298820276,
+          "kind": "snapshotOffset",
+          "addend": 140
+        },
+        {
+          "site": 373412,
+          "expected": 3298820280,
+          "kind": "snapshotOffset",
+          "addend": 144
+        },
+        {
+          "site": 373428,
+          "expected": 2493644988,
+          "kind": "snapshotOffset",
+          "addend": 148
+        },
+        {
+          "site": 373444,
+          "expected": 2426536126,
+          "kind": "snapshotOffset",
+          "addend": 150
+        },
+        {
+          "site": 373460,
+          "expected": 2426536127,
+          "kind": "snapshotOffset",
+          "addend": 151
+        },
+        {
+          "site": 373476,
+          "expected": 2426536128,
+          "kind": "snapshotOffset",
+          "addend": 152
+        },
+        {
+          "site": 373492,
+          "expected": 2426536129,
+          "kind": "snapshotOffset",
+          "addend": 153
+        },
+        {
+          "site": 373508,
+          "expected": 2426536130,
+          "kind": "snapshotOffset",
+          "addend": 154
+        },
+        {
+          "site": 373524,
+          "expected": 2426536131,
+          "kind": "snapshotOffset",
+          "addend": 155
+        },
+        {
+          "site": 373540,
+          "expected": 2426536132,
+          "kind": "snapshotOffset",
+          "addend": 156
+        },
+        {
+          "site": 373556,
+          "expected": 2426536133,
+          "kind": "snapshotOffset",
+          "addend": 157
+        },
+        {
+          "site": 373572,
+          "expected": 2426536134,
+          "kind": "snapshotOffset",
+          "addend": 158
+        },
+        {
+          "site": 373588,
+          "expected": 2426536135,
+          "kind": "snapshotOffset",
+          "addend": 159
+        },
+        {
+          "site": 373604,
+          "expected": 2426536136,
+          "kind": "snapshotOffset",
+          "addend": 160
+        },
+        {
+          "site": 373620,
+          "expected": 2426536137,
+          "kind": "snapshotOffset",
+          "addend": 161
+        },
+        {
+          "site": 373636,
+          "expected": 2426536138,
+          "kind": "snapshotOffset",
+          "addend": 162
+        },
+        {
+          "site": 373652,
+          "expected": 2426536139,
+          "kind": "snapshotOffset",
+          "addend": 163
+        },
+        {
+          "site": 373668,
+          "expected": 2426536140,
+          "kind": "snapshotOffset",
+          "addend": 164
+        },
+        {
+          "site": 373684,
+          "expected": 2426536141,
+          "kind": "snapshotOffset",
+          "addend": 165
+        },
+        {
+          "site": 373756,
+          "expected": 687996978,
+          "kind": "mapCount",
+          "addend": 0
+        },
+        {
+          "site": 373768,
+          "expected": 2424447224,
+          "kind": "tailOffset",
+          "addend": 0
+        },
+        {
+          "site": 373784,
+          "expected": 3296731388,
+          "kind": "tailOffset",
+          "addend": 4
+        },
+        {
+          "site": 373796,
+          "expected": 3296731392,
+          "kind": "tailOffset",
+          "addend": 8
+        },
+        {
+          "site": 373808,
+          "expected": 3296731396,
+          "kind": "tailOffset",
+          "addend": 12
+        },
+        {
+          "site": 373820,
+          "expected": 3296731400,
+          "kind": "tailOffset",
+          "addend": 16
+        },
+        {
+          "site": 373832,
+          "expected": 3296731404,
+          "kind": "tailOffset",
+          "addend": 20
+        },
+        {
+          "site": 373844,
+          "expected": 2357338384,
+          "kind": "tailOffset",
+          "addend": 24
+        },
+        {
+          "site": 373856,
+          "expected": 2357338388,
+          "kind": "tailOffset",
+          "addend": 28
+        },
+        {
+          "site": 373884,
+          "expected": 3296731416,
+          "kind": "tailOffset",
+          "addend": 32
+        },
+        {
+          "site": 373896,
+          "expected": 3296731420,
+          "kind": "tailOffset",
+          "addend": 36
+        },
+        {
+          "site": 373908,
+          "expected": 3296731424,
+          "kind": "tailOffset",
+          "addend": 40
+        },
+        {
+          "site": 373920,
+          "expected": 3296731428,
+          "kind": "tailOffset",
+          "addend": 44
+        },
+        {
+          "site": 373932,
+          "expected": 3296731432,
+          "kind": "tailOffset",
+          "addend": 48
+        },
+        {
+          "site": 373944,
+          "expected": 3296731436,
+          "kind": "tailOffset",
+          "addend": 52
+        },
+        {
+          "site": 373956,
+          "expected": 3296731440,
+          "kind": "tailOffset",
+          "addend": 56
+        },
+        {
+          "site": 373968,
+          "expected": 3296731444,
+          "kind": "tailOffset",
+          "addend": 60
+        },
+        {
+          "site": 373980,
+          "expected": 3296731448,
+          "kind": "tailOffset",
+          "addend": 64
+        },
+        {
+          "site": 373992,
+          "expected": 3296731452,
+          "kind": "tailOffset",
+          "addend": 68
+        },
+        {
+          "site": 374004,
+          "expected": 2357338432,
+          "kind": "tailOffset",
+          "addend": 72
+        },
+        {
+          "site": 374016,
+          "expected": 2357338436,
+          "kind": "tailOffset",
+          "addend": 76
+        },
+        {
+          "site": 374028,
+          "expected": 2357338440,
+          "kind": "tailOffset",
+          "addend": 80
+        },
+        {
+          "site": 374040,
+          "expected": 2357338444,
+          "kind": "tailOffset",
+          "addend": 84
+        },
+        {
+          "site": 374052,
+          "expected": 2357338448,
+          "kind": "tailOffset",
+          "addend": 88
+        },
+        {
+          "site": 374064,
+          "expected": 2357338452,
+          "kind": "tailOffset",
+          "addend": 92
+        },
+        {
+          "site": 374076,
+          "expected": 2357338456,
+          "kind": "tailOffset",
+          "addend": 96
+        },
+        {
+          "site": 374088,
+          "expected": 2357338460,
+          "kind": "tailOffset",
+          "addend": 100
+        },
+        {
+          "site": 374100,
+          "expected": 2357338464,
+          "kind": "tailOffset",
+          "addend": 104
+        },
+        {
+          "site": 374112,
+          "expected": 2357338468,
+          "kind": "tailOffset",
+          "addend": 108
+        },
+        {
+          "site": 374124,
+          "expected": 2424447336,
+          "kind": "tailOffset",
+          "addend": 112
+        },
+        {
+          "site": 374136,
+          "expected": 2424447337,
+          "kind": "tailOffset",
+          "addend": 113
+        },
+        {
+          "site": 374148,
+          "expected": 2424447338,
+          "kind": "tailOffset",
+          "addend": 114
+        },
+        {
+          "site": 374160,
+          "expected": 2424447339,
+          "kind": "tailOffset",
+          "addend": 115
+        },
+        {
+          "site": 374172,
+          "expected": 2424447340,
+          "kind": "tailOffset",
+          "addend": 116
+        },
+        {
+          "site": 374184,
+          "expected": 2424447341,
+          "kind": "tailOffset",
+          "addend": 117
+        },
+        {
+          "site": 374196,
+          "expected": 2424447342,
+          "kind": "tailOffset",
+          "addend": 118
+        },
+        {
+          "site": 374208,
+          "expected": 2424447343,
+          "kind": "tailOffset",
+          "addend": 119
+        },
+        {
+          "site": 374220,
+          "expected": 2424447344,
+          "kind": "tailOffset",
+          "addend": 120
+        },
+        {
+          "site": 374232,
+          "expected": 2424447345,
+          "kind": "tailOffset",
+          "addend": 121
+        },
+        {
+          "site": 374244,
+          "expected": 2424447346,
+          "kind": "tailOffset",
+          "addend": 122
+        },
+        {
+          "site": 374256,
+          "expected": 2424447347,
+          "kind": "tailOffset",
+          "addend": 123
+        },
+        {
+          "site": 374268,
+          "expected": 2424447348,
+          "kind": "tailOffset",
+          "addend": 124
+        },
+        {
+          "site": 374280,
+          "expected": 2424447349,
+          "kind": "tailOffset",
+          "addend": 125
+        },
+        {
+          "site": 374292,
+          "expected": 2424447350,
+          "kind": "tailOffset",
+          "addend": 126
+        },
+        {
+          "site": 374304,
+          "expected": 2424447351,
+          "kind": "tailOffset",
+          "addend": 127
+        },
+        {
+          "site": 374320,
+          "expected": 2424447352,
+          "kind": "tailOffset",
+          "addend": 128
+        },
+        {
+          "site": 374344,
+          "expected": 623255929,
+          "kind": "tailOffset",
+          "addend": 129
+        },
+        {
+          "site": 374396,
+          "expected": 2491556378,
+          "kind": "tailOffset",
+          "addend": 290
+        },
+        {
+          "site": 374416,
+          "expected": 2491556380,
+          "kind": "tailOffset",
+          "addend": 292
+        },
+        {
+          "site": 374440,
+          "expected": 623256094,
+          "kind": "tailOffset",
+          "addend": 294
+        },
+        {
+          "site": 374492,
+          "expected": 2424447806,
+          "kind": "tailOffset",
+          "addend": 582
+        },
+        {
+          "site": 374508,
+          "expected": 2424447807,
+          "kind": "tailOffset",
+          "addend": 583
+        },
+        {
+          "site": 374520,
+          "expected": 2424447808,
+          "kind": "tailOffset",
+          "addend": 584
+        },
+        {
+          "site": 374532,
+          "expected": 2424447809,
+          "kind": "tailOffset",
+          "addend": 585
+        },
+        {
+          "site": 374548,
+          "expected": 2424447810,
+          "kind": "tailOffset",
+          "addend": 586
+        },
+        {
+          "site": 374568,
+          "expected": 2493653828,
+          "kind": "tailOffset",
+          "addend": 588
+        },
+        {
+          "site": 374580,
+          "expected": 2422350692,
+          "kind": "tailOffset",
+          "addend": 620
+        },
+        {
+          "site": 374596,
+          "expected": 2422350708,
+          "kind": "tailOffset",
+          "addend": 636
+        },
+        {
+          "site": 374612,
+          "expected": 2422350724,
+          "kind": "tailOffset",
+          "addend": 652
+        },
+        {
+          "site": 374648,
+          "expected": 2424447892,
+          "kind": "tailOffset",
+          "addend": 668
+        },
+        {
+          "site": 374664,
+          "expected": 2424447893,
+          "kind": "tailOffset",
+          "addend": 669
+        },
+        {
+          "site": 374676,
+          "expected": 2424447894,
+          "kind": "tailOffset",
+          "addend": 670
+        },
+        {
+          "site": 374688,
+          "expected": 2424447895,
+          "kind": "tailOffset",
+          "addend": 671
+        },
+        {
+          "site": 374700,
+          "expected": 2424447928,
+          "kind": "tailOffset",
+          "addend": 704
+        },
+        {
+          "site": 374712,
+          "expected": 2491556794,
+          "kind": "tailOffset",
+          "addend": 706
+        },
+        {
+          "site": 374724,
+          "expected": 2424447932,
+          "kind": "tailOffset",
+          "addend": 708
+        },
+        {
+          "site": 374736,
+          "expected": 2424447933,
+          "kind": "tailOffset",
+          "addend": 709
+        },
+        {
+          "site": 374752,
+          "expected": 2424447934,
+          "kind": "tailOffset",
+          "addend": 710
+        },
+        {
+          "site": 374776,
+          "expected": 2422350744,
+          "kind": "tailOffset",
+          "addend": 672
+        },
+        {
+          "site": 374792,
+          "expected": 2493653920,
+          "kind": "tailOffset",
+          "addend": 680
+        },
+        {
+          "site": 374800,
+          "expected": 2422350768,
+          "kind": "tailOffset",
+          "addend": 696
+        },
+        {
+          "site": 374848,
+          "expected": 2491556800,
+          "kind": "tailOffset",
+          "addend": 712
+        }
+      ],
+      "references": [
+        {
+          "high": 372748,
+          "low": 372752,
+          "highWord": 1006993433,
+          "lowWord": 614807224,
+          "group": "drops",
+          "addend": 0
+        },
+        {
+          "high": 372840,
+          "low": 372848,
+          "highWord": 1006731289,
+          "lowWord": 2887913712,
+          "group": "backups",
+          "addend": 0
+        },
+        {
+          "high": 372856,
+          "low": 372864,
+          "highWord": 1006731289,
+          "lowWord": 2887913832,
+          "group": "backups",
+          "addend": 120
+        },
+        {
+          "high": 372872,
+          "low": 372880,
+          "highWord": 1006731289,
+          "lowWord": 2887913732,
+          "group": "backups",
+          "addend": 20
+        },
+        {
+          "high": 372888,
+          "low": 372896,
+          "highWord": 1006731289,
+          "lowWord": 2887913748,
+          "group": "backups",
+          "addend": 36
+        },
+        {
+          "high": 372904,
+          "low": 372912,
+          "highWord": 1006731289,
+          "lowWord": 2887913800,
+          "group": "backups",
+          "addend": 88
+        },
+        {
+          "high": 372920,
+          "low": 372928,
+          "highWord": 1006731289,
+          "lowWord": 2887913804,
+          "group": "backups",
+          "addend": 92
+        },
+        {
+          "high": 372936,
+          "low": 372944,
+          "highWord": 1006731289,
+          "lowWord": 2887913808,
+          "group": "backups",
+          "addend": 96
+        },
+        {
+          "high": 372952,
+          "low": 372960,
+          "highWord": 1006731289,
+          "lowWord": 2887913812,
+          "group": "backups",
+          "addend": 100
+        },
+        {
+          "high": 372968,
+          "low": 372976,
+          "highWord": 1006731289,
+          "lowWord": 2887913820,
+          "group": "backups",
+          "addend": 108
+        },
+        {
+          "high": 372984,
+          "low": 372992,
+          "highWord": 1006731289,
+          "lowWord": 2887913824,
+          "group": "backups",
+          "addend": 112
+        },
+        {
+          "high": 373000,
+          "low": 373008,
+          "highWord": 1006731289,
+          "lowWord": 2887913828,
+          "group": "backups",
+          "addend": 116
+        },
+        {
+          "high": 373016,
+          "low": 373024,
+          "highWord": 1006731289,
+          "lowWord": 2887913836,
+          "group": "backups",
+          "addend": 124
+        },
+        {
+          "high": 373032,
+          "low": 373040,
+          "highWord": 1006731289,
+          "lowWord": 2887913840,
+          "group": "backups",
+          "addend": 128
+        },
+        {
+          "high": 373048,
+          "low": 373056,
+          "highWord": 1006731289,
+          "lowWord": 2887913844,
+          "group": "backups",
+          "addend": 132
+        },
+        {
+          "high": 373064,
+          "low": 373072,
+          "highWord": 1006731289,
+          "lowWord": 2887913848,
+          "group": "backups",
+          "addend": 136
+        },
+        {
+          "high": 373080,
+          "low": 373088,
+          "highWord": 1006731289,
+          "lowWord": 2887913852,
+          "group": "backups",
+          "addend": 140
+        },
+        {
+          "high": 373096,
+          "low": 373104,
+          "highWord": 1006731289,
+          "lowWord": 3827306744,
+          "group": "backups",
+          "addend": 8
+        },
+        {
+          "high": 373112,
+          "low": 373120,
+          "highWord": 1006731289,
+          "lowWord": 3827306748,
+          "group": "backups",
+          "addend": 12
+        },
+        {
+          "high": 373128,
+          "low": 373136,
+          "highWord": 1006731289,
+          "lowWord": 3827306752,
+          "group": "backups",
+          "addend": 16
+        },
+        {
+          "high": 373144,
+          "low": 373152,
+          "highWord": 1006731289,
+          "lowWord": 3827306760,
+          "group": "backups",
+          "addend": 24
+        },
+        {
+          "high": 373160,
+          "low": 373168,
+          "highWord": 1006731289,
+          "lowWord": 3827306764,
+          "group": "backups",
+          "addend": 28
+        },
+        {
+          "high": 373176,
+          "low": 373184,
+          "highWord": 1006731289,
+          "lowWord": 3827306776,
+          "group": "backups",
+          "addend": 40
+        },
+        {
+          "high": 373192,
+          "low": 373200,
+          "highWord": 1006731289,
+          "lowWord": 3827306780,
+          "group": "backups",
+          "addend": 44
+        },
+        {
+          "high": 373208,
+          "low": 373216,
+          "highWord": 1006731289,
+          "lowWord": 3827306784,
+          "group": "backups",
+          "addend": 48
+        },
+        {
+          "high": 373224,
+          "low": 373232,
+          "highWord": 1006731289,
+          "lowWord": 3827306788,
+          "group": "backups",
+          "addend": 52
+        },
+        {
+          "high": 373240,
+          "low": 373248,
+          "highWord": 1006731289,
+          "lowWord": 3827306792,
+          "group": "backups",
+          "addend": 56
+        },
+        {
+          "high": 373256,
+          "low": 373264,
+          "highWord": 1006731289,
+          "lowWord": 3827306796,
+          "group": "backups",
+          "addend": 60
+        },
+        {
+          "high": 373272,
+          "low": 373280,
+          "highWord": 1006731289,
+          "lowWord": 3827306800,
+          "group": "backups",
+          "addend": 64
+        },
+        {
+          "high": 373288,
+          "low": 373296,
+          "highWord": 1006731289,
+          "lowWord": 3827306804,
+          "group": "backups",
+          "addend": 68
+        },
+        {
+          "high": 373304,
+          "low": 373312,
+          "highWord": 1006731289,
+          "lowWord": 3827306808,
+          "group": "backups",
+          "addend": 72
+        },
+        {
+          "high": 373320,
+          "low": 373328,
+          "highWord": 1006731289,
+          "lowWord": 3827306812,
+          "group": "backups",
+          "addend": 76
+        },
+        {
+          "high": 373336,
+          "low": 373344,
+          "highWord": 1006731289,
+          "lowWord": 3827306816,
+          "group": "backups",
+          "addend": 80
+        },
+        {
+          "high": 373352,
+          "low": 373360,
+          "highWord": 1006731289,
+          "lowWord": 3827306820,
+          "group": "backups",
+          "addend": 84
+        },
+        {
+          "high": 373368,
+          "low": 373376,
+          "highWord": 1006731289,
+          "lowWord": 3827306884,
+          "group": "backups",
+          "addend": 148
+        },
+        {
+          "high": 373384,
+          "low": 373392,
+          "highWord": 1006731289,
+          "lowWord": 3827306892,
+          "group": "backups",
+          "addend": 156
+        },
+        {
+          "high": 373400,
+          "low": 373408,
+          "highWord": 1006731289,
+          "lowWord": 3827306908,
+          "group": "backups",
+          "addend": 172
+        },
+        {
+          "high": 373416,
+          "low": 373424,
+          "highWord": 1006731289,
+          "lowWord": 3827306912,
+          "group": "backups",
+          "addend": 176
+        },
+        {
+          "high": 373432,
+          "low": 373440,
+          "highWord": 1006731289,
+          "lowWord": 2753696166,
+          "group": "backups",
+          "addend": 182
+        },
+        {
+          "high": 373448,
+          "low": 373456,
+          "highWord": 1006731289,
+          "lowWord": 2686587124,
+          "group": "backups",
+          "addend": 4
+        },
+        {
+          "high": 373464,
+          "low": 373472,
+          "highWord": 1006731289,
+          "lowWord": 2686587152,
+          "group": "backups",
+          "addend": 32
+        },
+        {
+          "high": 373480,
+          "low": 373488,
+          "highWord": 1006731289,
+          "lowWord": 2686587264,
+          "group": "backups",
+          "addend": 144
+        },
+        {
+          "high": 373496,
+          "low": 373504,
+          "highWord": 1006731289,
+          "lowWord": 2686587265,
+          "group": "backups",
+          "addend": 145
+        },
+        {
+          "high": 373512,
+          "low": 373520,
+          "highWord": 1006731289,
+          "lowWord": 2686587266,
+          "group": "backups",
+          "addend": 146
+        },
+        {
+          "high": 373528,
+          "low": 373536,
+          "highWord": 1006731289,
+          "lowWord": 2686587272,
+          "group": "backups",
+          "addend": 152
+        },
+        {
+          "high": 373544,
+          "low": 373552,
+          "highWord": 1006731289,
+          "lowWord": 2686587300,
+          "group": "backups",
+          "addend": 180
+        },
+        {
+          "high": 373560,
+          "low": 373568,
+          "highWord": 1006731289,
+          "lowWord": 2686587301,
+          "group": "backups",
+          "addend": 181
+        },
+        {
+          "high": 373576,
+          "low": 373584,
+          "highWord": 1006731289,
+          "lowWord": 2686587304,
+          "group": "backups",
+          "addend": 184
+        },
+        {
+          "high": 373592,
+          "low": 373600,
+          "highWord": 1006731289,
+          "lowWord": 2686587305,
+          "group": "backups",
+          "addend": 185
+        },
+        {
+          "high": 373608,
+          "low": 373616,
+          "highWord": 1006731289,
+          "lowWord": 2686587306,
+          "group": "backups",
+          "addend": 186
+        },
+        {
+          "high": 373624,
+          "low": 373632,
+          "highWord": 1006731289,
+          "lowWord": 2686587307,
+          "group": "backups",
+          "addend": 187
+        },
+        {
+          "high": 373640,
+          "low": 373648,
+          "highWord": 1006731289,
+          "lowWord": 2686587308,
+          "group": "backups",
+          "addend": 188
+        },
+        {
+          "high": 373656,
+          "low": 373664,
+          "highWord": 1006731289,
+          "lowWord": 2686587309,
+          "group": "backups",
+          "addend": 189
+        },
+        {
+          "high": 373672,
+          "low": 373680,
+          "highWord": 1006731289,
+          "lowWord": 2686587310,
+          "group": "backups",
+          "addend": 190
+        },
+        {
+          "high": 373696,
+          "low": 373704,
+          "highWord": 1006731289,
+          "lowWord": 2887782744,
+          "group": "backups",
+          "addend": 104
+        },
+        {
+          "high": 373708,
+          "low": 373716,
+          "highWord": 1006731289,
+          "lowWord": 2887782800,
+          "group": "backups",
+          "addend": 160
+        },
+        {
+          "high": 373720,
+          "low": 373728,
+          "highWord": 1006731289,
+          "lowWord": 2887782804,
+          "group": "backups",
+          "addend": 164
+        },
+        {
+          "high": 373732,
+          "low": 373740,
+          "highWord": 1006731289,
+          "lowWord": 2887782808,
+          "group": "backups",
+          "addend": 168
+        },
+        {
+          "high": 373744,
+          "low": 373752,
+          "highWord": 1006731289,
+          "lowWord": 2686587311,
+          "group": "backups",
+          "addend": 191
+        }
+      ]
+    },
+    {
+      "start": 374884,
+      "size": 2044,
+      "address": 2149079396,
+      "retailSha256": "776af852cdfee7d63ea51e0912c00ace93d2073bedb3fb93caf4222c172ccc71",
+      "patches": [
+        {
+          "site": 374916,
+          "expected": 687996948,
+          "kind": "enemyCount",
+          "addend": 0
+        },
+        {
+          "site": 374952,
+          "expected": 2892103720,
+          "kind": "snapshotOffset",
+          "addend": 0
+        },
+        {
+          "site": 374968,
+          "expected": 2892103724,
+          "kind": "snapshotOffset",
+          "addend": 4
+        },
+        {
+          "site": 374984,
+          "expected": 2892103728,
+          "kind": "snapshotOffset",
+          "addend": 8
+        },
+        {
+          "site": 375000,
+          "expected": 2892103732,
+          "kind": "snapshotOffset",
+          "addend": 12
+        },
+        {
+          "site": 375016,
+          "expected": 2892103736,
+          "kind": "snapshotOffset",
+          "addend": 16
+        },
+        {
+          "site": 375032,
+          "expected": 2892103740,
+          "kind": "snapshotOffset",
+          "addend": 20
+        },
+        {
+          "site": 375048,
+          "expected": 2892103744,
+          "kind": "snapshotOffset",
+          "addend": 24
+        },
+        {
+          "site": 375064,
+          "expected": 2892103748,
+          "kind": "snapshotOffset",
+          "addend": 28
+        },
+        {
+          "site": 375080,
+          "expected": 2892103752,
+          "kind": "snapshotOffset",
+          "addend": 32
+        },
+        {
+          "site": 375096,
+          "expected": 2892103756,
+          "kind": "snapshotOffset",
+          "addend": 36
+        },
+        {
+          "site": 375112,
+          "expected": 2892103760,
+          "kind": "snapshotOffset",
+          "addend": 40
+        },
+        {
+          "site": 375128,
+          "expected": 2892103764,
+          "kind": "snapshotOffset",
+          "addend": 44
+        },
+        {
+          "site": 375144,
+          "expected": 2892103768,
+          "kind": "snapshotOffset",
+          "addend": 48
+        },
+        {
+          "site": 375160,
+          "expected": 2892103772,
+          "kind": "snapshotOffset",
+          "addend": 52
+        },
+        {
+          "site": 375176,
+          "expected": 2892103776,
+          "kind": "snapshotOffset",
+          "addend": 56
+        },
+        {
+          "site": 375192,
+          "expected": 2892103780,
+          "kind": "snapshotOffset",
+          "addend": 60
+        },
+        {
+          "site": 375208,
+          "expected": 3831496808,
+          "kind": "snapshotOffset",
+          "addend": 64
+        },
+        {
+          "site": 375224,
+          "expected": 3831496812,
+          "kind": "snapshotOffset",
+          "addend": 68
+        },
+        {
+          "site": 375240,
+          "expected": 3831496816,
+          "kind": "snapshotOffset",
+          "addend": 72
+        },
+        {
+          "site": 375256,
+          "expected": 3831496820,
+          "kind": "snapshotOffset",
+          "addend": 76
+        },
+        {
+          "site": 375272,
+          "expected": 3831496824,
+          "kind": "snapshotOffset",
+          "addend": 80
+        },
+        {
+          "site": 375288,
+          "expected": 3831496828,
+          "kind": "snapshotOffset",
+          "addend": 84
+        },
+        {
+          "site": 375304,
+          "expected": 3831496832,
+          "kind": "snapshotOffset",
+          "addend": 88
+        },
+        {
+          "site": 375320,
+          "expected": 3831496836,
+          "kind": "snapshotOffset",
+          "addend": 92
+        },
+        {
+          "site": 375336,
+          "expected": 3831496840,
+          "kind": "snapshotOffset",
+          "addend": 96
+        },
+        {
+          "site": 375352,
+          "expected": 3831496844,
+          "kind": "snapshotOffset",
+          "addend": 100
+        },
+        {
+          "site": 375368,
+          "expected": 3831496848,
+          "kind": "snapshotOffset",
+          "addend": 104
+        },
+        {
+          "site": 375384,
+          "expected": 3831496852,
+          "kind": "snapshotOffset",
+          "addend": 108
+        },
+        {
+          "site": 375400,
+          "expected": 3831496856,
+          "kind": "snapshotOffset",
+          "addend": 112
+        },
+        {
+          "site": 375416,
+          "expected": 3831496860,
+          "kind": "snapshotOffset",
+          "addend": 116
+        },
+        {
+          "site": 375432,
+          "expected": 3831496864,
+          "kind": "snapshotOffset",
+          "addend": 120
+        },
+        {
+          "site": 375448,
+          "expected": 3831496868,
+          "kind": "snapshotOffset",
+          "addend": 124
+        },
+        {
+          "site": 375464,
+          "expected": 3831496872,
+          "kind": "snapshotOffset",
+          "addend": 128
+        },
+        {
+          "site": 375480,
+          "expected": 3831496876,
+          "kind": "snapshotOffset",
+          "addend": 132
+        },
+        {
+          "site": 375496,
+          "expected": 3831496880,
+          "kind": "snapshotOffset",
+          "addend": 136
+        },
+        {
+          "site": 375512,
+          "expected": 3831496884,
+          "kind": "snapshotOffset",
+          "addend": 140
+        },
+        {
+          "site": 375528,
+          "expected": 3831496888,
+          "kind": "snapshotOffset",
+          "addend": 144
+        },
+        {
+          "site": 375544,
+          "expected": 2757886140,
+          "kind": "snapshotOffset",
+          "addend": 148
+        },
+        {
+          "site": 375560,
+          "expected": 2690777278,
+          "kind": "snapshotOffset",
+          "addend": 150
+        },
+        {
+          "site": 375576,
+          "expected": 2690777279,
+          "kind": "snapshotOffset",
+          "addend": 151
+        },
+        {
+          "site": 375592,
+          "expected": 2690777280,
+          "kind": "snapshotOffset",
+          "addend": 152
+        },
+        {
+          "site": 375608,
+          "expected": 2690777281,
+          "kind": "snapshotOffset",
+          "addend": 153
+        },
+        {
+          "site": 375624,
+          "expected": 2690777282,
+          "kind": "snapshotOffset",
+          "addend": 154
+        },
+        {
+          "site": 375640,
+          "expected": 2690777283,
+          "kind": "snapshotOffset",
+          "addend": 155
+        },
+        {
+          "site": 375656,
+          "expected": 2690777284,
+          "kind": "snapshotOffset",
+          "addend": 156
+        },
+        {
+          "site": 375672,
+          "expected": 2690777285,
+          "kind": "snapshotOffset",
+          "addend": 157
+        },
+        {
+          "site": 375688,
+          "expected": 2690777286,
+          "kind": "snapshotOffset",
+          "addend": 158
+        },
+        {
+          "site": 375704,
+          "expected": 2690777287,
+          "kind": "snapshotOffset",
+          "addend": 159
+        },
+        {
+          "site": 375720,
+          "expected": 2690777288,
+          "kind": "snapshotOffset",
+          "addend": 160
+        },
+        {
+          "site": 375736,
+          "expected": 2690777289,
+          "kind": "snapshotOffset",
+          "addend": 161
+        },
+        {
+          "site": 375752,
+          "expected": 2690777290,
+          "kind": "snapshotOffset",
+          "addend": 162
+        },
+        {
+          "site": 375768,
+          "expected": 2690777291,
+          "kind": "snapshotOffset",
+          "addend": 163
+        },
+        {
+          "site": 375784,
+          "expected": 2690777292,
+          "kind": "snapshotOffset",
+          "addend": 164
+        },
+        {
+          "site": 375808,
+          "expected": 2690777293,
+          "kind": "snapshotOffset",
+          "addend": 165
+        },
+        {
+          "site": 375812,
+          "expected": 687996978,
+          "kind": "mapCount",
+          "addend": 0
+        },
+        {
+          "site": 375836,
+          "expected": 2692882680,
+          "kind": "tailOffset",
+          "addend": 0
+        },
+        {
+          "site": 375848,
+          "expected": 3833602300,
+          "kind": "tailOffset",
+          "addend": 4
+        },
+        {
+          "site": 375860,
+          "expected": 3833602304,
+          "kind": "tailOffset",
+          "addend": 8
+        },
+        {
+          "site": 375872,
+          "expected": 3833602308,
+          "kind": "tailOffset",
+          "addend": 12
+        },
+        {
+          "site": 375884,
+          "expected": 3833602312,
+          "kind": "tailOffset",
+          "addend": 16
+        },
+        {
+          "site": 375896,
+          "expected": 3833602316,
+          "kind": "tailOffset",
+          "addend": 20
+        },
+        {
+          "site": 375908,
+          "expected": 2894209296,
+          "kind": "tailOffset",
+          "addend": 24
+        },
+        {
+          "site": 375920,
+          "expected": 2894209300,
+          "kind": "tailOffset",
+          "addend": 28
+        },
+        {
+          "site": 375932,
+          "expected": 3833602328,
+          "kind": "tailOffset",
+          "addend": 32
+        },
+        {
+          "site": 375944,
+          "expected": 3833602332,
+          "kind": "tailOffset",
+          "addend": 36
+        },
+        {
+          "site": 375956,
+          "expected": 3833602336,
+          "kind": "tailOffset",
+          "addend": 40
+        },
+        {
+          "site": 375968,
+          "expected": 3833602340,
+          "kind": "tailOffset",
+          "addend": 44
+        },
+        {
+          "site": 375980,
+          "expected": 3833602344,
+          "kind": "tailOffset",
+          "addend": 48
+        },
+        {
+          "site": 375992,
+          "expected": 3833602348,
+          "kind": "tailOffset",
+          "addend": 52
+        },
+        {
+          "site": 376004,
+          "expected": 3833602352,
+          "kind": "tailOffset",
+          "addend": 56
+        },
+        {
+          "site": 376016,
+          "expected": 3833602356,
+          "kind": "tailOffset",
+          "addend": 60
+        },
+        {
+          "site": 376028,
+          "expected": 3833602360,
+          "kind": "tailOffset",
+          "addend": 64
+        },
+        {
+          "site": 376040,
+          "expected": 3833602364,
+          "kind": "tailOffset",
+          "addend": 68
+        },
+        {
+          "site": 376052,
+          "expected": 2894209344,
+          "kind": "tailOffset",
+          "addend": 72
+        },
+        {
+          "site": 376064,
+          "expected": 2894209348,
+          "kind": "tailOffset",
+          "addend": 76
+        },
+        {
+          "site": 376076,
+          "expected": 2894209352,
+          "kind": "tailOffset",
+          "addend": 80
+        },
+        {
+          "site": 376088,
+          "expected": 2894209356,
+          "kind": "tailOffset",
+          "addend": 84
+        },
+        {
+          "site": 376100,
+          "expected": 2894209360,
+          "kind": "tailOffset",
+          "addend": 88
+        },
+        {
+          "site": 376112,
+          "expected": 2894209364,
+          "kind": "tailOffset",
+          "addend": 92
+        },
+        {
+          "site": 376124,
+          "expected": 2894209368,
+          "kind": "tailOffset",
+          "addend": 96
+        },
+        {
+          "site": 376136,
+          "expected": 2894209372,
+          "kind": "tailOffset",
+          "addend": 100
+        },
+        {
+          "site": 376148,
+          "expected": 2894209376,
+          "kind": "tailOffset",
+          "addend": 104
+        },
+        {
+          "site": 376160,
+          "expected": 2894209380,
+          "kind": "tailOffset",
+          "addend": 108
+        },
+        {
+          "site": 376172,
+          "expected": 2692882792,
+          "kind": "tailOffset",
+          "addend": 112
+        },
+        {
+          "site": 376184,
+          "expected": 2692882793,
+          "kind": "tailOffset",
+          "addend": 113
+        },
+        {
+          "site": 376196,
+          "expected": 2692882794,
+          "kind": "tailOffset",
+          "addend": 114
+        },
+        {
+          "site": 376208,
+          "expected": 2692882795,
+          "kind": "tailOffset",
+          "addend": 115
+        },
+        {
+          "site": 376220,
+          "expected": 2692882796,
+          "kind": "tailOffset",
+          "addend": 116
+        },
+        {
+          "site": 376232,
+          "expected": 2692882797,
+          "kind": "tailOffset",
+          "addend": 117
+        },
+        {
+          "site": 376244,
+          "expected": 2692882798,
+          "kind": "tailOffset",
+          "addend": 118
+        },
+        {
+          "site": 376256,
+          "expected": 2692882799,
+          "kind": "tailOffset",
+          "addend": 119
+        },
+        {
+          "site": 376268,
+          "expected": 2692882800,
+          "kind": "tailOffset",
+          "addend": 120
+        },
+        {
+          "site": 376280,
+          "expected": 2692882801,
+          "kind": "tailOffset",
+          "addend": 121
+        },
+        {
+          "site": 376292,
+          "expected": 2692882802,
+          "kind": "tailOffset",
+          "addend": 122
+        },
+        {
+          "site": 376304,
+          "expected": 2692882803,
+          "kind": "tailOffset",
+          "addend": 123
+        },
+        {
+          "site": 376316,
+          "expected": 2692882804,
+          "kind": "tailOffset",
+          "addend": 124
+        },
+        {
+          "site": 376328,
+          "expected": 2692882805,
+          "kind": "tailOffset",
+          "addend": 125
+        },
+        {
+          "site": 376340,
+          "expected": 2692882806,
+          "kind": "tailOffset",
+          "addend": 126
+        },
+        {
+          "site": 376356,
+          "expected": 2692882807,
+          "kind": "tailOffset",
+          "addend": 127
+        },
+        {
+          "site": 376376,
+          "expected": 2692882808,
+          "kind": "tailOffset",
+          "addend": 128
+        },
+        {
+          "site": 376380,
+          "expected": 618996089,
+          "kind": "tailOffset",
+          "addend": 129
+        },
+        {
+          "site": 376388,
+          "expected": 619258243,
+          "kind": "tailOffset",
+          "addend": 139
+        },
+        {
+          "site": 376452,
+          "expected": 2760057370,
+          "kind": "tailOffset",
+          "addend": 290
+        },
+        {
+          "site": 376472,
+          "expected": 2760057372,
+          "kind": "tailOffset",
+          "addend": 292
+        },
+        {
+          "site": 376476,
+          "expected": 616768030,
+          "kind": "tailOffset",
+          "addend": 294
+        },
+        {
+          "site": 376484,
+          "expected": 617030192,
+          "kind": "tailOffset",
+          "addend": 312
+        },
+        {
+          "site": 376544,
+          "expected": 2692883262,
+          "kind": "tailOffset",
+          "addend": 582
+        },
+        {
+          "site": 376556,
+          "expected": 2692883263,
+          "kind": "tailOffset",
+          "addend": 583
+        },
+        {
+          "site": 376568,
+          "expected": 2692883264,
+          "kind": "tailOffset",
+          "addend": 584
+        },
+        {
+          "site": 376584,
+          "expected": 2692883265,
+          "kind": "tailOffset",
+          "addend": 585
+        },
+        {
+          "site": 376604,
+          "expected": 2692883266,
+          "kind": "tailOffset",
+          "addend": 586
+        },
+        {
+          "site": 376612,
+          "expected": 2762089284,
+          "kind": "tailOffset",
+          "addend": 588
+        },
+        {
+          "site": 376632,
+          "expected": 2690786148,
+          "kind": "tailOffset",
+          "addend": 620
+        },
+        {
+          "site": 376652,
+          "expected": 2690786164,
+          "kind": "tailOffset",
+          "addend": 636
+        },
+        {
+          "site": 376672,
+          "expected": 2690786180,
+          "kind": "tailOffset",
+          "addend": 652
+        },
+        {
+          "site": 376700,
+          "expected": 2692883348,
+          "kind": "tailOffset",
+          "addend": 668
+        },
+        {
+          "site": 376712,
+          "expected": 2692883349,
+          "kind": "tailOffset",
+          "addend": 669
+        },
+        {
+          "site": 376724,
+          "expected": 2692883350,
+          "kind": "tailOffset",
+          "addend": 670
+        },
+        {
+          "site": 376736,
+          "expected": 2692883351,
+          "kind": "tailOffset",
+          "addend": 671
+        },
+        {
+          "site": 376748,
+          "expected": 2692883384,
+          "kind": "tailOffset",
+          "addend": 704
+        },
+        {
+          "site": 376760,
+          "expected": 2759992250,
+          "kind": "tailOffset",
+          "addend": 706
+        },
+        {
+          "site": 376772,
+          "expected": 2692883388,
+          "kind": "tailOffset",
+          "addend": 708
+        },
+        {
+          "site": 376788,
+          "expected": 2692883389,
+          "kind": "tailOffset",
+          "addend": 709
+        },
+        {
+          "site": 376808,
+          "expected": 2692883390,
+          "kind": "tailOffset",
+          "addend": 710
+        },
+        {
+          "site": 376828,
+          "expected": 2690786200,
+          "kind": "tailOffset",
+          "addend": 672
+        },
+        {
+          "site": 376840,
+          "expected": 2762089376,
+          "kind": "tailOffset",
+          "addend": 680
+        },
+        {
+          "site": 376860,
+          "expected": 2690786224,
+          "kind": "tailOffset",
+          "addend": 696
+        },
+        {
+          "site": 376900,
+          "expected": 2759992256,
+          "kind": "tailOffset",
+          "addend": 712
+        }
+      ],
+      "references": [
+        {
+          "high": 374892,
+          "low": 374896,
+          "highWord": 1006862361,
+          "lowWord": 610481848,
+          "group": "drops",
+          "addend": 0
+        },
+        {
+          "high": 374940,
+          "low": 374948,
+          "highWord": 1006796825,
+          "lowWord": 2353139952,
+          "group": "backups",
+          "addend": 0
+        },
+        {
+          "high": 374956,
+          "low": 374964,
+          "highWord": 1006796825,
+          "lowWord": 2353140072,
+          "group": "backups",
+          "addend": 120
+        },
+        {
+          "high": 374972,
+          "low": 374980,
+          "highWord": 1006796825,
+          "lowWord": 2353139972,
+          "group": "backups",
+          "addend": 20
+        },
+        {
+          "high": 374988,
+          "low": 374996,
+          "highWord": 1006796825,
+          "lowWord": 2353139988,
+          "group": "backups",
+          "addend": 36
+        },
+        {
+          "high": 375004,
+          "low": 375012,
+          "highWord": 1006796825,
+          "lowWord": 2353140040,
+          "group": "backups",
+          "addend": 88
+        },
+        {
+          "high": 375020,
+          "low": 375028,
+          "highWord": 1006796825,
+          "lowWord": 2353140044,
+          "group": "backups",
+          "addend": 92
+        },
+        {
+          "high": 375036,
+          "low": 375044,
+          "highWord": 1006796825,
+          "lowWord": 2353140048,
+          "group": "backups",
+          "addend": 96
+        },
+        {
+          "high": 375052,
+          "low": 375060,
+          "highWord": 1006796825,
+          "lowWord": 2353140052,
+          "group": "backups",
+          "addend": 100
+        },
+        {
+          "high": 375068,
+          "low": 375076,
+          "highWord": 1006796825,
+          "lowWord": 2353140060,
+          "group": "backups",
+          "addend": 108
+        },
+        {
+          "high": 375084,
+          "low": 375092,
+          "highWord": 1006796825,
+          "lowWord": 2353140064,
+          "group": "backups",
+          "addend": 112
+        },
+        {
+          "high": 375100,
+          "low": 375108,
+          "highWord": 1006796825,
+          "lowWord": 2353140068,
+          "group": "backups",
+          "addend": 116
+        },
+        {
+          "high": 375116,
+          "low": 375124,
+          "highWord": 1006796825,
+          "lowWord": 2353140076,
+          "group": "backups",
+          "addend": 124
+        },
+        {
+          "high": 375132,
+          "low": 375140,
+          "highWord": 1006796825,
+          "lowWord": 2353140080,
+          "group": "backups",
+          "addend": 128
+        },
+        {
+          "high": 375148,
+          "low": 375156,
+          "highWord": 1006796825,
+          "lowWord": 2353140084,
+          "group": "backups",
+          "addend": 132
+        },
+        {
+          "high": 375164,
+          "low": 375172,
+          "highWord": 1006796825,
+          "lowWord": 2353140088,
+          "group": "backups",
+          "addend": 136
+        },
+        {
+          "high": 375180,
+          "low": 375188,
+          "highWord": 1006796825,
+          "lowWord": 2353140092,
+          "group": "backups",
+          "addend": 140
+        },
+        {
+          "high": 375196,
+          "low": 375204,
+          "highWord": 1006731289,
+          "lowWord": 3290435832,
+          "group": "backups",
+          "addend": 8
+        },
+        {
+          "high": 375212,
+          "low": 375220,
+          "highWord": 1006731289,
+          "lowWord": 3290435836,
+          "group": "backups",
+          "addend": 12
+        },
+        {
+          "high": 375228,
+          "low": 375236,
+          "highWord": 1006731289,
+          "lowWord": 3290435840,
+          "group": "backups",
+          "addend": 16
+        },
+        {
+          "high": 375244,
+          "low": 375252,
+          "highWord": 1006731289,
+          "lowWord": 3290435848,
+          "group": "backups",
+          "addend": 24
+        },
+        {
+          "high": 375260,
+          "low": 375268,
+          "highWord": 1006731289,
+          "lowWord": 3290435852,
+          "group": "backups",
+          "addend": 28
+        },
+        {
+          "high": 375276,
+          "low": 375284,
+          "highWord": 1006731289,
+          "lowWord": 3290435864,
+          "group": "backups",
+          "addend": 40
+        },
+        {
+          "high": 375292,
+          "low": 375300,
+          "highWord": 1006731289,
+          "lowWord": 3290435868,
+          "group": "backups",
+          "addend": 44
+        },
+        {
+          "high": 375308,
+          "low": 375316,
+          "highWord": 1006731289,
+          "lowWord": 3290435872,
+          "group": "backups",
+          "addend": 48
+        },
+        {
+          "high": 375324,
+          "low": 375332,
+          "highWord": 1006731289,
+          "lowWord": 3290435876,
+          "group": "backups",
+          "addend": 52
+        },
+        {
+          "high": 375340,
+          "low": 375348,
+          "highWord": 1006731289,
+          "lowWord": 3290435880,
+          "group": "backups",
+          "addend": 56
+        },
+        {
+          "high": 375356,
+          "low": 375364,
+          "highWord": 1006731289,
+          "lowWord": 3290435884,
+          "group": "backups",
+          "addend": 60
+        },
+        {
+          "high": 375372,
+          "low": 375380,
+          "highWord": 1006731289,
+          "lowWord": 3290435888,
+          "group": "backups",
+          "addend": 64
+        },
+        {
+          "high": 375388,
+          "low": 375396,
+          "highWord": 1006731289,
+          "lowWord": 3290435892,
+          "group": "backups",
+          "addend": 68
+        },
+        {
+          "high": 375404,
+          "low": 375412,
+          "highWord": 1006731289,
+          "lowWord": 3290435896,
+          "group": "backups",
+          "addend": 72
+        },
+        {
+          "high": 375420,
+          "low": 375428,
+          "highWord": 1006731289,
+          "lowWord": 3290435900,
+          "group": "backups",
+          "addend": 76
+        },
+        {
+          "high": 375436,
+          "low": 375444,
+          "highWord": 1006731289,
+          "lowWord": 3290435904,
+          "group": "backups",
+          "addend": 80
+        },
+        {
+          "high": 375452,
+          "low": 375460,
+          "highWord": 1006731289,
+          "lowWord": 3290435908,
+          "group": "backups",
+          "addend": 84
+        },
+        {
+          "high": 375468,
+          "low": 375476,
+          "highWord": 1006731289,
+          "lowWord": 3290435972,
+          "group": "backups",
+          "addend": 148
+        },
+        {
+          "high": 375484,
+          "low": 375492,
+          "highWord": 1006731289,
+          "lowWord": 3290435980,
+          "group": "backups",
+          "addend": 156
+        },
+        {
+          "high": 375500,
+          "low": 375508,
+          "highWord": 1006731289,
+          "lowWord": 3290435996,
+          "group": "backups",
+          "addend": 172
+        },
+        {
+          "high": 375516,
+          "low": 375524,
+          "highWord": 1006731289,
+          "lowWord": 3290436000,
+          "group": "backups",
+          "addend": 176
+        },
+        {
+          "high": 375532,
+          "low": 375540,
+          "highWord": 1006796825,
+          "lowWord": 2487357862,
+          "group": "backups",
+          "addend": 182
+        },
+        {
+          "high": 375548,
+          "low": 375556,
+          "highWord": 1006796825,
+          "lowWord": 2420248820,
+          "group": "backups",
+          "addend": 4
+        },
+        {
+          "high": 375564,
+          "low": 375572,
+          "highWord": 1006796825,
+          "lowWord": 2420248848,
+          "group": "backups",
+          "addend": 32
+        },
+        {
+          "high": 375580,
+          "low": 375588,
+          "highWord": 1006796825,
+          "lowWord": 2420248960,
+          "group": "backups",
+          "addend": 144
+        },
+        {
+          "high": 375596,
+          "low": 375604,
+          "highWord": 1006796825,
+          "lowWord": 2420248961,
+          "group": "backups",
+          "addend": 145
+        },
+        {
+          "high": 375612,
+          "low": 375620,
+          "highWord": 1006796825,
+          "lowWord": 2420248962,
+          "group": "backups",
+          "addend": 146
+        },
+        {
+          "high": 375628,
+          "low": 375636,
+          "highWord": 1006796825,
+          "lowWord": 2420248968,
+          "group": "backups",
+          "addend": 152
+        },
+        {
+          "high": 375644,
+          "low": 375652,
+          "highWord": 1006796825,
+          "lowWord": 2420248996,
+          "group": "backups",
+          "addend": 180
+        },
+        {
+          "high": 375660,
+          "low": 375668,
+          "highWord": 1006796825,
+          "lowWord": 2420248997,
+          "group": "backups",
+          "addend": 181
+        },
+        {
+          "high": 375676,
+          "low": 375684,
+          "highWord": 1006796825,
+          "lowWord": 2420249000,
+          "group": "backups",
+          "addend": 184
+        },
+        {
+          "high": 375692,
+          "low": 375700,
+          "highWord": 1006796825,
+          "lowWord": 2420249001,
+          "group": "backups",
+          "addend": 185
+        },
+        {
+          "high": 375708,
+          "low": 375716,
+          "highWord": 1006796825,
+          "lowWord": 2420249002,
+          "group": "backups",
+          "addend": 186
+        },
+        {
+          "high": 375724,
+          "low": 375732,
+          "highWord": 1006796825,
+          "lowWord": 2420249003,
+          "group": "backups",
+          "addend": 187
+        },
+        {
+          "high": 375740,
+          "low": 375748,
+          "highWord": 1006796825,
+          "lowWord": 2420249004,
+          "group": "backups",
+          "addend": 188
+        },
+        {
+          "high": 375756,
+          "low": 375764,
+          "highWord": 1006796825,
+          "lowWord": 2420249005,
+          "group": "backups",
+          "addend": 189
+        },
+        {
+          "high": 375772,
+          "low": 375780,
+          "highWord": 1006796825,
+          "lowWord": 2420249006,
+          "group": "backups",
+          "addend": 190
+        },
+        {
+          "high": 375788,
+          "low": 375796,
+          "highWord": 1006796825,
+          "lowWord": 2420249007,
+          "group": "backups",
+          "addend": 191
+        }
+      ]
+    }
+  ]
+}

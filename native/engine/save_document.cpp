@@ -414,6 +414,7 @@ bool SaveDocument::validSlot(int slot) const {
     return rosterPresent(decode(slot));
 }
 int SaveDocument::slotFormat(int slot) const {
+    if (slot == 15 && compressedSuspendSize_ == LC_SAVE_CAPACITY_SUSPEND_BYTES) return 3;
     return slot == 15 && compressedSuspendSize_ == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : int(expanded_);
 }
 int SaveDocument::slotSize(int slot) const {

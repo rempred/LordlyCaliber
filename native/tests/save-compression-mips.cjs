@@ -113,8 +113,9 @@ assert.equal(call('lc_save_expand_image',imageAt,32768),1);
 const before=read(imageAt,32768);let commits=0,refusals=0;
 if(fixtureDir)for(const name of fs.readdirSync(fixtureDir).filter(n=>n.endsWith('.bin'))){
  const data=fs.readFileSync(path.join(fixtureDir,name)),size=data.length,workBytes=20224+size+2*(4096+size);
- if(size!==22820)continue; // Other proposed layouts exercise only the generic codec above.
- m.load(source,data);assert.equal(call('lc_save_record_seal',source,size,15,2),1);
+ const format=size===27068?3:size===22820?2:size===19208?1:0;
+ if(!format)continue; // Other proposed layouts exercise only the generic codec above.
+ m.load(source,data);assert.equal(call('lc_save_record_seal',source,size,15,format),1);
  const signed=read(source,size);m.load(imageAt,before);
  for(const available of [0,workBytes-1]){
   assert.equal(call('lc_save_commit_compressed',imageAt,32768,source,size,scratch,available),0);
