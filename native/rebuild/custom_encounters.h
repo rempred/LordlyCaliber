@@ -13,7 +13,8 @@ struct CustomRuntimeBuild {
 QMap<QString, quint32> customEncounterServices();
 CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &directory,
                                       quint32 address, quint32 capacity, quint32 indexRomOffset,
-                                      int poolSlots = 10, int profileCount = 0);
+                                      int poolSlots = 10, int profileCount = 0,
+                                      const QMap<QString,quint32> &capacitySymbols = {});
 QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const QString &directory,
                                 const QMap<QString, quint32> &entries,
                                 const std::optional<CustomPlacement> &previous = std::nullopt);

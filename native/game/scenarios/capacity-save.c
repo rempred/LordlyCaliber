@@ -49,13 +49,13 @@ int lc_save_expand_capacity(CapacityByte *record, CapacityWord capacity)
 
     /* Move every old mission byte, including unknown fields and padding, before
      * using its former storage for new character records and type metadata. */
-    capacity_move_bytes(record, LC_CAPACITY_MISSION_OFFSET + 60U + 60U * 168U,
+    capacity_move_bytes(record, LC_CAPACITY_MISSION_OFFSET + 64U + 61U * 168U,
                         6256U + 3788U + 40U + 50U * 168U, 724);
-    capacity_move_bytes(record, LC_CAPACITY_MISSION_OFFSET + 60U,
+    capacity_move_bytes(record, LC_CAPACITY_MISSION_OFFSET + 64U,
                         6256U + 3788U + 40U, 50U * 168U);
     capacity_move_bytes(record, LC_CAPACITY_MISSION_OFFSET, 6256U + 3788U, 40);
-    capacity_zero(record + LC_CAPACITY_MISSION_OFFSET + 40U, 20);
-    capacity_zero(record + LC_CAPACITY_MISSION_OFFSET + 60U + 50U * 168U, 10U * 168U);
+    capacity_zero(record + LC_CAPACITY_MISSION_OFFSET + 40U, 24);
+    capacity_zero(record + LC_CAPACITY_MISSION_OFFSET + 64U + 50U * 168U, 11U * 168U);
 
     tags = record + LC_CAPACITY_TAG_OFFSET;
     capacity_zero(tags, LC_CAPACITY_TAG_BYTES);
@@ -74,13 +74,12 @@ int lc_save_expand_capacity(CapacityByte *record, CapacityWord capacity)
         }
     }
     padding = quick[3787];
-    capacity_move_bits(quick, 73998, 30040, 256);
+    capacity_move_bits(quick, 74135, 30040, 256);
     capacity_move_bits(quick, 69888, 27300, 2740);
     for (i = 27300; i < 69888; ++i) capacity_set_bit(quick, i, 0);
-    for (i = 72628; i < 73998; ++i) capacity_set_bit(quick, i, 0);
-    quick[9281] &= 0xFC;
-    quick[9282] = 0;
-    quick[9283] = padding;
+    for (i = 72628; i < 74135; ++i) capacity_set_bit(quick, i, 0);
+    quick[9298] &= 0xFE;
+    quick[9299] = padding;
     lc_save_record_seal(record, capacity, 15, 3);
     if (cleared) record[0] = record[1] = record[2] = record[3] = 0;
     return 1;

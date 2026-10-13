@@ -8,6 +8,9 @@ void lc_original_heap_init(u32, u32);
 void lc_original_pool_add(u32, u32);
 void lc_original_secondary_reset(void);
 void lc_dma_read(u32, void *, u32);
+/* Linker-provided absolute end avoids GCC materializing both the positive
+ * address and its negation. Keep this tiny resident loader within its owner. */
+extern unsigned char lc_class_data_end[];
 
 static void add_reclaimed_storage(void)
 {
@@ -25,8 +28,8 @@ void lc_heap_reset(u32 start, u32 size)
      * Keep the upper arena primary; the lower span remains a secondary pool
      * until the original overlay reset discards/rebuilds those secondary pools.
      */
-    lc_original_heap_init(0x80243DB0U + LC_RESERVED_BYTES,
-                          start + size - (0x80243DB0U + LC_RESERVED_BYTES));
+    lc_original_heap_init((u32)lc_class_data_end,
+                          start + size - (u32)lc_class_data_end);
     add_reclaimed_storage();
     if (start < 0x80243DB0U)
         lc_original_pool_add(start, 0x80243DB0U - start);

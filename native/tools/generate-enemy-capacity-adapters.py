@@ -8,6 +8,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import re
 
 NATIVE = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -50,13 +51,19 @@ EDITS = {
     }''', '    lc_enemy_clear_members();', 1),
         ('index < 50', 'index < LC_TOTAL_SOURCES', 1)],
     'func_001960A8': [
+        ('((((*(u8 *)((s8 *)(cursor0) + (0))) * 4) + 0x801F0000)) + (0xCB0)',
+         '((((*(u8 *)((s8 *)(cursor0) + (0))) * 4) + (u32)D_801F0CB0))', 1),
+        ('(u8 *)0x80187C42', 'D_80187C42', 1),
+        ('(u8 *)0x80187C44', 'D_80187C44', 1),
+        ('(u8 *)0x80187C46', 'D_80187C46', 1),
+        ('(u8 *)0x80187C48', 'D_80187C48', 1),
         ('memset_00023780(((u32)D_80195560), 0x1450);', 'lc_enemy_reset();', 1),
         ('memset_00023780(((u32)D_801971F0 + 0x2EE), 0x1F4);',
-         'memset_00023780(((u32)D_801971F0 + 0x2EE), LC_ENEMY_SOURCES * 25);', 1),
+         'memset_00023780(((u32)D_801971F0 + 0x2EE), LC_ENEMY_SAVE_SOURCES * 25);', 1),
         ('memset_00023780(((u32)D_801F2700), 0xF00);',
-         'memset_00023780(((u32)D_801F2700), LC_ENEMY_SOURCES * 192);', 1),
+         'memset_00023780(((u32)D_801F2700), LC_ENEMY_SAVE_SOURCES * 192);', 1),
         ('memset_00023780(((u32)D_801F0D28), 0x50);',
-         'memset_00023780(((u32)D_801F0D28), LC_ENEMY_SOURCES * 4);', 1),
+         'memset_00023780(((u32)D_801F0D28), LC_ENEMY_SAVE_SOURCES * 4);', 1),
         ('index < 0x32', 'index < LC_TOTAL_SOURCES', 1)],
     'func_00129068': [('value >= 100', 'lc_member_is_soldier(record[0] - 1, value)', 1)],
     'func_0012967C': [('value >= 100', 'lc_member_is_soldier(index, value)', 1)],
@@ -132,9 +139,13 @@ for name, edits in EDITS.items():
             '#include "enemy-capacity.h"\n'
             'extern unsigned short lc_enemy_soldier_max_hp;\n' + text)
     target = output / (name + '.c')
-    target.write_text(text, encoding='utf-8', newline='\n')
+    target.write_text(text.rstrip() + '\n', encoding='utf-8', newline='\n')
     metadata['adaptedSource'] = target.relative_to(NATIVE).as_posix()
     metadata['adaptedSha256'] = hashlib.sha256(target.read_bytes()).hexdigest()
+    for entry in metadata.get('entryPoints', []):
+        names = set(re.findall(r'\b' + re.escape(entry['name']) + r'\b', text, re.IGNORECASE))
+        assert len(names) == 1, (name, entry, names)
+        entry['name'] = names.pop()
     catalog.append(metadata)
 (output / 'owners.json').write_text(json.dumps(dict(generator='native/tools/generate-enemy-capacity-adapters.py',
                                                   owners=catalog), indent=2) + '\n', encoding='utf-8', newline='\n')

@@ -33,7 +33,7 @@ const m=new FloatMips();m.ram=new Uint8Array(0x400000);m.load(0x80280000,fs.read
 const sp=0x803f0000,specAt=0x803a0000,read=(at,n)=>Buffer.from(m.ram.subarray(m.phys(at),m.phys(at)+n));
 function call(name,...args){m.set('sp',sp);args.forEach((v,i)=>i<4?m.set('a'+i,v):m.w32(sp+16+4*(i-4),v));m.call(entries[name]||name,0x80000100,2000000);assert.equal(m.get('sp'),sp);return m.get('v0');}
 const ranges=[['lc_enemy_characters',256*52],['lc_enemy_types',256],['lc_enemy_soldier_hp',512],
- ['lc_enemy_soldier_state',256],['lc_capacity_sources',60*25],['lc_capacity_active_sources',60]];
+ ['lc_enemy_soldier_state',256],['lc_capacity_sources',61*25],['lc_capacity_active_sources',61]];
 function reset(){for(const [n,size] of ranges){m.load(symbols[n]-16,Buffer.alloc(size+32,0xa6));m.load(symbols[n],Buffer.alloc(size));}m.w16(symbols.lc_enemy_soldier_max_hp,437);}
 function guards(){for(const [n,size] of ranges){assert.deepEqual(read(symbols[n]-16,16),Buffer.alloc(16,0xa6),n);assert.deepEqual(read(symbols[n]+size,16),Buffer.alloc(16,0xa6),n);}}
 function snapshot(){return Buffer.concat(ranges.map(([n,size])=>read(symbols[n],size)));}
@@ -139,7 +139,7 @@ for(const owner of catalog.owners){
 let adapterChecks=0;
 m.trap(0x80093380,c=>c.load(c.get('a0'),Buffer.alloc(c.get('a1'))));
 function setupMember(handle,kind,source=35){
- reset();m.load(mapBase,Buffer.alloc(60*192));m.load(pointerBase,Buffer.alloc(60*4));
+ reset();m.load(mapBase,Buffer.alloc(61*192));m.load(pointerBase,Buffer.alloc(61*4));
  m.w32(pointerBase+source*4,mapBase+source*192);m.w8(mapBase+source*192+4,source);
  const row=symbols.lc_capacity_sources+source*25; m.w8(row,source+1);m.w8(row+1,0x81);m.w8(row+2,handle);
  m.w8(symbols.lc_enemy_types+handle,kind);m.w16(symbols.lc_enemy_characters+handle*52+24,123);
@@ -200,14 +200,14 @@ for(const handle of [1,99,100,127,128,219,220,254])for(const kind of [1,2]){
  reset();const template0=Buffer.from({length:52},(_,i)=>i*3&255),players=Buffer.from({length:750},(_,i)=>i*7&255);
  m.load(symbols.lc_enemy_characters,template0);m.load(symbols.lc_capacity_sources,players);
  m.load(specAt,template(false));for(let source=30;source<60;source++)assert.equal(call('lc_enemy_construct',specAt,source),1);
- m.load(mapBase,Buffer.alloc(60*192));for(let i=0;i<60;i++)m.w32(pointerBase+i*4,mapBase+i*192);
- m.w32(binding.func_0012A050.D_801F367C,60);call(adapters.func_0012A050);
+ m.load(mapBase,Buffer.alloc(61*192));for(let i=0;i<61;i++)m.w32(pointerBase+i*4,mapBase+i*192);
+ m.w32(binding.func_0012A050.D_801F367C,61);call(adapters.func_0012A050);
  assert.deepEqual(read(symbols.lc_enemy_characters,52),template0);
  assert.deepEqual(read(symbols.lc_enemy_characters+52,255*52),Buffer.alloc(255*52));
  assert.deepEqual(read(symbols.lc_enemy_types,256),Buffer.alloc(256));
  assert.deepEqual(read(symbols.lc_enemy_soldier_hp,512),Buffer.alloc(512));
  assert.deepEqual(read(symbols.lc_capacity_sources,750),players);
- assert.deepEqual(read(symbols.lc_capacity_sources+750,750),Buffer.alloc(750));guards();adapterChecks++;
+ assert.deepEqual(read(symbols.lc_capacity_sources+750,775),Buffer.alloc(775));guards();adapterChecks++;
 }
 {
  reset();m.load(0x80315000-16,Buffer.alloc(356+32,0xa6));
@@ -220,6 +220,8 @@ for(const handle of [1,99,100,127,128,219,220,254])for(const kind of [1,2]){
  for(const [handle,expected] of [[0,1],[99,0],[100,0],[128,1],[220,0],[254,1],[255,1]])assert.equal(m.r8(0x80315000+100+handle)&1,expected);
  assert.deepEqual(read(0x80315000-16,16),Buffer.alloc(16,0xa6));assert.deepEqual(read(0x80315000+356,16),Buffer.alloc(16,0xa6));adapterChecks++;
 }
-const report={fullArmies,boundaries,refusals,retailConstructorComparisons:comparisons,adapters:catalog.owners.length,adapterChecks,codeBytes:fs.statSync(path.join(work,'capacity.bin')).size,
+const extraChecks=require('./capacity-battle-training.cjs')({m,read,call,rom,symbols,entries,run,work,native,reset,guards});
+const neutralChecks=require('./capacity-neutral-mips.cjs')({m,read,call,rom,symbols,entries,run,work,native,reset,guards});
+const report={fullArmies,boundaries,refusals,retailConstructorComparisons:comparisons,adapters:catalog.owners.length,adapterChecks,...extraChecks,...neutralChecks,codeBytes:fs.statSync(path.join(work,'capacity.bin')).size,
  scope:'Compiled allocator/constructor and selected map/supply/combat writeback adapters, with controlled external callbacks. No installed ROM, save/load or emulator claim.'};
 fs.writeFileSync(path.join(work,'report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({...report,work}));

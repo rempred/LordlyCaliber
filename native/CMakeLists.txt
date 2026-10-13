@@ -7,6 +7,15 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets Concurrent Test Qml ZlibPrivate)
 include(CTest)
 add_library(lordly_engine STATIC engine/rom.cpp engine/archive.cpp engine/shops.cpp engine/resource.cpp engine/text.cpp engine/class_text.cpp engine/promotion.cpp engine/class_data.cpp engine/item_data.cpp engine/class_runtime_inventory.cpp engine/expanded_promotion_resource.cpp engine/save_runtime.cpp engine/project.cpp game/classes/save-format.c game/classes/save-compression.c game/classes/save-image.c rebuild/compiler.cpp rebuild/class_runtime.cpp rebuild/class_menu_layout.cpp rebuild/promotion_runtime.cpp rebuild/save_runtime.cpp rebuild/elf_references.cpp)
+target_sources(lordly_engine PRIVATE rebuild/capacity_runtime.cpp engine/capacity_placement.cpp)
+file(GLOB capacity_c_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/scenarios/capacity/*.c")
+qt_add_resources(lordly_engine capacity_sources PREFIX "/" BASE . FILES
+  ${capacity_c_sources} game/scenarios/capacity/owners.json
+  game/scenarios/enemy-capacity.c game/scenarios/enemy-capacity.h
+  game/scenarios/capacity-neutral.c game/scenarios/capacity-tags.c
+  game/scenarios/capacity-quick-save.c game/scenarios/capacity-save.c game/scenarios/capacity-save.h
+  game/scenarios/capacity-references.json game/scenarios/capacity-save-owners.json
+  game/scenarios/capacity-bounds.json game/scenarios/capacity-predicates.json game/scenarios/capacity-extra.json)
 target_include_directories(lordly_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(lordly_engine PRIVATE Qt6::ZlibPrivate)
 target_sources(lordly_engine PRIVATE engine/archive_writer.cpp)

@@ -1,4 +1,5 @@
 #include "engine/class_data.h"
+#include "engine/capacity_placement.h"
 #include "engine/scenario_member_runtime.h"
 #include "engine/class_text.h"
 #include "engine/expanded_promotion_resource.h"
@@ -181,8 +182,10 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
             result.residentChecksum)
         throw Error("Resident extension differs from its declared allocation");
     result.saves.verify(rom.bytes());
-    if (result.descriptionEntry)
-        verifyClassDescriptionRouting(rom.bytes(), result.descriptionEntry);
+    if (result.descriptionEntry) {
+        const auto capacity=CapacityPlacement::read(rom);
+        verifyClassDescriptionRouting(capacity?capacity->canonical(rom).bytes():rom.bytes(),result.descriptionEntry);
+    }
     if (u32(header, 16) != l.end - l.indexBase ||
         quint64(result.dataRomOffset) + u32(header, 16) > quint64(rom.bytes().size()) ||
         crc32(rom.bytes().mid(result.dataRomOffset, u32(header, 16))) != u32(header, 52) ||

@@ -367,4 +367,3 @@ s32 func_00124B98(RuntimeUnit *unit)
     }
     return 0;
 }
-

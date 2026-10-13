@@ -126,6 +126,7 @@ class SaveDocument {
     bool swapped_ = false, expanded_ = false;
     bool compressed_ = false;
     int compressedSuspendSize_ = 0;
+    int sourceBase_ = 0x1971f0, activeSourceBase_ = 0x1977d8;
     int daysInMonth(unsigned year, unsigned month) const;
     SaveChange planBytes(int address, const QByteArray &replacement) const;
     SaveChange difference(const QByteArray &next, int first, int size) const;

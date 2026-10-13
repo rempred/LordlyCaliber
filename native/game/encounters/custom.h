@@ -37,7 +37,13 @@ extern u8 lc_character_records[];
 extern u8 lc_source_records[];
 /* Match the transient reset at z64 0x45F30: slots 1..98. Slot zero is
  * reserved; 99 is outside that reset. IDs 100+ have another reference meaning. */
+#ifdef LC_ENEMY_CAPACITY
+#include "enemy-capacity.h"
+#define LC_CUSTOM_CHARACTER_END (LC_ENEMY_LAST_HANDLE + 1)
+#else
 #define LC_CUSTOM_CHARACTER_END 99
+#endif
+extern u32 lc_custom_materialize(u8 *source, u32 base_level);
 extern void lc_dma_read(u32 source, void *destination, u32 length);
 extern u32 lc_random(void);
 extern void lc_character_create(void *record, u32 class_id, u32 level,

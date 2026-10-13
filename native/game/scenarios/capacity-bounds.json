@@ -1,0 +1,487 @@
+{
+  "generator": "native/tools/generate-capacity-bounds.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "start": 269344,
+      "size": 608,
+      "retailSha256": "5943839747d13752777f341ab173b91450a257e0eeca4221ebab781c8f161207",
+      "patches": [
+        {
+          "site": 269844,
+          "expected": 704774244,
+          "value": 704774400,
+          "reason": "ordinary enemy name scan; player bound unchanged"
+        }
+      ]
+    },
+    {
+      "start": 1056220,
+      "size": 4388,
+      "retailSha256": "c5acea948826a375733e5b80ff794d86b3b45e070262aac196278054e06049f2",
+      "patches": [
+        {
+          "site": 1056428,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "active source and object refresh loops"
+        }
+      ]
+    },
+    {
+      "start": 1084444,
+      "size": 2208,
+      "retailSha256": "0eb2a0029b4b889b7c792f936b33a89f45b06d7f2461e303e873340bb9ba4081",
+      "patches": [
+        {
+          "site": 1084808,
+          "expected": 604242124,
+          "value": 604242168,
+          "reason": "heap candidate list:61 IDs plus -1 terminator"
+        },
+        {
+          "site": 1085128,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "candidate list enemy producer loop"
+        }
+      ]
+    },
+    {
+      "start": 1086652,
+      "size": 1420,
+      "retailSha256": "9a9f6c8a137b056db87fa503f928c8355636e2c201e856d650a708708efdf885",
+      "patches": [
+        {
+          "site": 1087580,
+          "expected": 681705522,
+          "value": 681705533,
+          "reason": "enemy object flag scans"
+        },
+        {
+          "site": 1087964,
+          "expected": 681705522,
+          "value": 681705533,
+          "reason": "enemy object flag scans"
+        }
+      ]
+    },
+    {
+      "start": 1088072,
+      "size": 444,
+      "retailSha256": "27ce3aed50e163e8254b10a044be5ce62e9a76910825e3168a857a820b38dcb1",
+      "patches": [
+        {
+          "site": 1088164,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "enemy object scan"
+        }
+      ]
+    },
+    {
+      "start": 1088516,
+      "size": 56,
+      "retailSha256": "2fc6c773a803562578f0a34ac177fc4f58e0a9a51296b1df6e14ac7f9686ad84",
+      "patches": [
+        {
+          "site": 1088552,
+          "expected": 681705522,
+          "value": 681705533,
+          "reason": "enemy object flag scans"
+        }
+      ]
+    },
+    {
+      "start": 1089832,
+      "size": 1520,
+      "retailSha256": "f9b76f5c4f079bb3d41027b177b2feb8d59847e1fc51e06c6a49cbd762f93173",
+      "patches": [
+        {
+          "site": 1091036,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "target object search and exhaustion"
+        },
+        {
+          "site": 1091044,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "target object search and exhaustion"
+        },
+        {
+          "site": 1091056,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "target object search and exhaustion"
+        }
+      ]
+    },
+    {
+      "start": 1093048,
+      "size": 648,
+      "retailSha256": "54e80068525e5c713d78d410980d46f193601499bfe1fab56e11506c555a371d",
+      "patches": [
+        {
+          "site": 1093104,
+          "expected": 744620082,
+          "value": 744620093,
+          "reason": "batched object scheduler end"
+        },
+        {
+          "site": 1093180,
+          "expected": 744620082,
+          "value": 744620093,
+          "reason": "batched object scheduler end"
+        },
+        {
+          "site": 1093208,
+          "expected": 742522931,
+          "value": 742522943,
+          "reason": "batched object scheduler wrap, next multiple of three after source count"
+        }
+      ]
+    },
+    {
+      "start": 1105332,
+      "size": 9132,
+      "retailSha256": "77d2e54439c7fb2e96a77920ffe0efcd5a2c68329fd893cb28846154b8e3739b",
+      "patches": [
+        {
+          "site": 1107748,
+          "expected": 708968498,
+          "value": 708968509,
+          "reason": "source object flag loop"
+        }
+      ]
+    },
+    {
+      "start": 1135680,
+      "size": 7792,
+      "retailSha256": "d2df8935d20c3a9baa865e70f4809dc0ff92298e631c413ddc70cb2ae3ee14a8",
+      "patches": [
+        {
+          "site": 1141692,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "source object display list loop"
+        }
+      ]
+    },
+    {
+      "start": 1143472,
+      "size": 4688,
+      "retailSha256": "a650ab1c6b676ff107fc5386998927017b942d5e37a3675695e43e26e0c7514f",
+      "patches": [
+        {
+          "site": 1145956,
+          "expected": 604110898,
+          "value": 604110909,
+          "reason": "exhausted proximity search sentinel"
+        },
+        {
+          "site": 1145964,
+          "expected": 681705522,
+          "value": 681705533,
+          "reason": "enemy proximity search"
+        },
+        {
+          "site": 1145976,
+          "expected": 604110898,
+          "value": 604110909,
+          "reason": "exhausted proximity search sentinel"
+        },
+        {
+          "site": 1146704,
+          "expected": 604110898,
+          "value": 604110909,
+          "reason": "exhausted proximity search sentinel"
+        },
+        {
+          "site": 1146712,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "enemy proximity search"
+        },
+        {
+          "site": 1146724,
+          "expected": 604110898,
+          "value": 604110909,
+          "reason": "exhausted proximity search sentinel"
+        },
+        {
+          "site": 1148096,
+          "expected": 708968498,
+          "value": 708968509,
+          "reason": "source object loop"
+        }
+      ]
+    },
+    {
+      "start": 1150220,
+      "size": 312,
+      "retailSha256": "f59158167382c9c044a3326ddee5ded143e32a3b9a487c8cb07f985489c0122b",
+      "patches": [
+        {
+          "site": 1150276,
+          "expected": 605159474,
+          "value": 605159485,
+          "reason": "source reference clearing"
+        }
+      ]
+    },
+    {
+      "start": 1181016,
+      "size": 576,
+      "retailSha256": "70e87d7843a9f4a961895406860571a07c1fe53209bb6f5beee2864be89c5960",
+      "patches": [
+        {
+          "site": 1181400,
+          "expected": 708968498,
+          "value": 708968509,
+          "reason": "placement/path object scan"
+        }
+      ]
+    },
+    {
+      "start": 1193968,
+      "size": 1608,
+      "retailSha256": "9bde90c8e4312b68957eb7877d73d459437f2cb07f0c1885e1bde56ad359ca4e",
+      "patches": [
+        {
+          "site": 1194044,
+          "expected": 742522895,
+          "value": 742522910,
+          "reason": "route activation:30 active enemy/allied squads"
+        },
+        {
+          "site": 1194136,
+          "expected": 744620047,
+          "value": 744620062,
+          "reason": "dormant squad activation:30 active enemy/allied squads"
+        },
+        {
+          "site": 1194156,
+          "expected": 605028367,
+          "value": 605028382,
+          "reason": "available activation slots for the entire movement group"
+        },
+        {
+          "site": 1195068,
+          "expected": 742522895,
+          "value": 742522910,
+          "reason": "route activation:30 active enemy/allied squads"
+        }
+      ]
+    },
+    {
+      "start": 1218936,
+      "size": 1752,
+      "retailSha256": "8be3836d063c2e4bf5385b2d0debdff6e11d8d4f06e58fef6af7691c9da178f3",
+      "patches": [
+        {
+          "site": 1218976,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1219028,
+          "expected": 617096576,
+          "value": 617098688,
+          "reason": "61 snapshots,192 bytes each"
+        },
+        {
+          "site": 1219316,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1219376,
+          "expected": 617096576,
+          "value": 617098688,
+          "reason": "61 snapshots,192 bytes each"
+        },
+        {
+          "site": 1219664,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1220020,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1220432,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1220588,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        },
+        {
+          "site": 1220636,
+          "expected": 704774194,
+          "value": 704774205,
+          "reason": "map state initialize/copy/restore loops"
+        }
+      ]
+    },
+    {
+      "start": 1221024,
+      "size": 980,
+      "retailSha256": "531e6d203c71b5ac2e2aa5e5cd56276b238b0607a4968437d37bb65001f7851d",
+      "patches": [
+        {
+          "site": 1221848,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "clear source flag4"
+        }
+      ]
+    },
+    {
+      "start": 1239376,
+      "size": 24,
+      "retailSha256": "22d8d96c59d2dbaba46de1d24d72184ec21e50c146866ef0178e6480dbd00a84",
+      "patches": [
+        {
+          "site": 1239376,
+          "expected": 679673906,
+          "value": 679673917,
+          "reason": "source ID validator"
+        }
+      ]
+    },
+    {
+      "start": 1244760,
+      "size": 1884,
+      "retailSha256": "041d9ce6d1364c7699951c185735a66a41cbfcb4c78285488c4aa6bfcbdeddfa",
+      "patches": [
+        {
+          "site": 1246580,
+          "expected": 734134372,
+          "value": 734134528,
+          "reason": "ordinary enemy recovery scan"
+        }
+      ]
+    },
+    {
+      "start": 1249360,
+      "size": 76,
+      "retailSha256": "e7df83941aeeb1aefb40e4c860f9da21842d7002a3018e0de468bc7189d09122",
+      "patches": [
+        {
+          "site": 1249404,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "active source and object refresh loops"
+        }
+      ]
+    },
+    {
+      "start": 1249436,
+      "size": 748,
+      "retailSha256": "3054b842c27cfb5c675edb400044dfa904df26a8d36568111d501a88e3761823",
+      "patches": [
+        {
+          "site": 1250128,
+          "expected": 706871346,
+          "value": 706871357,
+          "reason": "active source and object refresh loops"
+        }
+      ]
+    },
+    {
+      "start": 1258036,
+      "size": 604,
+      "retailSha256": "06400725c32e29a25881ff558e35e5ed173b32f763251696fb71f5c4908cefd7",
+      "patches": [
+        {
+          "site": 1258116,
+          "expected": 706871496,
+          "value": 706871652,
+          "reason": "combined100 player plus256 tagged enemy availability"
+        },
+        {
+          "site": 1258472,
+          "expected": 675414216,
+          "value": 675414372,
+          "reason": "combined availability loop end"
+        }
+      ]
+    },
+    {
+      "start": 1269476,
+      "size": 792,
+      "retailSha256": "b197508ca6653f907799caccc063206b57ff0feb3d49b9c3d8b1bfe3277a0af9",
+      "patches": [
+        {
+          "site": 1269492,
+          "expected": 679608370,
+          "value": 679608381,
+          "reason": "source pointer selector"
+        }
+      ]
+    },
+    {
+      "start": 1908860,
+      "size": 368,
+      "retailSha256": "6f8f707ec441e3023f34aeb19a2dedfd6c5bcac85791d474220a0f14759db1c0",
+      "patches": [
+        {
+          "site": 1908912,
+          "expected": 604308706,
+          "value": 604308981,
+          "reason": "new-game clear of61 source records"
+        }
+      ]
+    },
+    {
+      "start": 2399640,
+      "size": 1096,
+      "retailSha256": "a55924c20836947051caafcd8fa21b0ee29864eb2602a0a983d2635d0f69f16c",
+      "patches": [
+        {
+          "site": 2399804,
+          "expected": 604110898,
+          "value": 604110908,
+          "reason": "scripted copy searches only30 authored map sources"
+        },
+        {
+          "site": 2399812,
+          "expected": 744620082,
+          "value": 744620092,
+          "reason": "scripted copy source loop"
+        },
+        {
+          "site": 2399824,
+          "expected": 604110898,
+          "value": 604110908,
+          "reason": "scripted copy searches only30 authored map sources"
+        }
+      ]
+    },
+    {
+      "start": 2635784,
+      "size": 164,
+      "retailSha256": "cd4578802d4cd8536694f86b55698db609921551e1f8f21b242bf1746cbb2479",
+      "patches": [
+        {
+          "site": 2635816,
+          "expected": 681705572,
+          "value": 681705728,
+          "reason": "enemy class-record lookup; player lookup bound unchanged"
+        }
+      ]
+    }
+  ]
+}

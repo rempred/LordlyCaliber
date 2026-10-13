@@ -42,11 +42,17 @@ u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
      * original source allocator otherwise overwrites unchecked player slot 29. */
     available = 0;
     for (id = 1; id < LC_CUSTOM_CHARACTER_END && available < state->profile.member_count; ++id)
+#ifdef LC_ENEMY_CAPACITY
+        if (lc_enemy_types[id] == LC_MEMBER_FREE) ++available;
+#else
         if (!lc_character_records[id * 52 + 17]) ++available;
+#endif
     if (available < state->profile.member_count) return 0;
+#ifndef LC_ENEMY_CAPACITY
     for (id = 30; id < 50; ++id)
         if (!(lc_source_records[id * 25 + 1] & 1)) break;
     if (id == 50) return 0;
+#endif
     state->pending = 1;
     state->active = 1;
     return state->profile.member[0].class_id;
@@ -70,13 +76,20 @@ u32 lc_custom_materialize(u8 *source, u32 base_level)
     }
     available = 0;
     for (id = 1; id < LC_CUSTOM_CHARACTER_END && available < count; ++id)
+#ifdef LC_ENEMY_CAPACITY
+        if (lc_enemy_types[id] == LC_MEMBER_FREE) free_id[available++] = id;
+#else
         if (!lc_character_records[id * 52 + 17]) free_id[available++] = id;
+#endif
     if (available < count) {
         state->active = 0;
         return 0;
     }
     for (member = 0; member < count; ++member) {
         id = free_id[member];
+#ifdef LC_ENEMY_CAPACITY
+        lc_enemy_types[id] = LC_MEMBER_ORDINARY;
+#endif
         record = lc_character_records + id * 52;
         spec = &state->profile.member[member];
         lc_character_create(record, spec->class_id,

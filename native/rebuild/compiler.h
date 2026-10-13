@@ -22,13 +22,15 @@ class Compiler {
     QByteArray compile(const QByteArray &source, const QString &directory, const QString &name,
                        quint32 address, const QString &section,
                        const QMap<QString, QByteArray> &headers = {},
-                       const QMap<QString, quint32> &symbols = {}) const;
+                       const QMap<QString, quint32> &symbols = {},
+                       bool inlineReadOnlyData = false) const;
     QByteArray compileData(const QByteArray &bytes, const QString &directory,
                            const QString &name) const;
     CompiledModule compileModule(const QByteArray &source, const QString &directory,
                                  const QString &name, quint32 address,
                                  const QMap<QString, QByteArray> &headers = {},
-                                 const QMap<QString, quint32> &symbols = {}) const;
+                                 const QMap<QString, quint32> &symbols = {},
+                                 bool inlineReadOnlyData = false) const;
     void authenticate() const;
     QByteArray assembleOwner(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address,

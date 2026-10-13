@@ -69,7 +69,7 @@ int lc_enemy_construct(const unsigned char *spec, unsigned int source)
     unsigned int id = source & 127U, flag, count = 1, selector, slot, i, free_count;
     unsigned char kinds[5], selectors[5], positions[5], handles[5];
     unsigned char *record;
-    if (!spec || id >= LC_TOTAL_SOURCES) return 0;
+    if (!spec || id >= LC_MAP_SOURCE_END) return 0;
     if (id < LC_PLAYER_SOURCES) {
         lc_capacity_player_construct(spec, source);
         return 1;

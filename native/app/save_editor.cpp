@@ -400,7 +400,7 @@ SaveEditor::~SaveEditor() {
 }
 void SaveEditor::loadBytes(const QByteArray &bytes, const QString &sourcePath) {
     auto candidate =
-        SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
+        SaveDocument::open(project_->runtimeRom(), bytes, int(project_->records(Table::Classes).size()));
     pendingUnitEdits_ = false; // The caller has already handled replacing the loaded document.
     defaultArmySink_ = {};
     defaultArmy_->hide();
@@ -439,7 +439,7 @@ void SaveEditor::exportFile(const QString &path) {
     prepared.validateUnitSupplyEdits(*project_);
     const auto bytes = prepared.serialize();
     const auto reopened =
-        SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
+        SaveDocument::open(project_->runtimeRom(), bytes, int(project_->records(Table::Classes).size()));
     if (reopened.serialize() != bytes)
         throw Error("Edited save failed reopening");
     atomicWrite(path, bytes);

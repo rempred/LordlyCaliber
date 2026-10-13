@@ -1,5 +1,6 @@
 #include "engine/scenario_member_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/capacity_runtime.h"
 #include "engine/class_text.h"
 #include "engine/art_resource_links.h"
 #include "engine/promotion.h"
@@ -16,7 +17,7 @@ ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder,
-                  const ItemData *items) {
+                  const ItemData *items, CapacityRuntimeBuild *capacity) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -25,12 +26,24 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.bytes += items->build(result.data.layout.items);
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
     }
-    if (expandedSaves || result.data.layout.count > 165) {
+    if(capacity) {
+        if(capacity->base<result.data.layout.end || capacity->storage.isEmpty())
+            throw Error("Capacity storage overlaps class or item data");
+        result.data.bytes+=QByteArray(capacity->base-result.data.layout.end,0)+capacity->storage;
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+    }
+    if (capacity || expandedSaves || result.data.layout.count > 165) {
         const quint32 codecAddress = (result.data.layout.end + 15U) & ~15U;
         result.data.bytes += QByteArray(codecAddress - result.data.layout.end, 0);
-        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory, codecAddress);
+        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory, codecAddress,capacity!=nullptr);
         result.data.bytes += result.saves->compression.bytes;
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
+        if(capacity) {
+            if(result.saves->capacityMigration.address!=result.data.layout.indexBase+result.data.bytes.size())
+                throw Error("Save migration disagrees with its permanent allocation");
+            result.data.bytes+=result.saves->capacityMigration.bytes;
+            while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        }
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
         if (result.data.layout.end > 0x80400000U)
             throw Error("Save compression exceeds permanent class storage");
@@ -50,6 +63,11 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.placement.residentBytes = quint32(result.resident.size());
         result.placement.residentChecksum = crc32(result.resident);
         reclaimStart += result.placement.residentBytes;
+    }
+    if(capacity) {
+        compileCapacityRuntime(*capacity,result.data.layout.end,result.data.layout,compiler,directory);
+        result.data.bytes+=capacity->code;
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
     }
     result.dataRomOffset = dataRomOffset;
     if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
@@ -71,6 +89,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
     result.code = compiler.compileModule(source.readAll(), directory, "class_runtime", 0x80187c14,
                                          {{"class_runtime_config.h", header}},
                                          {{"lc_original_heap_init", 0x80070c60},
+                                          {"lc_class_data_end", result.data.layout.end},
                                           {"lc_original_pool_add", 0x80070d20},
                                           {"lc_original_secondary_reset", 0x80070f14},
                                           {"lc_dma_read", result.saves ? result.saves->code.entries.value("lc_save_load_data") : 0x8009da50}});

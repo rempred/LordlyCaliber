@@ -1,0 +1,2460 @@
+{
+  "generator": "native/tools/generate-capacity-predicates.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "patches": [
+    {
+      "site": 351088,
+      "hook": 351088,
+      "address": 2149055600,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 3
+      },
+      "expected": [
+        746717284,
+        135203
+      ],
+      "name": "lc_capacity_type_00055b70",
+      "bindings": {
+        "lc_continue": 2149055608,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 351092
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 351016,
+        "size": 2444,
+        "retailSha256": "a04c60ee7ff8633a05d0ca172a7802be8fd3f134a65bc1796d3e2f0e94260f10"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00055b70\n.type lc_capacity_type_00055b70, @function\nlc_capacity_type_00055b70:\naddu $at, $3, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00055b70, . - lc_capacity_type_00055b70\n"
+    },
+    {
+      "site": 539152,
+      "hook": 539152,
+      "address": 2149206656,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19,
+        "loads": [
+          [
+            "word",
+            0
+          ],
+          [
+            "byte",
+            1
+          ]
+        ],
+        "mask": 128
+      },
+      "expected": [
+        744620132,
+        339738628,
+        10273
+      ],
+      "name": "lc_capacity_type_00083a10",
+      "bindings": {
+        "lc_taken": 2149206680,
+        "lc_continue": 2149206668,
+        "lc_displaced_0": 10273
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 539160
+        }
+      ],
+      "entryOffsets": {
+        "539156": 56
+      },
+      "owner": {
+        "start": 538992,
+        "size": 748,
+        "retailSha256": "fc780583c2c8db6628f1637e5dd70561671243bcd9c0d0544ad4c7aeea5f3d72"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00083a10\n.type lc_capacity_type_00083a10, @function\nlc_capacity_type_00083a10:\naddu $at, $19, $zero\nlw $at, 0($at)\nlbu $at, 1($at)\nandi $at, $at, 128\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c620064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00083a10, . - lc_capacity_type_00083a10\n"
+    },
+    {
+      "site": 542740,
+      "hook": 542740,
+      "address": 2149210244,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "address": 2149286440,
+        "loads": [
+          [
+            "byte",
+            0
+          ]
+        ]
+      },
+      "expected": [
+        755105892,
+        339738813,
+        6656033
+      ],
+      "name": "lc_capacity_type_00084814",
+      "bindings": {
+        "lc_taken": 2149211008,
+        "lc_continue": 2149210256,
+        "lc_displaced_0": 6656033
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 542748
+        }
+      ],
+      "entryOffsets": {
+        "542744": 52
+      },
+      "owner": {
+        "start": 539740,
+        "size": 5492,
+        "retailSha256": "d7bc6289d237f646d86af05c7d1b3fe8a5cdc9fde977d796a9f0067f69e78f98"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00084814\n.type lc_capacity_type_00084814, @function\nlc_capacity_type_00084814:\nlui $at, 0x801c\naddiu $at, $at, -32216\nlbu $at, 0($at)\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $8\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2d020064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00084814, . - lc_capacity_type_00084814\n"
+    },
+    {
+      "site": 583836,
+      "hook": 583832,
+      "address": 2149195320,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 18,
+        "mask": 255
+      },
+      "expected": [
+        274858244,
+        744620132
+      ],
+      "name": "lc_capacity_type_0008e89c",
+      "bindings": {
+        "lc_taken": 2149196364,
+        "lc_continue": 2149195328
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 583464,
+        "size": 1448,
+        "retailSha256": "2525c5e65a7b5d3c792616f007371fcddf74630ec99d4eb905929a22f4d260a5"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0008e89c\n.type lc_capacity_type_0008e89c, @function\nlc_capacity_type_0008e89c:\nbeq $3, $2, taken\nnop\naddu $at, $18, $zero\nandi $at, $at, 255\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2c620064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $18, $zero\nandi $at, $at, 255\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2c620064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_0008e89c, . - lc_capacity_type_0008e89c\n"
+    },
+    {
+      "site": 775124,
+      "hook": 775124,
+      "address": 2149386612,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bd3d4",
+      "bindings": {
+        "lc_continue": 2149386620,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 775128
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 775120,
+        "size": 108,
+        "retailSha256": "606518b511a9d161ad617dc9c21fc4bb284d141b13a38b4df76c99f288776c3e"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bd3d4\n.type lc_capacity_type_000bd3d4, @function\nlc_capacity_type_000bd3d4:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bd3d4, . - lc_capacity_type_000bd3d4\n"
+    },
+    {
+      "site": 775236,
+      "hook": 775236,
+      "address": 2149386724,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bd444",
+      "bindings": {
+        "lc_continue": 2149386732,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 775240
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 775228,
+        "size": 184,
+        "retailSha256": "18399fed7c687840cfbdf64d27905b54c5dc996877edce50f92ff37d87895cd8"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bd444\n.type lc_capacity_type_000bd444, @function\nlc_capacity_type_000bd444:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bd444, . - lc_capacity_type_000bd444\n"
+    },
+    {
+      "site": 775712,
+      "hook": 775712,
+      "address": 2149387200,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bd620",
+      "bindings": {
+        "lc_continue": 2149387208,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 775716
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 775692,
+        "size": 696,
+        "retailSha256": "7af884f6ec617912acd5c52465fa2ce6c730c4075d6f3e8a31444a0c573eb609"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bd620\n.type lc_capacity_type_000bd620, @function\nlc_capacity_type_000bd620:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bd620, . - lc_capacity_type_000bd620\n"
+    },
+    {
+      "site": 776408,
+      "hook": 776408,
+      "address": 2149387896,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bd8d8",
+      "bindings": {
+        "lc_continue": 2149387904,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 776412
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 776388,
+        "size": 688,
+        "retailSha256": "1e07a0a76f4e8ce7e7db3176243f9079cffc5c13bc886968a97679ab67eb4d7b"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bd8d8\n.type lc_capacity_type_000bd8d8, @function\nlc_capacity_type_000bd8d8:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bd8d8, . - lc_capacity_type_000bd8d8\n"
+    },
+    {
+      "site": 777156,
+      "hook": 777156,
+      "address": 2149388644,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bdbc4",
+      "bindings": {
+        "lc_continue": 2149388652,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 777160
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 777076,
+        "size": 600,
+        "retailSha256": "ad3c00907dd1a4bc37116b5aae8f6c0403c7af6a751e0029dd176260c6e23923"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bdbc4\n.type lc_capacity_type_000bdbc4, @function\nlc_capacity_type_000bdbc4:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bdbc4, . - lc_capacity_type_000bdbc4\n"
+    },
+    {
+      "site": 777756,
+      "hook": 777756,
+      "address": 2149389244,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000bde1c",
+      "bindings": {
+        "lc_continue": 2149389252,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 777760
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 777676,
+        "size": 600,
+        "retailSha256": "d4d7941abf1f92aad836191b67a7a04ac29ab88b4d0f877278df294983db35da"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000bde1c\n.type lc_capacity_type_000bde1c, @function\nlc_capacity_type_000bde1c:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000bde1c, . - lc_capacity_type_000bde1c\n"
+    },
+    {
+      "site": 778356,
+      "hook": 778356,
+      "address": 2149389844,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000be074",
+      "bindings": {
+        "lc_continue": 2149389852,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 778360
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 778276,
+        "size": 600,
+        "retailSha256": "4d5c812869a543707296df0bf50d1d55d46fa502ab30fe72251b033f6bd50532"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000be074\n.type lc_capacity_type_000be074, @function\nlc_capacity_type_000be074:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000be074, . - lc_capacity_type_000be074\n"
+    },
+    {
+      "site": 778884,
+      "hook": 778884,
+      "address": 2149390372,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000be284",
+      "bindings": {
+        "lc_continue": 2149390380,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 778888
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 778876,
+        "size": 536,
+        "retailSha256": "32932eec8678c58daeeaeeb355424d2c47694a1cdac03803fb2d9a8e7bd5c717"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000be284\n.type lc_capacity_type_000be284, @function\nlc_capacity_type_000be284:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000be284, . - lc_capacity_type_000be284\n"
+    },
+    {
+      "site": 779420,
+      "hook": 779420,
+      "address": 2149390908,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_000be49c",
+      "bindings": {
+        "lc_continue": 2149390916,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 779424
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 779412,
+        "size": 536,
+        "retailSha256": "7febfea279cd941811d44b9bea7ce3305758ceeb44eca3cbaa92a5243faa9d11"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_000be49c\n.type lc_capacity_type_000be49c, @function\nlc_capacity_type_000be49c:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_000be49c, . - lc_capacity_type_000be49c\n"
+    },
+    {
+      "site": 1151540,
+      "hook": 1151536,
+      "address": 2149337840,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "source",
+        "register": 19
+      },
+      "expected": [
+        274726976,
+        677511268
+      ],
+      "name": "lc_capacity_type_00119234",
+      "bindings": {
+        "lc_taken": 2149338100,
+        "lc_continue": 2149337848
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1151436,
+        "size": 648,
+        "retailSha256": "ff2bf4b0d12cd6ccc46d3116a922bbbe7376059c8c0b8b18e9e8cc00d1dca054"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00119234\n.type lc_capacity_type_00119234, @function\nlc_capacity_type_00119234:\nbeq $3, $0, taken\nnop\naddu $at, $19, $zero\nsltiu $at, $at, 30\nbne $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28620064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nsltiu $at, $at, 30\nbne $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28620064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00119234, . - lc_capacity_type_00119234\n"
+    },
+    {
+      "site": 1151708,
+      "hook": 1151708,
+      "address": 2149338012,
+      "kind": "plain",
+      "context": {
+        "kind": "source",
+        "register": 19
+      },
+      "expected": [
+        744685668,
+        946012161
+      ],
+      "name": "lc_capacity_type_001192dc",
+      "bindings": {
+        "lc_continue": 2149338020,
+        "lc_displaced_0": 946012161
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1151712
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1151436,
+        "size": 648,
+        "retailSha256": "ff2bf4b0d12cd6ccc46d3116a922bbbe7376059c8c0b8b18e9e8cc00d1dca054"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001192dc\n.type lc_capacity_type_001192dc, @function\nlc_capacity_type_001192dc:\naddu $at, $19, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $3, %lo(lc_enemy_types)($at)\naddiu $3, $3, -2\nsltu $3, $zero, $3\nb pred_done\nnop\npred_player:\n.word 0x2c630064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001192dc, . - lc_capacity_type_001192dc\n"
+    },
+    {
+      "site": 1153256,
+      "hook": 1153252,
+      "address": 2149339556,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        274726926,
+        677511268
+      ],
+      "name": "lc_capacity_type_001198e8",
+      "bindings": {
+        "lc_taken": 2149339616,
+        "lc_continue": 2149339564
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1152084,
+        "size": 4332,
+        "retailSha256": "a5dcba64f8708b23fd6a527e159eb818aee5570c7ce95093778f60df90708324"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001198e8\n.type lc_capacity_type_001198e8, @function\nlc_capacity_type_001198e8:\nbeq $3, $0, taken\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nj lc_continue\nnop\ntaken:\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nj lc_taken\nnop\n.size lc_capacity_type_001198e8, . - lc_capacity_type_001198e8\n"
+    },
+    {
+      "site": 1235648,
+      "hook": 1235648,
+      "address": 2149421952,
+      "kind": "plain",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        679608420,
+        943849473
+      ],
+      "name": "lc_capacity_type_0012dac0",
+      "bindings": {
+        "lc_continue": 2149421960,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1235652
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1235612,
+        "size": 144,
+        "retailSha256": "79d6efdcf62148910022665c49c0bc066d1b03a04d0d943621f49d096aa61d22"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0012dac0\n.type lc_capacity_type_0012dac0, @function\nlc_capacity_type_0012dac0:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0012dac0, . - lc_capacity_type_0012dac0\n"
+    },
+    {
+      "site": 1245796,
+      "hook": 1245796,
+      "address": 2149432100,
+      "kind": "plain",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        679608420,
+        943849473
+      ],
+      "name": "lc_capacity_type_00130264",
+      "bindings": {
+        "lc_continue": 2149432108,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1245800
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1244760,
+        "size": 1884,
+        "retailSha256": "041d9ce6d1364c7699951c185735a66a41cbfcb4c78285488c4aa6bfcbdeddfa"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00130264\n.type lc_capacity_type_00130264, @function\nlc_capacity_type_00130264:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00130264, . - lc_capacity_type_00130264\n"
+    },
+    {
+      "site": 1245936,
+      "hook": 1245936,
+      "address": 2149432240,
+      "kind": "plain",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        679608420,
+        943849473
+      ],
+      "name": "lc_capacity_type_001302f0",
+      "bindings": {
+        "lc_continue": 2149432248,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1245940
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1244760,
+        "size": 1884,
+        "retailSha256": "041d9ce6d1364c7699951c185735a66a41cbfcb4c78285488c4aa6bfcbdeddfa"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001302f0\n.type lc_capacity_type_001302f0, @function\nlc_capacity_type_001302f0:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001302f0, . - lc_capacity_type_001302f0\n"
+    },
+    {
+      "site": 1250608,
+      "hook": 1250608,
+      "address": 2149436912,
+      "kind": "plain",
+      "context": {
+        "kind": "playerFlag",
+        "register": 9
+      },
+      "expected": [
+        679608420,
+        943849473
+      ],
+      "name": "lc_capacity_type_00131530",
+      "bindings": {
+        "lc_continue": 2149436920,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1250612
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1250512,
+        "size": 340,
+        "retailSha256": "c99fd80ea701263718ce76e5fe135214d5e0de9ffc8e0da4b19e5d580ac78ef9"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00131530\n.type lc_capacity_type_00131530, @function\nlc_capacity_type_00131530:\naddu $at, $9, $zero\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00131530, . - lc_capacity_type_00131530\n"
+    },
+    {
+      "site": 1256836,
+      "hook": 1256832,
+      "address": 2149443136,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "source",
+        "register": 17,
+        "loads": [
+          [
+            "byte",
+            4
+          ]
+        ]
+      },
+      "expected": [
+        276824097,
+        679608420
+      ],
+      "name": "lc_capacity_type_00132d84",
+      "bindings": {
+        "lc_taken": 2149443272,
+        "lc_continue": 2149443144
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1256752,
+        "size": 528,
+        "retailSha256": "6e7334ebb5b209cc9d932c5ea12681e2670f2427b5e4b23ba59507ca563a3ff7"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00132d84\n.type lc_capacity_type_00132d84, @function\nlc_capacity_type_00132d84:\nbeq $4, $0, taken\nnop\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28820064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28820064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00132d84, . - lc_capacity_type_00132d84\n"
+    },
+    {
+      "site": 1257084,
+      "hook": 1257080,
+      "address": 2149443384,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "source",
+        "register": 17,
+        "loads": [
+          [
+            "byte",
+            4
+          ]
+        ]
+      },
+      "expected": [
+        276824099,
+        679608420
+      ],
+      "name": "lc_capacity_type_00132e7c",
+      "bindings": {
+        "lc_taken": 2149443528,
+        "lc_continue": 2149443392
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1256752,
+        "size": 528,
+        "retailSha256": "6e7334ebb5b209cc9d932c5ea12681e2670f2427b5e4b23ba59507ca563a3ff7"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00132e7c\n.type lc_capacity_type_00132e7c, @function\nlc_capacity_type_00132e7c:\nbeq $4, $0, taken\nnop\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28820064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28820064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00132e7c, . - lc_capacity_type_00132e7c\n"
+    },
+    {
+      "site": 1257596,
+      "hook": 1257592,
+      "address": 2149443896,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "source",
+        "register": 17,
+        "loads": [
+          [
+            "byte",
+            4
+          ]
+        ]
+      },
+      "expected": [
+        276824097,
+        679608420
+      ],
+      "name": "lc_capacity_type_0013307c",
+      "bindings": {
+        "lc_taken": 2149444032,
+        "lc_continue": 2149443904
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1257512,
+        "size": 524,
+        "retailSha256": "57747832dd62f619856075fe0d7bd95bd0445017d979e08d79604419d3ed4804"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0013307c\n.type lc_capacity_type_0013307c, @function\nlc_capacity_type_0013307c:\nbeq $4, $0, taken\nnop\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28820064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28820064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_0013307c, . - lc_capacity_type_0013307c\n"
+    },
+    {
+      "site": 1257844,
+      "hook": 1257840,
+      "address": 2149444144,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "source",
+        "register": 17,
+        "loads": [
+          [
+            "byte",
+            4
+          ]
+        ]
+      },
+      "expected": [
+        276824099,
+        679608420
+      ],
+      "name": "lc_capacity_type_00133174",
+      "bindings": {
+        "lc_taken": 2149444288,
+        "lc_continue": 2149444152
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1257512,
+        "size": 524,
+        "retailSha256": "57747832dd62f619856075fe0d7bd95bd0445017d979e08d79604419d3ed4804"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00133174\n.type lc_capacity_type_00133174, @function\nlc_capacity_type_00133174:\nbeq $4, $0, taken\nnop\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28820064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $17, $zero\nlbu $at, 4($at)\nsltiu $at, $at, 30\nbne $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28820064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00133174, . - lc_capacity_type_00133174\n"
+    },
+    {
+      "site": 1260252,
+      "hook": 1260252,
+      "address": 2149446556,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        677511268,
+        1346371642,
+        619118593
+      ],
+      "name": "lc_capacity_type_00133adc",
+      "bindings": {
+        "lc_taken": 2149446796,
+        "lc_continue": 2149446568,
+        "lc_displaced_0": 619118593
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1260260
+        }
+      ],
+      "entryOffsets": {
+        "1260256": 48
+      },
+      "owner": {
+        "start": 1260172,
+        "size": 340,
+        "retailSha256": "ddc9f78e0c36734cd83ffec39a01d2d61c68e88c049346eb6284141f9fd2866c"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00133adc\n.type lc_capacity_type_00133adc, @function\nlc_capacity_type_00133adc:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28620064\npred_done:\nbeql $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00133adc, . - lc_capacity_type_00133adc\n"
+    },
+    {
+      "site": 1260624,
+      "hook": 1260624,
+      "address": 2149446928,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        677511268,
+        339738684,
+        748814366
+      ],
+      "name": "lc_capacity_type_00133c50",
+      "bindings": {
+        "lc_taken": 2149447176,
+        "lc_continue": 2149446940,
+        "lc_displaced_0": 748814366
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1260632
+        }
+      ],
+      "entryOffsets": {
+        "1260628": 48
+      },
+      "owner": {
+        "start": 1260512,
+        "size": 704,
+        "retailSha256": "f81abb2a1075459d6eafd3f526c38ccb731cf489bdb307bab8908f418a59f3f1"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00133c50\n.type lc_capacity_type_00133c50, @function\nlc_capacity_type_00133c50:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x28620064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00133c50, . - lc_capacity_type_00133c50\n"
+    },
+    {
+      "site": 1269680,
+      "hook": 1269680,
+      "address": 2149455984,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 19,
+        "loads": [
+          [
+            "byte",
+            0
+          ]
+        ],
+        "limit": 31
+      },
+      "expected": [
+        744620132,
+        339738628,
+        10273
+      ],
+      "name": "lc_capacity_type_00135fb0",
+      "bindings": {
+        "lc_taken": 2149456008,
+        "lc_continue": 2149455996,
+        "lc_displaced_0": 10273
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1269688
+        }
+      ],
+      "entryOffsets": {
+        "1269684": 52
+      },
+      "owner": {
+        "start": 1269476,
+        "size": 792,
+        "retailSha256": "b197508ca6653f907799caccc063206b57ff0feb3d49b9c3d8b1bfe3277a0af9"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00135fb0\n.type lc_capacity_type_00135fb0, @function\nlc_capacity_type_00135fb0:\naddu $at, $19, $zero\nlbu $at, 0($at)\nsltiu $at, $at, 31\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c620064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00135fb0, . - lc_capacity_type_00135fb0\n"
+    },
+    {
+      "site": 1276604,
+      "hook": 1276604,
+      "address": 2149462908,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 29,
+        "loads": [
+          [
+            "word",
+            84
+          ],
+          [
+            "word",
+            0
+          ]
+        ]
+      },
+      "expected": [
+        771883108,
+        339738821,
+        6731809
+      ],
+      "name": "lc_capacity_type_00137abc",
+      "bindings": {
+        "lc_taken": 2149463704,
+        "lc_continue": 2149462920,
+        "lc_displaced_0": 6731809
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1276612
+        }
+      ],
+      "entryOffsets": {
+        "1276608": 56
+      },
+      "owner": {
+        "start": 1272888,
+        "size": 9400,
+        "retailSha256": "45df03922abbe81d0e2c21ed70012bbf1a82d0adf885dcf04a7b81fa4f4d6619"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00137abc\n.type lc_capacity_type_00137abc, @function\nlc_capacity_type_00137abc:\naddu $at, $29, $zero\nlw $at, 84($at)\nlw $at, 0($at)\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $16\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2e020064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00137abc, . - lc_capacity_type_00137abc\n"
+    },
+    {
+      "site": 1279732,
+      "hook": 1279732,
+      "address": 2149466036,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 21
+      },
+      "expected": [
+        750911588,
+        339738642,
+        0
+      ],
+      "name": "lc_capacity_type_001386f4",
+      "bindings": {
+        "lc_taken": 2149466116,
+        "lc_continue": 2149466048,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1279740
+        }
+      ],
+      "entryOffsets": {
+        "1279736": 44
+      },
+      "owner": {
+        "start": 1272888,
+        "size": 9400,
+        "retailSha256": "45df03922abbe81d0e2c21ed70012bbf1a82d0adf885dcf04a7b81fa4f4d6619"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001386f4\n.type lc_capacity_type_001386f4, @function\nlc_capacity_type_001386f4:\naddu $at, $21, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $6\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2cc20064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_001386f4, . - lc_capacity_type_001386f4\n"
+    },
+    {
+      "site": 1378008,
+      "hook": 1378008,
+      "address": 2149578088,
+      "kind": "plain",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        746717284,
+        943849473
+      ],
+      "name": "lc_capacity_type_001506d8",
+      "bindings": {
+        "lc_continue": 2149578096,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1378012
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1377616,
+        "size": 2828,
+        "retailSha256": "f891849a0db9eef518e0a8b19b9e64505c385c0be970c9555767ad24249eb868"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001506d8\n.type lc_capacity_type_001506d8, @function\nlc_capacity_type_001506d8:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001506d8, . - lc_capacity_type_001506d8\n"
+    },
+    {
+      "site": 1378540,
+      "hook": 1378540,
+      "address": 2149578620,
+      "kind": "plain",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        696385636,
+        2909208668
+      ],
+      "name": "lc_capacity_type_001508ec",
+      "bindings": {
+        "lc_continue": 2149578628,
+        "lc_displaced_0": 2909208668
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1378544
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1377616,
+        "size": 2828,
+        "retailSha256": "f891849a0db9eef518e0a8b19b9e64505c385c0be970c9555767ad24249eb868"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001508ec\n.type lc_capacity_type_001508ec, @function\nlc_capacity_type_001508ec:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $12\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001508ec, . - lc_capacity_type_001508ec\n"
+    },
+    {
+      "site": 1386172,
+      "hook": 1386172,
+      "address": 2149586252,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_001526bc",
+      "bindings": {
+        "lc_continue": 2149586260,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1386176
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1386156,
+        "size": 644,
+        "retailSha256": "f542054a00251602d401e8811a407ff26eeb6efdcb4969f12c26d3219c847215"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001526bc\n.type lc_capacity_type_001526bc, @function\nlc_capacity_type_001526bc:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001526bc, . - lc_capacity_type_001526bc\n"
+    },
+    {
+      "site": 1386816,
+      "hook": 1386816,
+      "address": 2149586896,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_00152940",
+      "bindings": {
+        "lc_continue": 2149586904,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1386820
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1386800,
+        "size": 644,
+        "retailSha256": "a833c685ccef060b86614b54e4b15d2f88001c73585a40ccaa9609d9624f79a3"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00152940\n.type lc_capacity_type_00152940, @function\nlc_capacity_type_00152940:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00152940, . - lc_capacity_type_00152940\n"
+    },
+    {
+      "site": 1387632,
+      "hook": 1387632,
+      "address": 2149587712,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_00152c70",
+      "bindings": {
+        "lc_continue": 2149587720,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1387636
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1387628,
+        "size": 108,
+        "retailSha256": "a82a362af24d90b0fd2aead080919be3cf42005581631a45cbb874e372c7c7eb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00152c70\n.type lc_capacity_type_00152c70, @function\nlc_capacity_type_00152c70:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00152c70, . - lc_capacity_type_00152c70\n"
+    },
+    {
+      "site": 1388564,
+      "hook": 1388564,
+      "address": 2149588644,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_00153014",
+      "bindings": {
+        "lc_continue": 2149588652,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1388568
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1388476,
+        "size": 756,
+        "retailSha256": "70bf6d5f55fcb6e8ec4f7e64727b77a922b593d7bb4b672ce46213eca8b3d9aa"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00153014\n.type lc_capacity_type_00153014, @function\nlc_capacity_type_00153014:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00153014, . - lc_capacity_type_00153014\n"
+    },
+    {
+      "site": 1389320,
+      "hook": 1389320,
+      "address": 2149589400,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_00153308",
+      "bindings": {
+        "lc_continue": 2149589408,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1389324
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1389232,
+        "size": 756,
+        "retailSha256": "941445d2ff9490445eacf79f0cec385b7a724fd143a44979433a2e72e6e4155a"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00153308\n.type lc_capacity_type_00153308, @function\nlc_capacity_type_00153308:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_00153308, . - lc_capacity_type_00153308\n"
+    },
+    {
+      "site": 1390076,
+      "hook": 1390076,
+      "address": 2149590156,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_001535fc",
+      "bindings": {
+        "lc_continue": 2149590164,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1390080
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1389988,
+        "size": 756,
+        "retailSha256": "73f0796e16b59732dd52eea3a0742a7cafae6e4eb6db77eea05991cfae18dd7e"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001535fc\n.type lc_capacity_type_001535fc, @function\nlc_capacity_type_001535fc:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_001535fc, . - lc_capacity_type_001535fc\n"
+    },
+    {
+      "site": 1390748,
+      "hook": 1390748,
+      "address": 2149590828,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 4,
+        "mask": 255
+      },
+      "expected": [
+        742522980,
+        135203
+      ],
+      "name": "lc_capacity_type_0015389c",
+      "bindings": {
+        "lc_continue": 2149590836,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1390752
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1390744,
+        "size": 180,
+        "retailSha256": "6f554612ae4cd6d2957f247db4e4a0aa82a648adc9f6bac34a66ec98cb1a2284"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015389c\n.type lc_capacity_type_0015389c, @function\nlc_capacity_type_0015389c:\naddu $at, $4, $zero\nandi $at, $at, 255\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c420064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0015389c, . - lc_capacity_type_0015389c\n"
+    },
+    {
+      "site": 1393292,
+      "hook": 1393288,
+      "address": 2149593368,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19,
+        "mask": 255
+      },
+      "expected": [
+        274858232,
+        744620132
+      ],
+      "name": "lc_capacity_type_0015428c",
+      "bindings": {
+        "lc_taken": 2149594364,
+        "lc_continue": 2149593376
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1393088,
+        "size": 1236,
+        "retailSha256": "7de05d587615b21fc30cdf10d5f3f20a6040493989d6ada087a91d3bda38a13a"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015428c\n.type lc_capacity_type_0015428c, @function\nlc_capacity_type_0015428c:\nbeq $3, $2, taken\nnop\naddu $at, $19, $zero\nandi $at, $at, 255\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2c620064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nandi $at, $at, 255\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2c620064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_0015428c, . - lc_capacity_type_0015428c\n"
+    },
+    {
+      "site": 1411264,
+      "hook": 1411264,
+      "address": 2149611344,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 5
+      },
+      "expected": [
+        746717284,
+        272629946,
+        620888065
+      ],
+      "name": "lc_capacity_type_001588c0",
+      "bindings": {
+        "lc_taken": 2149612096,
+        "lc_continue": 2149611356,
+        "lc_displaced_0": 620888065
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1411272
+        }
+      ],
+      "entryOffsets": {
+        "1411268": 48
+      },
+      "owner": {
+        "start": 1411036,
+        "size": 1576,
+        "retailSha256": "7d276a8e52654ab0fa6223ae35f2bda4766b4099cc1cbadd7ddac79d75e5c22b"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001588c0\n.type lc_capacity_type_001588c0, @function\nlc_capacity_type_001588c0:\naddu $at, $5, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_001588c0, . - lc_capacity_type_001588c0\n"
+    },
+    {
+      "site": 1414508,
+      "hook": 1414508,
+      "address": 2149614588,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "playerFlag",
+        "register": 5
+      },
+      "expected": [
+        744620132,
+        272629905,
+        616693761
+      ],
+      "name": "lc_capacity_type_0015956c",
+      "bindings": {
+        "lc_taken": 2149615176,
+        "lc_continue": 2149614600,
+        "lc_displaced_0": 616693761
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1414516
+        }
+      ],
+      "entryOffsets": {
+        "1414512": 44
+      },
+      "owner": {
+        "start": 1414260,
+        "size": 1564,
+        "retailSha256": "d4a1e2a84cae42dc2797079d6b5757bbc53f657f14d2fe43b05797f5f1729e9e"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015956c\n.type lc_capacity_type_0015956c, @function\nlc_capacity_type_0015956c:\naddu $at, $5, $zero\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c620064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0015956c, . - lc_capacity_type_0015956c\n"
+    },
+    {
+      "site": 1423852,
+      "hook": 1423852,
+      "address": 2149623932,
+      "kind": "plain",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        746717284,
+        943849473
+      ],
+      "name": "lc_capacity_type_0015b9ec",
+      "bindings": {
+        "lc_continue": 2149623940,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1423856
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1417172,
+        "size": 13344,
+        "retailSha256": "f77cdff41f352f649434dc493d3b463a09e43e26cfc25443975bd278679305ab"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015b9ec\n.type lc_capacity_type_0015b9ec, @function\nlc_capacity_type_0015b9ec:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0015b9ec, . - lc_capacity_type_0015b9ec\n"
+    },
+    {
+      "site": 1433544,
+      "hook": 1433544,
+      "address": 2149633624,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        675414116,
+        272629768,
+        811728898
+      ],
+      "name": "lc_capacity_type_0015dfc8",
+      "bindings": {
+        "lc_taken": 2149633664,
+        "lc_continue": 2149633636,
+        "lc_displaced_0": 811728898
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1433552
+        }
+      ],
+      "entryOffsets": {
+        "1433548": 20
+      },
+      "owner": {
+        "start": 1433468,
+        "size": 128,
+        "retailSha256": "3ab79eea0caab5ed957d0992448568dfe7258da383cb26788a2a047bef0b7033"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015dfc8\n.type lc_capacity_type_0015dfc8, @function\nlc_capacity_type_0015dfc8:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $2\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0015dfc8, . - lc_capacity_type_0015dfc8\n"
+    },
+    {
+      "site": 1434860,
+      "hook": 1434860,
+      "address": 2149634940,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "address": 2149529248,
+        "loads": [
+          [
+            "byte",
+            0
+          ]
+        ],
+        "mask": 1
+      },
+      "expected": [
+        746717284,
+        943849473
+      ],
+      "name": "lc_capacity_type_0015e4ec",
+      "bindings": {
+        "lc_continue": 2149634948,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1434864
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1434776,
+        "size": 472,
+        "retailSha256": "e7bf5e93c23e39ce91a10b7a7513f401de16bcc75fba051e851be83ca534195e"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015e4ec\n.type lc_capacity_type_0015e4ec, @function\nlc_capacity_type_0015e4ec:\nlui $at, 0x801f\naddiu $at, $at, 13984\nlbu $at, 0($at)\nandi $at, $at, 1\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0015e4ec, . - lc_capacity_type_0015e4ec\n"
+    },
+    {
+      "site": 1435020,
+      "hook": 1435020,
+      "address": 2149635100,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "address": 2149529248,
+        "loads": [
+          [
+            "byte",
+            0
+          ]
+        ],
+        "mask": 1
+      },
+      "expected": [
+        746717284,
+        943849473
+      ],
+      "name": "lc_capacity_type_0015e58c",
+      "bindings": {
+        "lc_continue": 2149635108,
+        "lc_displaced_0": 943849473
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1435024
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1434776,
+        "size": 472,
+        "retailSha256": "e7bf5e93c23e39ce91a10b7a7513f401de16bcc75fba051e851be83ca534195e"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0015e58c\n.type lc_capacity_type_0015e58c, @function\nlc_capacity_type_0015e58c:\nlui $at, 0x801f\naddiu $at, $at, 13984\nlbu $at, 0($at)\nandi $at, $at, 1\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0015e58c, . - lc_capacity_type_0015e58c\n"
+    },
+    {
+      "site": 1610524,
+      "hook": 1610524,
+      "address": 2149668668,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "eitherEnemy",
+        "register": 20,
+        "address": 2149758323
+      },
+      "expected": [
+        746717284,
+        339738642,
+        0
+      ],
+      "name": "lc_capacity_type_0018931c",
+      "bindings": {
+        "lc_taken": 2149668748,
+        "lc_continue": 2149668680,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1610532
+        }
+      ],
+      "entryOffsets": {
+        "1610528": 64
+      },
+      "owner": {
+        "start": 1608924,
+        "size": 2476,
+        "retailSha256": "c90213853d43c5874c07c46c295541a5bad858803a7c26b57ee8664338e2e9d7"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018931c\n.type lc_capacity_type_0018931c, @function\nlc_capacity_type_0018931c:\nbne $20, $zero, pred_enemy\nnop\nlui $at, 0x8023\naddiu $at, $at, -19085\nlbu $at, 0($at)\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0018931c, . - lc_capacity_type_0018931c\n"
+    },
+    {
+      "site": 1610992,
+      "hook": 1610992,
+      "address": 2149669136,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        744620132,
+        339738635,
+        200768
+      ],
+      "name": "lc_capacity_type_001894f0",
+      "bindings": {
+        "lc_taken": 2149669188,
+        "lc_continue": 2149669148,
+        "lc_displaced_0": 200768
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1611000
+        }
+      ],
+      "entryOffsets": {
+        "1610996": 20
+      },
+      "owner": {
+        "start": 1608924,
+        "size": 2476,
+        "retailSha256": "c90213853d43c5874c07c46c295541a5bad858803a7c26b57ee8664338e2e9d7"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001894f0\n.type lc_capacity_type_001894f0, @function\nlc_capacity_type_001894f0:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_001894f0, . - lc_capacity_type_001894f0\n"
+    },
+    {
+      "site": 1611864,
+      "hook": 1611860,
+      "address": 2149670004,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        272629829,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189858",
+      "bindings": {
+        "lc_taken": 2149670284,
+        "lc_continue": 2149670012
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189858\n.type lc_capacity_type_00189858, @function\nlc_capacity_type_00189858:\nbeq $2, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189858, . - lc_capacity_type_00189858\n"
+    },
+    {
+      "site": 1611880,
+      "hook": 1611876,
+      "address": 2149670020,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        339738689,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189868",
+      "bindings": {
+        "lc_taken": 2149670284,
+        "lc_continue": 2149670028
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189868\n.type lc_capacity_type_00189868, @function\nlc_capacity_type_00189868:\nbne $2, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189868, . - lc_capacity_type_00189868\n"
+    },
+    {
+      "site": 1612040,
+      "hook": 1612036,
+      "address": 2149670180,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        272629785,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189908",
+      "bindings": {
+        "lc_taken": 2149670284,
+        "lc_continue": 2149670188
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189908\n.type lc_capacity_type_00189908, @function\nlc_capacity_type_00189908:\nbeq $2, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189908, . - lc_capacity_type_00189908\n"
+    },
+    {
+      "site": 1612056,
+      "hook": 1612052,
+      "address": 2149670196,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        339738645,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189918",
+      "bindings": {
+        "lc_taken": 2149670284,
+        "lc_continue": 2149670204
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189918\n.type lc_capacity_type_00189918, @function\nlc_capacity_type_00189918:\nbne $2, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189918, . - lc_capacity_type_00189918\n"
+    },
+    {
+      "site": 1612128,
+      "hook": 1612124,
+      "address": 2149670268,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        341966851,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189960",
+      "bindings": {
+        "lc_taken": 2149670284,
+        "lc_continue": 2149670276
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189960\n.type lc_capacity_type_00189960, @function\nlc_capacity_type_00189960:\nbne $3, $2, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189960, . - lc_capacity_type_00189960\n"
+    },
+    {
+      "site": 1612308,
+      "hook": 1612304,
+      "address": 2149670448,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        272629767,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189a14",
+      "bindings": {
+        "lc_taken": {
+          "entry": "lc_capacity_type_00189a2c",
+          "offset": 44,
+          "originalAddress": 2149670480
+        },
+        "lc_continue": 2149670456
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189a14\n.type lc_capacity_type_00189a14, @function\nlc_capacity_type_00189a14:\nbeq $2, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189a14, . - lc_capacity_type_00189a14\n"
+    },
+    {
+      "site": 1612332,
+      "hook": 1612332,
+      "address": 2149670476,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        717357156,
+        272629972,
+        0
+      ],
+      "name": "lc_capacity_type_00189a2c",
+      "bindings": {
+        "lc_taken": 2149671332,
+        "lc_continue": 2149670488,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1612340
+        }
+      ],
+      "entryOffsets": {
+        "1612336": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189a2c\n.type lc_capacity_type_00189a2c, @function\nlc_capacity_type_00189a2c:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ac20064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00189a2c, . - lc_capacity_type_00189a2c\n"
+    },
+    {
+      "site": 1613364,
+      "hook": 1613360,
+      "address": 2149671504,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        375390252,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189e34",
+      "bindings": {
+        "lc_taken": {
+          "entry": "lc_capacity_type_00189ee0",
+          "offset": 44,
+          "originalAddress": 2149671684
+        },
+        "lc_continue": 2149671512
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189e34\n.type lc_capacity_type_00189e34, @function\nlc_capacity_type_00189e34:\nbne $19, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189e34, . - lc_capacity_type_00189e34\n"
+    },
+    {
+      "site": 1613500,
+      "hook": 1613496,
+      "address": 2149671640,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        375390218,
+        717357156
+      ],
+      "name": "lc_capacity_type_00189ebc",
+      "bindings": {
+        "lc_taken": {
+          "entry": "lc_capacity_type_00189ee0",
+          "offset": 44,
+          "originalAddress": 2149671684
+        },
+        "lc_continue": 2149671648
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189ebc\n.type lc_capacity_type_00189ebc, @function\nlc_capacity_type_00189ebc:\nbne $19, $0, taken\nnop\naddu $at, $19, $zero\nbeq $at, $zero, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x2ac20064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\naddu $at, $19, $zero\nbeq $at, $zero, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x2ac20064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00189ebc, . - lc_capacity_type_00189ebc\n"
+    },
+    {
+      "site": 1613536,
+      "hook": 1613536,
+      "address": 2149671680,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        717357156,
+        339738628,
+        0
+      ],
+      "name": "lc_capacity_type_00189ee0",
+      "bindings": {
+        "lc_taken": 2149671704,
+        "lc_continue": 2149671692,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1613544
+        }
+      ],
+      "entryOffsets": {
+        "1613540": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189ee0\n.type lc_capacity_type_00189ee0, @function\nlc_capacity_type_00189ee0:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ac20064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00189ee0, . - lc_capacity_type_00189ee0\n"
+    },
+    {
+      "site": 1613732,
+      "hook": 1613732,
+      "address": 2149671876,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        717357156,
+        339738628,
+        0
+      ],
+      "name": "lc_capacity_type_00189fa4",
+      "bindings": {
+        "lc_taken": 2149671900,
+        "lc_continue": 2149671888,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1613740
+        }
+      ],
+      "entryOffsets": {
+        "1613736": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00189fa4\n.type lc_capacity_type_00189fa4, @function\nlc_capacity_type_00189fa4:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ac20064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_00189fa4, . - lc_capacity_type_00189fa4\n"
+    },
+    {
+      "site": 1614468,
+      "hook": 1614468,
+      "address": 2149672612,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        746717284,
+        272629765,
+        0
+      ],
+      "name": "lc_capacity_type_0018a284",
+      "bindings": {
+        "lc_taken": 2149672640,
+        "lc_continue": 2149672624,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1614476
+        }
+      ],
+      "entryOffsets": {
+        "1614472": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018a284\n.type lc_capacity_type_0018a284, @function\nlc_capacity_type_0018a284:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0018a284, . - lc_capacity_type_0018a284\n"
+    },
+    {
+      "site": 1615556,
+      "hook": 1615556,
+      "address": 2149673700,
+      "kind": "plain",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        717357156,
+        135203
+      ],
+      "name": "lc_capacity_type_0018a6c4",
+      "bindings": {
+        "lc_continue": 2149673708,
+        "lc_displaced_0": 135203
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1615560
+        }
+      ],
+      "entryOffsets": {},
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018a6c4\n.type lc_capacity_type_0018a6c4, @function\nlc_capacity_type_0018a6c4:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ac20064\npred_done:\n.word lc_displaced_0\nj lc_continue\nnop\n.size lc_capacity_type_0018a6c4, . - lc_capacity_type_0018a6c4\n"
+    },
+    {
+      "site": 1617808,
+      "hook": 1617808,
+      "address": 2149675952,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        746717284,
+        272629765,
+        0
+      ],
+      "name": "lc_capacity_type_0018af90",
+      "bindings": {
+        "lc_taken": 2149675980,
+        "lc_continue": 2149675964,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1617816
+        }
+      ],
+      "entryOffsets": {
+        "1617812": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018af90\n.type lc_capacity_type_0018af90, @function\nlc_capacity_type_0018af90:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c820064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0018af90, . - lc_capacity_type_0018af90\n"
+    },
+    {
+      "site": 1619176,
+      "hook": 1619176,
+      "address": 2149677320,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "register": 19
+      },
+      "expected": [
+        717357156,
+        272629863,
+        0
+      ],
+      "name": "lc_capacity_type_0018b4e8",
+      "bindings": {
+        "lc_taken": 2149677740,
+        "lc_continue": 2149677332,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1619184
+        }
+      ],
+      "entryOffsets": {
+        "1619180": 44
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018b4e8\n.type lc_capacity_type_0018b4e8, @function\nlc_capacity_type_0018b4e8:\naddu $at, $19, $zero\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $22\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ac20064\npred_done:\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0018b4e8, . - lc_capacity_type_0018b4e8\n"
+    },
+    {
+      "site": 1620280,
+      "hook": 1620280,
+      "address": 2149678424,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "poolFlag",
+        "address": 2149529248,
+        "loads": [
+          [
+            "byte",
+            0
+          ]
+        ],
+        "mask": 1
+      },
+      "expected": [
+        677576804,
+        341835779,
+        135232
+      ],
+      "name": "lc_capacity_type_0018b938",
+      "bindings": {
+        "lc_taken": 2149678444,
+        "lc_continue": 2149678436,
+        "lc_displaced_0": 135232
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1620288
+        }
+      ],
+      "entryOffsets": {
+        "1620284": 56
+      },
+      "owner": {
+        "start": 1611640,
+        "size": 8788,
+        "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0018b938\n.type lc_capacity_type_0018b938, @function\nlc_capacity_type_0018b938:\nlui $at, 0x801f\naddiu $at, $at, 13984\nlbu $at, 0($at)\nandi $at, $at, 1\nbeq $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $3, %lo(lc_enemy_types)($at)\naddiu $3, $3, -2\nsltu $3, $zero, $3\nb pred_done\nnop\npred_player:\n.word 0x28630064\npred_done:\nbne $3, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0018b938, . - lc_capacity_type_0018b938\n"
+    },
+    {
+      "site": 1761048,
+      "hook": 1761048,
+      "address": 2149686280,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        744620132,
+        339738636,
+        200768
+      ],
+      "name": "lc_capacity_type_001adf18",
+      "bindings": {
+        "lc_taken": 2149686336,
+        "lc_continue": 2149686292,
+        "lc_displaced_0": 200768
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1761056
+        }
+      ],
+      "entryOffsets": {
+        "1761052": 20
+      },
+      "owner": {
+        "start": 1760588,
+        "size": 892,
+        "retailSha256": "636a437c97d73e77d16fab4d50c6f62e27d6162b1af9daa7a7550aec139425c6"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001adf18\n.type lc_capacity_type_001adf18, @function\nlc_capacity_type_001adf18:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_001adf18, . - lc_capacity_type_001adf18\n"
+    },
+    {
+      "site": 1762004,
+      "hook": 1762004,
+      "address": 2149687236,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        744620132,
+        339738634,
+        200768
+      ],
+      "name": "lc_capacity_type_001ae2d4",
+      "bindings": {
+        "lc_taken": 2149687284,
+        "lc_continue": 2149687248,
+        "lc_displaced_0": 200768
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 1762012
+        }
+      ],
+      "entryOffsets": {
+        "1762008": 20
+      },
+      "owner": {
+        "start": 1761884,
+        "size": 3884,
+        "retailSha256": "32968b878157464040cdef2e222f271140fd3d808081d1d0c89b8c15346cd2bc"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_001ae2d4\n.type lc_capacity_type_001ae2d4, @function\nlc_capacity_type_001ae2d4:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_001ae2d4, . - lc_capacity_type_001ae2d4\n"
+    },
+    {
+      "site": 2136108,
+      "hook": 2136108,
+      "address": 2149344156,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 19,
+        "loads": [
+          [
+            "word",
+            16
+          ]
+        ]
+      },
+      "expected": [
+        744620132,
+        339738628,
+        10273
+      ],
+      "name": "lc_capacity_type_0020982c",
+      "bindings": {
+        "lc_taken": 2149344180,
+        "lc_continue": 2149344168,
+        "lc_displaced_0": 10273
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2136116
+        }
+      ],
+      "entryOffsets": {
+        "2136112": 52
+      },
+      "owner": {
+        "start": 2135924,
+        "size": 768,
+        "retailSha256": "edf258c473ee2f798ec8b4e760c7462764c86e1e455282ff7c15ea827745fd49"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0020982c\n.type lc_capacity_type_0020982c, @function\nlc_capacity_type_0020982c:\naddu $at, $19, $zero\nlw $at, 16($at)\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c620064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0020982c, . - lc_capacity_type_0020982c\n"
+    },
+    {
+      "site": 2141164,
+      "hook": 2141164,
+      "address": 2149349212,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 29,
+        "loads": [
+          [
+            "word",
+            52
+          ],
+          [
+            "word",
+            16
+          ]
+        ]
+      },
+      "expected": [
+        748814436,
+        339738812,
+        0
+      ],
+      "name": "lc_capacity_type_0020abec",
+      "bindings": {
+        "lc_taken": 2149349972,
+        "lc_continue": 2149349224,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2141172
+        }
+      ],
+      "entryOffsets": {
+        "2141168": 56
+      },
+      "owner": {
+        "start": 2137972,
+        "size": 7532,
+        "retailSha256": "ac44cea185ecea7bdac8cfcb21765944a72ca6749d44cce7d86c7265cbea202a"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0020abec\n.type lc_capacity_type_0020abec, @function\nlc_capacity_type_0020abec:\naddu $at, $29, $zero\nlw $at, 52($at)\nlw $at, 16($at)\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $5\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ca20064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0020abec, . - lc_capacity_type_0020abec\n"
+    },
+    {
+      "site": 2144172,
+      "hook": 2144172,
+      "address": 2149352220,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 29,
+        "loads": [
+          [
+            "word",
+            52
+          ],
+          [
+            "word",
+            16
+          ]
+        ]
+      },
+      "expected": [
+        744620132,
+        339738642,
+        0
+      ],
+      "name": "lc_capacity_type_0020b7ac",
+      "bindings": {
+        "lc_taken": 2149352300,
+        "lc_continue": 2149352232,
+        "lc_displaced_0": 0
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2144180
+        }
+      ],
+      "entryOffsets": {
+        "2144176": 56
+      },
+      "owner": {
+        "start": 2137972,
+        "size": 7532,
+        "retailSha256": "ac44cea185ecea7bdac8cfcb21765944a72ca6749d44cce7d86c7265cbea202a"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0020b7ac\n.type lc_capacity_type_0020b7ac, @function\nlc_capacity_type_0020b7ac:\naddu $at, $29, $zero\nlw $at, 52($at)\nlw $at, 16($at)\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2c620064\npred_done:\nbne $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0020b7ac, . - lc_capacity_type_0020b7ac\n"
+    },
+    {
+      "site": 2212436,
+      "hook": 2212436,
+      "address": 2149420932,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "source",
+        "register": 4
+      },
+      "expected": [
+        748814436,
+        1346371624,
+        35659809
+      ],
+      "name": "lc_capacity_type_0021c254",
+      "bindings": {
+        "lc_taken": 2149421100,
+        "lc_continue": 2149420944,
+        "lc_displaced_0": 35659809
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2212444
+        }
+      ],
+      "entryOffsets": {
+        "2212440": 48
+      },
+      "owner": {
+        "start": 2212160,
+        "size": 624,
+        "retailSha256": "ea5019bdb92f6c2fc0057d4cb2ac07148e7c578bd0847fd4eb4139675a0a7efb"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0021c254\n.type lc_capacity_type_0021c254, @function\nlc_capacity_type_0021c254:\naddu $at, $4, $zero\nsltiu $at, $at, 30\nbne $at, $zero, pred_player\nnop\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $5\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb pred_done\nnop\npred_player:\n.word 0x2ca20064\npred_done:\nbeql $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0021c254, . - lc_capacity_type_0021c254\n"
+    },
+    {
+      "site": 2217172,
+      "hook": 2217172,
+      "address": 2149425668,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        744620132,
+        272629769,
+        200768
+      ],
+      "name": "lc_capacity_type_0021d4d4",
+      "bindings": {
+        "lc_taken": 2149425712,
+        "lc_continue": 2149425680,
+        "lc_displaced_0": 200768
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2217180
+        }
+      ],
+      "entryOffsets": {
+        "2217176": 20
+      },
+      "owner": {
+        "start": 2217040,
+        "size": 820,
+        "retailSha256": "ade6b60e643001fb2952c15d5b6ed7439e2d85f7f05ee0e77e2d0aa8e9ac890c"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_0021d4d4\n.type lc_capacity_type_0021d4d4, @function\nlc_capacity_type_0021d4d4:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_0021d4d4, . - lc_capacity_type_0021d4d4\n"
+    },
+    {
+      "site": 2307728,
+      "hook": 2307724,
+      "address": 2149516220,
+      "kind": "precedingBranch",
+      "context": {
+        "kind": "enemyBase",
+        "register": 17,
+        "playerBase": 2149126016
+      },
+      "expected": [
+        274726929,
+        677511268
+      ],
+      "name": "lc_capacity_type_00233690",
+      "bindings": {
+        "lc_taken": 2149516292,
+        "lc_continue": 2149516228
+      },
+      "displaced": [],
+      "entryOffsets": {},
+      "owner": {
+        "start": 2307552,
+        "size": 300,
+        "retailSha256": "5110be826ff15f81021b9e06bcc90808ccd93c1b33135817aa62cbcfa898701f"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_00233690\n.type lc_capacity_type_00233690, @function\nlc_capacity_type_00233690:\nbeq $3, $0, taken\nnop\nlui $at, 0x8019\naddiu $at, $at, 3968\nbeq $17, $at, not_taken_player\nnop\nnot_taken_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb not_taken_done\nnop\nnot_taken_player:\n.word 0x28620064\nnot_taken_done:\nj lc_continue\nnop\ntaken:\nlui $at, 0x8019\naddiu $at, $at, 3968\nbeq $17, $at, taken_pred_player\nnop\ntaken_pred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $3\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nb taken_pred_done\nnop\ntaken_pred_player:\n.word 0x28620064\ntaken_pred_done:\nj lc_taken\nnop\n.size lc_capacity_type_00233690, . - lc_capacity_type_00233690\n"
+    },
+    {
+      "site": 2807368,
+      "hook": 2807368,
+      "address": 2149834472,
+      "kind": "followingBranch",
+      "context": {
+        "kind": "enemy"
+      },
+      "expected": [
+        746717284,
+        272629775,
+        266304
+      ],
+      "name": "lc_capacity_type_002ad648",
+      "bindings": {
+        "lc_taken": 2149834540,
+        "lc_continue": 2149834484,
+        "lc_displaced_0": 266304
+      },
+      "displaced": [
+        {
+          "symbol": "lc_displaced_0",
+          "site": 2807376
+        }
+      ],
+      "entryOffsets": {
+        "2807372": 20
+      },
+      "owner": {
+        "start": 2807156,
+        "size": 348,
+        "retailSha256": "ff71ece499634693d2f14ff035b54ee45f372d6650e706d445752d2c946f2129"
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_type_002ad648\n.type lc_capacity_type_002ad648, @function\nlc_capacity_type_002ad648:\npred_enemy:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $4\nlbu $2, %lo(lc_enemy_types)($at)\naddiu $2, $2, -2\nsltu $2, $zero, $2\nbeq $2, $0, taken\n.word lc_displaced_0\nj lc_continue\nnop\ntaken:\nj lc_taken\nnop\n.size lc_capacity_type_002ad648, . - lc_capacity_type_002ad648\n"
+    }
+  ]
+}

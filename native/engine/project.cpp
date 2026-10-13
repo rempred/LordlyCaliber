@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/capacity_placement.h"
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
 #include "engine/body_visual_policy.h"
@@ -17,6 +18,19 @@
 #include <tuple>
 
 namespace lordly {
+bool Project::expandedArmies() const {
+    if(runtimeRom_)return true;
+    if(scenarios_)for(const auto &scenario:scenarios_->entries()) {
+        int members=0;
+        for(int i=0;i<scenario.squads.size();++i) {
+            const auto source=u8(scenario.layout.deployments[i],0)&127;
+            if(source>=50)return true;
+            if(source>=30)members+=Scenarios::memberCount(scenario.squads[i]);
+        }
+        if(members>98)return true;
+    }
+    return false;
+}
 namespace {
 QString classLabel(const QJsonObject &labels, int id, const QString &name) {
     const auto label = labels[QString::number(id)].toString();
@@ -151,6 +165,10 @@ const QVector<Field> &fields(Table table) {
 Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     rom.requireSupported();
     Project p;
+    if(const auto capacity=CapacityPlacement::read(rom)) {
+        p.runtimeRom_=rom;
+        rom=capacity->canonical(rom);
+    }
     p.rom_ = std::move(rom);
     p.catalog_ = catalog;
     p.catalog_["CLASS_LABELS"] = catalog.contains("CLASS_LABELS")
@@ -977,7 +995,7 @@ QJsonObject Project::manifest() const {
     auto result = retained_;
     result["format"] = "LordlyCaliberProject";
     result["version"] = 1;
-    result["sourceSha256"] = QString::fromLatin1(sha256(rom_.bytes()));
+    result["sourceSha256"] = QString::fromLatin1(sha256(runtimeRom().bytes()));
     result["sourcePath"] = rom_.sourcePath();
     QJsonObject edits;
     for (const auto &[table, records] : tables_) {
@@ -1181,11 +1199,11 @@ void Project::setDialogues(const QJsonObject &value) {
 void Project::applyManifest(const QJsonObject &object) {
     if (object.value("format") != "LordlyCaliberProject" || object.value("version").toInt() != 1)
         throw Error("Unsupported native project format");
-    if (object.value("sourceSha256").toString().toLatin1() != sha256(rom_.bytes()))
+    if (object.value("sourceSha256").toString().toLatin1() != sha256(runtimeRom().bytes()))
         throw Error("Project requires a different source ROM");
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
-    auto candidate = Project::fromRom(rom_, catalog_);
+    auto candidate = Project::fromRom(runtimeRom(), catalog_);
     if (!texts_.isEmpty())
         candidate.loadTexts();
     if (promotion_)

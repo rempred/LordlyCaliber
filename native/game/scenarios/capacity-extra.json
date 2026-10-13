@@ -1,0 +1,713 @@
+{
+  "generator": "native/tools/generate-capacity-extra.py",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "patches": [
+    {
+      "site": 1151552,
+      "end": 1151592,
+      "address": 2149337856,
+      "name": "lc_capacity_extra_00119240",
+      "reason": "Soldier HP pool follows source ownership, including allied sources",
+      "owner": {
+        "start": 1151436,
+        "size": 648,
+        "retailSha256": "ff2bf4b0d12cd6ccc46d3116a922bbbe7376059c8c0b8b18e9e8cc00d1dca054"
+      },
+      "expected": [
+        1006796825,
+        5509153,
+        2420273649,
+        1006927897,
+        612634496,
+        809631872,
+        272629763,
+        200768,
+        1006927897,
+        612652016
+      ],
+      "bindings": {
+        "lc_continue": 2149337896
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00119240\n.type lc_capacity_extra_00119240, @function\nlc_capacity_extra_00119240:\nsltiu $at, $s3, 30\nbne $at, $zero, player\nsll $v0, $v1, 1\nlui $a0, %hi(lc_enemy_soldier_hp + 196)\naddiu $a0, $a0, %lo(lc_enemy_soldier_hp + 196)\nb done\nnop\nplayer:\nlui $a0, 0x8019\naddiu $a0, $a0, 0x0f80\ndone:\nj lc_continue\nnop\n.size lc_capacity_extra_00119240, . - lc_capacity_extra_00119240\n"
+    },
+    {
+      "site": 1260720,
+      "end": 1260728,
+      "address": 2149447024,
+      "name": "lc_capacity_extra_00133cb0",
+      "reason": "Rest healing separates indexed HP from shared maximum",
+      "owner": {
+        "start": 1260512,
+        "size": 704,
+        "retailSha256": "f81abb2a1075459d6eafd3f526c38ccb731cf489bdb307bab8908f418a59f3f1"
+      },
+      "expected": [
+        5779489,
+        654835910
+      ],
+      "bindings": {
+        "lc_continue": 2149447032
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00133cb0\n.type lc_capacity_extra_00133cb0, @function\nlc_capacity_extra_00133cb0:\nlui $at, %hi(lc_enemy_soldier_hp)\naddiu $at, $at, %lo(lc_enemy_soldier_hp)\naddu $a2, $at, $v0\nlui $t0, %hi(lc_enemy_soldier_max_hp)\naddiu $t0, $t0, %lo(lc_enemy_soldier_max_hp)\nj lc_continue\nnop\n.size lc_capacity_extra_00133cb0, . - lc_capacity_extra_00133cb0\n"
+    },
+    {
+      "site": 2144208,
+      "end": 2144216,
+      "address": 2149352256,
+      "name": "lc_capacity_extra_0020b7d0",
+      "reason": "Formation Soldier HP and maximum",
+      "owner": {
+        "start": 2137972,
+        "size": 7532,
+        "retailSha256": "ac44cea185ecea7bdac8cfcb21765944a72ca6749d44cce7d86c7265cbea202a"
+      },
+      "expected": [
+        2487746560,
+        2546532550
+      ],
+      "bindings": {
+        "lc_continue": 2149352264
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020b7d0\n.type lc_capacity_extra_0020b7d0, @function\nlc_capacity_extra_0020b7d0:\nsll $at, $v1, 1\nlui $t0, %hi(lc_enemy_soldier_hp)\naddu $at, $at, $t0\nlhu $t0, %lo(lc_enemy_soldier_hp)($at)\nlui $at, %hi(lc_enemy_soldier_max_hp)\nlhu $t1, %lo(lc_enemy_soldier_max_hp)($at)\nj lc_continue\nnop\n.size lc_capacity_extra_0020b7d0, . - lc_capacity_extra_0020b7d0\n"
+    },
+    {
+      "site": 2212616,
+      "end": 2212624,
+      "address": 2149421112,
+      "name": "lc_capacity_extra_0021c308",
+      "reason": "Combat HP writeback before original status call",
+      "owner": {
+        "start": 2212160,
+        "size": 624,
+        "retailSha256": "ea5019bdb92f6c2fc0057d4cb2ac07148e7c578bd0847fd4eb4139675a0a7efb"
+      },
+      "expected": [
+        201794444,
+        2755919676
+      ],
+      "bindings": {
+        "lc_continue": 2149421120,
+        "lc_original_call": 2149355056
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0021c308\n.type lc_capacity_extra_0021c308, @function\nlc_capacity_extra_0021c308:\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s2, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_hp)\naddiu $at, $at, %lo(lc_enemy_soldier_hp)\nsll $v0, $a1, 1\naddu $at, $at, $v0\nsh $v1, 0($at)\naddu $v0, $s2, $v0\nb done\nnop\nplayer:\nsh $v1, -196($v0)\ndone:\nlui $ra, %hi(lc_continue)\naddiu $ra, $ra, %lo(lc_continue)\nj lc_original_call\nnop\n.size lc_capacity_extra_0021c308, . - lc_capacity_extra_0021c308\n"
+    },
+    {
+      "site": 2212648,
+      "end": 2212656,
+      "address": 2149421144,
+      "name": "lc_capacity_extra_0021c328",
+      "reason": "Combat state update retains existing set/clear rule",
+      "owner": {
+        "start": 2212160,
+        "size": 624,
+        "retailSha256": "ea5019bdb92f6c2fc0057d4cb2ac07148e7c578bd0847fd4eb4139675a0a7efb"
+      },
+      "expected": [
+        2451767542,
+        37951521
+      ],
+      "bindings": {
+        "lc_continue": 2149421152
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0021c328\n.type lc_capacity_extra_0021c328, @function\nlc_capacity_extra_0021c328:\nlbu $v1, 246($s1)\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s2, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_state - 144)\naddiu $at, $at, %lo(lc_enemy_soldier_state - 144)\naddu $v1, $v1, $at\nb done\nnop\nplayer:\naddu $v1, $s2, $v1\ndone:\nj lc_continue\nnop\n.size lc_capacity_extra_0021c328, . - lc_capacity_extra_0021c328\n"
+    },
+    {
+      "site": 2212668,
+      "end": 2212676,
+      "address": 2149421164,
+      "name": "lc_capacity_extra_0021c33c",
+      "reason": "Combat state update retains existing set/clear rule",
+      "owner": {
+        "start": 2212160,
+        "size": 624,
+        "retailSha256": "ea5019bdb92f6c2fc0057d4cb2ac07148e7c578bd0847fd4eb4139675a0a7efb"
+      },
+      "expected": [
+        2451767542,
+        37951521
+      ],
+      "bindings": {
+        "lc_continue": 2149421172
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0021c33c\n.type lc_capacity_extra_0021c33c, @function\nlc_capacity_extra_0021c33c:\nlbu $v1, 246($s1)\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s2, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_state - 144)\naddiu $at, $at, %lo(lc_enemy_soldier_state - 144)\naddu $v1, $v1, $at\nb done\nnop\nplayer:\naddu $v1, $s2, $v1\ndone:\nj lc_continue\nnop\n.size lc_capacity_extra_0021c33c, . - lc_capacity_extra_0021c33c\n"
+    },
+    {
+      "site": 2307740,
+      "end": 2307756,
+      "address": 2149516236,
+      "name": "lc_capacity_extra_0023369c",
+      "reason": "Supporting Soldier HP preserves signed handle-minus100 arithmetic",
+      "owner": {
+        "start": 2307552,
+        "size": 300,
+        "retailSha256": "5110be826ff15f81021b9e06bcc90808ccd93c1b33135817aa62cbcfa898701f"
+      },
+      "expected": [
+        610533276,
+        200768,
+        5312545,
+        2487484420
+      ],
+      "bindings": {
+        "lc_continue": 2149516252
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0023369c\n.type lc_capacity_extra_0023369c, @function\nlc_capacity_extra_0023369c:\naddiu $v1, $v1, -100\nsll $v0, $v1, 1\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s1, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_hp + 200)\naddiu $at, $at, %lo(lc_enemy_soldier_hp + 200)\naddu $v0, $v0, $at\nlhu $a0, 0($v0)\nb done\nnop\nplayer:\naddu $v0, $v0, $s1\nlhu $a0, 4($v0)\ndone:\nj lc_continue\nnop\n.size lc_capacity_extra_0023369c, . - lc_capacity_extra_0023369c\n"
+    },
+    {
+      "site": 2307760,
+      "end": 2307768,
+      "address": 2149516256,
+      "name": "lc_capacity_extra_002336b0",
+      "reason": "Supporting Soldier state",
+      "owner": {
+        "start": 2307552,
+        "size": 300,
+        "retailSha256": "5110be826ff15f81021b9e06bcc90808ccd93c1b33135817aa62cbcfa898701f"
+      },
+      "expected": [
+        35852321,
+        2420244724
+      ],
+      "bindings": {
+        "lc_continue": 2149516264
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_002336b0\n.type lc_capacity_extra_002336b0, @function\nlc_capacity_extra_002336b0:\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s1, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_state + 100)\naddu $at, $at, $v1\nlbu $v0, %lo(lc_enemy_soldier_state + 100)($at)\nb done\nnop\nplayer:\naddu $v0, $s1, $v1\nlbu $v0, 244($v0)\ndone:\nj lc_continue\nnop\n.size lc_capacity_extra_002336b0, . - lc_capacity_extra_002336b0\n"
+    },
+    {
+      "site": 2307780,
+      "end": 2307792,
+      "address": 2149516276,
+      "name": "lc_capacity_extra_002336c4",
+      "reason": "Supporting Soldier shared maximum before original calculation",
+      "owner": {
+        "start": 2307552,
+        "size": 300,
+        "retailSha256": "5110be826ff15f81021b9e06bcc90808ccd93c1b33135817aa62cbcfa898701f"
+      },
+      "expected": [
+        2519007234,
+        201795565,
+        0
+      ],
+      "bindings": {
+        "lc_continue": 2149516288,
+        "lc_original_call": 2149359540
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_002336c4\n.type lc_capacity_extra_002336c4, @function\nlc_capacity_extra_002336c4:\nlui $at, 0x8019\naddiu $at, $at, 0x0f80\nbeq $s1, $at, player\nnop\nlui $at, %hi(lc_enemy_soldier_max_hp)\nlhu $a1, %lo(lc_enemy_soldier_max_hp)($at)\nb done\nnop\nplayer:\nlhu $a1, 2($s1)\ndone:\nlui $ra, %hi(lc_continue)\naddiu $ra, $ra, %lo(lc_continue)\nj lc_original_call\nnop\n.size lc_capacity_extra_002336c4, . - lc_capacity_extra_002336c4\n"
+    },
+    {
+      "site": 269260,
+      "end": 269268,
+      "address": 2148973772,
+      "name": "lc_capacity_extra_00041bcc",
+      "reason": "Enemy deletion retains tags for surviving source references",
+      "owner": {
+        "start": 268652,
+        "size": 692,
+        "retailSha256": "8b0c3d171e5efcd0c5b5a87c853019524d2615772422f872737167625296a842"
+      },
+      "expected": [
+        849477887,
+        137280
+      ],
+      "bindings": {
+        "lc_continue": 2148973820
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00041bcc\n.type lc_capacity_extra_00041bcc, @function\nlc_capacity_extra_00041bcc:\nandi $a0, $s5, 255\njal lc_capacity_delete_enemy\nnop\nj lc_continue\nnop\n.size lc_capacity_extra_00041bcc, . - lc_capacity_extra_00041bcc\n"
+    },
+    {
+      "site": 286512,
+      "end": 286520,
+      "address": 2148991024,
+      "name": "lc_capacity_extra_00045f30",
+      "reason": "Reset all tagged handles while retaining template0",
+      "owner": {
+        "start": 286512,
+        "size": 352,
+        "retailSha256": "f3bd05a22b5cb500fe672c5cbace3864e485f5a3fbaea78d53f27e6798100fc0"
+      },
+      "expected": [
+        666763232,
+        2947547152
+      ],
+      "bindings": {},
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00045f30\n.type lc_capacity_extra_00045f30, @function\nlc_capacity_extra_00045f30:\nj lc_enemy_clear_members\nnop\n.size lc_capacity_extra_00045f30, . - lc_capacity_extra_00045f30\n"
+    },
+    {
+      "site": 2338888,
+      "end": 2338896,
+      "address": 2149389544,
+      "name": "lc_capacity_extra_0023b048",
+      "reason": "Dedicated source60 for temporary encounter",
+      "owner": {
+        "start": 2338888,
+        "size": 472,
+        "retailSha256": "153f6808ba4c8a4de0167b7925d83cd100b658ebb81f53b229fd6f5acd670394"
+      },
+      "expected": [
+        666763216,
+        2947743780
+      ],
+      "bindings": {},
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0023b048\n.type lc_capacity_extra_0023b048, @function\nlc_capacity_extra_0023b048:\nj lc_capacity_neutral_construct\nnop\n.size lc_capacity_extra_0023b048, . - lc_capacity_extra_0023b048\n"
+    },
+    {
+      "site": 2211756,
+      "end": 2211908,
+      "address": 2149420252,
+      "name": "lc_capacity_extra_0021bfac",
+      "reason": "Clean up only dedicated temporary source",
+      "owner": {
+        "start": 2209940,
+        "size": 2016,
+        "retailSha256": "ff6a3c62cb024f13d2da495bc59e3f0750b337a0842fa39c4bfe5535b8ca37ed"
+      },
+      "expected": [
+        1006796825,
+        2420274920,
+        32801,
+        1007976473,
+        647255392,
+        137280,
+        6428705,
+        202944,
+        6428705,
+        1006796825,
+        608334320,
+        6457377,
+        36704289,
+        2420244482,
+        1346371597,
+        638582785,
+        139328,
+        8527905,
+        270464,
+        8527905,
+        270464,
+        1007845401,
+        38047777,
+        2454869362,
+        9707553,
+        201477344,
+        604307508,
+        638582785,
+        771883013,
+        339804143,
+        36704289,
+        35659809,
+        201477344,
+        604307481,
+        1006731289,
+        2686465649,
+        1006731289,
+        2687661800
+      ],
+      "bindings": {
+        "lc_continue": 2149420404
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0021bfac\n.type lc_capacity_extra_0021bfac, @function\nlc_capacity_extra_0021bfac:\njal lc_capacity_neutral_cleanup\nnop\nj lc_continue\nnop\n.size lc_capacity_extra_0021bfac, . - lc_capacity_extra_0021bfac\n"
+    },
+    {
+      "site": 2179864,
+      "end": 2179872,
+      "address": 2149388360,
+      "name": "lc_capacity_extra_00214318",
+      "reason": "Defensive recruitment guard before clearing a player record",
+      "owner": {
+        "start": 2179780,
+        "size": 668,
+        "retailSha256": "fc2de8c7b4ea33d8615b393dc09ad931e872656413d0e010cab2ad9abda873cb"
+      },
+      "expected": [
+        1118400,
+        5312547
+      ],
+      "bindings": {
+        "lc_continue": 2149388368,
+        "lc_refuse": 2149388916
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00214318\n.type lc_capacity_extra_00214318, @function\nlc_capacity_extra_00214318:\nbeq $s1, $zero, refuse\nnop\nlbu $at, 246($s2)\nlui $v0, %hi(lc_enemy_types)\naddu $at, $at, $v0\nlbu $at, %lo(lc_enemy_types)($at)\naddiu $at, $at, -1\nbne $at, $zero, refuse\nnop\nsll $v0, $s1, 3\nsubu $v0, $v0, $s1\nj lc_continue\nnop\nrefuse:\nj lc_refuse\nnop\n.size lc_capacity_extra_00214318, . - lc_capacity_extra_00214318\n"
+    },
+    {
+      "site": 1660880,
+      "end": 1660888,
+      "address": 2149667648,
+      "name": "lc_capacity_extra_001957d0",
+      "reason": "Keep original player constructor; route map enemies to tagged allocator",
+      "owner": {
+        "start": 1660880,
+        "size": 1484,
+        "retailSha256": "e05ef7bf474667f4586c0674c4f55dcef161a2d0e0070ba2d46a870eb79d146b"
+      },
+      "expected": [
+        666763184,
+        815923455
+      ],
+      "bindings": {
+        "lc_continue": 2149667656
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_001957d0\n.type lc_capacity_extra_001957d0, @function\nlc_capacity_extra_001957d0:\nandi $at, $a1, 127\nsltiu $at, $at, 30\nbne $at, $zero, player\nnop\nj lc_enemy_construct\nnop\nplayer:\n.word 0x27bdffb0\n.word 0x30a200ff\nj lc_continue\nnop\n.size lc_capacity_extra_001957d0, . - lc_capacity_extra_001957d0\n"
+    },
+    {
+      "site": 2399700,
+      "end": 2399740,
+      "address": 2149408372,
+      "name": "lc_capacity_extra_00249dd4",
+      "reason": "Class search includes all ordinary enemy handles, excludes Soldiers/template",
+      "owner": {
+        "start": 2399640,
+        "size": 1096,
+        "retailSha256": "a55924c20836947051caafcd8fa21b0ee29864eb2602a0a983d2635d0f69f16c"
+      },
+      "expected": [
+        1006796825,
+        4395041,
+        2420266353,
+        272891910,
+        604110947,
+        640745473,
+        773980259,
+        339804152,
+        610467892,
+        604110947
+      ],
+      "bindings": {
+        "lc_continue": 2149408412
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00249dd4\n.type lc_capacity_extra_00249dd4, @function\nlc_capacity_extra_00249dd4:\njal lc_capacity_find_enemy\nnop\naddu $s1, $v0, $zero\naddiu $v0, $zero, 255\nj lc_continue\nnop\n.size lc_capacity_extra_00249dd4, . - lc_capacity_extra_00249dd4\n"
+    },
+    {
+      "site": 2399912,
+      "end": 2400000,
+      "address": 2149408584,
+      "name": "lc_capacity_extra_00249ea8",
+      "reason": "Preflight scripted copy and initialize player IDs by formation slot",
+      "owner": {
+        "start": 2399640,
+        "size": 1096,
+        "retailSha256": "a55924c20836947051caafcd8fa21b0ee29864eb2602a0a983d2635d0f69f16c"
+      },
+      "expected": [
+        645070849,
+        778174469,
+        339804158,
+        645070849,
+        38945,
+        34849,
+        8225,
+        664993808,
+        1006796825,
+        4460577,
+        2420259793,
+        1413480455,
+        640745473,
+        778174469,
+        1413480449,
+        2758868992,
+        610467842,
+        645070849,
+        640745473,
+        773980260,
+        339804147,
+        612630584
+      ],
+      "bindings": {
+        "lc_continue": 2149408672,
+        "lc_refuse": 2149408576
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00249ea8\n.type lc_capacity_extra_00249ea8, @function\nlc_capacity_extra_00249ea8:\naddu $a0, $s2, $zero\njal lc_capacity_transfer_slots\naddiu $a1, $sp, 16\nbeq $v0, $zero, refuse\nnop\nj lc_continue\nnop\nrefuse:\nj lc_refuse\nnop\n.size lc_capacity_extra_00249ea8, . - lc_capacity_extra_00249ea8\n"
+    },
+    {
+      "site": 1151608,
+      "end": 1151616,
+      "address": 2149337912,
+      "name": "lc_capacity_extra_00119278",
+      "reason": "Release a dead detached Soldier without clobbering live loop registers",
+      "owner": {
+        "start": 1151436,
+        "size": 648,
+        "retailSha256": "ff2bf4b0d12cd6ccc46d3116a922bbbe7376059c8c0b8b18e9e8cc00d1dca054"
+      },
+      "expected": [
+        2720006144,
+        2393899008
+      ],
+      "bindings": {
+        "lc_continue": 2149337920
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00119278\n.type lc_capacity_extra_00119278, @function\nlc_capacity_extra_00119278:\nsb $zero, 0($s1)\naddiu $sp, $sp, -96\nsw $2, 16($sp)\nsw $3, 20($sp)\nsw $4, 24($sp)\nsw $5, 28($sp)\nsw $6, 32($sp)\nsw $7, 36($sp)\nsw $8, 40($sp)\nsw $9, 44($sp)\nsw $10, 48($sp)\nsw $11, 52($sp)\nsw $12, 56($sp)\nsw $13, 60($sp)\nsw $14, 64($sp)\nsw $15, 68($sp)\nsw $24, 72($sp)\nsw $25, 76($sp)\nsw $31, 80($sp)\nmfhi $at\nsw $at, 84($sp)\nmflo $at\nsw $at, 88($sp)\naddu $a0, $s3, $zero\njal lc_capacity_release_detached\naddu $a1, $v1, $zero\nlw $at, 84($sp)\nmthi $at\nlw $at, 88($sp)\nmtlo $at\nlw $2, 16($sp)\nlw $3, 20($sp)\nlw $4, 24($sp)\nlw $5, 28($sp)\nlw $6, 32($sp)\nlw $7, 36($sp)\nlw $8, 40($sp)\nlw $9, 44($sp)\nlw $10, 48($sp)\nlw $11, 52($sp)\nlw $12, 56($sp)\nlw $13, 60($sp)\nlw $14, 64($sp)\nlw $15, 68($sp)\nlw $24, 72($sp)\nlw $25, 76($sp)\nlw $31, 80($sp)\naddiu $sp, $sp, 96\nlw $s0, 0($s5)\nj lc_continue\nnop\n.size lc_capacity_extra_00119278, . - lc_capacity_extra_00119278\n"
+    },
+    {
+      "site": 1246196,
+      "end": 1246208,
+      "address": 2149432500,
+      "name": "lc_capacity_extra_001303f4",
+      "reason": "Ordinary-only enemy recovery scan",
+      "owner": {
+        "start": 1244760,
+        "size": 1884,
+        "retailSha256": "041d9ce6d1364c7699951c185735a66a41cbfcb4c78285488c4aa6bfcbdeddfa"
+      },
+      "expected": [
+        2462318609,
+        1350565977,
+        647233537
+      ],
+      "bindings": {
+        "lc_continue": 2149432512,
+        "lc_skipped": 2149432864
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_001303f4\n.type lc_capacity_extra_001303f4, @function\nlc_capacity_extra_001303f4:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $s8\nlbu $at, %lo(lc_enemy_types)($at)\naddiu $at, $at, -1\nbne $at, $zero, empty\nnop\nlbu $a0, 17($s6)\nb ready\nnop\nempty:\naddu $a0, $zero, $zero\nready:\nbeql $a0, $zero, skipped\naddiu $s4, $s4, 1\nj lc_continue\nnop\nskipped:\nj lc_skipped\nnop\n.size lc_capacity_extra_001303f4, . - lc_capacity_extra_001303f4\n"
+    },
+    {
+      "site": 1258136,
+      "end": 1258148,
+      "address": 2149444440,
+      "name": "lc_capacity_extra_00133298",
+      "reason": "Combined player/enemy availability includes all ordinary handles",
+      "owner": {
+        "start": 1258036,
+        "size": 604,
+        "retailSha256": "06400725c32e29a25881ff558e35e5ed173b32f763251696fb71f5c4908cefd7"
+      },
+      "expected": [
+        2420247612,
+        1413480517,
+        616955956
+      ],
+      "bindings": {
+        "lc_continue": 2149444452,
+        "lc_skipped": 2149444724
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00133298\n.type lc_capacity_extra_00133298, @function\nlc_capacity_extra_00133298:\nlui $at, %hi(lc_capacity_availability)\naddu $at, $at, $s1\nlbu $v0, %lo(lc_capacity_availability)($at)\nsltiu $at, $s1, 100\nbne $at, $zero, ready\nnop\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $a3\nlbu $at, %lo(lc_enemy_types)($at)\naddiu $at, $at, -1\nbeq $at, $zero, ready\nnop\nori $v0, $v0, 1\nready:\nbnel $v0, $zero, skipped\naddiu $a2, $a2, 52\nj lc_continue\nnop\nskipped:\nj lc_skipped\nnop\n.size lc_capacity_extra_00133298, . - lc_capacity_extra_00133298\n"
+    },
+    {
+      "site": 269804,
+      "end": 269816,
+      "address": 2148974316,
+      "name": "lc_capacity_extra_00041dec",
+      "reason": "Name uniqueness scans ordinary records without interpreting Soldier storage",
+      "owner": {
+        "start": 269344,
+        "size": 608,
+        "retailSha256": "5943839747d13752777f341ab173b91450a257e0eeca4221ebab781c8f161207"
+      },
+      "expected": [
+        2420266353,
+        272629767,
+        39854113
+      ],
+      "bindings": {
+        "lc_continue": 2148974328,
+        "lc_skipped": 2148974352
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00041dec\n.type lc_capacity_extra_00041dec, @function\nlc_capacity_extra_00041dec:\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $s0\nlbu $at, %lo(lc_enemy_types)($at)\naddiu $at, $at, -1\nbne $at, $zero, empty\nnop\nlui $v0, %hi(lc_enemy_characters + 17)\naddu $v0, $v0, $s1\nlbu $v0, %lo(lc_enemy_characters + 17)($v0)\nb ready\nnop\nempty:\naddu $v0, $zero, $zero\nready:\nbeq $v0, $zero, skipped\naddu $a0, $s3, $zero\nj lc_continue\nnop\nskipped:\nj lc_skipped\nnop\n.size lc_capacity_extra_00041dec, . - lc_capacity_extra_00041dec\n"
+    },
+    {
+      "site": 2635804,
+      "end": 2635816,
+      "address": 2149742668,
+      "name": "lc_capacity_extra_0028381c",
+      "reason": "Class record lookup retains template0 and filters tagged records",
+      "owner": {
+        "start": 2635784,
+        "size": 164,
+        "retailSha256": "cd4578802d4cd8536694f86b55698db609921551e1f8f21b242bf1746cbb2479"
+      },
+      "expected": [
+        2420266353,
+        272891924,
+        614793217
+      ],
+      "bindings": {
+        "lc_continue": 2149742680,
+        "lc_found": 2149742756
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0028381c\n.type lc_capacity_extra_0028381c, @function\nlc_capacity_extra_0028381c:\nbeq $a1, $zero, ordinary\nnop\nlui $at, %hi(lc_enemy_types)\naddu $at, $at, $a1\nlbu $at, %lo(lc_enemy_types)($at)\naddiu $at, $at, -1\nbne $at, $zero, skipped\nnop\nordinary:\nlui $v0, %hi(lc_enemy_characters + 17)\naddu $v0, $v0, $a2\nlbu $v0, %lo(lc_enemy_characters + 17)($v0)\nbeq $v0, $a0, found\naddiu $a1, $a1, 1\nj lc_continue\nnop\nskipped:\naddiu $a1, $a1, 1\nj lc_continue\nnop\nfound:\nj lc_found\nnop\n.size lc_capacity_extra_0028381c, . - lc_capacity_extra_0028381c\n"
+    },
+    {
+      "site": 1908884,
+      "end": 1908900,
+      "address": 2149170068,
+      "name": "lc_capacity_extra_001d2094",
+      "reason": "New-game/reset path clears all expanded enemy storage",
+      "owner": {
+        "start": 1908860,
+        "size": 368,
+        "retailSha256": "6f8f707ec441e3023f34aeb19a2dedfd6c5bcac85791d474220a0f14759db1c0"
+      },
+      "expected": [
+        1006927897,
+        612652384,
+        201477344,
+        604312656
+      ],
+      "bindings": {
+        "lc_continue": 2149170084
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_001d2094\n.type lc_capacity_extra_001d2094, @function\nlc_capacity_extra_001d2094:\njal lc_enemy_reset\nnop\nj lc_continue\nnop\n.size lc_capacity_extra_001d2094, . - lc_capacity_extra_001d2094\n"
+    },
+    {
+      "site": 2202212,
+      "end": 2202220,
+      "address": 2149410708,
+      "name": "lc_capacity_extra_00219a64",
+      "reason": "Full player roster prevents destructive recruitment success",
+      "owner": {
+        "start": 2202132,
+        "size": 1272,
+        "retailSha256": "ab78564153e072fa1a0afa836eb0254df1729fd9176087b9247b88f57ec4351a"
+      },
+      "expected": [
+        201803171,
+        0
+      ],
+      "bindings": {
+        "lc_continue": 2149410716
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00219a64\n.type lc_capacity_extra_00219a64, @function\nlc_capacity_extra_00219a64:\nlui $ra, %hi(lc_continue)\naddiu $ra, $ra, %lo(lc_continue)\nj lc_capacity_persuasion\nnop\n.size lc_capacity_extra_00219a64, . - lc_capacity_extra_00219a64\n"
+    },
+    {
+      "site": 2153756,
+      "end": 2153768,
+      "address": 2149361804,
+      "name": "lc_capacity_extra_0020dd1c",
+      "reason": "Combat type keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        776077412,
+        272630005,
+        1183808
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152488,
+        "lc_battle_ordinary": 2149361816,
+        "lc_battle_soldier": 2149362792
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020dd1c\n.type lc_capacity_extra_0020dd1c, @function\nlc_capacity_extra_0020dd1c:\n/* Replace the three-instruction member-kind decision on either combat side.\n * Only the assembler scratch register and the original v0 result are clobbered.\n * In particular v1 already points to the ordinary record and must survive.\n */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_types)\n    addu $at, $at, $s2\n    lbu $at, %lo(lc_enemy_types)($at)\n    addiu $at, $at, -2\n    bne $at, $zero, 2f\n    sll $v0, $s2, 1\n    j lc_battle_soldier\n    nop\n1:  sltiu $at, $s2, 100\n    beq $at, $zero, 3f\n    sll $v0, $s2, 1\n2:  j lc_battle_ordinary\n    nop\n3:  j lc_battle_soldier\n    nop\n.size lc_capacity_extra_0020dd1c, . - lc_capacity_extra_0020dd1c\n"
+    },
+    {
+      "site": 2156096,
+      "end": 2156108,
+      "address": 2149364144,
+      "name": "lc_capacity_extra_0020e640",
+      "reason": "Combat type keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        776077412,
+        272629955,
+        1183808
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152476,
+        "lc_battle_ordinary": 2149364156,
+        "lc_battle_soldier": 2149364932
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020e640\n.type lc_capacity_extra_0020e640, @function\nlc_capacity_extra_0020e640:\n/* Replace the three-instruction member-kind decision on either combat side.\n * Only the assembler scratch register and the original v0 result are clobbered.\n * In particular v1 already points to the ordinary record and must survive.\n */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_types)\n    addu $at, $at, $s2\n    lbu $at, %lo(lc_enemy_types)($at)\n    addiu $at, $at, -2\n    bne $at, $zero, 2f\n    sll $v0, $s2, 1\n    j lc_battle_soldier\n    nop\n1:  sltiu $at, $s2, 100\n    beq $at, $zero, 3f\n    sll $v0, $s2, 1\n2:  j lc_battle_ordinary\n    nop\n3:  j lc_battle_soldier\n    nop\n.size lc_capacity_extra_0020e640, . - lc_capacity_extra_0020e640\n"
+    },
+    {
+      "site": 2154744,
+      "end": 2154752,
+      "address": 2149362792,
+      "name": "lc_capacity_extra_0020e0f8",
+      "reason": "Combat hp keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        39981089,
+        2487418684
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152488,
+        "lc_battle_hp_continue": 2149362800
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020e0f8\n.type lc_capacity_extra_0020e0f8, @function\nlc_capacity_extra_0020e0f8:\n/* Initial Soldier HP eligibility read. v0 holds handle*2 on entry. */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_soldier_hp)\n    addu $v0, $at, $v0\n    lhu $v0, %lo(lc_enemy_soldier_hp)($v0)\n    j lc_battle_hp_continue\n    nop\n1:  addu $v0, $s3, $v0\n    lhu $v0, -196($v0)\n    j lc_battle_hp_continue\n    nop\n.size lc_capacity_extra_0020e0f8, . - lc_capacity_extra_0020e0f8\n"
+    },
+    {
+      "site": 2156884,
+      "end": 2156892,
+      "address": 2149364932,
+      "name": "lc_capacity_extra_0020e954",
+      "reason": "Combat hp keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        39981089,
+        2487418684
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152476,
+        "lc_battle_hp_continue": 2149364940
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020e954\n.type lc_capacity_extra_0020e954, @function\nlc_capacity_extra_0020e954:\n/* Initial Soldier HP eligibility read. v0 holds handle*2 on entry. */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_soldier_hp)\n    addu $v0, $at, $v0\n    lhu $v0, %lo(lc_enemy_soldier_hp)($v0)\n    j lc_battle_hp_continue\n    nop\n1:  addu $v0, $s3, $v0\n    lhu $v0, -196($v0)\n    j lc_battle_hp_continue\n    nop\n.size lc_capacity_extra_0020e954, . - lc_capacity_extra_0020e954\n"
+    },
+    {
+      "site": 2155280,
+      "end": 2155312,
+      "address": 2149363328,
+      "name": "lc_capacity_extra_0020e310",
+      "reason": "Combat fields keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        39981089,
+        2487418684,
+        2787246112,
+        2451702006,
+        2523070466,
+        39981089,
+        2787311650,
+        2420244624
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152488,
+        "lc_battle_fields_continue": 2149363360
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020e310\n.type lc_capacity_extra_0020e310, @function\nlc_capacity_extra_0020e310:\n/* Soldier actor HP, maximum and status. v0 holds actor.handle*2 on entry.\n * Player layout and the original v0/v1 results remain unchanged. */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_soldier_hp)\n    addu $v0, $at, $v0\n    lhu $v0, %lo(lc_enemy_soldier_hp)($v0)\n    sh $v0, 32($s1)\n    lui $at, %hi(lc_enemy_soldier_max_hp)\n    lhu $v1, %lo(lc_enemy_soldier_max_hp)($at)\n    sh $v1, 34($s1)\n    lbu $v0, 246($s1)\n    lui $at, %hi(lc_enemy_soldier_state)\n    addu $v0, $at, $v0\n    lbu $v0, %lo(lc_enemy_soldier_state)($v0)\n    j lc_battle_fields_continue\n    nop\n1:  addu $v0, $s3, $v0\n    lhu $v0, -196($v0)\n    sh $v0, 32($s1)\n    lbu $v0, 246($s1)\n    lhu $v1, 2($s3)\n    addu $v0, $s3, $v0\n    sh $v1, 34($s1)\n    lbu $v0, 144($v0)\n    j lc_battle_fields_continue\n    nop\n.size lc_capacity_extra_0020e310, . - lc_capacity_extra_0020e310\n"
+    },
+    {
+      "site": 2157440,
+      "end": 2157472,
+      "address": 2149365488,
+      "name": "lc_capacity_extra_0020eb80",
+      "reason": "Combat fields keeps player layout and uses tagged enemy storage",
+      "owner": {
+        "start": 2153232,
+        "size": 5548,
+        "retailSha256": "a47d14c3227f9fad494097a03496a8759de3c1a19e00324012cd541c53732eb7"
+      },
+      "expected": [
+        39981089,
+        2487418684,
+        2787246112,
+        2451702006,
+        2523070466,
+        39981089,
+        2787311650,
+        2420244624
+      ],
+      "bindings": {
+        "lc_battle_source": 2149152476,
+        "lc_battle_fields_continue": 2149365520
+      },
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_0020eb80\n.type lc_capacity_extra_0020eb80, @function\nlc_capacity_extra_0020eb80:\n/* Soldier actor HP, maximum and status. v0 holds actor.handle*2 on entry.\n * Player layout and the original v0/v1 results remain unchanged. */\n.set noat\n.set noreorder\n    lui $at, %hi(lc_battle_source)\n    lbu $at, %lo(lc_battle_source)($at)\n    sltiu $at, $at, 30\n    bne $at, $zero, 1f\n    nop\n    lui $at, %hi(lc_enemy_soldier_hp)\n    addu $v0, $at, $v0\n    lhu $v0, %lo(lc_enemy_soldier_hp)($v0)\n    sh $v0, 32($s1)\n    lui $at, %hi(lc_enemy_soldier_max_hp)\n    lhu $v1, %lo(lc_enemy_soldier_max_hp)($at)\n    sh $v1, 34($s1)\n    lbu $v0, 246($s1)\n    lui $at, %hi(lc_enemy_soldier_state)\n    addu $v0, $at, $v0\n    lbu $v0, %lo(lc_enemy_soldier_state)($v0)\n    j lc_battle_fields_continue\n    nop\n1:  addu $v0, $s3, $v0\n    lhu $v0, -196($v0)\n    sh $v0, 32($s1)\n    lbu $v0, 246($s1)\n    lhu $v1, 2($s3)\n    addu $v0, $s3, $v0\n    sh $v1, 34($s1)\n    lbu $v0, 144($v0)\n    j lc_battle_fields_continue\n    nop\n.size lc_capacity_extra_0020eb80, . - lc_capacity_extra_0020eb80\n"
+    }
+  ]
+}

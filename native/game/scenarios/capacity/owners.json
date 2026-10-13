@@ -36,16 +36,16 @@
           "start": 1197344
         },
         {
-          "name": "func_0012469c",
+          "name": "func_0012469C",
           "start": 1197724
         },
         {
-          "name": "func_00124b98",
+          "name": "func_00124B98",
           "start": 1199000
         }
       ],
       "adaptedSource": "game/scenarios/capacity/squad_supply_end.c",
-      "adaptedSha256": "7622dc3ccddddfcdfb7c44783e20fa758cc575d1176a4349ededf56f64ee5f88"
+      "adaptedSha256": "cc390711949fb563f2502e0242b06d6d45e65243a3fa5b29e88c272be00194ba"
     },
     {
       "source": "game\\accepted\\library\\src\\lib\\func_00128E80.c",
@@ -255,7 +255,7 @@
         "func_00128E80": 2149402432
       },
       "adaptedSource": "game/scenarios/capacity/func_001960A8.c",
-      "adaptedSha256": "83574b0682c23edb7bf73a1313066f431b43d611e48b27f65fe2cad7db2c645f"
+      "adaptedSha256": "b1f4fbe39f8c0b6e7699bba71efc54e046978ebc996db839021e279b0a2b7270"
     },
     {
       "source": "game\\accepted\\library\\src\\lib\\func_00129068.c",

@@ -6,6 +6,7 @@
 
 namespace lordly {
 struct PromotionRuntimeBuild;
+struct CapacityRuntimeBuild;
 struct ClassRuntimeBuild {
     ClassDataImage data;
     QByteArray compiledData;
@@ -27,7 +28,7 @@ ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves = false,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder = {},
-                  const ItemData *items = nullptr);
+                  const ItemData *items = nullptr, CapacityRuntimeBuild *capacity = nullptr);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

@@ -1,5 +1,44 @@
 # Native Lordly Caliber
 
+## Expanded armies (2026-10-13)
+
+CapacityRuntimeBuild reserves a 64 KiB-aligned permanent block after class/item
+data. Sources0..29 remain player squads;30..59 are authored enemy/allied squads;
+60 is a dedicated wild encounter slot. All61 pointers refer to192-byte objects,
+including the inactive temporary slot. The ordinary player roster is unchanged.
+Enemy handles1..254 use explicit ordinary/Soldier tags and256-entry character,
+HP and state arrays. Rebuilt C owners, instruction adapters and qualified address
+pairs relocate readers together; complete replaced owners require known hashes.
+The route resolver's queued, dormant and group activation limits also rise from
+15 to30 through four guarded constants. Group activation checks the remaining
+capacity before waking any member. The special key54 portal search keeps its
+existing32..48 slot range; expanding ordinary authored squads does not rewrite
+that battle's portal script or spawn presets.
+
+The format3 suspend record is27256 bytes:6256 normal,9300 quick,664 type/HP/state
+extension and11036 mission state. Both normal records retain their original
+6256-byte expanded layout. The existing compression transaction preserves32 KiB
+SRAM and refuses overflow before writes. Legacy migration preserves the old
+normal prefix,100 ordinary enemy rows,20 enemy sources, Soldier data,50 snapshots,
+and opaque mission tail; extra slots start clear. The migration compiles outside
+the reclaimed resident save allocation; save callbacks link to its actual entry.
+
+LC07CAPA metadata records exact guarded before/after instruction words plus
+checksums. Project keeps the input runtime ROM and a canonical model ROM that
+restores these owned patches; unrelated bytes remain intact. Rebuilding composes
+existing features from canonical code, then reapplies capacity and refreshes
+ClassPlacement/save ownership checksums. SaveDocument uses runtime source bases
+for RAM/state files and the unchanged virtual normal descriptor for battery files.
+Project source identity remains the actual input ROM. Whole linked allocation
+growth is checked before reuse; a growing allocation with following resources
+moves to the ROM tail and its loader/encounter references are relinked.
+
+Tests execute compiled N64 code in private MIPS RAM with guarded allocation and
+simulated SRAM. Public export tests cover30×5 squads, refusal of a31st, reopen,
+unchanged rebuild, relocated player source inspection and full save dispatcher
+roundtrips. These tests do not emulate a complete console or prove a universal
+compression bound. Keep the authored cap at30 and player deployment at20.
+
 ## Scenario battle strategies (2026-10-12)
 
 The shared `ScenarioSquadPanel` exposes Section 1 deployment byte 8 in both the

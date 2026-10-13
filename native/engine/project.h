@@ -61,6 +61,8 @@ class Project {
     const Rom &rom() const {
         return rom_;
     }
+    const Rom &runtimeRom() const { return runtimeRom_ ? *runtimeRom_ : rom_; }
+    bool expandedArmies() const;
     const QVector<Record> &records(Table table) const {
         return tables_.at(table);
     }
@@ -237,6 +239,7 @@ class Project {
     void importLegacyScenes(const QJsonObject &);
     void importLegacyWorld(const QJsonObject &object);
     Rom rom_;
+    std::optional<Rom> runtimeRom_;
     QJsonObject catalog_, retained_, legacy_;
     bool legacyScenesImported_ = false;
     bool legacyAnimationSequencesImported_ = false;

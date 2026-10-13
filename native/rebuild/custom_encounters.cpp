@@ -167,7 +167,8 @@ QMap<QString, quint32> customEncounterServices() {
             {"lc_menu_context", 0x801ce8c0}};
 }
 CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &directory,
-                                      quint32 address, quint32 capacity, quint32 indexRomOffset, int poolSlots, int profileCount) {
+                                      quint32 address, quint32 capacity, quint32 indexRomOffset, int poolSlots, int profileCount,
+                                      const QMap<QString,quint32> &capacitySymbols) {
     if (poolSlots < 10 || poolSlots > 32 || profileCount < 0 || profileCount > 256 * poolSlots ||
         address < ClassPlacement::residentBegin || address % 16 || capacity % 16 ||
         capacity < CustomRuntimeBuild::stateSize ||
@@ -184,6 +185,7 @@ CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &d
     auto source = QString("#define LC_POOL_SLOTS %1\n#define LC_POOL_PAIRS %2U\n")
                       .arg(poolSlots).arg(poolSlots > 10 ? indexRomOffset + 256 * poolSlots * 4 + profileCount * 128 : 0)
                       .toLatin1() + read("custom.c");
+    if(!capacitySymbols.isEmpty())source="#define LC_ENEMY_CAPACITY 1\n"+source;
     // One translation unit gives C and register adapters ordinary linked symbols.
     // Keep the editable assembly readable as a separate resource, not encoded bytes.
     auto adapter = read("custom-sites.s");
@@ -193,9 +195,19 @@ CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &d
     adapter.replace("\n", "\\n\"\n\"");
     source += "\nasm(\"" + adapter + "\");\n";
     auto symbols = customEncounterServices();
+    if(!capacitySymbols.isEmpty()) {
+        symbols.insert(capacitySymbols);
+        symbols["lc_character_records"]=capacitySymbols.value("lc_enemy_characters");
+        symbols["lc_source_records"]=capacitySymbols.value("lc_capacity_sources");
+    }
     symbols["lc_custom_state"] = address + capacity - CustomRuntimeBuild::stateSize;
     symbols["lc_custom_index"] = indexRomOffset;
-    const QMap<QString, QByteArray> headers{{"custom.h", read("custom.h")}};
+    QMap<QString, QByteArray> headers{{"custom.h", read("custom.h")}};
+    if(!capacitySymbols.isEmpty()) {
+        QFile header(":/game/scenarios/enemy-capacity.h");
+        if(!header.open(QIODevice::ReadOnly))throw Error("Missing capacity encounter header");
+        headers["enemy-capacity.h"]=header.readAll();
+    }
     auto code =
         compiler.compileModule(source, directory, "custom_encounters", address, headers, symbols);
     const auto size = (quint32(code.bytes.size()) + 15) & ~15U;

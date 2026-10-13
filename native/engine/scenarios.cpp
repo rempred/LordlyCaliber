@@ -114,9 +114,9 @@ int Scenarios::carryingCapacity(const QByteArray &record, const ClassData &class
 void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
     const auto &base = original(s.key);
     const auto &e = s.layout;
-    if (e.deployments.size() != s.squads.size() || e.deployments.size() > 20 ||
+    if (e.deployments.size() != s.squads.size() || e.deployments.size() > 60 ||
         e.nodes.size() > 16 || e.conditions.size() > 16)
-        throw Error("Scenario supports up to 20 squads, 16 movement nodes and 16 conditions");
+        throw Error("Scenario supports 30 enemy/allied squads, original player deployments, 16 movement nodes and 16 conditions");
     if (e.baseLevel() < 1 || e.baseLevel() > 99)
         throw Error("Scenario base level must be 1–99");
     if (e.header.mid(11, 2) != base.layout.header.mid(11, 2) &&
@@ -132,10 +132,10 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
         const QByteArray before = beforeIndex < 0 ? QByteArray() : base.squads[beforeIndex];
         const QByteArray beforeRow =
             beforeIndex < 0 ? QByteArray() : base.layout.deployments[beforeIndex];
-        if (source > 49 || sources.contains(source) || (beforeIndex < 0 && source < 30))
-            throw Error("Added squads need an unused source ID from 30 through 49");
+        if (source > 59 || sources.contains(source) || (beforeIndex < 0 && source < 30))
+            throw Error("Added squads need an unused source ID from 30 through 59");
         sources.insert(source);
-        total += memberCount(record);
+        if(source>=30)total += memberCount(record);
         // Preserve unrelated unusual source values when changing equipment or levels.
         const bool changedComposition = composition(record) != composition(before);
         bool changedSize = false, changedCapacity = false;
@@ -192,8 +192,8 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
                 throw Error("Squad drop refers to an unavailable item");
         }
     }
-    if (total > 98)
-        throw Error("Scenario exceeds the 98 resettable transient character records");
+    if (total > 150)
+        throw Error("Scenario exceeds 150 enemy/allied members");
 }
 void Scenarios::replace(Scenario value, const ClassData &classes) {
     validate(value, classes);
@@ -237,16 +237,14 @@ void Scenarios::editSquad(int key, int row, const QByteArray &squad, const QByte
 int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
     auto next = scenario(key);
     if (templateRow >= 0) rowIndex(next, templateRow);
-    if (next.squads.size() >= 20)
-        throw Error("This scenario already has 20 squads");
     QSet<int> used;
     for (const auto &row : next.layout.deployments)
         used.insert(sourceId(row));
     int source = 30;
-    while (source < 50 && used.contains(source))
+    while (source < 60 && used.contains(source))
         ++source;
-    if (source == 50)
-        throw Error("This scenario has no free enemy source ID");
+    if (source == 60)
+        throw Error("This scenario already has 30 enemy/allied squads");
     QByteArray row = templateRow >= 0 ? next.layout.deployments[templateRow] : QByteArray(18, 0);
     put8(row, 0, quint8(source));
     put16(row, 1, 0);

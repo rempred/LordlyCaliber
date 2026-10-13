@@ -1,4 +1,5 @@
 #include "engine/save_document.h"
+#include "engine/capacity_placement.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
 #include "game/army/leader.h"
@@ -120,7 +121,8 @@ SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int cla
     SaveDocument result;
     result.original_ = bytes;
     result.classCount_ = classCount;
-    result.readCodec(rom);
+    const auto capacity=CapacityPlacement::read(rom);
+    result.readCodec(capacity?capacity->canonical(rom):rom);
     if (bytes.size() == 0x8000 || bytes.size() == 0x10000) {
         result.format_ = Format::Battery;
         result.data_ = bytes;
@@ -167,6 +169,10 @@ SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int cla
         if (result.slot_ < 0)
             throw Error("No populated battery-save slot passed validation");
     } else {
+        if(capacity) {
+            result.sourceBase_=int((capacity->base+0x3800)&0x1fffffff);
+            result.activeSourceBase_=int((capacity->base+0x3e00)&0x1fffffff);
+        }
         result.blob_ = bytes;
         if (bytes.startsWith(rzipMagic)) {
             if (bytes.size() < 20)
@@ -295,7 +301,7 @@ void SaveDocument::validateUnitSupplyEdits(const Project &project) const {
                                 .arg(slot + 1));
         }
         for (const auto &unit : current.units()) {
-            const int at = 0x1971f0 + unit.index * 25 + 13;
+            const int at = sourceBase_ + unit.index * 25 + 13;
             if (before.mid(at, 10) == current.ram_.mid(at, 10))
                 continue; // Opening/exporting does not normalize an unusual original save.
             int count = 0;
@@ -348,7 +354,7 @@ SaveChange SaveDocument::planArmyRefresh(const Project &project) const {
         QVector<SaveUnit> affected;
         try {
             for (const auto &unit : candidate.units()) {
-                const int at = 0x1971f0 + unit.index * 25;
+                const int at = sourceBase_ + unit.index * 25;
                 const bool added = (u8(before, at + 1) & 0x81) != 1;
                 bool changed = added || before.mid(at + 2, 10) != candidate.ram_.mid(at + 2, 10);
                 bool leaderChanged = added || u8(before, at + 2) != unit.members[0];
@@ -800,7 +806,7 @@ QVector<int> SaveDocument::newLegionCommanders(const ClassData &classes) const {
         }
         const int leader = unit.members[0];
         if (assigned || leader < 1 || leader >= 100 ||
-            (u8(ram_, 0x1971f0 + unit.index * 25 + 1) & 4) ||
+            (u8(ram_, sourceBase_ + unit.index * 25 + 1) & 4) ||
             (u8(ram_, roster + leader * stride + 51) & 4) ||
             !u16(ram_, roster + leader * stride + 24))
             continue;
@@ -864,7 +870,7 @@ SaveChange SaveDocument::planCreateLegion(int unit, const ClassData &classes) co
     candidate.apply(candidate.planBytes(0x1969b8 + index * 11, record), true);
     candidate.legionCapacity(index); // Validate any supporting groups before exposing the change.
     candidate.apply(candidate.planLegionMembers({index, label, {unit, 255, 255, 255, 255}}), true);
-    const int flag = 0x1971f0 + unit * 25 + 1;
+    const int flag = sourceBase_ + unit * 25 + 1;
     candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) | 2))), true);
     // Keep a complete unique order. Native C2090 can overwrite an earlier entry
     // when the new active index reuses a hole; its subsequent list repair changes order.
@@ -918,7 +924,7 @@ SaveChange SaveDocument::planJoinLegion(int index, int unit, const ClassData &cl
     if (leader < 1 || leader >= 100)
         throw Error("The joining squad needs an ordinary leader");
     memberClasses(leader);
-    if ((u8(ram_, 0x1971f0 + unit * 25 + 1) & 4) || (u8(ram_, roster + leader * stride + 51) & 4) ||
+    if ((u8(ram_, sourceBase_ + unit * 25 + 1) & 4) || (u8(ram_, roster + leader * stride + 51) & 4) ||
         !u16(ram_, roster + leader * stride + 24))
         throw Error("A deployed squad or incapacitated leader cannot join a legion");
     validateFormation(*found, classes);
@@ -944,7 +950,7 @@ SaveChange SaveDocument::planLegionMembers(const SaveLegion &legion) const {
     for (int i = 0; i < 5; ++i) {
         put8(record, 2 + i, quint8(legion.units[i]));
         const int id = legion.units[i];
-        const int type = id == 255 ? 0 : u8(ram_, 0x1971f0 + id * 25 + 24);
+        const int type = id == 255 ? 0 : u8(ram_, sourceBase_ + id * 25 + 24);
         if (type > 7)
             throw Error("A legion squad has an unsupported movement type");
         types << type;
@@ -984,7 +990,7 @@ void SaveDocument::updateLegionsForUnits(const QVector<int> &changed, const Clas
 QVector<SaveUnit> SaveDocument::units() const {
     QVector<SaveUnit> result;
     for (int i = 0; i < 30; ++i) {
-        const int at = 0x1971f0 + i * 25;
+        const int at = sourceBase_ + i * 25;
         // Army materialization at z64 C1820..C1830 selects these persistent rows.
         if ((u8(ram_, at + 1) & 0x81) != 1)
             continue;
@@ -1021,7 +1027,7 @@ int SaveDocument::maximumUnitSupply(int index, int itemSlot) const {
         throw Error("Choose a valid saved squad item slot");
     if (!battery())
         return 255;
-    const int at = 0x1971f0 + index * 25 + 13 + itemSlot;
+    const int at = sourceBase_ + index * 25 + 13 + itemSlot;
     for (const auto &field : codec_)
         if (field.address == at && field.bytes == 1 && !field.sign)
             return (1 << field.bits) - 1;
@@ -1060,7 +1066,7 @@ int SaveDocument::consumableAssigned(int id) const {
     // Resident 41674..41774 includes every player row with flag1, including
     // rows temporarily excluded from the Army menu by flag80.
     for (int unit = 0; unit < 30; ++unit) {
-        const int at = 0x1971f0 + unit * 25;
+        const int at = sourceBase_ + unit * 25;
         if (u8(ram_, at + 1) & 1)
             for (int slot = 0; slot < 10; ++slot)
                 count += u8(ram_, at + 13 + slot) == id;
@@ -1097,7 +1103,7 @@ SaveChange SaveDocument::planUnitSupplies(int index, const QVector<int> &supplie
                 throw Error(
                     QString("Item %1 does not have enough unassigned copies in inventory").arg(id));
         }
-    const int at = 0x1971f0 + index * 25;
+    const int at = sourceBase_ + index * 25;
     auto record = ram_.mid(at, 25);
     if (supplies != it->supplies && count > unitCarryingCapacity(index, project.classData()))
         throw Error("These carried items exceed the squad's carrying capacity");
@@ -1110,7 +1116,7 @@ int SaveDocument::freeCharacterSlot() const {
         return -1;
     QSet<int> assigned;
     for (int row = 0; row < 30; ++row) {
-        const int at = 0x1971f0 + row * 25;
+        const int at = sourceBase_ + row * 25;
         if (u8(ram_, at + 1) & 1)
             for (int i = 0; i < 5; ++i)
                 assigned.insert(u8(ram_, at + 2 + i));
@@ -1172,7 +1178,7 @@ SaveChange SaveDocument::planRemoveCharacter(int id) const {
     if (!reserveMembers().contains(id))
         throw Error("Move the character out of their squad before removing them from the roster");
     for (int row = 0; row < 30; ++row) {
-        const int at = 0x1971f0 + row * 25;
+        const int at = sourceBase_ + row * 25;
         if (u8(ram_, at + 1) & 1)
             for (int i = 0; i < 5; ++i)
                 if (u8(ram_, at + 2 + i) == id)
@@ -1220,7 +1226,7 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
         throw Error("All thirty player squads are in use");
     QSet<int> labels, ranks;
     for (const auto &unit : list) {
-        const int rank = u8(ram_, 0x1977d8 + unit.index);
+        const int rank = u8(ram_, activeSourceBase_ + unit.index);
         if (unit.label < 1 || unit.label > 30 || labels.contains(unit.label) ||
             rank >= list.size() || ranks.contains(rank))
             throw Error("Existing squad numbers or Army order are inconsistent; resolve them "
@@ -1229,7 +1235,7 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
         ranks << rank;
     }
     int index = 0, label = 1;
-    while (index < 30 && (u8(ram_, 0x1971f0 + index * 25 + 1) & 1))
+    while (index < 30 && (u8(ram_, sourceBase_ + index * 25 + 1) & 1))
         ++index;
     if (index == 30)
         throw Error("No free saved player-squad record is available");
@@ -1250,11 +1256,11 @@ SaveChange SaveDocument::planCreateUnit(int leader, int cell, const ClassData &c
     put8(record, 7, quint8(cell));
     put8(record, 24, quint8(unitMovementType(unit, classes)));
     auto candidate = *this;
-    candidate.apply(candidate.planBytes(0x1971f0 + index * 25, record), true);
+    candidate.apply(candidate.planBytes(sourceBase_ + index * 25, record), true);
     const int flag = roster + leader * stride + 51;
     candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) | 2))), true);
     // Persistent order is rank indexed by saved record, not a list of record IDs.
-    candidate.apply(candidate.planBytes(0x1977d8 + index, QByteArray(1, char(list.size()))), true);
+    candidate.apply(candidate.planBytes(activeSourceBase_ + index, QByteArray(1, char(list.size()))), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       slotSize(slot_));
 }
@@ -1278,7 +1284,7 @@ SaveChange SaveDocument::planDisbandUnit(int index) const {
                                     [&](const auto &unit) { return unit.index == index; });
     if (found == list.end())
         throw Error("Choose an existing saved squad");
-    const int at = 0x1971f0 + index * 25, leader = found->members[0];
+    const int at = sourceBase_ + index * 25, leader = found->members[0];
     if (leader < 1 || leader >= 100)
         throw Error("The squad needs a valid ordinary leader before disbanding");
     if (lordly_army_fixed_leader(quint8(leader), quint8(memberClasses(leader).first)))
@@ -1295,7 +1301,7 @@ SaveChange SaveDocument::planDisbandUnit(int index) const {
             "This squad belongs to a legion; its legion links must be updated before disbanding");
     QSet<int> ranks;
     for (const auto &unit : list) {
-        const int rank = u8(ram_, 0x1977d8 + unit.index);
+        const int rank = u8(ram_, activeSourceBase_ + unit.index);
         if (rank >= list.size() || ranks.contains(rank))
             throw Error(
                 "Existing Army order is inconsistent; resolve it before disbanding a squad");
@@ -1329,13 +1335,13 @@ SaveChange SaveDocument::planDisbandUnit(int index) const {
             candidate.apply(candidate.planBytes(0x191074 + member - 100, QByteArray(1, 0)), true);
         }
     candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(pool))), true);
-    auto order = ram_.mid(0x1977d8, 30);
+    auto order = ram_.mid(activeSourceBase_, 30);
     const int prior = u8(order, index);
     for (const auto &unit : list)
         if (u8(order, unit.index) > prior)
             put8(order, unit.index, quint8(u8(order, unit.index) - 1));
     put8(order, index, 31);
-    candidate.apply(candidate.planBytes(0x1977d8, order), true);
+    candidate.apply(candidate.planBytes(activeSourceBase_, order), true);
     // Owned consumables already include carried copies. Clearing membership
     // releases their assignment on the next native inventory rebuild.
     return difference(candidate.data_, recordOffset(slot_, expanded_),
@@ -1471,7 +1477,7 @@ SaveChange SaveDocument::planUnitEdit(int index, const QVector<int> &cells, int 
         changed.cells = cells;
         validateFormation(changed, classes);
     }
-    const int at = 0x1971f0 + index * 25;
+    const int at = sourceBase_ + index * 25;
     auto record = ram_.mid(at, 25);
     for (int i = 0; i < 5; ++i)
         put8(record, 7 + i, quint8(cells[i]));
@@ -1509,7 +1515,7 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     const int oldAt = roster + prior * stride + 51, newAt = roster + next * stride + 51;
     if (u8(ram_, newAt) & 2)
         throw Error("The selected member already has a conflicting leader flag");
-    const int at = 0x1971f0 + index * 25;
+    const int at = sourceBase_ + index * 25;
     bool commander = false;
     for (int row = 0; row < 10; ++row) {
         const int legion = 0x1969b8 + row * 11;
@@ -1693,7 +1699,7 @@ SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
                 const auto pair = memberClasses(id);
                 capacity += classes.carryingCapacity(pair.first, pair.second);
             }
-        const int at = 0x1971f0 + unit.index * 25;
+        const int at = sourceBase_ + unit.index * 25;
         auto record = ram_.mid(at, 25);
         for (int i = 13; i < 23; ++i)
             carried += u8(record, i) != 0;

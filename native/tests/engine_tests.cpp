@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/class_data.h"
+#include "engine/capacity_placement.h"
 #include "engine/class_runtime_inventory.h"
 #include "engine/class_text.h"
 #include "engine/consumable_effects.h"
@@ -11,11 +12,13 @@
 #include "engine/scenario_resources.h"
 #include "engine/squad_members.h"
 #include "engine/scenario_member_runtime.h"
+#include "engine/save_document.h"
 #include "engine/shop_runtime.h"
 #include "engine/world_resources.h"
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
+#include "rebuild/capacity_runtime.h"
 #include "rebuild/creature_rewards.h"
 #include "rebuild/custom_encounters.h"
 #include "rebuild/elf_references.h"
@@ -59,6 +62,161 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void capacityPublicExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);
+            project.loadScenarios();project.loadTools();const auto classes=project.classData();
+            auto scenarios=*project.scenarios();const auto original=scenarios.json();
+            QVector<CustomMember> members;
+            for(int i=0;i<5;++i)members.append({5,0,8-i,{0,0}});
+            for(int i=0;i<scenarios.scenario(1).squads.size();++i)
+                scenarios.setSquad(1,i,editSquadMembers(scenarios.scenario(1).squads[i],members),classes);
+            while(scenarios.scenario(1).squads.size()<30)scenarios.addSquad(1,0,classes);
+            QCOMPARE(scenarios.scenario(1).squads.size(),30);
+            for(const auto &squad:scenarios.scenario(1).squads)QCOMPARE(Scenarios::memberCount(squad),5);
+            const auto full=scenarios.json();QVERIFY_THROWS_EXCEPTION(Error,scenarios.addSquad(1,0,classes));
+            QCOMPARE(scenarios.json(),full);project.setScenarios(full);
+            auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();rules["deploymentLimit"]=20;
+            settings["gameRules"]=rules;project.setTools(settings);
+            auto root=QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir();QVERIFY(root.cd("../../.."));
+            const auto output=root.filePath("Test ROMs/enemy-capacity-20261013/public");QVERIFY(QDir().mkpath(output));
+            const auto work=root.filePath("tmp/enemy-capacity-20261012/public-export");QVERIFY(QDir().mkpath(work));
+            const auto build=rebuild(project,tools,work);
+            const auto outputPath=QDir(output).filePath(QFileInfo(path).fileName());exportRom(project,build,outputPath);
+            const auto exported=Rom::open(outputPath);auto reopened=Project::fromRom(exported);
+            QVERIFY(reopened.expandedArmies());reopened.loadScenarios();reopened.loadTools();
+            QCOMPARE(reopened.scenarios()->json(),full);
+            QCOMPARE(reopened.tools()->gameRules().value("deploymentLimit"),20);
+            QCOMPARE(reopened.classData().entries().size(),165);
+            const auto again=rebuild(reopened,tools,work+"-again");
+            const auto againFolder=output+"-again";QVERIFY(QDir().mkpath(againFolder));
+            exportRom(reopened,again,QDir(againFolder).filePath(QFileInfo(path).fileName()));
+            QCOMPARE(again.image,build.image);
+            const auto capacity=CapacityPlacement::read(exported);QVERIFY(capacity);
+            QByteArray ram(0x400000,0);const int sources=int((capacity->base+0x3800)&0x1fffffff);
+            for(int i=0;i<30;++i) {
+                const auto member=0x193bc0+(i+1)*56;put8(ram,member+17,5);put8(ram,member+18,5);put8(ram,member+19,12);
+                put16(ram,member+24,100);put8(ram,sources+i*25,i+1);put8(ram,sources+i*25+1,1);
+                put8(ram,sources+i*25+2,i+1);put8(ram,sources+i*25+7,8);
+            }
+            const auto save=SaveDocument::open(exported,ram);QCOMPARE(save.units().size(),30);
+            QCOMPARE(save.units().last().members[0],30);QCOMPARE(save.serialize(),ram);
+            QFile report(QDir(work).filePath("capacity-export.json"));QVERIFY(report.open(QIODevice::WriteOnly));
+            report.write(QJsonDocument(QJsonObject{{"rom",outputPath},{"base",double(capacity->base)},
+                {"codeAddress",double(capacity->codeAddress)},{"squads",30},{"members",150},
+                {"unchangedReexport",true},{"runtimePlayerSquads",30}}).toJson());
+            report.close();
+            QProcess execution;execution.start("node",{QFINDTESTDATA("capacity-export-save-mips.cjs"),work});
+            QVERIFY(execution.waitForFinished(60000));
+            QVERIFY2(!execution.exitCode(),execution.readAllStandardError().constData());
+            qInfo().noquote()<<execution.readAllStandardOutput();
+            for(const auto mode:{"populated","soldier-heavy"}) {
+                QFile saved(QDir(work).filePath(QString(mode)+"-full-army.sra"));QVERIFY(saved.open(QIODevice::ReadOnly));
+                const auto bytes=saved.readAll();auto document=SaveDocument::open(exported,bytes);
+                QCOMPARE(document.serialize(),bytes);
+                for(int slot:{0,1,15}) {
+                    document.selectSlot(slot);QCOMPARE(document.units().size(),30);
+                    QCOMPARE(document.rows(SaveTable::Characters).size(),99);
+                    const auto before=document.serialize();
+                    const auto change=document.planEdit(SaveTable::Characters,99,"strength",777);
+                    document.apply(change,true);const auto edited=document.serialize();QCOMPARE(edited.size(),32768);
+                    auto loaded=SaveDocument::open(exported,edited);loaded.selectSlot(slot);
+                    QCOMPARE(loaded.value(SaveTable::Characters,99,"strength").toInt(),777);
+                    for(int other:{0,1,15}){loaded.selectSlot(other);QCOMPARE(loaded.units().size(),30);}
+                    document.apply(change,false);QCOMPARE(document.serialize(),before);
+                }
+            }
+            qInfo().noquote()<<"30 squads / 150 members exported; reopen and unchanged rebuild agree; 30 relocated player squads readable.";
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void capacityComposition() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto root=QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir();QVERIFY(root.cd("../../.."));
+            const auto initial=root.filePath("Test ROMs/enemy-capacity-20261013/public/"+QFileInfo(path).fileName());
+            if(!QFileInfo::exists(initial))QSKIP("Run capacityPublicExport first");
+            auto project=Project::fromRom(Rom::open(initial));project.loadScenarios();project.loadEncounters();project.loadTraining();project.loadTools();
+            QCOMPARE(project.appendClass(5,"Capacity test class"),165);
+            auto encounters=*project.encounters();CustomSquad encounter;encounter.scenarioKey=1;encounter.members[0].classId=165;
+            encounters.setCustomSquad(encounter,166);project.setEncounters(encounters.json());
+            auto training=project.training()->json();auto rows=training["opponents"].toArray();auto row=rows[0].toObject();
+            row["squad"]=QString::fromLatin1(editSquadMembers(project.training()->entries()[0].squad,
+                {{165,0,8,{0,0}},{5,1,6,{0,0}}}).toHex());
+            row["price"]=7;rows[0]=row;training["opponents"]=rows;project.setTraining(training);
+            auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();
+            rules["restHealing"]=7;rules["recoveryRate"]=200;rules["trainingBonus"]=20;settings["gameRules"]=rules;project.setTools(settings);
+            const auto work=root.filePath("tmp/enemy-capacity-20261012/composition");QVERIFY(QDir().mkpath(work));
+            auto tooMany=settings;auto badRules=rules;badRules["deploymentLimit"]=21;tooMany["gameRules"]=badRules;
+            project.setTools(tooMany);QVERIFY_THROWS_EXCEPTION(Error,rebuild(project,tools,work));project.setTools(settings);
+            const auto build=rebuild(project,tools,work);
+            const auto output=root.filePath("Test ROMs/enemy-capacity-20261013/composition");QVERIFY(QDir().mkpath(output));
+            const auto candidate=QDir(output).filePath(QFileInfo(path).fileName());exportRom(project,build,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadEncounters();reopened.loadTraining();reopened.loadTools();reopened.loadScenarios();
+            QCOMPARE(reopened.encounters()->json(),project.encounters()->json());QCOMPARE(reopened.training()->json(),training);
+            QCOMPARE(reopened.tools()->json(),settings);QCOMPARE(reopened.scenarios()->json(),project.scenarios()->json());
+            QCOMPARE(reopened.classData().entries().size(),166);
+            const auto again=rebuild(reopened,tools,work+"-again");
+            const auto againOutput=output+"-again";QVERIFY(QDir().mkpath(againOutput));
+            exportRom(reopened,again,QDir(againOutput).filePath(QFileInfo(path).fileName()));
+            QCOMPARE(again.image,build.image);
+            qInfo()<<"Expanded armies compose with added class, custom encounter, independent training members and recovery settings.";
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void capacityRuntimeLink() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            QTemporaryDir work;
+            const auto requested=qEnvironmentVariable("LORDLY_CAPACITY_LINK_OUTPUT");
+            const auto directory=requested.isEmpty()?work.path():requested;
+            QVERIFY(QDir().mkpath(directory));
+            const auto rom=Rom::open(path);Compiler compiler(tools);compiler.authenticate();
+            const auto classData=ClassData::loadRetail(rom);
+            const auto classes=classData.build(0x80243db0);
+            auto build=prepareCapacityRuntime(0x80250000,rom);
+            auto unknown=rom.bytes();put32(unknown,0x128ee4,0x34420002);
+            QVERIFY_THROWS_EXCEPTION(Error,prepareCapacityRuntime(0x80250000,Rom::fromBytes(unknown)));
+            std::optional<CustomRuntimeBuild> custom;
+            const auto built=buildClassRuntime(classData,compiler,directory,0x2800000,true,
+                [&](quint32 address,quint32 capacity) {
+                    custom=buildCustomRuntime(compiler,directory,address,capacity,0x2900000,10,1,build.symbols);
+                    build.custom=custom->code.entries;build.custom["lc_custom_state"]=custom->stateAddress;
+                    return custom->bytes;
+                },nullptr,&build);
+            qInfo()<<"Capacity code bytes"<<build.code.size()<<"Save runtime bytes"<<built.saves->code.bytes.size()
+                   <<"Custom encounter bytes"<<custom->bytes.size()<<"Total permanent bytes"<<built.data.bytes.size();
+            const auto linked=linkClassRuntime(rom,built);
+            const auto image=installCapacityRuntime(Rom::fromBytes(linked),build);
+            const auto placement=CapacityPlacement::read(Rom::fromBytes(image));QVERIFY(placement);
+            QCOMPARE(placement->canonical(Rom::fromBytes(image)).bytes(),linked);
+            ClassPlacement::read(Rom::fromBytes(image));
+            QCOMPARE(u32(image,0x5d354),build.symbols["lc_capacity_sources"]);
+            QCOMPARE(u32(image,0x386b8),9964U);
+            auto corrupted=rom.bytes();const auto site=build.expected.firstKey();
+            put32(corrupted,site,u32(corrupted,site)^0x10000U);
+            const auto before=corrupted;
+            QVERIFY_THROWS_EXCEPTION(Error,applyCapacityRuntime(corrupted,build));
+            QCOMPARE(corrupted,before);
+            QJsonObject symbols,entries;
+            for(auto it=build.symbols.cbegin();it!=build.symbols.cend();++it)symbols[it.key()]=double(it.value());
+            for(auto it=build.entries.cbegin();it!=build.entries.cend();++it)entries[it.key()]=double(it.value());
+            const QJsonObject fixture{{"base",double(build.base)},{"storage",QString::fromLatin1(build.storage.toHex())},
+                {"codeAddress",double(build.codeAddress)},{"code",QString::fromLatin1(build.code.toHex())},
+                {"symbols",symbols},{"entries",entries},{"classes",QString::fromLatin1(classes.bytes.toHex())},
+                {"classBase",double(classes.layout.indexBase)},{"customAddress",double(custom->code.address)},
+                {"custom",QString::fromLatin1(custom->bytes.toHex())}};
+            QFile file(QDir(directory).filePath("capacity-linked.json"));QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(QJsonDocument(fixture).toJson());file.close();
+            QProcess instructions;instructions.start("node",{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
+                .filePath("capacity-linked-mips.cjs"),file.fileName()});
+            QVERIFY(instructions.waitForFinished(60000));
+            QVERIFY2(!instructions.exitCode(),instructions.readAllStandardError().constData());
+            qInfo().noquote()<<instructions.readAllStandardOutput();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void scenarioStartingTimeAndRewards() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
@@ -3723,6 +3881,35 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             Error, compiler.compileModule(
                        "unsigned int state;\nunsigned int use_state(void) { return state; }\n",
                        work.path(), "requires_bss", 0x80187c14));
+    }
+    void linkedModuleConstants() {
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (tools.isEmpty()) QSKIP("Set LORDLY_N64_TOOLCHAIN to exercise linked C modules");
+        QTemporaryDir work;
+        Compiler compiler(tools);
+        compiler.authenticate();
+        const QByteArray source =
+            "static const unsigned int values[8] = {13,71,9,43,109,2,881,17};\n"
+            "unsigned int lookup(unsigned int i) { return values[i & 7]; }\n";
+        QVERIFY_THROWS_EXCEPTION(Error, compiler.compileModule(source, work.path(), "separate_constants", 0x80260000));
+        const auto built = compiler.compileModule(source, work.path(), "inline_constants", 0x80260000, {}, {}, true);
+        QCOMPARE(built.functionExtent, quint32(built.bytes.size()));
+        QVERIFY_THROWS_EXCEPTION(Error, built.fitOwner(built.bytes.size() - 4));
+        // Mutable storage remains rejected even when immutable tables are allowed.
+        QVERIFY_THROWS_EXCEPTION(Error, compiler.compileModule(
+            "volatile unsigned int state = 4; unsigned int f(void) { return state; }\n",
+            work.path(), "mutable_constants", 0x80260000, {}, {}, true));
+        QFile fixture(work.filePath("linked_constants.json"));
+        QVERIFY(fixture.open(QIODevice::WriteOnly));
+        fixture.write(QJsonDocument(QJsonObject{{"address", double(built.address)},
+            {"entry", double(built.entries.value("lookup"))}, {"bytes", QString::fromLatin1(built.bytes.toHex())}}).toJson());
+        fixture.close();
+        QProcess instructions;
+        instructions.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
+            .filePath("linked-constants-mips.cjs"), fixture.fileName()});
+        QVERIFY(instructions.waitForFinished(30000));
+        QVERIFY2(!instructions.exitCode(), instructions.readAllStandardError().constData());
+        qInfo().noquote() << instructions.readAllStandardOutput();
     }
     void byteOrders() {
         const auto expected = QByteArray::fromHex("8037124011223344") + QByteArray(56, 0);

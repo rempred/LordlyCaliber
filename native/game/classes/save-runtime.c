@@ -7,6 +7,12 @@
  */
 #include "save_format.h"
 #include "save_compression.h"
+#ifndef LC_SAVE_RUNTIME_FORMAT
+#define LC_SAVE_RUNTIME_FORMAT 1
+#endif
+#if LC_SAVE_RUNTIME_FORMAT == 3
+#include "capacity-save.h"
+#endif
 typedef unsigned char SaveByte;
 typedef unsigned int SaveWord;
 extern SaveByte *volatile lc_save_cache;
@@ -53,19 +59,31 @@ static SaveByte *save_cache(void)
 }
 static int read_save_record(SaveWord slot, SaveByte *record)
 {
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT), decoded;
     SaveByte *cache;
     if (!record || !size) return 0;
     cache = save_cache();
     if (!cache) return 0;
-    if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2)
-        return lc_save_read_compressed(cache, LC_SAVE_IMAGE_BYTES, record, size) == size;
+    if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+        decoded = lc_save_read_compressed(cache, LC_SAVE_IMAGE_BYTES, record, size);
+#if LC_SAVE_RUNTIME_FORMAT == 3
+        if (decoded == LC_SAVE_EXPANDED_SUSPEND_BYTES)
+            return lc_save_expand_capacity(record, size);
+#endif
+        return decoded == size;
+    }
+#if LC_SAVE_RUNTIME_FORMAT == 3
+    if (slot == 15) {
+        copy_save_bytes(record, cache + lc_save_record_offset(slot, 1), LC_SAVE_EXPANDED_SUSPEND_BYTES);
+        return lc_save_expand_capacity(record, size);
+    }
+#endif
     copy_save_bytes(record, cache + lc_save_record_offset(slot, 1), size);
     return lc_save_record_valid(record, size, slot, 1);
 }
 static int write_save_record(SaveWord slot, const SaveByte *record)
 {
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT);
     SaveByte *cache, *scratch;
     int result;
     if (!record || !size) return 0;
@@ -106,7 +124,7 @@ void lc_save_copy(SaveByte *record, SaveWord offset, SaveWord size)
 }
 void lc_save_sign(SaveWord slot, SaveByte *record)
 {
-    lc_save_record_seal(record, lc_save_record_size(slot, 1), slot, 1);
+    lc_save_record_seal(record, lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT), slot, LC_SAVE_RUNTIME_FORMAT);
 }
 void lc_discovery_init(SaveByte *record)
 {
@@ -186,7 +204,7 @@ int lc_save_headers_missing(void)
 }
 void lc_save_initialize_slot(SaveWord slot)
 {
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT);
     SaveByte *record, *cache;
     if (!size || !(cache = save_cache())) return;
     if (slot == 15) {
@@ -219,11 +237,11 @@ void lc_save_initialize_slot(SaveWord slot)
 }
 int lc_save_check_slot(SaveWord slot)
 {
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT);
     SaveByte *cache = save_cache(), *record;
     int valid;
     if (!cache || !size) return 0;
-    if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+    if (slot == 15 && (LC_SAVE_RUNTIME_FORMAT == 3 || lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2)) {
         record = (SaveByte *)lc_native_save_alloc(size);
         if (!record) return 0;
         valid = read_save_record(slot, record);
@@ -236,7 +254,7 @@ int lc_save_check_slot(SaveWord slot)
 }
 static int save_game_slot(SaveWord slot)
 {
-    SaveWord size = lc_save_record_size(slot, 1), counter = 0;
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT), counter = 0;
     SaveByte *record, *cache;
     int result;
     if (!size || !(cache = save_cache())) return 0;
@@ -263,7 +281,7 @@ static int save_game_slot(SaveWord slot)
 }
 static void load_game_slot(SaveWord slot)
 {
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT);
     SaveByte *record;
     if (!size) return;
     record = (SaveByte *)lc_native_save_alloc(size);
@@ -297,15 +315,15 @@ void lc_load_game(SaveWord slot)
 SaveByte *lc_save_summary(SaveWord slot)
 {
     SaveByte *cache, *record, *summary = 0, *temporary = 0;
-    SaveWord size = lc_save_record_size(slot, 1);
+    SaveWord size = lc_save_record_size(slot, LC_SAVE_RUNTIME_FORMAT);
     if ((slot < 2 || slot == 15) && (cache = save_cache())) {
         record = cache + lc_save_record_offset(slot, 1);
-        if (slot == 15 && lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2) {
+        if (slot == 15 && (LC_SAVE_RUNTIME_FORMAT == 3 || lc_save_image_version(cache, LC_SAVE_IMAGE_BYTES) == 2)) {
             temporary = (SaveByte *)lc_native_save_alloc(size);
             record = temporary;
             if (record && !read_save_record(slot, record)) { lc_native_save_free(record); record = 0; temporary = 0; }
         }
-        if (record && lc_save_record_valid(record, size, slot, 1) && save_word(record + (slot == 15 ? 0 : 12))) {
+        if (record && lc_save_record_valid(record, size, slot, LC_SAVE_RUNTIME_FORMAT) && save_word(record + (slot == 15 ? 0 : 12))) {
             summary = (SaveByte *)lc_native_save_alloc(26);
             if (summary) copy_save_bytes(summary, record + 12 + lc_save_callbacks[0].offset, 26);
         }

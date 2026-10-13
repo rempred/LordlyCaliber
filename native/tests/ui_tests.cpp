@@ -10461,6 +10461,14 @@ class UiTests : public QObject {
         QVERIFY(tools.grab().save("native/build/tools-game-rules.png"));
         tools.findChild<QTabWidget *>("toolsPages")->setCurrentIndex(2);QTest::qWait(20);
         QVERIFY(tools.grab().save("native/build/tools-mission-rewards.png"));
+        auto expanded=*project.scenarios();
+        while(expanded.scenario(1).squads.size()<30)expanded.addSquad(1,0,project.classData());
+        project.setScenarios(expanded.json());QVERIFY(project.expandedArmies());
+        ToolsEditor capacityTools(&project,&undo,[]{});
+        auto capped=capacityTools.findChild<QSpinBox *>("rule_deploymentLimit");QVERIFY(capped);
+        QCOMPARE(capped->maximum(),20);capped->setValue(30);
+        QCOMPARE(project.tools()->gameRules().value("deploymentLimit"),20);
+        undo.undo();QCOMPARE(capped->value(),10);undo.redo();QCOMPARE(capped->value(),20);
     }
     void scenarioSettingsEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

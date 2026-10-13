@@ -3,7 +3,8 @@
 #include <QJsonArray>
 namespace lordly {
 SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
-                                  const QString &directory, quint32 compressionAddress) {
+                                  const QString &directory, quint32 compressionAddress,
+                                  bool expandedArmies) {
     auto source = [](const QString &name) {
         QFile file(":/game/classes/" + name);
         if (!file.open(QIODevice::ReadOnly))
@@ -40,12 +41,28 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
         "void lc_save_load_data(unsigned int rom, void *data, unsigned int size) {\n"
         "    lc_native_class_dma(rom, data, size);\n"
         "    lc_native_invalidate_code(data, size);\n}\n";
-    result.code = compiler.compileModule(source("save-format.c") + "\n" + source("save-image.c") + "\n" + source("save-runtime.c") + prepareCode,
-                                         directory, "save_runtime", SavePlacement::ramAddress,
-                                         {{"save_format.h", source("save_format.h")},
-                                          {"save_compression.h", source("save_compression.h")},
-                                          {"save_checksums.h", source("save_checksums.h")}},
-                                         services);
+    QByteArray capacityCode;
+    QMap<QString,QByteArray> headers{{"save_format.h",source("save_format.h")},
+        {"save_compression.h",source("save_compression.h")},{"save_checksums.h",source("save_checksums.h")}};
+    if(expandedArmies) {
+        QFile migration(":/game/scenarios/capacity-save.c"),header(":/game/scenarios/capacity-save.h");
+        if(!migration.open(QIODevice::ReadOnly)||!header.open(QIODevice::ReadOnly))
+            throw Error("Missing expanded-army save migration");
+        capacityCode="\n"+migration.readAll();headers["capacity-save.h"]=header.readAll();
+        services["lc_save_expand_capacity"]=(compressionAddress+quint32(result.compression.bytes.size())+15U)&~15U;
+    }
+    const auto runtimeSource=(expandedArmies?QByteArray("#define LC_SAVE_RUNTIME_FORMAT 3\n"):QByteArray{})+
+        source("save-format.c")+"\n"+source("save-image.c")+"\n"+source("save-runtime.c")+prepareCode;
+    result.code=compiler.compileModule(runtimeSource,directory,"save_runtime",SavePlacement::ramAddress,headers,services);
+    if(expandedArmies) {
+        result.capacityMigration=compiler.compileModule(capacityCode,directory,"capacity_migration",
+            services["lc_save_expand_capacity"],headers,result.code.entries);
+        services["lc_save_expand_capacity"]=result.capacityMigration.entries.value("lc_save_expand_capacity");
+        const auto rebound=compiler.compileModule(runtimeSource,directory,"save_runtime",SavePlacement::ramAddress,headers,services);
+        if(!services["lc_save_expand_capacity"] || rebound.entries!=result.code.entries || rebound.bytes.size()!=result.code.bytes.size())
+            throw Error("Linking the save migration changed resident service placement");
+        result.code=rebound;
+    }
     result.placement.codeBytes = quint32(result.code.bytes.size());
     result.placement.codeChecksum = crc32(result.code.bytes);
     result.placement.version = 4;

@@ -1,5 +1,17 @@
 # Feature inventory and completion tracking
 
+Scenario authoring supports up to 30 enemy/allied squads combined (150 members).
+Maps using the expanded army storage support up to 20 deployed player squads;
+Tools shows this limit and export rejects a larger setting. The player roster
+remains 99 ordinary characters, with all 30 organized squads and reserves kept.
+A separate temporary slot protects player/map squads during wild encounters.
+Waiting enemy squads and groups can activate up to the expanded30-squad limit.
+Exports rebuild the storage, member readers, lifecycle and save routines together.
+Normal slots and suspend remain in a 32 KiB battery save. Older suspend saves are
+migrated on read; compression overflow refuses the new save and retains the
+previous image rather than dropping army data. This is not a guarantee that
+every possible edited state compresses to fit.
+
 Scenario → Squads and Map → selected squad → Members and supplies include
 Battle strategy: Autonomous, Attack Strongest, Attack Leader or Attack Weakest.
 The selected strategy has a short targeting explanation. Changes apply immediately

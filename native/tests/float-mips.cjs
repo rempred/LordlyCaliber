@@ -13,6 +13,20 @@ class FloatMips extends Mips {
  exec(pc,next){
   const w=this.r32(pc),op=w>>>26,rt=w>>>16&31,rs=w>>>21&31,fs=w>>>11&31,fd=w>>>6&31,fn=w&63;
   const address=(this.r[rs]+(w<<16>>16))>>>0,advance=()=>[next,(next+4)>>>0];
+  if(op===0&&fn===17){this.hi=this.r[rs];return advance();}
+  if(op===0&&fn===19){this.lo=this.r[rs];return advance();}
+  // Big-endian unaligned word pairs used by compiled fixed-size struct copies.
+  if([34,38,42,46].includes(op)){
+   const left=op===34||op===42,load=op===34||op===38,n=address&3;
+   const count=left?4-n:n+1,start=left?address:(address&~3)>>>0;
+   let value=this.r[rt];
+   for(let i=0;i<count;i++){
+    const shift=left?24-i*8:(count-1-i)*8;
+    if(load)value=((value&~(255<<shift))|(this.r8(start+i)<<shift))>>>0;
+    else this.w8(start+i,value>>>shift);
+   }
+   if(load&&rt)this.r[rt]=value;return advance();
+  }
   if(op===49){this.fp[rt]=this.r32(address);return advance();}
   if(op===57){this.w32(address,this.fp[rt]);return advance();}
   if(op===53){this.fp[rt+1]=this.r32(address);this.fp[rt]=this.r32(address+4);return advance();}

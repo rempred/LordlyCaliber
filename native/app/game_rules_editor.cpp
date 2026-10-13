@@ -77,6 +77,10 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
             example->setWordWrap(true);example->setTextInteractionFlags(Qt::TextSelectableByMouse);
             form->addRow(example);
         }
+        if(group=="deployment") {
+            auto notice=new QLabel;notice->setObjectName("expandedArmyLimit");notice->setWordWrap(true);
+            form->addRow(notice);
+        }
         const auto problem=project_->tools()->gameRules().unavailable(group);
         if(!problem.isEmpty()) {auto notice=new QLabel(problem);notice->setWordWrap(true);form->addRow(notice);box->setEnabled(false);}
         layout->addWidget(box);
@@ -87,7 +91,15 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
 void GameRulesEditor::refresh() {
     const auto &rules=project_->tools()->gameRules();
     for(auto it=fields_.begin();it!=fields_.end();++it) {
-        const QSignalBlocker block(it.value());it.value()->setValue(rules.value(it.key()));
+        const QSignalBlocker block(it.value());
+        if(it.key()=="deploymentLimit")
+            it.value()->setMaximum(project_->expandedArmies()?std::max(20,rules.value(it.key())):30);
+        it.value()->setValue(rules.value(it.key()));
+    }
+    if(auto notice=findChild<QLabel *>("expandedArmyLimit")) {
+        notice->setVisible(project_->expandedArmies());
+        notice->setText("Expanded armies allow up to 20 deployed player squads and 30 enemy/allied squads. All 30 organized player squads, the 99-member roster and reserves remain saved."
+            +QString(rules.value("deploymentLimit")>20?" Lower Maximum deployed squads to 20 or less before exporting.":""));
     }
     auto example=[this](const QString &group,const QString &text) {
         if(auto label=findChild<QLabel *>("ruleExample_"+group)) label->setText(text);

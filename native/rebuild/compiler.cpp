@@ -10,6 +10,7 @@
 #include "engine/scene_program_resources.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/capacity_runtime.h"
 #include "rebuild/chaos_counter.h"
 #include "rebuild/display_tools.h"
 #include "rebuild/high_attack.h"
@@ -79,11 +80,14 @@ void Compiler::run(const QString &tool, const QStringList &args, const QString &
 QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address, const QString &section,
                              const QMap<QString, QByteArray> &headers,
-                             const QMap<QString, quint32> &symbols) const {
+                             const QMap<QString, quint32> &symbols,
+                             bool inlineReadOnlyData) const {
     if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(name).hasMatch())
         throw Error("Invalid source unit name");
     if (section != ".text" && section != ".data")
         throw Error("Unsupported compiler output section");
+    if (inlineReadOnlyData && section != ".text")
+        throw Error("Inline constants require an executable module");
     if (!QDir().mkpath(directory))
         throw Error("Cannot create build directory");
     QDir dir(directory);
@@ -100,7 +104,7 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
         throw Error("Cannot create source header directory");
     QDir includes(headerDirectory.path());
     for (auto it = headers.begin(); it != headers.end(); ++it) {
-        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*\\.h$").match(it.key()).hasMatch())
+        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_-]*\\.h$").match(it.key()).hasMatch())
             throw Error("Invalid source header name");
         atomicWrite(includes.absoluteFilePath(it.key()), it.value());
     }
@@ -124,9 +128,10 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
             throw Error("Invalid linked symbol name");
         bindings += QString("%1 = 0x%2;\n").arg(it.key()).arg(it.value(), 0, 16).toLatin1();
     }
-    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) } }\n")
+    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } }\n")
                                        .arg(section)
                                        .arg(address, 0, 16)
+                                       .arg(inlineReadOnlyData ? "*(.rodata) *(.rdata) *(.lit4) *(.lit8)" : "")
                                        .toLatin1());
     run("mips-kmc-elf-ld.exe", {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object},
         directory);
@@ -144,9 +149,10 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
 CompiledModule Compiler::compileModule(const QByteArray &source, const QString &directory,
                                        const QString &name, quint32 address,
                                        const QMap<QString, QByteArray> &headers,
-                                       const QMap<QString, quint32> &symbols) const {
+                                       const QMap<QString, quint32> &symbols,
+                                       bool inlineReadOnlyData) const {
     CompiledModule result{
-        compile(source, directory, name, address, ".text", headers, symbols), address, {}};
+        compile(source, directory, name, address, ".text", headers, symbols, inlineReadOnlyData), address, {}};
     const auto elf = readFile(QDir(directory).filePath(name + ".elf"));
     auto range = [&](quint64 offset, quint64 length) {
         if (offset > quint64(elf.size()) || length > quint64(elf.size()) - offset)
@@ -215,6 +221,9 @@ CompiledModule Compiler::compileModule(const QByteArray &source, const QString &
     }
     if (result.entries.isEmpty())
         throw Error("Compiled module has no exported functions");
+    // A relocated module owns its constants as well as its functions. fitOwner
+    // must never truncate a jump table merely because the final function ends.
+    if (inlineReadOnlyData) result.functionExtent = quint32(result.bytes.size());
     result.addressReferences =
         readMipsAddressReferences(readFile(QDir(directory).filePath(name + ".o")), result, symbols);
     return result;
@@ -490,6 +499,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
+    const bool expandedArmies=p.expandedArmies();
+    std::optional<CapacityRuntimeBuild> capacityRuntime;
+    if(expandedArmies) {
+        p.loadTools();
+        if(p.tools()->gameRules().value("deploymentLimit")>20)
+            throw Error("Expanded enemy armies support at most 20 deployed player squads. Set Maximum deployed squads to 20 or less in Tools; all 30 organized squads remain saved.");
+    }
     if(p.rom().revision()==0)p.loadAnimationOverrides();
     for (const auto &r : p.records(Table::Classes))
         if (r.original.size() == r.bytes.size() &&
@@ -581,7 +597,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     const bool relocateClasses = relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || expandedClasses || customSquads ||
-                                 avatarEdits || armyRoutes;
+                                 avatarEdits || armyRoutes || expandedArmies;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -743,6 +759,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         const auto classImage = data.build(0x80243db0);
         const auto dataSize = classImage.bytes.size() +
                               (itemData ? itemData->build(classImage.layout.end).size() : 0);
+        if(expandedArmies) {
+            const auto capacityBase=(classImage.layout.indexBase+quint32(dataSize)+65535U)&~65535U;
+            capacityRuntime=prepareCapacityRuntime(capacityBase,p.rom());
+        }
         if (priorClassPlacement &&
             dataSize > priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
             quint64(priorClassPlacement->dataRomOffset) + priorClassPlacement->layout.end -
@@ -750,9 +770,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 quint64(result.image.size()))
             offset = quint32((result.image.size() + 15) & ~qsizetype(15));
         std::optional<CustomRuntimeBuild> custom;
+        quint32 customIndex=0;
         std::function<QByteArray(quint32, quint32)> residentBuilder;
         if (customSquads) {
-            const auto classEnd = quint64(offset) + dataSize;
+            const auto classEnd = quint64(offset) + (expandedArmies?0x40000:dataSize);
             const auto prospectiveEnd = qMax(quint64(result.image.size()), classEnd);
             auto index = quint32((prospectiveEnd + 15) & ~quint64(15));
             const int poolSlots = p.encounters()->slotsPerPool();
@@ -768,17 +789,38 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 if (separate && (append || reuse))
                     index = before;
             }
-            residentBuilder = [&, index](quint32 address, quint32 capacity) {
-                custom = buildCustomRuntime(compiler, directory, address, capacity, index,
+            customIndex=index;
+            residentBuilder = [&](quint32 address, quint32 capacity) {
+                custom = buildCustomRuntime(compiler, directory, address, capacity, customIndex,
                                             p.encounters()->slotsPerPool(),
-                                            int(p.encounters()->customSquads().profiles().size()));
+                                            int(p.encounters()->customSquads().profiles().size()),
+                                            capacityRuntime?capacityRuntime->symbols:QMap<QString,quint32>{});
+                if(capacityRuntime) {
+                    capacityRuntime->custom=custom->code.entries;
+                    capacityRuntime->custom["lc_custom_state"]=custom->stateAddress;
+                }
                 return custom->bytes;
             };
         }
         auto classes = buildClassRuntime(
             data, compiler, directory, offset,
             expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
-            residentBuilder, itemData ? &*itemData : nullptr);
+            residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr);
+        // Codec/adapters can grow independently of the class records. Once the
+        // complete linked size is known, move a growing non-tail allocation as
+        // a whole and relink its ROM loader and optional encounter library.
+        if(priorClassPlacement && offset==priorClassPlacement->dataRomOffset &&
+           classes.data.bytes.size()>priorClassPlacement->layout.end-priorClassPlacement->layout.indexBase &&
+           quint64(offset)+priorClassPlacement->layout.end-priorClassPlacement->layout.indexBase!=quint64(result.image.size())) {
+            offset=quint32((result.image.size()+15)&~qsizetype(15));
+            customIndex=quint32((quint64(offset)+std::max<qsizetype>(classes.data.bytes.size(),expandedArmies?0x40000:0)+15)&~quint64(15));
+            if(capacityRuntime)capacityRuntime=prepareCapacityRuntime(capacityRuntime->base,p.rom());
+            classes=buildClassRuntime(data,compiler,directory,offset,
+                expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
+                itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr);
+        }
+        if(capacityRuntime && custom && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
+            throw Error("Expanded army data overlaps the custom encounter library");
         classes.removeResident = priorCustom.has_value() && !customSquads;
         const auto menus = expandedClasses
                                ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
@@ -1066,6 +1108,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if (p.tools()->gameRules().value(rule.key) != p.tools()->gameRules().loaded(rule.key) &&
                 !reopenedRules.unavailable(rule.group).isEmpty())
                 throw Error("Rebuilt game rule failed authentication: " + rule.label);
+    }
+    if(capacityRuntime) {
+        result.image=installCapacityRuntime(Rom::fromBytes(result.image),*capacityRuntime);
+        result.report<<"Compiled 30 enemy/allied squad slots and a separate temporary encounter slot; retained the 99-character player roster, all 30 organized player squads and 32 KB battery saves.";
     }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
