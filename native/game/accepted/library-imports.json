@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
-  "revision": "3b14cb65416a27e1167feeaf56337a41e735e48e",
-  "verifiedAt": "2026-10-11T19:55:04.798Z",
+  "revision": "4bcb7f9841fdc8966a8848b89741f52cfec31cd3",
+  "verifiedAt": "2026-10-13T22:20:37.680Z",
   "sourceClass": "PURE_C",
-  "fingerprint": "B72EB18218EE66180263F7588289A5192251AB7B7B27B048A12044328403EC4B",
-  "verificationSha256": "ABEAE080B21B64748B2560CA5329782410E815E1ACB5A982D9D19F05A432DCB2",
-  "freshCompilationSha256": "5165D16C1D937BC86DF27C0D7907559C3180FE3489519420825B893C3AFF72D3",
+  "fingerprint": "355186C5A9E03FEE542E170E5ECC14BD57AA3FE446F2EBA3B8D98445F335AE5B",
+  "verificationSha256": "7E1881F1479261CFC13EA54CA2B3E0A46D2B5611E3BEE48367A056D40512273D",
+  "freshCompilationSha256": "140242306707B28601DB5BC2B05459A150DFC2F08C3CA77A202236E4169AE8AC",
   "purpose": "Complete accepted pure-C source library. Source availability is separate from active editor adoption; existing adaptation manifests retain their own baselines.",
   "counts": {
-    "owners": 795,
-    "functions": 836,
-    "producerSources": 770,
-    "sourceAndHeaderFiles": 794
+    "owners": 831,
+    "functions": 872,
+    "producerSources": 796,
+    "sourceAndHeaderFiles": 820
   },
   "imports": [
     {
@@ -5688,6 +5688,57 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_0004d634.c",
+      "sourceSha256": "3643B7D55CC627CB6CB62250EE07E957A35135BBCB86401D73C155450B29FE15",
+      "file": "game/accepted/library/src/lib/func_0004d634.c",
+      "symbols": [
+        "func_0004d634"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0004d634",
+          "functions": [
+            "func_0004d634"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0004da84.c",
+      "sourceSha256": "EE36337054B92E5D829B1D97AAFC10450F48301802AFC529645829C7369CF96D",
+      "file": "game/accepted/library/src/lib/func_0004da84.c",
+      "symbols": [
+        "func_0004da84"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0004da84",
+          "functions": [
+            "func_0004da84"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0004e1c4.c",
+      "sourceSha256": "5642B0C58C984FB4EFDC23117EE82B8483AA2D58B8DE6D8D1C52BC11F0F7C185",
+      "file": "game/accepted/library/src/lib/func_0004e1c4.c",
+      "symbols": [
+        "func_0004e1c4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0004e1c4",
+          "functions": [
+            "func_0004e1c4"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/lib/func_0004e434.c",
       "sourceSha256": "93D2169DA69A7759918E878CB6E67A8BD3506714953ADECE6DA8AFAB0790A3F9",
       "file": "game/accepted/library/src/lib/func_0004e434.c",
@@ -6861,6 +6912,30 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_00101ddc.c",
+      "sourceSha256": "28D2D305936189114BD67FA16863D84EF044AB8631DB91CE1978AE743474488D",
+      "file": "game/accepted/library/src/lib/func_00101ddc.c",
+      "symbols": [
+        "func_00101DDC"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00101DDC",
+          "functions": [
+            "func_00101DDC"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_00105CC0.c",
       "sourceSha256": "7AF42FE16E0C3C103912C91BEEAA89E0FF2E56617912365B29EA4AC87CA4D62C",
       "file": "game/accepted/library/src/lib/func_00105CC0.c",
@@ -6872,6 +6947,79 @@
           "symbol": "func_00105CC0",
           "functions": [
             "func_00105CC0"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00108AA0_group.c",
+      "sourceSha256": "4B80486C2852D927952BC3EC1B56434EDD9E191936B0589B30927B91CD2C0AE5",
+      "file": "game/accepted/library/src/lib/func_00108AA0_group.c",
+      "symbols": [
+        "func_00108AA0",
+        "func_00108C1C",
+        "func_001094BC",
+        "func_00109A48",
+        "func_00109C04",
+        "func_00109C3C",
+        "func_0010A128",
+        "func_0010A718",
+        "func_0010ADB8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00108AA0",
+          "functions": [
+            "func_00108AA0"
+          ]
+        },
+        {
+          "symbol": "func_00108C1C",
+          "functions": [
+            "func_00108C1C"
+          ]
+        },
+        {
+          "symbol": "func_001094BC",
+          "functions": [
+            "func_001094BC"
+          ]
+        },
+        {
+          "symbol": "func_00109A48",
+          "functions": [
+            "func_00109A48"
+          ]
+        },
+        {
+          "symbol": "func_00109C04",
+          "functions": [
+            "func_00109C04"
+          ]
+        },
+        {
+          "symbol": "func_00109C3C",
+          "functions": [
+            "func_00109C3C"
+          ]
+        },
+        {
+          "symbol": "func_0010A128",
+          "functions": [
+            "func_0010A128"
+          ]
+        },
+        {
+          "symbol": "func_0010A718",
+          "functions": [
+            "func_0010A718"
+          ]
+        },
+        {
+          "symbol": "func_0010ADB8",
+          "functions": [
+            "func_0010ADB8"
           ]
         }
       ],
@@ -6912,6 +7060,78 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_00118e44.c",
+      "sourceSha256": "E7417C2702C4F81D908B58A72552217B70D6EB4020A12F51E4B1712CC9036CD9",
+      "file": "game/accepted/library/src/lib/func_00118e44.c",
+      "symbols": [
+        "func_00118E44"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00118E44",
+          "functions": [
+            "func_00118E44"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_001191cc.c",
+      "sourceSha256": "4C97AE53E8E2F684E02861D007209537681BCD9F82A9AF333D4353FC85E5E9AF",
+      "file": "game/accepted/library/src/lib/func_001191cc.c",
+      "symbols": [
+        "func_001191CC"
+      ],
+      "owners": [
+        {
+          "symbol": "func_001191CC",
+          "functions": [
+            "func_001191CC"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_00119454.c",
+      "sourceSha256": "4AEC2B68C8862A6F4E8CF460B759C3D96D3588511FFC599C3AF84D1B4D36AD59",
+      "file": "game/accepted/library/src/lib/func_00119454.c",
+      "symbols": [
+        "func_00119454"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00119454",
+          "functions": [
+            "func_00119454"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_0011AB74.c",
       "sourceSha256": "EACA65A46836E348FF54B4D2A37E64BAA2866A9694C370408035D8F21B8FCACF",
       "file": "game/accepted/library/src/lib/func_0011AB74.c",
@@ -6940,6 +7160,54 @@
           "symbol": "func_0011AECC",
           "functions": [
             "func_0011AECC"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_0011bb4c.c",
+      "sourceSha256": "12F32479602CDA1F4039B053D274BE60BD5EBA5FA1F5DF158852DE9068EE903E",
+      "file": "game/accepted/library/src/lib/func_0011bb4c.c",
+      "symbols": [
+        "func_0011BB4C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0011BB4C",
+          "functions": [
+            "func_0011BB4C"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_0011d8d4.c",
+      "sourceSha256": "4C3BB21CF3BD8462360D0CEADBADD20428760A54CFFE00ED6EDFC12D66247516",
+      "file": "game/accepted/library/src/lib/func_0011d8d4.c",
+      "symbols": [
+        "func_0011D8D4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0011D8D4",
+          "functions": [
+            "func_0011D8D4"
           ]
         }
       ],
@@ -7151,6 +7419,47 @@
           "symbol": "func_00126D24",
           "functions": [
             "func_00126D24"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00127154.c",
+      "sourceSha256": "E4F8BBC6047A7838B9876954A9C5195275E86247FBB266B8AFD0B5EAC9CA4BB3",
+      "file": "game/accepted/library/src/lib/func_00127154.c",
+      "symbols": [
+        "func_00127154"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00127154",
+          "functions": [
+            "func_00127154"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_00127830.c",
+      "sourceSha256": "C21C70884BD0D5E5F6547627F39D1A9504941681ADB3F8E87FDE2F452EAE0437",
+      "file": "game/accepted/library/src/lib/func_00127830.c",
+      "symbols": [
+        "func_00127830"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00127830",
+          "functions": [
+            "func_00127830"
           ]
         }
       ],
@@ -7461,6 +7770,30 @@
         }
       ],
       "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00129978.c",
+      "sourceSha256": "A07D24AEBA80EE79AACF3D04960CA5FD84693C115DB50468D5D9E671AC0566C6",
+      "file": "game/accepted/library/src/lib/func_00129978.c",
+      "symbols": [
+        "func_00129978"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00129978",
+          "functions": [
+            "func_00129978"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
     },
     {
       "source": "src/lib/func_0012A050.c",
@@ -7837,6 +8170,47 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_0012fbb8.c",
+      "sourceSha256": "71B2AB1E6C67A8BA2CE2925C01FC0BE028FA319F1912598E6DE31D5985D8DFE5",
+      "file": "game/accepted/library/src/lib/func_0012fbb8.c",
+      "symbols": [
+        "func_0012FBB8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0012FBB8",
+          "functions": [
+            "func_0012FBB8"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0012fe58.c",
+      "sourceSha256": "CFD4CCC95F48CC2CA66D49A100E47A0BBE5957E9D6380FA4C849BAB7592A5D89",
+      "file": "game/accepted/library/src/lib/func_0012fe58.c",
+      "symbols": [
+        "func_0012FE58"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0012FE58",
+          "functions": [
+            "func_0012FE58"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_001305B4.c",
       "sourceSha256": "EAD8D0BD92774485B96D2A1F608EEA3F23EFE6CE4C1727D644846266B95D70CF",
       "file": "game/accepted/library/src/lib/func_001305B4.c",
@@ -7865,6 +8239,40 @@
           "symbol": "func_00130794",
           "functions": [
             "func_00130794"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_00130d74.c",
+      "sourceSha256": "8EE508413AD0D9A74C3884DA539B8868476D7312A2D0784D811D0307EE4E5162",
+      "file": "game/accepted/library/src/lib/func_00130d74.c",
+      "symbols": [
+        "func_00130D74"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00130D74",
+          "functions": [
+            "func_00130D74"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0013109c.c",
+      "sourceSha256": "20B90657DD2077B83D679F6A95D818165D255EF2ABABF92071F2873FDD79B5FA",
+      "file": "game/accepted/library/src/lib/func_0013109c.c",
+      "symbols": [
+        "func_0013109C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0013109C",
+          "functions": [
+            "func_0013109C"
           ]
         }
       ],
@@ -7941,6 +8349,47 @@
           "symbol": "func_0013466C",
           "functions": [
             "func_0013466C"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/func_0013a3d8.c",
+      "sourceSha256": "16E901FD0BC7746F83AC7D625A7A3D502FFFA5DF0F587B8FB5B845D48792501B",
+      "file": "game/accepted/library/src/lib/func_0013a3d8.c",
+      "symbols": [
+        "func_0013A3D8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0013A3D8",
+          "functions": [
+            "func_0013A3D8"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_0013c060.c",
+      "sourceSha256": "05B7322C6E5B19D3F135773B1ACE1B4CCFD2F21E30E40E2DAB172BA708948B0D",
+      "file": "game/accepted/library/src/lib/func_0013c060.c",
+      "symbols": [
+        "func_0013C060"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0013C060",
+          "functions": [
+            "func_0013C060"
           ]
         }
       ],
@@ -9330,6 +9779,48 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_001F3C00.c",
+      "sourceSha256": "277A245286A449DFB9D1FD4575DDFC3C0D5E797FCB48570D30F9979A764F2F6F",
+      "file": "game/accepted/library/src/lib/func_001F3C00.c",
+      "symbols": [
+        "func_001F3C00"
+      ],
+      "owners": [
+        {
+          "symbol": "func_001F3C00",
+          "functions": [
+            "func_001F3C00"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "bytes": 1408,
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h"
+        },
+        {
+          "path": "include/game/combat_draw.h",
+          "bytes": 362,
+          "sha256": "DEA4C4DDDEA3D523C088558D41D15EDFCCC28C9467F48DA03E779F4F2F1A0B08",
+          "file": "game/accepted/library/include/game/combat_draw.h"
+        },
+        {
+          "path": "include/game/combat_pose_record.h",
+          "bytes": 868,
+          "sha256": "3ECFF3EEA02A4A2AB76E7E489B00ECDB2FFA2511382E95CD936F376509457815",
+          "file": "game/accepted/library/include/game/combat_pose_record.h"
+        },
+        {
+          "path": "include/game/combat_types.h",
+          "bytes": 109,
+          "sha256": "DD2B627C22F084DB4F668D27E8DE3C3F3D8FDFC352F690034FE3E1A5655959D6",
+          "file": "game/accepted/library/include/game/combat_types.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_001F5654.c",
       "sourceSha256": "A9DAAB47A3AB8495EAE9504F909A1B9F1E9196C5ED5EE3D6ECC3E17CBECA0427",
       "file": "game/accepted/library/src/lib/func_001F5654.c",
@@ -9341,6 +9832,48 @@
           "symbol": "func_001F5654",
           "functions": [
             "func_001F5654"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "bytes": 1408,
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h"
+        },
+        {
+          "path": "include/game/combat_draw.h",
+          "bytes": 362,
+          "sha256": "DEA4C4DDDEA3D523C088558D41D15EDFCCC28C9467F48DA03E779F4F2F1A0B08",
+          "file": "game/accepted/library/include/game/combat_draw.h"
+        },
+        {
+          "path": "include/game/combat_pose_record.h",
+          "bytes": 868,
+          "sha256": "3ECFF3EEA02A4A2AB76E7E489B00ECDB2FFA2511382E95CD936F376509457815",
+          "file": "game/accepted/library/include/game/combat_pose_record.h"
+        },
+        {
+          "path": "include/game/combat_types.h",
+          "bytes": 109,
+          "sha256": "DD2B627C22F084DB4F668D27E8DE3C3F3D8FDFC352F690034FE3E1A5655959D6",
+          "file": "game/accepted/library/include/game/combat_types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_001F6098.c",
+      "sourceSha256": "09D057B57D463AC6AD700B11F18B4AE70193E8815CBB60247DB405F509267C84",
+      "file": "game/accepted/library/src/lib/func_001F6098.c",
+      "symbols": [
+        "func_001F6098"
+      ],
+      "owners": [
+        {
+          "symbol": "func_001F6098",
+          "functions": [
+            "func_001F6098"
           ]
         }
       ],
@@ -11572,6 +12105,23 @@
       ]
     },
     {
+      "source": "src/lib/func_0020DB10.c",
+      "sourceSha256": "4ED0F38CC44D183BAC5973ED5B830B0B0E02319CCF35940A7F11357D7D1B09BF",
+      "file": "game/accepted/library/src/lib/func_0020DB10.c",
+      "symbols": [
+        "func_0020DB10"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0020DB10",
+          "functions": [
+            "func_0020DB10"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/lib/func_0020F3D4.c",
       "sourceSha256": "567861AC6E8DC82E7A6C2BBD7A54027D99FCFB9B410C8C8B527B2449FC849D0C",
       "file": "game/accepted/library/src/lib/func_0020F3D4.c",
@@ -11760,6 +12310,36 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_0023a3a0.c",
+      "sourceSha256": "3CDE92C35DF69B27C91B59E3D9C06E5C304383BAFB8EC3DDF6F7AAAD945799F0",
+      "file": "game/accepted/library/src/lib/func_0023a3a0.c",
+      "symbols": [
+        "func_0023A3A0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0023A3A0",
+          "functions": [
+            "func_0023A3A0"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        },
+        {
+          "path": "include/game/class_entry.h",
+          "bytes": 262,
+          "sha256": "7484DF99811858FD0F641F927EF6C943E4336B7191DA159DBD74538A341F0E2F",
+          "file": "game/accepted/library/include/game/class_entry.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_0023A5EC.c",
       "sourceSha256": "219A5E5958C6DC204A84A129942948BD224F565849451B4D9A4C593E460972B6",
       "file": "game/accepted/library/src/lib/func_0023A5EC.c",
@@ -11930,8 +12510,62 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/func_002488d0.c",
+      "sourceSha256": "C0F45AD28BC7F054CF14F83AFD099AE9BB4C7841AD627F131B19806D890E86DB",
+      "file": "game/accepted/library/src/lib/func_002488d0.c",
+      "symbols": [
+        "func_002488D0"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002488D0",
+          "functions": [
+            "func_002488D0"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ]
+    },
+    {
+      "source": "src/lib/func_00249290.c",
+      "sourceSha256": "B194D5C0542A954C4E61290C780F4F8E8F786699D2FE4CB4AF331E492C590201",
+      "file": "game/accepted/library/src/lib/func_00249290.c",
+      "symbols": [
+        "func_00249290"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00249290",
+          "functions": [
+            "func_00249290"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        },
+        {
+          "path": "include/game/class_entry.h",
+          "bytes": 262,
+          "sha256": "7484DF99811858FD0F641F927EF6C943E4336B7191DA159DBD74538A341F0E2F",
+          "file": "game/accepted/library/include/game/class_entry.h"
+        }
+      ]
+    },
+    {
       "source": "src/lib/func_00249A14.c",
-      "sourceSha256": "7EADF27F4E48A2EE58B1C78813772474403D1F93D56AC8C139A6796EDE7EF26D",
+      "sourceSha256": "61092FB2724F6F54331A13428ECC8559EEDF9097F49F734E868BA8BEF0220903",
       "file": "game/accepted/library/src/lib/func_00249A14.c",
       "symbols": [
         "func_00249A14"
@@ -13512,6 +14146,37 @@
       "dependencies": []
     },
     {
+      "source": "src/lib/q1_terrain_policy.c",
+      "sourceSha256": "6203CA6381CB665F69C50BF9576729A653B96635AA3FC214568B203B1FD23AAB",
+      "file": "game/accepted/library/src/lib/q1_terrain_policy.c",
+      "symbols": [
+        "func_0013A558",
+        "func_0013AA40",
+        "func_0013B350"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0013A558",
+          "functions": [
+            "func_0013A558"
+          ]
+        },
+        {
+          "symbol": "func_0013AA40",
+          "functions": [
+            "func_0013AA40"
+          ]
+        },
+        {
+          "symbol": "func_0013B350",
+          "functions": [
+            "func_0013B350"
+          ]
+        }
+      ],
+      "dependencies": []
+    },
+    {
       "source": "src/lib/resource_alloc_alt_scan.c",
       "sourceSha256": "792A6C4BBAB3F8E7A7C4E10DAF0B9DC7283BB6BF9974822C39352457C77B3858",
       "file": "game/accepted/library/src/lib/resource_alloc_alt_scan.c",
@@ -14005,7 +14670,7 @@
     },
     {
       "source": "src/lib/squad_supply_end.c",
-      "sourceSha256": "5F005B9E1B6AB900BE631C131C5D8C4CEDA0BE30A09F3EA150FADB481410A067",
+      "sourceSha256": "ABAA4C2256B7E71769F20DC0770F69813C51D33BEAAA02E96114E2CB5F41CD86",
       "file": "game/accepted/library/src/lib/squad_supply_end.c",
       "symbols": [
         "func_00124520",

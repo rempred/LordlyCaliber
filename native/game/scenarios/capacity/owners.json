@@ -6,7 +6,7 @@
       "start": 1197344,
       "size": 2720,
       "address": 2149383648,
-      "sourceSha256": "5f005b9e1b6ab900be631c131c5d8c4ceda0be30a09f3ea150fadb481410a067",
+      "sourceSha256": "abaa4c2256b7e71769f20dc0770f69813c51d33beaaa02e96114e2cb5f41cd86",
       "retailSha256": "86ee425454232ff939c1cd97efde3d7d2d9043f9147a3c870e5cc61be2c79572",
       "symbols": {
         "D_801F1070": 2149519472,
@@ -45,7 +45,7 @@
         }
       ],
       "adaptedSource": "game/scenarios/capacity/squad_supply_end.c",
-      "adaptedSha256": "cc390711949fb563f2502e0242b06d6d45e65243a3fa5b29e88c272be00194ba"
+      "adaptedSha256": "4f52ca9f244f68a8db0219690a040044806fd827e0238e3dd0358f7e4466f3ba"
     },
     {
       "source": "game\\accepted\\library\\src\\lib\\func_00128E80.c",

@@ -3,6 +3,60 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "accepted-draw-callbacks", "priority": 1,
+      "behavior": "Recovered animation and stage-object drawing",
+      "symbols": ["func_001F3C00", "func_001F6098"],
+      "editorFiles": ["game/accepted/library/src/lib/func_001F3C00.c", "game/accepted/library/src/lib/func_001F6098.c", "engine/stage_object_renderer.cpp"],
+      "editorUse": "imported",
+      "benefit": "Previously hybrid drawing owners are now accepted pure C, providing complete references for checking pose geometry, transforms and draw ordering. Import alone does not change preview rendering.",
+      "preserve": "Keep native display-list, matrix, material and resource dependencies distinct from the PC rasterizer. Existing pixel coverage, filtering and console precision limits remain."
+    },
+    {
+      "id": "accepted-squad-scheduler", "priority": 2,
+      "behavior": "Squad scheduling and order progression",
+      "symbols": ["func_00108AA0", "func_00108C1C", "func_001094BC", "func_00109A48", "func_00109C04", "func_00109C3C", "func_0010A128", "func_0010A718", "func_0010ADB8"],
+      "editorFiles": ["game/accepted/library/src/lib/func_00108AA0_group.c", "engine/scenario_routes.cpp", "engine/route_preview.cpp"],
+      "editorUse": "imported",
+      "benefit": "The complete nine-function producer can be used to audit live order progression beyond the editor's planned waypoint route.",
+      "preserve": "Keep the complete coupled producer and its scenario-state dependencies. Planned routes do not simulate the live scheduler, pursuit or evasion."
+    },
+    {
+      "id": "accepted-terrain-policy", "priority": 2,
+      "behavior": "Scenario-dependent terrain policy helpers",
+      "symbols": ["func_0013A558", "func_0013AA40", "func_0013B350"],
+      "editorFiles": ["game/accepted/library/src/lib/q1_terrain_policy.c", "game/scenarios/capacity/squad_supply_end.c", "engine/route_preview.cpp"],
+      "editorUse": "imported",
+      "benefit": "The supply-destination selector calls these flag-dependent helpers. Their accepted source makes those conditions inspectable; the general route preview still uses its existing pathfinder.",
+      "preserve": "Keep all three bodies, byte arguments and both output bytes. Some field meanings remain unknown. Do not treat their output bytes as movement costs or rename queried flags without evidence."
+    },
+    {
+      "id": "town-takeover-chaos-frame", "priority": 2,
+      "behavior": "Town takeover alignment and Chaos Frame calculation",
+      "symbols": ["func_0012FBB8"],
+      "editorFiles": ["game/accepted/library/src/lib/func_0012fbb8.c", "engine/chaos_counter.cpp"],
+      "editorUse": "imported",
+      "benefit": "Confirms the documented average-alignment versus town-morale formula, random 0-7 term, stored 40-point penalty and Chaos Frame clamp. It provides a reference for a future town-outcome preview; the existing counter only displays Chaos Frame.",
+      "preserve": "Retain member eligibility, integer averaging, no-member fallback, site skip conditions, random draw order, score bands and separate return value."
+    },
+    {
+      "id": "accepted-scripted-site-state", "priority": 2,
+      "behavior": "Scripted scenario, site and squad-state transitions",
+      "symbols": ["func_00101DDC", "func_00118E44", "func_001191CC", "func_00119454", "func_0011BB4C", "func_0011D8D4", "func_00127154", "func_00129978", "func_0012FE58", "func_0013A3D8"],
+      "editorFiles": ["game/accepted/library-imports.json", "game/scenarios/capacity-bounds.json", "game/scenarios/capacity-references.json", "rebuild/capacity_runtime.cpp"],
+      "editorUse": "imported",
+      "benefit": "Makes scenario transitions and squad snapshot restoration easier to audit. The 50-object retail copy/restore loops in 00129978 are already covered by the expanded-army patches.",
+      "preserve": "Original C retains retail limits. Do not substitute it directly for the expanded runtime or discard relocation, backup-size and slot-count patches."
+    },
+    {
+      "id": "accepted-scenario-helpers", "priority": 3,
+      "behavior": "Scenario loading boundaries and record/site helpers",
+      "symbols": ["func_0004D634", "func_0004DA84", "func_0004E1C4", "func_0023A3A0", "func_002488D0", "func_00249290", "func_00127830", "func_00130D74", "func_0013109C", "func_0013C060"],
+      "editorFiles": ["game/accepted/library-imports.json"],
+      "editorUse": "imported",
+      "benefit": "Accepted references for existing loading, record construction and site-dependent choices. No new executing adaptation is claimed.",
+      "preserve": "Keep DMA/cache/BSS boundaries, overlay-specific callees, record widths and unknown field meanings. Corrected caller declarations in 00249A14 remain paired with their accepted callees."
+    },
+    {
       "id": "combat-action-resolution", "priority": 3,
       "behavior": "Shared combat action resolution",
       "symbols": ["func_0022F580", "func_00230A9C", "func_002317C8", "func_00231CC0", "func_00232280", "func_00232458", "func_00232D7C"],

@@ -68,9 +68,9 @@ extern u8 D_800E7AC3, D_8018F481;
 extern f32 D_801F0D98[];
 extern u16 D_801F36D8[][32];
 extern void func_0012EA80(s32 index, f32 *point);
-extern s32 func_0013A558(s32 first, s32 second, u8 *a, u8 *b);
-extern s32 func_0013AA40(s32 first, s32 second, u8 *a, u8 *b);
-extern s32 func_0013B350(s32 first, s32 second, u8 *a, u8 *b);
+extern void func_0013A558(u8, u8, u8 *, u8 *);
+extern void func_0013AA40(u8, u8, u8 *, u8 *);
+extern void func_0013B350(u8, u8, u8 *, u8 *);
 
 s32 func_0012469C(RuntimeUnit *unit, f32 *output)
 {

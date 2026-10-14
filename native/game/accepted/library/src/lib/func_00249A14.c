@@ -38,8 +38,8 @@ extern void boot_resource_archive_load_many(ResourceArchiveInput *first,
 extern void memcpy_aligned(void *destination, const void *source, s32 size);
 extern void memset_00023780(void *destination, s32 size);
 extern u8 func_000454c8(s32 selector);
-extern u32 func_00249290(u16 slot, u16 *selected, s32 modifier, u32 option);
-extern void func_002488D0(u8 *staged, u32 selector);
+extern u32 func_00249290(u16 slot, u16 *selected, s8 modifier, u8 option);
+extern s32 func_002488D0(u8 *staged, u32 selector);
 
 s32 func_00249A14(s32 record_index, s32 option, u8 apply_flag)
 {

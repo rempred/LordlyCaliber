@@ -1,5 +1,29 @@
 # Native Lordly Caliber
 
+## Accepted animation, terrain and scenario sources (2026-10-13)
+
+The accepted library now contains 872 compiler-recorded functions from 831
+PURE_C owners (796 source files), authenticated against Decomp's passing
+CURRENT 355186C5. This adds 36 functions in 26 files: the complete nine-function
+squad scheduler, ten scenario helpers, ten scripted/site functions, the town
+Chaos Frame calculation, three drawing/animation owners and three terrain-policy
+helpers. Existing animation/gameplay adaptation manifests keep their baselines.
+The interest catalog records relevant consumers and the remaining adoption work.
+
+The drawing owners 1F3C00 and 1F6098 and service owner 20DB10 are now pure C;
+older sections describing their hybrid reference reflect the earlier baseline.
+Importing those originals does not replace the PC renderer or complete its
+console-specific behavior. Terrain helpers 13A558/13AA40/13B350 depend on game
+flags and publish two bytes used by the supply-destination selector; unresolved
+output meanings remain numeric. The general planned-route preview is unchanged.
+
+Two imported callers received declaration corrections. The capacity adapter was
+regenerated from the updated squad_supply_end source and requalified against its
+complete 2,720-byte retail owner. Only its three helper declarations and source
+identity metadata changed; generated runtime instructions remain unchanged.
+The original 50-object copy/restore paths now visible in 129978 are already
+covered by the expanded-army count, backup-size and relocation patches.
+
 ## Expanded armies (2026-10-13)
 
 CapacityRuntimeBuild reserves a 64 KiB-aligned permanent block after class/item

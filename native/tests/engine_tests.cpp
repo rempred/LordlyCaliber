@@ -28,9 +28,14 @@
 #include <QElapsedTimer>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <QUuid>
 #include <QtTest>
 
 using namespace lordly;
+static QString capacityTestRun() {
+    static const auto run = "enemy-capacity-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    return run;
+}
 static QByteArray syntheticRom() {
     QByteArray data(0x2800000, char(0));
     put32(data, 0, 0x80371240);
@@ -81,8 +86,8 @@ class EngineTests : public QObject {
             auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();rules["deploymentLimit"]=20;
             settings["gameRules"]=rules;project.setTools(settings);
             auto root=QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir();QVERIFY(root.cd("../../.."));
-            const auto output=root.filePath("Test ROMs/enemy-capacity-20261013/public");QVERIFY(QDir().mkpath(output));
-            const auto work=root.filePath("tmp/enemy-capacity-20261012/public-export");QVERIFY(QDir().mkpath(work));
+            const auto output=root.filePath("Test ROMs/"+capacityTestRun()+"/public");QVERIFY(QDir().mkpath(output));
+            const auto work=root.filePath("tmp/"+capacityTestRun()+"/public-export");QVERIFY(QDir().mkpath(work));
             const auto build=rebuild(project,tools,work);
             const auto outputPath=QDir(output).filePath(QFileInfo(path).fileName());exportRom(project,build,outputPath);
             const auto exported=Rom::open(outputPath);auto reopened=Project::fromRom(exported);
@@ -128,7 +133,7 @@ class EngineTests : public QObject {
                     document.apply(change,false);QCOMPARE(document.serialize(),before);
                 }
             }
-            qInfo().noquote()<<"30 squads / 150 members exported; reopen and unchanged rebuild agree; 30 relocated player squads readable.";
+            qInfo().noquote()<<"30 squads / 150 members exported; reopen and unchanged rebuild agree; 30 relocated player squads readable. Candidate:"<<outputPath;
         }catch(const std::exception &e){QFAIL(e.what());}
     }
     void capacityComposition() {
@@ -136,7 +141,7 @@ class EngineTests : public QObject {
         if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
         try {
             auto root=QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir();QVERIFY(root.cd("../../.."));
-            const auto initial=root.filePath("Test ROMs/enemy-capacity-20261013/public/"+QFileInfo(path).fileName());
+            const auto initial=root.filePath("Test ROMs/"+capacityTestRun()+"/public/"+QFileInfo(path).fileName());
             if(!QFileInfo::exists(initial))QSKIP("Run capacityPublicExport first");
             auto project=Project::fromRom(Rom::open(initial));project.loadScenarios();project.loadEncounters();project.loadTraining();project.loadTools();
             QCOMPARE(project.appendClass(5,"Capacity test class"),165);
@@ -148,11 +153,11 @@ class EngineTests : public QObject {
             row["price"]=7;rows[0]=row;training["opponents"]=rows;project.setTraining(training);
             auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();
             rules["restHealing"]=7;rules["recoveryRate"]=200;rules["trainingBonus"]=20;settings["gameRules"]=rules;project.setTools(settings);
-            const auto work=root.filePath("tmp/enemy-capacity-20261012/composition");QVERIFY(QDir().mkpath(work));
+            const auto work=root.filePath("tmp/"+capacityTestRun()+"/composition");QVERIFY(QDir().mkpath(work));
             auto tooMany=settings;auto badRules=rules;badRules["deploymentLimit"]=21;tooMany["gameRules"]=badRules;
             project.setTools(tooMany);QVERIFY_THROWS_EXCEPTION(Error,rebuild(project,tools,work));project.setTools(settings);
             const auto build=rebuild(project,tools,work);
-            const auto output=root.filePath("Test ROMs/enemy-capacity-20261013/composition");QVERIFY(QDir().mkpath(output));
+            const auto output=root.filePath("Test ROMs/"+capacityTestRun()+"/composition");QVERIFY(QDir().mkpath(output));
             const auto candidate=QDir(output).filePath(QFileInfo(path).fileName());exportRom(project,build,candidate);
             auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadEncounters();reopened.loadTraining();reopened.loadTools();reopened.loadScenarios();
             QCOMPARE(reopened.encounters()->json(),project.encounters()->json());QCOMPARE(reopened.training()->json(),training);
