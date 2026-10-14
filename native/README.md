@@ -1,4 +1,4 @@
-# Lordly Caliber 0.5 — native development build
+# Lordly Caliber 0.5.1
 
 Windows x64, Qt 6.12 and C++. Extract the portable ZIP and run
 `LordlyCaliber.exe`. Open a US Ogre Battle 64 ROM, edit its records or
@@ -27,7 +27,7 @@ is available explicitly in the advanced view. Legacy boss labels identify classe
 without changing their in-game names. Save and enemy formation boards both show
 cells7–9 in the front row.
 
-This is a local development build, not the published 0.5 release. Classes and Items provide
+Classes and Items provide
 record editing, descriptions, undo, project persistence and source-built export.
 US Rev 0 Classes also provides promotion requirements, family selection and
 creation, compatibility masks, and new classes through ID 255. Choose New class

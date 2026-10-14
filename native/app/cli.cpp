@@ -14,7 +14,7 @@
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     app.setApplicationName("LordlyCaliber-cli");
-    app.setApplicationVersion("0.5.0-dev");
+    app.setApplicationVersion("0.5.1");
     QCommandLineParser parser;
     parser.setApplicationDescription(
         "Inspect or rebuild an Ogre Battle 64 project without the desktop UI.");

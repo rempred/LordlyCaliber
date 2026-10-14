@@ -24,7 +24,8 @@ to create a release. It creates a unique `native-main-RUN-ATTEMPT` tag pointing
 to the exact built commit and never overwrites an existing release. It retrieves
 the application artifact as raw ZIP bytes, checks its published checksum, and
 uploads it with the verification sidecars without repacking. These are
-development prereleases; this workflow does not declare a stable 0.5 release.
+development prereleases; a numbered release is published separately using the
+same verified application ZIP and its checksum and attestation sidecars.
 
 The build job uses Windows Server 2022's MSVC 2022 toolset, pinned Qt/CMake
 archives, and the authenticated N64 dependency in

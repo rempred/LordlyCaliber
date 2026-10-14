@@ -9,7 +9,7 @@ $sourceRoot = Split-Path -Parent $PSScriptRoot
 if (!$N64Tools) { $N64Tools = Join-Path $sourceRoot '.local\n64-toolchain' }
 if (!$Destination) {
     $Destination = if ($Live) { Join-Path $sourceRoot 'live' }
-                   else { Join-Path $sourceRoot ('dist\LordlyCaliber-0.5-dev-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+                   else { Join-Path $sourceRoot ('dist\LordlyCaliber-0.5.1-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
 if ((Test-Path -LiteralPath $Destination) -and !$Live) { throw 'Choose a fresh package directory.' }

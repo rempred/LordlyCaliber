@@ -6,7 +6,7 @@
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("LordlyCaliber");
-    app.setApplicationVersion("0.5.0-dev");
+    app.setApplicationVersion("0.5.1");
     app.setOrganizationName("LordlyCaliber");
     lordly::applyEditorTheme(app);
     QCommandLineParser parser;
