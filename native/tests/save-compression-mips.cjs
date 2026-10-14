@@ -112,7 +112,7 @@ for(const slot of [0,1,14,15]){
 assert.equal(call('lc_save_expand_image',imageAt,32768),1);
 const before=read(imageAt,32768);let commits=0,refusals=0;
 if(fixtureDir)for(const name of fs.readdirSync(fixtureDir).filter(n=>n.endsWith('.bin'))){
- const data=fs.readFileSync(path.join(fixtureDir,name)),size=data.length,workBytes=20224+size+2*(4096+size);
+ const data=fs.readFileSync(path.join(fixtureDir,name)),size=data.length,workBytes=20224+2*(4096+size);
  const format=size===27256?3:size===22820?2:size===19208?1:0;
  if(!format)continue; // Other proposed layouts exercise only the generic codec above.
  m.load(source,data);assert.equal(call('lc_save_record_seal',source,size,15,format),1);

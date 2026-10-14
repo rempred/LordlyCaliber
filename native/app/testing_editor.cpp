@@ -11,6 +11,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
@@ -20,6 +21,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+#include <utility>
 namespace lordly {
 namespace {
 QByteArray readSave(const QString &path) {
@@ -48,6 +50,13 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
         "travel to the marked destination. Export your edited ROM first to test its changes.");
     note->setWordWrap(true);
     layout->addWidget(note);
+    auto buildRow = new QHBoxLayout;
+    freshness_ = new QLabel("Source ROM — export the project to test its edits.");
+    freshness_->setObjectName("testingFreshness"); freshness_->setWordWrap(true);
+    buildRow->addWidget(freshness_, 1);
+    auto build = new QPushButton("Build current project…"); build->setObjectName("testingBuildProject");
+    buildRow->addWidget(build); layout->addLayout(buildRow);
+    connect(build, &QPushButton::clicked, this, &TestingEditor::exportRequested);
     controls_ = new QWidget;
     auto controls = new QVBoxLayout(controls_);
     controls->setContentsMargins(0, 0, 0, 0);
@@ -153,8 +162,10 @@ void TestingEditor::guarded(const std::function<void()> &action) {
     }
 }
 void TestingEditor::loadRom(const QString &path) {
-    if (busy_)
+    if (busy_) {
+        pendingRom_ = path;
         return;
+    }
     initialized_ = true;
     busy_ = true;
     controls_->setEnabled(false);
@@ -167,6 +178,7 @@ void TestingEditor::loadRom(const QString &path) {
         std::shared_ptr<ScenarioSeeder> seeder;
         QString error;
         qint64 size = 0, time = 0;
+        QByteArray digest;
     };
     auto watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, path] {
@@ -175,6 +187,9 @@ void TestingEditor::loadRom(const QString &path) {
         busy_ = false;
         controls_->setEnabled(true);
         missions_->setEnabled(true);
+        if (!pendingRom_.isEmpty()) {
+            const auto pending = std::exchange(pendingRom_, {}); loadRom(pending); return;
+        }
         if (!r.seeder) {
             status_->setText(r.error);
             romLabel_->setText(path + " — unavailable");
@@ -185,7 +200,9 @@ void TestingEditor::loadRom(const QString &path) {
         QSettings().setValue("testing/rom", path);
         romSize_ = r.size;
         romTime_ = r.time;
+        loadedDigest_ = r.digest;
         romLabel_->setText(path);
+        updateFreshness();
         for (int i = 0; i < seeder_->choices().size(); ++i) {
             const auto &c = seeder_->choices()[i];
             auto item = new QTreeWidgetItem(missions_, {c.location, c.mission});
@@ -194,8 +211,10 @@ void TestingEditor::loadRom(const QString &path) {
         }
         armyLabel_->setText(armyPath_.isEmpty() ? "Army: default army"
                                                 : "Army: " + QFileInfo(armyPath_).fileName());
+        const int requested = requestedScenario_;
         filter();
         status_->setText("Use Cold boot beside a mission to install its save and restart Project64.");
+        if (requested >= 0) selectScenario(requested);
     });
     watcher->setFuture(QtConcurrent::run([path] {
         try {
@@ -205,13 +224,52 @@ void TestingEditor::loadRom(const QString &path) {
             QFileInfo after(path);
             if (before.size() != after.size() || before.lastModified() != after.lastModified())
                 throw Error("ROM changed while loading; choose it again");
-            return Result{result, {}, after.size(), after.lastModified().toMSecsSinceEpoch()};
+            return Result{result, {}, after.size(), after.lastModified().toMSecsSinceEpoch(), sha256(result->rom().bytes())};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
         }
     }));
 }
+void TestingEditor::useExport(const QString &path, quint64 revision, const QByteArray &digest) {
+    exportPath_ = QFileInfo(path).absoluteFilePath(); exportRevision_ = revision;
+    exportDigest_ = digest;
+    loadRom(path);
+}
+void TestingEditor::setProjectRevision(quint64 revision, bool pending) {
+    projectRevision_ = revision; pendingEdits_ = pending; updateFreshness();
+}
+void TestingEditor::updateFreshness() {
+    const QFileInfo file(romPath_);
+    const bool exported = !exportPath_.isEmpty() && file.absoluteFilePath() == exportPath_ &&
+        !exportDigest_.isEmpty() && loadedDigest_ == exportDigest_ &&
+        file.size() == romSize_ && file.lastModified().toMSecsSinceEpoch() == romTime_;
+    freshness_->setText(exported
+        ? (projectRevision_ != exportRevision_ || pendingEdits_
+            ? "Project changed since this export. Build again to include your current edits."
+            : "Latest export — includes the applied project edits at export time.")
+        : "Selected ROM has not been exported from this project in this session. Build to test the current edits.");
+}
+void TestingEditor::selectScenario(int key) {
+    requestedScenario_ = key;
+    if (!seeder_) return;
+    search_->clear();
+    requestedScenario_ = key;
+    QTreeWidgetItem *first = nullptr;
+    for (int row = 0; row < missions_->topLevelItemCount(); ++row) {
+        auto item = missions_->topLevelItem(row);
+        const int choice = item->data(0, Qt::UserRole).toInt();
+        const bool match = choice >= 0 && choice < seeder_->choices().size() && seeder_->choices()[choice].scenarios.contains(key);
+        item->setHidden(!match);
+        if (match && !first) first = item;
+    }
+    missions_->setCurrentItem(first);
+    if (first) {
+        missions_->scrollToItem(first);
+        status_->setText(QString("Showing story entries for scenario %1. Choose Cold boot, then load slot 1 and travel to the marked destination. Story choices may select a different mission variant.").arg(key));
+    } else status_->setText(QString("Scenario %1 has no supported world-map entry in this ROM. Search for another mission, or use your own save.").arg(key));
+}
 void TestingEditor::filter() {
+    requestedScenario_ = -1;
     for (int i = 0; i < missions_->topLevelItemCount(); ++i) {
         auto item = missions_->topLevelItem(i);
         item->setHidden(
@@ -253,6 +311,10 @@ void TestingEditor::coldBoot(QTreeWidgetItem *item) {
     if (busy_ || !item || item->isHidden())
         return;
     guarded([&] {
+        if ((projectRevision_ != exportRevision_ || pendingEdits_ || loadedDigest_ != exportDigest_) &&
+            !exportPath_.isEmpty() && QFileInfo(romPath_).absoluteFilePath() == exportPath_ &&
+            QMessageBox::question(this, "Test an older export?", "This ROM does not include the current project edits. Continue testing the older export?",
+                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
         const auto dest = destination();
         const int i = item->data(0, Qt::UserRole).toInt();
         const bool merge = i >= 0;

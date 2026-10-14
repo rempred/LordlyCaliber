@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/scenario_map_editor.h"
+#include "app/scenario_route_editor.h"
 #include "app/text_workspace.h"
 #include "app/dialogue_inspector.h"
 #include "app/army_editor.h"
@@ -66,6 +67,13 @@ void MainWindow::navigateTo(const EditLocation &location) {
                         table->scrollTo(table->currentIndex()); break;
                     }
                 destination = location.key == "promotionEditor" ? findChild<QWidget *>(location.key) : table;
+                if (location.key.startsWith("section:")) {
+                    auto section = findChild<QComboBox *>(kind + "InspectorSection");
+                    if (section) {
+                        section->setCurrentIndex(section->findText(location.key.mid(8)));
+                        destination = section;
+                    }
+                }
             }
         } else if (kind == "family") {
             // Open a member of this family; this selects the family without changing assignment.
@@ -86,12 +94,39 @@ void MainWindow::navigateTo(const EditLocation &location) {
             combo("trainingLocation",id); destination=combo("trainingOpponent",location.child);
         } else if (kind == "shops") {
             clear("shopSearch"); destination = list("shopList", id);
+        } else if (kind == "encounterMap") {
+            clear("encounterSearch"); reveal(list("encounterPools", id));
+            destination = combo("encounterMapKey", location.child);
         } else if (kind == "encounters") {
             clear("encounterSearch"); destination = list("encounterPools", id);
         } else if (kind == "encounterReward") {
             clear("rewardSearch"); destination = list("rewardClasses", id);
         } else if (kind == "customEncounter") {
             clear("customSearch"); destination = list("customSquadList", CustomSquads::key(id, location.child));
+        } else if (kind == "squad-order-draft") {
+            clear("scenarioSearch"); reveal(list("scenarioList", id));
+            const auto &rows = project_->scenarios()->scenario(id).layout.deployments;
+            int squad = -1;
+            for (int i = 0; i < rows.size(); ++i) if ((u8(rows[i], 0) & 127) == location.child) squad = i;
+            if (location.key == "mapSimpleOrders") {
+                if (auto tabs = findChild<QTabBar *>("scenarioNavigation")) tabs->setCurrentIndex(0);
+                if (auto objects = findChild<QListWidget *>("mapObjects"))
+                    for (int row = 0; row < objects->count(); ++row) {
+                        auto item = objects->item(row);
+                        if (item->data(Qt::UserRole).toInt() == int(MapObject::Squad) && item->data(Qt::UserRole + 1).toInt() == squad)
+                            objects->setCurrentRow(row);
+                    }
+            } else {
+                if (auto tabs = findChild<QTabBar *>("scenarioNavigation")) tabs->setCurrentIndex(2);
+                for (auto widget : findChildren<QWidget *>()) if (auto routes = dynamic_cast<ScenarioRouteEditor *>(widget)) routes->selectSquad(squad);
+            }
+            destination = findChild<QWidget *>(location.key);
+        } else if (kind == "route-draft") {
+            clear("scenarioSearch"); reveal(list("scenarioList", id));
+            if (auto tabs = findChild<QTabBar *>("scenarioNavigation")) tabs->setCurrentIndex(2);
+            for (auto widget : findChildren<QWidget *>()) if (auto routes = dynamic_cast<ScenarioRouteEditor *>(widget)) {
+                routes->selectDraft(location.key, location.child); destination = routes; break;
+            }
         } else if (kind == "scenario-event") {
             project_->loadSceneEvents();
             const auto bytes = SceneEvents::retailRow(project_->rom(), id);
@@ -136,7 +171,8 @@ void MainWindow::navigateTo(const EditLocation &location) {
             if (auto objects = findChild<QListWidget *>("mapObjects"))
                 for (int row = 0; row < objects->count(); ++row) {
                     const auto item = objects->item(row);
-                    const bool site = siteRow >= 0 && item->data(Qt::UserRole).toInt() == int(MapObject::Site) && item->data(Qt::UserRole + 1).toInt() == siteRow;
+                    const int requestedSite = location.key == "site" ? location.child : siteRow;
+                    const bool site = requestedSite >= 0 && item->data(Qt::UserRole).toInt() == int(MapObject::Site) && item->data(Qt::UserRole + 1).toInt() == requestedSite;
                     const bool treasure = location.key == "treasure" && item->data(Qt::UserRole).toInt() == int(MapObject::Treasure) && item->data(Qt::UserRole + 1).toInt() == location.child;
                     if (site || treasure) { objects->setCurrentRow(row); destination = objects; break; }
                 }

@@ -11,6 +11,7 @@ class QTextBrowser;
 class QCheckBox;
 namespace lordly {
 class SquadOrderEditor;
+class PendingEdits;
 class ScenarioRouteEditor : public QWidget {
   public:
     ScenarioRouteEditor(Project *project,
@@ -19,6 +20,7 @@ class ScenarioRouteEditor : public QWidget {
     void refresh(int key);
     void selectNode(int row);
     void selectSquad(int row);
+    void selectDraft(const QString &kind, int row);
     std::function<void(int)> squadSelected;
 
   private:
@@ -35,6 +37,10 @@ class ScenarioRouteEditor : public QWidget {
     struct Draft { QByteArray source; QVariantMap values; };
     QMap<QString,Draft> drafts_;
     QMap<QString,QVariantMap> baselines_;
+    PendingEdits *pending_;
+    bool applyDrafts();
+    void checkDraft(const QString &kind, int row, const QByteArray &source) const;
+    void restoreStart();
     QPushButton *discardNode_, *discardCondition_, *discardGroup_;
     QWidget *groupDetails_;
     void applyNode();
@@ -53,7 +59,7 @@ class ScenarioRouteEditor : public QWidget {
     QSpinBox *x_, *z_, *group_;
     QVector<QSpinBox *> payload_;
     QVector<QLabel *> payloadLabels_;
-    QLabel *extension_, *notice_, *conditionNote_;
+    QLabel *extension_, *notice_, *conditionNote_, *nodeImpact_;
     QPushButton *deleteCondition_;
     QWidget *nodeDetails_, *conditionDetails_;
     int key_ = -1, nodeRow_ = 0, conditionRow_ = 0;

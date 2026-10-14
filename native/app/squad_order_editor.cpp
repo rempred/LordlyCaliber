@@ -1,4 +1,5 @@
 #include "app/squad_order_editor.h"
+#include "app/pending_edits.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHideEvent>
@@ -78,6 +79,17 @@ SquadOrderEditor::SquadOrderEditor(Project *project,
         if (picking_) picking_(on);
     });
     connect(apply_,&QPushButton::clicked,this,&SquadOrderEditor::applyCommand);
+    pending_ = new PendingEdits(this);
+    pending_->entries = [this] {
+        QVector<PendingEdit> entries;
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it)
+            entries.append({QString("Scenario %1 · squad %2 · pending order%3").arg(it.key().first).arg(it.key().second)
+                                .arg(it->ready ? " (may replace scripted orders)" : " (destination needed)"),
+                            {"squad-order-draft", it.key().first, it.key().second, objectName()}});
+        return entries;
+    };
+    pending_->apply = [this] { return applyDrafts(); };
+    pending_->discard = [this] { drafts_.clear(); refresh(key_, squad_); pending_->notify(); };
 }
 void SquadOrderEditor::enableMapPicking(std::function<void(bool)> callback) {
     picking_ = std::move(callback);
@@ -108,11 +120,36 @@ void SquadOrderEditor::edited(bool destinationReady) {
 }
 void SquadOrderEditor::applyCommand() {
     const auto command=previewCommand();if(!command)return;
+    const auto priorDrafts = drafts_;
     try {
+        if (drafts_[identity_].basis != basis_) throw Error("This pending order conflicts with another route edit. Discard it or undo that edit first.");
         auto next=*project_->scenarios();next.setSquadCommand(key_,squad_,*command,project_->classData());
         drafts_.remove(identity_);commit_(next,"Change squad command");refresh(key_,squad_);
         notice_->setText("Order applied. Undo restores the previous order.");
-    } catch(const Error &e){notice_->setText(QString::fromUtf8(e.what()));controls();}
+    } catch(const Error &e){drafts_ = priorDrafts;notice_->setText(QString::fromUtf8(e.what()));controls();}
+}
+bool SquadOrderEditor::applyDrafts() {
+    try {
+        auto next = *project_->scenarios();
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it) {
+            if (!it->ready) throw Error("Choose a destination before applying this pending squad order.");
+            const int key = it.key().first;
+            const auto &s = project_->scenarios()->scenario(key); int row = -1;
+            for (int i = 0; i < s.layout.deployments.size(); ++i)
+                if ((u8(s.layout.deployments[i], 0) & 127) == it.key().second) { row = i; break; }
+            if (row < 0) throw Error("The pending order's squad no longer exists. Discard its draft.");
+            auto basis = s.layout.deployments[row].mid(6, 1);
+            for (const auto &n : s.layout.nodes) basis += n;
+            for (const auto &d : s.layout.deployments) basis += d.mid(16, 2);
+            if (it->basis != basis) throw Error("A pending order conflicts with another route edit. Review it before applying.");
+            next.setSquadCommand(key, row, {SquadBehavior(it->command), it->destination ? it->destination : it->x,
+                                           it->destination ? 0 : it->z}, project_->classData());
+        }
+        const auto pending = drafts_; drafts_.clear();
+        try { commit_(next, "Apply pending squad orders"); }
+        catch (...) { drafts_ = pending; throw; }
+        refresh(key_, squad_); pending_->notify(); return true;
+    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); return false; }
 }
 void SquadOrderEditor::refresh(int key, int squad) {
     cancelPick();loading_=true;key_=key;squad_=squad;
@@ -136,7 +173,6 @@ void SquadOrderEditor::refresh(int key, int squad) {
     int action=command?int(command->behavior):-1,x=command?command->x:u8(deployment,3),z=command?command->z:u8(deployment,4);
     ready_=command && action>=int(SquadBehavior::Move);
     const bool staleDraft=drafts_.contains(identity_) && drafts_[identity_].basis!=basis_;
-    if(staleDraft)drafts_.remove(identity_);
     current_->setText(command?"Current order: "+command_->itemText(command_->findData(action)):"Current order: scripted route. Original behavior is preserved until you replace it.");
     int point=z?0:x;
     if(drafts_.contains(identity_)){const auto d=drafts_[identity_];action=d.command;point=d.destination;x=d.x;z=d.z;ready_=d.ready;}
@@ -144,7 +180,7 @@ void SquadOrderEditor::refresh(int key, int squad) {
     command_->setCurrentIndex(command_->findData(action));destination_->setCurrentIndex(destination_->findData(point));
     x_->setValue(point?128:x);z_->setValue(point?128:std::max(1,z));
     loading_=false;notice_->clear();controls();
-    if(staleDraft)notice_->setText("The pending order was cleared because its saved route changed. The current project order is shown.");
+    if(staleDraft)notice_->setText("The saved route changed while this order was pending. The draft is retained; discard it or undo the conflicting edit before applying.");
 }
 void SquadOrderEditor::controls() {
     const int action=command_->currentData().toInt();const bool moving=action>=int(SquadBehavior::Move);
@@ -167,5 +203,6 @@ void SquadOrderEditor::controls() {
     apply_->setText("Replace scripted orders");apply_->setVisible(complex_ && action>=0 && !follower_);apply_->setEnabled(ready_);
     pick_->setEnabled(moving && !follower_);discard_->setVisible(hasDraft());leaderButton_->setVisible(follower_ && bool(selectLeader));
     if(stateChanged)stateChanged();
+    if (pending_) pending_->notify();
 }
 }

@@ -161,6 +161,7 @@ class Project {
     void loadMapEdits();
     const std::optional<MapEdits> &mapEdits() const {return mapEdits_;}
     void setMapEdits(const QJsonObject &);
+    void applyMapDelta(const FieldEditDelta &delta, bool forward);
     void loadScenePrograms();
     const std::optional<ScenePrograms> &scenePrograms() const {
         return scenePrograms_;

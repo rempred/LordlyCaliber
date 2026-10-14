@@ -1,4 +1,6 @@
 #include "app/scenario_route_editor.h"
+#include "app/pending_edits.h"
+#include "app/shared_impact.h"
 #include "app/squad_order_editor.h"
 #include "app/view_position.h"
 #include <QComboBox>
@@ -114,15 +116,22 @@ ScenarioRouteEditor::ScenarioRouteEditor(
             return;
         const auto &s = project_->scenarios()->scenario(key_);
         const int row = routeSquad_->currentData().toInt();
-        if (row >= 0 && row < s.layout.deployments.size())
-            select(routeStart_, u8(s.layout.deployments[row], 6));
+        if (row >= 0 && row < s.layout.deployments.size()) restoreStart();
         showSquadRoute();
         showCommand();
         if(squadSelected)squadSelected(row);
     });
     connect(routeStart_, &QComboBox::currentIndexChanged, this, [this] {
-        if (!loading_)
+        if (!loading_ && key_ >= 0 && routeSquad_->currentIndex() >= 0) {
+            const int row = routeSquad_->currentData().toInt();
+            const auto source = project_->scenarios()->scenario(key_).layout.deployments[row].mid(6, 1);
+            const auto key = draftKey("start", row);
+            if (routeStart_->currentData().toInt() == u8(source, 0)) drafts_.remove(key);
+            else drafts_[key] = {drafts_.contains(key) ? drafts_[key].source : source,
+                                 {{"start", routeStart_->currentData()}}};
+            pending_->notify();
             showSquadRoute();
+        }
     });
     connect(routeSummary_, &QTextBrowser::anchorClicked, this, [this](const QUrl &link) {
         const int id = link.toString().toInt();
@@ -139,8 +148,10 @@ ScenarioRouteEditor::ScenarioRouteEditor(
         change("Assign squad behavior", [this](Scenarios &s) {
             const int row = routeSquad_->currentData().toInt();
             auto deployment = s.scenario(key_).layout.deployments[row];
+            checkDraft("start", row, deployment.mid(6, 1));
             put8(deployment, 6, quint8(routeStart_->currentData().toInt()));
             s.setDeployment(key_, row, deployment, project_->classData());
+            drafts_.remove(draftKey("start", row));
         });
     });
     auto tabs = new QTabWidget;
@@ -188,6 +199,9 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     nodeForm->addRow(nodeApply);
     discardNode_=new QPushButton("Discard pending step changes");discardNode_->setObjectName("routeDiscardNode");nodeForm->addRow(discardNode_);
     connect(discardNode_,&QPushButton::clicked,this,[this]{drafts_.remove(draftKey("node",nodeRow_));showNode();});
+    nodeImpact_ = new QLabel;
+    nodeImpact_->setObjectName("routeStepImpact");
+    nodeDetails_->layout()->addWidget(nodeImpact_);
     split->addWidget(nodeDetails_);
     split->setSizes({330, 800});
     auto actions = new QHBoxLayout;
@@ -309,6 +323,7 @@ ScenarioRouteEditor::ScenarioRouteEditor(
     });
     connect(groupApply, &QPushButton::clicked, this, [this] {
         change("Change squad movement group", [this](Scenarios &s) {
+            checkDraft("group", groupSquad_->currentData().toInt(), s.scenario(key_).layout.deployments[groupSquad_->currentData().toInt() - 1].right(2));
             s.setRouteGroup(key_, groupSquad_->currentData().toInt(), group_->value(),
                             pattern_->currentData().toInt(), project_->classData());
             drafts_.remove(draftKey("group",groupSquad_->currentData().toInt()));
@@ -326,6 +341,20 @@ ScenarioRouteEditor::ScenarioRouteEditor(
         for(auto box:panel->findChildren<QComboBox *>())if(box!=groupSquad_)connect(box,&QComboBox::currentIndexChanged,this,remember);
         for(auto spin:panel->findChildren<QSpinBox *>()){spin->setKeyboardTracking(false);connect(spin,&QSpinBox::valueChanged,this,remember);}
     }
+    pending_ = new PendingEdits(this);
+    pending_->entries = [this] {
+        QVector<PendingEdit> entries;
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it) {
+            const auto parts = it.key().split('/');
+            entries.append({QString("Scenario %1 · %2 %3").arg(parts[0], parts[1]).arg(parts[2].toInt() + 1),
+                            {"route-draft", parts[0].toInt(), parts[2].toInt(), parts[1]}});
+        }
+        return entries;
+    };
+    pending_->apply = [this] { return applyDrafts(); };
+    pending_->discard = [this] { drafts_.clear(); refresh(key_); pending_->notify(); };
+    for (auto discard : {discardNode_, discardCondition_, discardGroup_})
+        connect(discard, &QPushButton::clicked, pending_, &PendingEdits::notify);
     setEnabled(false);
 }
 namespace {
@@ -337,22 +366,27 @@ QVariantMap routeFields(QWidget *panel) {
 }
 }
 QString ScenarioRouteEditor::draftKey(const QString &kind,int row) const {return QString("%1/%2/%3").arg(key_).arg(kind).arg(row);}
+void ScenarioRouteEditor::checkDraft(const QString &kind, int row, const QByteArray &source) const {
+    const auto key = draftKey(kind, row);
+    if (drafts_.contains(key) && drafts_[key].source != source)
+        throw Error("This draft conflicts with a saved change. Discard it or undo the other change before applying.");
+}
 void ScenarioRouteEditor::rememberDraft(QWidget *panel,const QString &kind,int row,const QByteArray &source,QPushButton *discard) {
     const auto key=draftKey(kind,row);const auto values=routeFields(panel);
-    if(values==baselines_.value(key))drafts_.remove(key);else drafts_[key]={source,values};
+    if(values==baselines_.value(key))drafts_.remove(key);else drafts_[key]={drafts_.contains(key) ? drafts_[key].source : source,values};
     discard->setVisible(drafts_.contains(key));
     if(drafts_.contains(key))notice_->setText("Pending advanced changes are retained when switching steps or scenarios. Apply commits this edit; Discard restores the saved values.");
+    pending_->notify();
 }
 void ScenarioRouteEditor::restoreDraft(QWidget *panel,const QString &kind,int row,const QByteArray &source,QPushButton *discard) {
     const auto key=draftKey(kind,row);baselines_[key]=routeFields(panel);
-    if(drafts_.contains(key) && drafts_[key].source!=source) {
-        drafts_.remove(key);notice_->setText("A pending advanced edit was cleared because its saved step changed. The current project values are shown.");
-    }
     if(drafts_.contains(key)) {
         const auto values=drafts_[key].values;
         for(auto box:panel->findChildren<QComboBox *>())if(values.contains(box->objectName()))select(box,values[box->objectName()].toInt());
         for(auto spin:panel->findChildren<QSpinBox *>())if(values.contains(spin->objectName()))spin->setValue(values[spin->objectName()].toInt());
-        notice_->setText("Pending advanced changes — Apply or Discard. Switching selection keeps this draft.");
+        notice_->setText(drafts_[key].source == source
+            ? "Pending advanced changes — Apply or Discard. Switching selection keeps this draft."
+            : "This draft conflicts with a saved change. Discard it and edit current values, or undo the other change first.");
     }
     discard->setVisible(drafts_.contains(key));
 }
@@ -383,8 +417,7 @@ void ScenarioRouteEditor::refresh(int key) {
     routeStart_->addItem("Hold position", 1);
     for (const auto &node : s.layout.nodes)
         routeStart_->addItem(QString("Step %1").arg(u8(node, 0)), u8(node, 0));
-    if (routeSquad_->currentIndex() >= 0)
-        select(routeStart_, u8(s.layout.deployments[routeSquad_->currentData().toInt()], 6));
+    if (routeSquad_->currentIndex() >= 0) restoreStart();
     nodes_->clear();
     for (const auto &n : s.layout.nodes)
         nodes_->addItem(QString("Node %1 · %2\nNext: %3 · Condition A: %4")
@@ -428,6 +461,64 @@ void ScenarioRouteEditor::refresh(int key) {
     showGroup();
     showSquadRoute();
     showCommand();
+    pending_->notify();
+}
+void ScenarioRouteEditor::restoreStart() {
+    const QSignalBlocker block(routeStart_);
+    const int row = routeSquad_->currentData().toInt();
+    const auto key = draftKey("start", row);
+    select(routeStart_, drafts_.contains(key) ? drafts_[key].values["start"].toInt()
+        : u8(project_->scenarios()->scenario(key_).layout.deployments[row], 6));
+}
+void ScenarioRouteEditor::selectDraft(const QString &kind, int row) {
+    advancedToggle_->setChecked(true);
+    auto tabs = findChild<QTabWidget *>("scenarioRouteTabs");
+    if (kind == "node") selectNode(row);
+    else if (kind == "condition") { tabs->setCurrentIndex(1); conditions_->setCurrentRow(row); }
+    else if (kind == "group") { tabs->setCurrentIndex(2); select(groupSquad_, row); }
+    else if (kind == "start") selectSquad(row);
+}
+bool ScenarioRouteEditor::applyDrafts() {
+    try {
+        auto next = *project_->scenarios();
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it) {
+            const auto parts = it.key().split('/');
+            const int key = parts[0].toInt(), row = parts[2].toInt();
+            const auto &kind = parts[1]; const auto &v = it->values;
+            const auto &s = project_->scenarios()->scenario(key);
+            QByteArray source;
+            if (kind == "node" && row < s.layout.nodes.size()) source = s.layout.nodes[row];
+            else if (kind == "condition" && row < s.layout.conditions.size()) source = s.layout.conditions[row];
+            else if (kind == "group" && row > 0 && row <= s.layout.deployments.size()) source = s.layout.deployments[row - 1].right(2);
+            else if (kind == "start" && row < s.layout.deployments.size()) source = s.layout.deployments[row].mid(6, 1);
+            if (source != it->source) throw Error("A pending route conflicts with another change. Review the draft before applying.");
+            auto value = [&](const QString &name) { return v.value(name).toInt(); };
+            if (kind == "node") {
+                auto n = source; const int type = value("routeKind");
+                if (type != u8(n, 1)) n.replace(2, 8, QByteArray(8, 0));
+                put8(n, 1, quint8(type));
+                if (type == 0 || type == 1) { put8(n, 2, quint8(value("routeMove"))); put8(n, 3, quint8(value("routeWait"))); }
+                if (type == 1) { put8(n, 4, quint8(value("routeX"))); put8(n, 5, quint8(value("routePlacement") ? value("routeZ") : 0)); }
+                const int gate = value("routeGate");
+                put8(n, 10, quint8(value("routeConditionA"))); put8(n, 11, quint8(gate));
+                put8(n, 12, quint8(gate ? value("routeConditionB") : 0));
+                if (gate == 1 && !u8(n, 13) && !u8(n, 14) && !u8(n, 15)) put8(n, 16, quint8(value("routeFork")));
+                put8(n, 17, quint8(value("routeNext"))); next.setNode(key, row, n, project_->classData());
+            } else if (kind == "condition") {
+                auto c = source; put8(c, 1, quint8(value("routeConditionKind")));
+                for (int i = 0; i < 8; ++i) put8(c, i + 2, quint8(value(QString("routePayload_%1").arg(i + 2))));
+                next.setCondition(key, row, c, project_->classData());
+            } else if (kind == "group") next.setRouteGroup(key, row, value("routeGroup"), value("routePattern"), project_->classData());
+            else if (kind == "start") {
+                auto d = s.layout.deployments[row]; put8(d, 6, quint8(value("start")));
+                next.setDeployment(key, row, d, project_->classData());
+            }
+        }
+        const auto pending = drafts_; drafts_.clear();
+        try { commit_(next, "Apply pending route changes"); }
+        catch (...) { drafts_ = pending; throw; }
+        refresh(key_); pending_->notify(); return true;
+    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); return false; }
 }
 void ScenarioRouteEditor::showCommand() {
     orders_->refresh(key_, routeSquad_->currentIndex() < 0 ? -1 : routeSquad_->currentData().toInt());
@@ -524,6 +615,9 @@ void ScenarioRouteEditor::showNode() {
         return;
     loading_ = true;
     const auto &n = project_->scenarios()->scenario(key_).layout.nodes[nodeRow_];
+    showEditImpact(nodeImpact_, "This step is reached by these squads",
+                   findProjectUses(*project_, "routeStep", key_, QString::number(nodeRow_)),
+                   "Includes known routes and group followers. Script-controlled transitions may add other uses.");
     select(nodeKind_, u8(n, 1));
     select(move_, u8(n, 2));
     select(wait_, u8(n, 3));
@@ -610,6 +704,7 @@ void ScenarioRouteEditor::applyNode() {
         return;
     change("Edit movement node", [this](Scenarios &s) {
         auto n = s.scenario(key_).layout.nodes[nodeRow_];
+        checkDraft("node", nodeRow_, n);
         const int kind = nodeKind_->currentData().toInt();
         if (kind != u8(n, 1))
             n.replace(2, 8, QByteArray(8, 0));
@@ -641,6 +736,7 @@ void ScenarioRouteEditor::applyCondition() {
         return;
     change("Edit scenario condition", [this](Scenarios &s) {
         auto c = s.scenario(key_).layout.conditions[conditionRow_];
+        checkDraft("condition", conditionRow_, c);
         put8(c, 1, quint8(conditionKind_->currentData().toInt()));
         for (int i = 0; i < 8; ++i)
             put8(c, i + 2, quint8(payload_[i]->value()));
@@ -652,12 +748,15 @@ void ScenarioRouteEditor::change(const QString &label,
                                  const std::function<void(Scenarios &)> &edit) {
     if (key_ < 0)
         return;
+    const auto priorDrafts = drafts_;
     try {
         auto next = *project_->scenarios();
         edit(next);
         commit_(next, label);
         notice_->setText("Changes applied.");
+        pending_->notify();
     } catch (const Error &error) {
+        drafts_ = priorDrafts;
         notice_->setText(QString::fromUtf8(error.what()));
     }
 }

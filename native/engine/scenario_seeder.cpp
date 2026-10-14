@@ -271,7 +271,7 @@ ScenarioSeeder::ScenarioSeeder(Rom rom) : rom_(std::move(rom)), routing_(rom_) {
         if (routing_.keys[b.route.event] == QVector<int>{20, 21})
             titles = {"The Grim Path — opening peace decision"};
         choices_ << SeedChoice{b.route, b.cf, routing_.nodes[b.route.node].name,
-                               titles.join(" / ")};
+                               titles.join(" / "), routing_.keys[b.route.event]};
     }
     auto rank = [&](const SeedChoice &c) {
         int n = 999;

@@ -1,4 +1,6 @@
 #include "app/scenario_event_editor.h"
+#include "app/pending_edits.h"
+#include <QScopedValueRollback>
 #include "app/content_refresh.h"
 #include "engine/event_script.h"
 #include <QCheckBox>
@@ -59,11 +61,25 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     form->addRow("Flag", flags_); form->addRow("Action", action_); layout->addLayout(form);
     auto buttons = new QHBoxLayout;
     apply_ = new QPushButton("Apply step"); apply_->setObjectName("scenarioEventApply"); buttons->addWidget(apply_);
+    discard_ = new QPushButton("Discard pending step"); discard_->setObjectName("scenarioEventDiscard"); buttons->addWidget(discard_);
     jump_ = new QPushButton("Go to branch destination"); jump_->setObjectName("scenarioEventJump"); buttons->addWidget(jump_);
     buttons->addStretch();
     restore_ = new QPushButton("Restore loaded flag instructions"); restore_->setObjectName("scenarioEventRestore"); buttons->addWidget(restore_);
     layout->addLayout(buttons);
     notice_ = new QLabel; notice_->setWordWrap(true); notice_->setObjectName("scenarioEventNotice"); layout->addWidget(notice_);
+    pending_ = new PendingEdits(this);
+    pending_->entries = [this] {
+        QVector<PendingEdit> entries;
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it)
+            entries.append({QString("Event row %1 · flag instruction %2").arg(it.key().first).arg(position(it.key().second)),
+                            {"scenario-event", it.key().first, it.key().second}});
+        return entries;
+    };
+    pending_->apply = [this] { return applyDrafts(); };
+    pending_->discard = [this] { drafts_.clear(); selectStep(); pending_->notify(); };
+    connect(discard_, &QPushButton::clicked, this, [this] { drafts_.remove(selection_); selectStep(); pending_->notify(); });
+    connect(flags_, &QComboBox::currentTextChanged, this, [this] { rememberDraft(); });
+    connect(action_, &QComboBox::currentIndexChanged, this, [this] { rememberDraft(); });
     connect(rows_, &QComboBox::currentIndexChanged, this, [this] { if (!loading_) showRow(); });
     connect(all_, &QCheckBox::toggled, this, [this] { showRow(); });
     connect(steps_, &QTreeWidget::currentItemChanged, this, [this] { selectStep(); });
@@ -85,6 +101,8 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     connect(restore_, &QPushButton::clicked, this, [this] {
         if (rows_->currentIndex() < 0) return;
         auto next = *project_->sceneEvents(); next.restoreFlags(rows_->currentData().toInt());
+        for (auto it = drafts_.begin(); it != drafts_.end(); )
+            if (it.key().first == rows_->currentData().toInt()) it = drafts_.erase(it); else ++it;
         commit(next, "Restore scenario event flags");
     });
     watchContentChanges(undo_, this, [this] { if (isVisible()) refresh(); });
@@ -153,11 +171,14 @@ void ScenarioEventEditor::showRow() {
     selectStep();
 }
 void ScenarioEventEditor::selectStep() {
+    const QScopedValueRollback<bool> guard(loading_, true);
     auto item = steps_->currentItem();
     const bool editable = item && item->parent() && item->data(0, flagRole).toInt() >= 0;
     flags_->setEnabled(editable); action_->setEnabled(editable); apply_->setEnabled(editable);
     jump_->setEnabled(item && item->parent() && item->data(0, targetRole).toInt() >= 0);
     action_->clear();
+    discard_->hide();
+    selection_ = editable ? QPair(rows_->currentData().toInt(), item->data(0, offsetRole).toInt()) : QPair(-1, -1);
     if (!editable) { detail_->setText(item ? item->text(1) + " — read-only" : "Select a flag instruction to edit it."); return; }
     const bool check = item->data(0, checkRole).toBool();
     flags_->setCurrentIndex(flags_->findData(item->data(0, flagRole)));
@@ -165,18 +186,60 @@ void ScenarioEventEditor::selectStep() {
     action_->addItem(check ? "Check ON — take the branch when ON" : "Set — turn ON", true);
     action_->setCurrentIndex(action_->findData(item->data(0, valueRole)));
     detail_->setText(item->text(1) + (check ? "\nThe other result continues after this check. Use Go to branch destination to inspect its target." : "\nThis changes the flag when the game reaches this step."));
+    if (drafts_.contains(selection_)) {
+        const auto &draft = drafts_[selection_];
+        if (draft.flag >= 0) flags_->setCurrentIndex(flags_->findData(draft.flag));
+        else flags_->setEditText(draft.text);
+        action_->setCurrentIndex(action_->findData(draft.value));
+        discard_->show();
+        notice_->setText("Pending flag changes — Apply or Discard. Switching steps retains this draft.");
+    }
+}
+void ScenarioEventEditor::rememberDraft() {
+    if (loading_ || selection_.first < 0 || action_->currentIndex() < 0) return;
+    auto item = steps_->currentItem(); if (!item) return;
+    const int flag = flags_->currentText() == flags_->itemText(flags_->currentIndex()) ? flags_->currentData().toInt() : -1;
+    const bool value = action_->currentData().toBool();
+    const int baseFlag = item->data(0, flagRole).toInt(); const bool baseValue = item->data(0, valueRole).toBool();
+    if (flag == baseFlag && value == baseValue) drafts_.remove(selection_);
+    else {
+        const auto previous = drafts_.value(selection_, {flag, baseFlag, value, baseValue, flags_->currentText()});
+        drafts_[selection_] = {flag, previous.baseFlag, value, previous.baseValue, flags_->currentText()};
+    }
+    discard_->setVisible(drafts_.contains(selection_));
+    notice_->setText(drafts_.contains(selection_) ? "Pending flag changes — Apply or Discard. Switching steps retains this draft." : "");
+    pending_->notify();
+}
+void ScenarioEventEditor::applyDraftTo(SceneEvents &next, QPair<int, int> key) {
+    const auto &draft = drafts_[key];
+    if (draft.flag < 0) throw Error("Choose a listed flag before applying.");
+    const auto bytes = SceneEvents::flagRow(SceneEvents::retailRow(project_->rom(), key.first), key.first, project_->sceneEvents()->flagEdits());
+    bool current = false;
+    for (const auto &handler : EventScript::decode(bytes)) for (const auto &step : handler.steps)
+        if (step.offset == key.second && step.flag == draft.baseFlag && step.value == draft.baseValue) current = true;
+    if (!current) throw Error("A pending flag conflicts with another edit. Discard the draft or undo that edit first.");
+    next.editFlag(key.first, key.second, draft.flag, draft.value);
+}
+bool ScenarioEventEditor::applyDrafts() {
+    const auto priorDrafts = drafts_;
+    try {
+        auto next = *project_->sceneEvents();
+        for (const auto &key : drafts_.keys()) applyDraftTo(next, key);
+        drafts_.clear(); commit(next, "Apply pending event flags"); return true;
+    } catch (const std::exception &e) { drafts_ = priorDrafts; notice_->setText(QString::fromUtf8(e.what())); return false; }
 }
 void ScenarioEventEditor::apply() {
     if (!apply_->isEnabled()) return;
+    const auto priorDrafts = drafts_;
     try {
         if (flags_->currentText() != flags_->itemText(flags_->currentIndex())) throw Error("Choose a listed flag before applying");
         auto next = *project_->sceneEvents();
-        next.editFlag(rows_->currentData().toInt(), steps_->currentItem()->data(0, offsetRole).toInt(), flags_->currentData().toInt(), action_->currentData().toBool());
+        if (drafts_.contains(selection_)) { applyDraftTo(next, selection_); drafts_.remove(selection_); }
         commit(next, "Edit scenario event flag");
-    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    } catch (const std::exception &e) { drafts_ = priorDrafts; notice_->setText(QString::fromUtf8(e.what())); }
 }
 void ScenarioEventEditor::commit(const SceneEvents &next, const QString &label) {
     if (next.json() != project_->sceneEvents()->json()) undo_->push(new FlagCommand(project_, next.json(), label));
-    refresh(); changed_();
+    refresh(); changed_(); pending_->notify();
 }
 } // namespace lordly

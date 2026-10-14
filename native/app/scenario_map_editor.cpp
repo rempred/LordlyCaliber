@@ -628,18 +628,18 @@ class MapWorldCommand final : public QUndoCommand {
 };
 class FieldEditCommand final : public QUndoCommand {
   public:
-    FieldEditCommand(Project *p, QJsonObject before, QJsonObject after, const QString &label)
-        : QUndoCommand(label), project_(p), before_(std::move(before)), after_(std::move(after)) {}
+    FieldEditCommand(Project *p, FieldEditDelta delta, const QString &label)
+        : QUndoCommand(label), project_(p), delta_(std::move(delta)) {}
     void undo() override {
-        project_->setMapEdits(before_);
+        project_->applyMapDelta(delta_, false);
     }
     void redo() override {
-        project_->setMapEdits(after_);
+        project_->applyMapDelta(delta_, true);
     }
 
   private:
     Project *project_;
-    QJsonObject before_, after_;
+    FieldEditDelta delta_;
 };
 ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                                      std::function<void(const Scenarios &, const QString &)> commit,
@@ -904,9 +904,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
             return;
         try {
             auto next = *project_->mapEdits();
-            const auto before = next.json();
+            const auto before = next;
             next.removeCity(key_, canvas_->markers[row].row);
-            undo_->push(new FieldEditCommand(project_, before, next.json(), "Remove city piece"));
+            undo_->push(new FieldEditCommand(project_, before.difference(key_, next), "Remove city piece"));
             refresh(key_);
         } catch (const Error &e) {
             notice_->setText(QString::fromUtf8(e.what()));
@@ -1094,10 +1094,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     connect(restore, &QPushButton::clicked, this, [this] {
         try {
             auto next = *project_->mapEdits();
-            const auto before = next.json();
+            const auto before = next;
             next.restore(key_);
-            if (next.json() != before) {
-                undo_->push(new FieldEditCommand(project_, before, next.json(),
+            if (!before.difference(key_, next).empty()) {
+                undo_->push(new FieldEditCommand(project_, before.difference(key_, next),
                                                  "Restore map terrain and buildings"));
                 refresh(key_);
             }
@@ -1434,13 +1434,7 @@ void ScenarioMapEditor::refresh(int key) {
         }
         QString cacheKey = QString::number(key);
         if (editable)
-            cacheKey +=
-                ':' +
-                QString::fromLatin1(
-                    QCryptographicHash::hash(
-                        QJsonDocument(project_->mapEdits()->json()).toJson(QJsonDocument::Compact),
-                        QCryptographicHash::Sha256)
-                        .toHex());
+            cacheKey += ':' + QString::number(project_->mapEdits()->revision(key));
         for (auto flag : siteFlags)
             cacheKey += ':' + QString::number(flag);
         try {
@@ -1704,10 +1698,10 @@ void ScenarioMapEditor::movePeak(int row, QPointF position) {
 }
 void ScenarioMapEditor::commitPeakEdit(const MapEdits &next, const QString &label,
                                        std::optional<MountainPeak> selected) {
-    const auto before = project_->mapEdits()->json();
-    if (before == next.json())
+    const auto before = *project_->mapEdits();
+    if (before.difference(key_, next).empty())
         return;
-    undo_->push(new FieldEditCommand(project_, before, next.json(), label));
+    undo_->push(new FieldEditCommand(project_, before.difference(key_, next), label));
     refresh(key_);
     if (selected)
         for (int i = 0; i < canvas_->markers.size(); ++i)
@@ -1729,11 +1723,11 @@ void ScenarioMapEditor::move(int row, QPoint bytes) {
                      project_->mapEdits()->changes(key_).city[marker.row].rotation);
         } else if (marker.kind == MapObject::Site) {
             auto next = *project_->mapEdits();
-            const auto before = next.json();
+            const auto before = next;
             next.moveSite(key_, marker.row, maps_[key_].world(bytes.x(), bytes.y()));
-            if (before != next.json()) {
+            if (!before.difference(key_, next).empty()) {
                 undo_->push(
-                    new FieldEditCommand(project_, before, next.json(), "Move town or stronghold"));
+                    new FieldEditCommand(project_, before.difference(key_, next), "Move town or stronghold"));
                 refresh(key_);
             }
         } else if (marker.kind == MapObject::Treasure) {
@@ -1768,11 +1762,11 @@ void ScenarioMapEditor::changeBoundary(QRectF b) {
         return;
     try {
         auto next = *project_->mapEdits();
-        const auto before = next.json();
+        const auto before = next;
         next.setBoundary(key_, b);
-        if (before != next.json()) {
+        if (!before.difference(key_, next).empty()) {
             undo_->push(
-                new FieldEditCommand(project_, before, next.json(), "Resize playable boundary"));
+                new FieldEditCommand(project_, before.difference(key_, next), "Resize playable boundary"));
             refresh(key_);
         }
     } catch (const Error &e) {
@@ -1784,7 +1778,7 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
         return;
     try {
         auto next = *project_->mapEdits();
-        const auto before = next.json();
+        const auto before = next;
         const bool cityMode = tool_->currentIndex() == 5;
         if (cityMode && cityType_->currentData().metaType().id() == QMetaType::QString) {
             const auto p = stroke.last();
@@ -1793,7 +1787,7 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
                            b.topLeft() + QPointF(p.x() * b.width() / 256, p.y() * b.height() / 256),
                            cityAngle_->value());
             next.model(key_);
-            undo_->push(new FieldEditCommand(project_, before, next.json(), "Place city piece"));
+            undo_->push(new FieldEditCommand(project_, before.difference(key_, next), "Place city piece"));
             refresh(key_);
             objects_->setCurrentRow(-1);
             notice_->setText("City piece placed. Click to place another, or choose Select / move.");
@@ -1804,10 +1798,10 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
                          : cityMode                   ? cityType_->currentData().toInt()
                                                       : paintType_->currentData().toInt();
         next.paint(key_, stroke, type, brushSize_->value());
-        if (before == next.json())
+        if (before.difference(key_, next).empty())
             return;
         next.model(key_); // Check geometry and texture budgets before committing.
-        undo_->push(new FieldEditCommand(project_, before, next.json(),
+        undo_->push(new FieldEditCommand(project_, before.difference(key_, next),
                                          type == 255 ? "Erase map painting"
                                          : type == 1 ? "Paint road"
                                                      : "Paint terrain"));
@@ -1854,12 +1848,12 @@ void ScenarioMapEditor::updateCityTool() {
 void ScenarioMapEditor::editCity(int row, QPointF position, int rotation) {
     try {
         auto next = *project_->mapEdits();
-        const auto before = next.json();
+        const auto before = next;
         next.moveCity(key_, row, position, rotation);
         next.model(key_);
-        if (before != next.json()) {
+        if (!before.difference(key_, next).empty()) {
             undo_->push(
-                new FieldEditCommand(project_, before, next.json(), "Move or rotate city piece"));
+                new FieldEditCommand(project_, before.difference(key_, next), "Move or rotate city piece"));
             refresh(key_);
         }
     } catch (const Error &e) {

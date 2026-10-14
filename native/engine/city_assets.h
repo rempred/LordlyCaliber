@@ -33,6 +33,7 @@ struct CityPlacement {
     QString asset;
     QPointF position; // World X/Z, independent of the fine terrain raster.
     int rotation = 0;
+    bool operator==(const CityPlacement &) const = default;
 };
 inline bool cityPaint(int type) {
     return type >= 32 && type <= 35;

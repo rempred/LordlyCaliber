@@ -21,6 +21,7 @@ class ScenarioEditor : public QWidget {
   public:
     ScenarioEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                    QWidget *parent = nullptr);
+    std::function<void(int)> testScenario;
 
   private:
     void refresh();

@@ -13,6 +13,7 @@ class MainWindow : public QMainWindow {
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
     void loadRom(const QString &path);
+    bool openProjectFile(const QString &path);
     void navigateTo(const EditLocation &);
 
   protected:
@@ -37,5 +38,6 @@ class MainWindow : public QMainWindow {
     QTabWidget *workspaces_;
     QLabel *summary_;
     bool loading_ = false;
+    quint64 projectRevision_ = 0;
 };
 } // namespace lordly

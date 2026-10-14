@@ -1,4 +1,5 @@
 #include "app/content_refresh.h"
+#include "app/shared_impact.h"
 #include "app/scenario_world_editor.h"
 #include "app/shop_editor.h"
 #include <QCheckBox>
@@ -302,9 +303,9 @@ void ScenarioWorldEditor::showSite() {
         QString("Stored descriptor: 0x%1. An explicit choice uses the game's standard value.")
             .arg(raw, 4, 16, QChar('0')));
     allegiance_->setCurrentIndex(0);
-    siteHelp_->setText(
-        QString("Changes apply automatically and can be undone. Site %1 metadata is shared across scenarios; allegiance changes only this scenario.")
-            .arg(id));
+    siteHelp_->setObjectName("townEditImpact");
+    showEditImpact(siteHelp_, "Town name, population and facilities affect these missions",
+                   findProjectUses(*project_, "town", id), "Allegiance changes only the selected mission. Changes apply automatically and can be undone.");
     loading_ = false;
 }
 void ScenarioWorldEditor::editSite(const QString &label,

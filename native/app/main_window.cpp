@@ -1,4 +1,7 @@
 #include "app/main_window.h"
+#include "app/pending_edits.h"
+#include "app/class_setup.h"
+#include "app/content_refresh.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/animation_sequence_editor.h"
@@ -82,6 +85,12 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), undo_(new QUndoStack(this)), workspaces_(new QTabWidget(this)),
       summary_(new QLabel(this)) {
     qApp->installEventFilter(this);
+    undo_->setUndoLimit(128);
+    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+        ++projectRevision_;
+        if (auto testing = workspaces_->findChild<TestingEditor *>())
+            testing->setProjectRevision(projectRevision_, !pendingEdits(workspaces_).isEmpty());
+    });
     setWindowTitle("Lordly Caliber · Native Editor");
     resize(1440, 900);
     setMinimumSize(900, 600);
@@ -125,6 +134,7 @@ MainWindow::MainWindow(QWidget *parent)
     file->addAction("E&xit", this, &QWidget::close);
     auto edit = menuBar()->addMenu("&Edit");
     auto undoAction = undoGroup_->createUndoAction(this, "&Undo");
+    undoAction->setToolTip("Undo the last edit. Project history retains up to 128 operations.");
     undoAction->setShortcut(QKeySequence::Undo);
     edit->addAction(undoAction);
     auto redoAction = undoGroup_->createRedoAction(this, "&Redo");
@@ -139,9 +149,13 @@ MainWindow::MainWindow(QWidget *parent)
     toolbar->addAction(save);
     toolbar->addAction(build);
     toolbar->addAction(review);
-    auto uses = toolbar->addAction("?", this, &MainWindow::showUses);
+    auto uses = toolbar->addAction("Find uses", this, &MainWindow::showUses);
     uses->setObjectName("whereUsed");
     uses->setToolTip("Where is this used? Select a class, item, shop or sprite first.");
+    auto pending = toolbar->addAction("Pending changes", this, [this] {
+        resolvePendingEdits(workspaces_, "continuing", [this](const EditLocation &where) { navigateTo(where); });
+    });
+    pending->setObjectName("pendingProjectChanges");
     menuBar()->setCornerWidget(toolbar, Qt::TopRightCorner);
     statusBar()->addPermanentWidget(summary_);
     auto welcome =
@@ -153,6 +167,9 @@ MainWindow::MainWindow(QWidget *parent)
     updateStatus();
 }
 bool MainWindow::confirmDiscard() {
+    if (auto focus = focusWidget()) focus->clearFocus();
+    if (!resolvePendingEdits(workspaces_, "closing or replacing this project",
+                             [this](const EditLocation &where) { navigateTo(where); })) return false;
     const auto save = workspaces_->findChild<SaveEditor *>();
     if (undo_->isClean() && !invalidEdits() && (!save || !save->modified()))
         return true;
@@ -226,6 +243,8 @@ void MainWindow::loadRom(const QString &path) {
     }));
 }
 void MainWindow::installProject(Project project) {
+    if (auto back = findChild<QAction *>("returnToClassSetup")) back->setVisible(false);
+    if (auto back = findChild<QPushButton *>("returnToClassSetupButton")) back->hide();
     undo_->clear();
     while (workspaces_->count()) {
         auto old = workspaces_->widget(0);
@@ -308,6 +327,13 @@ void MainWindow::installProject(Project project) {
             });
         auto testing = new TestingEditor(project_->rom().sourcePath());
         workspaces_->addTab(testing, "Testing");
+        testing->setProjectRevision(projectRevision_, false);
+        connect(testing, &TestingEditor::exportRequested, this, &MainWindow::buildRom);
+        for (auto widget : workspaces_->findChildren<QWidget *>())
+            if (auto scenario = dynamic_cast<ScenarioEditor *>(widget))
+                scenario->testScenario = [this, testing](int key) {
+                    workspaces_->setCurrentWidget(testing); testing->selectScenario(key);
+                };
         connect(testing, &TestingEditor::editDefaultArmy, this,
                 [this, save, testing](const QByteArray &bytes) {
                     if (save->editDefaultArmy(bytes, [this, testing](const QByteArray &army) {
@@ -319,6 +345,8 @@ void MainWindow::installProject(Project project) {
     }
     workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Art Library");
+    for (auto drafts : workspaces_->findChildren<PendingEdits *>())
+        connect(drafts, &PendingEdits::changed, this, &MainWindow::updateStatus);
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {
@@ -381,6 +409,33 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
+    ClassSetup *setup = nullptr;
+    if (table == Table::Classes && project_->hasClassData()) {
+        setup = new ClassSetup(project_.get(), [this](const EditLocation &location) {
+            auto back = findChild<QAction *>("returnToClassSetup");
+            if (!back) {
+                back = new QAction("Back to class setup", this);
+                back->setObjectName("returnToClassSetup");
+                auto button = new QPushButton;
+                button->setObjectName("returnToClassSetupButton");
+                statusBar()->addWidget(button);
+                connect(button, &QPushButton::clicked, back, &QAction::trigger);
+                connect(back, &QAction::triggered, this, [this, back] {
+                    navigateTo({"classes", back->data().toInt(), -1, "section:Overview"});
+                });
+            }
+            back->setData(location.id);
+            back->setText("Back to " + project_->record(Table::Classes, location.id).name.simplified());
+            back->setVisible(true);
+            auto button = findChild<QPushButton *>("returnToClassSetupButton");
+            button->setText(back->text() + " setup"); button->show();
+            navigateTo(location);
+        });
+        auto scroll = new QScrollArea;
+        scroll->setWidgetResizable(true); scroll->setWidget(setup);
+        addInspectorPage(scroll, "Overview");
+        watchContentChanges(undo_, setup, [setup, selected] { setup->selectClass(*selected); });
+    }
     auto description = new DescriptionPanel(project_.get(), undo_, [this] { updateStatus(); });
     description->setObjectName(tableKey(table) + "DescriptionPanel");
     inspectorLayout->addWidget(description);
@@ -415,7 +470,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                                       "no equipment, attacks or family."
                                       "\nCharacter compatibility starts as Male; this does not assign the Male family."
                                       "\nKnight artwork and animations are assigned initially; "
-                                      "change them in Art Library.",
+                                      "review them in the class Overview.",
                                       QLineEdit::Normal, "New class", &accepted);
             if (!accepted)
                 return;
@@ -569,11 +624,12 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem, newItem, description, actionDescriptions, actionId] {
+                    addItem, newItem, description, actionDescriptions, actionId, setup] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
+        if (setup) setup->selectClass(*selected);
         description->selectDescription(tableKey(table), *selected < 0 ? -1 :
             table == Table::Classes ? Project::classDescriptionIndex(*selected) : *selected);
         if (addItem)
@@ -652,6 +708,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         }
     }
     workspaces_->addTab(page, title);
+    if (setup) sections->setCurrentIndex(sections->findText("Overview"));
     grid->selectRow(1);
 }
 void MainWindow::openProject() {
@@ -661,35 +718,39 @@ void MainWindow::openProject() {
         report("Open the source ROM before opening a project.");
         return;
     }
-    if (!confirmDiscard())
-        return;
     auto path = QFileDialog::getOpenFileName(this, "Open project manifest or sharing archive", {},
                                              "Lordly projects (*.json *.lcproject);;All files (*)");
     if (path.isEmpty())
         return;
     try {
-        auto object = Project::readProject(path);
-        auto next = Project::fromRom(project_->rom(), catalog_);
-        next.loadTexts();
-        if (next.rom().revision() == 0) {
-            next.loadPromotion();
-            next.loadShops();
-            next.loadConsumableEffects();
-            next.loadEncounters();
-            next.loadScenarios();
-            next.loadWorld();
-        }
-        if (object.value("format") == "LordlyCaliberProject")
-            next.applyManifest(object);
-        else
-            next.importLegacy(object);
-        auto warnings = next.importWarnings();
-        installProject(std::move(next));
-        if (!warnings.isEmpty())
-            report(warnings.join('\n'));
+        openProjectFile(path);
     } catch (const std::exception &e) {
         report(QString::fromUtf8(e.what()));
     }
+}
+bool MainWindow::openProjectFile(const QString &path) {
+    if (loading_ || !project_ || !confirmDiscard()) return false;
+    const auto object = Project::readProject(path);
+    // Manifests identify the actual input ROM, including installed runtimes.
+    auto next = Project::fromRom(project_->runtimeRom(), catalog_);
+    next.loadTexts();
+    if (next.rom().revision() == 0) {
+        next.loadPromotion();
+        next.loadShops();
+        next.loadConsumableEffects();
+        next.loadEncounters();
+        next.loadScenarios();
+        next.loadWorld();
+    }
+    if (object.value("format") == "LordlyCaliberProject")
+        next.applyManifest(object);
+    else
+        next.importLegacy(object);
+    auto warnings = next.importWarnings();
+    installProject(std::move(next));
+    if (!warnings.isEmpty())
+        report(warnings.join('\n'));
+    return true;
 }
 void MainWindow::saveProject(bool archive) {
     if (loading_)
@@ -698,6 +759,9 @@ void MainWindow::saveProject(bool archive) {
         report("Open a ROM first.");
         return;
     }
+    if (auto focus = focusWidget()) focus->clearFocus();
+    if (!resolvePendingEdits(workspaces_, "saving the project",
+                             [this](const EditLocation &where) { navigateTo(where); })) return;
     if (invalidEdits()) {
         report("Correct invalid text input before saving.");
         return;
@@ -721,6 +785,9 @@ void MainWindow::saveProject(bool archive) {
 void MainWindow::buildRom() {
     if (loading_ || !project_)
         return;
+    if (auto focus = focusWidget()) focus->clearFocus();
+    if (!resolvePendingEdits(workspaces_, "exporting the ROM",
+                             [this](const EditLocation &where) { navigateTo(where); })) return;
     if (invalidEdits()) {
         report("Correct invalid text input before building.");
         return;
@@ -744,9 +811,10 @@ void MainWindow::buildRom() {
     struct Result {
         QString error;
         QStringList report;
+        QByteArray digest;
     };
     auto watcher = new QFutureWatcher<Result>(this);
-    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher] {
+    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, path, revision = projectRevision_] {
         auto result = watcher->result();
         watcher->deleteLater();
         loading_ = false;
@@ -754,7 +822,12 @@ void MainWindow::buildRom() {
         if (!result.error.isEmpty())
             report(result.error);
         else {
-            QMessageBox::information(this, "ROM exported", result.report.join('\n'));
+            auto testing = workspaces_->findChild<TestingEditor *>();
+            if (testing) testing->useExport(path, revision, result.digest);
+            QMessageBox message(QMessageBox::Information, "ROM exported", path + "\n\n" + result.report.join('\n'), QMessageBox::Ok, this);
+            auto test = testing ? message.addButton("Test this ROM", QMessageBox::ActionRole) : nullptr;
+            message.exec();
+            if (test && message.clickedButton() == test) workspaces_->setCurrentWidget(testing);
             statusBar()->showMessage("ROM exported successfully", 5000);
         }
     });
@@ -766,13 +839,19 @@ void MainWindow::buildRom() {
                 throw Error("Cannot create build workspace");
             auto result = rebuild(project, tools, work.path());
             exportRom(project, result, path);
-            return Result{{}, result.report};
+            return Result{{}, result.report, sha256(result.image)};
         } catch (const std::exception &e) {
             return Result{QString::fromUtf8(e.what()), {}};
         }
     }));
 }
 void MainWindow::updateStatus() {
+    const int draftCount = pendingEdits(workspaces_).size();
+    if (auto testing = workspaces_->findChild<TestingEditor *>())
+        testing->setProjectRevision(projectRevision_, draftCount > 0 || invalidEdits());
+    auto pending = findChild<QAction *>("pendingProjectChanges");
+    pending->setVisible(draftCount > 0);
+    pending->setText(QString("Pending changes (%1)").arg(draftCount));
     findChild<QAction *>("reviewProjectChanges")->setEnabled(bool(project_));
     findChild<QAction *>("whereUsed")->setEnabled(bool(project_));
     summary_->setText(project_ ? QString("  US Rev %1  ·  %2 changed records")
@@ -782,7 +861,7 @@ void MainWindow::updateStatus() {
     const auto save = workspaces_->findChild<SaveEditor *>();
     if (save && workspaces_->currentWidget() == save)
         undoGroup_->setActiveStack(save->hasPendingUnitEdits() ? nullptr : save->undoStack());
-    setWindowModified(!undo_->isClean() || invalidEdits() || (save && save->modified()));
+    setWindowModified(draftCount || !undo_->isClean() || invalidEdits() || (save && save->modified()));
     setWindowTitle(QString("Lordly Caliber[*] · %1")
                        .arg(project_ ? project_->rom().title() : "Native Editor"));
 }

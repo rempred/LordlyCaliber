@@ -20,6 +20,7 @@ struct MountainPeak {
     QPointF origin;  // Default summit identity, independent of its edited position.
     int addedId = 0; // Positive IDs identify explicitly added summits.
     bool removed = false;
+    bool operator==(const MountainPeak &) const = default;
     bool sameIdentity(const MountainPeak &other) const {
         return addedId || other.addedId ? addedId == other.addedId
                                         : terrain == other.terrain && origin == other.origin;
@@ -31,6 +32,18 @@ struct FieldChanges {
     std::optional<QRectF> boundary;
     QVector<CityPlacement> city;
     QVector<MountainPeak> peaks;
+    bool operator==(const FieldChanges &) const = default;
+};
+struct FieldPaintDelta {
+    int offset = 0;
+    QByteArray before, after;
+};
+struct FieldEditDelta {
+    int model = 0;
+    FieldChanges before, after; // Paint is stored only in the changed runs below.
+    QVector<FieldPaintDelta> paint;
+    bool empty() const { return before == after && paint.isEmpty(); }
+    qsizetype bytes() const;
 };
 struct FieldPlan {
     int geometryIndex = 0, terrainIndex = 0, pointIndex = 0;
@@ -68,6 +81,9 @@ class MapEdits {
     QByteArray rebuild(const Rom &) const;
     QJsonObject json() const;
     void apply(const QJsonObject &);
+    FieldEditDelta difference(int key, const MapEdits &after) const;
+    void applyDelta(const FieldEditDelta &, bool forward);
+    quint64 revision(int key) const { return revisions_.value(modelId(key)); }
     bool modified() const {
         return !edits_.isEmpty();
     }
@@ -81,6 +97,8 @@ class MapEdits {
     mutable QMap<int, FieldBrush> textures_;
     mutable QVector<CityAsset> cityAssets_;
     QMap<int, FieldChanges> edits_;
+    QMap<int, quint64> revisions_;
+    void touch(int model);
     int modelId(int key) const;
     FieldBrush texture(int code) const;
     void prune(int model);

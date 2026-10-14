@@ -89,6 +89,9 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     auto browse = new QPushButton("Scenarios"); browse->setCheckable(true); browse->setChecked(true);
     browse->setObjectName("scenarioBrowse"); navigationRow->addWidget(browse); navigationRow->addWidget(navigation);
     auto title = new QLabel; title->setObjectName("scenarioCurrentTitle"); navigationRow->addWidget(title,1);
+    auto test = new QPushButton("Test this mission…"); test->setObjectName("scenarioTestMission");
+    navigationRow->addWidget(test);
+    connect(test, &QPushButton::clicked, this, [this] { if (key() >= 0 && testScenario) testScenario(key()); });
     layout->addLayout(navigationRow);
     auto content = new QWidget;
     auto contentLayout = new QVBoxLayout(content);

@@ -6,6 +6,7 @@ struct SeedChoice {
     StoryRoute route;
     int chaos = 50;
     QString location, mission;
+    QVector<int> scenarios;
 };
 class ScenarioSeeder {
   public:

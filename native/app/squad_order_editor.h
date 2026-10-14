@@ -7,6 +7,7 @@ class QSpinBox;
 class QLabel;
 class QPushButton;
 namespace lordly {
+class PendingEdits;
 class SquadOrderEditor : public QWidget {
   public:
     SquadOrderEditor(Project *, std::function<void(const Scenarios &, const QString &)>);
@@ -24,8 +25,10 @@ class SquadOrderEditor : public QWidget {
     void controls();
     void edited(bool destinationReady = false);
     void applyCommand();
+    bool applyDrafts();
     struct Draft { int command, destination, x, z; bool ready; QByteArray basis; };
     QMap<QPair<int,int>,Draft> drafts_;
+    PendingEdits *pending_ = nullptr;
     QPair<int,int> identity_;
     QByteArray basis_;
     bool loading_ = false, complex_ = false, ready_ = false, follower_ = false;

@@ -6221,3 +6221,45 @@ cover byte order, undo, damaged-suspend preservation and Tester merging. Export,
 checksum and reopen checks pass with166/256 classes. These checks do not establish
 60-squad gameplay or a universal worst-case compression bound: source/map arrays,
 member handles and expanded mission callbacks still require implementation.
+
+
+### Native review follow-up - 2026-10-14
+
+Desktop Open project constructs the new Project from runtimeRom(), because the
+manifest source hash names the actual ROM input, not its canonicalized engine view.
+PendingEdits adapters expose unapplied drafts and per-panel apply/discard operations.
+MainWindow resolves them before save/export/close; selection and navigation retain
+them. Source snapshots detect conflicting edits instead of silently applying stale
+values. The Save Editor continues to own its separate document and Undo history.
+
+Field resources carry a 64-byte LCFIELD1 ownership prefix before the game's length
+word: root, child index, reserved capacity, payload length, SHA-256 of ownership
+fields plus payload, and zero reserved bytes. Reuse requires matching identity,
+bounds, hash and untouched padding. Allocations grow geometrically and preserve
+foreign following bytes; only a verified last allocation extends in place.
+
+Generated map models retain an opaque original prefix and describe generated raw
+blocks, display lists and field programs in an LCMODEL1 footer. The footer hashes
+the model and block table. Export follows the program's drawing-list pointers and
+the generated lists' vertex/matrix/texture/call references, relocates reachable
+blocks, and removes only unreachable generated blocks. Absolute load/call/restore
+wrappers for repeated town moves collapse without accumulating old wrappers.
+Unknown original bytes and unmarked older exports are never garbage-collected.
+The final decoded model, including metadata, remains bounded to 512 KiB.
+
+Terrain commands retain one map's metadata plus changed paint spans, falling back
+to one mask span for fragmented strokes. A monotonic per-model revision invalidates
+the correct preview after Undo/Redo or history branching. Project Undo is capped
+at 128 operations. A small-stroke regression retains 578 logical bytes with 12 maps
+edited; six town-move/export/reopen cycles hold both ROM and model sizes constant.
+
+Compressed suspend readback now reuses the encoder's dead hash-chain workspace.
+For the 27,256-byte expanded-army record, scratch falls from 110,184 to 82,928 bytes.
+The dispatcher uses 142,952 live bytes at the tested save peak, excluding allocator
+headers and the rest of the game. Public exported MIPS code saves both populated
+and Soldier-heavy full armies under a 90,000-byte per-allocation test cap, and retains
+previous data when allocation fails. The format and CRC/byte-comparison publication
+gates are unchanged. This improves memory requirements; it does not prove crowded
+natural-game heap availability or guarantee that every possible logical record
+compresses into the 20,224-byte physical suspend region. An in-game failure message
+and natural crowded-mission suspend testing remain separate validation limits.

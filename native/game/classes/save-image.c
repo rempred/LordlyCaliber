@@ -24,7 +24,10 @@ int lc_save_commit_compressed(ImageByte *image, ImageWord capacity,
     format = size == LC_SAVE_CAPACITY_SUSPEND_BYTES ? 3 : size == LC_SAVE_LARGE_SUSPEND_BYTES ? 2 : 1;
     if (!lc_save_record_valid(source, size, 15, format)) return 0;
     decoded = scratch + LC_SAVE_PACK_SUSPEND_CAPACITY;
-    work = (unsigned short *)(decoded + ((size + 1U) & ~1U));
+    /* The encoder has finished using its hash chains before readback starts.
+     * Reuse those bytes for the decoded verification copy. The work region
+     * is larger than size for every supported record. */
+    work = (unsigned short *)decoded;
     packed = lc_save_frame_encode(source, size, scratch, LC_SAVE_PACK_SUSPEND_CAPACITY, work);
     if (!packed || lc_save_frame_decode(decoded, size, scratch, packed) != size) return 0;
     for (i = 0; i < size; ++i) if (source[i] != decoded[i]) return 0;

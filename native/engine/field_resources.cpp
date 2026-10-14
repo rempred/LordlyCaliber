@@ -1,4 +1,5 @@
 #include "engine/field_resources.h"
+#include <QCryptographicHash>
 namespace lordly {
 namespace {
 quint32 le32(const QByteArray &b, int at) {
@@ -78,15 +79,58 @@ quint32 fieldChild(const Rom &rom, quint32 root, int index) {
 }
 void replaceFieldChild(QByteArray &image, quint32 root, int index, const QByteArray &payload) {
     const auto rom = Rom::fromBytes(image);
-    fieldChild(rom, root, index);
-    const qsizetype at = (image.size() + 15) & ~qsizetype(15);
-    if (at < 0x2800000 || at + 4 + payload.size() > 0x4000000)
+    const auto key = fieldChild(rom, root, index);
+    const auto previous = fieldResource(rom, key);
+    if (payload.isEmpty() || payload.size() > 8 * 1024 * 1024)
+        throw Error("Invalid edited field resource size");
+    if (previous == payload)
+        return;
+    // Only reuse a block carrying our complete ownership record. A resource
+    // being outside retail ROM space alone does not establish ownership.
+    constexpr qsizetype headerSize = 64;
+    qsizetype header = qsizetype(key) + 0x594280 - headerSize;
+    quint32 capacity = 0;
+    const auto digest = [](const QByteArray &prefix, const QByteArray &data) {
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        hash.addData(prefix); hash.addData(data);
+        return hash.result();
+    };
+    if (header >= 0x2800000 && !(header & 15) &&
+        image.mid(header, 8) == QByteArray("LCFIELD1", 8) &&
+        u32(image, header + 8) == root && u32(image, header + 12) == quint32(index)) {
+        const auto saved = u32(image, header + 16);
+        if (saved >= 4 + previous.size() && saved <= 16 * 1024 * 1024 && !(saved & 15) &&
+            header + headerSize + saved <= image.size() &&
+            u32(image, header + 20) == previous.size() &&
+            image.mid(header + 24, 32) == digest(image.mid(header, 24), previous) &&
+            image.mid(header + 56, 8) == QByteArray(8, 0) &&
+            image.mid(header + headerSize + 4 + previous.size(), saved - 4 - previous.size()) ==
+                QByteArray(saved - 4 - previous.size(), char(-1)))
+            capacity = saved;
+    }
+    quint32 wanted = 4096;
+    while (wanted < 4 + payload.size()) wanted *= 2;
+    if (!capacity || (wanted > capacity && header + headerSize + capacity != image.size())) {
+        header = (image.size() + 15) & ~qsizetype(15);
+        capacity = wanted;
+    } else {
+        capacity = std::max(capacity, wanted);
+    }
+    const qsizetype end = header + headerSize + capacity;
+    if (header < 0x2800000 || end > 0x4000000)
         throw Error("Edited battlefield exceeds cartridge space");
-    image += QByteArray(at - image.size() + 4, char(-1));
+    if (end > image.size()) image += QByteArray(end - image.size(), char(-1));
+    QByteArray record(headerSize, 0);
+    record.replace(0, 8, QByteArray("LCFIELD1", 8));
+    put32(record, 8, root); put32(record, 12, quint32(index));
+    put32(record, 16, capacity); put32(record, 20, quint32(payload.size()));
+    record.replace(24, 32, digest(record.first(24), payload));
+    image.replace(header, headerSize, record);
+    const qsizetype at = header + headerSize;
     put32(image, at, quint32(payload.size()));
-    image += payload;
-    while (image.size() % 16)
-        image += char(-1);
+    image.replace(at + 4, payload.size(), payload);
+    image.replace(at + 4 + payload.size(), capacity - 4 - payload.size(),
+                  QByteArray(capacity - 4 - payload.size(), char(-1)));
     put32(image, root + 0x594284 + index * 4, quint32(at - 0x594280));
 }
 void replaceFieldMemberInPlace(QByteArray &image, quint32 key, int index, const QByteArray &data) {

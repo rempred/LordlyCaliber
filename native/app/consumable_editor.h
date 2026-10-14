@@ -8,6 +8,7 @@ class QSpinBox;
 class QCheckBox;
 class QPushButton;
 namespace lordly {
+class PendingEdits;
 class ConsumableEditor : public QWidget {
   public:
     ConsumableEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
@@ -17,6 +18,12 @@ class ConsumableEditor : public QWidget {
   private:
     void refresh();
     void apply(bool restore);
+    void rememberDraft();
+    bool applyDrafts();
+    struct Draft { int id; QJsonObject source, values; bool description; };
+    QMap<QString, Draft> drafts_;
+    PendingEdits *pending_;
+    bool refreshing_ = false;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
@@ -25,6 +32,6 @@ class ConsumableEditor : public QWidget {
     QLabel *heading_, *target_, *notice_, *minimumLabel_, *maximumLabel_;
     QSpinBox *minimum_, *maximum_;
     QCheckBox *description_;
-    QPushButton *apply_, *restore_;
+    QPushButton *apply_, *restore_, *discard_;
 };
 } // namespace lordly

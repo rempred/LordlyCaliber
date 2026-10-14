@@ -2,6 +2,7 @@
 #include "engine/field_brush.h"
 #include "engine/field_span.h"
 #include "engine/map_edits.h"
+#include "engine/field_model_storage.h"
 #include <QSet>
 #include <algorithm>
 #include <bit>
@@ -73,20 +74,7 @@ double heightAt(const FieldMapSource &source, QPointF p) {
     // Native height interpolation at z64 F33C8 uses 0x477EFF00 = 65279.
     return real(b, 12) + (real(b, 16) - real(b, 12)) * h / 65279.;
 }
-struct Append {
-    QByteArray bytes;
-    int geometry;
-    quint32 add(QByteArray data, int alignment = 8) {
-        while (bytes.size() % alignment)
-            bytes += char(0);
-        const auto at = bytes.size();
-        if (at + data.size() > 512 * 1024)
-            throw Error("This map has reached its detail capacity (512 KiB); simplify or erase "
-                        "some strokes");
-        bytes += data;
-        return 0x02000000u + quint32(at - geometry);
-    }
-};
+using Append = FieldModelStorage;
 class TerrainClone {
     const QByteArray &original_;
     Append &out_;
@@ -129,7 +117,7 @@ class TerrainClone {
                 break;
         }
         active_.remove(address);
-        return changed ? out_.add(code) : address;
+        return changed ? out_.list(code) : address;
     }
 };
 class BuildingClone {
@@ -177,7 +165,7 @@ class BuildingClone {
                 break;
         }
         active_.remove(address);
-        const auto result = out_.add(code);
+        const auto result = out_.list(code);
         lists_[address] = result;
         return result;
     }
@@ -718,7 +706,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
             if (movement.contains(group)) {
                 if (!clones.contains(group))
                     clones[group] = std::make_shared<BuildingClone>(original, out, movement[group]);
-                const auto list = clones[group]->clone(args[0]);
+                auto list = clones[group]->clone(args[0]);
                 // Flags and some roofs inherit the transform from an earlier material
                 // list. Seed each moved draw with its original incoming transform.
                 const auto state = transforms.value(instructionAt);
@@ -728,12 +716,14 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
                 for (int axis = 0; axis < 3; ++axis)
                     putFixed(matrix, 12 + axis, fixed(matrix, 12 + axis) + movement[group][axis]);
                 QByteArray wrapper;
-                command(wrapper, 0xda380003, out.add(matrix, 16));
+                auto matrixAddress = out.add(matrix, 16);
+                out.unwrap(matrixAddress, list);
+                command(wrapper, 0xda380003, matrixAddress);
                 command(wrapper, 0xde000000, list);
                 // Do not leak the translated matrix into the following unmoved draw.
                 command(wrapper, 0xda380003, out.add(state.mid(64), 16));
                 command(wrapper, 0xdf000000, 0);
-                args[0] = out.add(wrapper);
+                args[0] = out.list(wrapper);
             }
         }
         for (int n = 0; n < widths[op]; ++n)
@@ -903,7 +893,7 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         }
         command(dl, 0xdf000000, 0);
         word(program, 1);
-        word(program, out.add(dl));
+        word(program, out.list(dl));
     }
     QMap<QByteArray, quint32> cityTextures;
     for (const auto &placement : change.city) {
@@ -991,11 +981,10 @@ QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &chan
         }
         command(dl, 0xdf000000, 0);
         word(program, 1);
-        word(program, out.add(dl));
+        word(program, out.list(dl));
     }
     word(program, 0);
-    const auto programAddress = out.add(program, 4);
-    put32(out.bytes, 0, (programAddress & 0xffffff) + out.geometry);
-    return out.bytes;
+    const auto programAddress = out.add(program, 4, 2);
+    return out.finish(programAddress);
 }
 } // namespace lordly

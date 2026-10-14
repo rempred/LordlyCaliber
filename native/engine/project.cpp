@@ -804,6 +804,9 @@ void Project::loadWorld() {
 }
 void Project::loadMapEdits() {if(!mapEdits_)mapEdits_=MapEdits::load(rom_);}
 void Project::setMapEdits(const QJsonObject &value){loadMapEdits();mapEdits_->apply(value);}
+void Project::applyMapDelta(const FieldEditDelta &delta, bool forward) {
+    loadMapEdits(); mapEdits_->applyDelta(delta, forward);
+}
 void Project::setWorld(const QJsonObject &value) {
     loadWorld();
     world_->apply(value);

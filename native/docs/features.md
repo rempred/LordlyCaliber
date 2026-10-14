@@ -904,9 +904,28 @@ as current project edits. Reports compare decoded artwork and semantic records;
 relocated name pointers are not changes. Unknown code/data and the separate Save
 Editor document are not interpreted in this report. Comparison never rewrites either
 ROM. Named rule, scenario time/reward, training opponent, dialogue and art entries
-open their editing controls. The ? lookup also lists consumers of shared army-board
+open their editing controls. Find uses also lists consumers of shared army-board
 sprites; an independent class copy stops appearing as a user of the old sprite.
 
 Tools groups controls into Battle and squads, Training, Mission rewards, and Display
 and options. Training formations are checked again when a class size changes, even
 if the opponent record itself is untouched.
+
+
+Native review improvements (2026-10-14): project opening preserves the actual input
+ROM identity, including expanded-army runtimes. Pending consumable, advanced-route,
+squad-order and event-flag forms survive selection and are resolved before project
+save, export or close. Failed/conflicting drafts remain available for review.
+
+Classes has a selected-class Overview with stats, equipment, actions, family,
+portrait and direct editing links. Export selects the exact output in Testing;
+new project edits and drafts mark it stale. Scenario Test this mission opens the
+matching supported story entries without starting Project64. Named links beside
+town details, encounter creatures and route steps show the affected missions or
+squads. Find uses remains available for item/class/art/shop references.
+
+Map Undo retains changed paint runs and metadata for the affected map, with a
+128-operation project history. Previews invalidate only the edited battlefield.
+Export reuses verified owned field allocations and collects unused generated model
+blocks; unknown original geometry stays intact. Reopening older exports keeps their
+unmarked drawing data; only newly tracked generated blocks can be reclaimed.

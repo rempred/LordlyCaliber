@@ -9,6 +9,7 @@ class QTreeWidget;
 class QLabel;
 class QPushButton;
 namespace lordly {
+class PendingEdits;
 class ScenarioEventEditor : public QWidget {
   public:
     ScenarioEventEditor(Project *, QUndoStack *, std::function<void()>, QWidget *parent = nullptr);
@@ -20,6 +21,13 @@ class ScenarioEventEditor : public QWidget {
     void showRow();
     void selectStep();
     void apply();
+    void rememberDraft();
+    bool applyDrafts();
+    void applyDraftTo(SceneEvents &, QPair<int, int>);
+    struct Draft { int flag, baseFlag; bool value, baseValue; QString text; };
+    QMap<QPair<int, int>, Draft> drafts_;
+    QPair<int, int> selection_{-1, -1};
+    PendingEdits *pending_ = nullptr;
     void commit(const SceneEvents &, const QString &);
     Project *project_;
     QUndoStack *undo_;
@@ -30,6 +38,6 @@ class ScenarioEventEditor : public QWidget {
     QTreeWidget *steps_;
     QCheckBox *all_;
     QLabel *notice_, *detail_;
-    QPushButton *apply_, *restore_, *jump_;
+    QPushButton *apply_, *restore_, *jump_, *discard_;
 };
 } // namespace lordly

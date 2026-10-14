@@ -1,4 +1,5 @@
 #include "app/squad_route_steps.h"
+#include "app/shared_impact.h"
 #include "app/squad_trigger_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -219,9 +220,10 @@ void SquadRouteSteps::showStep(){
     const bool follower=route_.leader!=squad_, shared=route_.sharedRows.contains(row),extended=SquadRoute::extended(n,&s.layout);
     const bool writable=!follower && (!shared || shared_->isChecked());
     details_->setEnabled(writable);shared_->setVisible(!follower && !route_.sharedRows.isEmpty());leader_->setVisible(follower);
-    scope_->setText(follower?"This squad follows its movement-group leader. The leader's steps are shown."
+    const QString explanation = follower?"This squad follows its movement-group leader. The leader's steps are shown."
         :shared?"This step may be shared with another squad or script. Enable shared editing to change it for every user."
-        :"Editing this squad's route. Movement-group followers use the same orders.");
+        :"Editing this squad's route. Movement-group followers use the same orders.";
+    showEditImpact(scope_, "Squads using this step", findProjectUses(*project_, "routeStep", key_, QString::number(row)), explanation);
     heading_->setText(QString("Edit step %1").arg(route_.number(row+4)));
     choose(action_,SquadRoute::action(n));
     destination_->clear();destination_->addItem("Map position (choose on map)",0);

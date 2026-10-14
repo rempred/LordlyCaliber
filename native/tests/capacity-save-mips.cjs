@@ -242,7 +242,7 @@ for(const [i,v] of [entries.lc_discovery_init,entries.lc_discovery_load,entries.
 m.load(0x800a8240,rom.subarray(0x38640,0x38648));m.w8(0x800c4800,0);
 const cartridge=Buffer.alloc(32768),live=new Map(),cacheAt=0x80360000,bufferAt=0x80370000,
  scratchAt=0x80390000,summaryAt=0x80380000,flushAt=0x80381000,
- scratchBytes=20224+27256+2*(4096+27256);
+ scratchBytes=20224+2*(4096+27256);
 let failSize=0,writes=0;
 m.trap(storage.lc_native_save_alloc,c=>{
  const n=c.get('a0');if(n===failSize){c.set('v0',0);return;}

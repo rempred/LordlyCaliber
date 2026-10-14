@@ -1,6 +1,7 @@
 #include "engine/project_references.h"
 #include "engine/actor_art.h"
 #include "engine/squad_members.h"
+#include "engine/squad_route.h"
 #include <QJsonArray>
 #include <functional>
 
@@ -127,6 +128,37 @@ QVector<ProjectReference> projectReferences(Project p) {
 }
 QVector<ProjectChange> findProjectUses(Project p, const QString &kind, int id, const QString &key) {
     QVector<ProjectChange> result;
+    if (kind == "town" || kind == "map" || kind == "routeStep") {
+        p.loadScenarios();
+        auto mission = [&](int key) { return p.scenarios()->entries().contains(key) ? p.scenarios()->scenario(key).name : QString("Scenario %1").arg(key); };
+        if (kind == "town") {
+            p.loadWorld();
+            for (int scenario = 1; scenario <= 64; ++scenario)
+                for (int row = 0; row < p.world()->siteCount(scenario); ++row)
+                    if (u16(p.world()->scenario(scenario).sites, 1 + row * 4) == id) {
+                        result << ProjectChange{"Town details", QString("%1 · %2").arg(scenario).arg(mission(scenario)), {}, {"map", scenario, row, "site"}};
+                        break;
+                    }
+        } else if (kind == "map") {
+            p.loadMapEdits();
+            for (int scenario : p.mapEdits()->sharedScenarios(id))
+                result << ProjectChange{"Shared battlefield", QString("%1 · %2").arg(scenario).arg(mission(scenario)), {}, {"map", scenario}};
+        } else {
+            const auto &s = p.scenarios()->scenario(id);
+            const int node = key.toInt();
+            for (int squad = 0; squad < s.squads.size(); ++squad)
+                if (SquadRoute::read(s, squad).rows.contains(node))
+                    result << ProjectChange{"Route step", QString("Squad %1 · %2").arg(u8(s.layout.deployments[squad], 0) & 127)
+                        .arg(p.record(Table::Classes, u8(s.squads[squad], 0)).name.simplified()), {}, {"scenarios", id, squad}};
+        }
+        return result;
+    }
+    if (kind == "encounterPool") {
+        p.loadEncounters();
+        for (int scenario : p.encounters()->scenarioKeys(id))
+            result << ProjectChange{"Encounter creatures", QString("%1 · %2").arg(scenario).arg(p.encounters()->scenarioLabel(scenario)), {}, {"encounterMap", id, scenario}};
+        return result;
+    }
     if (kind == "sprites") {
         const auto &asset = p.sprites().asset(key);
         if (asset.provenance.contains("classId"))

@@ -6,9 +6,56 @@
 #include <QLineF>
 #include <QSet>
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cmath>
 namespace lordly {
+qsizetype FieldEditDelta::bytes() const {
+    qsizetype result = sizeof(*this);
+    for (const auto &run : paint) result += sizeof(run) + run.before.size() + run.after.size();
+    for (const auto *state : {&before, &after}) {
+        result += state->sites.size() * (sizeof(QPointF) + sizeof(int));
+        result += state->city.size() * sizeof(CityPlacement) + state->peaks.size() * sizeof(MountainPeak);
+        for (const auto &piece : state->city) result += piece.asset.size() * sizeof(QChar);
+    }
+    return result;
+}
+void MapEdits::touch(int model) {
+    static std::atomic<quint64> next{0};
+    revisions_[model] = ++next;
+}
+FieldEditDelta MapEdits::difference(int key, const MapEdits &after) const {
+    FieldEditDelta delta;
+    delta.model = modelId(key); delta.before = changes(key); delta.after = after.changes(key);
+    const auto &old = delta.before.paint; const auto &now = delta.after.paint;
+    qsizetype stored = 0;
+    for (int at = 0; at < old.size();) {
+        if (old[at] == now[at]) { ++at; continue; }
+        const int start = at++;
+        while (at < old.size() && old[at] != now[at]) ++at;
+        delta.paint.append({start, old.mid(start, at - start), now.mid(start, at - start)});
+        stored += sizeof(FieldPaintDelta) + 2 * (at - start);
+        if (stored > 2 * old.size()) {
+            delta.paint = {{0, old, now}}; break;
+        }
+    }
+    delta.before.paint.clear(); delta.after.paint.clear();
+    return delta;
+}
+void MapEdits::applyDelta(const FieldEditDelta &delta, bool forward) {
+    auto current = edits_.value(delta.model);
+    auto paint = current.paint; current.paint.clear();
+    if (current != (forward ? delta.before : delta.after)) throw Error("Map Undo state no longer matches this edit");
+    for (const auto &run : delta.paint) {
+        const auto &expected = forward ? run.before : run.after;
+        const auto &replacement = forward ? run.after : run.before;
+        if (run.offset < 0 || run.offset + expected.size() > paint.size() || expected.size() != replacement.size() ||
+            paint.mid(run.offset, expected.size()) != expected) throw Error("Terrain Undo state no longer matches this edit");
+        paint.replace(run.offset, replacement.size(), replacement);
+    }
+    current = forward ? delta.after : delta.before; current.paint = std::move(paint);
+    edits_[delta.model] = std::move(current); prune(delta.model);
+}
 namespace {
 constexpr quint32 geometryRoot = 0x1e39dce, terrainRoot = 0x20712ea, pointsKey = 0x2092506;
 void real(QByteArray &b, int at, double v) {
@@ -127,8 +174,8 @@ int MapEdits::modelId(int key) const {
 }
 const FieldMapSource &MapEdits::source(int key) const {
     const int id = modelId(key);
-    if (sources_.contains(id))
-        return sources_[id];
+    if (const auto found = sources_.constFind(id); found != sources_.cend())
+        return found.value();
     const int row = 0x654a0 + key * 9;
     FieldMapSource s;
     s.key = key;
@@ -159,7 +206,7 @@ const FieldMapSource &MapEdits::source(int key) const {
     s.boundary = QRectF(QPointF(u8(rom_.bytes(), edge), u8(rom_.bytes(), edge + 1)),
                         QPointF(u8(rom_.bytes(), edge + 2), u8(rom_.bytes(), edge + 3)));
     sources_[id] = s;
-    return sources_[id];
+    return sources_.constFind(id).value();
 }
 const FieldChanges &MapEdits::changes(int key) const {
     static const FieldChanges empty;
@@ -285,6 +332,7 @@ void MapEdits::savePeak(int key, const MountainPeak &peak) {
     next.model(key); // Validate drawing allocation before committing the edit.
     editFieldHeight(next.source(key), next.changes(key));
     edits_ = std::move(next.edits_);
+    revisions_ = std::move(next.revisions_);
 }
 void MapEdits::setPeakHeight(int key, const MountainPeak &peak, double height) {
     auto p = currentPeak(key, peak);
@@ -327,6 +375,7 @@ void MapEdits::restorePeaks(int key) {
     }
 }
 void MapEdits::prune(int id) {
+    touch(id);
     const auto &s = edits_[id];
     if (!s.boundary && s.sites.isEmpty() && s.city.isEmpty() && s.peaks.isEmpty() &&
         s.paint == QByteArray(65536, char(-1)))
@@ -334,6 +383,7 @@ void MapEdits::prune(int id) {
 }
 void MapEdits::restore(int key) {
     edits_.remove(modelId(key));
+    touch(modelId(key));
 }
 QRectF MapEdits::boundary(int key) const {
     return changes(key).boundary.value_or(source(key).boundary);
@@ -527,7 +577,8 @@ void MapEdits::placeCity(int key, const QString &asset, QPointF position, int ro
     auto next = *this;
     next.edits_[s.modelId].city << CityPlacement{asset, position, rotation};
     next.moveCity(key, int(next.edits_[s.modelId].city.size()) - 1, position, rotation);
-    *this = std::move(next);
+    edits_ = std::move(next.edits_);
+    revisions_ = std::move(next.revisions_);
 }
 void MapEdits::moveCity(int key, int row, QPointF position, int rotation) {
     const auto &s = source(key);
@@ -547,6 +598,7 @@ void MapEdits::moveCity(int key, int row, QPointF position, int rotation) {
         }
     edits_[s.modelId].city[row].position = position;
     edits_[s.modelId].city[row].rotation = rotation;
+    touch(s.modelId);
 }
 void MapEdits::removeCity(int key, int row) {
     const int id = modelId(key);
@@ -783,6 +835,7 @@ void MapEdits::apply(const QJsonObject &o) {
         }
         next.prune(id);
     }
+    for (int id : edits_.keys()) if (!next.edits_.contains(id)) next.touch(id);
     *this = std::move(next);
 }
 } // namespace lordly

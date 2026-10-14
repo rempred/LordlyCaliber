@@ -56,8 +56,20 @@ imported through Open project after opening the matching source ROM.
 Choose Review project changes from the File menu or toolbar to inspect the current
 changes, find text, copy the report or save a text changelog. The comparison uses
 the loaded source ROM, so project saves retain the changelog. It includes project
-assets and summarizes binary scene/artwork changes. Apply pending form edits first;
-the independent Save workspace is outside this project report.
+assets and summarizes binary scene/artwork changes. Pending changes lists unapplied
+consumable effects, route orders and event flags. Saving, exporting and closing ask
+you to apply, discard or review those drafts. The independent Save workspace is
+outside this project report.
+
+Classes opens with an Overview of the selected class's stats, starting equipment,
+actions, family and portrait. Its edit buttons keep the selected class when opening
+artwork and animation tools; Back to class setup returns to that overview.
+
+After export, the exported ROM is selected in Testing. Test this ROM opens it there;
+Test this mission in Scenarios filters the supported world-map entry choices.
+Testing identifies the export by its content digest and warns when project edits
+or pending drafts are newer. Build current project includes those edits before a
+new test. Selecting a mission does not launch the emulator automatically.
 
 Items / Add item from selected creates a new equipment ID, with editable name,
 independent description and ROM-sourced icon/weapon appearance. The current

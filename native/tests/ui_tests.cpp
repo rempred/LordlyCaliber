@@ -13,6 +13,10 @@
 #include "app/encounter_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
+#include "app/pending_edits.h"
+#include "app/class_setup.h"
+#include "engine/project_references.h"
+#include "app/scenario_route_editor.h"
 #include "app/theme.h"
 #include "app/formation_board.h"
 #include "app/portrait_editor.h"
@@ -119,6 +123,192 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void pendingConsumableAndRouteEdits() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadTexts(); project.loadConsumableEffects(); project.loadScenarios(); project.loadWorld();
+        QUndoStack undo;
+        ConsumableEditor effects(&project, &undo, [] {});
+        effects.selectConsumable(1);
+        auto amount = effects.findChild<QSpinBox *>("effectMinimum");
+        const int original = amount->value();
+        const auto before = project.consumableEffects()->json();
+        amount->setValue(original + 1);
+        QCOMPARE(pendingEdits(&effects).size(), 1);
+        QCOMPARE(project.consumableEffects()->json(), before);
+        effects.selectConsumable(2); effects.selectConsumable(1);
+        QCOMPARE(amount->value(), original + 1);
+        QTimer::singleShot(0, &effects, [&] { effects.findChild<QDialog *>("pendingEditsDialog")->reject(); });
+        QVERIFY(!resolvePendingEdits(&effects, "saving", [](const EditLocation &) {}));
+        QCOMPARE(pendingEdits(&effects).size(), 1);
+        QTimer::singleShot(0, &effects, [&] { effects.findChild<QPushButton *>("pendingApplyAll")->click(); });
+        QVERIFY(resolvePendingEdits(&effects, "saving", [](const EditLocation &) {}));
+        QVERIFY(pendingEdits(&effects).isEmpty());
+        QVERIFY(project.consumableEffects()->json() != before);
+        undo.undo(); QCOMPARE(project.consumableEffects()->json(), before);
+        effects.selectConsumable(11);
+        effects.findChild<QSpinBox *>("effectMinimum")->setValue(20);
+        effects.findChild<QSpinBox *>("effectMaximum")->setValue(1);
+        auto pending = effects.findChild<PendingEdits *>();
+        QVERIFY(!pending->apply());
+        QCOMPARE(pendingEdits(&effects).size(), 1);
+        QCOMPARE(project.consumableEffects()->json(), before);
+        pending->discard(); QVERIFY(pendingEdits(&effects).isEmpty());
+
+        ScenarioRouteEditor *routes = nullptr;
+        ScenarioRouteEditor editor(&project, [&](const Scenarios &next, const QString &) {
+            project.setScenarios(next.json()); routes->refresh(1);
+        });
+        routes = &editor; editor.refresh(1);
+        int row = -1;
+        for (int i = 0; i < project.scenarios()->scenario(1).layout.nodes.size(); ++i)
+            if (u8(project.scenarios()->scenario(1).layout.nodes[i], 1) <= 1) { row = i; break; }
+        QVERIFY(row >= 0); editor.selectNode(row);
+        auto wait = editor.findChild<QComboBox *>("routeWait");
+        const auto originalNode = project.scenarios()->scenario(1).layout.nodes[row];
+        const int chosen = (u8(originalNode, 3) + 1) % 3;
+        wait->setCurrentIndex(wait->findData(chosen));
+        QCOMPARE(pendingEdits(&editor).size(), 1);
+        editor.refresh(2); editor.refresh(1); editor.selectNode(row);
+        QCOMPARE(wait->currentData().toInt(), chosen);
+        QCOMPARE(project.scenarios()->scenario(1).layout.nodes[row], originalNode);
+        auto guard = editor.findChild<PendingEdits *>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(guard); QVERIFY(guard->apply());
+        QVERIFY(pendingEdits(&editor).isEmpty());
+        QCOMPARE(u8(project.scenarios()->scenario(1).layout.nodes[row], 3), chosen);
+    }
+    void classSetupAndTestingHandoff() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        MainWindow window; window.resize(1440, 1000); window.show(); window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QWidget *>("classSetup"), 30000);
+        window.navigateTo({"classes", 5, -1, "section:Overview"});
+        auto section = window.findChild<QComboBox *>("classesInspectorSection");
+        QCOMPARE(section->currentText(), "Overview");
+        window.findChild<QPushButton *>("classSetupEquipment")->click();
+        QCOMPARE(section->currentText(), "Equipment");
+        auto back = window.findChild<QAction *>("returnToClassSetup"); QVERIFY(back);
+        back->trigger(); QCOMPARE(section->currentText(), "Overview");
+        window.findChild<QPushButton *>("classSetup_portrait")->click();
+        auto portraits = window.findChild<QListWidget *>("portraitClasses");
+        QCOMPARE(portraits->currentItem()->data(Qt::UserRole).toInt(), 5);
+        QVERIFY(portraits->isVisible());
+        back->trigger(); QVERIFY(window.findChild<QWidget *>("classSetup")->isVisible());
+        QVERIFY(window.grab().save(QCoreApplication::applicationDirPath() + "/class-setup-review.png"));
+        QCOMPARE(window.findChild<QAction *>("whereUsed")->text(), "Find uses");
+        auto testing = window.findChild<TestingEditor *>(); QVERIFY(testing);
+        testing->setProjectRevision(10, false);
+        testing->useExport(path, 10, sha256(Rom::open(path).bytes()));
+        testing->selectScenario(1); // A sidebar handoff can precede the async ROM load.
+        QTRY_VERIFY_WITH_TIMEOUT(testing->ready(), 30000);
+        QVERIFY(testing->findChild<QLabel *>("seederStatus")->text().contains("scenario 1"));
+        auto freshness = testing->findChild<QLabel *>("testingFreshness");
+        QVERIFY(freshness->text().startsWith("Latest export"));
+        testing->setProjectRevision(11, false); QVERIFY(freshness->text().contains("changed since"));
+        testing->setProjectRevision(10, true); QVERIFY(freshness->text().contains("changed since"));
+        testing->setProjectRevision(10, false);
+        testing->selectScenario(1);
+        auto missions = testing->findChild<QTreeWidget *>("seederMissions");
+        QVERIFY(missions->currentItem()); QVERIFY(!missions->currentItem()->isHidden());
+        QVERIFY(testing->findChild<QLabel *>("seederStatus")->text().contains("scenario 1"));
+        testing->selectScenario(999); QVERIFY(!missions->currentItem());
+        QVERIFY(testing->findChild<QLabel *>("seederStatus")->text().contains("no supported"));
+        testing->findChild<QLineEdit *>("seederSearch")->setText(" ");
+        QVERIFY(missions->topLevelItemCount() > 0);
+    }
+    void namedSharedEditImpact() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path)); project.loadScenarios(); project.loadWorld(); project.loadEncounters();
+        const int town = u16(project.world()->scenario(1).sites, 1);
+        const auto towns = findProjectUses(project, "town", town);
+        QVERIFY(!towns.isEmpty());
+        for (const auto &use : towns) {
+            QVERIFY(use.subject.contains(QString::number(use.location.id)));
+            QCOMPARE(u16(project.world()->scenario(use.location.id).sites, 1 + use.location.child * 4), town);
+        }
+        const auto maps = findProjectUses(project, "map", 1);
+        QVERIFY(!maps.isEmpty());
+        for (const auto &use : maps)
+            QCOMPARE(u8(project.rom().bytes(), 0x654a0 + use.location.id * 9 + 3), u8(project.rom().bytes(), 0x654a0 + 12));
+        for (int group = 1; group <= Encounters::poolCount; ++group) {
+            const auto uses = findProjectUses(project, "encounterPool", group);
+            QCOMPARE(uses.size(), project.encounters()->scenarioKeys(group).size());
+            for (const auto &use : uses) QVERIFY(project.encounters()->scenarioKeys(group).contains(use.location.child));
+        }
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {}); editor.resize(1300, 900); editor.show();
+        auto scenarios = editor.findChild<QListWidget *>("scenarioList");
+        QVERIFY(scenarios); scenarios->setCurrentRow(0);
+        auto objects = editor.findChild<QListWidget *>("mapObjects"); QVERIFY(objects);
+        bool selected = false;
+        for (int row = 0; row < objects->count(); ++row)
+            if (objects->item(row)->data(Qt::UserRole).toInt() == int(MapObject::Site)) { objects->setCurrentRow(row); selected = true; break; }
+        QVERIFY(selected);
+        auto impact = editor.findChild<QLabel *>("townEditImpact"); QVERIFY(impact);
+        QVERIFY(impact->text().contains("href="));
+    }
+    void pendingEditsProtectWindowClose() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        MainWindow window; window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("consumablesTable"), 30000);
+        window.navigateTo({"consumables", 1});
+        auto amount = window.findChild<QSpinBox *>("effectMinimum");
+        amount->setValue(amount->value() + 1);
+        QVERIFY(window.isWindowModified());
+        auto action = window.findChild<QAction *>("pendingProjectChanges");
+        QVERIFY(action->isVisible());
+        bool prompted = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto dialog = window.findChild<QDialog *>("pendingEditsDialog");
+            if (dialog) { prompted = true; dialog->reject(); }
+        });
+        QVERIFY(!window.close()); QVERIFY(prompted);
+        QCOMPARE(pendingEdits(&window).size(), 1);
+        int checked = 0;
+        for (auto command : window.findChildren<QAction *>())
+            if (command->text() == "Save project &folder…" || command->text() == "Save sharing &archive…" || command->text() == "Build and &export ROM…") {
+                prompted = false;
+                QTimer::singleShot(0, &window, [&] {
+                    auto dialog = window.findChild<QDialog *>("pendingEditsDialog");
+                    if (dialog) { prompted = true; dialog->reject(); }
+                });
+                command->trigger(); QVERIFY(prompted);
+                QCOMPARE(pendingEdits(&window).size(), 1); ++checked;
+            }
+        QCOMPARE(checked, 3);
+        QTimer::singleShot(0, &window, [&] { window.findChild<QPushButton *>("pendingDiscardAll")->click(); });
+        action->trigger();
+        QVERIFY(pendingEdits(&window).isEmpty()); QVERIFY(!window.isWindowModified());
+    }
+    void expandedSourceProjectOpening() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_EXPANDED_ROM");
+        if (path.isEmpty()) QSKIP("Expanded-army ROM fixture required");
+        auto project = Project::fromRom(Rom::open(path));
+        QVERIFY(project.expandedArmies());
+        QVERIFY(project.runtimeRom().bytes() != project.rom().bytes());
+        project.loadTexts();
+        const auto name = QString("Reopened source");
+        project.setClassNameBytes(5, encodeClassName(name));
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        project.saveFolder(folder.path());
+        project.saveArchive(folder.filePath("saved.lcproject"));
+        MainWindow window;
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("classesTable"), 30000);
+        QVERIFY(window.openProjectFile(folder.filePath("project.json")));
+        auto table = window.findChild<QTableView *>("classesTable");
+        QVERIFY(table);
+        bool found = false;
+        for (int row = 0; row < table->model()->rowCount(); ++row)
+            found |= table->model()->index(row, 1).data().toString() == name;
+        QVERIFY(found);
+        QVERIFY(window.openProjectFile(folder.filePath("saved.lcproject")));
+        QVERIFY(!window.isWindowModified());
+    }
     void artLibraryRomImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

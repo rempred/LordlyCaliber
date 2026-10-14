@@ -80,16 +80,18 @@ assert.equal(main.find(g=>g.base===storage.lc_enemy_soldier_hp+200).count,120);
 function setBits(b,at,n,value){for(let j=0;j<n;j++){const bit=at+j,mask=1<<(7-(bit&7));b[bit>>3]=(b[bit>>3]&~mask)|(((value>>>(n-j-1))&1)?mask:0);}}
 const cartridge=Buffer.alloc(32768),live=new Map(),cacheAt=0x80360000,bufferAt=0x80370000,
  scratchAt=0x80390000,summaryAt=0x80380000,flushAt=0x80381000,
- scratchBytes=20224+27256+2*(4096+27256);
-let failSize=0,writes=0;
+ scratchBytes=20224+2*(4096+27256);
+let failSize=0,writes=0,peakLiveBytes=0,largestRequest=0;
+const maximumAllocation=90000;
 m.trap(storage.lc_native_save_alloc,c=>{
- const n=c.get('a0');if(n===failSize){c.set('v0',0);return;}
+ const n=c.get('a0');largestRequest=Math.max(largestRequest,n);if(n===failSize||n>maximumAllocation){c.set('v0',0);return;}
  let at=n===32768?cacheAt:n===scratchBytes?scratchAt:n===26?summaryAt:n===16||n===400?flushAt:bufferAt;
  assert([32768,scratchBytes,26,16,400,27256,6256].includes(n),'allocation '+n);
  if(n===16||n===400){while([...live].some(([p,size])=>at+n+16>p-16&&p+size+16>at-16))at+=16;assert(at+n<scratchAt-16);}
  assert(!live.has(at));
  for(const [other,size] of live)assert(at+n+16<=other-16||other+size+16<=at-16);
- live.set(at,n);c.load(at-16,Buffer.alloc(n+32,0xa6));c.set('v0',at);
+ live.set(at,n);peakLiveBytes=Math.max(peakLiveBytes,[...live.values()].reduce((a,b)=>a+b,0));
+ c.load(at-16,Buffer.alloc(n+32,0xa6));c.set('v0',at);
 });
 m.trap(storage.lc_native_save_free,c=>{
  const at=c.get('a0'),n=live.get(at);assert(n,'free '+at.toString(16));
@@ -198,6 +200,6 @@ for(const compressed of [false,true]){
   assert.deepEqual(migrated.subarray(to,to+n),legacy.subarray(from,from+n));
  flush();assert.deepEqual(cartridge,before);assert.equal(writes,oldWrites);legacyReads++;
 }
-const report={loaderChecks:4,activationChecks,dispatchArmies,dispatchRefusals,legacyReads,writes,sourceSlots:61,physicalBytes:32768,
+const report={loaderChecks:4,activationChecks,dispatchArmies,dispatchRefusals,legacyReads,writes,sourceSlots:61,physicalBytes:32768,maximumAllocation,largestRequest,peakLiveBytes,
  scope:'Actual public-export code and native callbacks in private MIPS RAM with guarded allocation and simulated SRAM; no emulator session.'};
 fs.writeFileSync(path.join(work,'save-load-report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));

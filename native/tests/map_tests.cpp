@@ -4,6 +4,7 @@
 #include "engine/field_borders.h"
 #include "engine/field_brush.h"
 #include "engine/map_edits.h"
+#include "engine/field_model_storage.h"
 #include "engine/project.h"
 #include "engine/scenario_map.h"
 #include "engine/scenario_world.h"
@@ -58,6 +59,171 @@ double movementHeight(const QByteArray &data, int x, int z) {
 class MapTests : public QObject {
     Q_OBJECT
   private slots:
+    void generatedMapCollection() {
+        QByteArray original(256, 'x'); put32(original, 0, 128); put32(original, 48, 128);
+        FieldModelStorage storage(original, 128);
+        storage.add(QByteArray(4000, 'd')); // unreachable scratch must disappear
+        const auto tex = storage.add(QByteArray(256, 't'));
+        const auto matrices = storage.add(QByteArray(64, 'a') + QByteArray(64, 'm'), 16);
+        const auto vertices = storage.add(QByteArray(16, 'h') + QByteArray(48, 'v'), 16);
+        QByteArray dl(24, 0);
+        put32(dl, 0, 0x01003006); put32(dl, 4, vertices + 16);
+        put32(dl, 8, 0xfd100000); put32(dl, 12, tex); put32(dl, 16, 0xdf000000);
+        const auto inner = storage.list(dl);
+        QByteArray outer(32, 0);
+        put32(outer, 0, 0xda380003); put32(outer, 4, matrices + 64);
+        put32(outer, 8, 0xde000000); put32(outer, 12, inner);
+        put32(outer, 16, 0xde000000); put32(outer, 20, inner); // shared target
+        put32(outer, 24, 0xdf000000);
+        const auto draw = storage.list(outer);
+        QByteArray program(12, 0); put32(program, 0, 1); put32(program, 4, draw);
+        const auto first = storage.finish(storage.add(program, 4, 2));
+        QCOMPARE(first.mid(4, 252), original.mid(4));
+        QVERIFY(first.size() < 1600);
+        auto address = [&](int at) { return int(u32(first, at) & 0xffffff) + 128; };
+        const int firstDraw = address(u32(first, 0) + 4);
+        QCOMPARE(first.mid(address(firstDraw + 4), 64), QByteArray(64, 'm'));
+        QCOMPARE(address(firstDraw + 12), address(firstDraw + 20));
+        const int firstInner = address(firstDraw + 12);
+        QCOMPARE(first.mid(address(firstInner + 4), 48), QByteArray(48, 'v'));
+        QCOMPARE(first.mid(address(firstInner + 12), 256), QByteArray(256, 't'));
+        FieldModelStorage reopened(first, 128);
+        reopened.add(QByteArray(16000, 'z'));
+        const auto oldProgram = u32(first, 0);
+        const auto newProgram = reopened.add(first.mid(oldProgram, 12), 4, 2);
+        QCOMPARE(reopened.finish(newProgram), first);
+        auto damaged = first; damaged[260] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, FieldModelStorage(damaged, 128));
+    }
+    void fieldAllocationReuse() {
+        QByteArray image(0x2800000, char(-1));
+        put32(image, 0, 0x80371240);
+        constexpr quint32 root = 0x100, child = 0x200;
+        put32(image, root + 0x594280, 4);
+        put32(image, root + 0x594284, child);
+        put32(image, child + 0x594280, 4);
+        image.replace(child + 0x594284, 4, "base", 4);
+        const auto original = image;
+        replaceFieldChild(image, root, 0, "base");
+        QCOMPARE(image, original);
+        replaceFieldChild(image, root, 0, QByteArray(2000, 'a'));
+        const auto size = image.size();
+        const auto key = fieldChild(Rom::fromBytes(image), root, 0);
+        for (int i = 0; i < 20; ++i) {
+            const QByteArray payload(2000 + i * 50, char('b' + i));
+            replaceFieldChild(image, root, 0, payload);
+            QCOMPARE(image.size(), size);
+            QCOMPARE(fieldChild(Rom::fromBytes(image), root, 0), key);
+            QCOMPARE(fieldResource(Rom::fromBytes(image), key), payload);
+        }
+        QCOMPARE(image.mid(child + 0x594280, 8), original.mid(child + 0x594280, 8));
+        // Data following an allocation belongs to somebody else, even if it
+        // looks like padding. A larger resource must leave it intact.
+        image += QByteArray(128, 'x');
+        replaceFieldChild(image, root, 0, QByteArray(5000, 'y'));
+        QCOMPARE(image.mid(size, 128), QByteArray(128, 'x'));
+        const auto larger = image.size();
+        replaceFieldChild(image, root, 0, QByteArray(5200, 'z'));
+        QCOMPARE(image.size(), larger);
+        const auto newKey = fieldChild(Rom::fromBytes(image), root, 0);
+        const auto header = newKey + 0x594280 - 64;
+        image[header + 24] ^= 1; // Damaged ownership hash must not permit reuse.
+        const auto damaged = image;
+        replaceFieldChild(image, root, 0, QByteArray(5201, 'q'));
+        QVERIFY(image.size() > damaged.size());
+        QCOMPARE(image.mid(header, larger - header), damaged.mid(header));
+        QVERIFY_EXCEPTION_THROWN(replaceFieldChild(image, root, 0, {}), Error);
+    }
+    void boundedMapUndo() {
+        try {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto before = MapEdits::load(Rom::open(path));
+        auto after = before;
+        after.paint(1, {{110, 140}}, 1, 2);
+        const auto delta = before.difference(1, after);
+        QVERIFY(!delta.empty());
+        QVERIFY(delta.bytes() < 4096);
+        before.applyDelta(delta, true);
+        QCOMPARE(before.json(), after.json());
+        const auto firstRevision = before.revision(1);
+        before.applyDelta(delta, false);
+        QVERIFY(!before.modified());
+        QVERIFY(before.revision(1) != firstRevision);
+        before.applyDelta(delta, true);
+        QCOMPARE(before.json(), after.json());
+        QVERIFY_EXCEPTION_THROWN(before.applyDelta(delta, true), Error);
+        auto crowded = before;
+        QSet<int> models;
+        for (int key = 2; key <= 15; ++key) {
+            const int model = u8(Rom::open(path).bytes(), 0x654a0 + key * 9 + 3);
+            if (model < 4 || model > 44) continue;
+            const auto &source = crowded.source(key);
+            if (source.modelId == crowded.source(1).modelId || models.contains(source.modelId)) continue;
+            models.insert(source.modelId);
+            crowded.setBoundary(key, {20, 20, 200, 200});
+        }
+        const auto unaffected = crowded.revision(2);
+        auto next = crowded;
+        next.paint(1, {{115, 140}}, 1, 2);
+        const auto many = crowded.difference(1, next);
+        auto single = before;
+        single.paint(1, {{115, 140}}, 1, 2);
+        QCOMPARE(many.bytes(), before.difference(1, single).bytes());
+        crowded.applyDelta(many, true);
+        QCOMPARE(crowded.json(), next.json());
+        QCOMPARE(crowded.revision(2), unaffected);
+        qInfo() << "Stroke retained bytes" << many.bytes() << "with" << models.size() + 1 << "edited maps";
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void repeatedMapExport() {
+        try {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto rom = Rom::open(path);
+        const auto initial = MapEdits::load(rom).source(1);
+        const auto originalTriangles = initial.field.triangles();
+        const int movedGroup = initial.field.siteGroups()[1];
+        qsizetype firstSize = 0, firstModelSize = 0;
+        for (int cycle = 0; cycle < 6; ++cycle) {
+            auto edit = MapEdits::load(rom);
+            const auto target = edit.source(1).map.points[0] + QPointF(.1, .1);
+            edit.moveSite(1, 0, target);
+            const auto expected = edit.model(1);
+            auto image = edit.rebuild(rom);
+            Rom::updateChecksum(image);
+            rom = Rom::fromBytes(image);
+            const auto reopened = MapEdits::load(rom);
+            QCOMPARE(reopened.source(1).geometry[0].data, expected);
+            const auto triangles = reopened.source(1).field.triangles();
+            QCOMPARE(triangles.size(), originalTriangles.size());
+            int movedVertices = 0;
+            for (int t = 0; t < triangles.size(); ++t) for (int vertex = 0; vertex < 3; ++vertex) {
+                const auto original = originalTriangles[t].points[vertex], point = triangles[t].points[vertex];
+                if (originalTriangles[t].group == movedGroup) {
+                    QVERIFY(std::abs(point.x() - original.x() - .1 * (cycle + 1)) < .001);
+                    QVERIFY(std::abs(point.z() - original.z() - .1 * (cycle + 1)) < .001);
+                    ++movedVertices;
+                } else QCOMPARE(point, original);
+            }
+            QVERIFY(movedVertices > 0);
+            QVERIFY(QLineF(reopened.points(1)[0], target).length() < .0001);
+            auto check = image; Rom::updateChecksum(check); QCOMPARE(check, image);
+            if (!cycle) { firstSize = image.size(); firstModelSize = expected.size(); }
+            QCOMPARE(expected.size(), firstModelSize);
+            qInfo() << "Cycle" << cycle + 1 << "ROM bytes" << image.size() << "model bytes" << expected.size();
+        }
+        // Modest repeated edits should fit the first owned allocations.
+        QCOMPARE(rom.bytes().size(), firstSize);
+        const auto output = qEnvironmentVariable("LORDLY_MAP_OUTPUT");
+        if (!output.isEmpty()) {
+            QFile file(output); QVERIFY(file.open(QIODevice::WriteOnly));
+            const auto bytes = Rom::open(path).serialize(rom.bytes());
+            QCOMPARE(file.write(bytes), bytes.size()); file.close();
+            QCOMPARE(Rom::open(output).bytes(), rom.bytes());
+        }
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void mountainSaddleShading() {
         QByteArray mask(65536, char(-1));
         for (int z = 40; z <= 80; ++z)

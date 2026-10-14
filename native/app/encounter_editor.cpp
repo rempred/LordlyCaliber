@@ -1,3 +1,4 @@
+#include "app/shared_impact.h"
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/encounter_editor.h"
@@ -505,11 +506,9 @@ void EncounterEditor::showTerrain() {
     QStringList terrains;
     for (int t = 0; t < Encounters::terrainCount; ++t)
         if (project_->encounters()->lookup(t) == slot + 1) terrains << Encounters::mapTerrainName(t);
-    scope_->setText("Applies to: " + terrains.join(", ") + ". " +
-        (project_->encounters()->scenarioKeys(selected()).size() > 1
-            ? "Creature choices are shared by every map version in this group. Squads apply only to the selected version."
-            : "Creature choices and squads apply to this map.") +
-        " Terrain chance is one of several encounter checks; it is not the overall encounter frequency.");
+    scope_->setObjectName("encounterEditImpact");
+    showEditImpact(scope_, "Creature choices affect these map versions", findProjectUses(*project_, "encounterPool", selected()),
+        "Terrain: " + terrains.join(", ") + ". Custom squads apply only to the selected map version. Terrain chances and terrain-group assignments affect all maps.");
 }
 void EncounterEditor::chooseCreatures() {
     const int slot = selectedSlot(), group = selected(), map = selectedKey();

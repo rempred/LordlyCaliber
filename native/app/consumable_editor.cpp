@@ -1,5 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/consumable_editor.h"
+#include "app/pending_edits.h"
+#include <QScopedValueRollback>
 #include <QCheckBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -53,13 +55,34 @@ ConsumableEditor::ConsumableEditor(Project *project, QUndoStack *undo,
     restore_ = new QPushButton("Restore loaded effect");
     apply_->setObjectName("effectApply");
     restore_->setObjectName("effectRestore");
+    discard_ = new QPushButton("Discard pending effect");
+    discard_->setObjectName("effectDiscard");
     layout->addWidget(apply_);
+    layout->addWidget(discard_);
     layout->addWidget(restore_);
     notice_ = new QLabel;
     notice_->setObjectName("effectNotice");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
     layout->addStretch();
+    pending_ = new PendingEdits(this);
+    pending_->entries = [this] {
+        QVector<PendingEdit> entries;
+        for (const auto &draft : drafts_)
+            entries.append({"Consumable effect · " + project_->record(Table::Consumables, draft.id).name.simplified(),
+                            {"consumables", draft.id}});
+        return entries;
+    };
+    pending_->apply = [this] { return applyDrafts(); };
+    pending_->discard = [this] { drafts_.clear(); refresh(); pending_->notify(); };
+    for (auto spin : {minimum_, maximum_}) {
+        spin->setKeyboardTracking(false);
+        connect(spin, &QSpinBox::valueChanged, this, [this] { rememberDraft(); });
+    }
+    connect(description_, &QCheckBox::toggled, this, [this] { rememberDraft(); });
+    connect(discard_, &QPushButton::clicked, this, [this] {
+        drafts_.remove(definition_["key"].toString()); refresh(); pending_->notify();
+    });
     connect(apply_, &QPushButton::clicked, this, [this] { apply(false); });
     connect(restore_, &QPushButton::clicked, this, [this] { apply(true); });
     watchContentChanges(undo_, this, [this] {
@@ -73,6 +96,7 @@ void ConsumableEditor::selectConsumable(int id) {
     refresh();
 }
 void ConsumableEditor::refresh() {
+    const QScopedValueRollback<bool> guard(refreshing_, true);
     definition_ = {};
     for (const auto &entry : ConsumableEffects::definitions()) {
         const auto def = entry.toObject();
@@ -108,6 +132,7 @@ void ConsumableEditor::refresh() {
     apply_->setEnabled(supported);
     restore_->setEnabled(supported);
     notice_->clear();
+    discard_->hide();
     if (!supported)
         return;
     const auto values =
@@ -122,12 +147,56 @@ void ConsumableEditor::refresh() {
     else if (selected_ >= 1 && selected_ <= 3)
         notice_->setText("Zero consumes the item without healing. The description update changes "
                          "only one recognizable HP amount; custom wording is preserved.");
+    const auto key = definition_["key"].toString();
+    if (drafts_.contains(key)) {
+        const auto &draft = drafts_[key];
+        minimum_->setValue(draft.values[range ? "minimum" : "magnitude"].toInt());
+        maximum_->setValue(draft.values["maximum"].toInt());
+        description_->setChecked(draft.description);
+        discard_->show();
+        notice_->setText(draft.source == values
+            ? "Pending effect changes — Apply or Discard. Switching items retains this draft."
+            : "The saved effect changed while this draft was pending. Discard this draft and edit the current values, or undo that other change first.");
+    }
+}
+void ConsumableEditor::rememberDraft() {
+    if (refreshing_ || definition_.isEmpty()) return;
+    const auto key = definition_["key"].toString();
+    const auto source = project_->consumableEffects()->models()[key].toObject();
+    const QJsonObject values = definition_["kind"] == "range"
+        ? QJsonObject{{"minimum", minimum_->value()}, {"maximum", maximum_->value()}}
+        : QJsonObject{{"magnitude", minimum_->value()}};
+    if (values == source) drafts_.remove(key);
+    else drafts_[key] = {selected_, drafts_.contains(key) ? drafts_[key].source : source,
+                         values, description_->isChecked()};
+    discard_->setVisible(drafts_.contains(key));
+    if (drafts_.contains(key)) notice_->setText("Pending effect changes — Apply or Discard. Switching items retains this draft.");
+    else notice_->clear();
+    pending_->notify();
+}
+bool ConsumableEditor::applyDrafts() {
+    try {
+        auto next = *project_;
+        for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it) {
+            if (it->source != project_->consumableEffects()->models()[it.key()].toObject())
+                throw Error("A pending effect conflicts with another edit. Review it before applying.");
+            next.editConsumableEffect(it.key(), it->values, it->description);
+        }
+        drafts_.clear();
+        if (next.manifest() != project_->manifest())
+            undo_->push(new EffectCommand(project_, *project_, std::move(next)));
+        refresh(); pending_->notify(); return true;
+    } catch (const std::exception &error) {
+        notice_->setText(QString::fromUtf8(error.what())); return false;
+    }
 }
 void ConsumableEditor::apply(bool restore) {
     if (definition_.isEmpty())
         return;
     try {
         const auto key = definition_["key"].toString();
+        if (!restore && drafts_.contains(key) && drafts_[key].source != project_->consumableEffects()->models()[key].toObject())
+            throw Error("The saved effect changed. Resolve the pending draft before applying.");
         QJsonObject values =
             definition_["kind"] == "range"
                 ? QJsonObject{{"minimum", minimum_->value()}, {"maximum", maximum_->value()}}
@@ -136,10 +205,12 @@ void ConsumableEditor::apply(bool restore) {
             values = ConsumableEffects::load(project_->rom()).models()[key].toObject();
         auto next = *project_;
         next.editConsumableEffect(key, values, description_->isChecked());
+        drafts_.remove(key);
         if (next.manifest() != project_->manifest())
             undo_->push(new EffectCommand(project_, *project_, std::move(next)));
         else
             refresh();
+        pending_->notify();
     } catch (const std::exception &error) {
         notice_->setText(QString::fromUtf8(error.what()));
     }
