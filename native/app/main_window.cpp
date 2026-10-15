@@ -32,6 +32,8 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -45,6 +47,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSortFilterProxyModel>
@@ -451,7 +454,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         }
         return id;
     };
-    QPushButton *addClass = nullptr, *newClass = nullptr, *addItem = nullptr, *newItem = nullptr;
+    QPushButton *addClass = nullptr, *newClass = nullptr, *renameClass = nullptr, *addItem = nullptr, *newItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         addClass = new QPushButton("Copy class…");
         addClass->setObjectName("addClass");
@@ -460,8 +463,68 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         auto actions = new QHBoxLayout;
         actions->addWidget(newClass);
         actions->addWidget(addClass);
+        renameClass = new QPushButton("Rename class…");
+        renameClass->setObjectName("renameClass");
+        renameClass->setToolTip("Change the selected class's in-game name.");
+        actions->addWidget(renameClass);
         actions->addStretch();
         layout->insertLayout(1, actions);
+        connect(renameClass, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
+            const int id = *selected;
+            if (id < 0 || id >= model->rowCount()) return;
+            QDialog dialog(this);
+            dialog.setObjectName("renameClassDialog");
+            dialog.setWindowTitle("Rename class");
+            dialog.resize(480, 270);
+            auto body = new QVBoxLayout(&dialog);
+            auto selectedClass = new QLabel(QString("Class %1 · %2")
+                .arg(QString::number(id, 16).toUpper().rightJustified(2, '0'),
+                     project_->record(Table::Classes, id).name.simplified()));
+            selectedClass->setTextFormat(Qt::PlainText);
+            selectedClass->setWordWrap(true);
+            body->addWidget(selectedClass);
+            auto label = new QLabel("In-game class name (up to two lines)");
+            auto name = new QPlainTextEdit(decodeText(project_->classNameBytes(id)));
+            name->setObjectName("renameClassName");
+            name->setTabChangesFocus(true);
+            label->setBuddy(name);
+            body->addWidget(label);
+            body->addWidget(name);
+            auto error = new QLabel;
+            error->setObjectName("renameClassError");
+            error->setWordWrap(true);
+            body->addWidget(error);
+            auto buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+            body->addWidget(buttons);
+            auto validate = [name, error, buttons] {
+                try {
+                    encodeClassName(name->toPlainText());
+                    error->clear();
+                    buttons->button(QDialogButtonBox::Save)->setEnabled(true);
+                } catch (const Error &e) {
+                    error->setText(QString::fromUtf8(e.what()));
+                    buttons->button(QDialogButtonBox::Save)->setEnabled(false);
+                }
+            };
+            connect(name, &QPlainTextEdit::textChanged, &dialog, validate);
+            connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+            connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+                const auto index = model->index(id, 1);
+                if (name->toPlainText() == index.data(Qt::EditRole).toString() ||
+                    model->setData(index, name->toPlainText(), Qt::EditRole)) dialog.accept();
+            });
+            validate();
+            name->selectAll();
+            name->setFocus();
+            if (dialog.exec() != QDialog::Accepted) return;
+            auto index = proxy->mapFromSource(model->index(id, 1));
+            if (!index.isValid()) {
+                search->clear();
+                index = proxy->mapFromSource(model->index(id, 1));
+            }
+            grid->setCurrentIndex(index);
+            grid->scrollTo(index);
+        });
         connect(newClass, &QPushButton::clicked, page, [this, model, proxy, grid, search] {
             bool accepted = false;
             const auto name =
@@ -637,7 +700,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem, newItem, description, actionDescriptions, actionId, setup] {
+                    addItem, newItem, renameClass, description, actionDescriptions, actionId, setup] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
@@ -647,6 +710,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             table == Table::Classes ? Project::classDescriptionIndex(*selected) : *selected);
         if (addItem)
             addItem->setEnabled(*selected >= 1 && model->rowCount() < ItemData::maximumCount);
+        if (renameClass)
+            renameClass->setEnabled(*selected >= 0 &&
+                                   (model->flags(model->index(*selected, 1)) & Qt::ItemIsEditable));
         if (newClass)
             newClass->setEnabled(model->rowCount() < 256);
         if (addClass)

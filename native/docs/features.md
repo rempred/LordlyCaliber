@@ -943,3 +943,8 @@ manual class changes: it preserves the primary identity while current class chan
 A zero link allows the class change to replace both IDs. The retail Asnabel example
 shows 76/76 -> 76/05 -> 76/76 (hex), with his existing named-class menu mapping
 restoring his special Berserker class. This is separate from class-data storage reuse.
+
+Classes has a Rename class button beside New class and Copy class. Its dialog
+shows the selected class ID and edits the actual in-game name, with up to two
+lines, inline validation, Save and Cancel. Renames use the existing Undo history
+and keep the selected class visible after sorting or filtering changes.
