@@ -937,3 +937,9 @@ shown as Same as this class. It sets the starting current class for new characte
 and the match used by supported class/appearance lookups. Ordinary level-up growth
 reads the stored current class directly. Changing the default does not rewrite
 existing character records. Project keys, IDs and ROM/save layouts are unchanged.
+
+The Default current class help also explains the nonzero identity anchor used by
+manual class changes: it preserves the primary identity while current class changes.
+A zero link allows the class change to replace both IDs. The retail Asnabel example
+shows 76/76 -> 76/05 -> 76/76 (hex), with his existing named-class menu mapping
+restoring his special Berserker class. This is separate from class-data storage reuse.

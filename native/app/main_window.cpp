@@ -574,11 +574,19 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         editor->setEnabled(false);
         if (f.key == "classCopyMatch")
             editor->setToolTip(
-                "Sets the starting current class for newly created characters. 0 means Same as this class.\n"
-                "When a character's current class matches this setting, supported class and appearance lookups "
-                "use this class's own record; otherwise they use the current class.\n"
-                "Ordinary level-up growth comes directly from the character's current class. "
-                "Existing saved characters keep their stored current class.");
+                "<p><b>Default class and identity anchor</b><br>"
+                "Sets the current class used when a character is created.</p>"
+                "<p>A nonzero value also keeps the character's original class identity during manual class "
+                "changes. Only their current class changes. With <b>0 - Same as this class</b>, new characters "
+                "start in this class, but a later manual class change replaces both class IDs.</p>"
+                "<p><b>Asnabel example (IDs in hex)</b><br>"
+                "Starts as Berserker: identity <b>76</b>, current class <b>76</b>.<br>"
+                "Changes to Knight: identity <b>76</b>, current class <b>05</b>.<br>"
+                "Returns to Berserker: his existing class-menu mapping restores current class <b>76</b>.</p>"
+                "<p>When current class matches this setting, supported class and appearance lookups use "
+                "this class's own record; otherwise they use the current class. Ordinary level-up growth "
+                "comes directly from the current class.</p>"
+                "<p>Changing this default does not rewrite existing characters' stored class IDs.</p>");
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
         if (f.choices == "ACTION_NAMES") {
