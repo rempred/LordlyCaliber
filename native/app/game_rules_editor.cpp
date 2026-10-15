@@ -31,11 +31,18 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
     const QMap<QString,QString> titles{{"deployment","Mission deployment"},{"reserve","Reserve experience — Expansion Pak required (8 MiB RAM)"},{"trainingXp","Training experience"},{"clock","Day and night length — all missions"},{"fatigue","Fatigue while moving"},
         {"recovery","Recovery while resting"},{"tactics","Battle tactic alignment"},
         {"goth","Mission completion — Goth"},{"soldierPopulation","Mission completion — Soldier rewards"},{"soldierMinimum","Soldier minimum"},
-        {"elements","Character elemental affinity"},{"weapons","Weapon bonus to spells"},{"resistance","Resistance effects"}};
+        {"elements","Character elemental affinity"},{"weapons","Weapon bonus to spells"},{"resistance","Resistance effects"},
+        {"statusPoison","Poison"},{"statusPowerUp","Power Up"},{"statusPowerDown","Power Down"},
+        {"statusSleep","Sleep"},{"statusParalysis","Paralysis"},{"statusPetrification","Petrification"}};
     for(const auto &group:groups) {
         auto box=new QGroupBox(titles.value(group,group));box->setObjectName("ruleGroup_"+group);auto form=new QFormLayout(box);
         auto help=new QLabel(group=="tactics"
             ? "Each credited kill combines the selected tactic's amount with the character and enemy alignment/level terms. The maximum below limits the total gain or loss. Training keeps its existing exclusion."
+            : group=="statusPoison" ? "Lowers STR, VIT, INT, MEN, AGI, DEX and Luck by a percentage of their baseline values. Repeated Poison does not stack, and it does not drain HP. There is no natural recovery timer; cure effects and the existing end-of-battle cleanup remain."
+            : group=="statusPowerUp" || group=="statusPowerDown" ? "Changes baseline STR, VIT, INT, MEN, AGI, DEX and Luck with each application. Repeated applications stack, and opposite Power effects offset each other. HP and permanent stats are unchanged. There is no natural recovery timer; the effect lasts for this battle."
+            : group=="statusSleep" ? "The character loses actions while asleep. Choose Luck-based (retail), or a fixed recovery chance from 0% to 100%. This applies at each lost action and when an eligible sleeping character survives a physical hit. Waking during an action still spends that action. A Sleep weapon can put them back to sleep after the hit."
+            : group=="statusParalysis" ? "The character loses actions while paralyzed. Choose Luck-based (retail), or a fixed recovery chance from 0% to 100% at each lost action. Recovery still spends that action. Physical hits do not cure Paralysis."
+            : group=="statusPetrification" ? "Turns the character to stone and prevents actions. This is an on/off condition, so it has no strength setting. There is no natural recovery timer: it requires a cure and can persist after battle. Its existing cure rules are unchanged."
             : group=="deployment" ? "Choose a limit from 1 to 20 newly deployed player squads. Every squad in a Legion uses a slot, so a Legion must fit as a whole. Already deployed squads stay on the map if you lower the limit."
             : group=="reserve" ? "Once per completed mission, unassigned reserve characters gain the XP below. Assigned squad members, fallen or petrified characters, Soldiers and level-99 characters are excluded. 0 keeps retail behavior."
             : group=="trainingXp" ? "Adds a configurable bonus to the usual defeated-enemy XP after winning training. Fallen, petrified, Soldier and level-99 members keep their normal exclusions. Losses give no XP."
@@ -56,6 +63,8 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
             auto spin=new QSpinBox;spin->setObjectName("rule_"+rule.key);spin->setRange(rule.minimum,rule.maximum);
             spin->setSingleStep(rule.step);spin->setKeyboardTracking(false);spin->setToolTip(rule.help);
             if(rule.percent) spin->setSuffix(" %");
+            if(rule.key=="sleepRecoveryChance" || rule.key=="paralysisRecoveryChance")
+                spin->setSpecialValueText("Luck-based (retail)");
             else if(rule.key=="restHealing") spin->setSuffix(" HP");
             else if(rule.group=="elements" || rule.group=="weapons" || rule.group=="alignmentCap") spin->setSuffix(" points");
             horizontal->addWidget(spin,1);fields_[rule.key]=spin;
@@ -80,7 +89,8 @@ GameRulesEditor::GameRulesEditor(Project *p,QUndoStack *undo,std::function<void(
                 undo->push(new RuleCommand(project_,rule.key,rounded,rule.label));
             });
         }
-        if(group=="tactics" || group=="elements" || group=="weapons" || group=="recovery" || group=="resistance") {
+        if(group=="tactics" || group=="elements" || group=="weapons" || group=="recovery" || group=="resistance" ||
+            (group.startsWith("status") && group!="statusPetrification")) {
             auto example=new QLabel;example->setObjectName("ruleExample_"+group);
             example->setWordWrap(true);example->setTextInteractionFlags(Qt::TextSelectableByMouse);
             form->addRow(example);
@@ -121,6 +131,20 @@ void GameRulesEditor::refresh() {
     auto example=[this](const QString &group,const QString &text) {
         if(auto label=findChild<QLabel *>("ruleExample_"+group)) label->setText(text);
     };
+    const int poison=rules.value("poisonStrength"),up=rules.value("powerUpStrength"),down=rules.value("powerDownStrength");
+    example("statusPoison",QString("At %1%, a baseline stat of 200 becomes about %2 while poisoned. "
+        "0% removes the attribute penalty but keeps the Poison condition. There is no effect on maximum or current HP.")
+        .arg(poison).arg(200-2*poison));
+    example("statusPowerUp",QString("At %1% per application, a baseline stat of 200 becomes about %2, then %3. "
+        "Attributes cap at 999 and Luck at 100. 0% gives no attribute gain.").arg(up).arg(200+2*up).arg(200+4*up));
+    example("statusPowerDown",QString("At %1% per application, a baseline stat of 200 becomes about %2, then %3. "
+        "Attributes cannot fall below 0. 0% gives no attribute loss.").arg(down).arg(std::max(0,200-2*down)).arg(std::max(0,200-4*down)));
+    for(const auto &group:{QString("statusSleep"),QString("statusParalysis")}) {
+        const auto chance=rules.value(group=="statusSleep"?"sleepRecoveryChance":"paralysisRecoveryChance");
+        example(group,chance<0 ? "Retail uses Luck + 1, capped at 100%: Luck 0 gives 1%, Luck 50 gives 51%, and Luck 99 gives 100%."
+            : QString("Current chance: %1% per recovery check, independent of Luck. 0% means no natural recovery; "
+                      "100% means recovery at the next eligible check. Cure effects still work.").arg(chance));
+    }
     const int cap=rules.value("alignmentCap");
     example("tactics",cap ? QString("Current limit: −%1 to +%1 points per kill. A calculated +8 becomes +%2; −8 becomes −%2. Alignment always stays within 0–100.").arg(cap).arg(std::min(8,cap))
                           : "Kill-based alignment changes are disabled. Items and other alignment effects keep their existing rules.");

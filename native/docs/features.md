@@ -1,11 +1,30 @@
 # Feature inventory and completion tracking
 
+Tools → Status effects provides global Poison, Power Up and Power Down strength
+(0–100%) plus Sleep and Paralysis recovery (Luck-based retail or fixed 0–100%).
+Live examples, Retail reset and Undo are available. Sleep's physical-hit waking
+uses the same setting. Petrification has an explanatory card; no new timers are
+introduced. Settings persist in projects and exported ROMs, including weapon
+status patches. Authored high-strength Power uses full-width clamping so repeated
+applications do not wrap derived attributes before the game's existing caps.
+
+Automatic recovery saves applied project edits every minute while unsaved work
+exists. Compressed snapshots include edited animations/artwork and reference the
+original ROM. Retention is two per session, ten overall, 128 MiB total including
+staging, with a 64 MiB single-snapshot limit and 14-day cleanup on later writes.
+File → Recover unsaved work lists interrupted sessions and checks ROM identity.
+Restored work is marked unsaved. Pending form/dialog drafts and Save Editor data
+are excluded and explained in Help. A persistent status reports backup failures.
+Help → Open crash logs exposes bounded local session logs and Windows exception,
+abort or uncaught-C++ reports. Forced termination/power loss need not produce a
+crash report. No automatic upload occurs.
+
 Items → Stats includes Status effect on hit: None, Poison, Sleep, Paralysis,
 Petrification, Power Up and Power Down. It applies to the first equipped weapon's
 physical hits when the target survives, with existing immunity handling and no
 extra chance roll. Poison cannot replace another ailment. Power Up strengthens
-the struck target and Power Down weakens it; repeated hits stack approximately
-10% of baseline attributes per hit, without changing HP or permanent stats.
+the struck target and Power Down weakens it; repeated hits stack the configured
+strength (retail: approximately 10% of baseline attributes per hit), without changing HP or permanent stats.
 Selection supports Undo, copy/new items, saved projects, named change summaries
 and ROM export/reopen. Other weapon flags and existing combinations are preserved
 until explicitly changed. The extension compiles within the original battle

@@ -1,0 +1,102 @@
+{
+  "statusPoison": {
+    "offset": 2268920,
+    "size": 8,
+    "address": 2149477416,
+    "sha256": "b9c11d2b41dd360b8100fd8173333b03b69a2d4d5ba2ca29c294d8f97e737613"
+  },
+  "statusPowerUp": {
+    "offset": 2217860,
+    "size": 36,
+    "address": 2149426356,
+    "sha256": "a75f8ed91de318c03c55a148b219faebdcba8c6119c201bed08a56173257dd0f"
+  },
+  "statusPowerDown": {
+    "offset": 2217896,
+    "size": 36,
+    "address": 2149426392,
+    "sha256": "9da6fc1fb00907e154b2f449bd67431b08ffbec99f04276c2834051fd325c0ae"
+  },
+  "statusAttributes": {
+    "offset": 2217040,
+    "size": 820,
+    "address": 2149425536,
+    "sha256": "ade6b60e643001fb2952c15d5b6ed7439e2d85f7f05ee0e77e2d0aa8e9ac890c",
+    "narrowingOffsets": [
+      272,
+      352,
+      432,
+      512,
+      592,
+      672,
+      752
+    ]
+  },
+  "statusSleep": {
+    "offset": 2289108,
+    "size": 380,
+    "address": 2149497604,
+    "sha256": "b7bd76b18817e52977f7de132d7ce3e2cabf51c64d93e317bad2082b701cbdac",
+    "layouts": [
+      {
+        "sha256": "b7bd76b18817e52977f7de132d7ce3e2cabf51c64d93e317bad2082b701cbdac",
+        "load": 128,
+        "compare": 228,
+        "loadWord": 2456944688,
+        "compareWord": 38834219,
+        "branchWord": 373293083
+      }
+    ]
+  },
+  "statusParalysis": {
+    "offset": 2288648,
+    "size": 460,
+    "address": 2149497144,
+    "sha256": "117e7d2c787701c831d3d524c281f7237a4bc2b21f8ea7726cc63042f6cce81c",
+    "layouts": [
+      {
+        "sha256": "117e7d2c787701c831d3d524c281f7237a4bc2b21f8ea7726cc63042f6cce81c",
+        "load": 128,
+        "compare": 228,
+        "loadWord": 2456944688,
+        "compareWord": 38834219,
+        "branchWord": 373293103
+      }
+    ]
+  },
+  "statusWake": {
+    "offset": 2271588,
+    "size": 1176,
+    "address": 2149480084,
+    "sha256": "9c25689bfd60fce419ca36f9505733ae00ff98df2acfd444f455586df05d9832",
+    "layouts": [
+      {
+        "name": "retail",
+        "sha256": "9c25689bfd60fce419ca36f9505733ae00ff98df2acfd444f455586df05d9832",
+        "load": 204,
+        "compare": 300,
+        "loadWord": 2456944688,
+        "compareWord": 38834219,
+        "branchWord": 373293081
+      },
+      {
+        "name": "Poison v1",
+        "sha256": "c1c9613dbd2844247a2fe91cd258b0f37e7ecdcb20a0cbb898ea79f83b6f0a9f",
+        "load": 192,
+        "compare": 288,
+        "loadWord": 2456944688,
+        "compareWord": 38834219,
+        "branchWord": 373293082
+      },
+      {
+        "name": "All six",
+        "sha256": "74ecc0d59dc66bf8894cae0b7a775def40a2a1d1dd45c14db5223b9b04f55dd3",
+        "load": 192,
+        "compare": 288,
+        "loadWord": 2456944688,
+        "compareWord": 38834219,
+        "branchWord": 373293082
+      }
+    ]
+  }
+}

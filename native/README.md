@@ -10,6 +10,24 @@ For local iteration, run `native/live/LordlyCaliber.exe`. The maintainer command
 `native/tools/package.ps1 -Live` updates that stable folder without creating a ZIP.
 Close the live editor after saving your work before updating it.
 
+Applied project edits are backed up automatically about once a minute while
+unsaved changes exist. **File → Recover unsaved work** restores a snapshot using
+the original source ROM. The editor keeps two snapshots per session, at most ten
+overall, within 128 MB including a write in progress. Snapshots never contain a
+ROM copy. A snapshot larger than 64 MB is skipped with a visible warning; the
+previous snapshot remains. Older snapshots expire after 14 days when another
+backup is written. Saving or deliberately discarding a project clears its recovery.
+Unapplied forms, unconfirmed dialog edits and Save Editor game-save changes must
+be applied or saved separately. **Help → Open crash logs** opens the local reports
+folder. Share the matching `.crash.txt` and `.session.log` when reporting a crash.
+These files rotate; nothing is uploaded automatically.
+
+**Tools → Status effects** controls Poison's attribute penalty, Power Up/Down's
+per-application strength, and Sleep/Paralysis recovery. Recovery can use retail
+Luck-based checks or a fixed 0–100% chance. Sleep also uses that setting for
+eligible physical-hit waking. Petrification is explained without inventing a
+timer; effects without natural recovery retain their existing cure behavior.
+
 Open, Save, Build and Review are at the right of the File/Edit menu bar. The
 workspace tabs and their section tabs remain below it. Advanced animations uses
 the selector at the right of the Art tab row to choose its editing tool.

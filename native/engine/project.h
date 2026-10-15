@@ -283,4 +283,5 @@ class Project {
 QByteArray encodeItemName(const QString &name);
 QByteArray encodeClassName(const QString &name);
 void atomicWrite(const QString &path, const QByteArray &data);
+QJsonObject decodeProject(QByteArray bytes);
 } // namespace lordly

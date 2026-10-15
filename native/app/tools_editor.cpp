@@ -116,13 +116,20 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     scroll->setWidget(content);
     auto pages=new QTabWidget; pages->setObjectName("toolsPages");
     outer->addWidget(pages); pages->addTab(scroll,"Battle and squads");
-    pages->addTab(new TrainingEditor(project_,undo_,changed_),"Training");
     auto layout = new QVBoxLayout(content);
     layout->addWidget(new GameRulesEditor(project_, undo_, changed_, {"deployment", "tactics", "fatigue", "recovery", "elements", "weapons", "resistance"}));
     auto page=[pages](const QString &name) {
         auto scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
         auto body=new QWidget;scroll->setWidget(body);pages->addTab(scroll,name);return new QVBoxLayout(body);
     };
+    auto statuses=page("Status effects");
+    auto statusScope=new QLabel("These settings apply throughout the game to status effects from spells, abilities and weapon hits. "
+                               "Retail restores the original value for each control.");
+    statusScope->setWordWrap(true);statuses->addWidget(statusScope);
+    statuses->addWidget(new GameRulesEditor(project_,undo_,changed_,
+        {"statusPoison","statusPowerUp","statusPowerDown","statusSleep","statusParalysis","statusPetrification"}));
+    statuses->addStretch();
+    pages->addTab(new TrainingEditor(project_,undo_,changed_),"Training");
     auto rewards=page("Mission rewards");
     rewards->addWidget(new GameRulesEditor(project_,undo_,changed_,{"goth","soldierPopulation","soldierMinimum","reserve"}));
     rewards->addStretch();

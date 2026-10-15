@@ -15,6 +15,59 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void statusEffects() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+            const auto rom=Rom::open(path);
+            QTemporaryDir work, output(QFileInfo(path).absolutePath()+"/Test ROMs/native-status-XXXXXX");
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            for(int amount:{0,1,10,25,50,99,100}) {
+                auto project=Project::fromRom(rom);project.loadTools();const auto defaults=project.tools()->json();
+                auto settings=defaults, rules=settings["gameRules"].toObject();
+                for(const auto key:{"poisonStrength","powerUpStrength","powerDownStrength"}) rules[key]=amount;
+                for(const auto key:{"sleepRecoveryChance","paralysisRecoveryChance"}) rules[key]=amount==10?-1:amount;
+                settings["gameRules"]=rules;project.setTools(settings);
+                project.saveFolder(work.filePath("project"));auto restored=Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(work.filePath("project")));restored.loadTools();
+                QCOMPARE(restored.tools()->json(),settings);
+                const auto built=rebuild(project,tools,work.path());
+                const auto folder=output.filePath(QString::number(amount));QVERIFY(QDir().mkpath(folder));
+                const auto candidate=folder+"/"+QFileInfo(path).fileName();exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();
+                QCOMPARE(reopened.tools()->json(),settings);QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+                auto unchanged=built.image;
+                for(const auto &owner:project.tools()->gameRules().builds()) unchanged.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
+                Rom::updateChecksum(unchanged);QCOMPARE(unchanged,rom.bytes());
+                QProcess execution;execution.start("node",{QFINDTESTDATA("status-rules-mips.cjs"),candidate,QString::number(amount),QString::number(amount==10?-1:amount)});
+                QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
+                qInfo().noquote()<<execution.readAllStandardOutput();
+                reopened.setTools(defaults);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+                if(amount==25) {
+                    // Recompiling weapon-on-hit code must preserve the selected waking chance.
+                    auto weapon=project.record(Table::Items,1).bytes;weapon[27]=char(u8(weapon,27)|0x20);
+                    project.replaceBytes(Table::Items,1,weapon);
+                    const auto combined=rebuild(project,tools,work.path());exportRom(project,combined,candidate);
+                    auto combinedProject=Project::fromRom(Rom::open(candidate));combinedProject.loadTools();
+                    QCOMPARE(combinedProject.tools()->json(),settings);
+                    QCOMPARE(rebuild(combinedProject,tools,work.path()).image,combined.image);
+                    execution.start("node",{QFINDTESTDATA("status-rules-mips.cjs"),candidate,"25","25"});
+                    QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
+                }
+            }
+            auto project=Project::fromRom(rom);project.loadTools();const auto settings=project.tools()->json();
+            for(const auto key:{"poisonStrength","powerUpStrength","powerDownStrength","sleepRecoveryChance","paralysisRecoveryChance"}) {
+                for(int bad:{-2,101}) {auto invalid=settings,rules=settings["gameRules"].toObject();rules[key]=bad;invalid["gameRules"]=rules;
+                    QVERIFY_THROWS_EXCEPTION(Error,project.setTools(invalid));QCOMPARE(project.tools()->json(),settings);}
+            }
+            for(const auto part:{qMakePair(QString("statusPowerUp"),0x21d790),qMakePair(QString("statusSleep"),0x22a968),qMakePair(QString("statusParalysis"),0x22ec10)}) {
+                auto foreign=rom.bytes();foreign[part.second]^=1;auto unknown=Project::fromRom(Rom::fromBytes(foreign));unknown.loadTools();
+                QVERIFY(!unknown.tools()->gameRules().unavailable(part.first).isEmpty());
+                QCOMPARE(rebuild(unknown,tools,work.path()).image,foreign);
+            }
+            qInfo().noquote()<<"Status candidates:"<<output.path();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void alignmentCapAndRestHealing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

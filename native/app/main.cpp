@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/theme.h"
+#include "app/diagnostics.h"
 #include <QApplication>
 #include <QCommandLineParser>
 
@@ -8,6 +9,7 @@ int main(int argc, char **argv) {
     app.setApplicationName("LordlyCaliber");
     app.setApplicationVersion("0.5.1");
     app.setOrganizationName("LordlyCaliber");
+    lordly::Diagnostics diagnostics;
     lordly::applyEditorTheme(app);
     QCommandLineParser parser;
     parser.addHelpOption();

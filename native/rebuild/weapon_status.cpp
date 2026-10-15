@@ -1,5 +1,6 @@
 #include "rebuild/weapon_status.h"
 #include "engine/weapon_status.h"
+#include "engine/status_rules.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -26,7 +27,8 @@ void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
     if (!offset || !address || size <= 0 || quint64(offset) + size > quint64(result.image.size()))
         throw Error("Invalid weapon status allocation");
     const auto original = result.image.mid(offset, size);
-    const auto hash = QString::fromLatin1(sha256(original));
+    int wakeChance=-1;
+    const auto hash = QString::fromLatin1(sha256(canonicalWeaponRecovery(original,&wakeChance)));
     if (hash != manifest["retailSha256"].toString() && hash != manifest["compiledSha256"].toString() &&
         !manifest["priorSha256"].toArray().contains(hash))
         throw Error("Cannot add this status: the ROM has an unrecognized physical-hit routine. Its code has been preserved.");
@@ -44,7 +46,7 @@ void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
         code.first(entry - address) != QByteArray(entry - address, 0) ||
         sha256(code) != manifest["compiledSha256"].toString().toLatin1())
         throw Error("Compiled weapon status routine differs from its tested allocation");
-    result.image.replace(offset, size, code);
+    result.image.replace(offset, size, withWeaponRecovery(code,wakeChance));
     result.report << "Compiled Poison, Power Up and Power Down weapon hits; retained existing ailments and immunity rules";
 }
 } // namespace lordly

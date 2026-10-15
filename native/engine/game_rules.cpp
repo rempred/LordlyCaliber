@@ -1,4 +1,5 @@
 #include "engine/game_rules.h"
+#include "engine/status_rules.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <cmath>
@@ -78,7 +79,7 @@ QByteArray words(const QByteArray &bytes) {
 }
 }
 QVector<GameRule> GameRules::definitions() {
-    return {{"deploymentLimit", "deployment", "Maximum deployed squads", "Player squads allowed on a mission at once, up to 20. Retail allows 10; all 30 organized squad slots remain saved. Each squad in a Legion counts separately. Existing story deployments are retained.",1,20,1,10},
+    QVector<GameRule> result = {{"deploymentLimit", "deployment", "Maximum deployed squads", "Player squads allowed on a mission at once, up to 20. Retail allows 10; all 30 organized squad slots remain saved. Each squad in a Legion counts separately. Existing story deployments are retained.",1,20,1,10},
             {"reserveXp", "reserve", "XP per reserve member", "Award this much XP once at normal mission completion. 0 disables it. Reaching 100 uses normal class/equipment growth, resets XP to 0, and gains at most one level. Requires an Expansion Pak (8 MiB RAM).",0,100,1,0},
             {"trainingBonus", "trainingXp", "Training XP bonus", "Extra XP for each eligible member after a training win. Manual of Warfare doubles this bonus; the total remains capped at 100. Retail gives 0 bonus.",0,100,1,0},
             {"gothLowDivisor", "goth", "Below 50 Chaos Frame: divisor", "Population bonus = (50 − Chaos Frame) × captured population ÷ this value, rounded down. Base mission Goth is then added.",1,1000,1,25},
@@ -98,6 +99,8 @@ QVector<GameRule> GameRules::definitions() {
             {"tacticLeader", "tactics", "Attack Leader", "Alignment contribution per kill when targeting the leader.",-5,5,1,1},
             {"tacticWeak", "tactics", "Attack Weakest", "Alignment contribution per kill when targeting greatest estimated damage.",-5,5,1,0},
             {"alignmentCap", "alignmentCap", "Maximum alignment change per kill", "Maximum gain or loss after combining the tactic, alignment and level terms. Retail is 5. Zero disables kill-based alignment changes. Alignment itself stays within 0–100; other alignment effects keep their rules.",0,100,1,5}};
+    result += statusRuleDefinitions();
+    return result;
 }
 GameRules GameRules::load(const Rom &rom) {
     GameRules result;
@@ -220,6 +223,7 @@ GameRules GameRules::load(const Rom &rom) {
     // remove that loader while editing an otherwise recognized Goth formula.
     if(!result.unavailable("reserve").isEmpty() && rom.bytes().mid(0x139afc,4)!=QByteArray::fromHex("0c0771c8"))
         result.unavailable_["goth"]=result.unavailable("reserve");
+    loadStatusRules(rom,result.values_,result.unavailable_,result.owners_);
     result.originals_=result.values_;
     return result;
 }
@@ -309,6 +313,7 @@ QVector<RuleBuild> GameRules::builds() const {
         const auto expected=QByteArray::fromHex(value("reserveXp")?"0c0794b4":"0c0771c8");
         result<<RuleBuild{"reserveHook",0x139afc,4,0x801e53bc,words(expected),expected,{},false};
     }
+    result += buildStatusRules(*this,owners_);
     return result;
 }
 }

@@ -1,5 +1,52 @@
 # Native Lordly Caliber
 
+## Status controls and recovery (2026-10-15)
+
+`engine/status_rules` extends GameRules with five persisted values. Its manifest
+authenticates complete status owners and recognizes original or authored values.
+Poison patches its double constant; Power patches wrapper float arguments.
+When strengths differ from retail, seven signed16-narrowing pairs in the original
+attribute calculation become full-width transfers before existing stat clamps.
+Sleep/Paralysis recovery patches the Luck load, unsigned comparison and branch,
+preserving RNG calls, timing and consumed actions. Fixed chances use roll < chance;
+retail uses roll <= Luck. The physical-hit owner recognizes retail and both prior
+weapon-runtime layouts, and weapon recompilation preserves its wake setting.
+Offsets and live addresses are recorded separately in `game/tools/status-effects.json`.
+
+`tool_settings_tests statusEffects` checks project persistence, bounds, checksum,
+export/reopen, stable re-export, retail restoration, unknown-owner preservation
+and composition with weapon status code. `status-rules-mips.cjs` executes exported
+instructions: 14,784 cases across seven strength/recovery configurations and a
+combined weapon build, including all six attributes, Luck, repeated Power,
+Poison coexistence, unchanged HP/permanent records, all 100 recovery rolls and
+physical-hit waking. Event/pose/RNG services are deterministic traps, not a full
+console. `ui_tests statusEffectRules` covers controls, examples and Undo.
+
+`RecoveryStore` writes compressed project manifests through QSaveFile, with a
+bounded metadata header and payload checksum. No source ROM is embedded. A global
+QLockFile serializes storage transactions, while per-window session locks exclude
+running sessions from the recovery browser. Pruning budgets the replacement's
+staging bytes before writing and protects the current session's newest good copy.
+Interrupted staging files are cleaned under the same lock. The GUI snapshots a
+Project value and compresses/writes on a worker; a cancellation token removes
+late results after save/discard. Manual save and intentional discard clear the
+current and recovered session snapshots. Recovery applies the ordinary manifest
+validator against the original ROM and resets the Undo clean marker.
+
+`Diagnostics` bounds each session log to 1 MiB and crash report to 64 KiB, retaining
+at most fourteen older files before opening a new pair (active Windows files are
+left alone). A preopened Windows handle records exception code/address, module
+offset, x64 context, version and executable hash without Qt file operations in
+the exception filter. Abort/terminate and exception unwinding retain reports too.
+This is best-effort crash reporting, not a debugger or minidump service.
+
+`recovery_tests` checks rotation, byte limits, oversized-write preservation,
+orphan staging cleanup, corrupt payload rejection, edited animation/project
+roundtrip, wrong-ROM rejection, three actual crashing child processes and bounded
+logs. `ui_tests automaticRecoveryLifecycle` checks timer-driven snapshots, restore,
+unsaved marking and discard while a writer is active. These tests use private
+temporary storage and offscreen Qt, without emulator or Windows UI automation.
+
 ## Weapon status on hit (2026-10-15)
 
 WeaponStatus interprets equipment record byte 27 (logical B23), mask `0xEE`:

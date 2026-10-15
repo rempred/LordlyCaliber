@@ -3,9 +3,13 @@
 #include <QJsonObject>
 #include <QMainWindow>
 #include <memory>
+#include <atomic>
 class QTabWidget;
 class QLabel;
 class QUndoGroup;
+class QLockFile;
+class QTimer;
+class QToolBar;
 namespace lordly {
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -15,6 +19,7 @@ class MainWindow : public QMainWindow {
     void loadRom(const QString &path);
     bool openProjectFile(const QString &path);
     void navigateTo(const EditLocation &);
+    bool openRecoveryFile(const QString &path, const QString &sourceRom);
 
   protected:
     void closeEvent(QCloseEvent *event) override;
@@ -31,6 +36,11 @@ class MainWindow : public QMainWindow {
     void updateStatus();
     bool invalidEdits() const;
     void report(const QString &text);
+    void initializeRecovery();
+    void autosaveRecovery();
+    void showRecovery();
+    void clearRecovery();
+    void beginRecoverySession();
     QJsonObject catalog_;
     std::unique_ptr<Project> project_;
     QUndoStack *undo_;
@@ -39,5 +49,12 @@ class MainWindow : public QMainWindow {
     QLabel *summary_;
     bool loading_ = false;
     quint64 projectRevision_ = 0;
+    QString recoverySession_, recoveredSession_, projectLabel_;
+    quint64 recoveryRevision_ = 0;
+    bool recoveryBusy_ = false;
+    QLabel *recoveryStatus_ = nullptr;
+    QToolBar *recoveryNotice_ = nullptr;
+    std::unique_ptr<QLockFile> recoverySessionLock_;
+    std::shared_ptr<std::atomic_bool> recoveryCancelled_ = std::make_shared<std::atomic_bool>(false);
 };
 } // namespace lordly

@@ -46,6 +46,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLockFile>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
@@ -105,6 +106,7 @@ MainWindow::MainWindow(QWidget *parent)
     undoGroup_->addStack(undo_);
     undoGroup_->setActiveStack(undo_);
     connect(workspaces_, &QTabWidget::currentChanged, this, [this] {
+        if(workspaces_->currentIndex()>=0)qInfo().noquote()<<"Workspace:"<<workspaces_->tabText(workspaces_->currentIndex());
         const auto save = qobject_cast<SaveEditor *>(workspaces_->currentWidget());
         undoGroup_->setActiveStack(
             save ? (save->hasPendingUnitEdits() ? nullptr : save->undoStack()) : undo_);
@@ -170,6 +172,7 @@ MainWindow::MainWindow(QWidget *parent)
     workspaces_->addTab(welcome, "Workspace");
     connect(undo_, &QUndoStack::cleanChanged, this, [this] { updateStatus(); });
     updateStatus();
+    initializeRecovery();
 }
 bool MainWindow::confirmDiscard() {
     if (auto focus = focusWidget()) focus->clearFocus();
@@ -198,10 +201,13 @@ MainWindow::~MainWindow() {
 void MainWindow::closeEvent(QCloseEvent *e) {
     if (loading_ || !confirmDiscard())
         e->ignore();
-    else
+    else {
+        clearRecovery();
         e->accept();
+    }
 }
 void MainWindow::report(const QString &text) {
+    qWarning().noquote()<<text;
     QMessageBox::warning(this, "Lordly Caliber", text);
 }
 void MainWindow::loadRom(const QString &path) {
@@ -248,6 +254,8 @@ void MainWindow::loadRom(const QString &path) {
     }));
 }
 void MainWindow::installProject(Project project) {
+    clearRecovery();
+    beginRecoverySession();
     if (auto back = findChild<QAction *>("returnToClassSetup")) back->setVisible(false);
     if (auto back = findChild<QPushButton *>("returnToClassSetupButton")) back->hide();
     undo_->clear();
@@ -774,9 +782,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             if (weapon && (status & (WeaponStatus::powerUp | WeaponStatus::powerDown)))
                 weaponStatusHelp->setText(weaponStatusHelp->text() +
                     "\n\nPower Up strengthens the target you hit; Power Down weakens that target. "
-                    "Each hit adds or subtracts about 10% of their baseline STR, VIT, INT, MEN, AGI, DEX and Luck. "
-                    "Repeated hits stack: a baseline stat of 200 becomes 220, then 240 with Power Up, "
-                    "or 180, then 160 with Power Down. HP is unchanged; the effect lasts for this battle.");
+                    "Repeated hits stack changes to their baseline STR, VIT, INT, MEN, AGI, DEX and Luck. "
+                    "Set the strength and see examples in Tools → Status effects. "
+                    "HP is unchanged; the effect lasts for this battle.");
         }
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];
@@ -884,6 +892,7 @@ bool MainWindow::openProjectFile(const QString &path) {
         next.importLegacy(object);
     auto warnings = next.importWarnings();
     installProject(std::move(next));
+    projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
     if (!warnings.isEmpty())
         report(warnings.join('\n'));
     return true;
@@ -913,6 +922,8 @@ void MainWindow::saveProject(bool archive) {
         else
             project_->saveFolder(path);
         undo_->setClean();
+        projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
+        clearRecovery();
         statusBar()->showMessage("Project saved", 5000);
     } catch (const std::exception &e) {
         report(QString::fromUtf8(e.what()));

@@ -1969,7 +1969,11 @@ QJsonObject Project::readProject(const QString &path) {
     QFile file(QFileInfo(path).isDir() ? QDir(path).filePath("project.json") : path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > limit)
         throw Error("Cannot read project or project is too large");
-    auto bytes = file.readAll();
+    return decodeProject(file.readAll());
+}
+QJsonObject decodeProject(QByteArray bytes) {
+    constexpr qsizetype limit = 512 * 1024 * 1024;
+    if(bytes.size()>limit)throw Error("Project exceeds the document limit");
     if (bytes.startsWith("LC05PACK\n")) {
         bytes = bytes.mid(9);
         if (bytes.size() < 5 || u32(bytes, 0) == 0 || u32(bytes, 0) > limit)

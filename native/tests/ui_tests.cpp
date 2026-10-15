@@ -13,6 +13,7 @@
 #include "app/encounter_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
+#include "engine/recovery_store.h"
 #include "app/pending_edits.h"
 #include "app/class_setup.h"
 #include "engine/project_references.h"
@@ -10663,13 +10664,68 @@ class UiTests : public QObject {
     void trainingEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ToolsEditor tools(&project,&undo,[]{});
-        tools.resize(1100,780);tools.show();tools.findChild<QTabWidget *>("toolsPages")->setCurrentIndex(1);
+        tools.resize(1100,780);tools.show();auto pages=tools.findChild<QTabWidget *>("toolsPages");
+        for(int i=0;i<pages->count();++i)if(pages->tabText(i)=="Training")pages->setCurrentIndex(i);
         auto location=tools.findChild<QComboBox *>("trainingLocation");location->setCurrentIndex(location->findData(7));
         auto price=tools.findChild<QSpinBox *>("trainingPrice");QCOMPARE(price->value(),15);price->setValue(0);
         QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("0 Goth"));undo.undo();QCOMPARE(price->value(),15);undo.redo();QCOMPARE(price->value(),0);
         auto preview=tools.findChild<QSpinBox *>("trainingPreviewLevel");preview->setValue(41);price->setValue(20);
         QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("1260 Goth"));
         QTest::qWait(30);QVERIFY(tools.grab().save("native/build/training-editor.png"));
+    }
+    void automaticRecoveryLifecycle() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QStandardPaths::setTestModeEnabled(true);
+        struct Restore {~Restore(){QStandardPaths::setTestModeEnabled(false);}} restore;
+        RecoveryStore store;const auto previous=store.entries();QString saved,session;
+        {
+            MainWindow window;window.loadRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QSpinBox *>("rule_powerUpStrength"),60000);
+            window.findChild<QSpinBox *>("rule_powerUpStrength")->setValue(25);
+            auto timer=window.findChild<QTimer *>("recoveryTimer");QVERIFY(timer);
+            QVERIFY(QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection));
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QLabel *>("recoveryStatus")->text().startsWith("Recovery saved"),30000);
+            for(const auto &entry:store.entries()) {
+                bool old=false;for(const auto &before:previous)if(before.path==entry.path)old=true;
+                if(!old){saved=entry.path;session=entry.session;break;}
+            }
+            QVERIFY(!saved.isEmpty());
+        } // Simulates an interrupted window without running its deliberate-close cleanup.
+        MainWindow recovered;QVERIFY(recovered.openRecoveryFile(saved,path));
+        QCOMPARE(recovered.findChild<QSpinBox *>("rule_powerUpStrength")->value(),25);QVERIFY(recovered.isWindowModified());
+        QVERIFY(recovered.findChild<QAction *>("openCrashLogs"));QVERIFY(recovered.findChild<QAction *>("recoverProject"));
+        recovered.show();QTest::qWait(50);QVERIFY(recovered.grab().save("native/build/recovered-project.png"));
+        recovered.findChild<QSpinBox *>("rule_powerUpStrength")->setValue(50);
+        QMetaObject::invokeMethod(recovered.findChild<QTimer *>("recoveryTimer"),"timeout",Qt::DirectConnection);
+        QTimer::singleShot(0,[]{if(auto dialog=qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))dialog->button(QMessageBox::Discard)->click();});
+        QVERIFY(recovered.close());
+        QTRY_VERIFY_WITH_TIMEOUT(!QFile::exists(saved),30000);
+        QTest::qWait(500);
+        QTRY_COMPARE_WITH_TIMEOUT(store.entries().size(),previous.size(),30000);
+        for(const auto &entry:store.entries())QVERIFY(entry.session!=session);
+    }
+    void statusEffectRules() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        ToolsEditor tools(&project,&undo,[]{});tools.resize(1440,1000);tools.show();
+        auto pages=tools.findChild<QTabWidget *>("toolsPages");
+        for(int i=0;i<pages->count();++i)if(pages->tabText(i)=="Status effects")pages->setCurrentIndex(i);
+        QCOMPARE(pages->tabText(pages->currentIndex()),QString("Status effects"));QVERIFY(undo.isClean());
+        auto spin=[&](const char *key){return tools.findChild<QSpinBox *>(QString("rule_")+key);};
+        QCOMPARE(spin("sleepRecoveryChance")->text(),QString("Luck-based (retail)"));
+        spin("sleepRecoveryChance")->setValue(0);QCOMPARE(project.tools()->gameRules().value("sleepRecoveryChance"),0);
+        undo.undo();QCOMPARE(spin("sleepRecoveryChance")->value(),-1);undo.redo();
+        tools.findChild<QPushButton *>("ruleReset_sleepRecoveryChance")->click();QCOMPARE(spin("sleepRecoveryChance")->value(),-1);
+        spin("poisonStrength")->setValue(25);
+        QVERIFY(tools.findChild<QLabel *>("ruleExample_statusPoison")->text().contains("150"));
+        spin("powerUpStrength")->setValue(50);
+        QVERIFY(tools.findChild<QLabel *>("ruleExample_statusPowerUp")->text().contains("400"));
+        const auto stone=tools.findChild<QWidget *>("ruleGroup_statusPetrification");QVERIFY(stone);
+        QVERIFY(stone->findChildren<QSpinBox *>().isEmpty());
+        for(const auto name:{"statusPoison","statusPowerUp","statusPowerDown","statusSleep","statusParalysis","statusPetrification"}) {
+            auto box=tools.findChild<QWidget *>(QString("ruleGroup_")+name);QVERIFY(box);
+            QTest::qWait(20);QVERIFY(box->grab().save(QString("native/build/status-%1.png").arg(name)));
+        }
     }
     void ruleStrengthExplanations() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
