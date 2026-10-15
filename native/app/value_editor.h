@@ -12,7 +12,7 @@ class ValueEditor : public QWidget {
   public:
     ValueEditor(const Field &field, const QJsonObject &catalog, std::function<void(int)> edited,
                 QWidget *parent = nullptr)
-        : QWidget(parent), choiceKey_(field.choices) {
+        : QWidget(parent), choiceKey_(field.choices), sameClassDefault_(field.key == "classCopyMatch") {
         auto layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
         spin_ = new QSpinBox;
@@ -20,6 +20,7 @@ class ValueEditor : public QWidget {
         spin_->setKeyboardTracking(false);
         layout->addWidget(spin_);
         auto labels = catalog[field.choices].toObject();
+        if (sameClassDefault_) labels["0"] = "Same as this class";
         labels_ = labels;
         if (!labels.isEmpty()) {
             choice_ = new QComboBox;
@@ -51,7 +52,8 @@ class ValueEditor : public QWidget {
         syncChoice(value);
     }
     void setChoices(const QJsonObject &catalog) {
-        const auto labels = catalog[choiceKey_].toObject();
+        auto labels = catalog[choiceKey_].toObject();
+        if (sameClassDefault_) labels["0"] = "Same as this class";
         if (!choice_ || labels == labels_)
             return;
         labels_ = labels;
@@ -84,6 +86,7 @@ class ValueEditor : public QWidget {
     QSpinBox *spin_;
     QComboBox *choice_ = nullptr;
     QString choiceKey_;
+    bool sameClassDefault_ = false;
     QJsonObject labels_;
 };
 } // namespace lordly

@@ -85,7 +85,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     auto castRow = new QGridLayout(storyCastUi_);
     castRow->setContentsMargins(0, 0, 0, 0);
     castRow->addWidget(new QLabel("Primary class"), 0, 0);
-    castRow->addWidget(new QLabel("Secondary class"), 1, 0);
+    castRow->addWidget(new QLabel("Current class"), 1, 0);
     const auto classes = ClassData::load(rom_);
     classCount_ = int(classes.entries().size());
     const auto sample = SceneStoryCast::sample();
@@ -107,10 +107,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
         choice->setObjectName(QString("sceneCast%1").arg(i));
         secondary->setObjectName(QString("sceneCastSecondary%1").arg(i));
         choice->setAccessibleName(QString("Actor %1 primary class").arg(i));
-        secondary->setAccessibleName(QString("Actor %1 secondary class").arg(i));
+        secondary->setAccessibleName(QString("Actor %1 current class").arg(i));
         choice->setToolTip("Primary class controls this story Actor's dialogue branch.");
         secondary->setToolTip(
-            "Retain the independent secondary class supplied by the launch event.");
+            "Current class supplied by the launch event. Changing it keeps the primary class unchanged.");
         for (int id : SceneStoryCast::choices())
             if (id < classCount_)
                 choice->addItem(decodeText(classes.entries()[id].name), id);

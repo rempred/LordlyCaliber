@@ -138,7 +138,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Actor slot", 0, 1, 0, 27);
             action.fields.last().mirrors = {{1, 0}};
             field("Primary class", 1, 1, 1, 255, 1);
-            field("Secondary class", 5, 1, 1, 255, 1);
+            field("Current class", 5, 1, 1, 255, 1);
             field("Pose ID", 2, 1, 0, 32767, 1);
             field("X", 4, 1000);
             field("Y", 5, 1000);
@@ -254,7 +254,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             action.name = "Set Actor class and pose";
             field("Actor slot (-1 skips)", 0, 1, -1, 27);
             field("Primary class (-1 keeps current)", 1, 1, -1, 255);
-            field("Secondary class (-1 keeps current)", 5, 1, -1, 255);
+            field("Current class (-1 keeps existing)", 5, 1, -1, 255);
             field("Pose ID (-1 keeps current)", 2, 1, -1, 32767);
             // Keep the independent body flags exactly as authored. Their two
             // operands are not interchangeable with ordinary Actor facing.

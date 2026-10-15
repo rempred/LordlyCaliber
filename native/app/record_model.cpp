@@ -94,6 +94,7 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
     if (role == Qt::DisplayRole && !f.choices.isEmpty()) {
         auto names = project_->catalog().value(f.choices).toObject();
         auto label = names.value(QString::number(value)).toString();
+        if (f.key == "classCopyMatch" && value == 0) label = "Same as this class";
         if (!label.isEmpty())
             return QString("%1 · %2").arg(value).arg(label.simplified());
     }

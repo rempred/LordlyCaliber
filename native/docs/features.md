@@ -929,3 +929,11 @@ Map Undo retains changed paint runs and metadata for the affected map, with a
 Export reuses verified owned field allocations and collects unused generated model
 blocks; unknown original geometry stays intact. Reopening older exports keeps their
 unmarked drawing data; only newly tracked generated blocks can be reclaimed.
+
+
+Current class is the user-facing name for a character's stored secondary class.
+Classes / Growth calls the class-definition link Default current class; zero is
+shown as Same as this class. It sets the starting current class for new characters
+and the match used by supported class/appearance lookups. Ordinary level-up growth
+reads the stored current class directly. Changing the default does not rewrite
+existing character records. Project keys, IDs and ROM/save layouts are unchanged.

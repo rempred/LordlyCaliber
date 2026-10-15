@@ -522,7 +522,7 @@ QVector<SaveField> SaveDocument::fields(SaveTable table) const {
                 {"owned", "Owned", 3, 1, 0, battery() ? 127U : 255U}};
     return {{"name", "Name", 0, battery() ? 13 : 17, 0, 0},
             {"class", "Primary class", 17, 1, 1, quint32(classCount_ - 1)},
-            {"secondaryClass", "Secondary class", 18, 1, 0, quint32(classCount_ - 1)},
+            {"secondaryClass", "Current class", 18, 1, 0, quint32(classCount_ - 1)},
             {"level", "Level", 19, 1, 1, 99},
             {"hpMax", "Maximum HP", 22, 2, 1, 999},
             {"hpCur", "Current HP", 24, 2, 0, 999},
@@ -618,7 +618,7 @@ SaveChange SaveDocument::planEdit(SaveTable table, int row, const QString &key,
 SaveChange SaveDocument::planCharacterClassEdit(int row, const QString &key, const QVariant &value,
                                                 const ClassData &classes) const {
     if (key != "class" && key != "secondaryClass")
-        throw Error("Choose a primary or secondary character class");
+        throw Error("Choose a primary or current character class");
     const auto scalar = planEdit(SaveTable::Characters, row, key, value);
     if (!canEditUnits() || scalar.spans.isEmpty())
         return scalar;

@@ -97,7 +97,7 @@ const QVector<Field> &fields(Table table) {
         add("baseTransitionLevel", "First transition level", "Growth", 66);
         add("intermediateClass", "Intermediate growth class", "Growth", 67, 1, "CLASS_NAMES");
         add("finalTransitionLevel", "Second transition level", "Growth", 68);
-        add("classCopyMatch", "Secondary class link", "Growth", 69, 1, "CLASS_NAMES");
+        add("classCopyMatch", "Default current class", "Growth", 69, 1, "CLASS_NAMES");
         add("element", "Default element", "Combat", 70, 1, "DEFAULT_ELEMENTS");
         add("itemCapacity", "Carried-item contribution", "Equipment",
             ClassData::itemCapacityOffset);

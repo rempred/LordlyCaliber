@@ -573,7 +573,12 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         });
         editor->setEnabled(false);
         if (f.key == "classCopyMatch")
-            editor->setToolTip("When a character's secondary class matches this link, the game uses this class's own data. Otherwise it uses the secondary class. This is not a promotion requirement.");
+            editor->setToolTip(
+                "Sets the starting current class for newly created characters. 0 means Same as this class.\n"
+                "When a character's current class matches this setting, supported class and appearance lookups "
+                "use this class's own record; otherwise they use the current class.\n"
+                "Ordinary level-up growth comes directly from the character's current class. "
+                "Existing saved characters keep their stored current class.");
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
         if (f.choices == "ACTION_NAMES") {
