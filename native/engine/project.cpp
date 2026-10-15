@@ -146,7 +146,7 @@ const QVector<Field> &fields(Table table) {
                     covered = true;
             if (!covered)
                 f.push_back({QString("b%1Raw").arg(logical), (logical == 12 ? QString("B12 — combat LCK modifier")
-                              : logical == 23 ? QString("B23 — bit 0: anti-dragon attack; other bits unknown")
+                              : logical == 23 ? QString("B23 — weapon status and special attack flags")
                               : logical == 24 ? QString("B24 — bit 0: anti-dragon defense; other bits unknown")
                               : logical >= 28 ? QString("B%1 — name pointer (managed by rebuild)").arg(logical)
                               : QString("B%1 — unknown / reserved").arg(logical)),

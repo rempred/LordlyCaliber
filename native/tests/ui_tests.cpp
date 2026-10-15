@@ -48,6 +48,7 @@
 #include "engine/sprite_sources.h"
 #include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
+#include "engine/weapon_status.h"
 #include <QAction>
 #include <cmath>
 #include <QAbstractProxyModel>
@@ -177,6 +178,51 @@ class UiTests : public QObject {
         QVERIFY(guard); QVERIFY(guard->apply());
         QVERIFY(pendingEdits(&editor).isEmpty());
         QCOMPARE(u8(project.scenarios()->scenario(1).layout.nodes[row], 3), chosen);
+    }
+    void weaponStatusSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        MainWindow window; window.resize(1440, 1000); window.show(); window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QComboBox *>("weaponStatusOnHit"), 30000);
+        window.navigateTo({"items", 1, -1, "section:Stats"});
+        auto choice = window.findChild<QComboBox *>("weaponStatusOnHit");
+        QVERIFY(choice->isVisible()); QVERIFY(choice->isEnabled());
+        auto table = window.findChild<QTableView *>("itemsTable"); QVERIFY(table);
+        auto proxy = qobject_cast<QAbstractProxyModel *>(table->model()); QVERIFY(proxy);
+        auto model = qobject_cast<RecordModel *>(proxy->sourceModel()); QVERIFY(model);
+        auto undo = window.findChild<QUndoGroup *>(); QVERIFY(undo);
+        int flags = -1, type = -1;
+        for (int n=0; n<fields(Table::Items).size(); ++n) {
+            if (fields(Table::Items)[n].key == "b23Raw") flags=n+2;
+            if (fields(Table::Items)[n].key == "equipType") type=n+2;
+        }
+        QVERIFY(flags >= 2); QVERIFY(type >= 2);
+        QVERIFY(model->setData(model->index(1, flags), 0xd1, Qt::EditRole));
+        for (const int effect : {32, 2, 4, 8, 0}) {
+            const int index = choice->findData(effect); QVERIFY(index >= 0);
+            choice->setCurrentIndex(index);
+            QVERIFY(QMetaObject::invokeMethod(choice, "activated", Qt::DirectConnection, Q_ARG(int,index)));
+            QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0xd1|effect);
+            undo->undo(); undo->redo();
+            QCOMPARE(choice->currentData().toInt(), effect);
+        }
+        QVERIFY(model->setData(model->index(1, flags), 0xd7, Qt::EditRole));
+        QVERIFY(choice->currentText().startsWith("Existing combination:"));
+        window.navigateTo({"items", 2, -1, "section:Stats"});
+        window.navigateTo({"items", 1, -1, "section:Stats"});
+        QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0xd7);
+        const int poison = choice->findData(32);
+        choice->setCurrentIndex(poison);
+        QMetaObject::invokeMethod(choice, "activated", Qt::DirectConnection, Q_ARG(int,poison));
+        QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0xf1);
+        QCOMPARE(model->appendItem(1, "Poison blade copy"), 278);
+        window.navigateTo({"items", 278, -1, "section:Stats"});
+        QCOMPARE(choice->currentText(), "Poison");
+        QVERIFY(window.grab().save(QCoreApplication::applicationDirPath()+"/weapon-status-ui.png"));
+        QVERIFY(model->setData(model->index(278, type), 14, Qt::EditRole));
+        QVERIFY(!choice->isEnabled()); QCOMPARE(choice->currentText(), "Poison");
+        QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0xf1);
+        undo->undo(); QVERIFY(choice->isEnabled());
     }
     void classSetupAndTestingHandoff() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

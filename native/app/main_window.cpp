@@ -1,4 +1,6 @@
 #include "app/main_window.h"
+#include "engine/weapon_status.h"
+#include <QSignalBlocker>
 #include "app/pending_edits.h"
 #include "app/class_setup.h"
 #include "app/content_refresh.h"
@@ -663,6 +665,33 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             });
         }
     }
+    QComboBox *weaponStatus = nullptr;
+    QLabel *weaponStatusHelp = nullptr;
+    if (table == Table::Items) {
+        weaponStatus = new QComboBox;
+        weaponStatus->setObjectName("weaponStatusOnHit");
+        for (int value : {0, WeaponStatus::poison, 2, 4, 8})
+            weaponStatus->addItem(WeaponStatus::name(value), value);
+        weaponStatusHelp = new QLabel;
+        weaponStatusHelp->setObjectName("weaponStatusHelp");
+        weaponStatusHelp->setWordWrap(true);
+        groups["Stats"]->insertRow(0, "Status effect on hit", weaponStatus);
+        groups["Stats"]->insertRow(1, weaponStatusHelp);
+        connect(weaponStatus, &QComboBox::activated, page, [this, model, selected, weaponStatus] {
+            if (*selected < 1) return;
+            const auto &record = project_->record(Table::Items, *selected).bytes;
+            if (!WeaponStatus::isWeapon(record)) return;
+            const auto effect = weaponStatus->currentData().toInt();
+            if (effect != 0 && effect != WeaponStatus::poison && effect != 2 && effect != 4 && effect != 8) return;
+            const auto &list = fields(Table::Items);
+            for (int field = 0; field < list.size(); ++field)
+                if (list[field].key == "b23Raw") {
+                    model->setData(model->index(*selected, field + 2),
+                                   WeaponStatus::replace(u8(record, WeaponStatus::offset), effect), Qt::EditRole);
+                    break;
+                }
+        });
+    }
     PromotionEditor *promotion = nullptr;
     ConsumableEditor *effects = nullptr;
     if (table == Table::Consumables) {
@@ -704,7 +733,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem, newItem, renameClass, description, actionDescriptions, actionId, setup] {
+                    addItem, newItem, renameClass, description, actionDescriptions, actionId, setup,
+                    weaponStatus, weaponStatusHelp] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
@@ -725,6 +755,22 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             promotion->selectClass(*selected);
         if (effects)
             effects->selectConsumable(*selected);
+        if (weaponStatus) {
+            const QSignalBlocker blocked(weaponStatus);
+            while (weaponStatus->count() > 5) weaponStatus->removeItem(5);
+            const auto record = *selected >= 0 ? project_->record(Table::Items, *selected).bytes : QByteArray();
+            const bool weapon = *selected >= 1 && WeaponStatus::isWeapon(record);
+            const int status = record.isEmpty() ? 0 : u8(record, WeaponStatus::offset) & WeaponStatus::mask;
+            if (weaponStatus->findData(status) < 0)
+                weaponStatus->addItem("Existing combination: " + WeaponStatus::name(status), status);
+            weaponStatus->setCurrentIndex(weaponStatus->findData(status));
+            weaponStatus->setEnabled(weapon);
+            weaponStatusHelp->setText(weapon
+                ? "Applies after a physical hit if the target survives and is not immune. No extra chance roll. "
+                  "Uses the first equipped weapon; casting a spell does not apply this effect. "
+                  "Poison cannot replace another ailment. Choose None to remove the on-hit status."
+                : "Select a weapon to give its physical hits a status effect. Armor and accessories do not apply on-hit effects.");
+        }
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];
             if (!editor) continue;

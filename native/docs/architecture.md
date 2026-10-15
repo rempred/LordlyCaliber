@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Weapon status on hit (2026-10-15)
+
+WeaponStatus interprets equipment record byte27 (logical B23), mask0x2E.
+The Items Stats selector edits the existing b23Raw field through RecordModel,
+preserving anti-dragon, undead-removal and unknown bits. Existing combinations
+remain visible and unchanged until a named single effect is chosen. No project
+schema or new item allocation is needed.
+
+When any weapon uses bit0x20, rebuildWeaponStatus compiles game/items/weapon-hit.c,
+adapted from accepted battle/func_0022A964.c, at live0x801E7694 within the original
+1176-byte z64 ROM owner0x22A964..0x22ADFC. Pure predicates and shared time updates
+make room; verified leading alignment NOPs preserve the original entry. The
+entire owner must match the retail or tested compiled hash. The existing immunity
+filter already strips bit0x20. Prediction sets Poison and rebuilds attributes;
+retail event0x27 applies its presentation/playback. Removing all Poison items
+preserves the installed routine, and exporting again authenticates/recompiles it
+when needed. Existing ailments, priority and wake-up behavior remain unchanged.
+
+engine_tests weaponStatusExport verifies persistence, expanded item278, export,
+checksum, owner boundaries, second export and unknown-owner rejection. Its Node
+probe compares actual original/exported MIPS over16384 legacy cases,128 Poison
+states,24 class/equipment immunity cases and10 ordinary/Soldier damage cases.
+Event, pose, RNG and attribute services are trapped; this is not a full-console
+battle/presentation test. ui_tests weaponStatusSelection covers the real window's
+selection, Undo/Redo, copying, unknown combinations and disabled non-weapons.
+
 ## Accepted animation, terrain and scenario sources (2026-10-13)
 
 The accepted library now contains 872 compiler-recorded functions from 831

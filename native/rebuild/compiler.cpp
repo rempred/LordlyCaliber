@@ -1,5 +1,6 @@
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/weapon_status.h"
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
 #include "rebuild/body_selection.h"
@@ -1111,6 +1112,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=installCapacityRuntime(Rom::fromBytes(result.image),*capacityRuntime);
         result.report<<"Compiled 30 enemy/allied squad slots and a separate temporary encounter slot; retained the 99-character player roster, all 30 organized player squads and 32 KB battery saves.";
     }
+    rebuildWeaponStatus(p, compiler, directory, result);
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());

@@ -18,6 +18,8 @@
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
+#include "rebuild/weapon_status.h"
+#include "engine/weapon_status.h"
 #include "rebuild/capacity_runtime.h"
 #include "rebuild/creature_rewards.h"
 #include "rebuild/custom_encounters.h"
@@ -67,6 +69,72 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void weaponStatusExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            for (int original = 0; original < 256; ++original)
+                for (int effect : {0, 2, 4, 8, 32}) {
+                    const auto changed = WeaponStatus::replace(original, effect);
+                    QCOMPARE(changed & ~WeaponStatus::mask, original & ~WeaponStatus::mask);
+                    QCOMPARE(changed & WeaponStatus::mask, effect);
+                }
+            QCOMPARE(project.appendItem(1, "Poison test blade"), 278);
+            int id = 1;
+            for (int effect : {2, 4, 8, 32}) {
+                auto row = project.record(Table::Items, id).bytes;
+                put8(row, 4, 1);
+                put8(row, WeaponStatus::offset, WeaponStatus::replace(0xd1, effect));
+                project.replaceBytes(Table::Items, id++, row);
+            }
+            auto added = project.record(Table::Items, 278).bytes;
+            put8(added, WeaponStatus::offset, WeaponStatus::replace(u8(added, WeaponStatus::offset), 32));
+            project.replaceBytes(Table::Items, 278, added);
+            QVERIFY(project.changeReport().text().contains("Status effect on hit: None → Poison"));
+            QTemporaryDir work, output(QFileInfo(path).absolutePath() + "/Test ROMs/weapon-status-XXXXXX");
+            QVERIFY(work.isValid()); QVERIFY(output.isValid()); output.setAutoRemove(false);
+            project.saveFolder(work.filePath("project"));
+            auto saved = Project::fromRom(source);
+            saved.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(saved.manifest(), project.manifest());
+            const auto built = rebuild(saved, tools, work.path());
+            QCOMPARE(built.image.mid(0x22a960, 4), source.bytes().mid(0x22a960, 4));
+            QCOMPARE(built.image.mid(0x22adfc, 16), source.bytes().mid(0x22adfc, 16));
+            auto checksum = built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum, built.image);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            for (int row = 0; row < project.records(Table::Items).size(); ++row)
+                QCOMPARE(reopened.record(Table::Items, row).bytes.mid(4), project.record(Table::Items, row).bytes.mid(4));
+            const auto second = rebuild(reopened, tools, work.path());
+            QCOMPARE(second.image, built.image);
+            QProcess process;
+            process.start("node", {QFINDTESTDATA("weapon-status-mips.cjs"), path, candidate});
+            QVERIFY(process.waitForFinished(60000));
+            const auto log = process.readAllStandardOutput() + process.readAllStandardError();
+            QVERIFY2(process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0, log.constData());
+            qInfo().noquote() << log;
+            // Removing all on-hit Poison leaves the installed code and other bits intact.
+            for (const int row : {4, 278}) {
+                auto bytes = reopened.record(Table::Items, row).bytes;
+                put8(bytes, WeaponStatus::offset, WeaponStatus::replace(u8(bytes, WeaponStatus::offset), 0));
+                reopened.replaceBytes(Table::Items, row, bytes);
+            }
+            BuildResult unchanged{built.image, {}};
+            Compiler compiler(tools);
+            rebuildWeaponStatus(reopened, compiler, work.path(), unchanged);
+            QCOMPARE(unchanged.image, built.image);
+            BuildResult foreign{source.bytes(), {}};
+            foreign.image[0x22a964] ^= 1;
+            const auto before = foreign.image;
+            QVERIFY_THROWS_EXCEPTION(Error, rebuildWeaponStatus(project, compiler, work.path(), foreign));
+            QCOMPARE(foreign.image, before);
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+            qInfo().noquote() << "Weapon status export:" << candidate;
+        } catch (const Error &error) { QFAIL(error.what()); }
+    }
     void capacityPublicExport() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");

@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/weapon_status.h"
 #include "engine/squad_members.h"
 #include "engine/event_script.h"
 #include <QFileInfo>
@@ -180,6 +181,13 @@ ChangeReport Project::changeReport(const Project *reference) const {
                 const auto before = fieldValue(reference && !added ? reference->record(table,row.id).bytes : row.original, field),
                            after = fieldValue(row.bytes, field);
                 if (added || before != after) {
+                    if (table == Table::Items && field.key == "b23Raw" &&
+                        (added || (before & WeaponStatus::mask) != (after & WeaponStatus::mask))) {
+                        lines << (added ? "Status effect on hit: " + WeaponStatus::name(after)
+                                        : transition("Status effect on hit", WeaponStatus::name(before),
+                                                     WeaponStatus::name(after)));
+                        if ((before & ~WeaponStatus::mask) == (after & ~WeaponStatus::mask)) continue;
+                    }
                     const auto label = field.group + " / " + field.label;
                     lines << (added ? label + ": " + choice(field, after, false)
                                     : transition(label, choice(field, before, true),

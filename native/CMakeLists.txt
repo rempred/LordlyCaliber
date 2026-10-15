@@ -17,6 +17,9 @@ qt_add_resources(lordly_engine capacity_sources PREFIX "/" BASE . FILES
   game/scenarios/capacity-references.json game/scenarios/capacity-save-owners.json
   game/scenarios/capacity-bounds.json game/scenarios/capacity-predicates.json game/scenarios/capacity-extra.json)
 target_include_directories(lordly_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_sources(lordly_engine PRIVATE rebuild/weapon_status.cpp)
+qt_add_resources(lordly_engine weapon_status_sources PREFIX "/" BASE . FILES
+  game/items/weapon-hit.c game/items/weapon-hit.json)
 target_link_libraries(lordly_engine PRIVATE Qt6::ZlibPrivate)
 target_sources(lordly_engine PRIVATE engine/archive_writer.cpp)
 target_sources(lordly_engine PRIVATE engine/image.cpp engine/scenario_map.cpp game/scenarios/site-count.c)
