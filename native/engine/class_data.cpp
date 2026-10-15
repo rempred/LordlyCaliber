@@ -313,6 +313,17 @@ void ClassData::validate(const ClassAsset &asset) {
     if (asset.name.isEmpty() || asset.name.contains(char(0)))
         throw Error("Class names must be nonempty encoded text without a terminator");
 }
+int ClassData::defaultPromotionClass(int id) const {
+    if (id < 0 || id >= entries_.size())
+        throw Error("Promotion refers to an unavailable class");
+    if (!id) return 0;
+    const auto &entry = entries_[id];
+    const int link = u8(entry.record, 69);
+    const int current = link ? link : id;
+    // Same one-step selection as game/promotion/class-screen.c, using the
+    // creation default rather than an existing character's saved current ID.
+    return entry.namedAlias && link == current ? entry.namedAlias : current;
+}
 int ClassData::unitSize(int primary, int secondary) const {
     if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
         throw Error("Character size refers to an unavailable class");

@@ -527,6 +527,14 @@ and change summaries. Generic labels in older projects resolve the same way;
 stored catalogs, family IDs and user-authored names remain unchanged. Lich is
 the only retail class with combined Male + Female compatibility; it has family None.
 Assigning a family's own icon still selects its independent List Classes tab.
+The Promotion and Overview panels resolve each class's creation default through
+its existing named-character menu mapping. Troi therefore shows Phalanx's Male
+family and requirements; Lurud shows Archer's. Shared settings are read-only with
+a Go to requirements button that opens the actual class for editing. Records
+without a manual entry show that explicitly and hide unavailable controls;
+selection never leaves the preceding class's requirements on display. This
+preview describes a newly created character; an existing character's current
+class can give different class-change options.
 
 ## Additional native capabilities
 

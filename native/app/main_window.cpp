@@ -678,6 +678,10 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     if (table == Table::Classes) {
         promotion = new PromotionEditor(project_.get(), undo_, [this] { updateStatus(); });
+        connect(promotion, &PromotionEditor::promotionClassRequested, this, [this, promotion](int id) {
+            navigateTo({"classes", id, -1, "section:Promotion"});
+            promotion->showOwnEntry();
+        });
         connect(promotion, &PromotionEditor::editFamilyIconRequested, this,
                 [this](int family, int icon, bool create) {
                     auto artwork = workspaces_->findChild<QTabWidget *>("artWorkspace");

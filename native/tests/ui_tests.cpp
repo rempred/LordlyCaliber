@@ -12284,6 +12284,140 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void promotionSourcesForAllClasses() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadPromotion();
+        QUndoStack undo;
+        PromotionEditor editor(&project, &undo, [] {});
+        ClassSetup overview(&project, [](const EditLocation &) {});
+        auto family = editor.findChild<QComboBox *>("classFamily");
+        auto mask = editor.findChild<QComboBox *>("compatibilityMask");
+        auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
+        auto details = editor.findChild<QWidget *>("promotionDetails");
+        auto notice = editor.findChild<QLabel *>("promotionNotice");
+        auto jump = editor.findChild<QPushButton *>("goToPromotionClass");
+        auto summary = overview.findChild<QLabel *>("classSetupFamily");
+        auto checklist = overview.findChild<QLabel *>("classSetupChecklist");
+        QVERIFY(family && mask && equipment && details && notice && jump && summary && checklist);
+        QSignalSpy requests(&editor, &PromotionEditor::promotionClassRequested);
+        // US Rev 0 creation defaults and named-menu aliases, audited directly
+        // from the read-only ROM. Unlisted records keep their own class ID.
+        const QMap<int, int> mapped{
+            {0x5A,0x18}, {0x5B,0x20}, {0x5D,0x72}, {0x5E,0x23},
+            {0x6A,0x69}, {0x6B,0x69}, {0x6D,0x6C}, {0x6E,0x6C},
+            {0x75,0x08}, {0x76,0x06}, {0x77,0x12}, {0x78,0x0D},
+            {0x79,0x27}, {0x7A,0x1F}, {0x7B,0x19}, {0x7C,0x15},
+            {0x89,0x0D}, {0x8A,0x06}, {0x8B,0x09}, {0x8C,0x0F},
+            {0x8D,0x0C}, {0x8E,0x08}, {0x8F,0x06}, {0x90,0x05},
+            {0x91,0x1A}, {0x92,0x0A}, {0x93,0x73}, {0x94,0x1B},
+            {0x95,0x20}, {0x96,0x15}, {0x97,0x1D}, {0x98,0x1F},
+            {0x99,0x36}, {0x9A,0x16}, {0x9B,0x73}, {0x9C,0x14},
+            {0x9D,0x31}, {0x9E,0x26}, {0x9F,0x74}, {0xA0,0x13}, {0xA2,0x13}};
+        for (int expanded = 0; expanded < 2; ++expanded) {
+            if (expanded) {
+                RecordModel model(&project, Table::Classes, &undo);
+                QCOMPARE(model.appendClass(5, "Test class"), 165);
+            }
+            const auto original = project.promotion()->json();
+            const auto classes = project.classData();
+            QCOMPARE(classes.entries().size(), 165 + expanded);
+            for (int id = 0; id < classes.entries().size(); ++id) {
+                // Seed unrelated values before every selection, including
+                // classes without a promotion row, to expose stale controls.
+                editor.selectClass(23);
+                editor.selectClass(id);
+                overview.selectClass(id);
+                const int source = mapped.value(id, id);
+                QCOMPARE(classes.defaultPromotionClass(id), source);
+                const bool present = source > 0 && source < project.promotion()->classCount();
+                const bool redirected = present && source != id;
+                QCOMPARE(details->isHidden(), !present);
+                QCOMPARE(jump->isHidden(), !redirected);
+                QCOMPARE(family->isEnabled(), present && !redirected);
+                QCOMPARE(mask->isEnabled(), present && !redirected);
+                QCOMPARE(equipment->isEnabled(), present && !redirected);
+                for (int n = 0; n < 8; ++n) {
+                    auto gate = editor.findChild<QSpinBox *>(QString("promotionGate%1").arg(n));
+                    QVERIFY(gate);
+                    QCOMPARE(gate->isEnabled(), present && !redirected);
+                    QCOMPARE(gate->value(), present ? int(u8(project.promotion()->gates, source * 8 + n)) : 0);
+                    if (present) QVERIFY(!gate->text().isEmpty());
+                }
+                if (present) {
+                    const int expectedFamily = project.promotion()->families["assignments"].toArray()[source].toInt();
+                    QCOMPARE(family->currentData().toInt(), expectedFamily);
+                    QCOMPARE(mask->currentData().toInt(), int(u8(project.promotion()->masks, source)));
+                    QCOMPARE(equipment->isChecked(), bool(u8(project.promotion()->flags, source) & 0x80));
+                    if (expectedFamily) QVERIFY(!checklist->text().contains("No class family assigned"));
+                } else {
+                    QCOMPARE(family->currentIndex(), -1);
+                    QCOMPARE(mask->count(), 0);
+                    QVERIFY(!equipment->isChecked());
+                    QVERIFY(summary->text().contains("No manual class-change entry"));
+                }
+                if (redirected) {
+                    const auto name = project.record(Table::Classes, source).name.simplified();
+                    QVERIFY(notice->text().contains(name));
+                    QVERIFY(summary->text().contains(name));
+                    requests.clear(); jump->click();
+                    QCOMPARE(requests.size(), 1);
+                    QCOMPARE(requests.first().first().toInt(), source);
+                }
+                QCOMPARE(project.promotion()->json(), original);
+            }
+        }
+        // A modified default must change the preview; a zero default must
+        // not keep applying a named alias that the runtime no longer uses.
+        RecordModel model(&project, Table::Classes, &undo);
+        int column = -1;
+        for (int n = 0; n < fields(Table::Classes).size(); ++n)
+            if (fields(Table::Classes)[n].key == "classCopyMatch") column = n + 2;
+        QVERIFY(column >= 2);
+        QVERIFY(model.setData(model.index(0x89, column), 23, Qt::EditRole));
+        editor.selectClass(0x89);
+        QVERIFY(jump->text().contains("Cataphract"));
+        undo.undo(); editor.selectClass(0x89);
+        QVERIFY(jump->text().contains("Archer"));
+        QVERIFY(model.setData(model.index(0x75, column), 0, Qt::EditRole));
+        editor.selectClass(0x75);
+        QVERIFY(jump->isHidden());
+        QCOMPARE(family->currentData().toInt(), 0);
+        undo.undo(); editor.selectClass(0x75);
+        QCOMPARE(family->currentData().toInt(), 1);
+        QVERIFY(jump->text().contains("Phalanx"));
+
+        // The real window handoff must select the referenced class even when
+        // a search hides it, and keep the user on the Promotion page.
+        MainWindow window; window.resize(1440, 1000); window.show(); window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<PromotionEditor *>(), 30000);
+        window.navigateTo({"classes", 0x75, -1, "section:Promotion"});
+        auto search = window.findChild<QLineEdit *>("classesSearch");
+        search->setText("Troi");
+        auto panel = window.findChild<PromotionEditor *>();
+        QVERIFY(panel->findChild<QLabel *>("promotionNotice")->text().contains("Phalanx"));
+        QVERIFY(window.grab().save(QCoreApplication::applicationDirPath() + "/promotion-troi.png"));
+        panel->findChild<QPushButton *>("goToPromotionClass")->click();
+        QCOMPARE(search->text(), QString());
+        auto table = window.findChild<QTableView *>("classesTable");
+        QCOMPARE(table->model()->index(table->currentIndex().row(), 0).data(Qt::EditRole).toInt(), 8);
+        QCOMPARE(window.findChild<QComboBox *>("classesInspectorSection")->currentText(), "Promotion");
+        QVERIFY(panel->findChild<QComboBox *>("classFamily")->isEnabled());
+        // If an edited default points to another named identity, navigation
+        // must open that exact promotion row, not follow its alias again.
+        auto proxy = qobject_cast<QAbstractProxyModel *>(table->model()); QVERIFY(proxy);
+        auto records = qobject_cast<RecordModel *>(proxy->sourceModel()); QVERIFY(records);
+        QCOMPARE(records->appendClass(5, "Navigation test"), 165);
+        QVERIFY(records->setData(records->index(0x89, column), 0x75, Qt::EditRole));
+        window.navigateTo({"classes", 0x89, -1, "section:Promotion"});
+        panel->findChild<QPushButton *>("goToPromotionClass")->click();
+        QCOMPARE(table->model()->index(table->currentIndex().row(), 0).data(Qt::EditRole).toInt(), 0x75);
+        auto ownFamily = panel->findChild<QComboBox *>("classFamily");
+        QVERIFY(ownFamily->isEnabled()); QCOMPARE(ownFamily->currentData().toInt(), 0);
+        panel->findChild<QPushButton *>("goToPromotionClass")->click();
+        QVERIFY(!ownFamily->isEnabled()); QCOMPARE(ownFamily->currentData().toInt(), 1);
+    }
     void promotionControlsAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

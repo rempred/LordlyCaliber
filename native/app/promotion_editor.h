@@ -9,6 +9,7 @@ class QLabel;
 class QLineEdit;
 class QCheckBox;
 class QListWidget;
+class QPushButton;
 namespace lordly {
 class PromotionEditor : public QWidget {
     Q_OBJECT
@@ -16,9 +17,11 @@ class PromotionEditor : public QWidget {
     PromotionEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                     QWidget *parent = nullptr);
     void selectClass(int id);
+    void showOwnEntry();
 
   signals:
     void editFamilyIconRequested(int family, int icon, bool create);
+    void promotionClassRequested(int id);
 
   private:
     void refresh();
@@ -26,8 +29,10 @@ class PromotionEditor : public QWidget {
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
-    int id_ = -1;
-    bool refreshing_ = false;
+    int id_ = -1, sourceId_ = -1;
+    QWidget *details_;
+    QPushButton *goToSource_;
+    bool refreshing_ = false, ownEntry_ = false;
     QVector<QSpinBox *> gates_;
     QComboBox *mask_;
     QCheckBox *equipmentSets_;

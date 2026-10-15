@@ -67,10 +67,29 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
                                  QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("promotionEditor");
-    auto layout = new QVBoxLayout(this);
+    auto outer = new QVBoxLayout(this);
     notice_ = new QLabel;
+    notice_->setObjectName("promotionNotice");
+    notice_->setTextFormat(Qt::PlainText);
     notice_->setWordWrap(true);
-    layout->addWidget(notice_);
+    outer->addWidget(notice_);
+    goToSource_ = new QPushButton;
+    goToSource_->setObjectName("goToPromotionClass");
+    outer->addWidget(goToSource_);
+    connect(goToSource_, &QPushButton::clicked, this, [this] {
+        if (ownEntry_) {
+            ownEntry_ = false;
+            refresh();
+        } else if (sourceId_ > 0 && sourceId_ != id_) {
+            emit promotionClassRequested(sourceId_);
+        }
+    });
+    details_ = new QWidget;
+    details_->setObjectName("promotionDetails");
+    outer->addWidget(details_);
+    outer->addStretch();
+    auto layout = new QVBoxLayout(details_);
+    layout->setContentsMargins(0, 0, 0, 0);
     auto form = new QFormLayout;
     layout->addLayout(form);
     families_ = new QComboBox;
@@ -114,7 +133,7 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
                                      familyIcon_->currentData().toInt(), true);
     });
     connect(familyIcon_, &QComboBox::currentIndexChanged, this, [this] {
-        if (refreshing_ || !project_->categoryIcons() || families_->currentData().toInt() < 1)
+        if (refreshing_ || sourceId_ != id_ || !project_->categoryIcons() || families_->currentData().toInt() < 1)
             return;
         auto edited = *project_->categoryIcons();
         try {
@@ -157,7 +176,7 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         "New classes start with family None and Male compatibility. This filter also supplies the original List Classes categories unless the family has its own tab icon.");
     categoryHelp->setWordWrap(true);form->addRow(categoryHelp);
     connect(mask_, &QComboBox::currentIndexChanged, this, [this] {
-        if (refreshing_ || mask_->currentIndex()<0) return;
+        if (refreshing_ || !mask_->isEnabled() || mask_->currentIndex()<0) return;
         int value=mask_->currentData().toInt();
         if (value<0) {
             QDialog dialog(this);dialog.setObjectName("compatibilityCategoryDialog");
@@ -271,14 +290,27 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     refresh();
 }
 void PromotionEditor::selectClass(int id) {
+    if (id != id_) ownEntry_ = false;
     id_ = id;
+    refresh();
+}
+void PromotionEditor::showOwnEntry() {
+    ownEntry_ = true;
     refresh();
 }
 void PromotionEditor::refresh() {
     const ViewPosition keepView(this);
     refreshing_ = true;
     const bool available = project_->promotion().has_value();
-    const bool editable = available && id_ >= 1 && id_ < project_->promotion()->classCount();
+    const bool selected = id_ > 0 && id_ < project_->records(Table::Classes).size();
+    const int defaultSource = selected ? (project_->hasClassData()
+        ? project_->classData().defaultPromotionClass(id_) : id_) : -1;
+    sourceId_ = ownEntry_ && selected ? id_ : defaultSource;
+    const bool hasSource = available && sourceId_ > 0 && sourceId_ < project_->promotion()->classCount();
+    const bool redirected = hasSource && sourceId_ != id_;
+    const bool editable = hasSource && !redirected;
+    details_->setVisible(hasSource);
+    goToSource_->setVisible(redirected || (hasSource && ownEntry_ && defaultSource != id_));
     families_->setEnabled(editable);
     mask_->setEnabled(editable);
     equipmentSets_->setEnabled(editable);
@@ -287,12 +319,17 @@ void PromotionEditor::refresh() {
     findChild<QPushButton *>("createFamily")->setEnabled(editable);
     for (auto spin : gates_)
         spin->setEnabled(editable);
-    notice_->setText(!available  ? "Promotion source owners are available for US Rev 0."
-                     : !editable ? "This class is outside the existing manual-promotion roster."
-                                 : "Manual class-change requirements. Equipment, story and "
-                                   "character conditions also apply.");
+    notice_->setText(!selected ? "Select a class to see its class-change options."
+        : !available ? "Class-change settings are unavailable for this ROM."
+        : !hasSource ? "This class has no manual class-change entry for its default current class. "
+                       "No family or requirements are available here."
+        : "Manual class-change requirements. Equipment, story and character conditions also apply.");
     families_->clear();
+    mask_->clear();
+    equipmentSets_->setChecked(false);
     links_->clear();
+    for (auto spin : gates_)
+        spin->setValue(0);
     if (available) {
         const auto &p = *project_->promotion();
         for (auto f : p.families["families"].toArray()) {
@@ -301,21 +338,39 @@ void PromotionEditor::refresh() {
             auto label = QString("%1 · %2").arg(id).arg(Promotion::familyName(o));
             families_->addItem(label, id);
         }
-        if (editable) {
+        families_->setCurrentIndex(-1);
+        if (hasSource) {
             families_->setCurrentIndex(
-                families_->findData(p.families["assignments"].toArray()[id_].toInt()));
+                families_->findData(p.families["assignments"].toArray()[sourceId_].toInt()));
             for (int n = 0; n < gates_.size(); ++n)
-                gates_[n]->setValue(u8(p.gates, id_ * 8 + n));
-            const int mask=u8(p.masks,id_);
+                gates_[n]->setValue(u8(p.gates, sourceId_ * 8 + n));
+            const int mask=u8(p.masks,sourceId_);
             mask_->clear();
             for (int value : {0,1,2,3,4,8,16,32,64,128}) mask_->addItem(compatibilityName(value),value);
             if(mask_->findData(mask)<0)mask_->addItem(compatibilityName(mask),mask);
             mask_->addItem("Custom combination…",-1);
             mask_->setCurrentIndex(mask_->findData(mask));
-            equipmentSets_->setChecked((u8(p.flags, id_) & 0x80) != 0);
+            equipmentSets_->setChecked((u8(p.flags, sourceId_) & 0x80) != 0);
         }
     }
     const int family = families_->currentData().toInt();
+    if (redirected) {
+        const auto name = project_->record(Table::Classes, sourceId_).name.simplified();
+        QString familyName;
+        for (const auto &value : project_->promotion()->families["families"].toArray())
+            if (value.toObject()["id"].toInt() == family)
+                familyName = Promotion::familyName(value.toObject());
+        notice_->setText(QString("Uses %1's class-change options — family: %2.\n"
+            "Shown for a character starting in this class. After changing class, their current class determines the menu. "
+            "Open %1 below to edit these shared settings.").arg(name, familyName));
+        goToSource_->setText(QString("Go to %1 requirements").arg(name));
+    } else if (hasSource && ownEntry_ && defaultSource != id_) {
+        // A referenced current-class row can itself be a named identity. Open
+        // that exact row rather than following a second, incorrect alias hop.
+        notice_->setText("Editing this class's own promotion entry, as referenced by the previous class. "
+                         "Its default character setup can use different class-change options.");
+        goToSource_->setText("Show default class-change options");
+    }
     try {
         project_->loadCategoryIcons();
     } catch (const std::exception &) {
@@ -338,11 +393,11 @@ void PromotionEditor::refresh() {
             : QPixmap{});
     familyIcon_->setEnabled(editable && family > 0 && project_->categoryIcons().has_value());
     findChild<QPushButton *>("createFamilyIcon")->setEnabled(familyIcon_->isEnabled());
-    findChild<QPushButton *>("editFamilyIcon")->setEnabled(project_->categoryIcons().has_value());
+    findChild<QPushButton *>("editFamilyIcon")->setEnabled(editable && project_->categoryIcons().has_value());
     linksTitle_->setText(QString("Link %1 to other families — shares manual class-change destinations. The current family is omitted.").arg(families_->currentText()));
     links_->setEnabled(editable && family != 0);
     findChild<QPushButton *>("applyFamilyLinks")->setEnabled(editable && family != 0);
-    if (available && editable) {
+    if (hasSource) {
         const auto &p = *project_->promotion();
         const auto selectedLinks = p.linkedFamilies(family);
         const auto assignments = p.families["assignments"].toArray();
@@ -370,7 +425,7 @@ void PromotionEditor::refresh() {
 }
 void PromotionEditor::edit(const QString &label,
                            const std::function<void(Promotion &)> &operation) {
-    if (refreshing_ || !project_->promotion() || id_ < 1 ||
+    if (refreshing_ || !project_->promotion() || id_ < 1 || sourceId_ != id_ ||
         id_ >= project_->promotion()->classCount())
         return;
     try {

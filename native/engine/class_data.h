@@ -76,6 +76,9 @@ class ClassData {
     }
     int append(int templateId, const QByteArray &encodedName);
     void set(int id, const ClassAsset &asset);
+    // Menu class for a newly created character using this class's default.
+    // Existing characters can have a different current class.
+    int defaultPromotionClass(int id) const;
     int unitSize(int primary, int secondary) const;
     int carryingCapacity(int primary, int secondary) const;
     int movementType(int primary, int secondary) const;

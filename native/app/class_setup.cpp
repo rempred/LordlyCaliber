@@ -29,6 +29,7 @@ ClassSetup::ClassSetup(Project *project, std::function<void(const EditLocation &
     card("Starting equipment", "Equipment", equipment_);
     card("Combat actions", "Attacks", actions_);
     card("Family and class change", "Promotion", family_);
+    family_->setObjectName("classSetupFamily");
     auto art = new QGroupBox("Artwork and animation"); auto artLayout = new QVBoxLayout(art);
     artLayout->setSizeConstraint(QLayout::SetMinimumSize);
     art->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
@@ -76,12 +77,21 @@ void ClassSetup::selectClass(int id) {
     try {
         project_->loadPromotion();
         const auto &p = *project_->promotion();
-        const int family = p.families["assignments"].toArray()[id].toInt();
-        QString name = "None";
-        for (const auto &f : p.families["families"].toArray())
-            if (f.toObject()["id"].toInt() == family) name = Promotion::familyName(f.toObject());
-        family_->setText("Class family: " + name + "\nCharacter compatibility and promotion requirements are edited separately here.");
-        if (!family) needs << "No class family assigned";
+        const int source = project_->hasClassData() ? project_->classData().defaultPromotionClass(id) : id;
+        if (source > 0 && source < p.classCount()) {
+            const int family = p.families["assignments"].toArray()[source].toInt();
+            QString name = "None";
+            for (const auto &f : p.families["families"].toArray())
+                if (f.toObject()["id"].toInt() == family) name = Promotion::familyName(f.toObject());
+            family_->setText(source == id
+                ? "Class family: " + name + "\nCharacter compatibility and promotion requirements are edited separately here."
+                : QString("Default class-change family: %1\nUses %2's class-change options. Open Promotion to view the shared requirements.")
+                    .arg(name, project_->record(Table::Classes, source).name.simplified()));
+            if (!family) needs << "No class family assigned";
+        } else {
+            family_->setText("No manual class-change entry for this class's default current class.");
+            needs << "No manual class-change entry";
+        }
     } catch (const std::exception &e) { family_->setText(QString::fromUtf8(e.what())); }
     try {
         project_->loadAvatarArtwork();
