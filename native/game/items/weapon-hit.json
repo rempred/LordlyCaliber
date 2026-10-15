@@ -3,7 +3,7 @@
   "ramAddress": "0x801e7694",
   "size": 1176,
   "retailSha256": "9c25689bfd60fce419ca36f9505733ae00ff98df2acfd444f455586df05d9832",
-  "compiledSha256": "c1c9613dbd2844247a2fe91cd258b0f37e7ecdcb20a0cbb898ea79f83b6f0a9f",
+  "compiledSha256": "74ecc0d59dc66bf8894cae0b7a775def40a2a1d1dd45c14db5223b9b04f55dd3",
   "symbols": {
     "func_0020C2C0": "0x801c8e30",
     "func_0020C478": "0x801c8fe8",
@@ -15,6 +15,9 @@
     "func_0022257C": "0x801df2ac",
     "func_00239AA4": "0x801f67d4",
     "func_0002CBCC": "0x8009c7cc",
-    "func_0021D7CC": "0x801da4fc"
-  }
+    "func_0022B06C": "0x801e7d9c"
+  },
+  "priorSha256": [
+    "c1c9613dbd2844247a2fe91cd258b0f37e7ecdcb20a0cbb898ea79f83b6f0a9f"
+  ]
 }

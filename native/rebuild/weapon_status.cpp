@@ -2,6 +2,7 @@
 #include "engine/weapon_status.h"
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 
 namespace lordly {
 void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
@@ -9,10 +10,10 @@ void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
     bool needed = false;
     for (const auto &item : project.records(Table::Items))
         if (WeaponStatus::isWeapon(item.bytes) &&
-            (u8(item.bytes, WeaponStatus::offset) & WeaponStatus::poison)) needed = true;
-    if (!needed) return; // Existing installed code is preserved when the last Poison is removed.
+            (u8(item.bytes, WeaponStatus::offset) & WeaponStatus::extensionMask)) needed = true;
+    if (!needed) return; // Preserve installed code when the last extended status is removed.
     if (project.rom().revision() != 0)
-        throw Error("Poison weapons require the US revision 0 ROM");
+        throw Error("Poison and Power weapons require the US revision 0 ROM");
     auto read = [](const QString &path) {
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly)) throw Error("Missing weapon status source: " + path);
@@ -26,8 +27,9 @@ void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
         throw Error("Invalid weapon status allocation");
     const auto original = result.image.mid(offset, size);
     const auto hash = QString::fromLatin1(sha256(original));
-    if (hash != manifest["retailSha256"].toString() && hash != manifest["compiledSha256"].toString())
-        throw Error("Cannot add Poison: this ROM has an unrecognized physical-hit routine. Its code has been preserved.");
+    if (hash != manifest["retailSha256"].toString() && hash != manifest["compiledSha256"].toString() &&
+        !manifest["priorSha256"].toArray().contains(hash))
+        throw Error("Cannot add this status: the ROM has an unrecognized physical-hit routine. Its code has been preserved.");
     QMap<QString, quint32> symbols;
     const auto bindings = manifest["symbols"].toObject();
     for (auto it = bindings.begin(); it != bindings.end(); ++it)
@@ -43,6 +45,6 @@ void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
         sha256(code) != manifest["compiledSha256"].toString().toLatin1())
         throw Error("Compiled weapon status routine differs from its tested allocation");
     result.image.replace(offset, size, code);
-    result.report << "Compiled Poison weapon hits; retained Sleep, Paralysis, Petrification and immunity rules";
+    result.report << "Compiled Poison, Power Up and Power Down weapon hits; retained existing ailments and immunity rules";
 }
 } // namespace lordly

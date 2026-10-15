@@ -2,29 +2,36 @@
 
 ## Weapon status on hit (2026-10-15)
 
-WeaponStatus interprets equipment record byte27 (logical B23), mask0x2E.
-The Items Stats selector edits the existing b23Raw field through RecordModel,
-preserving anti-dragon, undead-removal and unknown bits. Existing combinations
-remain visible and unchanged until a named single effect is chosen. No project
-schema or new item allocation is needed.
+WeaponStatus interprets equipment record byte 27 (logical B23), mask `0xEE`:
+Sleep `0x02`, Paralysis `0x04`, Petrification `0x08`, Poison `0x20`, Power Up
+`0x40`, Power Down `0x80`. The Items Stats selector edits b23Raw through
+RecordModel, preserving anti-dragon and undead-removal bits. Existing combinations
+remain visible and unchanged until a single effect is chosen. No project schema
+or new item allocation is needed. Power affects the target struck, not the wielder.
 
-When any weapon uses bit0x20, rebuildWeaponStatus compiles game/items/weapon-hit.c,
-adapted from accepted battle/func_0022A964.c, at live0x801E7694 within the original
-1176-byte z64 ROM owner0x22A964..0x22ADFC. Pure predicates and shared time updates
-make room; verified leading alignment NOPs preserve the original entry. The
-entire owner must match the retail or tested compiled hash. The existing immunity
-filter already strips bit0x20. Prediction sets Poison and rebuilds attributes;
-retail event0x27 applies its presentation/playback. Removing all Poison items
-preserves the installed routine, and exporting again authenticates/recompiles it
-when needed. Existing ailments, priority and wake-up behavior remain unchanged.
+When any weapon uses the three extended bits, rebuildWeaponStatus compiles
+`game/items/weapon-hit.c`, adapted from accepted `battle/func_0022A964.c`, at live
+`0x801E7694` inside the original 1,176-byte z64 ROM owner `0x22A964..0x22ADFC`.
+Combined pure predicates and shared timing/pose paths make room. Verified leading
+alignment NOPs preserve the original entry. The whole owner must match retail,
+the first Poison implementation, or the current compiled hash. Existing ailments
+retain priority. The retail secondary dispatcher handles Poison and Power state
+changes; events `0x27`, `0x29`, `0x2A` replay them. The original immunity filter
+already handles Poison; retail has no Power immunity. Power applications stack
+through the game's existing attribute accumulator. Removing all extended effects
+preserves the installed routine; the next required export upgrades older code.
 
-engine_tests weaponStatusExport verifies persistence, expanded item278, export,
-checksum, owner boundaries, second export and unknown-owner rejection. Its Node
-probe compares actual original/exported MIPS over16384 legacy cases,128 Poison
-states,24 class/equipment immunity cases and10 ordinary/Soldier damage cases.
-Event, pose, RNG and attribute services are trapped; this is not a full-console
-battle/presentation test. ui_tests weaponStatusSelection covers the real window's
-selection, Undo/Redo, copying, unknown combinations and disabled non-weapons.
+`engine_tests weaponStatusExport` verifies persistence, expanded item 278, all six
+choices, export/reopen, checksum, owner boundaries, repeat export, migration from
+the first Poison source, Power-only installation and unknown-owner rejection.
+The Node probe executes original/exported MIPS: 4,096 retail comparisons, 128 Poison
+and 256 Power eligibility cases, 36 immunity cases, 30 ordinary/Soldier damage
+cases, and 12 actual attribute/playback cases. The latter execute the original
+attribute calculation and Power display-event bodies, including repeat stacking,
+Poison coexistence, unchanged HP and persistent stats, and prediction/playback
+agreement. Rendering and event-queue services remain traps; this is not a full
+console battle test. `ui_tests weaponStatusSelection` covers the real window's
+choices, help, Undo/Redo, copying, existing combinations and disabled non-weapons.
 
 ## Accepted animation, terrain and scenario sources (2026-10-13)
 

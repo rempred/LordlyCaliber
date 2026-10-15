@@ -27,6 +27,7 @@
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QElapsedTimer>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -76,17 +77,17 @@ class EngineTests : public QObject {
             const auto source = Rom::open(path);
             auto project = Project::fromRom(source);
             for (int original = 0; original < 256; ++original)
-                for (int effect : {0, 2, 4, 8, 32}) {
+                for (int effect : {0, 2, 4, 8, 32, 64, 128}) {
                     const auto changed = WeaponStatus::replace(original, effect);
                     QCOMPARE(changed & ~WeaponStatus::mask, original & ~WeaponStatus::mask);
                     QCOMPARE(changed & WeaponStatus::mask, effect);
                 }
             QCOMPARE(project.appendItem(1, "Poison test blade"), 278);
             int id = 1;
-            for (int effect : {2, 4, 8, 32}) {
+            for (int effect : {2, 4, 8, 32, 64, 128}) {
                 auto row = project.record(Table::Items, id).bytes;
                 put8(row, 4, 1);
-                put8(row, WeaponStatus::offset, WeaponStatus::replace(0xd1, effect));
+                put8(row, WeaponStatus::offset, WeaponStatus::replace(0x11, effect));
                 project.replaceBytes(Table::Items, id++, row);
             }
             auto added = project.record(Table::Items, 278).bytes;
@@ -110,20 +111,46 @@ class EngineTests : public QObject {
                 QCOMPARE(reopened.record(Table::Items, row).bytes.mid(4), project.record(Table::Items, row).bytes.mid(4));
             const auto second = rebuild(reopened, tools, work.path());
             QCOMPARE(second.image, built.image);
+            // An exported first-generation Poison routine upgrades from its
+            // original source, without depending on checked-in game binaries.
+            QFile oldSource(QFINDTESTDATA("fixtures/weapon-hit-poison-v1.c"));
+            QVERIFY(oldSource.open(QIODevice::ReadOnly));
+            QFile bindings(":/game/items/weapon-hit.json"); QVERIFY(bindings.open(QIODevice::ReadOnly));
+            const auto manifest = QJsonDocument::fromJson(bindings.readAll()).object();
+            const auto addresses = manifest["symbols"].toObject();
+            QMap<QString,quint32> symbols;
+            for (auto it=addresses.begin();it!=addresses.end();++it) symbols[it.key()]=it.value().toString().toUInt(nullptr,0);
+            symbols["func_0021D7CC"]=0x801da4fc;
+            Compiler compiler(tools);
+            const auto firstGeneration = compiler.compileModule(oldSource.readAll(),work.path(),"weapon_hit_v1",
+                                                                 0x801e7694,{},symbols).fitOwner(1176);
+            QVERIFY(manifest["priorSha256"].toArray().contains(QString::fromLatin1(sha256(firstGeneration))));
+            auto oldImage = built.image; oldImage.replace(0x22a964,1176,firstGeneration);
+            auto oldProject = Project::fromRom(Rom::fromBytes(oldImage));
+            QCOMPARE(rebuild(oldProject,tools,work.path()).image,built.image);
             QProcess process;
             process.start("node", {QFINDTESTDATA("weapon-status-mips.cjs"), path, candidate});
             QVERIFY(process.waitForFinished(60000));
             const auto log = process.readAllStandardOutput() + process.readAllStandardError();
             QVERIFY2(process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0, log.constData());
             qInfo().noquote() << log;
-            // Removing all on-hit Poison leaves the installed code and other bits intact.
-            for (const int row : {4, 278}) {
+            // Each Power choice must activate the runtime even without any Poison.
+            auto powerOnly = Project::fromRom(source);
+            for (int effect : {64,128}) {
+                auto bytes=powerOnly.record(Table::Items,1).bytes;
+                put8(bytes,WeaponStatus::offset,WeaponStatus::replace(0x11,effect));
+                powerOnly.replaceBytes(Table::Items,1,bytes);
+                BuildResult powerImage{source.bytes(),{}};
+                rebuildWeaponStatus(powerOnly,compiler,work.path(),powerImage);
+                QCOMPARE(powerImage.image.mid(0x22a964,1176),built.image.mid(0x22a964,1176));
+            }
+            // Removing every extended status leaves installed code intact.
+            for (const int row : {4, 5, 6, 278}) {
                 auto bytes = reopened.record(Table::Items, row).bytes;
                 put8(bytes, WeaponStatus::offset, WeaponStatus::replace(u8(bytes, WeaponStatus::offset), 0));
                 reopened.replaceBytes(Table::Items, row, bytes);
             }
             BuildResult unchanged{built.image, {}};
-            Compiler compiler(tools);
             rebuildWeaponStatus(reopened, compiler, work.path(), unchanged);
             QCOMPARE(unchanged.image, built.image);
             BuildResult foreign{source.bytes(), {}};

@@ -670,7 +670,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     if (table == Table::Items) {
         weaponStatus = new QComboBox;
         weaponStatus->setObjectName("weaponStatusOnHit");
-        for (int value : {0, WeaponStatus::poison, 2, 4, 8})
+        for (int value : {0, WeaponStatus::poison, 2, 4, 8, WeaponStatus::powerUp, WeaponStatus::powerDown})
             weaponStatus->addItem(WeaponStatus::name(value), value);
         weaponStatusHelp = new QLabel;
         weaponStatusHelp->setObjectName("weaponStatusHelp");
@@ -682,7 +682,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             const auto &record = project_->record(Table::Items, *selected).bytes;
             if (!WeaponStatus::isWeapon(record)) return;
             const auto effect = weaponStatus->currentData().toInt();
-            if (effect != 0 && effect != WeaponStatus::poison && effect != 2 && effect != 4 && effect != 8) return;
+            if (effect != 0 && effect != WeaponStatus::poison && effect != 2 && effect != 4 && effect != 8 &&
+                effect != WeaponStatus::powerUp && effect != WeaponStatus::powerDown) return;
             const auto &list = fields(Table::Items);
             for (int field = 0; field < list.size(); ++field)
                 if (list[field].key == "b23Raw") {
@@ -757,7 +758,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             effects->selectConsumable(*selected);
         if (weaponStatus) {
             const QSignalBlocker blocked(weaponStatus);
-            while (weaponStatus->count() > 5) weaponStatus->removeItem(5);
+            while (weaponStatus->count() > 7) weaponStatus->removeItem(7);
             const auto record = *selected >= 0 ? project_->record(Table::Items, *selected).bytes : QByteArray();
             const bool weapon = *selected >= 1 && WeaponStatus::isWeapon(record);
             const int status = record.isEmpty() ? 0 : u8(record, WeaponStatus::offset) & WeaponStatus::mask;
@@ -770,6 +771,12 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                   "Uses the first equipped weapon; casting a spell does not apply this effect. "
                   "Poison cannot replace another ailment. Choose None to remove the on-hit status."
                 : "Select a weapon to give its physical hits a status effect. Armor and accessories do not apply on-hit effects.");
+            if (weapon && (status & (WeaponStatus::powerUp | WeaponStatus::powerDown)))
+                weaponStatusHelp->setText(weaponStatusHelp->text() +
+                    "\n\nPower Up strengthens the target you hit; Power Down weakens that target. "
+                    "Each hit adds or subtracts about 10% of their baseline STR, VIT, INT, MEN, AGI, DEX and Luck. "
+                    "Repeated hits stack: a baseline stat of 200 becomes 220, then 240 with Power Up, "
+                    "or 180, then 160 with Power Down. HP is unchanged; the effect lasts for this battle.");
         }
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];

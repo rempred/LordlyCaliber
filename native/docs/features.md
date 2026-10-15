@@ -1,14 +1,16 @@
 # Feature inventory and completion tracking
 
-Items → Stats includes Status effect on hit: None, Poison, Sleep, Paralysis and
-Petrification. It applies to the first equipped weapon's physical hits when the
-target survives; equipment/class immunity still applies and there is no extra
-chance roll. Poison cannot replace another ailment. Selection supports Undo,
-copy/new items, saved projects, named change summaries and ROM export/reopen.
-Unrelated weapon bits and existing multi-effect combinations are preserved until
-explicitly changed. Poison's runtime is compiled within the original battle
-routine's allocation. The retail shop equipment summary still omits Poison;
-editable item descriptions are independent of the status selector.
+Items → Stats includes Status effect on hit: None, Poison, Sleep, Paralysis,
+Petrification, Power Up and Power Down. It applies to the first equipped weapon's
+physical hits when the target survives, with existing immunity handling and no
+extra chance roll. Poison cannot replace another ailment. Power Up strengthens
+the struck target and Power Down weakens it; repeated hits stack approximately
+10% of baseline attributes per hit, without changing HP or permanent stats.
+Selection supports Undo, copy/new items, saved projects, named change summaries
+and ROM export/reopen. Other weapon flags and existing combinations are preserved
+until explicitly changed. The extension compiles within the original battle
+routine's allocation and upgrades earlier Poison exports. The retail shop summary
+still omits the three extended effects; editable item descriptions are independent.
 
 Scenario → Events lists the selected mission's story and investigation scripts,
 with named flags where confirmed and numeric IDs elsewhere. Existing Boolean

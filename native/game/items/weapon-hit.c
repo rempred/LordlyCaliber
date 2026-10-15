@@ -1,10 +1,10 @@
 /* Adapted from accepted battle/func_0022A964.c (physical nonlethal hit).
  * The caller supplies a valid battle actor. Combine pure status predicates and
- * share the final time update to fit Poison in the original 0x498-byte owner.
- * Weapon B23: 02 Sleep, 04 Paralysis, 08 Petrification, 20 Poison.
- * Poison has lowest priority, respects the caller's immunity-filtered flags,
- * and cannot replace an existing ailment. Event 27 is the retail Poison event;
- * both prediction and playback rebuild attributes from the actor's baseline.
+ * share timing/pose paths to fit six effects in the original 0x498-byte owner.
+ * Weapon B23: 02 Sleep, 04 Paralysis, 08 Petrification, 20 Poison,
+ * 40 Power Up, 80 Power Down. Existing ailments keep priority for combinations.
+ * The retail secondary dispatcher owns eligibility and attribute updates.
+ * Events 27/29/2A replay Poison/Power Up/Power Down on the struck actor.
  */
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -16,7 +16,7 @@ static __inline__ int func_0020C2F4(void *record) { return (*(u32 *)((u8 *)recor
 static __inline__ int func_0020C310(void *record) { return (*(u32 *)((u8 *)record + 0x40) & 4) != 0; }
 static __inline__ int func_0020C32C(void *record) { return (*(u32 *)((u8 *)record + 0x40) & 2) != 0; }
 static __inline__ int func_0020C348(void *record) { return (*(u32 *)((u8 *)record + 0x40) & 16) != 0; }
-void func_0021D7CC(void *);
+void func_0022B06C(void *, u8 *);
 void *func_0020C478(unsigned int index);
 void func_0021D200(s32, s32, void *);
 void func_0021D230(s32, s32, void *, s32);
@@ -62,11 +62,6 @@ void func_0022A964(void *record, s32 initial_time, s32 mode, s32 parameter, u8 f
                 func_0021D230(0x27, time, record, 0xFF);
             }
         }
-    }
-    if ((flags & 0x2E) == 0x20 && !(*(u32 *)((u8 *)record + 0x40) & 0x1F)) {
-        *(u32 *)((u8 *)record + 0x40) |= 0x10;
-        func_0021D7CC(record);
-        func_0021D230(0x27, time, record, 0xFF);
     }
     mode_bits = flags & 0xE;
     if (mode_bits != 0) {
@@ -121,14 +116,18 @@ void func_0022A964(void *record, s32 initial_time, s32 mode, s32 parameter, u8 f
             goto default_path;
         }
     } else {
+        u8 effect = (flags & 0x20) ? 10 : (flags & 0x40) ? 5 : (flags & 0x80) ? 6 : 0;
+        if (effect) {
+            func_0022B06C(record, &effect);
+            if (effect)
+                func_0021D230(effect == 10 ? 0x27 : effect + 0x24, time, record, 0xFF);
+        }
 default_path:
         if (func_0020C32C(record) == 0) {
-            if (func_0020C2F4(record) != 0) {
-                func_0021D25C(0x1D, time, record, 0xFF, 0x20);
-                time += func_0022257C((u8 *)*(void **)record + 0x44, 0x20, 0);
-            } else if (func_0020C310(record) != 0) {
-                func_0021D25C(0x1D, time, record, 0xFF, 0x22);
-                time += func_0022257C((u8 *)*(void **)record + 0x44, 0x22, 0);
+            s32 pose = func_0020C2F4(record) ? 0x20 : func_0020C310(record) ? 0x22 : 0;
+            if (pose) {
+                func_0021D25C(0x1D, time, record, 0xFF, pose);
+                time += func_0022257C((u8 *)*(void **)record + 0x44, pose, 0);
             }
         }
 finish:

@@ -3,15 +3,17 @@
 // pose, RNG and attribute services are deterministic traps, not a full console.
 const fs = require('fs'), assert = require('assert/strict');
 const { Mips } = require('../../tests/lib/mips-interpreter.cjs');
+const { FloatMips } = require('./float-mips.cjs');
 const original = fs.readFileSync(process.argv[2]), patched = fs.readFileSync(process.argv[3]);
 for (const image of [original, patched]) {
   if (image.readUInt32BE(0) === 0x37804012) image.swap16();
   assert.equal(image.readUInt32BE(0), 0x80371240);
 }
 const entry = 0x801e7694, record = 0x80300000, context = 0x80400000, stack = 0x807fe000;
-function machine(image) {
-  const m = new Mips();
-  m.load(entry, image.subarray(0x22a964, 0x22b06c)); // hit routine + damage caller
+function machine(image, actualAttributes=false) {
+  const m = actualAttributes ? new FloatMips() : new Mips();
+  m.load(entry, image.subarray(0x22a964, 0x22b1f4)); // hit, damage and secondary status dispatcher
+  m.load(0x801f6bf0, original.subarray(0x239ec0,0x239ee8)); // dispatcher jump table
   m.load(0x801f45c0, original.subarray(0x237890, 0x2379ac)); // actual immunity filter
   m.load(0x801c8e30, original.subarray(0x20c2c0, 0x20c364)); // actual status predicates
   m.trap(0x801c8fe8, c => c.set('v0', record + c.get('a0') * 0x100));
@@ -29,6 +31,27 @@ function machine(image) {
     assert.equal(c.r32(c.get('a0')+0x40) & 0x10, 0x10, 'Poison flag precedes attribute rebuild');
     c.rebuilt++;
   });
+  for(const [address, step] of [[0x801da4b4,1],[0x801da4d8,-1]])
+    m.trap(address,c=>{c.power+=step;c.rebuilt++;});
+  if(actualAttributes) {
+    m.load(0x801da180,original.subarray(0x21d450,0x21d7e8)); // real baseline attribute arithmetic + wrappers
+    m.load(0x801c8b68,original.subarray(0x20bff8,0x20c050)); // side predicates
+    m.load(0x801e6c28,original.subarray(0x229ef8,0x229f00)); // Poison double constant
+    for(const address of [0x801da4b4,0x801da4d8,0x801da4fc])m.traps.delete(address);
+    const execute=m.exec.bind(m);
+    m.exec=(pc,next)=>{
+      if([0x801da4b4,0x801da4d8,0x801da4fc].includes(pc)) {
+        m.rebuilt++;m.power+=pc===0x801da4b4?1:pc===0x801da4d8?-1:0;
+      }
+      return execute(pc,next);
+    };
+    // Execute the retail Power display-event bodies, with only the renderer and
+    // enclosing dispatch-loop exit trapped. Prediction and playback start from
+    // independent copies of the same actor, as the game's event pipeline does.
+    m.load(0x801dd65c,original.subarray(0x22092c,0x220960));
+    m.trap(0x801e34d8,c=>c.displayed.push(c.get('a1')));
+    m.trap(0x801ddf10,c=>c.set('ra',0x80000100));
+  }
   m.trap(0x801c8c74, c => c.set('v0', c.soldiers)); // actual ADfc group predicate call
   m.trap(0x801c9fb4, c => c.set('v0', Math.ceil(c.get('a0') / c.get('a1'))));
   m.trap(0x801e6fb0, c => { c.killed++; c.w16(record+0x20,0); });
@@ -49,7 +72,9 @@ function setup(m, status=0, luck=0, scan=0, end=0) {
     m.w32(p+0x6c, 100+i); m.w32(p+0x70, 200+i);
   }
   m.w8(record+0x30, luck); m.w32(record+0x94,end); m.w16(record+0x20,30); m.w16(record+0x22,10);
-  m.events=[]; m.poses=[]; m.random=0; m.rebuilt=0; m.killed=0; m.scan=scan; m.soldiers=0;
+  for(let i=0;i<6;i++) {m.w16(0x80193bc0+0x1c+i*2,200);m.w16(record+0x24+i*2,200);}
+  m.w8(0x80193bc0+0x28,50);
+  m.events=[]; m.poses=[]; m.random=0; m.rebuilt=0; m.killed=0; m.scan=scan; m.soldiers=0; m.power=0;m.displayed=[];
   m.weapon=1; m.weaponFlags=0; m.classImmunity=0; m.equipmentImmunity={};
 }
 function hit(m, flags, mode=1) {
@@ -60,9 +85,10 @@ function hit(m, flags, mode=1) {
 }
 const retail=machine(original), built=machine(patched);
 let cases=0;
-// Include unknown/special weapon bits and status combinations; bit20 is tested below.
+// All original weapon bits/combinations. The three formerly unused bits now
+// select Poison/Power Up/Power Down and have dedicated tests below.
 for(let flags=0;flags<256;flags++) {
-  if(flags&0x20)continue;
+  if(flags&0xe0)continue;
   for(let status=0;status<32;status++) for(const mode of [0,1]) for(const luck of [0,100]) {
     const scan=cases%3, end=cases%2 ? 1000 : 0;
     setup(retail,status|0x60,luck,scan,end); setup(built,status|0x60,luck,scan,end);
@@ -70,6 +96,21 @@ for(let flags=0;flags<256;flags++) {
     cases++;
   }
 }
+let powerCases=0;
+for(const [flag,step,event] of [[0x40,1,0x29],[0x80,-1,0x2a]])
+  for(let status=0;status<32;status++)for(const mode of [0,1])for(const luck of [0,100]) {
+    setup(retail,status,luck);setup(built,status,luck);
+    const before=hit(retail,0,mode);hit(built,flag,mode);
+    const allowed=!(status&1);
+    assert.equal(built.power,allowed?step:0);
+    assert.equal(built.rebuilt,allowed?1:0);
+    assert.deepEqual(Buffer.from(built.ram.subarray(built.phys(record),built.phys(record)+0x1400)),before.actors);
+    assert.deepEqual(built.poses,before.poses);
+    const extra=built.events.filter(e=>e[0]===event);
+    assert.equal(extra.length,allowed?1:0);
+    if(allowed)assert.deepEqual(extra[0].slice(2),[record,0xff]);
+    powerCases++;
+  }
 let poisonCases=0;
 for(let status=0;status<32;status++) for(const mode of [0,1]) for(const luck of [0,100]) {
   setup(retail,status|0x60,luck); setup(built,status|0x60,luck);
@@ -84,24 +125,45 @@ for(let status=0;status<32;status++) for(const mode of [0,1]) for(const luck of 
   poisonCases++;
 }
 // Original immunity code, exercising every target equipment slot and class immunity.
-for(const [flag,immune] of [[2,4],[4,8],[8,2],[0x20,0x10]]) {
+for(const [flag,immune] of [[2,4],[4,8],[8,2],[0x20,0x10],[0x40,0],[0x80,0]]) {
   for(const slot of [-2,-1,0,1,2,3]) {
     setup(built);built.weaponFlags=flag;
     if(slot===-1)built.classImmunity=immune;
     if(slot>=0){built.w16(record+0x36+slot*2,7);built.equipmentImmunity[7]=flag;}
     built.set('a0',record+0x100);built.set('a1',record);built.call(0x801f45c0);
-    assert.equal(built.get('v0'),slot===-2?flag:0);
+    const allowed=slot===-2 || (slot===-1 && !immune);
+    assert.equal(built.get('v0'),allowed?flag:0);
     hit(built,built.get('v0'));
-    assert.equal(built.r32(record+0x40)&0x1e,slot===-2?immune:0);
+    assert.equal(built.r32(record+0x40)&0x1e,allowed?immune:0);
+    if(flag&0xc0)assert.equal(built.power,allowed?(flag===0x40?1:-1):0);
   }
 }
 // Actual retail damage wrapper: only a surviving target reaches the new routine.
-for(const soldiers of [0,1])for(const damage of [0,5,15,30,40]) {
+for(const flag of [0x20,0x40,0x80])for(const soldiers of [0,1])for(const damage of [0,5,15,30,40]) {
   setup(built);built.soldiers=soldiers;
   built.set('a0',record);built.set('a1',0);built.set('a2',10);built.set('a3',damage);
-  for(const [index,value] of [[4,0],[5,0x20],[6,1],[7,0]])built.w32(stack+index*4,value);
+  for(const [index,value] of [[4,0],[5,flag],[6,1],[7,0]])built.w32(stack+index*4,value);
   built.call(0x801e7b2c);
   assert.equal(built.rebuilt,damage<30?1:0,`damage=${damage} soldiers=${soldiers}`);
   assert.equal(built.killed,damage>=30?1:0);
 }
-console.log(`${cases} original-vs-compiled cases, ${poisonCases} Poison cases, 24 immunity cases and 10 nonlethal/lethal ordinary/Soldier cases passed.`);
+const actual=machine(patched,true), playback=machine(patched,true);
+let arithmeticCases=0;
+for(const [flag,event,step] of [[0x40,0x29,1],[0x80,0x2a,-1]])for(const status of [0,0x10]) {
+  setup(actual,status);setup(playback,status);
+  const permanent=Buffer.from(actual.ram.subarray(actual.phys(0x80193bc0),actual.phys(0x80193bc0)+56));
+  for(let count=1;count<=3;count++) {
+    hit(actual,flag);
+    const expected=200+step*20*count-(status?20:0);
+    for(let i=0;i<6;i++)assert.equal(actual.r16(record+0x24+i*2),expected);
+    assert.equal(actual.r8(record+0x30),50+step*5*count-(status?5:0));
+    assert.equal(actual.r16(record+0x20),30);assert.equal(actual.r16(record+0x22),10);
+    assert.deepEqual(Buffer.from(actual.ram.subarray(actual.phys(0x80193bc0),actual.phys(0x80193bc0)+56)),permanent);
+    playback.set('s4',record);playback.call(event===0x29?0x801dd65c:0x801dd670);
+    assert.equal(playback.displayed.at(-1),event===0x29?9:10);
+    assert.deepEqual(Buffer.from(actual.ram.subarray(actual.phys(record)+0x24,actual.phys(record)+0x49)),
+      Buffer.from(playback.ram.subarray(playback.phys(record)+0x24,playback.phys(record)+0x49)));
+    arithmeticCases++;
+  }
+}
+console.log(`${cases} retail comparisons, ${poisonCases} Poison and ${powerCases} Power eligibility cases, 36 immunity cases, 30 damage cases and ${arithmeticCases} real attribute/playback cases passed.`);

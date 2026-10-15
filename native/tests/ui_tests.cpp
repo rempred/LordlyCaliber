@@ -197,14 +197,20 @@ class UiTests : public QObject {
             if (fields(Table::Items)[n].key == "equipType") type=n+2;
         }
         QVERIFY(flags >= 2); QVERIFY(type >= 2);
-        QVERIFY(model->setData(model->index(1, flags), 0xd1, Qt::EditRole));
-        for (const int effect : {32, 2, 4, 8, 0}) {
+        QVERIFY(model->setData(model->index(1, flags), 0x11, Qt::EditRole));
+        for (const int effect : {32, 2, 4, 8, 64, 128, 0}) {
             const int index = choice->findData(effect); QVERIFY(index >= 0);
             choice->setCurrentIndex(index);
             QVERIFY(QMetaObject::invokeMethod(choice, "activated", Qt::DirectConnection, Q_ARG(int,index)));
-            QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0xd1|effect);
+            QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0x11|effect);
             undo->undo(); undo->redo();
             QCOMPARE(choice->currentData().toInt(), effect);
+            if (effect==64 || effect==128) {
+                auto help=window.findChild<QLabel *>("weaponStatusHelp");
+                QVERIFY(help->text().contains("Power Up strengthens the target"));
+                QTRY_VERIFY(help->height() >= help->heightForWidth(help->width()));
+                QVERIFY(window.grab().save(QCoreApplication::applicationDirPath()+"/weapon-power-ui.png"));
+            }
         }
         QVERIFY(model->setData(model->index(1, flags), 0xd7, Qt::EditRole));
         QVERIFY(choice->currentText().startsWith("Existing combination:"));
@@ -214,14 +220,14 @@ class UiTests : public QObject {
         const int poison = choice->findData(32);
         choice->setCurrentIndex(poison);
         QMetaObject::invokeMethod(choice, "activated", Qt::DirectConnection, Q_ARG(int,poison));
-        QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0xf1);
+        QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0x31);
         QCOMPARE(model->appendItem(1, "Poison blade copy"), 278);
         window.navigateTo({"items", 278, -1, "section:Stats"});
         QCOMPARE(choice->currentText(), "Poison");
         QVERIFY(window.grab().save(QCoreApplication::applicationDirPath()+"/weapon-status-ui.png"));
         QVERIFY(model->setData(model->index(278, type), 14, Qt::EditRole));
         QVERIFY(!choice->isEnabled()); QCOMPARE(choice->currentText(), "Poison");
-        QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0xf1);
+        QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0x31);
         undo->undo(); QVERIFY(choice->isEnabled());
     }
     void classSetupAndTestingHandoff() {
