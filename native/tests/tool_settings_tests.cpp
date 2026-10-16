@@ -15,6 +15,34 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void statusRecoveryCompatibility() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom=Rom::open(path); Compiler compiler(tools); compiler.authenticate(); QTemporaryDir work;
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/recovery-compat-XXXXXX");
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            for(const auto &version:{QString("weapon-hit-v1"),QString("weapon-hit")}) {
+                QFile manifest(":/game/items/"+version+".json"), source(":/game/items/"+version+".c");
+                QVERIFY(manifest.open(QIODevice::ReadOnly)); QVERIFY(source.open(QIODevice::ReadOnly));
+                const auto spec=QJsonDocument::fromJson(manifest.readAll()).object();
+                QMap<QString,quint32> symbols; const auto bindings=spec["symbols"].toObject();
+                for(auto it=bindings.begin();it!=bindings.end();++it) symbols[it.key()]=it->toString().toUInt(nullptr,0);
+                const auto code=compiler.compileModule(source.readAll(),work.path(),"old_weapon",0x801e7694,{},symbols).fitOwner(1176);
+                QCOMPARE(sha256(code),spec["compiledSha256"].toString().toLatin1());
+                auto original=rom.bytes();original.replace(0x22a964,1176,code);Rom::updateChecksum(original);
+                auto project=Project::fromRom(Rom::fromBytes(original));project.loadTools();const auto defaults=project.tools()->json();
+                auto settings=defaults,rules=settings["gameRules"].toObject();rules["sleepRecoveryChance"]=25;
+                settings["gameRules"]=rules;project.setTools(settings);
+                const auto built=rebuild(project,tools,work.path());
+                const auto folder=output.filePath(version);QVERIFY(QDir().mkpath(folder));
+                const auto candidate=folder+"/"+QFileInfo(path).fileName();exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();
+                QCOMPARE(reopened.tools()->json(),settings);QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+                reopened.setTools(defaults);QCOMPARE(rebuild(reopened,tools,work.path()).image,original);
+            }
+        } catch(const std::exception &e) { QFAIL(e.what()); }
+    }
     void statusEffects() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

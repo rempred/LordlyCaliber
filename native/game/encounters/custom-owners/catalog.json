@@ -29,7 +29,8 @@
         "service_8019cb3c": 2149174076,
         "service_8019c7a8": 2149173160,
         "service_80093540": 2148087104
-      }
+      },
+      "acceptedC": true
     },
     {
       "name": "card_message",
@@ -84,7 +85,8 @@
         "service_800ea604": 2148443652,
         "service_801de440": 2149442624,
         "service_801dc720": 2149435168
-      }
+      },
+      "acceptedC": true
     },
     {
       "name": "materializer",
@@ -325,7 +327,8 @@
         "service_8016f4e0": 2148988128,
         "service_800934b0": 2148086960,
         "service_8009c550": 2148123984
-      }
+      },
+      "acceptedC": true
     },
     {
       "name": "menu_iterator",
@@ -358,7 +361,8 @@
         "service_801c8aec": 2149354220,
         "service_801c8afc": 2149354236,
         "service_801c5938": 2149341496
-      }
+      },
+      "acceptedC": true
     },
     {
       "name": "round",
@@ -454,7 +458,8 @@
         "service_8016e338": 2148983608,
         "service_801d2614": 2149393940,
         "service_801c88cc": 2149353676
-      }
+      },
+      "acceptedC": true
     }
   ],
   "dependencies": [

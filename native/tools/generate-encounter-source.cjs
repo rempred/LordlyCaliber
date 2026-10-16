@@ -54,7 +54,7 @@ for(const row of rows){
   if(custom)out.push('.endif');
 }
 const source=out.join('\n')+'\n',output=path.join(root,'native/game/encounters');
-fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'dispatcher.s'),source);
+fs.mkdirSync(output,{recursive:true});
 const fields=[
  [0x13c1e8,'divisor','high'],[0x13c1ec,'divisor','low'],
  [0x13c1fc,'alternatePassCount','high'],[0x13c204,'alternatePassCount','low'],
@@ -86,7 +86,8 @@ for(const scenarioMode of [false,true]){
  selection.original.forEach((w,i)=>hooked.writeUInt32BE(w,selection.offset+i*4));
  if(!hooked.equals(scenarioMode?scenario:native))throw Error('Custom selection changed other dispatcher behavior');
 }
-fs.writeFileSync(path.join(output,'dispatcher.json'),JSON.stringify({
+const patches=require('./lib/owner-hooks.cjs')(source,output,'dispatcher',start,ram,[[0x13c1e8,0x13c230],[0x13c268,0x13c290],[0x13c414,0x13c41c]]);
+fs.writeFileSync(path.join(output,'dispatcher.json'),JSON.stringify({acceptedC:true,patches,
  generator:'native/tools/generate-encounter-source.cjs',input:'Accepted Decomp ASM func_0013C060.s; US Rev0 z64 SHA256 '+hash(rom),
  start,size:end-start,address:ram,retailSha256:hash(retail),nativeMaskedSha256:hash(masked),scenarioMaskedSha256:hash(scenarioMasked),fields,calls,selection,
  dma:{start:0x2de50,size:164,sha256:hash(rom.subarray(0x2de50,0x2def4))},

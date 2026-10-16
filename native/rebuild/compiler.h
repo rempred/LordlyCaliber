@@ -32,12 +32,21 @@ class Compiler {
                                  const QMap<QString, quint32> &symbols = {},
                                  bool inlineReadOnlyData = false) const;
     void authenticate() const;
+    // Freshly compile an authenticated original C owner at its exact game address.
+    // Small, separately bounded mod hooks may then be applied by the caller.
+    QByteArray compileAcceptedOwner(quint32 romStart, const QString &directory,
+                                    const QString &name) const;
     QByteArray assembleOwner(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address,
                              const QMap<QString, quint32> &symbols = {},
                              bool preserveInstructionPositions = false) const;
 
   private:
+    QByteArray compileAtLayout(const QByteArray &source, const QString &directory,
+                               const QString &name, quint32 address, const QString &section,
+                               const QMap<QString, QByteArray> &headers,
+                               const QMap<QString, quint32> &symbols, bool inlineReadOnlyData,
+                               const QJsonObject &fixedLayout) const;
     void run(const QString &tool, const QStringList &args, const QString &directory) const;
     QString root_;
 };

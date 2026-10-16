@@ -47,6 +47,16 @@ function main(args) {
     }
   }
   const checks = [];
+  const compiledOwners = new Map(game('accepted/owners.json').owners.map(owner => [owner.start, owner]));
+  function compiledSource(start) {
+    const owner = compiledOwners.get(start);
+    if (!owner || digest(fs.readFileSync(path.join(native, 'game', owner.source))) !== owner.sourceSha256.toUpperCase())
+      throw Error('Missing or changed compiled C owner: ' + hex(start));
+    const target = accepted.find(t => t.symbol === owner.symbol);
+    if (!target || target.sourceClass !== owner.sourceClass || target.sourceSha256.toLowerCase() !== owner.sourceSha256)
+      throw Error('Compiled owner disagrees with accepted evidence: ' + hex(start));
+    return 'game/' + owner.source;
+  }
   function check(name, start, size, selection, consumer, source) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(size) || start < 0 || size <= 0)
       throw Error('Invalid owner range: ' + name);
@@ -59,20 +69,20 @@ function main(args) {
       gap: selection === 'assembly-owner' && alternatives.length > 0});
   }
   for (const owner of game('promotion/owners.json').owners) {
-    const selection = owner.cSource ? 'adapted-c' : owner.cFragment ? 'c-fragment-with-retained-owner' :
+    const selection = owner.acceptedC ? 'compiled-c-with-bounded-hooks' : owner.cSource ? 'adapted-c' : owner.cFragment ? 'c-fragment-with-retained-owner' :
       owner.start === 0xbbd50 ? 'custom-family-return-abi' : 'assembly-owner';
     check(owner.name, owner.start, owner.size, selection, 'rebuild/promotion_runtime.cpp; rebuild/compiler.cpp',
-      owner.cSource ? 'game/promotion/' + owner.cSource : owner.start === 0xbbd50 ? 'game/promotion/family-lookup.s' :
+      owner.acceptedC ? compiledSource(owner.start) : owner.cSource ? 'game/promotion/' + owner.cSource : owner.start === 0xbbd50 ? 'game/promotion/family-lookup.s' :
       'game/promotion/owners.json (generated instruction source)');
   }
   for (const owner of game('encounters/custom-owners/catalog.json').owners)
-    check(owner.name, owner.start, owner.size, 'assembly-owner', 'rebuild/custom_encounters.cpp',
-      'game/encounters/custom-owners/' + owner.name + '.s');
+    check(owner.name, owner.start, owner.size, owner.acceptedC ? 'compiled-c-with-bounded-hooks' : 'assembly-owner', 'rebuild/custom_encounters.cpp',
+      owner.acceptedC ? compiledSource(owner.start) : 'game/encounters/custom-owners/' + owner.name + '.s');
   for (const name of ['dispatcher', 'rewards']) {
     const owner = game('encounters/' + name + '.json');
-    check(name, owner.start, owner.size, 'assembly-owner',
+    check(name, owner.start, owner.size, owner.acceptedC ? 'compiled-c-with-bounded-hooks' : 'assembly-owner',
       name === 'dispatcher' ? 'rebuild/scenario_rates.cpp; rebuild/compiler.cpp; rebuild/custom_encounters.cpp' :
-        'rebuild/creature_rewards.cpp; rebuild/custom_encounters.cpp', 'game/encounters/' + name + '.s');
+        'rebuild/creature_rewards.cpp; rebuild/custom_encounters.cpp', owner.acceptedC ? compiledSource(owner.start) : 'game/encounters/' + name + '.s');
   }
   const effectsHeader = fs.readFileSync(path.join(native, 'engine/consumable_effects.h'), 'utf8');
   const effectsOffset = effectsHeader.match(/romOffset\s*=\s*(0x[0-9a-f]+)/i);
@@ -88,8 +98,10 @@ function main(args) {
       'game/tools/game-rules.json');
   for (const [name, owner] of Object.entries(game('tools/status-effects.json')))
     check(name, owner.offset, owner.size, name === 'statusPoison' ? 'data' :
+      ['statusSleep', 'statusParalysis', 'statusWake'].includes(name) ? 'compiled-c-with-bounded-hooks' :
       ['statusPowerUp', 'statusPowerDown'].includes(name) ? 'instruction-patch' : 'assembly-owner',
-      'engine/status_rules.cpp; rebuild/compiler.cpp', 'game/tools/status-effects.json');
+      'engine/status_rules.cpp; rebuild/compiler.cpp; rebuild/weapon_status.cpp',
+      ['statusSleep', 'statusParalysis', 'statusWake'].includes(name) ? compiledSource(owner.offset) : 'game/tools/status-effects.json');
   for (const owner of game('shops/owners.json').owners)
     check('shop ' + hex(owner.start), owner.start, owner.size,
       owner.start === 0x19be40 ? 'adapted-c' : 'instruction-patch', 'rebuild/shop_runtime.cpp',
@@ -104,7 +116,8 @@ art/animation-override-mode-return.s art/animation-override-return.s art/body-co
 art/body-entrance-skip.s art/body-entrance-sticky.s art/body-markers.s art/body-roster-sticky.s
 art/equipment-allocate.s art/equipment-image-context.s art/equipment-image-kind.s art/equipment-image.s
 art/equipment-register.s classes/description-index.s classes/pak-export.s classes/pak-import.s
-encounters/custom-sites.s promotion/class-render-entry.s promotion/class-render-style.s
+encounters/custom-sites.s encounters/dispatcher-hook-0.s encounters/dispatcher-hook-1.s
+encounters/dispatcher-hook-2.s encounters/rewards-hook-0.s promotion/class-render-entry.s promotion/class-render-style.s
 promotion/equipment-first-class.s scenarios/capacity-battle-fields.s scenarios/capacity-battle-hp.s
 scenarios/capacity-battle-type.s shops/consumers.s shops/selection-guard.s tools/alignment-bootstrap.s
 tools/alignment-module.s tools/alignment-templates.s tools/chaos-bootstrap.s tools/chaos-continuation.s

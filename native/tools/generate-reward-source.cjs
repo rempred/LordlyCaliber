@@ -43,7 +43,7 @@ for(const row of rows){
  else out.push('    '+original);
 }
 const source=out.join('\n')+'\n',output=path.join(root,'native/game/encounters');
-fs.writeFileSync(path.join(output,'rewards.s'),source);
+
 const toolDir=path.resolve(process.argv[4]),pins=JSON.parse(fs.readFileSync(path.join(root,'native/rebuild/toolchain.json'))).tools;
 for(const [name,expected] of Object.entries(pins))if(hash(fs.readFileSync(path.join(toolDir,name)))!==expected.toLowerCase())throw Error('Compiler identity mismatch: '+name);
 const build=path.join(root,'native/build/reward-source');fs.mkdirSync(build,{recursive:true});
@@ -65,7 +65,8 @@ if(hooked.length!==native.length||!hooked.subarray(at+16,at+120).equals(native.s
 const customPrefix={offset:at,size:120,entry:'lc_custom_reward',words:[0,hooked.readUInt32BE(at+4),hooked.readUInt32BE(at+8),hooked.readUInt32BE(at+12)]};
 const restored=Buffer.from(hooked);native.copy(restored,at,at,at+120);
 if(!restored.equals(native))throw Error('Custom selector changed another instruction');
-fs.writeFileSync(path.join(output,'rewards.json'),JSON.stringify({generator:'native/tools/generate-reward-source.cjs',
+const patches=require('./lib/owner-hooks.cjs')(source,output,'rewards',start,ram,[[0x10245c,0x1024d4]]);
+fs.writeFileSync(path.join(output,'rewards.json'),JSON.stringify({acceptedC:true,patches,generator:'native/tools/generate-reward-source.cjs',
  input:'Accepted Decomp ASM func_00101DDC.s; US Rev0 z64 SHA256 '+hash(rom),start,size:end-start,address:ram,
  retailSha256:hash(retail),nativeMaskedSha256:hash(masked),calls,customPrefix,
  dma:{start:0x2de50,size:164,sha256:hash(rom.subarray(0x2de50,0x2def4))},

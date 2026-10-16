@@ -1,3 +1,4 @@
+#include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
 #include "rebuild/weapon_status.h"
@@ -83,6 +84,42 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
                              const QMap<QString, QByteArray> &headers,
                              const QMap<QString, quint32> &symbols,
                              bool inlineReadOnlyData) const {
+    return compileAtLayout(source, directory, name, address, section, headers, symbols,
+                           inlineReadOnlyData, {});
+}
+// Both the relocatable object and linked output use ELF32 big-endian sections.
+static int elfSectionHeader(const QByteArray &elf, const QByteArray &name) {
+    if (elf.first(7) != QByteArray::fromHex("7f454c46010201") || elf.size() < 52 ||
+        u16(elf, 18) != 8 || u16(elf, 46) != 40)
+        throw Error("Expected an ELF32 big-endian MIPS object");
+    const quint32 begin = u32(elf, 32), count = u16(elf, 48), names = u16(elf, 50);
+    if (names >= count || quint64(begin) + count * 40 > quint64(elf.size()))
+        throw Error("Invalid ELF section directory");
+    const auto stringsAt = u32(elf, begin + names * 40 + 16);
+    const auto stringsSize = u32(elf, begin + names * 40 + 20);
+    if (quint64(stringsAt) + stringsSize > quint64(elf.size()))
+        throw Error("Invalid ELF section names");
+    const auto strings = elf.mid(stringsAt, stringsSize);
+    for (quint32 i = 0; i < count; ++i) {
+        const auto at = begin + i * 40, offset = u32(elf, at);
+        if (offset >= stringsSize || strings.indexOf('\0', offset) < 0)
+            throw Error("Invalid ELF section name");
+        if (strings.mid(offset, strings.indexOf('\0', offset) - offset) == name)
+            return int(at);
+    }
+    throw Error("Missing ELF section: " + QString::fromLatin1(name));
+}
+static QByteArray elfSectionBytes(const QByteArray &elf, const QByteArray &name) {
+    const int header = elfSectionHeader(elf, name);
+    const auto offset = u32(elf, header + 16), size = u32(elf, header + 20);
+    if (quint64(offset) + size > quint64(elf.size())) throw Error("ELF section outside file");
+    return elf.mid(offset, size);
+}
+QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &directory,
+                                     const QString &name, quint32 address, const QString &section,
+                                     const QMap<QString, QByteArray> &headers,
+                                     const QMap<QString, quint32> &symbols,
+                                     bool inlineReadOnlyData, const QJsonObject &fixedLayout) const {
     if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(name).hasMatch())
         throw Error("Invalid source unit name");
     if (section != ".text" && section != ".data")
@@ -105,8 +142,10 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
         throw Error("Cannot create source header directory");
     QDir includes(headerDirectory.path());
     for (auto it = headers.begin(); it != headers.end(); ++it) {
-        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_-]*\\.h$").match(it.key()).hasMatch())
+        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_/-]*\\.h$").match(it.key()).hasMatch())
             throw Error("Invalid source header name");
+        if (!QDir().mkpath(QFileInfo(includes.absoluteFilePath(it.key())).absolutePath()))
+            throw Error("Cannot create source header folder");
         atomicWrite(includes.absoluteFilePath(it.key()), it.value());
     }
     // The executable runs on Windows; its input describes the N64 target.
@@ -123,19 +162,57 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
     run("mips-kmc-elf-as.exe",
         {"-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly},
         directory);
+    if (!fixedLayout.isEmpty()) {
+        auto bytes = readFile(object);
+        // The compiler emits 16-byte object alignment; original functions may
+        // start at any word. Change section alignment, never its instructions.
+        put32(bytes, elfSectionHeader(bytes, ".text") + 32, 4);
+        atomicWrite(object, bytes);
+    }
     QByteArray bindings;
     for (auto it = symbols.begin(); it != symbols.end(); ++it) {
         if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(it.key()).hasMatch())
             throw Error("Invalid linked symbol name");
         bindings += QString("%1 = 0x%2;\n").arg(it.key()).arg(it.value(), 0, 16).toLatin1();
     }
-    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } }\n")
+    QByteArray constants;
+    const auto tables = fixedLayout["tables"].toArray();
+    if (!tables.isEmpty())
+        constants = QString(" .rodata 0x%1 : { *(.rodata) }")
+                        .arg(tables.first().toObject()["address"].toInteger(), 0, 16).toLatin1();
+    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } %4 }\n")
                                        .arg(section)
                                        .arg(address, 0, 16)
                                        .arg(inlineReadOnlyData ? "*(.rodata) *(.rdata) *(.lit4) *(.lit8)" : "")
+                                       .arg(QString::fromLatin1(constants))
                                        .toLatin1());
     run("mips-kmc-elf-ld.exe", {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object},
         directory);
+    if (!fixedLayout.isEmpty()) {
+        const auto linked = readFile(elf);
+        const auto code = elfSectionBytes(linked, ".text");
+        const int size = fixedLayout["size"].toInt();
+        if (u32(linked, elfSectionHeader(linked, ".text") + 12) != address ||
+            size <= 0 || code.size() < size || code.sliced(size) != QByteArray(code.size() - size, 0) ||
+            sha256(code.first(size)) != fixedLayout["sha256"].toString().toLatin1())
+            throw Error("Compiled accepted C differs from its qualified original owner: " + name);
+        if (!tables.isEmpty()) {
+            const auto data = elfSectionBytes(linked, ".rodata");
+            int extent = 0;
+            for (const auto &value : tables) {
+                const auto table = value.toObject();
+                const int offset = table["offset"].toInt(), length = table["size"].toInt();
+                if (offset != extent || length <= 0 || offset + length > data.size() ||
+                    quint64(u32(linked, elfSectionHeader(linked, ".rodata") + 12)) + offset !=
+                        quint64(table["address"].toInteger()) ||
+                    sha256(data.mid(offset, length)) != table["sha256"].toString().toLatin1())
+                    throw Error("Compiled C switch table differs from its qualified original");
+                extent += length;
+            }
+            if (extent != data.size()) throw Error("Unexpected compiled C table extent");
+        }
+        return code.first(size);
+    }
     QStringList extract = {"-O", "binary"};
     // GNU 2.6 predates --only-section. Remove its known ancillary sections,
     // then verify the complete extracted owner against the expected result.
@@ -146,6 +223,32 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
     extract << elf << binary;
     run("mips-kmc-elf-objcopy.exe", extract, directory);
     return readFile(binary);
+}
+QByteArray Compiler::compileAcceptedOwner(quint32 romStart, const QString &directory,
+                                           const QString &name) const {
+    const auto catalog = QJsonDocument::fromJson(readFile(":/game/accepted/owners.json")).object();
+    for (const auto &value : catalog["owners"].toArray()) {
+        const auto owner = value.toObject();
+        if (owner["start"].toInteger() != romStart) continue;
+        auto authenticated = [](const QString &path, const QString &hash) {
+            const auto bytes = readFile(":/game/" + path);
+            if (sha256(bytes) != hash.toLatin1()) throw Error("Accepted C input changed: " + path);
+            return bytes;
+        };
+        QMap<QString, QByteArray> headers;
+        for (const auto &v : owner["headers"].toArray()) {
+            const auto h = v.toObject();
+            headers[h["name"].toString()] = authenticated(h["source"].toString(), h["sha256"].toString());
+        }
+        QMap<QString, quint32> symbols;
+        const auto bindings = owner["symbols"].toObject();
+        for (auto it = bindings.begin(); it != bindings.end(); ++it)
+            symbols[it.key()] = quint32(it->toInteger());
+        return compileAtLayout(authenticated(owner["source"].toString(), owner["sourceSha256"].toString()),
+                               directory, name, quint32(owner["address"].toInteger()), ".text",
+                               headers, symbols, false, owner);
+    }
+    throw Error("Missing accepted C owner: " + QString::number(romStart, 16));
 }
 CompiledModule Compiler::compileModule(const QByteArray &source, const QString &directory,
                                        const QString &name, quint32 address,
@@ -399,6 +502,15 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     throw Error("Invalid C function allocation within its runtime owner");
                 built = module.fitOwner(extent) + original.sliced(extent);
                 expected = owner["cSourceSha256"].toString().toLatin1();
+            } else if (owner["acceptedC"].toBool()) {
+                built = compiler.compileAcceptedOwner(start, directory, owner["name"].toString() + "_accepted");
+                for (auto it = replacements.begin(); it != replacements.end(); ++it) {
+                    if (it.key() < start || it.key() >= start + size) continue;
+                    const auto patch = compiler.assembleOwner(it.value(), directory, "family_compare",
+                                                              quint32(it.key()) + 0x801135a0u);
+                    if (patch.size() != 4) throw Error("Family comparison exceeds one instruction");
+                    built.replace(it.key() - start, 4, patch);
+                }
             } else if (start == 0xbbd50)
                 source = readFile(":/game/promotion/family-lookup.s");
             else
@@ -671,10 +783,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              "inside the original dispatcher";
         } else if (p.encounters()->globalRate().modified()) {
             const auto &rate = p.encounters()->globalRate();
-            const auto code = compiler.assembleOwner(
-                rate.assemblyDefinitions() + readFile(":/game/encounters/dispatcher.s"), directory,
-                "encounter_dispatcher", EncounterRate::ramAddress,
-                EncounterRate::serviceAddresses(), true);
+            const auto code = compileEncounterOwner(compiler, "dispatcher", rate.assemblyDefinitions(),
+                                                     directory, "encounter_dispatcher");
             if (code.size() != EncounterRate::codeSize)
                 throw Error("Encounter dispatcher exceeds its original allocation");
             result.image.replace(EncounterRate::romOffset, EncounterRate::codeSize, code);
@@ -1091,7 +1201,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         for (const auto &owner : p.tools()->gameRules().builds()) {
             if (result.image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
                 throw Error("Another rebuild owner overlaps the " + owner.name + " rule");
-            const auto bytes = owner.data
+            const auto bytes = owner.compiledRecovery ? compileStatusRecovery(owner, compiler, directory) : owner.data
                 ? compiler.compileData(owner.expected, directory, "rule_" + owner.name)
                 : compiler.assembleOwner(owner.source, directory, "rule_" + owner.name,
                                          owner.address, owner.symbols, true);

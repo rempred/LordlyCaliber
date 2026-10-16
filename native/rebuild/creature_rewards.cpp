@@ -1,3 +1,4 @@
+#include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/creature_rewards.h"
 #include <QFile>
@@ -16,12 +17,8 @@ QByteArray rebuildCreatureRewards(const Rom &rom, const CreatureRewards &rewards
     const auto data = compiler.compileData(rows, directory, "creature_reward_rows");
     if (data != rows)
         throw Error("Compiled creature rewards differ from their authored rows");
-    QFile file(":/game/encounters/rewards.s");
-    if (!file.open(QIODevice::ReadOnly))
-        throw Error("Missing maintained creature reward source");
-    const auto code = compiler.assembleOwner(
-        CreatureRewards::definitions(offset) + file.readAll(), directory, "creature_reward_owner",
-        CreatureRewards::ownerAddress, CreatureRewards::services(), true);
+    const auto code = compileEncounterOwner(compiler, "rewards", CreatureRewards::definitions(offset),
+                                             directory, "creature_reward_owner");
     if (code.size() != CreatureRewards::ownerSize)
         throw Error("Creature reward source exceeds its original owner");
     auto image = rom.bytes();

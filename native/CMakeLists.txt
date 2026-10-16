@@ -20,7 +20,7 @@ target_include_directories(lordly_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_sources(lordly_engine PRIVATE rebuild/weapon_status.cpp)
 target_sources(lordly_engine PRIVATE engine/status_rules.cpp engine/recovery_store.cpp)
 qt_add_resources(lordly_engine weapon_status_sources PREFIX "/" BASE . FILES
-  game/items/weapon-hit.c game/items/weapon-hit.json game/tools/status-effects.json)
+  game/items/weapon-hit.c game/items/weapon-hit.json game/items/weapon-hit-v1.c game/items/weapon-hit-v1.json game/tools/status-effects.json)
 target_link_libraries(lordly_engine PRIVATE Qt6::ZlibPrivate)
 target_sources(lordly_engine PRIVATE engine/archive_writer.cpp)
 target_sources(lordly_engine PRIVATE engine/image.cpp engine/scenario_map.cpp game/scenarios/site-count.c)
@@ -165,17 +165,15 @@ target_sources(lordly_engine PRIVATE engine/consumable_effects.cpp)
 target_sources(lordly_engine PRIVATE engine/encounters.cpp engine/encounter_rate.cpp)
 target_sources(lordly_engine PRIVATE engine/creature_rewards.cpp rebuild/creature_rewards.cpp)
 target_sources(lordly_engine PRIVATE engine/scenario_rates.cpp rebuild/scenario_rates.cpp)
-qt_add_resources(lordly_engine reward_sources PREFIX "/" BASE . FILES game/encounters/rewards.s game/encounters/rewards.json)
+qt_add_resources(lordly_engine reward_sources PREFIX "/" BASE . FILES game/encounters/rewards-hook-0.s game/encounters/rewards.json)
 target_sources(lordly_engine PRIVATE engine/squad_members.cpp engine/custom_runtime.cpp engine/custom_squads.cpp rebuild/custom_encounters.cpp)
 qt_add_resources(lordly_engine custom_sources PREFIX "/" BASE . FILES game/encounters/custom.c game/encounters/custom.h game/encounters/custom-sites.s)
 qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
-  game/encounters/custom-owners/catalog.json game/encounters/custom-owners/card_text.s
-  game/encounters/custom-owners/card_message.s game/encounters/custom-owners/materializer.s
+  game/encounters/custom-owners/catalog.json
+  game/encounters/custom-owners/materializer.s
   game/encounters/custom-owners/persuasion.s game/encounters/custom-owners/retreat.s
-  game/encounters/custom-owners/recruit.s game/encounters/custom-owners/talk_results.s
-  game/encounters/custom-owners/action_budget.s game/encounters/custom-owners/menu_iterator.s
-  game/encounters/custom-owners/round.s)
-qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/encounters/dispatcher.s game/encounters/dispatcher.json)
+  game/encounters/custom-owners/recruit.s game/encounters/custom-owners/talk_results.s)
+qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/encounters/dispatcher-hook-0.s game/encounters/dispatcher-hook-1.s game/encounters/dispatcher-hook-2.s game/encounters/dispatcher.json)
 qt_add_resources(lordly_engine encounter_labels PREFIX "/" BASE . FILES game/encounters/labels.json)
 qt_add_resources(lordly_engine consumable_sources PREFIX "/" BASE . FILES game/consumables/effects.json game/consumables/effects.s)
 qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/stock.c game/shops/selection-guard.s game/shops/consumers.s)
@@ -456,3 +454,20 @@ get_property(lordly_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(lordly_target IN LISTS lordly_targets)
   set_property(TARGET ${lordly_target} PROPERTY QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
 endforeach()
+
+qt_add_resources(lordly_engine accepted_owner_sources PREFIX "/" BASE . FILES
+  game/accepted/hybrid/func_000c37ec.c
+  game/accepted/library/include/common/types.h
+  game/accepted/library/src/battle/func_002159D0.c
+  game/accepted/library/src/battle/func_00215CF0.c
+  game/accepted/library/src/battle/func_0021EBBC.c
+  game/accepted/library/src/battle/func_0022A964.c
+  game/accepted/library/src/battle/func_0022EC08.c
+  game/accepted/library/src/battle/func_0022EDD4.c
+  game/accepted/library/src/lib/func_000E5968.c
+  game/accepted/library/src/lib/func_00101ddc.c
+  game/accepted/library/src/lib/func_0010ddb4.c
+  game/accepted/library/src/lib/func_0013c060.c
+  game/accepted/owners.json)
+
+target_sources(lordly_engine PRIVATE rebuild/encounter_owners.cpp)

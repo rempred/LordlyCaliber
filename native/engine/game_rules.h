@@ -16,6 +16,8 @@ struct RuleBuild {
     QByteArray source, expected;
     QMap<QString, quint32> symbols;
     bool data = false;
+    bool compiledRecovery = false;
+    int recoveryChance = -1;
 };
 class GameRules {
   public:

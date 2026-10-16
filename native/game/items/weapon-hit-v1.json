@@ -1,0 +1,20 @@
+{
+  "romOffset": "0x22a964",
+  "ramAddress": "0x801e7694",
+  "size": 1176,
+  "retailSha256": "9c25689bfd60fce419ca36f9505733ae00ff98df2acfd444f455586df05d9832",
+  "compiledSha256": "c1c9613dbd2844247a2fe91cd258b0f37e7ecdcb20a0cbb898ea79f83b6f0a9f",
+  "symbols": {
+    "func_0020C2C0": "0x801c8e30",
+    "func_0020C478": "0x801c8fe8",
+    "func_0021D200": "0x801d9f30",
+    "func_0021D230": "0x801d9f60",
+    "func_0021D25C": "0x801d9f8c",
+    "func_0021D28C": "0x801d9fbc",
+    "func_002224F4": "0x801df224",
+    "func_0022257C": "0x801df2ac",
+    "func_00239AA4": "0x801f67d4",
+    "func_0002CBCC": "0x8009c7cc",
+    "func_0021D7CC": "0x801da4fc"
+  }
+}

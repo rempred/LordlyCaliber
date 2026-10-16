@@ -9,4 +9,5 @@ QVector<RuleBuild> buildStatusRules(const GameRules &, const QMap<QString,QByteA
 // Normalize only recognized wake-check edits, retaining all other owner bytes.
 QByteArray canonicalWeaponRecovery(const QByteArray &, int *chance = nullptr);
 QByteArray withWeaponRecovery(const QByteArray &, int chance);
+QByteArray withStatusRecovery(const QByteArray &, const QString &owner, int chance);
 }

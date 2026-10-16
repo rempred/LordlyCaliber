@@ -6,6 +6,43 @@
 #include <QJsonArray>
 
 namespace lordly {
+QByteArray compileStatusRecovery(const RuleBuild &rule, const Compiler &compiler,
+                                 const QString &directory) {
+    QByteArray code;
+    if (rule.offset == 0x22a964) {
+        const auto canonical = canonicalWeaponRecovery(rule.expected);
+        const auto hash = sha256(canonical);
+        auto read = [](const QString &path) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) throw Error("Missing recovery C source: " + path);
+            return file.readAll();
+        };
+        auto manifest = QJsonDocument::fromJson(read(":/game/items/weapon-hit.json")).object();
+        if (hash == manifest["retailSha256"].toString().toLatin1())
+            code = compiler.compileAcceptedOwner(rule.offset, directory, "recovery_retail_hit");
+        else {
+            QString source = "weapon-hit.c";
+            if (hash != manifest["compiledSha256"].toString().toLatin1()) {
+                // Keep the earlier Poison-only export editable without silently
+                // changing its game behavior when only recovery is adjusted.
+                manifest = QJsonDocument::fromJson(read(":/game/items/weapon-hit-v1.json")).object();
+                source = "weapon-hit-v1.c";
+            }
+            if (hash != manifest["compiledSha256"].toString().toLatin1())
+                throw Error("Missing qualified C for this physical-hit routine");
+            QMap<QString, quint32> symbols;
+            const auto bindings = manifest["symbols"].toObject();
+            for (auto it = bindings.begin(); it != bindings.end(); ++it)
+                symbols[it.key()] = it->toString().toUInt(nullptr, 0);
+            code = compiler.compileModule(read(":/game/items/" + source), directory,
+                                           "recovery_weapon_hit", rule.address, {}, symbols).fitOwner(rule.size);
+            if (sha256(code) != hash) throw Error("Compiled physical-hit recovery owner changed");
+        }
+    } else if (rule.offset == 0x22edd4 || rule.offset == 0x22ec08)
+        code = compiler.compileAcceptedOwner(rule.offset, directory, "recovery_" + rule.name);
+    else throw Error("Unknown compiled recovery owner");
+    return withStatusRecovery(code, rule.name, rule.recoveryChance);
+}
 void rebuildWeaponStatus(const Project &project, const Compiler &compiler,
                          const QString &directory, BuildResult &result) {
     bool needed = false;

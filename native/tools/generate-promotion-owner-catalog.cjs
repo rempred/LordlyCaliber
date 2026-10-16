@@ -165,4 +165,5 @@ for (const [start, sites] of [
   const owner = [...catalog.owners, ...catalog.expandedOwners].find(entry=>entry.start===start);
   owner.expandedDataReferences = sites.map(site=>({group:'aliases',high:site-start,low:site+8-start,addend:0}));
 }
+catalog.owners.find(owner=>owner.start===0xc37ec).acceptedC=true;
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

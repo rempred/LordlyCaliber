@@ -1,3 +1,4 @@
+#include "rebuild/encounter_owners.h"
 #include "rebuild/scenario_rates.h"
 #include <QFile>
 namespace lordly {
@@ -7,12 +8,8 @@ QByteArray rebuildScenarioRates(const Rom &rom, const ScenarioRates &rates,
     const auto prior = ScenarioRates::placement(rom);
     EncounterRate::load(rom);
     if (!rates.hasOverrides()) {
-        QFile file(":/game/encounters/dispatcher.s");
-        if (!file.open(QIODevice::ReadOnly))
-            throw Error("Missing maintained encounter dispatcher");
-        const auto code = compiler.assembleOwner(
-            global.assemblyDefinitions() + file.readAll(), directory, "global_only_dispatcher",
-            EncounterRate::ramAddress, EncounterRate::serviceAddresses(), true);
+        const auto code = compileEncounterOwner(compiler, "dispatcher", global.assemblyDefinitions(),
+                                                 directory, "global_only_dispatcher");
         if (code.size() != EncounterRate::codeSize)
             throw Error("Global dispatcher exceeds its original function");
         auto image = rom.bytes();
@@ -40,12 +37,8 @@ QByteArray rebuildScenarioRates(const Rom &rom, const ScenarioRates &rates,
     const auto data = compiler.compileData(expected, directory, "scenario_rates");
     if (data != expected)
         throw Error("Compiled scenario rates disagree with the project");
-    QFile file(":/game/encounters/dispatcher.s");
-    if (!file.open(QIODevice::ReadOnly))
-        throw Error("Missing maintained encounter dispatcher");
-    const auto code = compiler.assembleOwner(
-        ScenarioRates::definitions(offset) + file.readAll(), directory, "scenario_dispatcher",
-        EncounterRate::ramAddress, EncounterRate::serviceAddresses(), true);
+    const auto code = compileEncounterOwner(compiler, "dispatcher", ScenarioRates::definitions(offset),
+                                             directory, "scenario_dispatcher");
     if (code.size() != EncounterRate::codeSize)
         throw Error("Scenario dispatcher exceeds its original function");
     auto image = rom.bytes();

@@ -171,6 +171,16 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
             if (at < end || at + length > start + size || style.size() != length)
                 throw Error("Expanded drawing style exceeds its allocation");
             built.replace(at - start, length, style);
+        } else if (owner["acceptedC"].toBool()) {
+            built = compiler.compileAcceptedOwner(start, directory, owner["name"].toString() + "_accepted");
+            // The expanded family helper returns behavior separately in v1.
+            // Retain that one comparison hook on the freshly compiled C body.
+            for (auto it = familyChanges.begin(); it != familyChanges.end(); ++it) {
+                if (it.key() < start || it.key() >= start + size) continue;
+                const auto patch = assemble(it.value(), "_family_compare", it.key());
+                if (patch.size() != 4) throw Error("Family comparison exceeds one instruction");
+                built.replace(it.key() - start, 4, patch);
+            }
         } else if (start == 0xbbd50) {
             built = assemble(read(":/game/promotion/family-lookup.s"), "_expanded", start);
         } else {

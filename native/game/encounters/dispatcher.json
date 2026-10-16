@@ -74,5 +74,35 @@
     "address": 2148084320,
     "outputBits": 30,
     "sha256": "33416dc6ace647ad8ab60566f80ef6d3dc30917219956571c999d55e282c6d1b"
-  }
+  },
+  "acceptedC": true,
+  "patches": [
+    {
+      "offset": 392,
+      "size": 72,
+      "source": "dispatcher-hook-0.s",
+      "symbols": {
+        "L_13c270": 2149481264,
+        "L_13c46c": 2149481772
+      }
+    },
+    {
+      "offset": 520,
+      "size": 40,
+      "source": "dispatcher-hook-1.s",
+      "symbols": {
+        "L_13c290": 2149481296,
+        "L_13c46c": 2149481772,
+        "L_13c230": 2149481200
+      }
+    },
+    {
+      "offset": 948,
+      "size": 8,
+      "source": "dispatcher-hook-2.s",
+      "symbols": {
+        "L_13c14c": 2149480972
+      }
+    }
+  ]
 }

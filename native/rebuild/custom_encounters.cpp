@@ -1,3 +1,4 @@
+#include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/custom_encounters.h"
 #include "engine/class_data.h"
@@ -102,41 +103,55 @@ QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const 
             for (const auto &s : owner["sites"].toArray())
                 if (!entries.contains(s.toObject()["entry"].toString()))
                     throw Error("Missing custom caller entry");
-        QFile file(":/game/encounters/custom-owners/" + name + ".s");
-        if (!file.open(QIODevice::ReadOnly))
-            throw Error("Missing custom caller source: " + name);
         const auto at = owner["start"].toInt(), size = owner["size"].toInt();
-        auto code = compiler.assembleOwner(QByteArray(".equ LC_CUSTOM_SQUADS,") +
+        QByteArray code;
+        if (owner["acceptedC"].toBool()) {
+            code = compiler.compileAcceptedOwner(at, directory, "custom_caller_" + name);
+            // Card-message's final word is the next physical entry, outside
+            // its accepted C allocation. The caller verifier authenticated it.
+            if (code.size() < size) code += rom.bytes().mid(at + code.size(), size - code.size());
+            if (!entries.isEmpty())
+                for (const auto &s : owner["sites"].toArray()) {
+                    const auto site = s.toObject();
+                    const int offset = site["offset"].toInt();
+                    const auto original = site["original"].toArray();
+                    if (offset < 0 || offset + 8 > code.size() || original.size() != 2 ||
+                        u32(code, offset) != quint32(original[0].toInteger()) ||
+                        u32(code, offset + 4) != quint32(original[1].toInteger()) || site["keepDelay"].toBool())
+                        throw Error("C custom encounter hook no longer matches its qualified site");
+                    const auto patch = compiler.assembleOwner(
+                        "jal " + site["entry"].toString().toLatin1() + "\nnop\n", directory,
+                        "custom_hook_" + name + QString::number(offset),
+                        quint32(owner["address"].toInteger()) + offset, symbols, true);
+                    if (patch.size() != 8) throw Error("Custom encounter call exceeds its hook");
+                    code.replace(offset, 8, patch);
+                }
+        } else {
+            QFile file(":/game/encounters/custom-owners/" + name + ".s");
+            if (!file.open(QIODevice::ReadOnly)) throw Error("Missing custom caller source: " + name);
+            code = compiler.assembleOwner(QByteArray(".equ LC_CUSTOM_SQUADS,") +
                                                (entries.isEmpty() ? "0\n" : "1\n") + file.readAll(),
                                            directory, "custom_caller_" + name,
                                            quint32(owner["address"].toDouble()), symbols, true);
+        }
         if (code.size() != size)
             throw Error("Custom caller source exceeds its original function");
         if (classes)
             code = classes->placedReferences(code, at);
         image.replace(at, size, retainArtReferences(rom, code, at));
     }
-    auto compile = [&](const QString &name, const QByteArray &definitions, quint32 address,
-                       QMap<QString, quint32> symbols, int offset, int size) {
-        QFile file(":/game/encounters/" + name + ".s");
-        if (!file.open(QIODevice::ReadOnly))
-            throw Error("Missing shared encounter source: " + name);
-        for (auto it = entries.begin(); it != entries.end(); ++it)
-            symbols[it.key()] = it.value();
-        const auto code = compiler.assembleOwner(
-            QByteArray(".equ LC_CUSTOM_SQUADS,") + (entries.isEmpty() ? "0\n" : "1\n") +
-                definitions + file.readAll(),
-            directory, "custom_shared_" + name, address, symbols, true);
+    auto compile = [&](const QString &name, const QByteArray &definitions, int offset, int size) {
+        const auto code = compileEncounterOwner(compiler, name, definitions, directory,
+                                                 "custom_shared_" + name, entries);
         if (code.size() != size)
             throw Error("Shared custom encounter caller exceeds its original function");
         image.replace(offset, size, retainArtReferences(rom, code, offset));
     };
     compile("dispatcher",
             scenario ? ScenarioRates::definitions(scenario->offset) : rate.assemblyDefinitions(),
-            EncounterRate::ramAddress, EncounterRate::serviceAddresses(), EncounterRate::romOffset,
+            EncounterRate::romOffset,
             EncounterRate::codeSize);
-    compile("rewards", CreatureRewards::definitions(*reward), CreatureRewards::ownerAddress,
-            CreatureRewards::services(), CreatureRewards::ownerOffset, CreatureRewards::ownerSize);
+    compile("rewards", CreatureRewards::definitions(*reward), CreatureRewards::ownerOffset, CreatureRewards::ownerSize);
     return image;
 }
 QMap<QString, quint32> customEncounterServices() {

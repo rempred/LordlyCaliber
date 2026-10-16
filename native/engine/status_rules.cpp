@@ -132,8 +132,9 @@ QVector<RuleBuild> buildStatusRules(const GameRules &rules, const QMap<QString,Q
             rules.value("powerUpStrength")!=10 || rules.value("powerDownStrength")!=10);
         else bytes=recoveryBytes(bytes,decodeRecovery(bytes,site).layout,rules.value(key));
         const bool data=name=="statusPoison";
+        const bool recovery=!strength(name) && !attributes;
         result.append({name,site["offset"].toInt(),site["size"].toInt(),quint32(site["address"].toInteger()),
-                       data ? QByteArray() : words(bytes),bytes,{},data});
+                       data || recovery ? QByteArray() : words(bytes),bytes,{},data,recovery,rules.value(key)});
     }
     return result;
 }
@@ -144,6 +145,10 @@ QByteArray canonicalWeaponRecovery(const QByteArray &bytes, int *chance) {
 }
 QByteArray withWeaponRecovery(const QByteArray &bytes, int chance) {
     const auto decoded=decodeRecovery(bytes,sites()["statusWake"].toObject());
+    return recoveryBytes(bytes,decoded.layout,chance);
+}
+QByteArray withStatusRecovery(const QByteArray &bytes, const QString &owner, int chance) {
+    const auto decoded=decodeRecovery(bytes,sites()[owner].toObject());
     return recoveryBytes(bytes,decoded.layout,chance);
 }
 }

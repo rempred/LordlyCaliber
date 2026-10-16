@@ -105,7 +105,8 @@
       "start": 800748,
       "size": 276,
       "retailSha256": "8602902fd9c683339d85f80f7bbc619d038c54beb9bc286f157b1904ced19a00",
-      "familySha256": "1b75e382befe62241aacf2185640fc9fd51bea4b9d2a66283d0e954e0a12baed"
+      "familySha256": "1b75e382befe62241aacf2185640fc9fd51bea4b9d2a66283d0e954e0a12baed",
+      "acceptedC": true
     },
     {
       "name": "func_000c3900",

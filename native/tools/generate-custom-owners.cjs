@@ -22,6 +22,7 @@ const specs=[
 const tools=path.resolve(root,'native/.local/n64-toolchain'),build=path.join(root,'native/.local/custom-generator');
 const output=path.join(root,'native/game/encounters/custom-owners');fs.mkdirSync(build,{recursive:true});fs.mkdirSync(output,{recursive:true});
 const owners=[];
+const acceptedCStarts=new Set([0xe5968,0x10ddb4,0x215cf0,0x2159d0,0x21ebbc]);
 function run(name,args) {
  try {return cp.execFileSync(path.join(tools,name),args,{stdio:'pipe'});}
  catch(e) {throw Error(name+': '+String(e.stderr||e.message).split('\n').slice(0,12).join('\n'));}
@@ -37,7 +38,7 @@ for(const [name,start,end,ram,files,patches] of specs) {
    source.push('.if LC_CUSTOM_SQUADS','    '+(row.at-start===site.offset?'jal '+site.entry:site.keepDelay?text:'nop'),'.else','    '+text,'.endif');
   } else source.push('    '+text);
  }
- const content=source.join('\n')+'\n';fs.writeFileSync(path.join(output,name+'.s'),content);
+ const content=source.join('\n')+'\n';if(!acceptedCStarts.has(start))fs.writeFileSync(path.join(output,name+'.s'),content);
  function assemble(custom) {
   const base=path.join(build,name+(custom?'_custom':'_retail'));
   const bindings={...calls};sites.forEach((s,i)=>bindings[s.entry]=0x80188000+i*0x100);
@@ -52,7 +53,7 @@ for(const [name,start,end,ram,files,patches] of specs) {
  const custom=assemble(true);if(custom.length!==end-start)throw Error('Custom owner exceeds original extent: '+name);
  const canonical=Buffer.from(custom);for(const s of sites)s.original.forEach((word,i)=>canonical.writeUInt32BE(word,s.offset+i*4));
  if(!canonical.equals(retail))throw Error('Custom owner changed outside declared entries: '+name);
- owners.push({name,start,size:end-start,address:ram,files,retailSha256:hash(retail),sites,calls});
+ owners.push({...(acceptedCStarts.has(start)?{acceptedC:true}:{}),name,start,size:end-start,address:ram,files,retailSha256:hash(retail),sites,calls});
  console.log(name+': '+rows.length+' instructions; retail exact, custom caller positions intact');
 }
 const dependencies=[2,7].map(id=>{const start=0x387c0+id*40;return {start,size:40,sha256:hash(rom.subarray(start,start+40))};});

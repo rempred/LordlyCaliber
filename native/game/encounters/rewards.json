@@ -57,5 +57,14 @@
     "start": 231640,
     "size": 40,
     "sha256": "45171bd5fe26dcefc5aa6b58302107c3cc362b5fe5da0e4e9fabd095bf3bf4f2"
-  }
+  },
+  "acceptedC": true,
+  "patches": [
+    {
+      "offset": 1664,
+      "size": 120,
+      "source": "rewards-hook-0.s",
+      "symbols": {}
+    }
+  ]
 }

@@ -24,6 +24,7 @@
 #include "rebuild/creature_rewards.h"
 #include "rebuild/custom_encounters.h"
 #include "rebuild/elf_references.h"
+#include "rebuild/encounter_owners.h"
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
 #include <QJsonArray>
@@ -70,6 +71,24 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void acceptedSourceOwners() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            Compiler compiler(tools); compiler.authenticate(); QTemporaryDir work;
+            QFile file(":/game/accepted/owners.json"); QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto owners = QJsonDocument::fromJson(file.readAll()).object()["owners"].toArray();
+            QCOMPARE(owners.size(), 11);
+            for (const auto &value : owners) {
+                const auto owner = value.toObject();
+                const auto start = quint32(owner["start"].toInteger());
+                QCOMPARE(compiler.compileAcceptedOwner(start, work.path(), "accepted_" + QString::number(start)),
+                         rom.bytes().mid(start, owner["size"].toInt()));
+            }
+            QVERIFY_THROWS_EXCEPTION(Error, compiler.compileAcceptedOwner(0, work.path(), "unknown"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void weaponStatusExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
@@ -93,7 +112,7 @@ class EngineTests : public QObject {
             auto added = project.record(Table::Items, 278).bytes;
             put8(added, WeaponStatus::offset, WeaponStatus::replace(u8(added, WeaponStatus::offset), 32));
             project.replaceBytes(Table::Items, 278, added);
-            QVERIFY(project.changeReport().text().contains("Status effect on hit: None → Poison"));
+            QVERIFY(project.changeReport().text().contains("Status effect on hit: None â†’ Poison"));
             QTemporaryDir work, output(QFileInfo(path).absolutePath() + "/Test ROMs/weapon-status-XXXXXX");
             QVERIFY(work.isValid()); QVERIFY(output.isValid()); output.setAutoRemove(false);
             project.saveFolder(work.filePath("project"));
@@ -1599,7 +1618,7 @@ class EngineTests : public QObject {
             QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
             for (const auto &label :
                  {QString(), QString(25, 'A'), QString("Bad@text"), QString("Bad\"text"),
-                  QString("Bad\\text"), QString::fromUtf8("é")}) {
+                  QString("Bad\\text"), QString::fromUtf8("Ã©")}) {
                 bad = row;
                 bad.label = label;
                 QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
@@ -2169,13 +2188,8 @@ class EngineTests : public QObject {
             QTemporaryDir build, folder;
             Compiler compiler(tools);
             compiler.authenticate();
-            QFile source(":/game/encounters/rewards.s");
-            QVERIFY(source.open(QIODevice::ReadOnly));
-            QCOMPARE(
-                compiler.assembleOwner(CreatureRewards::definitions(0, false) + source.readAll(),
-                                       build.path(), "reward_retail", CreatureRewards::ownerAddress,
-                                       CreatureRewards::services(), true),
-                rom.bytes().mid(0x101ddc, 4388));
+            QCOMPARE(compileEncounterOwner(compiler, "rewards", CreatureRewards::definitions(0, false),
+                                             build.path(), "reward_retail"), rom.bytes().mid(0x101ddc, 4388));
             QCOMPARE(rebuild(project, tools, build.path()).image, rom.bytes());
             auto model = *project.encounters();
             for (int id = 0; id < 256; ++id) {
@@ -2332,16 +2346,11 @@ class EngineTests : public QObject {
             const auto retail = rate.json();
             const auto original =
                 rom.bytes().mid(EncounterRate::romOffset, EncounterRate::codeSize);
-            QFile file(":/game/encounters/dispatcher.s");
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            const auto source = file.readAll();
             QTemporaryDir build;
             Compiler compiler(tools);
             compiler.authenticate();
-            QCOMPARE(compiler.assembleOwner(rate.assemblyDefinitions(false) + source, build.path(),
-                                            "global_retail", EncounterRate::ramAddress,
-                                            EncounterRate::serviceAddresses(), true),
-                     original);
+            QCOMPARE(compileEncounterOwner(compiler, "dispatcher", rate.assemblyDefinitions(false),
+                                             build.path(), "global_retail"), original);
             QJsonArray variants{QJsonObject{{"name", "retail"},
                                             {"rate", retail},
                                             {"code", QString::fromLatin1(original.toHex())}}};
@@ -2356,10 +2365,8 @@ class EngineTests : public QObject {
             QByteArray last;
             for (int i = 0; i < cases.size(); ++i) {
                 rate.apply(cases[i]);
-                const auto code = compiler.assembleOwner(
-                    rate.assemblyDefinitions() + source, build.path(),
-                    QString("global_native_%1").arg(i), EncounterRate::ramAddress,
-                    EncounterRate::serviceAddresses(), true);
+                const auto code = compileEncounterOwner(compiler, "dispatcher", rate.assemblyDefinitions(),
+                                                         build.path(), QString("global_native_%1").arg(i));
                 QCOMPARE(code.size(), EncounterRate::codeSize);
                 for (int at = 0; at < code.size(); ++at)
                     if (!(at >= 0x188 && at < 0x190) && !(at >= 0x198 && at < 0x1d0))
@@ -3572,11 +3579,13 @@ class EngineTests : public QObject {
                                   << candidate.filePath("menu-layout.json");
                 priorRom = candidateRom;
                 if (count == 166) {
-                    // Previous save installation metadata omitted the Pak owners.
-                    // Reopening and upgrading it must authenticate both sets.
+                    // A version-1 fixture predates Pak, reset and suspend-menu
+                    // hooks. Restore all later owners before testing its upgrade.
                     auto older = image;
                     auto previousOwners = saveRuntimeCatalog()["pakOwners"].toArray();
                     for (const auto value : saveRuntimeCatalog()["lifecycleOwners"].toArray())
+                        previousOwners.append(value);
+                    for (const auto value : saveRuntimeCatalog()["suspendMenuOwners"].toArray())
                         previousOwners.append(value);
                     for (const auto value : previousOwners) {
                         const auto row = value.toObject();
