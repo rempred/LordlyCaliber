@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+## Accepted October 15 intake and source-selection audit
+
+The source library now contains 890 functions from 847 PURE_C owners in 812
+producer files (836 files including dependencies), authenticated against Decomp
+CURRENT DA39A6C8. The 18 additions cover placement, item addition, route cleanup,
+descriptor/group loading, scenario requesters and the large site-event producer.
+Existing adaptation baselines and runtime code remain unchanged.
+
+The audit explicitly distinguishes bundled source from executing adoption.
+Eleven whole-owner export paths still use assembly with accepted alternatives:
+seven encounter owners, three status/recovery owners and one matching-hybrid
+class predicate. The modified family-return ABI and instruction fragments are
+listed separately. See [source-selection-audit.md](source-selection-audit.md)
+for exact paths and the reproducible check; the source-preference gate is not
+clean. Importing accepted C must not be reported as completing these migrations.
+
 ## Unconfirmed artwork recovery (2026-10-15)
 
 Dialog-owned `RecoveryDraft` providers publish copied candidate artwork sections

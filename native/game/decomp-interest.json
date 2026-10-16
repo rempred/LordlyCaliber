@@ -3,6 +3,60 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "accepted-placement-pair", "priority": 2,
+      "behavior": "Squad placement and initialization",
+      "symbols": ["func_00120BC0", "func_001307D4"],
+      "editorFiles": ["game/accepted/library/src/lib/func_00120BC0.c", "game/accepted/library/src/lib/func_001307D4.c", "game/scenarios/capacity-references.json"],
+      "editorUse": "imported",
+      "benefit": "Accepted references for initial squad coordinates, grid placement and scenario setup; useful for checking spawn and placement behavior.",
+      "preserve": "Retain original physical entry padding, coordinate calculation order, flags and expanded-squad relocations. Import does not replace the modified runtime."
+    },
+    {
+      "id": "accepted-item-addition", "priority": 2,
+      "behavior": "Encoded inventory item addition",
+      "symbols": ["func_00130E60"],
+      "editorFiles": ["game/accepted/library/src/lib/func_00130E60.c", "engine/save_document.cpp"],
+      "editorUse": "imported",
+      "benefit": "Provides the original encoded equipment/consumable addition, record search and count handling for inventory and reward checks.",
+      "preserve": "Keep the encoded item flag, separate inventories, byte counters and complete multi-owner function; unknown counter meanings remain unnamed."
+    },
+    {
+      "id": "accepted-route-cleanup", "priority": 3,
+      "behavior": "Release squad route storage",
+      "symbols": ["func_0011B344"],
+      "editorFiles": ["game/accepted/library/src/lib/func_0011B344.c"],
+      "editorUse": "imported",
+      "benefit": "Documents the native cleanup of five route buffers and their containing allocation.",
+      "preserve": "Retain null checks, pointer clearing and the separately owned original assembly tail. Host route previews use their own storage."
+    },
+    {
+      "id": "accepted-descriptor-loader", "priority": 3,
+      "behavior": "Descriptor-group resource loading",
+      "symbols": ["func_000065E4", "func_00006724", "func_00006830"],
+      "editorFiles": ["game/accepted/library/src/boot/boot_resource_table_mask_apply.c"],
+      "editorUse": "imported",
+      "benefit": "Complete three-function reference for descriptor masks, selected resource groups, loading and memory initialization.",
+      "preserve": "Keep the complete producer, cache/DMA boundaries and physical interfaces. This source does not establish all runtime resource identities."
+    },
+    {
+      "id": "accepted-scenario-requesters", "priority": 2,
+      "behavior": "Scenario state and resource request processing",
+      "symbols": ["func_00102FA0", "func_0010B040", "func_0010B46C", "func_0010B598", "func_0010B6A4", "func_0010BA0C", "func_0010BB2C", "func_0010BC4C", "func_0010C1A8", "func_001390F0"],
+      "editorFiles": ["game/accepted/library-imports.json", "game/scenarios/capacity-references.json", "game/tools/goth-reward.s"],
+      "editorUse": "imported",
+      "benefit": "Makes the complete scenario requester wave available for checking event flow, resource transitions and settlement behavior. The existing Goth tool still changes a bounded portion of 001390F0 through assembly.",
+      "preserve": "Retain four switch tables, original resource windows and expanded-army and reward modifications. Unknown state meanings remain numeric."
+    },
+    {
+      "id": "accepted-site-event-producer", "priority": 2,
+      "behavior": "Large site-event handler",
+      "symbols": ["func_0010DDB4"],
+      "editorFiles": ["game/accepted/library/src/lib/func_0010ddb4.c", "game/encounters/custom-owners/card_message.s", "rebuild/custom_encounters.cpp"],
+      "editorUse": "imported",
+      "benefit": "A complete pure-C reference is now available for the site-event owner. The custom-encounter exporter still uses its patched assembly version; that is an explicit source-selection gap.",
+      "preserve": "Keep the 52-entry switch table, separate four-byte assembly suffix and custom card-message patch. Exact retail C is not a replacement for the modified owner without reapplying and checking its extension."
+    },
+    {
       "id": "accepted-draw-callbacks", "priority": 1,
       "behavior": "Recovered animation and stage-object drawing",
       "symbols": ["func_001F3C00", "func_001F6098"],

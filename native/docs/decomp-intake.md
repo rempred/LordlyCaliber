@@ -1,5 +1,11 @@
 # Using newly accepted Decomp C
 
+The [native source-selection audit](source-selection-audit.md) records the actual
+export paths that still use assembly despite accepted C or matching hybrid C.
+Run `node native/tools/audit-source-selection.cjs --decomp <checkout>` after an
+intake; `--require-clean` fails when catalogued whole-owner gaps remain. This
+checks executing source selection separately from bundled source availability.
+
 The maintained [function list](../game/decomp-interest.json) maps upstream symbols
 to concrete editor consumers, benefits, priorities and extensions to preserve.
 It includes reconstructed behavior to replace, partial adaptations to finish,
