@@ -19,6 +19,7 @@ class TestingEditor : public QWidget {
     void loadRom(const QString &);
     void setDefaultArmy(const QByteArray &);
     void loadSave(const QString &);
+    void loadSaveRom(const QString &);
     void useExport(const QString &path, quint64 projectRevision, const QByteArray &digest);
     void useTestBuild(const QString &path, quint64 projectRevision, const QByteArray &digest,
                       int choice);
@@ -51,9 +52,13 @@ class TestingEditor : public QWidget {
 
   private:
     void filter();
-    void guarded(const std::function<void()> &);
+    void guarded(const std::function<void()> &, QLabel *feedback = nullptr);
     void chooseArmy();
     void useSave();
+    void assignCompleteSave();
+    void installPreparedSave(const Rom &, const QString &romPath, const QByteArray &save,
+                             const QString &title, bool merge, bool start, qint64 size,
+                             qint64 time);
     void requestLaunch(int choice);
     void addLaunchButton(QTreeWidgetItem *);
     void checkRom() const;
@@ -61,10 +66,9 @@ class TestingEditor : public QWidget {
     void updateLaunchControls();
     void updateArmyLabel();
     bool matchesExport() const;
-    QString destination() const;
     std::optional<SaveDocument> army() const;
     std::shared_ptr<ScenarioSeeder> seeder_;
-    QString initialRom_, romPath_, project64_, armyPath_, savePath_;
+    QString initialRom_, romPath_, project64_, armyPath_, savePath_, saveRomPath_;
     QString exportPath_, pendingRom_;
     QByteArray exportDigest_, loadedDigest_;
     quint64 projectRevision_ = 0, exportRevision_ = 0;
@@ -79,8 +83,8 @@ class TestingEditor : public QWidget {
     int armySlot_ = 0;
     qint64 romSize_ = 0, romTime_ = 0;
     bool initialized_ = false, busy_ = false;
-    QLabel *romLabel_, *p64Label_, *armyLabel_, *saveLabel_, *status_, *detail_;
-    QPushButton *saveLaunch_;
+    QLabel *romLabel_, *p64Label_, *armyLabel_, *saveLabel_, *saveRomLabel_, *saveStatus_, *status_,
+        *detail_;
     QComboBox *sourceMode_;
     QLineEdit *search_;
     QTreeWidget *missions_;

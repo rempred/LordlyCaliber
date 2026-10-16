@@ -1,13 +1,13 @@
 # Feature inventory and completion tracking
 
-Testing separates **Use my saved army in missions** from **Assign my complete saved
-game to this ROM**. The complete-save picker and assignment button stay above the
-mission table and survive filters, rebuilding and restarting. Current-project mode
-builds changed projects, reuses an unchanged verified build, and assigns the save
-with one action. The test ROM has a persistent visible location. Launching Project64
-after assignment is optional; future direct launches of the same ROM in the same
-Project64 installation use its assigned battery save without the editor. Seeding
-again is explicit and backs up the previous save. Existing-ROM mode remains available.
+Testing separates **Use my saved army in missions** from **Assign a saved game to a ROM**.
+The compact assignment box contains **Select Save** and **Select ROM**. Selecting both
+assigns the entire battery file using the configured Project64 folder, without building
+or launching. Both paths persist; reopening does not reinstall them. For mission tests,
+current-project mode builds changed projects and reuses an unchanged verified build.
+The test ROM has a persistent visible location; launching after mission seeding is
+optional. Future direct launches of the assigned ROM use its save without the editor.
+Reassigning backs up the previous save. Existing-ROM mission testing remains available.
 
 Tools → Status effects provides global Poison, Power Up and Power Down strength
 (0–100%) plus Sleep and Paralysis recovery (Luck-based retail or fixed 0–100%).

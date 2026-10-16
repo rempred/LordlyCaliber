@@ -94,10 +94,12 @@ shows the persistent output and lets you choose another location. **Open ROM fol
 helps you launch that same ROM directly in Project64 later.
 
 **Use my saved army in missions** imports only the army for any listed mission.
-**Assign my complete saved game to this ROM** is separate: choose a Project64 `.sra`
-and assign its whole army, inventory and story progress using the button above the
-mission table. This selection survives rebuilding and restarting the editor.
-**Also launch Project64 now** is optional. Assignment stores the battery save in
+The separate **Assign a saved game to a ROM** box has **Select Save** and **Select ROM**.
+Selecting both automatically assigns the complete `.sra` file, including army,
+inventory and story progress, using the Project64 folder already configured above.
+This action does not build or launch anything. Both selections are remembered;
+select either file again to reassign. **Launch mission after seeding** applies only
+to the mission buttons. Assignment stores the battery save in
 Project64's save folder for this ROM; neither future play nor normal in-game saving
 requires the editor. Seeding again explicitly replaces progress (with a backup).
 Mission seeds preserve slot 2 and clear suspend; complete-save assignment replaces

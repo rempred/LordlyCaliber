@@ -2,13 +2,14 @@
 
 ## Persistent Testing assignments and automatic builds (October 16)
 
-Testing keeps mission-army selection separate from the complete battery-save path;
-the latter has its own controls outside the filtered mission table. Selecting either
-source does not install anything. The complete-save path persists in settings and
-survives ROM reloads. Seeding copies into the existing ROM-specific Project64 battery
-path; optional launch retains the normal close/flush/install/cold-boot sequence.
-Assignment without launch still closes the selected emulator before installing the
-save. Source saves remain untouched except when the user explicitly chooses that
+Testing keeps mission-army selection separate from complete-save assignment. The
+compact assignment box has Select Save and Select ROM; selecting either installs
+once both paths are present. Its independent target ROM does not change the mission
+test source or build location. Both paths persist in settings; restoring settings
+does not install anything. Full-save assignment skips compilation and launch and
+uses the already configured Project64 folder. Both workflows share the existing
+ROM-specific close/flush/install path, with optional cold boot for mission tests.
+Source saves remain untouched except when the user explicitly chooses that
 same file as the destination. Previous battery files retain the existing backup and
 atomic/readback checks. No startup path automatically reinstalls a selected seed.
 
@@ -16,7 +17,7 @@ MainWindow shares its compiler/export path with Testing. The test action resolve
 pending forms, checks invalid editors, and runs export-reference validation before
 compilation. The builder retains allocation, reference, checksum and reopening
 checks. Success passes the output digest and captured project revision to Testing,
-which reloads it before seeding the captured mission choice (or complete-save option).
+which reloads it before seeding the captured mission choice.
 Failure/cancellation never falls back to the older output. An unchanged in-session
 output is reusable only while its path, digest, file metadata, revision and draft
 state agree. Persisted output paths are keyed by source-ROM digest; the default is
@@ -28,7 +29,8 @@ without controlling Project64; production keeps the existing process/installer p
 The queued mission is resolved by its world node and story-event ID after reload,
 so changed mission-selector scripts cannot redirect a request through a reordered
 row index. A missing entry aborts assignment. Focused Qt checks cover source/save
-selection persistence, filtered-table independence, complete-save byte preservation,
+selection persistence, both picker orders, cancellation, filtered-table independence,
+complete-save byte preservation and independence from mission build/launch options,
 real compiler output/reopening/CRC, revision reuse, failed-build preservation,
 pending-draft cancellation, and an edited-script fixture that moves the chosen
 story entry to a different row. The existing temporary Project64 stand-in checks

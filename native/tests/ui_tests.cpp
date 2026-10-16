@@ -452,16 +452,20 @@ class UiTests : public QObject {
         QSettings().setValue("testing/army", armyPath);
         QSettings().setValue("testing/armySlot", 0);
         QByteArray assigned;
+        QString assignedRom, assignedExe, assignedDestination;
         bool merged = false, started = false;
         int calls = 0;
         {
             TestingEditor editor(path);
             editor.resize(1200, 900);
             editor.show();
-            editor.setLauncher([&](const Rom &, const QString &, const QString &,
-                                   const QByteArray &save, const QString &, bool merge,
+            editor.setLauncher([&](const Rom &, const QString &romPath, const QString &exePath,
+                                   const QByteArray &save, const QString &destination, bool merge,
                                    bool start) {
                 assigned = save;
+                assignedRom = romPath;
+                assignedExe = exePath;
+                assignedDestination = destination;
                 merged = merge;
                 started = start;
                 ++calls;
@@ -470,31 +474,34 @@ class UiTests : public QObject {
             });
             QTRY_VERIFY_WITH_TIMEOUT(editor.ready(), 30000);
             editor.findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
+            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             auto list = editor.findChild<QTreeWidget *>("seederMissions");
             auto status = editor.findChild<QLabel *>("seederStatus");
             auto search = editor.findChild<QLineEdit *>("seederSearch");
-            auto launchSave = editor.findChild<QPushButton *>("testingLaunchSave");
-            QVERIFY(!launchSave->isEnabled());
             editor.loadSave(fullPath);
             QCOMPARE(list->topLevelItemCount(), model.choices().size());
-            QVERIFY(launchSave->isEnabled());
+            QCOMPARE(calls, 0); // Both files are required.
             editor.selectScenario(999);
             search->setText("no matching missions");
             for (int i = 0; i < list->topLevelItemCount(); ++i)
                 QVERIFY(list->topLevelItem(i)->isHidden());
-            QVERIFY(launchSave->isVisible());
-            launchSave->click();
+            QVERIFY(editor.findChild<QPushButton *>("seederUseSave")->isVisible());
+            QVERIFY(editor.findChild<QPushButton *>("testingSelectSaveRom")->isVisible());
+            editor.loadSaveRom(path);
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
             QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
             QCOMPARE(calls, 1);
             QCOMPARE(assigned, full);
             QVERIFY(!merged);
             QVERIFY(!started);
+            QCOMPARE(assignedRom, path);
+            QCOMPARE(assignedExe, exe);
+            QCOMPARE(assignedDestination, ScenarioSeeder::batteryPath(rom, exe));
             QVERIFY(editor.findChild<QLabel *>("testingAssignmentDetails")
                         ->text()
                         .contains("editor is not required"));
             // Choosing a mission uses the independently selected army, not the complete save.
+            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
             search->clear();
             list->setCurrentItem(list->topLevelItem(2));
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
@@ -517,6 +524,11 @@ class UiTests : public QObject {
             QVERIFY(!status->text().isEmpty());
             QCOMPARE(editor.findChild<QLabel *>("testingCompleteSaveName")->text(),
                      "whole-save.sra");
+            editor.loadSaveRom(exe);
+            editor.loadSave({});
+            editor.loadSaveRom({});
+            QCOMPARE(calls, 2); // Invalid/cancelled selections never install anything.
+            QCOMPARE(editor.findChild<QLabel *>("testingCompleteSaveRomName")->toolTip(), path);
             editor.findChild<QPushButton *>("seederDefaultArmy")->click();
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
@@ -530,18 +542,50 @@ class UiTests : public QObject {
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
             QCOMPARE(requests.size(), 1);
             QCOMPARE(requests.takeFirst()[0].toInt(), 8);
-            launchSave->click();
-            QCOMPARE(requests.takeFirst()[0].toInt(), -1);
-            QCOMPARE(calls, 3);
+            // Complete-save assignment bypasses project builds, even in current-project mode.
+            editor.loadSave(fullPath);
+            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
+            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QCOMPARE(requests.size(), 0);
+            QCOMPARE(calls, 4);
+            QCOMPARE(assigned, full);
+            QVERIFY(!merged);
+            QVERIFY(!started);
             editor.resize(1000, 800);
             QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
                                        "/testing-assignments.png"));
         }
         TestingEditor reopened(path);
+        reopened.setLauncher([&](const Rom &, const QString &, const QString &, const QByteArray &,
+                                 const QString &, bool, bool) {
+            ++calls;
+            return QString();
+        });
         reopened.show();
         QTRY_VERIFY_WITH_TIMEOUT(reopened.ready(), 30000);
         QCOMPARE(reopened.findChild<QLabel *>("testingCompleteSaveName")->text(), "whole-save.sra");
-        QCOMPARE(calls, 3); // Reopening the editor never silently overwrites a save.
+        QCOMPARE(reopened.findChild<QLabel *>("testingCompleteSaveRomName")->toolTip(), path);
+        QCOMPARE(calls, 4); // Reopening the editor never silently overwrites a save.
+        QSettings().remove("testing/completeSave");
+        QSettings().remove("testing/completeSaveRom");
+        TestingEditor reverse(path);
+        reverse.setLauncher([&](const Rom &, const QString &, const QString &,
+                                const QByteArray &save, const QString &, bool merge, bool start) {
+            assigned = save;
+            merged = merge;
+            started = start;
+            ++calls;
+            return QString();
+        });
+        reverse.loadSaveRom(path);
+        QCOMPARE(calls, 4);
+        reverse.loadSave(fullPath);
+        QTRY_VERIFY_WITH_TIMEOUT(reverse.findChild<QTreeWidget *>("seederMissions")->isEnabled(),
+                                 10000);
+        QCOMPARE(calls, 5); // ROM-first selection also assigns when the second file is selected.
+        QCOMPARE(assigned, full);
+        QVERIFY(!merged);
+        QVERIFY(!started);
     }
     void testingBuildAndSeed() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -664,15 +708,31 @@ class UiTests : public QObject {
             QCOMPARE(read(outputPath), firstImage);
             qputenv("LORDLY_N64_TOOLCHAIN", tools.toUtf8());
             testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
-            testing->findChild<QPushButton *>("testingLaunchSave")->click();
+            seedMission();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 180000);
             QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
             QCOMPARE(calls, 3);
-            QVERIFY(!merged);
-            QCOMPARE(assigned, full);
+            QVERIFY(merged);
             QCOMPARE(
                 u16(Project::fromRom(Rom::open(outputPath)).record(Table::Classes, 2).bytes, 8),
                 hp + 2);
+            // The independent assignment targets the selected source ROM, without compiling
+            // or replacing the mission test output, even with current-project mode selected.
+            const auto outputTime = QFileInfo(outputPath).lastModified();
+            qputenv("LORDLY_N64_TOOLCHAIN", fixture.path().toUtf8());
+            testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
+            testing->loadSaveRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
+            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QCOMPARE(calls, 4);
+            QVERIFY(!merged);
+            QVERIFY(!started);
+            QCOMPARE(assigned, full);
+            QCOMPARE(launchedPath, path);
+            QCOMPARE(built, source.bytes());
+            QCOMPARE(QFileInfo(outputPath).lastModified(), outputTime);
+            QVERIFY(testing->currentProjectReady());
+            qputenv("LORDLY_N64_TOOLCHAIN", tools.toUtf8());
             QCOMPARE(testing->findChild<QLabel *>("testingCompleteSaveName")->text(), "full.sra");
             // Pending forms are resolved before the cached-build shortcut as well.
             window.navigateTo({"consumables", 1});
@@ -688,7 +748,7 @@ class UiTests : public QObject {
             });
             seedMission();
             QVERIFY(prompted);
-            QCOMPARE(calls, 3);
+            QCOMPARE(calls, 4);
             QCOMPARE(pendingEdits(&window).size(), 1);
             QVERIFY(status->text().startsWith("Test cancelled"));
             for (auto drafts : window.findChildren<PendingEdits *>())
@@ -804,23 +864,34 @@ class UiTests : public QObject {
         QCoreApplication::setOrganizationName("LordlyCaliber-Tests");
         QCoreApplication::setApplicationName("Cold-boot-ui-" +
                                              QUuid::createUuid().toString(QUuid::Id128));
-        const QList<QByteArray> envs{"LORDLY_P64_FIXTURE_SAVE", "LORDLY_P64_FIXTURE_FLUSH", "LORDLY_P64_FIXTURE_LOG"};
+        const QList<QByteArray> envs{"LORDLY_P64_FIXTURE_SAVE", "LORDLY_P64_FIXTURE_FLUSH",
+                                     "LORDLY_P64_FIXTURE_LOG"};
         QList<QByteArray> previous;
-        for (const auto &name : envs) previous << qgetenv(name.constData());
+        for (const auto &name : envs)
+            previous << qgetenv(name.constData());
         const auto cleanup = qScopeGuard([&] {
             QFile::remove(temp.filePath("flush.sra"));
-            try { closeProject64(exe); } catch (...) {}
+            try {
+                closeProject64(exe);
+            } catch (...) {
+            }
             for (int i = 0; i < envs.size(); ++i) {
-                if (previous[i].isNull()) qunsetenv(envs[i].constData());
-                else qputenv(envs[i].constData(), previous[i]);
+                if (previous[i].isNull())
+                    qunsetenv(envs[i].constData());
+                else
+                    qputenv(envs[i].constData(), previous[i]);
             }
             QSettings().clear();
             QCoreApplication::setApplicationName(oldName);
             QCoreApplication::setOrganizationName(oldOrganization);
         });
-        const auto read = [](const QString &p) { QFile f(p); return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray(); };
+        const auto read = [](const QString &p) {
+            QFile f(p);
+            return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        };
         const auto write = [](const QString &p, const QByteArray &bytes) {
-            QDir().mkpath(QFileInfo(p).absolutePath()); QFile f(p);
+            QDir().mkpath(QFileInfo(p).absolutePath());
+            QFile f(p);
             return f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size();
         };
         try {
@@ -838,7 +909,8 @@ class UiTests : public QObject {
             QCOMPARE(QSettings().value("testing/project64").toString(), exe);
             TestingEditor editor(path);
             editor.findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
-            editor.resize(1150, 740); editor.show();
+            editor.resize(1150, 740);
+            editor.show();
             QTRY_VERIFY_WITH_TIMEOUT(editor.ready(), 30000);
             auto list = editor.findChild<QTreeWidget *>("seederMissions");
             auto status = editor.findChild<QLabel *>("seederStatus");
@@ -856,41 +928,47 @@ class UiTests : public QObject {
             const int choice = 8;
             auto target = list->topLevelItem(choice);
             qobject_cast<QPushButton *>(list->itemWidget(target, 2))->click();
-            QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("Started:") || list->isEnabled(), 30000);
+            QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("Started:") || list->isEnabled(),
+                                     30000);
             QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
             QTRY_COMPARE_WITH_TIMEOUT(old.state(), QProcess::NotRunning, 10000);
             QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 2, 10000);
             const auto installed = read(log + ".sra");
-            QCOMPARE(SaveDocument::open(rom, installed).memory(), SaveDocument::open(rom, model.seed(choice)).memory());
+            QCOMPARE(SaveDocument::open(rom, installed).memory(),
+                     SaveDocument::open(rom, model.seed(choice)).memory());
             QCOMPARE(read(dest), installed);
-            const auto backups = QDir(QFileInfo(dest).absolutePath()).entryList({"*.bak"}, QDir::Files);
+            const auto backups =
+                QDir(QFileInfo(dest).absolutePath()).entryList({"*.bak"}, QDir::Files);
             QCOMPARE(backups.size(), 1);
             QCOMPARE(read(QFileInfo(dest).dir().filePath(backups[0])), flushed);
-            const auto boot = QJsonDocument::fromJson(read(log).trimmed().split('\n').last()).object();
+            const auto boot =
+                QJsonDocument::fromJson(read(log).trimmed().split('\n').last()).object();
             QCOMPARE(boot["args"].toArray()[1].toString(), path);
             QVERIFY(status->text().contains(model.choices()[choice].location));
             QVERIFY(editor.grab().save("testing-cold-boot.png"));
-            // Complete saves use their separate assignment button and keep the battery unchanged.
+            // Selecting both files assigns the entire save and closes/flushed the stand-in
+            // without restarting, regardless of the mission launch checkbox.
             const auto imported = temp.filePath("my-save.sra");
             const auto full = model.seed(12);
             QVERIFY(write(imported, full));
             editor.loadSave(imported);
             QCOMPARE(list->topLevelItemCount(), model.choices().size());
             list->setCurrentItem(list->topLevelItem(5));
-            editor.findChild<QPushButton *>("testingLaunchSave")->click();
-            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
-            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
-            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 3, 10000);
-            QCOMPARE(read(log + ".sra"), full);
-            QCOMPARE(read(dest), full);
-            // Assignment-only closes/flushed the stand-in and installs the save without restarting.
-            QFile::remove(temp.filePath("flush.sra"));
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
-            editor.findChild<QPushButton *>("testingLaunchSave")->click();
+            editor.loadSaveRom(path);
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
             QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
             QVERIFY(!ScenarioSeeder::project64Running());
-            QCOMPARE(read(log).count('\n'), 3); QCOMPARE(read(dest), full);
+            QCOMPARE(read(log).count('\n'), 2);
+            QCOMPARE(read(dest), full);
+            // Reselecting a file explicitly reassigns, without launching.
+            QFile::remove(temp.filePath("flush.sra"));
+            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
+            editor.loadSave(imported);
+            QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
+            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QVERIFY(!ScenarioSeeder::project64Running());
+            QCOMPARE(read(log).count('\n'), 2);
+            QCOMPARE(read(dest), full);
             editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             // A different installation must be left running, with no save replacement.
             const auto otherDir = temp.filePath("other");
@@ -899,18 +977,24 @@ class UiTests : public QObject {
             QVERIFY(QFile::copy(exe, otherExe));
             QProcess other;
             const auto stopOther = qScopeGuard([&] {
-                try { closeProject64(otherExe); } catch (...) {}
+                try {
+                    closeProject64(otherExe);
+                } catch (...) {
+                }
                 other.waitForFinished(3000);
             });
             other.start(otherExe, {path});
             QVERIFY(other.waitForStarted());
-            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 4, 10000);
+            QTRY_VERIFY_WITH_TIMEOUT(read(log).count('\n') == 3, 10000);
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(3), 2))->click();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
-            QVERIFY2(status->text().contains("Another Project64 installation"), qPrintable(status->text()));
+            QVERIFY2(status->text().contains("Another Project64 installation"),
+                     qPrintable(status->text()));
             QCOMPARE(other.state(), QProcess::Running);
             QCOMPARE(read(dest), full);
-        } catch (const std::exception &e) { QFAIL(e.what()); }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
     }
     void testingDefaultArmy() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
