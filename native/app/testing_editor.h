@@ -10,7 +10,6 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QPushButton;
 class QComboBox;
-class QCheckBox;
 namespace lordly {
 class TestingEditor : public QWidget {
     Q_OBJECT
@@ -79,7 +78,6 @@ class TestingEditor : public QWidget {
     Launcher launcher_;
     QLabel *freshness_;
     QLabel *buildPathLabel_;
-    QCheckBox *launchAfterSeed_;
     int armySlot_ = 0;
     qint64 romSize_ = 0, romTime_ = 0;
     bool initialized_ = false, busy_ = false;

@@ -5,8 +5,8 @@ The compact assignment box contains **Select Save** and **Select ROM**. Selectin
 assigns the entire battery file using the configured Project64 folder, without building
 or launching. Both paths persist; reopening does not reinstall them. For mission tests,
 current-project mode builds changed projects and reuses an unchanged verified build.
-The test ROM has a persistent visible location; launching after mission seeding is
-optional. Future direct launches of the assigned ROM use its save without the editor.
+The test ROM has a persistent visible location; mission seeding launches Project64.
+Future direct launches of the assigned ROM use its save without the editor.
 Reassigning backs up the previous save. Existing-ROM mission testing remains available.
 
 Tools → Status effects provides global Poison, Power Up and Power Down strength

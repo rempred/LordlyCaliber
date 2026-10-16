@@ -8,7 +8,7 @@ once both paths are present. Its independent target ROM does not change the miss
 test source or build location. Both paths persist in settings; restoring settings
 does not install anything. Full-save assignment skips compilation and launch and
 uses the already configured Project64 folder. Both workflows share the existing
-ROM-specific close/flush/install path, with optional cold boot for mission tests.
+ROM-specific close/flush/install path, followed by cold boot for mission tests.
 Source saves remain untouched except when the user explicitly chooses that
 same file as the destination. Previous battery files retain the existing backup and
 atomic/readback checks. No startup path automatically reinstalls a selected seed.
@@ -30,11 +30,12 @@ The queued mission is resolved by its world node and story-event ID after reload
 so changed mission-selector scripts cannot redirect a request through a reordered
 row index. A missing entry aborts assignment. Focused Qt checks cover source/save
 selection persistence, both picker orders, cancellation, filtered-table independence,
-complete-save byte preservation and independence from mission build/launch options,
+complete-save byte preservation and independence from mission builds and launches,
 real compiler output/reopening/CRC, revision reuse, failed-build preservation,
 pending-draft cancellation, and an edited-script fixture that moves the chosen
 story entry to a different row. The existing temporary Project64 stand-in checks
-save flushing/backups, optional launch and refusal to close another installation.
+save flushing/backups, mission launch, full-save assignment without launch, and
+refusal to close another installation.
 These are desktop/installer checks, not a natural in-game mission-playthrough claim.
 
 ## Accepted C intake and native export selection (October 16)

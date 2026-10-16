@@ -474,7 +474,6 @@ class UiTests : public QObject {
             });
             QTRY_VERIFY_WITH_TIMEOUT(editor.ready(), 30000);
             editor.findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             auto list = editor.findChild<QTreeWidget *>("seederMissions");
             auto status = editor.findChild<QLabel *>("seederStatus");
             auto search = editor.findChild<QLineEdit *>("seederSearch");
@@ -501,14 +500,14 @@ class UiTests : public QObject {
                         ->text()
                         .contains("editor is not required"));
             // Choosing a mission uses the independently selected army, not the complete save.
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
             search->clear();
             list->setCurrentItem(list->topLevelItem(2));
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
-            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
             QCOMPARE(calls, 2);
             QVERIFY(merged);
+            QVERIFY(started);
             QCOMPARE(assigned, model.seed(8, &donor));
             auto seeded = SaveDocument::open(rom, assigned);
             seeded.selectSlot(0);
@@ -532,7 +531,7 @@ class UiTests : public QObject {
             editor.findChild<QPushButton *>("seederDefaultArmy")->click();
             qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
-            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
             QCOMPARE(calls, 3);
             QCOMPARE(assigned, model.seed(8));
             // Current-project requests capture the clicked mission rather than the selected row.
@@ -670,16 +669,15 @@ class UiTests : public QObject {
             const int hp = model->index(2, hpColumn).data(Qt::EditRole).toInt();
             QVERIFY(model->setData(model->index(2, hpColumn), hp + 1, Qt::EditRole));
             testing->loadSave(fullPath);
-            testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
             auto seedMission = [&] {
                 qobject_cast<QPushButton *>(list->itemWidget(list->topLevelItem(8), 2))->click();
             };
             seedMission();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 180000);
-            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
             QCOMPARE(calls, 1);
             QVERIFY(merged);
-            QVERIFY(!started);
+            QVERIFY(started);
             QCOMPARE(launchedPath, outputPath);
             const auto reopened = Project::fromRom(Rom::open(outputPath));
             QCOMPARE(u16(reopened.record(Table::Classes, 2).bytes, 8), hp + 1);
@@ -694,7 +692,6 @@ class UiTests : public QObject {
             // unavailable.
             QVERIFY(write(fixture.filePath("cc1.exe"), "bad compiler identity"));
             qputenv("LORDLY_N64_TOOLCHAIN", fixture.path().toUtf8());
-            testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             seedMission();
             QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("Started:"), 10000);
             QCOMPARE(calls, 2);
@@ -707,10 +704,9 @@ class UiTests : public QObject {
             QCOMPARE(calls, 2);
             QCOMPARE(read(outputPath), firstImage);
             qputenv("LORDLY_N64_TOOLCHAIN", tools.toUtf8());
-            testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
             seedMission();
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 180000);
-            QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+            QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
             QCOMPARE(calls, 3);
             QVERIFY(merged);
             QCOMPARE(
@@ -720,7 +716,6 @@ class UiTests : public QObject {
             // or replacing the mission test output, even with current-project mode selected.
             const auto outputTime = QFileInfo(outputPath).lastModified();
             qputenv("LORDLY_N64_TOOLCHAIN", fixture.path().toUtf8());
-            testing->findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             testing->loadSaveRom(path);
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 10000);
             QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
@@ -834,12 +829,11 @@ class UiTests : public QObject {
         });
         editor.setBuildPath(output);
         editor.setProjectRevision(1, false);
-        editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
         editor.useTestBuild(output, 1, sha256(bytes), oldRow);
         auto list = editor.findChild<QTreeWidget *>("seederMissions");
         QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
         auto status = editor.findChild<QLabel *>("seederStatus");
-        QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
+        QVERIFY2(status->text().startsWith("Started:"), qPrintable(status->text()));
         QCOMPARE(calls, 1);
         QCOMPARE(assigned, reordered.seed(newRow));
         QCOMPARE(list->currentItem()->data(0, Qt::UserRole).toInt(), newRow);
@@ -946,8 +940,8 @@ class UiTests : public QObject {
             QCOMPARE(boot["args"].toArray()[1].toString(), path);
             QVERIFY(status->text().contains(model.choices()[choice].location));
             QVERIFY(editor.grab().save("testing-cold-boot.png"));
-            // Selecting both files assigns the entire save and closes/flushed the stand-in
-            // without restarting, regardless of the mission launch checkbox.
+            // Selecting both files assigns the entire save and closes/flushes the stand-in
+            // without restarting.
             const auto imported = temp.filePath("my-save.sra");
             const auto full = model.seed(12);
             QVERIFY(write(imported, full));
@@ -962,14 +956,12 @@ class UiTests : public QObject {
             QCOMPARE(read(dest), full);
             // Reselecting a file explicitly reassigns, without launching.
             QFile::remove(temp.filePath("flush.sra"));
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(false);
             editor.loadSave(imported);
             QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(), 30000);
             QVERIFY2(status->text().startsWith("Save assigned:"), qPrintable(status->text()));
             QVERIFY(!ScenarioSeeder::project64Running());
             QCOMPARE(read(log).count('\n'), 2);
             QCOMPARE(read(dest), full);
-            editor.findChild<QCheckBox *>("testingLaunchAfterSeed")->setChecked(true);
             // A different installation must be left running, with no save replacement.
             const auto otherDir = temp.filePath("other");
             QVERIFY(QDir().mkpath(otherDir));

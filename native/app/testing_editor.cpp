@@ -1,9 +1,7 @@
 #include "app/testing_editor.h"
 #include "engine/project64_session.h"
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
-#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -22,7 +20,6 @@
 #include <QShowEvent>
 #include <QStandardPaths>
 #include <QTreeWidget>
-#include <QUrl>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 #include <utility>
@@ -101,21 +98,6 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
     auto p64 = pathRow("Project64 folder…", "seederChooseProject64", p64Label_);
     p64Label_->setText(project64_.isEmpty() ? "Choose the folder containing Project64.exe"
                                             : QFileInfo(project64_).absolutePath());
-    auto launchRow = new QHBoxLayout;
-    launchAfterSeed_ = new QCheckBox("Launch mission after seeding (cold boot)");
-    launchAfterSeed_->setObjectName("testingLaunchAfterSeed");
-    launchAfterSeed_->setChecked(true);
-    launchRow->addWidget(launchAfterSeed_);
-    launchRow->addStretch();
-    auto openFolder = new QPushButton("Open ROM folder");
-    openFolder->setObjectName("testingOpenRomFolder");
-    launchRow->addWidget(openFolder);
-    controls->addLayout(launchRow);
-    connect(openFolder, &QPushButton::clicked, this, [this] {
-        const auto path = sourceMode_->currentIndex() == 0 ? buildPathLabel_->text() : romPath_;
-        if (!path.isEmpty())
-            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
-    });
     auto savedGame = new QGroupBox("Assign a saved game to a ROM");
     savedGame->setObjectName("testingCompleteSave");
     auto savedLayout = new QVBoxLayout(savedGame);
@@ -551,8 +533,7 @@ void TestingEditor::launchPrepared(int choice) {
                   : "My saved game · " + QFileInfo(savePath_).fileName();
         if (merge)
             missions_->setCurrentItem(missions_->topLevelItem(choice));
-        installPreparedSave(seeder_->rom(), romPath_, raw, title, merge,
-                            launchAfterSeed_->isChecked(), romSize_, romTime_);
+        installPreparedSave(seeder_->rom(), romPath_, raw, title, merge, true, romSize_, romTime_);
     });
 }
 void TestingEditor::installPreparedSave(const Rom &rom, const QString &romPath,

@@ -89,17 +89,16 @@ artwork and animation tools; Back to class setup returns to that overview.
 Testing defaults to **Current project — build automatically**. Choose the Project64
 folder once, choose an army, then **Build and seed mission**. Pending forms are resolved
 first; the editor compiles and validates changed projects, selects the output, and
-assigns the mission save. An unchanged verified build is reused. **Test ROM location**
-shows the persistent output and lets you choose another location. **Open ROM folder**
-helps you launch that same ROM directly in Project64 later.
+assigns the mission save and launches Project64. An unchanged verified build is reused.
+**Test ROM location** shows the persistent output and lets you choose another location.
+You can open that same ROM directly in Project64 later.
 
 **Use my saved army in missions** imports only the army for any listed mission.
 The separate **Assign a saved game to a ROM** box has **Select Save** and **Select ROM**.
 Selecting both automatically assigns the complete `.sra` file, including army,
 inventory and story progress, using the Project64 folder already configured above.
-This action does not build or launch anything. Both selections are remembered;
-select either file again to reassign. **Launch mission after seeding** applies only
-to the mission buttons. Assignment stores the battery save in
+This action does not build or launch anything. Both selections are remembered.
+Select either file again to reassign. Assignment stores the battery save in
 Project64's save folder for this ROM; neither future play nor normal in-game saving
 requires the editor. Seeding again explicitly replaces progress (with a backup).
 Mission seeds preserve slot 2 and clear suspend; complete-save assignment replaces
