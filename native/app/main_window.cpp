@@ -58,6 +58,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
@@ -341,7 +342,31 @@ void MainWindow::installProject(Project project) {
         auto testing = new TestingEditor(project_->rom().sourcePath());
         workspaces_->addTab(testing, "Testing");
         testing->setProjectRevision(projectRevision_, false);
-        connect(testing, &TestingEditor::exportRequested, this, &MainWindow::buildRom);
+        testBuildLock_.reset();
+        const auto sourceId = QString::fromLatin1(sha256(project_->runtimeRom().bytes()).left(16));
+        testBuildSettingsKey_ = "testing/buildPath/" + sourceId;
+        const auto defaultPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) +
+            "/Testing/ROMs/" + sourceId + "/" + QFileInfo(project_->rom().sourcePath()).fileName();
+        testBuildPath_ = QSettings().value(testBuildSettingsKey_, defaultPath).toString();
+        testing->setBuildPath(testBuildPath_);
+        connect(testing, &TestingEditor::testProjectRequested, this, &MainWindow::buildForTesting);
+        connect(testing, &TestingEditor::assignmentFinished, this, [this](const QString &message) {
+            statusBar()->showMessage(message, 8000);
+        });
+        connect(testing, &TestingEditor::buildLocationRequested, this, [this, testing] {
+            if (loading_) return;
+            const auto path = QFileDialog::getSaveFileName(this, "Choose the reusable test ROM location",
+                testBuildPath_, "N64 ROM (*.v64 *.z64 *.n64)");
+            if (path.isEmpty()) return;
+            if (QFileInfo(path).canonicalFilePath() == QFileInfo(project_->rom().sourcePath()).canonicalFilePath()) {
+                report("Choose a test output different from the source ROM.");
+                return;
+            }
+            testBuildLock_.reset();
+            testBuildPath_ = path;
+            QSettings().setValue(testBuildSettingsKey_, path);
+            testing->setBuildPath(path);
+        });
         for (auto widget : workspaces_->findChildren<QWidget *>())
             if (auto scenario = dynamic_cast<ScenarioEditor *>(widget))
                 scenario->testScenario = [this, testing](int key) {
@@ -929,24 +954,64 @@ void MainWindow::saveProject(bool archive) {
         report(QString::fromUtf8(e.what()));
     }
 }
-void MainWindow::buildRom() {
+bool MainWindow::prepareBuild(const QString &action) {
     if (loading_ || !project_)
-        return;
-    if (auto focus = focusWidget()) focus->clearFocus();
-    if (!resolvePendingEdits(workspaces_, "exporting the ROM",
-                             [this](const EditLocation &where) { navigateTo(where); })) return;
+        return false;
+    if (auto focus = focusWidget())
+        focus->clearFocus();
+    if (!resolvePendingEdits(workspaces_, action,
+                             [this](const EditLocation &where) { navigateTo(where); }))
+        return false;
     if (invalidEdits()) {
         report("Correct invalid text input before building.");
-        return;
+        return false;
     }
+    updateStatus();
+    return true;
+}
+void MainWindow::buildRom() {
+    if (!prepareBuild("exporting the ROM"))
+        return;
     ProjectReviewDialog review(*project_, {}, this);
     connect(&review, &ProjectReviewDialog::editRequested, this, &MainWindow::navigateTo);
-    if (review.exec() != QDialog::Accepted) return;
-    auto path = QFileDialog::getSaveFileName(this, "Export rebuilt ROM",
-                                             "Ogre Battle 64-edited." + project_->rom().extension(),
-                                             "N64 ROM (*.v64 *.z64 *.n64)");
-    if (path.isEmpty())
+    if (review.exec() != QDialog::Accepted)
         return;
+    const auto path = QFileDialog::getSaveFileName(
+        this, "Export rebuilt ROM", "Ogre Battle 64-edited." + project_->rom().extension(),
+        "N64 ROM (*.v64 *.z64 *.n64)");
+    if (!path.isEmpty())
+        compileRom(path);
+}
+void MainWindow::buildForTesting(int choice) {
+    auto testing = workspaces_->findChild<TestingEditor *>();
+    if (!testing || loading_ || !project_)
+        return;
+    if (!prepareBuild("building and assigning a test save")) {
+        testing->buildFailed(
+            "Test cancelled. Resolve pending or invalid edits before seeding the ROM.");
+        return;
+    }
+    if (!testBuildLock_) {
+        if (!QDir().mkpath(QFileInfo(testBuildPath_).absolutePath())) {
+            testing->buildFailed(
+                "Cannot create the test ROM folder. Choose another Test ROM location.");
+            return;
+        }
+        auto lock = std::make_shared<QLockFile>(testBuildPath_ + ".lordly-lock");
+        if (!lock->tryLock()) {
+            testing->buildFailed("Another editor is using this test ROM location. Close it or "
+                                 "choose another location.");
+            return;
+        }
+        testBuildLock_ = std::move(lock);
+    }
+    if (testing->currentProjectReady())
+        testing->launchPrepared(choice);
+    else
+        compileRom(testBuildPath_, choice);
+}
+void MainWindow::compileRom(const QString &path, int testChoice) {
+    const bool testingBuild = testChoice != -2;
     auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
     if (tools.isEmpty())
         tools = QCoreApplication::applicationDirPath() + "/n64-toolchain";
@@ -959,38 +1024,73 @@ void MainWindow::buildRom() {
         QString error;
         QStringList report;
         QByteArray digest;
+        bool brokenReferences = false;
     };
     auto watcher = new QFutureWatcher<Result>(this);
-    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, path, revision = projectRevision_] {
-        auto result = watcher->result();
-        watcher->deleteLater();
-        loading_ = false;
-        workspaces_->setEnabled(true);
-        if (!result.error.isEmpty())
-            report(result.error);
-        else {
-            auto testing = workspaces_->findChild<TestingEditor *>();
-            if (testing) testing->useExport(path, revision, result.digest);
-            QMessageBox message(QMessageBox::Information, "ROM exported", path + "\n\n" + result.report.join('\n'), QMessageBox::Ok, this);
-            auto test = testing ? message.addButton("Test this ROM", QMessageBox::ActionRole) : nullptr;
-            message.exec();
-            if (test && message.clickedButton() == test) workspaces_->setCurrentWidget(testing);
-            statusBar()->showMessage("ROM exported successfully", 5000);
-        }
-    });
-    watcher->setFuture(QtConcurrent::run([project = *project_, path, tools] {
-        try {
-            QTemporaryDir work(QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-                               "/lordly-build-XXXXXX");
-            if (!work.isValid())
-                throw Error("Cannot create build workspace");
-            auto result = rebuild(project, tools, work.path());
-            exportRom(project, result, path);
-            return Result{{}, result.report, sha256(result.image)};
-        } catch (const std::exception &e) {
-            return Result{QString::fromUtf8(e.what()), {}};
-        }
-    }));
+    connect(watcher, &QFutureWatcher<Result>::finished, this,
+            [this, watcher, path, revision = projectRevision_, testChoice, testingBuild] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                loading_ = false;
+                workspaces_->setEnabled(true);
+                auto testing = workspaces_->findChild<TestingEditor *>();
+                if (!result.error.isEmpty()) {
+                    if (testingBuild && testing) {
+                        testing->buildFailed(
+                            "Build failed; no save was assigned and Project64 was not launched. " +
+                            result.error);
+                        statusBar()->showMessage("Test build failed");
+                        if (result.brokenReferences) {
+                            ProjectReviewDialog review(*project_, {}, this);
+                            connect(&review, &ProjectReviewDialog::editRequested, this,
+                                    &MainWindow::navigateTo);
+                            review.exec(); // Fix links are available; retry is always an explicit
+                                           // user action.
+                        }
+                    } else
+                        report(result.error);
+                } else if (testingBuild && testing) {
+                    testing->useTestBuild(path, revision, result.digest, testChoice);
+                    statusBar()->showMessage("Test ROM built. Assigning the selected save…");
+                } else {
+                    if (testing)
+                        testing->useExport(path, revision, result.digest);
+                    QMessageBox message(QMessageBox::Information, "ROM exported",
+                                        path + "\n\n" + result.report.join('\n'), QMessageBox::Ok,
+                                        this);
+                    auto test = testing
+                                    ? message.addButton("Test this ROM", QMessageBox::ActionRole)
+                                    : nullptr;
+                    message.exec();
+                    if (test && message.clickedButton() == test) {
+                        testing->findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
+                        workspaces_->setCurrentWidget(testing);
+                    }
+                    statusBar()->showMessage("ROM exported successfully", 5000);
+                }
+            });
+    watcher->setFuture(
+        QtConcurrent::run([project = *project_, path, tools, testingBuild, lock = testBuildLock_] {
+            try {
+                if (testingBuild) {
+                    QStringList errors;
+                    for (const auto &issue : exportIssues(project))
+                        if (issue.blocking)
+                            errors << issue.message;
+                    if (!errors.isEmpty())
+                        return Result{errors.join('\n'), {}, {}, true};
+                }
+                QTemporaryDir work(QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
+                                   "/lordly-build-XXXXXX");
+                if (!work.isValid())
+                    throw Error("Cannot create build workspace");
+                const auto result = rebuild(project, tools, work.path());
+                exportRom(project, result, path);
+                return Result{{}, result.report, sha256(result.image)};
+            } catch (const std::exception &e) {
+                return Result{QString::fromUtf8(e.what()), {}};
+            }
+        }));
 }
 void MainWindow::updateStatus() {
     const int draftCount = pendingEdits(workspaces_).size();

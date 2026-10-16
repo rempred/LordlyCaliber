@@ -33,6 +33,9 @@ class MainWindow : public QMainWindow {
     void openProject();
     void saveProject(bool archive);
     void buildRom();
+    bool prepareBuild(const QString &action);
+    void buildForTesting(int choice);
+    void compileRom(const QString &path, int testChoice = -2);
     void showUses();
     void updateStatus();
     bool invalidEdits() const;
@@ -50,6 +53,8 @@ class MainWindow : public QMainWindow {
     QLabel *summary_;
     bool loading_ = false;
     quint64 projectRevision_ = 0;
+    QString testBuildPath_, testBuildSettingsKey_;
+    std::shared_ptr<QLockFile> testBuildLock_;
     QString recoverySession_, recoveredSession_, projectLabel_;
     quint64 recoveryRevision_ = 0;
     bool recoveryBusy_ = false;

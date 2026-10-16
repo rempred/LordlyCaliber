@@ -86,11 +86,28 @@ Classes opens with an Overview of the selected class's stats, starting equipment
 actions, family and portrait. Its edit buttons keep the selected class when opening
 artwork and animation tools; Back to class setup returns to that overview.
 
-After export, the exported ROM is selected in Testing. Test this ROM opens it there;
-Test this mission in Scenarios filters the supported world-map entry choices.
-Testing identifies the export by its content digest and warns when project edits
-or pending drafts are newer. Build current project includes those edits before a
-new test. Selecting a mission does not launch the emulator automatically.
+Testing defaults to **Current project — build automatically**. Choose the Project64
+folder once, choose an army, then **Build and seed mission**. Pending forms are resolved
+first; the editor compiles and validates changed projects, selects the output, and
+assigns the mission save. An unchanged verified build is reused. **Test ROM location**
+shows the persistent output and lets you choose another location. **Open ROM folder**
+helps you launch that same ROM directly in Project64 later.
+
+**Use my saved army in missions** imports only the army for any listed mission.
+**Assign my complete saved game to this ROM** is separate: choose a Project64 `.sra`
+and assign its whole army, inventory and story progress using the button above the
+mission table. This selection survives rebuilding and restarting the editor.
+**Also launch Project64 now** is optional. Assignment stores the battery save in
+Project64's save folder for this ROM; neither future play nor normal in-game saving
+requires the editor. Seeding again explicitly replaces progress (with a backup).
+Mission seeds preserve slot 2 and clear suspend; complete-save assignment replaces
+the entire battery save with the selected file. Selecting a row or reopening the
+editor never seeds automatically.
+
+**Existing ROM file** seeds a chosen ROM without building the open project.
+After manual export, **Test this ROM** selects that mode. **Test this mission** in
+Scenarios filters the supported world-map entries; in game, load slot 1 and travel
+to the marked destination.
 
 Items / Add item from selected creates a new equipment ID, with editable name,
 independent description and ROM-sourced icon/weapon appearance. The current
