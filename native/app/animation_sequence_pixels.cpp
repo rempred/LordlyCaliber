@@ -1,5 +1,6 @@
 #include "app/animation_sequence_editor.h"
 #include "app/sprite_editor.h"
+#include "app/recovery_draft.h"
 #include "engine/combat_artwork.h"
 #include <QColorDialog>
 #include <QComboBox>
@@ -107,23 +108,25 @@ void AnimationSequenceEditor::editSprite() {
     connect(redo, &QPushButton::clicked, &dialog, [&] { drafts = history[++cursor]; refresh(); });
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    const auto candidate=[&] {
+        auto result=next;auto edited=snapshot;auto poses=bank;auto changedFrame=frame;
+        QMap<int,int> replacements;
+        const auto config=edited.controls()[2],palettes=edited.controls()[3];
+        for(auto it=drafts.cbegin();it!=drafts.cend();++it)
+            replacements[it.key()]=edited.appendSprite(it.value(),u8(config,0x20+it.key()),
+                palettes.mid(u8(config,u32(config,0x1c)+it.key())*512,512));
+        for(int i=0;i<u16(changedFrame,0);++i){const int at=2+i*16,art=u16(changedFrame,at);
+            if(replacements.contains(art))put16(changedFrame,at,quint16(replacements[art]));}
+        poses.setFrame(state,row,edited.appendFrame(changedFrame),u8(record.operands,record.operands.size()-1));
+        edited.setPoses(poses);result.setDescriptor(id,flags,edited);return result;
+    };
+    RecoveryDraft recovery(&dialog,QString("Paint animation sprite · class %1, pose %2, frame %3").arg(id).arg(state).arg(row+1),[&]{
+        return drafts.isEmpty()?QJsonObject{}:QJsonObject{{"animationSequences",candidate().json()}};
+    });
     refresh();
     if (dialog.exec() != QDialog::Accepted || drafts.isEmpty()) return;
     if (project_->animationSequences()->json() != before)
         throw Error("Animation data changed while sprite painting was open");
-    QMap<int, int> replacements;
-    const auto config = snapshot.controls()[2];
-    const auto palettes = snapshot.controls()[3];
-    for (auto it = drafts.cbegin(); it != drafts.cend(); ++it)
-        replacements[it.key()] = snapshot.appendSprite(it.value(), u8(config, 0x20 + it.key()),
-            palettes.mid(u8(config, u32(config, 0x1c) + it.key()) * 512, 512));
-    for (int i = 0; i < u16(frame, 0); ++i) {
-        const int at = 2 + i * 16, art = u16(frame, at);
-        if (replacements.contains(art)) put16(frame, at, quint16(replacements[art]));
-    }
-    bank.setFrame(state, row, snapshot.appendFrame(frame), u8(record.operands, record.operands.size() - 1));
-    snapshot.setPoses(bank);
-    next.setDescriptor(id, flags, snapshot);
-    apply(std::move(next), "Paint private animation frame sprite");
+    apply(candidate(), "Paint private animation frame sprite");
 }
 } // namespace lordly

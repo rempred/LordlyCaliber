@@ -1,6 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/sprite_editor.h"
+#include "app/recovery_draft.h"
 #include "app/rom_art_import.h"
 #include "app/art_image_assignment.h"
 #include "app/sprite_color_dialog.h"
@@ -685,9 +686,11 @@ void SpriteEditor::tick() {
 }
 void SpriteEditor::createAsset() {
     QDialog dialog(this);
+    dialog.setObjectName("spriteCreateDialog");
     dialog.setWindowTitle("New sprite asset");
     auto form = new QFormLayout(&dialog);
     QLineEdit name("Untitled sprite");
+    name.setObjectName("spriteCreateName");
     name.setMaxLength(120);
     form->addRow("Name", &name);
     QComboBox preset;
@@ -710,14 +713,18 @@ void SpriteEditor::createAsset() {
     form->addRow(&buttons);
     connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    const auto identity=SpriteAsset::blank("Untitled sprite",{1,1});
+    const auto candidate=[&]{auto asset=SpriteAsset::blank(name.text(),{width.value(),height.value()});
+        asset.id=identity.id;asset.frames[0].id=identity.frames[0].id;asset.frames[0].layers[0].id=identity.frames[0].layers[0].id;return asset;};
+    RecoveryDraft recovery(&dialog,"New sprite asset",[&]{auto library=project_->sprites();library.replace(candidate());return QJsonObject{{"spriteLibrary",library.json()}};});
     if (dialog.exec() == QDialog::Accepted)
-        guarded(
-            [&] { addAsset(SpriteAsset::blank(name.text(), {width.value(), height.value()})); });
+        guarded([&] { addAsset(candidate()); });
 }
 void SpriteEditor::resizeAsset() {
     if (!current())
         return;
     QDialog dialog(this);
+    dialog.setObjectName("spriteResizeDialog");
     dialog.setWindowTitle("Resize sprite");
     auto form = new QFormLayout(&dialog);
     QSpinBox width, height, x, y;
@@ -743,6 +750,10 @@ void SpriteEditor::resizeAsset() {
     form->addRow(&buttons);
     connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    RecoveryDraft recovery(&dialog,"Resize sprite canvas",[&]{
+        auto asset=current()->resized({width.value(),height.value()},scale.isChecked(),{x.value(),y.value()},crop.isChecked());
+        auto library=project_->sprites();library.replace(asset);return QJsonObject{{"spriteLibrary",library.json()}};
+    });
     if (dialog.exec() == QDialog::Accepted)
         change("Resize sprite canvas", [&](SpriteAsset &a) {
             a = a.resized({width.value(), height.value()}, scale.isChecked(),
@@ -827,10 +838,12 @@ void SpriteEditor::importLayerImage(const QString &path) {
          "Replace the selected layer's pixels. Its size and position stay the same; fit, crop or "
          "place the image below. Color and partial transparency are retained.",
          false, false},
-        [](const QImage &image, int, bool) {
+        [&](const QImage &image, int, bool) {
             const auto rgba = image.convertToFormat(QImage::Format_RGBA8888);
+            auto asset=before;asset.frames[frame].layers[layer].image=rgba;
+            auto library=project_->sprites();library.replace(asset);
             return ArtImageMapping{QByteArray(reinterpret_cast<const char *>(rgba.constBits()),
-                                               rgba.sizeInBytes()), rgba};
+                                               rgba.sizeInBytes()), rgba,{{"spriteLibrary",library.json()}}};
         });
     if (!prepared) return;
     if (!current() || *current() != before)

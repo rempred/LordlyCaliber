@@ -1,6 +1,7 @@
 #pragma once
 #include <QByteArray>
 #include <QImage>
+#include <QJsonObject>
 #include <QPoint>
 #include <QVector>
 #include <functional>
@@ -12,10 +13,12 @@ struct PreparedSpriteSequence {
     QVector<QByteArray> sprites;
     QPoint origin;
 };
-std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *, const SpriteAsset &);
+std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *, const SpriteAsset &,
+    const std::function<QJsonObject(const PreparedSpriteSequence &)> &recover = {});
 struct ArtImageMapping {
     QByteArray data;
     QImage image;
+    QJsonObject recovery;
 };
 struct ArtImageAssignment {
     QSize target;

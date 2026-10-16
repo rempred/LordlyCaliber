@@ -10,15 +10,18 @@ For local iteration, run `native/live/LordlyCaliber.exe`. The maintainer command
 `native/tools/package.ps1 -Live` updates that stable folder without creating a ZIP.
 Close the live editor after saving your work before updating it.
 
-Applied project edits are backed up automatically about once a minute while
-unsaved changes exist. **File → Recover unsaved work** restores a snapshot using
+Project edits and unfinished animation/sprite dialogs are backed up automatically
+about once a minute. **File → Recover unsaved work** restores a snapshot using
 the original source ROM. The editor keeps two snapshots per session, at most ten
 overall, within 128 MB including a write in progress. Snapshots never contain a
 ROM copy. A snapshot larger than 64 MB is skipped with a visible warning; the
 previous snapshot remains. Older snapshots expire after 14 days when another
 backup is written. Saving or deliberately discarding a project clears its recovery.
-Unapplied forms, unconfirmed dialog edits and Save Editor game-save changes must
-be applied or saved separately. **Help → Open crash logs** opens the local reports
+Painting, frame layers, animation copy/translation/import, sprite creation/resizing
+and image-placement previews are included before Apply is clicked. Recovered
+unfinished edits are named in Undo history; Cancel removes them from the next
+snapshot. Other unapplied forms, invalid text and Save Editor game-save changes
+must be applied or saved separately. **Help → Open crash logs** opens the local reports
 folder. Share the matching `.crash.txt` and `.session.log` when reporting a crash.
 These files rotate; nothing is uploaded automatically.
 

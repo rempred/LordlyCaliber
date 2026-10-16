@@ -1,6 +1,7 @@
 #pragma once
 #include "app/record_model.h"
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QMainWindow>
 #include <memory>
 #include <atomic>
@@ -52,6 +53,8 @@ class MainWindow : public QMainWindow {
     QString recoverySession_, recoveredSession_, projectLabel_;
     quint64 recoveryRevision_ = 0;
     bool recoveryBusy_ = false;
+    bool recoveryAgain_ = false;
+    QJsonArray recoveryDrafts_;
     QLabel *recoveryStatus_ = nullptr;
     QToolBar *recoveryNotice_ = nullptr;
     std::unique_ptr<QLockFile> recoverySessionLock_;

@@ -1,4 +1,5 @@
 #include "app/frame_layer_editor.h"
+#include "app/recovery_draft.h"
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -220,11 +221,14 @@ class FrameLayerDialog final : public QDialog {
 std::optional<QByteArray>
 editFrameLayers(const QByteArray &frame, const QByteArray &newLayer, int artCount,
                 const std::function<QVector<ActorFrameLayer>(const QByteArray &)> &render,
-                QWidget *parent) {
+                QWidget *parent,const std::function<QJsonObject(const QByteArray &)> &recover) {
     if (artCount < 1 || newLayer.size() != 16 || frame.size() < 2 ||
         frame.size() != 2 + u16(frame, 0) * 16)
         throw Error("Invalid editable frame layers");
     FrameLayerDialog dialog(frame, newLayer, artCount, render, parent);
+    RecoveryDraft recovery(&dialog,"Animation frame layers",[&]{
+        const auto changed=dialog.encoded();return !recover||changed==frame?QJsonObject{}:recover(changed);
+    });
     if (dialog.exec() != QDialog::Accepted)
         return {};
     return dialog.encoded();

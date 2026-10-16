@@ -571,7 +571,7 @@ void CombatEditor::prepareImage(const QImage &image) {
             auto next = *project_->combatArtwork();
             const auto pixels = next.mapImage(id, child, target, dither);
             next.setPixels(id, child, pixels);
-            return ArtImageMapping{pixels.color + pixels.alpha, next.image(id, child)};
+            return ArtImageMapping{pixels.color + pixels.alpha, next.image(id, child),{{"combatArtwork",next.json()}}};
         });
     if (prepared) {
         if (selected_ != id || child_ != child || project_->combatArtwork()->json() != before)

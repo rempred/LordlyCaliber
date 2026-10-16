@@ -1,4 +1,5 @@
 #include "app/animation_sequence_editor.h"
+#include "app/recovery_draft.h"
 #include "app/actor_pose_editor.h"
 #include "engine/animation_transfer.h"
 #include "engine/sprite_sources.h"
@@ -227,6 +228,17 @@ void AnimationSequenceEditor::chooseSource(bool compare, int destinationRecord, 
     connect(&sourceFrame, &QComboBox::currentIndexChanged, &dialog, showFrame);
     connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    RecoveryDraft recovery(&dialog,destinationRecord>=0?"Copy animation frame":"Copy animation sequence",[&]{
+        if(compare)return QJsonObject{};
+        const auto art=body(*project_,classes.currentData().toInt(),routes.currentIndex());
+        const auto source=sourceDescriptor(*project_,classes.currentData().toInt(),routes.currentIndex(),art);
+        auto next=*project_->animationSequences();const int id=selectedClass(),flags=routes_->currentIndex(),state=poses_->currentData().toInt();
+        if(!next.find(id,flags))next.create(id,flags,*project_->animationRoutes(),project_->combatArtwork()->previewEdits());
+        auto changed=destinationRecord>=0
+            ?copyAnimationFrame(project_->rom(),*next.find(id,flags),state,destinationRecord,source,art,poses.currentData().toInt(),sourceFrame.currentData().toInt(),duration)
+            :copyAnimationPose(project_->rom(),*next.find(id,flags),state,source,art,poses.currentData().toInt(),controls.isChecked());
+        next.setDescriptor(id,flags,changed);return QJsonObject{{"animationSequences",next.json()}};
+    });
     reload(); if (dialog.exec() != QDialog::Accepted) return;
     if (compare) compareFrames(this, frames(*project_, selectedClass(), routes_->currentIndex(), poses_->currentData().toInt()),
                                 frames(*project_, classes.currentData().toInt(), routes.currentIndex(), poses.currentData().toInt()));
@@ -297,6 +309,12 @@ void AnimationSequenceEditor::chooseTranslation() {
         catch (const std::exception &e) { status.setText(QString::fromUtf8(e.what())); }
     });
     connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    RecoveryDraft recovery(&dialog,"Translate animation frames",[&]{
+        if(!x.value()&&!y.value())return QJsonObject{};
+        auto next=editableSequences();next.setDescriptor(selectedClass(),routes_->currentIndex(),
+            translateAnimationFrames(original,selection(),{x.value(),y.value()},layer.value()));
+        return QJsonObject{{"animationSequences",next.json()}};
+    });
     dialog.exec();
 }
 } // namespace lordly

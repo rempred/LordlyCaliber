@@ -8,13 +8,16 @@ introduced. Settings persist in projects and exported ROMs, including weapon
 status patches. Authored high-strength Power uses full-width clamping so repeated
 applications do not wrap derived attributes before the game's existing caps.
 
-Automatic recovery saves applied project edits every minute while unsaved work
-exists. Compressed snapshots include edited animations/artwork and reference the
+Automatic recovery saves project edits and unfinished animation/sprite dialogs
+every minute, including when only a dialog has changed. Compressed snapshots reference the
 original ROM. Retention is two per session, ten overall, 128 MiB total including
 staging, with a 64 MiB single-snapshot limit and 14-day cleanup on later writes.
 File → Recover unsaved work lists interrupted sessions and checks ROM identity.
-Restored work is marked unsaved. Pending form/dialog drafts and Save Editor data
-are excluded and explained in Help. A persistent status reports backup failures.
+Restored work is marked unsaved. Unfinished painting, frame layers, copy/translation,
+frame/sequence imports, sprite creation/resizing and image-placement previews
+become named, undoable edits when recovered. Normal Apply/Cancel behavior is
+unchanged. Other pending forms, invalid text and Save Editor data remain excluded
+and explained in Help. A persistent status reports backup failures.
 Help → Open crash logs exposes bounded local session logs and Windows exception,
 abort or uncaught-C++ reports. Forced termination/power loss need not produce a
 crash report. No automatic upload occurs.

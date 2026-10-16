@@ -416,7 +416,7 @@ void ArtEditor::prepareImage(const QImage &image) {
             const auto words = project_->iconArtwork()->mapImage(item, target, true, alpha, dither);
             auto next = *project_->iconArtwork();
             next.setWords(item, words);
-            return ArtImageMapping{words, next.image(item)};
+            return ArtImageMapping{words, next.image(item),{{"iconArtwork",next.json()}}};
         });
     if (prepared) {
         if (selected_ != item || project_->iconArtwork()->words(item) != before)

@@ -1,4 +1,5 @@
 #include "app/art_image_assignment.h"
+#include "app/recovery_draft.h"
 #include "engine/rom.h"
 #include "engine/sprite_library.h"
 #include "engine/sprite_object.h"
@@ -94,6 +95,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
     buttons.button(QDialogButtonBox::Ok)->setText("Assign image");
     layout->addWidget(&buttons);
     QByteArray prepared;
+    QJsonObject recoverySections;
     auto update = [&] {
         try {
             double sx = double(options.target.width()) / source.width(),
@@ -123,6 +125,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
             if (mapped.image.size() != options.target || mapped.data.isEmpty())
                 throw Error("Artwork conversion returned an invalid preview");
             prepared = mapped.data;
+            recoverySections=mapped.recovery;
             const auto scale =
                 std::max(1, std::min(224 / mapped.image.width(), 256 / mapped.image.height()));
             output->setPixmap(QPixmap::fromImage(mapped.image.scaled(
@@ -133,6 +136,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
         } catch (const std::exception &e) {
             prepared.clear();
+            recoverySections={};
             status->setText(QString::fromUtf8(e.what()));
             buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
         }
@@ -154,11 +158,13 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
     QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     update();
+    RecoveryDraft recovery(&dialog,options.title,[&]{return recoverySections;});
     if (dialog.exec() != QDialog::Accepted)
         return {};
     return prepared;
 }
-std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *parent, const SpriteAsset &asset) {
+std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *parent, const SpriteAsset &asset,
+    const std::function<QJsonObject(const PreparedSpriteSequence &)> &recover) {
     asset.validate();
     if (asset.frames.size() > 255)
         throw Error("A game pose supports at most 255 instructions, including its controls");
@@ -254,17 +260,20 @@ std::optional<PreparedSpriteSequence> prepareSpriteSequence(QWidget *parent, con
     QObject::connect(&fit, &QComboBox::currentIndexChanged, &dialog, update);
     QObject::connect(&dither, &QCheckBox::toggled, &dialog, update);
     PreparedSpriteSequence result;
+    const auto candidate=[&]{
+        PreparedSpriteSequence value;value.origin={originX.value(),originY.value()};
+        for(int i=0;i<asset.frames.size();++i)value.sprites<<convert(i).data;
+        return value;
+    };
     QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, [&] {
         try {
-            PreparedSpriteSequence candidate;
-            candidate.origin = {originX.value(), originY.value()};
-            for (int i = 0; i < asset.frames.size(); ++i) candidate.sprites << convert(i).data;
-            result = std::move(candidate);
+            result=candidate();
             dialog.accept();
         } catch (const std::exception &e) { status->setText(QString::fromUtf8(e.what())); }
     });
     QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     update();
+    RecoveryDraft recovery(&dialog,"Import complete animation sequence",[&]{return recover?recover(candidate()):QJsonObject{};});
     if (dialog.exec() != QDialog::Accepted) return {};
     return result;
 }

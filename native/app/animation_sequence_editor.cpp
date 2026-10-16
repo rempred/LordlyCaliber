@@ -1,4 +1,5 @@
 #include "app/content_refresh.h"
+#include "app/recovery_draft.h"
 #include "app/view_position.h"
 #include "app/animation_sequence_editor.h"
 #include "app/actor_pose_editor.h"
@@ -566,15 +567,16 @@ void AnimationSequenceEditor::editLayers() {
         return updated.bodyFrame(project_->rom(), token,
                                  updated.defaultAppearance(project_->rom()));
     };
-    const auto result =
-        editFrameLayers(frame, newLayer, snapshot.members().size() - 4, render, this);
+    const auto candidate=[&](const QByteArray &value){
+        auto edited=snapshot;auto poses=bank;auto result=next;
+        poses.setFrame(state,index,edited.appendFrame(value),u8(record.operands,record.operands.size()-1));
+        edited.setPoses(poses);result.setDescriptor(id,flags,edited);return result;
+    };
+    const auto result = editFrameLayers(frame, newLayer, snapshot.members().size() - 4, render, this,
+        [&](const QByteArray &value){return QJsonObject{{"animationSequences",candidate(value).json()}};});
     if (!result || *result == frame)
         return;
-    const int replacement = snapshot.appendFrame(*result);
-    bank.setFrame(state, index, replacement, u8(record.operands, record.operands.size() - 1));
-    snapshot.setPoses(bank);
-    next.setDescriptor(id, flags, snapshot);
-    apply(std::move(next), "Edit private frame layers");
+    apply(candidate(*result), "Edit private frame layers");
 }
 void AnimationSequenceEditor::importImage(const QString &path) {
     prepareImage(loadArtworkImage(path));
@@ -582,22 +584,19 @@ void AnimationSequenceEditor::importImage(const QString &path) {
 void AnimationSequenceEditor::importSequence(const SpriteAsset &asset) {
     const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
     const auto before = project_->animationSequences()->json();
-    const auto prepared = prepareSpriteSequence(this, asset);
-    if (!prepared) return;
-    if (project_->animationSequences()->json() != before)
-        throw Error("Private sequences changed while sequence preparation was open");
     project_->loadCombatArtwork();
+    const auto candidate=[&](const PreparedSpriteSequence &prepared){
     auto next = *project_->animationSequences();
     if (!next.find(id, flags))
         next.create(id, flags, *project_->animationRoutes(), project_->combatArtwork()->previewEdits());
     auto snapshot = *next.find(id, flags);
     QVector<QPair<int, int>> frames;
-    for (int i = 0; i < prepared->sprites.size(); ++i) {
-        const auto sprite = SpriteObject::decode(prepared->sprites[i]);
-        const int art = snapshot.appendSprite(prepared->sprites[i], 0, snapshot.controls()[3].left(512));
+    for (int i = 0; i < prepared.sprites.size(); ++i) {
+        const auto sprite = SpriteObject::decode(prepared.sprites[i]);
+        const int art = snapshot.appendSprite(prepared.sprites[i], 0, snapshot.controls()[3].left(512));
         QByteArray row(18, 0);
         put16(row, 0, 1); put16(row, 2, quint16(art));
-        put16(row, 4, quint16(prepared->origin.x())); put16(row, 6, quint16(prepared->origin.y()));
+        put16(row, 4, quint16(prepared.origin.x())); put16(row, 6, quint16(prepared.origin.y()));
         put16(row, 8, quint16(sprite.width())); put16(row, 10, quint16(sprite.height()));
         put16(row, 14, 1024); put16(row, 16, 1024);
         frames << qMakePair(snapshot.appendFrame(row), asset.frames[i].ticks);
@@ -606,7 +605,12 @@ void AnimationSequenceEditor::importSequence(const SpriteAsset &asset) {
     bank.replaceFrames(state, frames);
     snapshot.setPoses(bank);
     next.setDescriptor(id, flags, snapshot);
-    apply(std::move(next), "Replace complete animation frame sequence");
+    return next;
+    };
+    const auto prepared=prepareSpriteSequence(this,asset,[&](const PreparedSpriteSequence &value){return QJsonObject{{"animationSequences",candidate(value).json()}};});
+    if(!prepared)return;
+    if(project_->animationSequences()->json()!=before)throw Error("Private sequences changed while sequence preparation was open");
+    apply(candidate(*prepared), "Replace complete animation frame sequence");
 }
 void AnimationSequenceEditor::copyToLibrary() {
     const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
@@ -632,13 +636,24 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
         throw Error("Make a private copy before importing a frame");
     auto snapshot = *original;
     const auto before = project_->animationSequences()->json();
+    const auto candidate=[&](const QByteArray &prepared){
+        auto edited=snapshot;auto result=next;
+        const auto sprite=SpriteObject::decode(prepared);
+        const int art=edited.appendSprite(prepared,0,edited.controls()[3].left(512));
+        QByteArray row(18,0);put16(row,0,1);put16(row,2,quint16(art));
+        put16(row,8,quint16(sprite.width()));put16(row,10,quint16(sprite.height()));put16(row,14,1024);put16(row,16,1024);
+        auto bank=edited.poses();const auto &records=bank.effective(state).records;
+        if(index<records.size() && isFrame(records[index])){const auto frame=edited.frame(token(records[index]));
+            if(u16(frame,0)){put16(row,4,u16(frame,4));put16(row,6,u16(frame,6));}}
+        bank.insertFrame(state,index,edited.appendFrame(row),ticks);edited.setPoses(bank);result.setDescriptor(id,flags,edited);return result;
+    };
     const auto prepared = prepareArtworkImage(
         this, image,
         {image.size(), "sequence", "Import private frame",
          "Insert a new frame before the selected instruction. Colors use the game's 5-bit RGB "
          "precision; opacity retains all 256 levels. Other frames keep their artwork.",
          false, false, true},
-        [](const QImage &target, int, bool dither) {
+        [&](const QImage &target, int, bool dither) {
             const auto rgba = target.convertToFormat(QImage::Format_RGBA8888);
             const auto sprite = SpriteObject::fromImage(
                 {rgba.width(), rgba.height(),
@@ -649,35 +664,13 @@ void AnimationSequenceEditor::prepareImage(const QImage &image) {
                                    QImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
                                           pixels.width, pixels.height, pixels.width * 4,
                                           QImage::Format_RGBA8888)
-                                       .copy()};
+                                       .copy(),{{"animationSequences",candidate(sprite.source()).json()}}};
         });
     if (!prepared)
         return;
     if (project_->animationSequences()->json() != before)
         throw Error("Private sequences changed while image preparation was open");
-    const auto sprite = SpriteObject::decode(*prepared);
-    const int art = snapshot.appendSprite(*prepared, 0, snapshot.controls()[3].left(512));
-    QByteArray row(18, 0);
-    put16(row, 0, 1);
-    put16(row, 2, quint16(art));
-    put16(row, 8, quint16(sprite.width()));
-    put16(row, 10, quint16(sprite.height()));
-    put16(row, 14, 1024);
-    put16(row, 16, 1024);
-    auto bank = snapshot.poses();
-    const auto &records = bank.effective(state).records;
-    if (index < records.size() && isFrame(records[index])) {
-        const auto frame = snapshot.frame(token(records[index]));
-        if (u16(frame, 0)) {
-            put16(row, 4, u16(frame, 4));
-            put16(row, 6, u16(frame, 6));
-        }
-    }
-    const int frame = snapshot.appendFrame(row);
-    bank.insertFrame(state, index, frame, ticks);
-    snapshot.setPoses(bank);
-    next.setDescriptor(id, flags, snapshot);
-    apply(std::move(next), "Import private sequence frame");
+    apply(candidate(*prepared), "Import private sequence frame");
 }
 void AnimationSequenceEditor::refresh() {
     const ViewPosition keepView(this);

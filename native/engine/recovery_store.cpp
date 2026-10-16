@@ -35,10 +35,11 @@ QVector<RecoveryEntry> RecoveryStore::entries() const {
     for(const auto &info:QDir(root_).entryInfoList({"*.lcrecovery"},QDir::Files,QDir::Name|QDir::Reversed)) {
         try {
             QFile file(info.absoluteFilePath());if(!file.open(QIODevice::ReadOnly))continue;
-            const auto h=header(file);QStringList pending;
+            const auto h=header(file);QStringList pending,drafts;
             for(const auto &text:h["pending"].toArray())pending<<text.toString();
+            for(const auto &text:h["drafts"].toArray())drafts<<text.toString();
             result.append({info.absoluteFilePath(),h["session"].toString(),h["sourcePath"].toString(),h["label"].toString(),
-                           QDateTime::fromString(h["created"].toString(),Qt::ISODateWithMs),pending});
+                           QDateTime::fromString(h["created"].toString(),Qt::ISODateWithMs),pending,drafts});
         } catch(const Error &) { /* A damaged entry stays available for diagnosis. */ }
     }
     return result;
@@ -51,6 +52,8 @@ QString RecoveryStore::save(const QString &session,const QJsonObject &manifest,c
     QJsonObject h{{"session",session},{"created",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
         {"sourcePath",manifest["sourcePath"]},{"label",label},{"pending",QJsonArray::fromStringList(pending)},
         {"sha256",QString::fromLatin1(sha256(payload))}};
+    QJsonArray drafts;for(const auto &draft:manifest["editorRecoveryDrafts"].toArray())drafts.append(draft.toObject()["label"]);
+    if(!drafts.isEmpty())h["drafts"]=drafts;
     const auto metadata=QJsonDocument(h).toJson(QJsonDocument::Compact);
     if(metadata.size()>=65535)throw Error("Recovery details exceed their size limit; save the project manually");
     const auto bytes=QByteArray(magic)+metadata+'\n'+payload;

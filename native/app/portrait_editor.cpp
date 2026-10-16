@@ -434,10 +434,12 @@ void PortraitEditor::prepareImage(const QImage &image) {
                              true,
                              true,
                              true},
-                            [](const QImage &target, int, bool dither) {
+                            [&](const QImage &target, int, bool dither) {
                                 const auto words =
                                     AvatarArtwork::mapImage(target, true, Qt::black, dither);
-                                return ArtImageMapping{words, AvatarArtwork::render(words)};
+                                auto next=*project_->avatarArtwork();next.setWords(project_->classData(),id,selector,words);
+                                if(both_->isChecked())next.setWords(project_->classData(),id,1-selector,words);
+                                return ArtImageMapping{words, AvatarArtwork::render(words),{{"avatarArtwork",next.json()}}};
                             });
     if (prepared) {
         if (selected_ != id || selector_ != selector || project_->avatarArtwork()->json() != before)

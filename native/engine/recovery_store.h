@@ -6,7 +6,7 @@ namespace lordly {
 struct RecoveryEntry {
     QString path, session, sourcePath, label;
     QDateTime created;
-    QStringList pending;
+    QStringList pending, drafts;
 };
 class RecoveryStore {
   public:

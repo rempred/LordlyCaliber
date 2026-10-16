@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/diagnostics.h"
 #include "app/pending_edits.h"
+#include "app/recovery_draft.h"
 #include "engine/recovery_store.h"
 #include <QApplication>
 #include <QDateTime>
@@ -47,13 +48,13 @@ void MainWindow::initializeRecovery() {
     });logs->setObjectName("openCrashLogs");
     help->addAction("About recovery and crash logs…",this,[this]{
         QMessageBox::information(this,"Recovery and crash logs",
-            "Applied project edits, including animation and artwork edits, are backed up about every minute while unsaved changes exist. "
+            "Project edits and unfinished animation/sprite dialog edits are backed up about every minute while unsaved changes exist. "
             "Recovery never changes your saved project or copies your ROM.\n\n"
             "Two snapshots per editing session are kept, up to 10 total and 128 MB including the next snapshot being written. "
             "Old snapshots are removed after 14 days when another backup is written. A single snapshot can use up to 64 MB. "
             "If a backup cannot be saved, the status bar reports it. Saving or deliberately discarding a project removes its temporary snapshots.\n\n"
-            "Unapplied form drafts, edits still inside a dialog, invalid text and Save Editor game-save changes are not in project recovery. "
-            "Apply or confirm edits to include them, and save game saves separately.\n\n"
+            "Supported animation and sprite dialogs are included before Apply is clicked. Recovery identifies these unfinished edits and adds them to Undo history. "
+            "Other unapplied forms, invalid text and Save Editor game-save changes are excluded; save game saves separately.\n\n"
             "After an interrupted session, use File → Recover unsaved work. The original source ROM is required.\n\n"
             "Crash reports and session logs are in:\n"+Diagnostics::folder()+
             "\n\nUse Help → Open crash logs and share the matching .crash.txt and .session.log files when reporting a problem. "
@@ -61,7 +62,7 @@ void MainWindow::initializeRecovery() {
             "Power loss or forcibly ending the process may leave recovery snapshots without a crash report.");
     });
     recoveryStatus_=new QLabel("Recovery ready");recoveryStatus_->setObjectName("recoveryStatus");
-    recoveryStatus_->setToolTip("Automatic recovery saves applied project edits about once a minute. File → Recover unsaved work.");
+    recoveryStatus_->setToolTip("Automatic recovery includes unfinished animation and sprite dialogs. File → Recover unsaved work.");
     statusBar()->addPermanentWidget(recoveryStatus_);
     recoveryNotice_=addToolBar("Recovery available");recoveryNotice_->setObjectName("recoveryNotice");recoveryNotice_->setMovable(false);
     recoveryNotice_->addWidget(new QLabel("  A previous session has recovery snapshots or a crash report.  "));
@@ -75,7 +76,7 @@ void MainWindow::initializeRecovery() {
     auto timer=new QTimer(this);timer->setObjectName("recoveryTimer");timer->setInterval(60000);connect(timer,&QTimer::timeout,this,&MainWindow::autosaveRecovery);timer->start();
 }
 void MainWindow::beginRecoverySession() {
-    recoverySession_=QUuid::createUuid().toString(QUuid::WithoutBraces);recoveryRevision_=projectRevision_;projectLabel_.clear();
+    recoverySession_=QUuid::createUuid().toString(QUuid::WithoutBraces);recoveryRevision_=projectRevision_;recoveryDrafts_={};projectLabel_.clear();
     try {RecoveryStore store;recoverySessionLock_=std::make_unique<QLockFile>(store.root()+"/.session-"+recoverySession_+".lock");
         if(!recoverySessionLock_->tryLock(0))throw Error("Cannot reserve recovery session");}
     catch(const std::exception &e){qWarning()<<"Recovery session:"<<e.what();}
@@ -83,6 +84,7 @@ void MainWindow::beginRecoverySession() {
 void MainWindow::clearRecovery() {
     recoveryCancelled_->store(true);
     recoveryCancelled_=std::make_shared<std::atomic_bool>(false);
+    recoveryDrafts_={};
     if(recoverySession_.isEmpty())return;
     try {RecoveryStore store;store.removeSession(recoverySession_);
         if(!recoveredSession_.isEmpty())store.removeSession(recoveredSession_);recoveredSession_.clear();}
@@ -90,26 +92,41 @@ void MainWindow::clearRecovery() {
     if(recoveryStatus_)recoveryStatus_->setText("Recovery ready");
 }
 void MainWindow::autosaveRecovery() {
-    if(!project_||loading_||recoveryBusy_||undo_->isClean()||projectRevision_==recoveryRevision_)return;
+    if(!project_||loading_)return;
+    if(recoveryBusy_){recoveryAgain_=true;return;}
+    QJsonArray drafts;
+    try {drafts=captureRecoveryDrafts(workspaces_,*project_);}
+    catch(const std::exception &e){recoveryStatus_->setText("Recovery failed — unfinished edit needs attention");recoveryStatus_->setToolTip(QString::fromUtf8(e.what()));qWarning()<<e.what();return;}
+    if(undo_->isClean() && drafts.isEmpty()){clearRecovery();return;}
+    if(projectRevision_==recoveryRevision_ && drafts==recoveryDrafts_)return;
     recoveryBusy_=true;
     const auto revision=projectRevision_;const auto session=recoverySession_;
     QStringList pending;for(const auto &entry:pendingEdits(workspaces_))pending<<entry.label;
     if(invalidEdits())pending<<"Invalid text input";
-    if(QApplication::activeModalWidget())pending<<"Unconfirmed edits in an open dialog";
+    if(auto modal=QApplication::activeModalWidget()) {
+        bool covered=false;
+        for(auto parent=modal;parent;parent=parent->parentWidget())
+            if(!parent->findChildren<RecoveryDraft *>(QString(),Qt::FindDirectChildrenOnly).isEmpty())covered=true;
+        if(!covered)pending<<"Unconfirmed edits in another open dialog";
+    }
     recoveryStatus_->setText("Saving recovery…");
     struct Result {QString error;};auto watcher=new QFutureWatcher<Result>(this);
-    connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,revision,session,pending]{
+    connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,revision,session,pending,drafts]{
         const auto result=watcher->result();watcher->deleteLater();recoveryBusy_=false;
-        if(session!=recoverySession_||undo_->isClean()) {
+        if(recoveryAgain_){recoveryAgain_=false;QTimer::singleShot(0,this,&MainWindow::autosaveRecovery);}
+        if(session!=recoverySession_) {
             try {RecoveryStore().removeSession(session);}catch(const std::exception &e){qWarning()<<e.what();}return;
         }
         if(!result.error.isEmpty()) {recoveryStatus_->setText("Recovery failed — save manually");recoveryStatus_->setToolTip(result.error);qWarning().noquote()<<result.error;}
-        else {recoveryRevision_=revision;recoveryStatus_->setText("Recovery saved "+QTime::currentTime().toString("h:mm AP")+(pending.isEmpty()?"":" · unapplied drafts excluded"));
-            recoveryStatus_->setToolTip(pending.isEmpty()?"Applied project edits are backed up. Save your project to keep them permanently.":"Not included: "+pending.join(", "));}
+        else {recoveryRevision_=revision;recoveryDrafts_=drafts;
+            recoveryStatus_->setText("Recovery saved "+QTime::currentTime().toString("h:mm AP")+(!drafts.isEmpty()?" · unfinished art included":"")+(pending.isEmpty()?"":" · other drafts excluded"));
+            recoveryStatus_->setToolTip(pending.isEmpty()?"Project edits and supported unfinished artwork are backed up. Save your project to keep it permanently.":"Not included: "+pending.join(", "));}
     });
-    watcher->setFuture(QtConcurrent::run([snapshot=*project_,session,label=projectLabel_,pending,cancelled=recoveryCancelled_]{
+    watcher->setFuture(QtConcurrent::run([snapshot=*project_,session,label=projectLabel_,pending,drafts,cancelled=recoveryCancelled_]{
         try {if(cancelled->load())return Result{};
-            RecoveryStore store;store.save(session,snapshot.manifest(),label,pending);
+            auto manifest=snapshot.manifest();
+            if(!drafts.isEmpty())manifest["editorRecoveryDrafts"]=drafts;
+            RecoveryStore store;store.save(session,manifest,label,pending);
             if(cancelled->load())store.removeSession(session);
             return Result{};}
         catch(const std::exception &e){return Result{QString::fromUtf8(e.what())};}
@@ -118,24 +135,27 @@ void MainWindow::autosaveRecovery() {
 bool MainWindow::openRecoveryFile(const QString &path,const QString &sourceRom) {
     if(loading_||!confirmDiscard())return false;
     RecoveryStore store;auto manifest=store.load(path);QString oldSession;
+    if(manifest.contains("editorRecoveryDrafts")&&!manifest["editorRecoveryDrafts"].isArray())throw Error("Invalid unfinished artwork snapshot");
+    const auto drafts=manifest.take("editorRecoveryDrafts").toArray();
     for(const auto &entry:store.entries())if(entry.path==path)oldSession=entry.session;
     auto next=Project::fromRom(Rom::open(sourceRom),catalog_);
     next.loadTexts();
     if(next.rom().revision()==0){next.loadPromotion();next.loadShops();next.loadConsumableEffects();next.loadEncounters();next.loadScenarios();next.loadWorld();}
-    next.applyManifest(manifest);installProject(std::move(next));
+    next.applyManifest(manifest);validateRecoveryDrafts(next,drafts);installProject(std::move(next));
     recoveredSession_=oldSession;
     // Recovery is an unsaved baseline. Subsequent edits have normal Undo; the
     // baseline itself must not pretend to undo restored data.
     undo_->setClean();undo_->resetClean();
+    restoreRecoveryDrafts(project_.get(),undo_,drafts);
     ++projectRevision_;
-    recoveryStatus_->setText("Recovered — save your project");updateStatus();
+    recoveryStatus_->setText(drafts.isEmpty()?"Recovered — save your project":"Recovered unfinished edits — review with Undo, then save");updateStatus();
     recoveryNotice_->hide();return true;
 }
 void MainWindow::showRecovery() {
     try {
         RecoveryStore store;QDialog dialog(this);dialog.setWindowTitle("Recover unsaved work");dialog.resize(760,460);
         auto layout=new QVBoxLayout(&dialog);
-        auto help=new QLabel("Choose a snapshot, then recover it using the original source ROM. Your saved project is not overwritten. Save the recovered project to keep it.");help->setWordWrap(true);layout->addWidget(help);
+        auto help=new QLabel("Recover using the original source ROM. Unfinished animation/sprite edits listed below are included as undoable changes. Your saved project is not overwritten; save the recovered project to keep it.");help->setWordWrap(true);layout->addWidget(help);
         auto list=new QListWidget;layout->addWidget(list);
         auto details=new QLabel;details->setTextFormat(Qt::PlainText);details->setWordWrap(true);layout->addWidget(details);
         auto buttons=new QDialogButtonBox(QDialogButtonBox::Close);layout->addWidget(buttons);
@@ -144,14 +164,15 @@ void MainWindow::showRecovery() {
         auto folder=buttons->addButton("Open recovery folder",QDialogButtonBox::ActionRole);
         auto locate=buttons->addButton("Choose source ROM…",QDialogButtonBox::ActionRole);
         QVector<RecoveryEntry> entries;QString selectedSource;
-        auto refresh=[&]{entries=recoverable(store);list->clear();for(const auto &entry:entries)list->addItem(entry.created.toLocalTime().toString("MMM d, yyyy h:mm:ss AP")+" — "+(entry.label.isEmpty()?QFileInfo(entry.sourcePath).fileName():entry.label));
+        auto refresh=[&]{entries=recoverable(store);list->clear();for(const auto &entry:entries)list->addItem(entry.created.toLocalTime().toString("MMM d, yyyy h:mm:ss AP")+" — "+(entry.label.isEmpty()?QFileInfo(entry.sourcePath).fileName():entry.label)+(entry.drafts.isEmpty()?"":" · unfinished edits"));
             recover->setEnabled(!entries.isEmpty());remove->setEnabled(!entries.isEmpty());locate->setEnabled(!entries.isEmpty());if(!entries.isEmpty())list->setCurrentRow(0);else details->setText("No recoverable snapshots. Snapshots from another running editor are not shown.");};
+        const auto describe=[&](int row){if(row<0||row>=entries.size())return;
+            details->setText("Source ROM: "+selectedSource+(entries[row].drafts.isEmpty()?"":"\nUnfinished edits included: "+entries[row].drafts.join(", "))+(entries[row].pending.isEmpty()?"":"\nNot included: "+entries[row].pending.join(", ")));};
         connect(list,&QListWidget::currentRowChanged,&dialog,[&](int row){if(row<0||row>=entries.size())return;
-            selectedSource=entries[row].sourcePath;
-            details->setText("Source ROM: "+selectedSource+(entries[row].pending.isEmpty()?"":"\nNot included: "+entries[row].pending.join(", ")));});
+            selectedSource=entries[row].sourcePath;describe(row);});
         connect(locate,&QPushButton::clicked,&dialog,[&]{
             const auto chosen=QFileDialog::getOpenFileName(&dialog,"Locate original source ROM",selectedSource,"N64 ROM (*.v64 *.z64 *.n64)");
-            if(!chosen.isEmpty()){selectedSource=chosen;details->setText("Source ROM: "+selectedSource);}
+            if(!chosen.isEmpty()){selectedSource=chosen;describe(list->currentRow());}
         });
         connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
         connect(folder,&QPushButton::clicked,&dialog,[&]{QDesktopServices::openUrl(QUrl::fromLocalFile(store.root()));});

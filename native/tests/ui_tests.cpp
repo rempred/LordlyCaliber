@@ -10673,6 +10673,43 @@ class UiTests : public QObject {
         QCOMPARE(tools.findChild<QLabel *>("trainingFee")->text(),QString("1260 Goth"));
         QTest::qWait(30);QVERIFY(tools.grab().save("native/build/training-editor.png"));
     }
+    void unfinishedSpriteAutosave() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QStandardPaths::setTestModeEnabled(true);struct Restore {~Restore(){QStandardPaths::setTestModeEnabled(false);}} restore;
+        RecoveryStore store;QTemporaryDir savedCopy;
+        MainWindow window;window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QPushButton *>("spriteNew"),60000);
+        QVERIFY(!window.isWindowModified());
+        QString latest;QJsonObject recoveredManifest;
+        QTimer::singleShot(0,&window,[&]{
+            auto dialog=window.findChild<QDialog *>("spriteCreateDialog");QVERIFY(dialog);
+            QTimer::singleShot(30000,dialog,&QDialog::reject);
+            auto name=dialog->findChild<QLineEdit *>("spriteCreateName");QVERIFY(name);name->setText("First unfinished sprite");
+            auto timer=window.findChild<QTimer *>("recoveryTimer");
+            QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QLabel *>("recoveryStatus")->text().contains("unfinished art included"),15000);
+            QVERIFY(!store.entries().isEmpty());latest=store.entries().front().path;
+            const auto first=store.load(latest);QCOMPARE(first["editorRecoveryDrafts"].toArray().size(),1);
+            QVERIFY(!store.entries().front().drafts.isEmpty());
+            name->setText("Second unfinished sprite");
+            QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection);
+            QTRY_VERIFY_WITH_TIMEOUT(store.entries().front().path!=latest,15000);
+            latest=store.entries().front().path;recoveredManifest=store.load(latest);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QLabel *>("recoveryStatus")->text().contains("unfinished art included"),15000);
+            QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection);QTest::qWait(150);
+            QCOMPARE(store.entries().front().path,latest); // No new copy for an unchanged draft.
+            QVERIFY(QFile::copy(latest,savedCopy.filePath("unfinished.lcrecovery")));
+            dialog->reject();
+        });
+        window.findChild<QPushButton *>("spriteNew")->click();
+        QVERIFY(!latest.isEmpty());QTRY_VERIFY_WITH_TIMEOUT(!QFile::exists(latest),15000);
+        QVERIFY(!window.isWindowModified());
+        MainWindow recovered;QVERIFY(recovered.openRecoveryFile(savedCopy.filePath("unfinished.lcrecovery"),path));
+        auto assets=recovered.findChild<QListWidget *>("spriteAssets");QVERIFY(assets);QCOMPARE(assets->count(),1);
+        QVERIFY(assets->item(0)->text().contains("Second unfinished sprite"));QVERIFY(recovered.isWindowModified());
+        auto undo=recovered.findChild<QUndoGroup *>();undo->undo();QCOMPARE(assets->count(),0);QVERIFY(recovered.isWindowModified());
+        undo->redo();QCOMPARE(assets->count(),1);
+    }
     void automaticRecoveryLifecycle() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         QStandardPaths::setTestModeEnabled(true);

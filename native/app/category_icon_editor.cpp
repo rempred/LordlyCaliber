@@ -333,7 +333,8 @@ void CategoryIconEditor::prepareImage(const QImage &image) {
     const auto result =
         prepareArtworkImage(this, image, config, [this](const QImage &image, int, bool) {
             const auto data = project_->categoryIcons()->mapImage(image);
-            return ArtImageMapping{data, project_->categoryIcons()->image(data)};
+            auto next=*project_->categoryIcons();next.setIndices(selected_,data);
+            return ArtImageMapping{data, project_->categoryIcons()->image(data),{{"categoryIcons",next.json()}}};
         });
     if (result) {
         auto edited = *project_->categoryIcons();

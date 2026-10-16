@@ -612,7 +612,13 @@ void ArmyEditor::prepareImage(const QImage &image) {
                                     next.mapImage(atlas, ordinal, target, threshold,
                                                   next.indices(atlas, model), dither);
                                 next.setIndices(atlas, model, pixels);
-                                return ArtImageMapping{pixels, next.image(atlas, model, ordinal)};
+                                const auto preview=next.image(atlas,model,ordinal);
+                                auto isolated=*project_->armyArtwork();
+                                if(pixels!=isolated.indices(atlas,model)) {
+                                    const int destination=class_>=0?isolated.isolateClass(project_->classData(),class_):model;
+                                    isolated.setIndices(atlas,destination,pixels);
+                                }
+                                return ArtImageMapping{pixels,preview,{{"armyArtwork",isolated.json()}}};
                             });
     if (prepared) {
         if (atlas_ != atlas || model_ != model || paletteOrdinal_ != ordinal ||

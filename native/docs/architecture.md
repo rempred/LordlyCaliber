@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Unconfirmed artwork recovery (2026-10-15)
+
+Dialog-owned `RecoveryDraft` providers publish copied candidate artwork sections
+on the GUI thread. Autosave stores these in `editorRecoveryDrafts` alongside the
+unchanged applied-project manifest; only value data goes to the worker. Equality
+checks notice draft-only edits even with clean Undo and avoid unchanged rewrites.
+Dialog completion queues an autosave after normal Apply/Cancel handling, including
+retry when a writer is already active. Existing storage/size limits are shared.
+
+Supported providers cover private animation painting/layers, copy/translation,
+single-frame and sequence import, sprite creation/resizing and prepared images
+for sprite layers, combat sprites, Army sprites, portraits and item/category icons.
+Apply and recovery share candidate construction. Recovery validates allowed
+sections against a value copy before replacing the current project; recovered
+drafts become individual Undo commands. The temporary metadata is removed before
+applying the ordinary project manifest. Original native data and normal Cancel
+behavior remain intact. Recovery preserves the current draft result, not dialog
+window positions, cursor state or the painter's individual stroke history.
+
+`ui_tests unfinishedSpriteAutosave` verifies a real open creation dialog with a
+clean project, successive draft-only snapshots, unchanged-draft suppression,
+Cancel cleanup and recovered Undo/Redo. `sequence_editor_tests` compares recovered
+painting, layer and multi-frame candidates to normal Apply outputs; painting also
+roundtrips through RecoveryStore. Existing sequence/image/ROM-export, lifecycle,
+storage-limit and crash tests remain passing. This uses offscreen Qt automation.
+
 ## Status controls and recovery (2026-10-15)
 
 `engine/status_rules` extends GameRules with five persisted values. Its manifest

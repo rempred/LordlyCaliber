@@ -1,6 +1,8 @@
 #include "app/animation_sequence_editor.h"
 #include "app/combat_animation_editor.h"
 #include "app/sprite_editor.h"
+#include "app/recovery_draft.h"
+#include "engine/recovery_store.h"
 #include "app/theme.h"
 #include "engine/actor_art.h"
 #include "engine/actor_pose.h"
@@ -405,8 +407,9 @@ class SequenceEditorTests : public QObject {
                 for (int x = 0; x < pixels.width; ++x) if (u8(pixels.rgba, (y * pixels.width + x) * 4 + 3)) { painted = {x, y}; break; }
             QVERIFY(painted.x() >= 0);
             QString problem;
+            QJsonArray paintedDraft;
             const auto respond = [&](bool accept) {
-                QTimer::singleShot(50, [&editor, &problem, painted, accept] {
+                QTimer::singleShot(50, [&editor, &problem, &paintedDraft, &project, painted, accept] {
                     auto dialog = editor.findChild<QDialog *>("sequenceSpriteDialog");
                     if (!dialog) { problem = "Missing sprite painter"; return; }
                     QTimer::singleShot(5000, dialog, &QDialog::reject);
@@ -416,14 +419,25 @@ class SequenceEditorTests : public QObject {
                     QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, painted * canvas->zoom() + QPoint(2, 2));
                     auto ok = dialog->findChild<QDialogButtonBox *>("sequenceSpriteButtons")->button(QDialogButtonBox::Ok);
                     if (!ok->isEnabled()) { problem = "Painting produced no editable frame"; dialog->reject(); return; }
+                    paintedDraft=captureRecoveryDrafts(&editor,project);
+                    if(paintedDraft.size()!=1){problem="Missing unfinished paint snapshot";dialog->reject();return;}
                     dialog->grab().save("native/build/combat-sprite-painter.png");
                     if (accept) ok->click(); else dialog->reject();
                 });
             };
             respond(false); button("sequenceEditSprite")->click();
             QVERIFY2(problem.isEmpty(), qPrintable(problem)); QCOMPARE(project.animationSequences()->json(), assigned); QCOMPARE(undo.count(), 1);
+            QTemporaryDir recoveryDir;RecoveryStore recovery(recoveryDir.path());
+            auto saved=project.manifest();saved["editorRecoveryDrafts"]=paintedDraft;
+            const auto recoveryPath=recovery.save("painting",saved,"Animation");
+            auto recoveredManifest=recovery.load(recoveryPath);const auto pending=recoveredManifest.take("editorRecoveryDrafts").toArray();
+            auto recovered=Project::fromRom(project.rom());recovered.applyManifest(recoveredManifest);QUndoStack recoveryUndo;
+            restoreRecoveryDrafts(&recovered,&recoveryUndo,pending);
+            const auto recoveredPaint=recovered.animationSequences()->json();QVERIFY(recoveredPaint!=assigned);
+            recoveryUndo.undo();QCOMPARE(recovered.animationSequences()->json(),assigned);recoveryUndo.redo();
             respond(true); button("sequenceEditSprite")->click();
             QVERIFY2(problem.isEmpty(), qPrintable(problem)); QCOMPARE(undo.count(), 2);
+            QCOMPARE(project.animationSequences()->json(),recoveredPaint);
             const auto changed = *project.animationSequences()->find(2, 1);
             const auto changedFrame = changed.frame(frameToken(changed.poses().effective(replacement).records[selected]));
             QCOMPARE(editor.findChild<QWidget *>("sequencePreview")->property("frameToken").toInt(),
@@ -497,13 +511,15 @@ class SequenceEditorTests : public QObject {
             second.layers[0].id = SpriteLibrary::newId(); second.layers[0].image.fill(Qt::blue);
             asset.frames << second;
             const auto before = project.animationSequences()->json();
-            const auto respond = [](bool accept) {
-                QTimer::singleShot(0, [accept] {
+            auto recoveryBase=project;QJsonArray batchDraft;
+            const auto respond = [&](bool accept) {
+                QTimer::singleShot(0, [&,accept] {
                     auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
                     QVERIFY(dialog);
                     QCOMPARE(dialog->objectName(), "sequenceBatchPreparation");
                     dialog->findChild<QSpinBox *>("sequenceBatchFrame")->setValue(2);
                     QVERIFY(dialog->findChild<QLabel *>("sequenceBatchStatus")->text().contains("7 ticks"));
+                    if(undo.count()==0){batchDraft=captureRecoveryDrafts(&editor,project);QCOMPARE(batchDraft.size(),1);}
                     dialog->findChild<QDialogButtonBox *>("sequenceBatchButtons")
                         ->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)->click();
                 });
@@ -513,6 +529,9 @@ class SequenceEditorTests : public QObject {
             respond(true); editor.importSequence(asset);
             QCOMPARE(undo.count(), 1);
             const auto after = project.animationSequences()->json();
+            QUndoStack restoredUndo;restoreRecoveryDrafts(&recoveryBase,&restoredUndo,batchDraft);
+            QCOMPARE(recoveryBase.animationSequences()->json(),after);
+            restoredUndo.undo();QCOMPARE(recoveryBase.animationSequences()->json(),before);
             const auto descriptor = *project.animationSequences()->find(2, 0);
             const auto original = AnimationDescriptor::load(project.rom(), descriptor.key());
             QCOMPARE(descriptor.poses().effective(0).source, original.poses().effective(0).source);
@@ -1000,6 +1019,7 @@ class SequenceEditorTests : public QObject {
             poses->setCurrentIndex(poses->findData(38));
             QVERIFY(editor.findChild<QLabel *>("sequenceSummary")->text().contains("warm tint"));
             editor.findChild<QTableWidget *>("sequenceRecords")->selectRow(1);
+            auto recoveryBase=project;QJsonArray layerDraft;
             QString error;
             QTimer::singleShot(50, [&] {
                 auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
@@ -1033,6 +1053,8 @@ class SequenceEditorTests : public QObject {
                     }
                     if (layer != expected.size())
                         throw Error("Missing substituted layer");
+                    layerDraft=captureRecoveryDrafts(&editor,project);
+                    if(layerDraft.size()!=1||project.animationSequences()->json()!=before)throw Error("Layer draft was not isolated from the live project");
                     dialog->findChild<QDialogButtonBox *>("layerDialogButtons")
                         ->button(QDialogButtonBox::Ok)
                         ->click();
@@ -1045,6 +1067,9 @@ class SequenceEditorTests : public QObject {
             QVERIFY2(error.isEmpty(), qPrintable(error));
             QCOMPARE(undo.count(), 1);
             const auto *edited = project.animationSequences()->find(2, 0);
+            QUndoStack restoredUndo;restoreRecoveryDrafts(&recoveryBase,&restoredUndo,layerDraft);
+            QCOMPARE(recoveryBase.animationSequences()->json(),project.animationSequences()->json());
+            restoredUndo.undo();QCOMPARE(recoveryBase.animationSequences()->json(),before);
             QCOMPARE(edited->poses().effective(38).records.last().operands,
                      QByteArray::fromHex("2002"));
             const auto updated = art.withDescriptor(*edited);
