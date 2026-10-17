@@ -117,7 +117,6 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     iconActions->addWidget(editIcon);
     auto createIcon = new QPushButton("Create icon…");
     createIcon->setObjectName("createFamilyIcon");
-    iconActions->addWidget(createIcon);
     form->addRow(iconActions);
     auto iconHelp = new QLabel(
         "Choose an icon to give this family its own List Classes tab. Classes still follow the "
@@ -245,7 +244,10 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     familyForm->addRow("Class-change rules", rules_);
     auto add = new QPushButton("Create and assign family");
     add->setObjectName("createFamily");
-    layout->addWidget(add);
+    auto createActions = new QHBoxLayout;
+    createActions->addWidget(add);
+    createActions->addWidget(createIcon);
+    layout->addLayout(createActions);
     connect(add, &QPushButton::clicked, this, [this] {
         edit("Create class family", [this](Promotion &p) {
             p.assign(id_, p.createFamily(name_->text(),
