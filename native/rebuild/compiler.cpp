@@ -1,6 +1,7 @@
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
@@ -1197,6 +1198,32 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);
+    if (p.tools() && p.tools()->leaderAffinity().modified()) {
+        const auto &affinity = p.tools()->leaderAffinity();
+        if (result.image.mid(LeaderAffinity::offset, LeaderAffinity::size) !=
+            p.rom().bytes().mid(LeaderAffinity::offset, LeaderAffinity::size))
+            throw Error("Another export owner overlaps leader affinity");
+        const auto rows = affinity.json()["rows"].toObject();
+        for (auto it = rows.begin(); it != rows.end(); ++it)
+            if (it.key().toInt() >= p.records(Table::Classes).size())
+                throw Error("Leader affinity references a missing class");
+        const auto bytes = compiler.assembleOwner(affinity.assembly(), directory,
+            "leader_affinity", LeaderAffinity::address, {}, true);
+        if (bytes.size() != LeaderAffinity::size || bytes != affinity.image())
+            throw Error("Leader-affinity code differs from its bounded allocation");
+        result.image.replace(LeaderAffinity::offset, LeaderAffinity::size, bytes);
+        const auto reopened = LeaderAffinity::load(Rom::fromBytes(result.image));
+        if (!reopened.unavailable().isEmpty() || reopened.json() != affinity.json())
+            throw Error("Rebuilt leader affinity differs from the project");
+        result.report << "Compiled combat leader affinity within its original code allocation";
+    }
+    if (p.encounters() && p.encounters()->persuasion().modified()) {
+        if (result.image.mid(Persuasion::ownerOffset,Persuasion::ownerSize) !=
+            p.rom().bytes().mid(Persuasion::ownerOffset,Persuasion::ownerSize))
+            throw Error("Another export owner overlaps persuasion affinity");
+        result.image = rebuildPersuasion(Rom::fromBytes(result.image), p.encounters()->persuasion(), compiler, directory);
+        result.report << "Compiled the persuasion starting-score table and preserved health, temperament and custom squad overrides";
+    }
     if (p.tools() && p.tools()->gameRules().modified()) {
         for (const auto &owner : p.tools()->gameRules().builds()) {
             if (result.image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))

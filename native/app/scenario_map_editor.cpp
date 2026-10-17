@@ -12,6 +12,7 @@
 #include <QCryptographicHash>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHideEvent>
 #include <QImage>
 #include <QJsonDocument>
 #include <QLabel>
@@ -110,6 +111,7 @@ class MapCanvas : public QWidget {
     std::function<void(QPointF)> peakPlaced;
     std::function<void()> cancelPeakPlacement;
     std::function<void(QPointF)> place;
+    std::function<void()> cancelPlacement;
     bool placing = false;
     bool pickingDestination = false;
     std::function<void(QPointF)> destinationPicked;
@@ -422,17 +424,16 @@ class MapCanvas : public QWidget {
             peakPlaced(fromPixel(e->position()));
             return;
         }
-        if (editBoundary) {
+        if (editBoundary && showBoundary && boundary.isValid()) {
             const QPointF corners[] = {boundary.topLeft(), boundary.topRight(),
                                        boundary.bottomRight(), boundary.bottomLeft()};
             for (int i = 0; i < 4; ++i)
                 if (QLineF(toPixel(corners[i]), press_).length() < 14) {
                     boundaryCorner = i;
                     boundaryDrag = boundary;
-                    break;
+                    update();
+                    return;
                 }
-            update();
-            return;
         }
         if (brushMode) {
             stroke = {fromPixel(e->position())};
@@ -531,11 +532,15 @@ class MapCanvas : public QWidget {
         e->accept();
     }
     void keyPressEvent(QKeyEvent *e) override {
+        if (e->key() == Qt::Key_Escape && placing && cancelPlacement) {
+            cancelPlacement();
+            return;
+        }
         if (e->key() == Qt::Key_Escape && addingPeak && cancelPeakPlacement) {
             cancelPeakPlacement();
             return;
         }
-        if (e->key() == Qt::Key_Escape && drag_ >= 0) {
+        if (e->key() == Qt::Key_Escape && (drag_ >= 0 || boundaryCorner >= 0)) {
             cancelDrag();
             update();
             return;
@@ -652,6 +657,11 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     auto fit = new QPushButton("Fit map");
     fit->setObjectName("mapFit");
     toolbar->addWidget(fit);
+    addSquad_ = new QPushButton("Add squad");
+    addSquad_->setObjectName("mapSquadAdd");
+    addSquad_->setCheckable(true);
+    addSquad_->setToolTip("Click the map to place a squad with one Knight leader and no other members.");
+    toolbar->addWidget(addSquad_);
     auto addTreasure = new QPushButton("Add treasure on map");
     addTreasure->setObjectName("mapTreasureAdd");
     addTreasure->setCheckable(true);
@@ -673,9 +683,21 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     painting->setContentsMargins(0, 0, 0, 0);
     tool_ = new QComboBox;
     tool_->setObjectName("mapTool");
-    tool_->addItems({"Select / move", "Paint terrain", "Draw road", "Erase painting",
-                     "Edit boundary", "City pieces", "Mountain peaks"});
+    tool_->addItems({"Select / move", "Terrain", "Scenery"});
     painting->addWidget(tool_);
+    terrainAction_ = new QComboBox;
+    terrainAction_->setObjectName("mapTerrainAction");
+    terrainAction_->addItem("Paint terrain", 1);
+    terrainAction_->addItem("Draw road", 2);
+    terrainAction_->addItem("Erase painting", 3);
+    terrainAction_->hide();
+    painting->addWidget(terrainAction_);
+    sceneryAction_ = new QComboBox;
+    sceneryAction_->setObjectName("mapSceneryAction");
+    sceneryAction_->addItem("City pieces", 5);
+    sceneryAction_->addItem("Mountain peaks", 6);
+    sceneryAction_->hide();
+    painting->addWidget(sceneryAction_);
     paintType_ = new QComboBox;
     paintType_->setObjectName("mapPaintType");
     for (int type = 1; type <= 14; ++type)
@@ -740,8 +762,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     cityLayout->addWidget(cityHelp, 1);
     layout->addWidget(cityTools_);
     cityTools_->hide();
-    auto boundaryToggle = new QCheckBox("Boundary");
+    auto boundaryToggle = new QCheckBox("Map border");
     boundaryToggle->setObjectName("mapBoundary");
+    boundaryToggle->setToolTip("In Select / move, drag the gold corner handles to resize the game border.");
     boundaryToggle->setChecked(true);
     toolbar->addWidget(boundaryToggle);
     boundaryTools_ = new QWidget;
@@ -767,8 +790,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     paintType_->setToolTip("Paint over existing roads with Plain or another terrain to remove "
                            "them. Highlands raise the ground; forests add a canopy and edge. "
                            "Existing landforms and fixed fortress walls remain.");
-    tool_->setToolTip("Drag to paint. Erase painting restores the loaded ROM in that area. Each "
-                      "stroke can be undone.");
+    tool_->setToolTip("Select / move edits objects and the map border. Terrain groups painting, "
+                     "roads and erasing. Scenery groups city pieces and mountain peaks.");
+    terrainAction_->setToolTip("Drag to paint. Erase painting restores the opened ROM in that area. "
+                              "Each stroke can be undone.");
     auto split = new QSplitter;
     canvas_ = new MapCanvas;
     split->addWidget(canvas_);
@@ -790,7 +815,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     auto inspector = new QWidget;
     auto fields = new QVBoxLayout(inspector);
     fields->setContentsMargins(0, 0, 0, 0);
-    fields->setSizeConstraint(QLayout::SetMinimumSize);
+    fields->setSizeConstraint(QLayout::SetMinAndMaxSize);
     auto scroll = new QScrollArea;
     scroll->setObjectName("mapInspectorScroll");
     scroll->setWidgetResizable(true);
@@ -813,6 +838,8 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     fields->addWidget(summary_);
     auto ordersPage = new QWidget; ordersPage->setObjectName("mapSquadOrders");
     auto ordersLayout = new QVBoxLayout(ordersPage); ordersLayout->setContentsMargins(0,0,0,0);
+    ordersLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    ordersPage->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     ordersLayout->setAlignment(Qt::AlignTop);
     steps_=new SquadRouteSteps(project_,commit_);ordersLayout->addWidget(steps_);
     steps_->advanced=[this](int row){editFields_(MapObject::Waypoint,row);};
@@ -848,6 +875,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     routePreview_->hide();
     auto beginPicking=[this, addTreasure](bool on) {
         if (on) {
+            addSquad_->setChecked(false);
             addTreasure->setChecked(false);
             tool_->setCurrentIndex(0);
             canvas_->cancelDrag();
@@ -1036,52 +1064,29 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     notice_->setObjectName("mapNotice");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
-    canvas_->resizedBoundary = [this](QRectF b) { changeBoundary(b); };
+    canvas_->resizedBoundary = [this](QRectF b) {
+        changeBoundary(b);
+        boundaryTools_->show();
+    };
     for(auto box:boundaryFields_)connect(box, &QSpinBox::valueChanged, this, [this] {
         if(loading_)return;
         changeBoundary(QRectF(QPointF(boundaryFields_[0]->value(), boundaryFields_[1]->value()),
                               QPointF(boundaryFields_[2]->value(), boundaryFields_[3]->value())));
     });
     connect(boundaryToggle, &QCheckBox::toggled, this, [this](bool value) {
+        canvas_->cancelDrag();
         canvas_->showBoundary = value;
+        if (!value) boundaryTools_->hide();
         canvas_->update();
     });
     canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
-    connect(tool_, &QComboBox::currentIndexChanged, this,
-            [this, addTreasure, boundaryToggle](int mode) {
-                if (mode) { orders_->cancelPick();steps_->cancelPick(); }
-                canvas_->cancelDrag();
-                canvas_->brushMode = mode < 4 ? mode : 0;
-                cityTools_->setVisible(mode == 5);
-                peakTools_->setVisible(mode == 6);
-                addPeak_->setChecked(false);
-                paintType_->setVisible(mode == 1);
-                brushLabel_->setVisible(mode > 0 && mode < 4);
-                brushSize_->setVisible(mode > 0 && mode < 4);
-                const int terrain = paintType_->currentData().toInt();
-                canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
-                canvas_->editBoundary = mode == 4 && key_ != 39;
-                boundaryTools_->setVisible(mode == 4);
-                boundaryTools_->setEnabled(key_ != 39);
-                if (mode == 4)
-                    boundaryToggle->setChecked(true);
-                if (mode)
-                    addTreasure->setChecked(false);
-                paintType_->setEnabled(mode == 1);
-                brushSize_->setEnabled(mode > 0 && mode < 4);
-                if (mode == 5)
-                    updateCityTool();
-                else
-                    canvas_->cityFootprint.clear();
-                canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
-                if (!loading_)
-                    refresh(key_);
-            });
+    for (auto choice : {tool_, terrainAction_, sceneryAction_})
+        connect(choice, &QComboBox::currentIndexChanged, this, [this] { updateTool(); });
     paintType_->setEnabled(false);paintType_->hide();brushLabel_->hide();brushSize_->hide();
     connect(paintType_, &QComboBox::currentIndexChanged, this, [this] {
         canvas_->cancelDrag();
         const int terrain = paintType_->currentData().toInt();
-        canvas_->straightBrush = tool_->currentIndex() == 1 && (terrain == 2 || terrain == 10);
+        canvas_->straightBrush = activeTool() == 1 && (terrain == 2 || terrain == 10);
         canvas_->update();
     });
     brushSize_->setEnabled(false);
@@ -1129,8 +1134,11 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     };
     connect(addTreasure, &QPushButton::toggled, this, [this](bool on) {
         if (on) {
+            addSquad_->setChecked(false);
             orders_->cancelPick();steps_->cancelPick();
             tool_->setCurrentIndex(0);
+            canvas_->cancelDrag();
+            canvas_->setFocus();
         }
         canvas_->placing = on;
         canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
@@ -1138,9 +1146,53 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
                               "cancel. Choose its item in the sidebar."
                             : "");
     });
+    connect(addSquad_, &QPushButton::toggled, this, [this, addTreasure](bool on) {
+        if (on) {
+            addTreasure->setChecked(false);
+            orders_->cancelPick();
+            steps_->cancelPick();
+            tool_->setCurrentIndex(0);
+            canvas_->cancelDrag();
+            canvas_->setFocus();
+        }
+        canvas_->placing = on;
+        canvas_->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+        notice_->setText(on ? "Click the map to place a Knight leader with no other members. "
+                              "Escape or Add squad cancels."
+                            : "");
+    });
+    canvas_->cancelPlacement = [this, addTreasure] {
+        addSquad_->setChecked(false);
+        addTreasure->setChecked(false);
+    };
     canvas_->place = [this, addTreasure](QPointF position) {
         if (key_ < 1 || !maps_.contains(key_))
             return;
+        if (addSquad_->isChecked()) {
+            if (position.x() < 1 || position.x() > 255 || position.y() < 1 || position.y() > 255) {
+                notice_->setText("Place the squad inside the map (X and Z from 1 to 255).");
+                return;
+            }
+            try {
+                auto next = *project_->scenarios();
+                const auto classes = project_->classData();
+                const int row = next.addSquad(key_, -1, classes);
+                auto deployment = next.scenario(key_).layout.deployments[row];
+                put8(deployment, 3, quint8(qRound(position.x())));
+                put8(deployment, 4, quint8(qRound(position.y())));
+                next.setDeployment(key_, row, deployment, classes);
+                addSquad_->setChecked(false);
+                commit_(next, "Place new squad on map");
+                refresh(key_);
+                selectSquad(row);
+                squadTabs_->setCurrentWidget(squadPanel_);
+                notice_->setText("Squad placed with a Knight leader and no other members. "
+                                 "Edit its members in the sidebar, or drag to move it.");
+            } catch (const Error &e) {
+                notice_->setText(QString::fromUtf8(e.what()));
+            }
+            return;
+        }
         if (position.x() < 0 || position.x() > 255 || position.y() < 0 || position.y() > 255) {
             notice_->setText("Place the treasure inside the map bounds.");
             return;
@@ -1199,7 +1251,50 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
         }
     });
 }
+void ScenarioMapEditor::hideEvent(QHideEvent *event) {
+    canvas_->cancelPlacement();
+    QWidget::hideEvent(event);
+}
+int ScenarioMapEditor::activeTool() const {
+    // Keep the existing brush operations independent of their grouped selectors.
+    if (tool_->currentIndex() == 1) return terrainAction_->currentData().toInt();
+    if (tool_->currentIndex() == 2) return sceneryAction_->currentData().toInt();
+    return 0;
+}
+void ScenarioMapEditor::updateTool() {
+    const int mode = activeTool();
+    if (mode) {
+        canvas_->cancelPlacement();
+        orders_->cancelPick();
+        steps_->cancelPick();
+    }
+    canvas_->cancelDrag();
+    canvas_->brushMode = mode < 4 ? mode : 0;
+    terrainAction_->setVisible(tool_->currentIndex() == 1);
+    sceneryAction_->setVisible(tool_->currentIndex() == 2);
+    cityTools_->setVisible(mode == 5);
+    peakTools_->setVisible(mode == 6);
+    addPeak_->setChecked(false);
+    paintType_->setVisible(mode == 1);
+    paintType_->setEnabled(mode == 1);
+    brushLabel_->setVisible(mode > 0 && mode < 4);
+    brushSize_->setVisible(mode > 0 && mode < 4);
+    brushSize_->setEnabled(mode > 0 && mode < 4);
+    const int terrain = paintType_->currentData().toInt();
+    canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
+    canvas_->editBoundary = mode == 0 && key_ > 0 && key_ != 39;
+    if (mode) boundaryTools_->hide();
+    if (mode == 5) updateCityTool();
+    else canvas_->cityFootprint.clear();
+    canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
+    if (!loading_) refresh(key_);
+}
 void ScenarioMapEditor::refresh(int key) {
+    if (key_ != key || key < 1) {
+        canvas_->cancelPlacement();
+        boundaryTools_->hide();
+    }
+    addSquad_->setEnabled(false);
     orders_->cancelPick();
     steps_->cancelPick();
     const ViewPosition keepView(this, key_ == key);
@@ -1285,13 +1380,19 @@ void ScenarioMapEditor::refresh(int key) {
         if (!maps_.contains(key))
             maps_[key] = ScenarioMap::load(project_->rom(), key);
         auto map = maps_[key];
+        const bool hasRoom = project_->scenarios()->scenario(key).squads.size() < 30;
+        addSquad_->setEnabled(hasRoom);
+        addSquad_->setToolTip(hasRoom
+            ? "Click the map to place a squad with one Knight leader and no other members."
+            : "This scenario already has 30 enemy/allied squads.");
+        if (!hasRoom) addSquad_->setChecked(false);
         bool editable = false;
         try {
             project_->loadMapEdits();
             map.points = project_->mapEdits()->points(key);
             editable = true;
             canvas_->boundary = project_->mapEdits()->boundary(key);
-            canvas_->editBoundary = tool_->currentIndex() == 4 && key != 39;
+            canvas_->editBoundary = activeTool() == 0 && key != 39;
             boundaryTools_->setEnabled(key != 39);
             boundaryTools_->setToolTip(key == 39
                                            ? "Fort Romulus uses a separate scripted boundary; "
@@ -1411,7 +1512,7 @@ void ScenarioMapEditor::refresh(int key) {
                     artwork(itemId | (equipment ? 0 : 0x200), false));
             }
         }
-        if (editable && tool_->currentIndex() == 6) {
+        if (editable && activeTool() == 6) {
             objects_->clear();
             canvas_->markers.clear();
             canvas_->edges.clear();
@@ -1466,7 +1567,7 @@ void ScenarioMapEditor::refresh(int key) {
                 "Battlefield preview unavailable: " + QString::fromUtf8(e.what()) +
                 (map.image ? "\nSeparate briefing overview shown below." : ""));
         }
-        notice_->setText(tool_->currentIndex() == 6
+        notice_->setText(activeTool() == 6
                              ? "Drag the base to move a peak inside Highlands. Drag the diamond to "
                                "change height. "
                                "Escape cancels."
@@ -1563,7 +1664,7 @@ void ScenarioMapEditor::select(int row) {
     summary_->clear();
     if (!valid) {
         selection_->setText(
-            tool_->currentIndex() == 6
+            activeTool() == 6
                 ? "Select a peak, or use Add peak on map. Paint Highlands to add a mountain."
                 : "Select a squad, waypoint, site, treasure or city piece on the map.");
         return;
@@ -1779,7 +1880,7 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
     try {
         auto next = *project_->mapEdits();
         const auto before = next;
-        const bool cityMode = tool_->currentIndex() == 5;
+        const bool cityMode = activeTool() == 5;
         if (cityMode && cityType_->currentData().metaType().id() == QMetaType::QString) {
             const auto p = stroke.last();
             const auto &b = maps_[key_].bounds;
@@ -1793,8 +1894,8 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
             notice_->setText("City piece placed. Click to place another, or choose Select / move.");
             return;
         }
-        const int type = tool_->currentIndex() == 3   ? 255
-                         : tool_->currentIndex() == 2 ? 1
+        const int type = activeTool() == 3   ? 255
+                         : activeTool() == 2 ? 1
                          : cityMode                   ? cityType_->currentData().toInt()
                                                       : paintType_->currentData().toInt();
         next.paint(key_, stroke, type, brushSize_->value());
@@ -1811,7 +1912,7 @@ void ScenarioMapEditor::paint(const QVector<QPointF> &stroke) {
     }
 }
 void ScenarioMapEditor::updateCityTool() {
-    if (tool_->currentIndex() != 5 || !project_->mapEdits() || !maps_.contains(key_))
+    if (activeTool() != 5 || !project_->mapEdits() || !maps_.contains(key_))
         return;
     try {
         if (cityType_->count() == 4) {

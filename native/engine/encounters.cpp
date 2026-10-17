@@ -62,6 +62,7 @@ Encounters Encounters::load(const Rom &rom, int classCount) {
     result.rewards_ = CreatureRewards::load(rom);
     result.scenarioRates_ = ScenarioRates::load(rom);
     result.customSquads_ = CustomSquads::load(rom, classCount);
+    result.persuasion_ = Persuasion::load(rom);
     result.pools_ = rom.bytes().mid(poolOffset, poolCount * slotCount * 2);
     if (const auto placement = CustomPlacement::read(rom); placement && placement->slotCount > 10)
         result.pools_ = rom.bytes().mid(placement->pairsOffset(), poolCount * placement->slotCount * 2);
@@ -147,11 +148,11 @@ void Encounters::setTerrain(int terrain, int value, int slot) {
 bool Encounters::modified() const {
     return pools_ != originalPools_ || rates_ != originalRates_ || slots_ != originalSlots_ ||
            globalRate_.modified() || rewards_.modified() || scenarioRates_.modified() ||
-           customSquads_.modified();
+           customSquads_.modified() || persuasion_.modified();
 }
 int Encounters::changedRows() const {
     int count = (globalRate_.modified() ? 1 : 0) + rewards_.changedRows() +
-                scenarioRates_.changedRows() + customSquads_.changedRows();
+                scenarioRates_.changedRows() + customSquads_.changedRows() + (persuasion_.modified() ? 1 : 0);
     for (int p = 0; p < poolCount; ++p)
         if (pools_.mid(p * slotsPerPool() * 2, slotsPerPool() * 2) !=
             originalPools_.mid(p * (originalPools_.size() / poolCount), originalPools_.size() / poolCount))
@@ -181,7 +182,7 @@ QJsonObject Encounters::json() const {
             {"globalRate", globalRate_.json()},
             {"rewards", rewards_.json()},
             {"scenarioRates", scenarioRates_.json()},
-            {"customSquads", customSquads_.json()}};
+            {"customSquads", customSquads_.json()}, {"persuasion", persuasion_.json()}};
 }
 void Encounters::apply(const QJsonObject &object, int classCount) {
     if ((object["version"] != 1 && object["version"] != 2) || !object["pools"].isArray() ||
@@ -191,6 +192,10 @@ void Encounters::apply(const QJsonObject &object, int classCount) {
         object["terrainSlots"].toArray().size() != terrainCount)
         throw Error("Encounter project requires 45 pools and 32 terrain entries");
     auto next = *this;
+    if (object.contains("persuasion")) {
+        if (!object["persuasion"].isObject()) throw Error("Invalid saved persuasion table");
+        next.persuasion_.apply(object["persuasion"].toObject(), classCount);
+    }
     const int count = object["slotCount"].toInt(10);
     if (count < 10 || count > 32 || (object["version"] == 1 && count != 10))
         throw Error("Encounter pools require 10–32 slots");

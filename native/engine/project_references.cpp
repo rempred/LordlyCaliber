@@ -90,8 +90,20 @@ QVector<ProjectReference> projectReferences(Project p) {
             }
         }
     }
+    if (p.tools()) {
+        const auto &affinity = p.tools()->leaderAffinity();
+        const auto rows = affinity.json()["rows"].toObject();
+        for (auto it = rows.begin(); it != rows.end(); ++it)
+            add("classes", it.key().toInt(), "Combat leader affinity", {"classes",it.key().toInt(),-1,"section:Combat"}, affinity.modified());
+    }
     if (p.encounters()) {
         const auto original = Encounters::load(p.rom(), int(p.records(Table::Classes).size()));
+        const auto &persuasion = p.encounters()->persuasion();
+        for (int leader : persuasion.leaders())
+            add("classes", leader, "Persuasion / leader row", {"encounters"}, persuasion.modified());
+        for (const auto &group : persuasion.groups())
+            for (int member : group.members)
+                add("classes", member, "Persuasion / " + group.name, {"encounters"}, persuasion.modified());
         for (int pool = 1; pool <= Encounters::poolCount; ++pool)
             for (int slot = 0; slot < p.encounters()->slotsPerPool(); ++slot)
                 for (int side = 0; side < 2; ++side) {

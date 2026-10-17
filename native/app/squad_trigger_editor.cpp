@@ -13,6 +13,8 @@ namespace lordly {
 SquadTriggerEditor::SquadTriggerEditor(const QString &suffix, QWidget *parent) : QWidget(parent) {
     setObjectName("squadTrigger" + suffix);
     auto layout = new QVBoxLayout(this); layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     auto box = [&](const QString &name) {
         auto w = new QComboBox; w->setObjectName("squadTrigger" + suffix + name);
         w->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -33,6 +35,7 @@ SquadTriggerEditor::SquadTriggerEditor(const QString &suffix, QWidget *parent) :
     type_->addItem("Scenario squad count is at most…", 9);
     type_->addItem("Preserve mission trigger", -1);
     area_ = new QWidget; auto grid = new QGridLayout(area_); grid->setContentsMargins(0,0,0,0);
+    grid->setSizeConstraint(QLayout::SetMinimumSize);
     const QStringList labels{"Left (X)", "Top (Z)", "Right (X)", "Bottom (Z)"};
     for (int i = 0; i < 4; ++i) {
         bounds_[i] = new QSpinBox; bounds_[i]->setRange(0,255); bounds_[i]->setKeyboardTracking(false);

@@ -4,6 +4,7 @@
 #include "engine/encounter_rate.h"
 #include "engine/rom.h"
 #include "engine/scenario_rates.h"
+#include "engine/persuasion.h"
 #include <QJsonObject>
 #include <QMap>
 #include <QStringList>
@@ -61,6 +62,8 @@ class Encounters {
     const CustomSquads &customSquads() const {
         return customSquads_;
     }
+    const Persuasion &persuasion() const { return persuasion_; }
+    void setPersuasion(const QJsonObject &value, int classCount) { persuasion_.apply(value, classCount); }
     void setCustomSquad(const CustomSquad &value, int classCount) {
         customSquads_.set(value, classCount);
     }
@@ -95,5 +98,6 @@ class Encounters {
     CreatureRewards rewards_;
     ScenarioRates scenarioRates_;
     CustomSquads customSquads_;
+    Persuasion persuasion_;
 };
 } // namespace lordly

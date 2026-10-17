@@ -65,6 +65,7 @@ class EncounterEditor : public QWidget {
     QVector<QSpinBox *> rates_;
     QDoubleSpinBox *divisor_, *normalPass_, *alternatePass_;
     QCheckBox *linkedRates_;
+    QLabel *areaChance_ = nullptr, *missionChance_ = nullptr;
     QLabel *globalRatio_ = nullptr, *globalNotice_ = nullptr;
     QListWidget *rewardClasses_ = nullptr;
     QLineEdit *rewardSearch_ = nullptr;

@@ -11,6 +11,7 @@
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
+#include "app/leader_affinity_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
 #include "engine/recovery_store.h"
@@ -125,6 +126,77 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void leaderAffinityEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);
+        auto project=Project::fromRom(Rom::open(path)); project.loadTools();
+        QUndoStack undo; LeaderAffinityEditor editor(&project,&undo,[]{});
+        editor.selectClass(0x18);
+        auto beast=editor.findChild<QSpinBox *>("leaderAffinityStrength0"); QVERIFY(beast);
+        QCOMPARE(beast->value(),15); beast->setValue(-25);
+        QCOMPARE(project.tools()->leaderAffinity().bonuses(0x18)[0],-25);
+        undo.undo(); QCOMPARE(beast->value(),15); undo.redo(); QCOMPARE(beast->value(),-25);
+        editor.findChild<QPushButton *>("leaderAffinityRetail")->click(); QCOMPARE(beast->value(),15);
+        int link=-1; const auto schema=fields(Table::Classes);
+        for(int i=0;i<schema.size();++i) if(schema[i].key=="classCopyMatch") link=i;
+        QVERIFY(link>=0); project.setValue(Table::Classes,0x76,link,6); editor.selectClass(0x76);
+        QVERIFY(editor.findChild<QLabel *>("leaderAffinityScope")->text().contains("shared"));
+        beast->setValue(12); QCOMPARE(project.tools()->leaderAffinity().bonuses(6)[0],12);
+        QCOMPARE(project.tools()->leaderAffinity().bonuses(0x76)[0],0);
+        editor.selectClass(6); QCOMPARE(beast->value(),12);
+        const int custom=project.appendClass(5,"Affinity tester"); project.setValue(Table::Classes,custom,link,0);
+        editor.selectClass(custom); beast->setValue(21); QCOMPARE(project.tools()->leaderAffinity().bonuses(custom)[0],21);
+        editor.selectClass(-1); QVERIFY(!beast->isEnabled());
+        MainWindow window; window.resize(1440,900); window.show(); window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QWidget *>("leaderAffinityEditor"),30000);
+        window.navigateTo({"classes",0x18,-1,"section:Combat"}); QTest::qWait(40);
+        QVERIFY(window.grab().save(QCoreApplication::applicationDirPath()+"/leader-affinity.png"));
+    }
+    void persuasionEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path)); project.loadEncounters();
+        const int custom=project.appendClass(5,"Persuasion tester");
+        QUndoStack undo; EncounterEditor editor(&project,&undo,[]{});
+        editor.resize(1200,850); editor.show();
+        auto tabs=editor.findChild<QTabWidget *>("encounterTabs"); QVERIFY(tabs);
+        for(int tab=0;tab<tabs->count();++tab) if(tabs->tabText(tab)=="Persuasion") tabs->setCurrentIndex(tab);
+        auto group=editor.findChild<QComboBox *>("persuasionGroup");
+        auto table=editor.findChild<QTableWidget *>("persuasionTable"); QVERIFY(group); QVERIFY(table);
+        const int beasts=project.encounters()->persuasion().groupFor(0x45); group->setCurrentIndex(beasts);
+        QTest::qWait(40); QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/persuasion.png"));
+        auto rowFor=[&](int id) { for(int row=0;row<table->rowCount();++row) if(table->item(row,0)->data(Qt::UserRole).toInt()==id) return row; return -1; };
+        QCOMPARE(table->item(rowFor(24),1)->data(Qt::EditRole).toInt(),80);
+        table->item(rowFor(24),1)->setData(Qt::EditRole,42);
+        QCOMPARE(project.encounters()->persuasion().score(24,beasts),42);
+        undo.undo(); QCOMPARE(table->item(rowFor(24),1)->data(Qt::EditRole).toInt(),80); undo.redo();
+        QTimer::singleShot(0,&editor,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
+            auto choices=dialog->findChild<QComboBox *>("persuasionNewLeader"); QVERIFY(choices);
+            choices->setCurrentIndex(choices->findData(custom)); dialog->accept();
+        });
+        editor.findChild<QPushButton *>("persuasionAddLeader")->click(); QVERIFY(rowFor(custom)>=0);
+        QCOMPARE(project.encounters()->persuasion().score(custom,beasts),30);
+        QTimer::singleShot(0,&editor,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom creatures");
+            auto list=dialog->findChild<QListWidget *>("persuasionGroupMembers"); QVERIFY(list);
+            for(int row=0;row<list->count();++row) if(list->item(row)->data(Qt::UserRole).toInt()==custom || list->item(row)->data(Qt::UserRole).toInt()==0x45)
+                list->item(row)->setCheckState(Qt::Checked);
+            dialog->accept();
+        });
+        editor.findChild<QPushButton *>("persuasionCreateGroup")->click();
+        const int created=group->currentIndex(); QVERIFY(created!=beasts);
+        QCOMPARE(project.encounters()->persuasion().groupFor(custom),created);
+        QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
+        QCOMPARE(project.encounters()->persuasion().score(24,created),42);
+        table->item(rowFor(custom),1)->setData(Qt::EditRole,91);
+        QCOMPARE(project.encounters()->persuasion().score(custom,created),91);
+        const auto manifest=project.manifest(); QTemporaryDir saved; project.saveFolder(saved.path());
+        auto reopened=Project::fromRom(Rom::open(path)); reopened.applyManifest(Project::readProject(saved.path()));
+        QCOMPARE(reopened.manifest(),manifest);
+        undo.undo(); undo.undo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),beasts);
+        undo.redo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
+    }
     void pendingConsumableAndRouteEdits() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -192,6 +264,9 @@ class UiTests : public QObject {
         auto proxy = qobject_cast<QAbstractProxyModel *>(table->model()); QVERIFY(proxy);
         auto model = qobject_cast<RecordModel *>(proxy->sourceModel()); QVERIFY(model);
         auto undo = window.findChild<QUndoGroup *>(); QVERIFY(undo);
+        const int statusColumn = model->weaponStatusColumn();
+        QVERIFY(statusColumn >= 2);
+        QVERIFY(!table->isColumnHidden(statusColumn));
         int flags = -1, type = -1;
         for (int n=0; n<fields(Table::Items).size(); ++n) {
             if (fields(Table::Items)[n].key == "b23Raw") flags=n+2;
@@ -204,6 +279,7 @@ class UiTests : public QObject {
             choice->setCurrentIndex(index);
             QVERIFY(QMetaObject::invokeMethod(choice, "activated", Qt::DirectConnection, Q_ARG(int,index)));
             QCOMPARE(model->index(1, flags).data(Qt::EditRole).toInt(), 0x11|effect);
+            QCOMPARE(model->index(1, statusColumn).data().toString(), choice->currentText());
             undo->undo(); undo->redo();
             QCOMPARE(choice->currentData().toInt(), effect);
             if (effect==64 || effect==128) {
@@ -229,7 +305,67 @@ class UiTests : public QObject {
         QVERIFY(model->setData(model->index(278, type), 14, Qt::EditRole));
         QVERIFY(!choice->isEnabled()); QCOMPARE(choice->currentText(), "Poison");
         QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0x31);
+        QVERIFY(!(model->flags(model->index(278, statusColumn)) & Qt::ItemIsEditable));
+        QVERIFY(!model->setData(model->index(278, statusColumn), 2, Qt::EditRole));
         undo->undo(); QVERIFY(choice->isEnabled());
+        // Edit through the table dropdown, preserving unrelated weapon bits and Undo.
+        auto index = proxy->mapFromSource(model->index(278, statusColumn));
+        auto delegate = table->itemDelegateForColumn(statusColumn);
+        std::unique_ptr<QWidget> cell(delegate->createEditor(table->viewport(), {}, index));
+        auto cellChoice = qobject_cast<QComboBox *>(cell.get()); QVERIFY(cellChoice);
+        delegate->setEditorData(cellChoice, index);
+        QCOMPARE(cellChoice->currentText(), "Poison");
+        cellChoice->setCurrentIndex(cellChoice->findData(2));
+        delegate->setModelData(cellChoice, proxy, index);
+        QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0x13);
+        QCOMPARE(choice->currentText(), "Sleep");
+        QCOMPARE(model->index(278, statusColumn).data().toString(), "Sleep");
+        undo->undo(); QCOMPARE(choice->currentText(), "Poison");
+        QCOMPARE(model->index(278, flags).data(Qt::EditRole).toInt(), 0x31);
+        undo->redo(); QCOMPARE(choice->currentText(), "Sleep");
+        auto views = window.findChild<QComboBox *>("itemsColumnView");
+        views->setCurrentIndex(views->findData("Resistance"));
+        QVERIFY(table->isColumnHidden(statusColumn));
+        views->setCurrentIndex(views->findData("Stats"));
+        QVERIFY(!table->isColumnHidden(statusColumn));
+        views->setCurrentIndex(views->findData(""));
+        QVERIFY(!table->isColumnHidden(statusColumn));
+    }
+    void fixedEquipmentChoices() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        MainWindow window;
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QComboBox *>("fixedEquipmentLocks"), 30000);
+        window.navigateTo({"classes", 1, -1, "section:Equipment"});
+        auto locks = window.findChild<QComboBox *>("fixedEquipmentLocks");
+        QCOMPARE(locks->currentData().toInt(), 3);
+        QCOMPARE(locks->currentText(), "Weapon + Body armor");
+        auto table = window.findChild<QTableView *>("classesTable");
+        auto proxy = qobject_cast<QAbstractProxyModel *>(table->model()); QVERIFY(proxy);
+        auto model = qobject_cast<RecordModel *>(proxy->sourceModel()); QVERIFY(model);
+        auto undo = window.findChild<QUndoGroup *>(); QVERIFY(undo);
+        int column = -1;
+        for (int n = 0; n < fields(Table::Classes).size(); ++n)
+            if (fields(Table::Classes)[n].key == "fixedEquipment") column = n + 2;
+        QVERIFY(column >= 2);
+        // Modified ROMs can carry unknown upper bits; named choices must leave them alone.
+        QVERIFY(model->setData(model->index(1, column), 0xa3, Qt::EditRole));
+        for (int mask : {0, 1, 2, 4, 8, 15, 3}) {
+            const int selection = locks->findData(mask); QVERIFY(selection >= 0);
+            locks->setCurrentIndex(selection);
+            QVERIFY(QMetaObject::invokeMethod(locks, "activated", Qt::DirectConnection, Q_ARG(int, selection)));
+            QCOMPARE(model->index(1, column).data(Qt::EditRole).toInt(), 0xa0 | mask);
+            undo->undo(); undo->redo();
+            QCOMPARE(locks->currentData().toInt(), mask);
+        }
+        const int previous = model->index(2, column).data(Qt::EditRole).toInt();
+        window.navigateTo({"classes", 2, -1, "section:Equipment"});
+        QCOMPARE(locks->currentData().toInt(), previous & 15);
+        window.navigateTo({"classes", 1, -1, "section:Equipment"});
+        QCOMPARE(locks->currentText(), "Weapon + Body armor");
+        QCOMPARE(model->index(1, column).data(Qt::EditRole).toInt(), 0xa3);
+        QCOMPARE(model->index(2, column).data(Qt::EditRole).toInt(), previous);
     }
     void classSetupAndTestingHandoff() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -9409,6 +9545,109 @@ class UiTests : public QObject {
         QCOMPARE(visible, 1);
         QCOMPARE(sha256(rom.bytes()), before);
     }
+    void scenarioMapSquadPlacement() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1200, 850);
+        editor.show();
+        auto missions = editor.findChild<QListWidget *>("scenarioList");
+        auto chooseMission = [&](int key) {
+            for (int i = 0; i < missions->count(); ++i)
+                if (missions->item(i)->data(Qt::UserRole).toInt() == key)
+                    missions->setCurrentRow(i);
+        };
+        chooseMission(1);
+        auto add = editor.findChild<QPushButton *>("mapSquadAdd");
+        auto treasure = editor.findChild<QPushButton *>("mapTreasureAdd");
+        auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+        auto tool = editor.findChild<QComboBox *>("mapTool");
+        QVERIFY(add && treasure && canvas && tool);
+        QTest::qWait(30);
+        const auto original = project.scenarios()->json();
+        const int row = project.scenarios()->scenario(1).squads.size();
+        auto pixel = [&](QPointF position) {
+            const double scale = (std::min(canvas->width(), canvas->height()) - 72) / 256.;
+            return (QPointF(canvas->width() / 2., canvas->height() / 2.) +
+                    (position - QPointF(128, 128)) * scale).toPoint();
+        };
+        add->click();
+        QVERIFY(add->isChecked());
+        QCOMPARE(project.scenarios()->json(), original);
+        QTest::keyClick(canvas, Qt::Key_Escape);
+        QVERIFY(!add->isChecked());
+        QCOMPARE(project.scenarios()->json(), original);
+        add->click();
+        treasure->click();
+        QVERIFY(!add->isChecked());
+        add->click();
+        QVERIFY(!treasure->isChecked());
+        tool->setCurrentText("Terrain");
+        QVERIFY(!add->isChecked());
+        add->click();
+        QCOMPARE(tool->currentText(), QString("Select / move"));
+        chooseMission(2);
+        QVERIFY(!add->isChecked());
+        chooseMission(1);
+        add->click();
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({0, 128}));
+        QCOMPARE(project.scenarios()->json(), original);
+        QVERIFY(add->isChecked());
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({128, 128}));
+        QVERIFY(!add->isChecked());
+        QCOMPARE(undo.count(), 1);
+        const auto &scenario = project.scenarios()->scenario(1);
+        QCOMPARE(scenario.squads.size(), row + 1);
+        const auto members = squadMembers(scenario.squads[row]);
+        QCOMPARE(members.size(), 1);
+        QCOMPARE(members[0].classId, 5); // Retail Knight; no follower slots.
+        const auto deployment = scenario.layout.deployments[row];
+        QVERIFY(qAbs(int(u8(deployment, 3)) - 128) <= 1);
+        QVERIFY(qAbs(int(u8(deployment, 4)) - 128) <= 1);
+        QCOMPARE(u8(deployment, 6), 1); // Hold position.
+        auto objects = editor.findChild<QListWidget *>("mapObjects");
+        QVERIFY(objects->currentItem());
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole).toInt(), int(MapObject::Squad));
+        QCOMPARE(objects->currentItem()->data(Qt::UserRole + 1).toInt(), row);
+        QCOMPARE(editor.findChild<QTabWidget *>("mapSquadTabs")->currentIndex(), 1);
+        const auto placed = project.scenarios()->json();
+        undo.undo();
+        QCOMPARE(project.scenarios()->json(), original);
+        undo.redo();
+        QCOMPARE(project.scenarios()->json(), placed);
+        QTemporaryDir work;
+        project.saveFolder(work.filePath("project"));
+        auto restored = Project::fromRom(Rom::open(path));
+        restored.applyManifest(Project::readProject(work.filePath("project")));
+        QCOMPARE(restored.scenarios()->json(), placed);
+
+        // The last allowed squad is placeable; Undo reopens capacity.
+        undo.clear();
+        auto full = *project.scenarios();
+        while (full.scenario(1).squads.size() < 29)
+            full.addSquad(1, -1, project.classData());
+        project.setScenarios(full.json());
+        chooseMission(2);
+        chooseMission(1);
+        QVERIFY(add->isEnabled());
+        add->click();
+        QTest::qWait(20);
+        QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({128, 128}));
+        QCOMPARE(project.scenarios()->scenario(1).squads.size(), 30);
+        QVERIFY(!add->isEnabled());
+        const auto capped = project.scenarios()->json();
+        add->click();
+        QCOMPARE(project.scenarios()->json(), capped);
+        undo.undo();
+        QCOMPARE(project.scenarios()->json(), full.json());
+        QVERIFY(add->isEnabled());
+        undo.redo();
+        QCOMPARE(project.scenarios()->json(), capped);
+        QVERIFY(!add->isEnabled());
+    }
     void scenarioMapLabelSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -10185,7 +10424,8 @@ class UiTests : public QObject {
         editor.show();
         connect(&undo, &QUndoStack::indexChanged, &editor, [&] { editor.refresh(5); });
         auto tool = editor.findChild<QComboBox *>("mapTool");
-        tool->setCurrentText("Mountain peaks");
+        tool->setCurrentText("Scenery");
+        editor.findChild<QComboBox *>("mapSceneryAction")->setCurrentText("Mountain peaks");
         QTest::qWait(20);
         auto objects = editor.findChild<QListWidget *>("mapObjects");
         auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
@@ -10596,7 +10836,10 @@ class UiTests : public QObject {
             QCOMPARE(project.mapEdits()->json(), movedMap);
             auto mapTool = editor.findChild<QComboBox *>("mapTool");
             QVERIFY(mapTool);
-            mapTool->setCurrentIndex(2);
+            mapTool->setCurrentText("Terrain");
+            auto terrainAction = editor.findChild<QComboBox *>("mapTerrainAction");
+            QVERIFY(terrainAction);
+            terrainAction->setCurrentText("Draw road");
             auto brushSize = editor.findChild<QDoubleSpinBox *>("mapBrushSize");
             QVERIFY(brushSize);
             QCOMPARE(brushSize->singleStep(), .5);
@@ -10613,7 +10856,7 @@ class UiTests : public QObject {
             QCOMPARE(project.mapEdits()->json(), movedMap);
             undo.redo();
             QCOMPARE(project.mapEdits()->json(), painted);
-            mapTool->setCurrentIndex(1);
+            terrainAction->setCurrentText("Paint terrain");
             auto paintType = editor.findChild<QComboBox *>("mapPaintType");
             paintType->setCurrentIndex(paintType->findData(7));
             brushSize->setValue(12);
@@ -10633,7 +10876,7 @@ class UiTests : public QObject {
             QCOMPARE(u8(project.mapEdits()->changes(1).paint, 55 * 256 + 193), quint8(255));
             brushSize->setValue(12);
             const auto terrainPaint = project.mapEdits()->json();
-            mapTool->setCurrentIndex(3);
+            terrainAction->setCurrentText("Erase painting");
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, pixel({110, 155}));
             QCOMPARE(u8(project.mapEdits()->fineTerrain(1), 155 * 256 + 110),
                      u8(project.mapEdits()->source(1).terrain[0].data, 155 * 256 + 110));
@@ -10653,7 +10896,11 @@ class UiTests : public QObject {
             boundaryToggle->setChecked(true);
             QCOMPARE(undo.index(), beforeBoundaryUndo);
             const auto originalBoundary = project.mapEdits()->boundary(1);
-            mapTool->setCurrentIndex(4);
+            mapTool->setCurrentText("Select / move");
+            QTest::qWait(20);
+            QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier,
+                              pixel(originalBoundary.bottomRight()));
+            QTest::qWait(20);
             auto topBoundary = editor.findChild<QSpinBox *>("mapBoundaryTop");
             QVERIFY(topBoundary && topBoundary->isVisible());
             topBoundary->setValue(4);
@@ -10687,7 +10934,8 @@ class UiTests : public QObject {
             // City scenery and paving use real map input, the shared Undo stack,
             // and the full save/compile/export/reopen checks below.
             const auto beforeCity = project.mapEdits()->json();
-            mapTool->setCurrentIndex(5);
+            mapTool->setCurrentText("Scenery");
+            editor.findChild<QComboBox *>("mapSceneryAction")->setCurrentText("City pieces");
             QTest::qWait(20);
             auto cityType = editor.findChild<QComboBox *>("mapCityType");
             auto cityRotation = editor.findChild<QSpinBox *>("mapCityRotation");
@@ -10748,7 +10996,7 @@ class UiTests : public QObject {
             QTest::qWait(20);
             QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-city-inspector.png"));
             editor.resize(1100, 800);
-            mapTool->setCurrentIndex(5);
+            mapTool->setCurrentText("Scenery");
             QTest::qWait(20);
             QVERIFY(cityType->isVisible() && cityType->height() >= 42);
             QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-city-small.png"));

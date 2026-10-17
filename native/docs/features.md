@@ -1,5 +1,21 @@
 # Feature inventory and completion tracking
 
+Classes → Combat includes leader affinity
+strengths for the four native member groups, their class names and a live score
+multiplier example. Default-current-class links identify shared values. Edits,
+Retail restore, Undo and project persistence use the Tools model; export replaces
+only the bounded affinity dispatch inside its original routine.
+
+Encounters → Persuasion edits the starting Talk score for a selected target group.
+Add leader row and Create/Edit group support custom classes, named groups and
+explicit class membership. Creating a group copies an existing group's scores;
+membership moves are explicit. Health and temperament remain in the existing
+resolver, and custom squads using a fixed chance retain their override.
+The former Scenario rates sub-tab is named Custom Scenario Rates.
+Built and installed October 17. Focused native, UI and instruction-level checks
+cover editing, Undo, persistence, export/reopen and retail/default equivalence.
+No live emulator playthrough is claimed by those checks.
+
 Testing separates **Use my saved army in missions** from **Assign a saved game to a ROM**.
 The compact assignment box contains **Select Save** and **Select ROM**. Selecting both
 assigns the entire battery file using the configured Project64 folder, without building
@@ -32,7 +48,10 @@ abort or uncaught-C++ reports. Forced termination/power loss need not produce a
 crash report. No automatic upload occurs.
 
 Items → Stats includes Status effect on hit: None, Poison, Sleep, Paralysis,
-Petrification, Power Up and Power Down. It applies to the first equipped weapon's
+Petrification, Power Up and Power Down. The Stats table shows the same named effects
+in an editable dropdown column beside the item name; edits synchronize with the
+side panel and support Undo. Armor and accessories show no applicable effect.
+It applies to the first equipped weapon's
 physical hits when the target survives, with existing immunity handling and no
 extra chance roll. Poison cannot replace another ailment. Power Up strengthens
 the struck target and Power Down weakens it; repeated hits stack the configured
@@ -175,6 +194,14 @@ Brush radius supports half steps, including 1.5. Bridges form straight spans fro
 the ROM's bridge mesh, retaining deck, rails, support faces and atlas mapping;
 the movement-height grid follows the deck.
 
+The map tool selector groups work into Select / move, Terrain and Scenery.
+Terrain contains painting, roads and erasing; Scenery contains city pieces and
+mountain peaks. Select / move exposes the visible border's corner handles;
+clicking or dragging a corner opens its numeric bounds. Ordinary object picking
+still works away from the handles. Add squad places one Knight leader with no
+followers at the clicked position and opens its member inspector. Placement is
+one Undo action, can be cancelled, and observes the 30 enemy/allied squad limit.
+
 Mountain peaks mode adds selectable peak markers. Drag a marker's base to move
 the peak across the map; drag its diamond to change height, or enter a height in
 the sidebar. No drag-mode selector is needed. Add peak on map places a
@@ -248,6 +275,9 @@ while squads apply to the selected version. The page explains shared terrains
 and versions before edits. Global terrain mappings, rates and pool expansion
 are in an Advanced dialog instead of a second main tab. Dragging to share,
 move or swap pools remains available there, with all-map scope explicit.
+Global rates leads with a bordered summary of the first encounter check: large,
+bold percentages for Area Investigation and In Mission update as counts change.
+The existing eight-decimal precision and later-check explanation remain.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
@@ -848,6 +878,9 @@ pending squad edits still need to be applied or discarded first.
 The Items table defaults to Stats columns. Its view dropdown also offers Identity,
 Resistance, Growth, Advanced and All fields, keeping the full item list available
 for comparison. Choosing a field group also opens that section in the side panel.
+Classes → Equipment uses a named Locked equipment slots dropdown for the four known
+slot locks, including No slots locked and All slots locked. Its explanation uses
+Soldier's fixed Short Spear and Half Armor; unknown upper bits remain unchanged.
 
 Scenario **Orders** now starts with commands: Guard, Intercept nearby enemies,
 Move, Move and attack, Hit and run, Evade, and Retreat. Destinations can be named

@@ -13,6 +13,8 @@ SquadOrderEditor::SquadOrderEditor(Project *project,
     std::function<void(const Scenarios &, const QString &)> commit)
     : project_(project), commit_(std::move(commit)) {
     auto layout = new QVBoxLayout(this);
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     layout->setContentsMargins(0, 0, 0, 0);layout->setAlignment(Qt::AlignTop);
     current_ = new QLabel;
     current_->setWordWrap(true);
@@ -28,6 +30,7 @@ SquadOrderEditor::SquadOrderEditor(Project *project,
     form->addRow("Command", command_);
     destinations_ = new QWidget;
     auto destinations = new QFormLayout(destinations_);
+    destinations->setSizeConstraint(QLayout::SetMinimumSize);
     destinations->setContentsMargins(0, 0, 0, 0);
     destinations->setRowWrapPolicy(QFormLayout::WrapLongRows);
     destination_ = new QComboBox;

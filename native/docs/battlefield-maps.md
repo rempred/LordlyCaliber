@@ -87,7 +87,10 @@ site record; allegiance selects texture children 170, 171 or 172 from
 from town metadata bytes 25–26 plus the scenario's site addend. Apply and Undo
 change the preview's cache key so building colours refresh.
 
-The Map tab provides Select / move, Paint terrain, Draw road, and Erase painting.
+The Map tab groups tools into Select / move, Terrain, and Scenery. Terrain
+contains Paint terrain, Draw road, and Erase painting. Scenery contains City
+pieces and Mountain peaks. Select / move also drags visible playable-border
+corners; a corner click exposes numeric bounds without changing tools.
 Brush radius accepts half steps, including 1.5; preview and raster coverage use
 the fractional value without rounding to an integer.
 Drag a brush stroke; each stroke is one Undo operation. Paint Plain over a road

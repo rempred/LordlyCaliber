@@ -11,6 +11,7 @@ class RecordModel : public QAbstractTableModel {
     RecordModel(Project *project, Table table, QUndoStack *undo, QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;
+    int weaponStatusColumn() const;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
@@ -32,6 +33,13 @@ class RecordModel : public QAbstractTableModel {
     Project *project_;
     Table table_;
     QUndoStack *undo_;
+};
+class WeaponStatusDelegate : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QWidget *createEditor(QWidget *, const QStyleOptionViewItem &, const QModelIndex &) const override;
+    void setEditorData(QWidget *, const QModelIndex &) const override;
+    void setModelData(QWidget *, QAbstractItemModel *, const QModelIndex &) const override;
 };
 class ClassNameDelegate : public QStyledItemDelegate {
   public:

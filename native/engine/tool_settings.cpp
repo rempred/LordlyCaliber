@@ -36,6 +36,7 @@ ToolSettings ToolSettings::load(const Rom &rom) {
     result.alignment_ = DisplayTool::load(rom, ToolLabel::Alignment);
     result.highAttack_ = HighAttack::load(rom);
     result.rules_ = GameRules::load(rom);
+    result.affinity_ = LeaderAffinity::load(rom);
     try {
         rom.requireSupported();
         if (rom.revision())
@@ -76,6 +77,12 @@ void ToolSettings::setExperiencePercent(int value) {
 }
 void ToolSettings::apply(const QJsonObject &input) {
     auto object = input;
+    const bool hasAffinity = object.contains("leaderAffinity");
+    if ((object["version"] == 6 && !hasAffinity) ||
+        (hasAffinity && !object["leaderAffinity"].isObject()))
+        throw Error("Invalid leader-affinity settings");
+    const auto affinity = object.take("leaderAffinity").toObject();
+    if (object["version"] == 6) object["version"] = 5;
     const bool hasRules = object.contains("gameRules");
     if ((object["version"] == 5 && !hasRules) ||
         (hasRules && !object["gameRules"].isObject()))
@@ -97,6 +104,7 @@ void ToolSettings::apply(const QJsonObject &input) {
         number != std::floor(number) || number < 0 || number > 300)
         throw Error("Invalid Tools project settings");
     auto candidate = *this;
+    if (hasAffinity) candidate.affinity_.apply(affinity);
     if (hasRules) candidate.rules_.apply(rules);
     if (candidate.percent_ != int(number))
         candidate.setExperiencePercent(int(number));

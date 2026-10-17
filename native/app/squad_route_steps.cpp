@@ -35,6 +35,8 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
     : QWidget(parent), project_(project), commit_(std::move(commit)) {
     setObjectName("squadRouteSteps");
     auto layout = new QVBoxLayout(this); layout->setContentsMargins(0,0,0,0);
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     layout->setAlignment(Qt::AlignTop);
     layout->addWidget(label("Route steps · Select a step here or its number on the map. Next step determines the order, including branches and repeats. Changes apply automatically with Undo."));
     steps_ = new QListWidget; steps_->setObjectName("squadSteps"); steps_->setWordWrap(true);
@@ -58,6 +60,8 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
     for (int i=0;i<actions.size();++i) action_->addItem(actions[i],i);
     form->addRow("Action",action_);
     place_=new QWidget; auto places=new QVBoxLayout(place_);places->setContentsMargins(0,0,0,0);
+    places->setSizeConstraint(QLayout::SetMinimumSize);
+    place_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     destination_=combo("squadStepDestination");places->addWidget(destination_);
     coordinates_=new QWidget;auto coords=new QHBoxLayout(coordinates_);coords->setContentsMargins(0,0,0,0);
     x_=new QSpinBox;z_=new QSpinBox;x_->setObjectName("squadStepX");z_->setObjectName("squadStepZ");
@@ -71,6 +75,7 @@ SquadRouteSteps::SquadRouteSteps(Project *project,
     when_->addItem("All triggers are true",2);when_->addItem("Any trigger is true",3);when_->addItem("Branch using triggers",4);
     when_->addItem("Preserved script (Advanced)",-1);form->addRow("Continue when",when_);
     conditions_=new QWidget;auto conditionForm=new QVBoxLayout(conditions_);conditionForm->setContentsMargins(0,0,0,0);
+    conditionForm->setSizeConstraint(QLayout::SetMinimumSize);
     for(int slot=0;slot<2;++slot) {
         const auto suffix=QString(slot?"B":"A");
         auto group=new QGroupBox("Trigger "+suffix);auto content=new QVBoxLayout(group);

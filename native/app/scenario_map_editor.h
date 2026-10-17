@@ -14,6 +14,7 @@ class QPushButton;
 class QUndoStack;
 class QLineEdit;
 class QTabWidget;
+class QHideEvent;
 namespace lordly {
 enum class MapObject { Squad, Waypoint, Site, Treasure, City, Peak };
 class MapCanvas;
@@ -31,6 +32,7 @@ class ScenarioMapEditor : public QWidget {
     std::function<void(int)> squadSelected;
 
   private:
+    void hideEvent(QHideEvent *event) override;
     void select(int row);
     void filterObjects();
     void move(int row, QPoint bytes);
@@ -51,7 +53,7 @@ class ScenarioMapEditor : public QWidget {
     SquadOrderEditor *orders_;
     SquadRouteSteps *steps_;
     QCheckBox *replaceOrders_;
-    QPushButton *createRoute_;
+    QPushButton *createRoute_, *addSquad_;
     ScenarioSquadPanel *squadPanel_;
     QTabWidget *squadTabs_;
     QLineEdit *objectSearch_;
@@ -63,7 +65,9 @@ class ScenarioMapEditor : public QWidget {
     QWidget *paintTools_, *boundaryTools_;
     std::array<QSpinBox *, 4> boundaryFields_;
     void changeBoundary(QRectF);
-    QComboBox *tool_, *paintType_;
+    QComboBox *tool_, *terrainAction_, *sceneryAction_, *paintType_;
+    int activeTool() const;
+    void updateTool();
     QDoubleSpinBox *brushSize_;
     QLabel *brushLabel_;
     QWidget *cityTools_, *cityInspector_;

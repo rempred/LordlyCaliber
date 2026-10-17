@@ -27,6 +27,7 @@
 #include "rebuild/encounter_owners.h"
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
+#include "rebuild/persuasion.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QElapsedTimer>
@@ -71,6 +72,111 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void leaderAffinityAndPersuasion() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom=Rom::open(path);
+            auto combat=LeaderAffinity::load(rom);
+            QVERIFY2(combat.unavailable().isEmpty(),qPrintable(combat.unavailable()));
+            QVERIFY(!combat.modified()); QCOMPARE(combat.image(),rom.bytes().mid(LeaderAffinity::offset,LeaderAffinity::size));
+            QCOMPARE(combat.bonuses(0x18)[0],15); QCOMPARE(combat.bonuses(0x5a)[0],15);
+            combat.set(5,0,7); combat.set(0xa5,2,-25); combat.set(255,3,100);
+            const auto combatImage=combat.image();
+            QCOMPARE(combatImage.first(0x5c),rom.bytes().mid(LeaderAffinity::offset,0x5c));
+            QCOMPARE(combatImage.mid(0x204),rom.bytes().mid(LeaderAffinity::offset+0x204,20));
+            auto patched=rom.bytes(); patched.replace(LeaderAffinity::offset,LeaderAffinity::size,combatImage);
+            QCOMPARE(LeaderAffinity::load(Rom::fromBytes(patched)).json(),combat.json());
+            auto imported=LeaderAffinity::load(rom); imported.apply(combat.json()); QCOMPARE(imported.json(),combat.json());
+            const auto before=combat.json();
+            QVERIFY_THROWS_EXCEPTION(Error,combat.set(5,4,10)); QVERIFY_THROWS_EXCEPTION(Error,combat.set(5,0,101));
+            QCOMPARE(combat.json(),before);
+            auto full=combat;
+            int id=1; while(full.json()["rows"].toObject().size()<LeaderAffinity::capacity()) full.set(id++,0,1);
+            while(full.bonuses(id)!=LeaderAffinity::Bonuses{}) ++id;
+            const auto fullBefore=full.json(); QVERIFY_THROWS_EXCEPTION(Error,full.set(id,0,1)); QCOMPARE(full.json(),fullBefore);
+            patched[LeaderAffinity::offset+12]^=1;
+            const auto invalid=LeaderAffinity::load(Rom::fromBytes(patched)); QVERIFY(!invalid.unavailable().isEmpty()); QVERIFY(!invalid.modified());
+
+            auto persuasion=Persuasion::load(rom);
+            QVERIFY2(persuasion.unavailable().isEmpty(),qPrintable(persuasion.unavailable()));
+            QVERIFY(!persuasion.modified()); QCOMPARE(persuasion.score(24,persuasion.groupFor(0x45)),80);
+            QCOMPARE(persuasion.score(9,persuasion.groupFor(0x45)),60); QCOMPARE(persuasion.score(5,persuasion.groupFor(0x45)),30);
+            QJsonArray samples;
+            const quint32 at=0x2800000;
+            auto sample=[&](const Persuasion &model,bool retail) {
+                samples << QJsonObject{{"retail",retail},{"owner",QString::fromLatin1(model.owner(at,model.storage().size()).toBase64())},
+                    {"runtime",QString::fromLatin1(model.runtime().toBase64())},{"key",int(at-0x594280)},{"table",model.json()}};
+            };
+            sample(persuasion,true);
+            const auto base=persuasion.json();
+            persuasion.addLeader(0xa5);
+            persuasion.addGroup("Custom spirits",{0xa5,0xa6},persuasion.groupFor(0x2f),256);
+            const int group=persuasion.groupFor(0xa5);
+            persuasion.setScore(0xa5,group,97); persuasion.setScore(5,group,0); persuasion.setScore(-1,group,11);
+            persuasion.editGroup(group,"Spirits",{0xa5,0xa6,0x45},256);
+            QCOMPARE(persuasion.groupFor(0x45),group); QCOMPARE(persuasion.score(0xa5,group),97);
+            sample(persuasion,false);
+            const auto saved=persuasion.json();
+            auto restore=Persuasion::load(rom); restore.apply(saved,256); QCOMPARE(restore.json(),saved);
+            QVERIFY_THROWS_EXCEPTION(Error,persuasion.editGroup(group,"Bad",{0xa5,0xa5},256));
+            QVERIFY_THROWS_EXCEPTION(Error,persuasion.addLeader(0xa5));
+            QVERIFY_THROWS_EXCEPTION(Error,persuasion.setScore(5,group,101));
+            QCOMPARE(persuasion.json(),saved);
+            auto stored=rom.bytes(); stored.resize(at); stored.append(persuasion.storage());
+            stored.replace(Persuasion::ownerOffset,Persuasion::ownerSize,persuasion.owner(at,persuasion.storage().size()));
+            const auto reopened=Persuasion::load(Rom::fromBytes(stored));
+            QVERIFY2(reopened.unavailable().isEmpty(),qPrintable(reopened.unavailable())); QCOMPARE(reopened.json(),saved);
+            stored[at+20]^=1;
+            QVERIFY(!Persuasion::load(Rom::fromBytes(stored)).unavailable().isEmpty());
+            restore.apply(base,256); QVERIFY(!restore.modified());
+
+            auto project=Project::fromRom(rom); project.loadEncounters(); project.loadTools();
+            auto tools=project.tools()->json(); auto oldTools=tools; oldTools.remove("leaderAffinity"); oldTools["version"]=5;
+            project.setTools(oldTools); QCOMPARE(project.tools()->json(),tools);
+            auto encounters=project.encounters()->json(); auto oldEncounters=encounters; oldEncounters.remove("persuasion");
+            project.setEncounters(oldEncounters); QCOMPARE(project.encounters()->json(),encounters);
+            // Persist supported existing-class edits through the normal project path.
+            auto supported=project.tools()->leaderAffinity(); supported.set(5,0,7); tools["leaderAffinity"]=supported.json(); project.setTools(tools);
+            auto talk=project.encounters()->persuasion(); talk.addLeader(1); talk.setScore(1,talk.groupFor(0x45),44);
+            encounters["persuasion"]=talk.json(); project.setEncounters(encounters);
+            QTemporaryDir folder; project.saveFolder(folder.path());
+            auto loaded=Project::fromRom(rom); loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.manifest(),project.manifest());
+
+            QTemporaryDir fixtures; QFile fixture(fixtures.filePath("affinity.json")); QVERIFY(fixture.open(QIODevice::WriteOnly));
+            fixture.write(QJsonDocument(QJsonObject{{"combat",QJsonObject{{"owner",QString::fromLatin1(combatImage.toBase64())},{"rows",combat.json()["rows"]}}},
+                {"persuasion",samples}}).toJson()); fixture.close();
+            QProcess instructions; instructions.start("node",{QFINDTESTDATA("affinity-mips.cjs"),path,fixture.fileName()});
+            QVERIFY(instructions.waitForFinished(120000)); const auto log=instructions.readAllStandardOutput()+instructions.readAllStandardError();
+            QVERIFY2(instructions.exitStatus()==QProcess::NormalExit && instructions.exitCode()==0,log.constData());
+        } catch(const Error &e) { QFAIL(e.what()); }
+    }
+    void affinityExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),toolchain=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || toolchain.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom=Rom::open(path); auto project=Project::fromRom(rom); project.loadTools(); project.loadEncounters();
+            auto combat=project.tools()->leaderAffinity(); combat.set(5,0,17);
+            auto tools=project.tools()->json(); tools["leaderAffinity"]=combat.json(); project.setTools(tools);
+            auto talk=project.encounters()->persuasion(); talk.addLeader(1); talk.addGroup("Test group",{0x45},talk.groupFor(0x45),165);
+            talk.setScore(1,talk.groupFor(0x45),91);
+            auto encounters=project.encounters()->json(); encounters["persuasion"]=talk.json(); project.setEncounters(encounters);
+            QTemporaryDir work;
+            const auto output=rebuild(project,toolchain,work.path());
+            auto reopened=Project::fromRom(Rom::fromBytes(output.image)); reopened.loadTools(); reopened.loadEncounters();
+            QCOMPARE(reopened.tools()->json(),project.tools()->json()); QCOMPARE(reopened.encounters()->json(),project.encounters()->json());
+            // The HP/temperament resource and Talk result resolver are outside our owners.
+            QCOMPARE(output.image.mid(0x8b15ac,0x158),rom.bytes().mid(0x8b15ac,0x158));
+            QCOMPARE(output.image.mid(0x21488c,0x350),rom.bytes().mid(0x21488c,0x350));
+            auto checksum=output.image; Rom::updateChecksum(checksum); QCOMPARE(checksum.mid(0x10,8),output.image.mid(0x10,8));
+            const auto root=QFileInfo(path).absoluteDir().filePath("Test ROMs/affinity-"+QUuid::createUuid().toString(QUuid::WithoutBraces));
+            QVERIFY(QDir().mkpath(root)); QFile candidate(QDir(root).filePath(QFileInfo(path).fileName()));
+            QVERIFY(candidate.open(QIODevice::WriteOnly)); const auto serialized=rom.serialize(output.image);
+            QCOMPARE(candidate.write(serialized),serialized.size()); candidate.close();
+            QCOMPARE(Rom::open(candidate.fileName()).bytes(),output.image);
+        } catch(const Error &e) { QFAIL(e.what()); }
+    }
     void acceptedSourceOwners() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");

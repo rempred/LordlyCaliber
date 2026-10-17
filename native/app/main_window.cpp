@@ -16,6 +16,7 @@
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
+#include "app/leader_affinity_editor.h"
 #include "app/portrait_editor.h"
 #include "app/promotion_editor.h"
 #include "app/save_editor.h"
@@ -418,6 +419,12 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     grid->setColumnWidth(1, 200);
     for (int i = 2; i < model->columnCount(); ++i)
         grid->setColumnWidth(i, 130);
+    if (table == Table::Items) {
+        const int statusColumn = model->weaponStatusColumn();
+        grid->setItemDelegateForColumn(statusColumn, new WeaponStatusDelegate(grid));
+        grid->setColumnWidth(statusColumn, 180);
+        grid->horizontalHeader()->moveSection(statusColumn, 2);
+    }
     if (table == Table::Consumables) {
         grid->resizeColumnsToContents();
         grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -640,6 +647,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         });
     }
     auto editors = std::make_shared<QVector<ValueEditor *>>();
+    QComboBox *equipmentLocks = nullptr;
+    int equipmentLocksField = -1;
     QMap<QString, QFormLayout *> groups;
     for (int n = 0; n < fields(table).size(); ++n) {
         if (table == Table::Consumables) {
@@ -662,6 +671,36 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             if (!f.offset)
                 groups[f.group]->addRow("Name address", new QLabel("Automatic — allocated during ROM export"));
             grid->setColumnHidden(n + 2, true);
+            editors->push_back(nullptr);
+            continue;
+        }
+        if (f.key == "fixedEquipment") {
+            equipmentLocksField = n;
+            equipmentLocks = new QComboBox;
+            equipmentLocks->setObjectName("fixedEquipmentLocks");
+            equipmentLocks->setMinimumContentsLength(18);
+            equipmentLocks->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            const QStringList slotNames{"Weapon", "Body armor", "Off-hand", "Head / accessory"};
+            for (int mask = 0; mask < 16; ++mask) {
+                QStringList locked;
+                for (int slot = 0; slot < slotNames.size(); ++slot)
+                    if (mask & (1 << slot)) locked << slotNames[slot];
+                equipmentLocks->addItem(mask == 0 ? "No slots locked" : mask == 15 ? "All slots locked"
+                                                                                        : locked.join(" + "), mask);
+            }
+            groups[f.group]->addRow("Locked equipment slots", equipmentLocks);
+            auto help = new QLabel("The player cannot replace the standard equipment in these slots. "
+                                   "For example, Soldier locks Weapon + Body armor, keeping its Short Spear "
+                                   "and Half Armor. Equipment type restrictions still apply to unlocked slots.");
+            help->setWordWrap(true);
+            groups[f.group]->addRow(help);
+            connect(equipmentLocks, &QComboBox::activated, page, [=] {
+                if (*selected < 0) return;
+                const int before = model->index(*selected, n + 2).data(Qt::EditRole).toInt();
+                // The control changes only the four known slot bits.
+                model->setData(model->index(*selected, n + 2),
+                               (before & ~15) | equipmentLocks->currentData().toInt(), Qt::EditRole);
+            });
             editors->push_back(nullptr);
             continue;
         }
@@ -718,21 +757,16 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         weaponStatusHelp->setWordWrap(true);
         groups["Stats"]->insertRow(0, "Status effect on hit", weaponStatus);
         groups["Stats"]->insertRow(1, weaponStatusHelp);
-        connect(weaponStatus, &QComboBox::activated, page, [this, model, selected, weaponStatus] {
+        connect(weaponStatus, &QComboBox::activated, page, [model, selected, weaponStatus] {
             if (*selected < 1) return;
-            const auto &record = project_->record(Table::Items, *selected).bytes;
-            if (!WeaponStatus::isWeapon(record)) return;
-            const auto effect = weaponStatus->currentData().toInt();
-            if (effect != 0 && effect != WeaponStatus::poison && effect != 2 && effect != 4 && effect != 8 &&
-                effect != WeaponStatus::powerUp && effect != WeaponStatus::powerDown) return;
-            const auto &list = fields(Table::Items);
-            for (int field = 0; field < list.size(); ++field)
-                if (list[field].key == "b23Raw") {
-                    model->setData(model->index(*selected, field + 2),
-                                   WeaponStatus::replace(u8(record, WeaponStatus::offset), effect), Qt::EditRole);
-                    break;
-                }
+            model->setData(model->index(*selected, model->weaponStatusColumn()),
+                           weaponStatus->currentData(), Qt::EditRole);
         });
+    }
+    LeaderAffinityEditor *leaderAffinity = nullptr;
+    if (table == Table::Classes && groups.contains("Combat")) {
+        leaderAffinity = new LeaderAffinityEditor(project_.get(), undo_, [this] { updateStatus(); });
+        groups["Combat"]->addRow(leaderAffinity);
     }
     PromotionEditor *promotion = nullptr;
     ConsumableEditor *effects = nullptr;
@@ -776,12 +810,13 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
                     addItem, newItem, renameClass, description, actionDescriptions, actionId, setup,
-                    weaponStatus, weaponStatusHelp] {
+                    weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
         if (setup) setup->selectClass(*selected);
+        if (leaderAffinity) leaderAffinity->selectClass(*selected);
         description->selectDescription(tableKey(table), *selected < 0 ? -1 :
             table == Table::Classes ? Project::classDescriptionIndex(*selected) : *selected);
         if (addItem)
@@ -797,6 +832,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             promotion->selectClass(*selected);
         if (effects)
             effects->selectConsumable(*selected);
+        if (equipmentLocks) {
+            const QSignalBlocker blocked(equipmentLocks);
+            equipmentLocks->setEnabled(*selected >= 0 &&
+                (model->flags(model->index(*selected, equipmentLocksField + 2)) & Qt::ItemIsEditable));
+            equipmentLocks->setCurrentIndex(*selected >= 0
+                ? equipmentLocks->findData(model->index(*selected, equipmentLocksField + 2).data(Qt::EditRole).toInt() & 15)
+                : -1);
+        }
         if (weaponStatus) {
             const QSignalBlocker blocked(weaponStatus);
             while (weaponStatus->count() > 7) weaponStatus->removeItem(7);
@@ -867,6 +910,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         const auto showColumns = [=](const QString &group) {
             for (int i = 0; i < fields(table).size(); ++i)
                 grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
+            if (table == Table::Items)
+                grid->setColumnHidden(model->weaponStatusColumn(), !group.isEmpty() && group != "Stats");
             const auto section = sections->findText(group);
             if (section >= 0)
                 sections->setCurrentIndex(section);

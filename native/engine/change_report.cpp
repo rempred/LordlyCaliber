@@ -305,6 +305,20 @@ ChangeReport Project::changeReport(const Project *reference) const {
     if (tools_ && (reference || tools_->modified())) {
         QStringList lines;
         auto before = ToolSettings::load(baseRom).json(), after = tools_->json();
+        const auto affinityBefore = before.take("leaderAffinity").toObject()["rows"].toObject();
+        const auto affinityAfter = after.take("leaderAffinity").toObject()["rows"].toObject();
+        auto leaders = affinityBefore.keys();
+        for (const auto &key : affinityAfter.keys()) if (!leaders.contains(key)) leaders << key;
+        for (const auto &key : leaders) {
+            QStringList bonuses;
+            const auto a = affinityBefore[key].toArray(), b = affinityAfter[key].toArray();
+            for (int group = 0; group < 4; ++group) {
+                const int oldValue = group < a.size() ? a[group].toInt() : 0;
+                const int newValue = group < b.size() ? b[group].toInt() : 0;
+                if (oldValue != newValue) bonuses << transition(LeaderAffinity::groupName(group),number(oldValue),number(newValue));
+            }
+            add("Classes", className(key.toInt()) + " / Leader affinity", bonuses, {"classes",key.toInt(),-1,"section:Combat"});
+        }
         const auto a = before.take("gameRules").toObject(), b = after.take("gameRules").toObject();
         for (const auto &rule : GameRules::definitions()) if (a[rule.key] != b[rule.key])
             add("Game rules", rule.label, {transition(rule.label, scalar(a[rule.key]), scalar(b[rule.key]))}, {"rule", -1, -1, rule.key});
@@ -337,7 +351,7 @@ ChangeReport Project::changeReport(const Project *reference) const {
                 Encounters::mapTerrainName(t), lines);
         }
         const auto a = original.json(), b = encounters_->json();
-        for (const auto &key : {"globalRate", "rewards", "scenarioRates", "customSquads"}) {
+        for (const auto &key : {"globalRate", "rewards", "scenarioRates", "customSquads", "persuasion"}) {
             QStringList lines;
             settings(lines, a[key], b[key]);
             add("Neutral encounters", friendly(key), lines);

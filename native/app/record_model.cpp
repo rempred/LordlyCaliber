@@ -1,6 +1,8 @@
 #include "app/record_model.h"
+#include "engine/weapon_status.h"
 #include <QBrush>
 #include <QColor>
+#include <QComboBox>
 #include <QKeyEvent>
 #include <QPlainTextEdit>
 #include <QUndoCommand>
@@ -61,7 +63,10 @@ int RecordModel::rowCount(const QModelIndex &p) const {
     return p.isValid() ? 0 : int(project_->records(table_).size());
 }
 int RecordModel::columnCount(const QModelIndex &p) const {
-    return p.isValid() ? 0 : int(fields(table_).size()) + 2;
+    return p.isValid() ? 0 : int(fields(table_).size()) + 2 + (table_ == Table::Items ? 1 : 0);
+}
+int RecordModel::weaponStatusColumn() const {
+    return table_ == Table::Items ? int(fields(table_).size()) + 2 : -1;
 }
 QVariant RecordModel::data(const QModelIndex &i, int role) const {
     if (!i.isValid())
@@ -83,6 +88,15 @@ QVariant RecordModel::data(const QModelIndex &i, int role) const {
         return decodeText(project_->classNameBytes(i.row()));
     if (i.column() == 1)
         return role == Qt::DisplayRole ? r.name.simplified() : r.name;
+    if (i.column() == weaponStatusColumn()) {
+        const bool weapon = r.id > 0 && WeaponStatus::isWeapon(r.bytes);
+        const int status = u8(r.bytes, WeaponStatus::offset) & WeaponStatus::mask;
+        if (role == Qt::ToolTipRole)
+            return weapon ? "Status applied by this weapon's physical hits. Double-click to change."
+                          : "On-hit status effects apply to weapons, not armor or accessories.";
+        if (role == Qt::EditRole) return weapon ? status : -1;
+        return weapon ? WeaponStatus::name(status) : QString("—");
+    }
     const auto &f = fields(table_)[i.column() - 2];
     int value = project_->value(table_, i.row(), i.column() - 2);
     if (role == Qt::ToolTipRole)
@@ -109,10 +123,18 @@ QVariant RecordModel::headerData(int n, Qt::Orientation o, int role) const {
         return "ID";
     if (n == 1)
         return "Name";
+    if (n >= 2 && n == weaponStatusColumn())
+        return "Status effect on hit";
     return n >= 2 && n < columnCount() ? fields(table_)[n - 2].label : QVariant();
 }
 Qt::ItemFlags RecordModel::flags(const QModelIndex &i) const {
     auto result = QAbstractTableModel::flags(i);
+    if (!i.isValid()) return result;
+    if (i.column() == weaponStatusColumn()) {
+        if (i.row() > 0 && WeaponStatus::isWeapon(project_->record(table_, i.row()).bytes))
+            result |= Qt::ItemIsEditable;
+        return result;
+    }
     if (i.column() == 1 && ((table_ == Table::Classes && project_->hasClassData()) ||
                             (table_ == Table::Items && project_->hasItemData())))
         result |= Qt::ItemIsEditable;
@@ -146,6 +168,21 @@ bool RecordModel::setData(const QModelIndex &i, const QVariant &v, int role) {
     int value = v.toInt(&ok);
     if (!ok)
         return false;
+    if (i.column() == weaponStatusColumn()) {
+        const int before = u8(project_->record(table_, i.row()).bytes, WeaponStatus::offset);
+        if ((before & WeaponStatus::mask) == value) return false;
+        try {
+            const int next = WeaponStatus::replace(before, value);
+            for (int field = 0; field < fields(table_).size(); ++field)
+                if (fields(table_)[field].key == "b23Raw") {
+                    undo_->push(new EditField(this, i.row(), field, before, next, "Edit status effect on hit"));
+                    return true;
+                }
+        } catch (const Error &error) {
+            emit editRejected(QString::fromUtf8(error.what()));
+        }
+        return false;
+    }
     const auto &f = fields(table_)[i.column() - 2];
     if (value < f.minimum() || value > f.maximum())
         return false;
@@ -228,6 +265,24 @@ void RecordModel::applyProject(const Project &project) {
     endResetModel();
     emit replaced();
     emit edited();
+}
+QWidget *WeaponStatusDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                                            const QModelIndex &) const {
+    auto choice = new QComboBox(parent);
+    for (int value : {0, WeaponStatus::poison, 2, 4, 8, WeaponStatus::powerUp, WeaponStatus::powerDown})
+        choice->addItem(WeaponStatus::name(value), value);
+    return choice;
+}
+void WeaponStatusDelegate::setEditorData(QWidget *widget, const QModelIndex &index) const {
+    auto choice = static_cast<QComboBox *>(widget);
+    const int status = index.data(Qt::EditRole).toInt();
+    if (choice->findData(status) < 0)
+        choice->addItem("Existing combination: " + WeaponStatus::name(status), status);
+    choice->setCurrentIndex(choice->findData(status));
+}
+void WeaponStatusDelegate::setModelData(QWidget *widget, QAbstractItemModel *model,
+                                       const QModelIndex &index) const {
+    model->setData(index, static_cast<QComboBox *>(widget)->currentData(), Qt::EditRole);
 }
 QWidget *ClassNameDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &,
                                          const QModelIndex &) const {

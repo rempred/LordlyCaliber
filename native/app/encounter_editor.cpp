@@ -2,6 +2,7 @@
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/encounter_editor.h"
+#include "app/persuasion_editor.h"
 #include "app/encounter_labels.h"
 #include "app/custom_squad_editor.h"
 #include "app/terrain_assignments.h"
@@ -14,6 +15,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -229,6 +231,33 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     connect(findChild<QPushButton *>("encounterEditSquad"), &QPushButton::clicked, this, &EncounterEditor::editSquad);
     auto globalPage = new QWidget;
     auto globalLayout = new QVBoxLayout(globalPage);
+    auto rateSummary = new QGroupBox("First encounter check — chance to pass");
+    rateSummary->setObjectName("encounterRateSummary");
+    auto summaryLayout = new QHBoxLayout(rateSummary);
+    summaryLayout->setContentsMargins(16, 16, 16, 12);
+    summaryLayout->setSpacing(24);
+    auto addRateReadout = [summaryLayout](const QString &title, const QString &name) {
+        auto column = new QVBoxLayout;
+        auto heading = new QLabel(title);
+        auto headingFont = heading->font();
+        headingFont.setBold(true);
+        heading->setFont(headingFont);
+        column->addWidget(heading);
+        auto value = new QLabel;
+        value->setObjectName(name);
+        value->setAccessibleName(title + " chance per check");
+        value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        auto valueFont = value->font();
+        valueFont.setPointSizeF(std::max(18.0, valueFont.pointSizeF() * 1.8));
+        valueFont.setBold(true);
+        value->setFont(valueFont);
+        column->addWidget(value);
+        summaryLayout->addLayout(column, 1);
+        return value;
+    };
+    areaChance_ = addRateReadout("Area Investigation", "encounterAreaChance");
+    missionChance_ = addRateReadout("In Mission", "encounterMissionChance");
+    globalLayout->addWidget(rateSummary);
     auto globalExplanation = new QLabel(
         "The first encounter check draws a value below the number of possible outcomes. "
         "It passes when the value is below the successful-outcome count. The game selects "
@@ -313,7 +342,9 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     connect(restoreGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(true); });
     tabs->addTab(globalPage, "Global rates");
     tabs->addTab(createRewardsPage(), "Class and squad rewards");
-    tabs->addTab(createScenarioPage(), "Scenario rates");
+    tabs->addTab(new PersuasionEditor(project_, undo_,
+        [this](const Encounters &next, const QString &label) { commit(next, label); }), "Persuasion");
+    tabs->addTab(createScenarioPage(), "Custom Scenario Rates");
     tabs->addTab(new CustomSquadEditor(
                      project_, undo_,
                      [this](const Encounters &next, const QString &label) { commit(next, label); }),
@@ -656,20 +687,23 @@ void EncounterEditor::showGlobalRatio() {
     const auto divisor = quint32(divisor_->value()), normal = quint32(normalPass_->value()),
                alternate = quint32(alternatePass_->value());
     if (normal > divisor || alternate > divisor) {
+        areaChance_->setText("Invalid rate");
+        missionChance_->setText("Invalid rate");
         globalRatio_->setText("Successful outcomes cannot exceed the possible-outcome count.");
         if (estimates_)
             for (int row = 0; row < 32; ++row)
                 for (int col = 1; col < 3; ++col) estimates_->item(row, col)->setText("Invalid rate");
         return;
     }
+    areaChance_->setText(QString("%1%").arg(
+        100.0 * EncounterRate::passingFraction(divisor, normal), 0, 'f', 8));
+    missionChance_->setText(QString("%1%").arg(
+        100.0 * EncounterRate::passingFraction(divisor, alternate), 0, 'f', 8));
     globalRatio_->setText(
-        QString("Share of random values passing: Area Investigation %1%; In Mission %2%.\n"
-                "Zero successful outcomes disables that roll. Matching the possible "
-                "outcome count passes this check every time. These figures account for the "
-                "game's 30-bit random-number range; actual encounter frequency also depends "
-                "on the later checks.")
-            .arg(100.0 * EncounterRate::passingFraction(divisor, normal), 0, 'f', 8)
-            .arg(100.0 * EncounterRate::passingFraction(divisor, alternate), 0, 'f', 8));
+        "Zero successful outcomes disables that roll. Matching the possible "
+        "outcome count passes this check every time. The percentages above account for the "
+        "game's 30-bit random-number range; actual encounter frequency also depends "
+        "on the later checks.");
     if (!estimates_) return;
     const auto &encounters = *project_->encounters();
     for (int terrain = 0; terrain < 32; ++terrain) {
