@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {readAcceptedEvidence, sourcePath} = require('./decomp-evidence.cjs');
 const native = path.resolve(__dirname, '..');
 const key = value => value.toLowerCase();
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -48,38 +49,22 @@ function main(args) {
       preserve: 'Keep original sources and dependencies intact. Importing a library version does not update existing portable adaptations.' });
   }
   const sources = new Map(), evidence = new Map();
-  let verifiedAt = null;
+  let verifiedAt = null, snapshot;
   if (decomp) {
     const registry = read(path.join(decomp, 'config/matching-c-targets.json'));
     for (const entry of registry.targets) sources.set(key(entry.symbol), entry.source);
-    const state = read(path.join(decomp, 'build/current/state.json'));
-    // Read the two small canonical reports only, never the producer's build tree.
-    const verificationPath = path.join(decomp, 'build/current/verification.json');
-    const freshPath = path.join(decomp, 'build/current/fresh-compilation.json');
-    const verificationHash = hash(verificationPath), freshHash = hash(freshPath);
-    const verified = read(verificationPath), fresh = read(freshPath);
-    if (!state.verifiedAt || verificationHash !== state.verificationSha256 ||
-        freshHash !== state.freshCompilationSha256 || verified.schemaVersion !== 5 ||
-        fresh.schemaVersion !== 5 || verified.status !== 'pass' || fresh.status !== 'pass' ||
-        verified.verification?.status !== 'pass')
-      throw Error('Decomp reports are unavailable, incomplete or changing; retry after its verification finishes');
-    const exact = new Map(verified.verification.targets.map(t => [key(t.symbol), t]));
-    for (const target of fresh.targets) {
-      const linked = exact.get(key(target.symbol));
-      if (linked?.source === target.source && linked.linkEvidence?.fullOwnerExact === true)
-        evidence.set(key(target.symbol), target);
-    }
+    snapshot = readAcceptedEvidence(decomp);
+    for (const target of snapshot.targets) evidence.set(key(target.symbol), target);
     // Some accepted owners contain several functions. Use their recorded body
     // names, not guessed addresses or merely registered compilation groups.
     for (const target of [...evidence.values()])
-      for (const body of target.textContract?.compilerTextFunctions || [])
+      for (const body of target.functions)
         if (!evidence.has(key(body.symbol))) evidence.set(key(body.symbol), target);
-    verifiedAt = state.verifiedAt;
-    if (hash(verificationPath) !== verificationHash || hash(freshPath) !== freshHash)
-      throw Error('Decomp reports changed during this read; retry');
+    verifiedAt = snapshot.state.verifiedAt;
   }
   const checked = new Map();
   function unchanged(relative, expected) {
+    sourcePath(relative);
     if (!checked.has(relative)) {
       const file = path.join(decomp, relative);
       checked.set(relative, fs.existsSync(file) ? hash(file) : null);
@@ -124,6 +109,7 @@ function main(args) {
     }
   }
   rows.sort((a, b) => a.priority - b.priority || a.group.localeCompare(b.group) || a.symbol.localeCompare(b.symbol));
+  snapshot?.assertStable();
   if (json) { console.log(JSON.stringify({ generator: 'native/tools/decomp-interest.cjs',
     catalog: 'native/game/decomp-interest.json', decomp, verifiedAt, rows }, null, 2)); return; }
   console.log('# Editor Decomp interests\n');

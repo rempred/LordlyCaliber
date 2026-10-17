@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {readAcceptedEvidence} = require('./decomp-evidence.cjs');
 const native = path.resolve(__dirname, '..');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase();
@@ -22,28 +23,13 @@ function main(args) {
     else throw Error('Use --decomp <checkout> [--json] [--require-clean]');
   }
   if (!decomp) throw Error('--decomp is required; absence of evidence is not a clean audit');
-  const reportFiles = ['state', 'verification', 'fresh-compilation'].map(name =>
-    path.join(decomp, 'build/current', name + '.json'));
-  const raw = reportFiles.map(file => fs.readFileSync(file));
-  const [state, verification, fresh] = raw.map(bytes => JSON.parse(bytes));
-  if ([state, verification, fresh].some(value => value.schemaVersion !== 5) ||
-      !state.verifiedAt || digest(raw[1]) !== state.verificationSha256 ||
-      digest(raw[2]) !== state.freshCompilationSha256 || verification.status !== 'pass' ||
-      verification.verification?.status !== 'pass' || fresh.status !== 'pass')
-    throw Error('Missing, changing or unsupported accepted evidence');
-  const linked = new Map(verification.verification.targets.map(target => [target.symbol, target]));
-  const accepted = fresh.targets.filter(target => ['PURE_C', 'HYBRID_C'].includes(target.sourceClass));
-  const authenticated = new Map();
+  const evidence = readAcceptedEvidence(decomp), {state} = evidence;
+  const accepted = evidence.targets;
+  const authenticated = new Set();
   for (const target of accepted) {
-    if (linked.get(target.symbol)?.source !== target.source ||
-        linked.get(target.symbol)?.linkEvidence?.fullOwnerExact !== true)
-      throw Error('Missing exact linked evidence: ' + target.symbol);
     for (const dependency of [{path: target.source, sha256: target.sourceSha256}, ...(target.dependencies || [])]) {
-      if (!/^(src|include|third_party\/lha\/ob64)\/[A-Za-z0-9_./-]+\.(c|h)$/.test(dependency.path) ||
-          dependency.path.split('/').includes('..')) throw Error('Unsafe source path');
-      const actual = authenticated.get(dependency.path) || digest(fs.readFileSync(path.join(decomp, dependency.path)));
-      if (actual !== dependency.sha256) throw Error('Checkout differs from accepted source: ' + dependency.path);
-      authenticated.set(dependency.path, actual);
+      evidence.readSource(dependency.path, dependency.sha256);
+      authenticated.add(dependency.path);
     }
   }
   const checks = [];
@@ -60,10 +46,10 @@ function main(args) {
   function check(name, start, size, selection, consumer, source) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(size) || start < 0 || size <= 0)
       throw Error('Invalid owner range: ' + name);
-    const alternatives = accepted.filter(target => target.textContract.owners.some(owner =>
+    const alternatives = accepted.filter(target => target.owners.some(owner =>
       owner.romStart < start + size && owner.romEndExclusive > start)).map(target => ({
         symbol: target.symbol, sourceClass: target.sourceClass, source: target.source,
-        owners: target.textContract.owners.map(owner => ({start: owner.romStart, bytes: owner.bytes}))
+        owners: target.owners.map(owner => ({start: owner.romStart, bytes: owner.bytes}))
       }));
     checks.push({name, start, size, selection, consumer, source, alternatives,
       gap: selection === 'assembly-owner' && alternatives.length > 0});
@@ -137,8 +123,7 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
   const callSites = files(path.join(native, 'rebuild')).filter(file => file.endsWith('.cpp')).flatMap(file =>
     fs.readFileSync(file, 'utf8').split('\n').flatMap((text, i) => text.includes('assembleOwner(') && !text.includes('Compiler::assembleOwner(') ?
       [{file: path.relative(native, file).replaceAll('\\', '/'), line: i + 1, text: text.trim()}] : []));
-  for (let i = 0; i < raw.length; i++)
-    if (!fs.readFileSync(reportFiles[i]).equals(raw[i])) throw Error('Acceptance changed during audit');
+  evidence.assertStable();
   const gaps = checks.filter(row => row.gap);
   const unknown = assembly.filter(row => row.classification === 'unclassified');
   const result = {generator: 'native/tools/audit-source-selection.cjs',

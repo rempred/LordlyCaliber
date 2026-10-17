@@ -3,6 +3,33 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "accepted-library-matrices", "priority": 1,
+      "behavior": "Camera, projection and rotation math",
+      "symbols": ["func_00020d40", "func_00022720", "func_000228d0", "func_00022e90", "func_00023018", "func_00028740"],
+      "editorFiles": ["game/director/scene_matrix.c", "engine/scene_camera.cpp", "game/accepted/library-imports.json"],
+      "editorUse": "imported",
+      "benefit": "Matching references for existing reconstructed preview matrices and camera calculations when rendering work resumes. Intake alone does not change preview output.",
+      "preserve": "Keep complete producers, target float operation order and external math/data dependencies. Adapt and compare at the host boundary before replacing existing portable code."
+    },
+    {
+      "id": "accepted-library-audio", "priority": 3,
+      "behavior": "Audio synthesis foundation",
+      "symbols": ["func_0001c9f0", "func_0001d220", "func_0001de40", "func_0001ec80", "func_0001ef30", "func_0001fd20"],
+      "editorFiles": ["game/accepted/library-imports.json"],
+      "editorUse": "imported",
+      "benefit": "Original synthesis, loading, envelopes, resampling and effects provide groundwork for the unfinished audio consumer. Scene previews remain silent.",
+      "preserve": "Keep complete producers, game state, bank/sample dependencies and RSP command boundaries. These sources do not provide a complete host audio output implementation."
+    },
+    {
+      "id": "accepted-library-controller-pak", "priority": 3,
+      "behavior": "Controller Pak file handling",
+      "symbols": ["func_00025f90", "func_000263c0", "func_000265e0", "func_00026a20", "func_00026d80", "func_00026f90", "func_0002b070"],
+      "editorFiles": ["game/classes/pak-import.s", "game/classes/pak-export.s", "game/accepted/library-imports.json"],
+      "editorUse": "imported",
+      "benefit": "Accepted references for Controller Pak allocation, read/write, file state, initialization and checking; useful for future save-transfer diagnostics.",
+      "preserve": "Retain the editor's save adapters and the game's surrounding device/error handling. Controller Pak source availability does not expand cartridge SRAM."
+    },
+    {
       "id": "accepted-placement-pair", "priority": 2,
       "behavior": "Squad placement and initialization",
       "symbols": ["func_00120BC0", "func_001307D4"],
@@ -51,10 +78,10 @@
       "id": "accepted-site-event-producer", "priority": 2,
       "behavior": "Large site-event handler",
       "symbols": ["func_0010DDB4"],
-      "editorFiles": ["game/accepted/library/src/lib/func_0010ddb4.c", "game/encounters/custom-owners/card_message.s", "rebuild/custom_encounters.cpp"],
-      "editorUse": "imported",
-      "benefit": "A complete pure-C reference is now available for the site-event owner. The custom-encounter exporter still uses its patched assembly version; that is an explicit source-selection gap.",
-      "preserve": "Keep the 52-entry switch table, separate four-byte assembly suffix and custom card-message patch. Exact retail C is not a replacement for the modified owner without reapplying and checking its extension."
+      "editorFiles": ["game/accepted/library/src/lib/func_0010ddb4.c", "game/accepted/owners.json", "rebuild/custom_encounters.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Native export compiles the accepted C owner and applies the bounded custom card-message hook; the October 16 source-selection migration closed the earlier assembly gap.",
+      "preserve": "Keep the 52-entry switch table, separate four-byte assembly suffix and bounded custom card-message hook."
     },
     {
       "id": "accepted-draw-callbacks", "priority": 1,

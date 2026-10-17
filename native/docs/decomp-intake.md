@@ -1,5 +1,38 @@
 # Using newly accepted Decomp C
 
+## October 17 library intake
+
+The full seven-wave library batch from Decomp `17e07534` is imported: 212 new
+functions, with no previously imported function lost. The current manifest has
+1,102 compiler-recorded functions from 1,057 PURE_C targets in 926 complete
+producer files, plus 24 included source/header dependencies. Its acceptance
+fingerprint is `171A02BF`. Six retired single-function files were replaced by
+their complete upstream producers. Existing adaptation baselines are unchanged.
+
+Graphics/math, audio, Controller Pak and system-service sources are available
+for future consumers. This intake does not switch the renderer, add audio output,
+or alter gameplay/export behavior. The native selection audit authenticates
+1,057 PURE_C and 45 HYBRID_C targets / 995 source-and-header files and reports
+zero catalogued whole-owner assembly gaps and zero unclassified assembly files.
+
+The importer, audit and interest lookup share `tools/decomp-evidence.cjs`.
+It supports report versions 5 and 6. Version 6 also authenticates each explicitly
+named source-object proof, joins its source/class/dependencies to the fresh and
+linked reports, verifies representation identities and exact physical owners,
+and retains complete-producer membership and compiler provenance. It does not
+run upstream tools or reproduce upstream matching acceptance.
+
+`node --test native/tools/tests/decomp-evidence.test.cjs` exercises intake and
+failure paths using synthetic evidence, including multiple functions/physical
+owners, complete producers, changed reports/sources/headers/proofs, and safe
+retirement of prior imports. It is also registered as CTest `decomp_intake`.
+Real intake separately checks all imported file bytes against accepted hashes.
+All 24 fixture checks, the registered CTest, the 19 new interest entries and the
+real source-selection audit passed for this intake. Native application behavior
+was not changed, so no application rebuild or emulator test was required.
+
+## Source selection and lookup
+
 The [native source-selection audit](source-selection-audit.md) records the actual
 export paths that still use assembly despite accepted C or matching hybrid C.
 Run `node native/tools/audit-source-selection.cjs --decomp <checkout>` after an
@@ -53,8 +86,8 @@ is not classified as matching just because it appears in that registry. An exact
 headers are flagged; the last report's accepted version remains useful upstream.
 Missing/changing reports produce an explicit error, not an empty ready list.
 
-The command reads existing evidence without running Decomp tools or entering its
-production build directory. It does not import sources, rebuild anything, watch
+The command reads existing reports and, for version 6, only the hash-bound proof
+files named by those reports. It does not run Decomp tools, import sources, rebuild anything, watch
 for changes or maintain a second acceptance database. It does not compare older
 portable adaptations semantically. Older adaptations without an import identity
 still require comparing their documented revision when updating them.
@@ -105,6 +138,9 @@ passing snapshot and all source dependencies without writing. Add `--write` to
 refresh the bundled library and its manifest. It rejects unsupported evidence
 versions and changed source identities; it never runs a Decomp build. Existing
 adaptation baselines and third-party notices remain intact.
+Refreshes remove a retired file only when the previous library manifest names it
+and its bytes still match that manifest; local edits cause refusal before writing.
+Unlisted historical/support files are preserved.
 
 Use the passing `build/current/state.json`, `verification.json` and
 `fresh-compilation.json` together. Select every exact `PURE_C` owner, join its

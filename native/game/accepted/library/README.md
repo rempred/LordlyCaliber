@@ -1,19 +1,20 @@
 # Accepted pure-C library
 
-This directory is a byte-preserved snapshot of every `PURE_C` owner in Decomp's
-passing verification of 2026-10-11 19:55 UTC. The snapshot contains 795 owners,
-836 compiler-recorded functions, 770 producer sources, and 794 source/header
-files including their recorded dependencies. Exact hybrid C/assembly sources
-are outside this pure-C snapshot.
+This directory retains the complete `PURE_C` source closure from Decomp's passing
+verification. [`../library-imports.json`](../library-imports.json) is authoritative
+for its current revision, verification time, counts and file membership. Exact
+hybrid C/assembly sources are outside this pure-C snapshot.
 
 [`../library-imports.json`](../library-imports.json) records the upstream Git
 revision, verification identity, owner/function membership, source paths and
-source/dependency identities. Git versions subsequent library updates. Original
+source/dependency identities. Version 6 intake also records proof descriptors,
+physical owner identities, complete-producer membership and compiler provenance.
+Git versions subsequent library updates. Original
 relative include paths are retained. The scoped `.gitattributes` prevents line
 ending conversion from changing the accepted source bytes.
-The manifest defines the current snapshot. Older producer files can remain as
-historical source when an upstream owner moves into a combined producer; those
-unlisted files are not additional current accepted functions.
+Refreshes remove unchanged previously listed files retired by a new producer.
+Unlisted historical/support files are preserved and are not additional current
+accepted functions.
 
 Importing source makes it available for future development. It does not compile
 every function into the editor or replace the functions in the user's ROM.
