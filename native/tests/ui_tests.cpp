@@ -12626,6 +12626,33 @@ class UiTests : public QObject {
         QCOMPARE(classes->model()->rowCount(), classCount);
         QCOMPARE(items->model()->rowCount(), itemCount);
         QCOMPARE(consumables->model()->rowCount(), 45);
+        // Column views must let the user compare all items without losing selection.
+        auto itemView = window.findChild<QComboBox *>("itemsColumnView");
+        QVERIFY(itemView);
+        const auto selectedItem = items->currentIndex().siblingAtColumn(0).data(Qt::EditRole);
+        const QList<QPair<QString, QString>> itemViews{{"Identity", "equipType"},
+                                                       {"Stats", "str"},
+                                                       {"Resistance", "resFire"},
+                                                       {"Growth", "growthHpStr"},
+                                                       {"Advanced", "b12Raw"},
+                                                       {"", "price"}};
+        for (const auto &[group, field] : itemViews) {
+            const int choice = itemView->findData(group);
+            QVERIFY(choice >= 0);
+            itemView->setCurrentIndex(choice);
+            int column = -1;
+            for (int i = 0; i < fields(Table::Items).size(); ++i)
+                if (fields(Table::Items)[i].key == field) column = i + 2;
+            QVERIFY(column >= 2);
+            QVERIFY(!items->isColumnHidden(column));
+            QVERIFY(!items->isColumnHidden(0));
+            QVERIFY(!items->isColumnHidden(1));
+            QCOMPARE(items->model()->rowCount(), itemCount);
+            QCOMPARE(items->currentIndex().siblingAtColumn(0).data(Qt::EditRole), selectedItem);
+            if (!group.isEmpty())
+                QCOMPARE(window.findChild<QComboBox *>("itemsInspectorSection")->currentText(), group);
+        }
+        itemView->setCurrentIndex(itemView->findData("Stats"));
         QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
         QCOMPARE(window.findChild<QListWidget *>("scenarioList")->count(), 64);
         auto textBaseline = baseline;
@@ -12772,6 +12799,29 @@ class UiTests : public QObject {
                     QTest::qWait(50);
                     QVERIFY(window.grab().save(capturePrefix + "-" + workspaceTabs->tabText(i).toLower() + ".png"));
                 }
+            window.navigateTo({"items", 1, -1, "section:Resistance"});
+            itemView->setCurrentIndex(itemView->findData("Resistance"));
+            QTest::qWait(50);
+            QVERIFY(window.grab().save(capturePrefix + "-item-resistance.png"));
+            window.navigateTo({"classes", 0x76, -1, "section:Growth"});
+            auto help = window.findChild<QLabel *>("defaultCurrentClassHelp");
+            QVERIFY(help);
+            for (QWidget *parent = help->parentWidget(); parent; parent = parent->parentWidget())
+                if (auto scroll = qobject_cast<QScrollArea *>(parent)) {
+                    scroll->ensureWidgetVisible(help);
+                    break;
+                }
+            QTest::qWait(50);
+            QVERIFY(window.grab().save(capturePrefix + "-class-help.png"));
+            window.navigateTo({"classes", 5, -1, "section:Promotion"});
+            auto promotion = window.findChild<PromotionEditor *>();
+            for (QWidget *parent = promotion->parentWidget(); parent; parent = parent->parentWidget())
+                if (auto scroll = qobject_cast<QScrollArea *>(parent)) {
+                    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+                    break;
+                }
+            QTest::qWait(50);
+            QVERIFY(window.grab().save(capturePrefix + "-family-links.png"));
             for (const auto name : {"encounterEditor", "scenarioEditor"}) {
                 workspaceTabs->setCurrentWidget(window.findChild<QWidget *>(name));
                 for (int width : {1440, 1100}) {

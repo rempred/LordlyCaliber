@@ -670,14 +670,18 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 model->setData(model->index(*selected, n + 2), value, Qt::EditRole);
         });
         editor->setEnabled(false);
-        if (f.key == "classCopyMatch")
-            editor->setToolTip(
+        editors->push_back(editor);
+        groups[f.group]->addRow(f.label, editor);
+        if (f.key == "classCopyMatch") {
+            auto help = new QLabel(
                 "<p><b>Default class and identity anchor</b><br>"
                 "Sets the current class used when a character is created.</p>"
                 "<p>A nonzero value also keeps the character's original class identity during manual class "
                 "changes. Only their current class changes. With <b>0 - Same as this class</b>, new characters "
                 "start in this class, but a later manual class change replaces both class IDs.</p>"
                 "<p><b>Asnabel example (IDs in hex)</b><br>"
+                "<b>76</b> is Asnabel's special Berserker class record. The standard Berserker class "
+                "is <b>06</b>. His identity stays tied to his special record.<br>"
                 "Starts as Berserker: identity <b>76</b>, current class <b>76</b>.<br>"
                 "Changes to Knight: identity <b>76</b>, current class <b>05</b>.<br>"
                 "Returns to Berserker: his existing class-menu mapping restores current class <b>76</b>.</p>"
@@ -685,8 +689,12 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 "this class's own record; otherwise they use the current class. Ordinary level-up growth "
                 "comes directly from the current class.</p>"
                 "<p>Changing this default does not rewrite existing characters' stored class IDs.</p>");
-        editors->push_back(editor);
-        groups[f.group]->addRow(f.label, editor);
+            help->setObjectName("defaultCurrentClassHelp");
+            help->setTextFormat(Qt::RichText);
+            help->setWordWrap(true);
+            help->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            groups[f.group]->addRow(help);
+        }
         if (f.choices == "ACTION_NAMES") {
             auto edit = new QPushButton("Description…");
             edit->setObjectName(f.key + "Description");
@@ -863,18 +871,16 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             if (section >= 0)
                 sections->setCurrentIndex(section);
         };
-        if (table == Table::Items) {
-            showColumns("Stats");
-        } else {
-            auto columns = new QComboBox;
-            columns->addItem("All fields", "");
-            for (auto group = groups.begin(); group != groups.end(); ++group)
-                columns->addItem(group.key() + " columns", group.key());
-            layout->insertWidget(1, columns);
-            connect(columns, &QComboBox::currentIndexChanged, page,
-                    [=] { showColumns(columns->currentData().toString()); });
-            columns->setCurrentIndex(columns->findData("Stats"));
-        }
+        auto columns = new QComboBox;
+        columns->setObjectName(tableKey(table) + "ColumnView");
+        columns->setToolTip("Choose the columns shown for every record in the list.");
+        columns->addItem("All fields", "");
+        for (auto group = groups.begin(); group != groups.end(); ++group)
+            columns->addItem(group.key() + " columns", group.key());
+        layout->insertWidget(1, columns);
+        connect(columns, &QComboBox::currentIndexChanged, page,
+                [=] { showColumns(columns->currentData().toString()); });
+        columns->setCurrentIndex(columns->findData("Stats"));
     }
     workspaces_->addTab(page, title);
     if (setup) sections->setCurrentIndex(sections->findText("Overview"));

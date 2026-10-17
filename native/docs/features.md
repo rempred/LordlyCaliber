@@ -371,7 +371,9 @@ full-game validation or measured encounter polling cadence is claimed.
 
 
 
-Authoring refinements: Promotion supports explicit bidirectional family links;
+Authoring refinements: Promotion supports explicit bidirectional family links,
+an editor feature not used by retail. The section appears last in Promotion and
+explains splitting Male into Warriors and Spellcasters with separate icon tabs;
 linked groups share manual-change destinations while masks, behavior, discovery,
 stats and equipment still apply. Automatic death/attack transformations remain
 separate and are explained in the panel. Items has New item (blank accessory)
@@ -843,8 +845,9 @@ Double-clicking a character on a squad board or in Reserve opens a stats and
 equipment popup, leaving the squad boards in view. Save commits all fields as
 one Undo action; Cancel discards the draft. Empty cells and Soldier groups do not open it;
 pending squad edits still need to be applied or discarded first.
-The Items table always shows Stats columns, with other field groups available
-in its side panel.
+The Items table defaults to Stats columns. Its view dropdown also offers Identity,
+Resistance, Growth, Advanced and All fields, keeping the full item list available
+for comparison. Choosing a field group also opens that section in the side panel.
 
 Scenario **Orders** now starts with commands: Guard, Intercept nearby enemies,
 Move, Move and attack, Hit and run, Evade, and Retreat. Destinations can be named
@@ -989,11 +992,12 @@ and the match used by supported class/appearance lookups. Ordinary level-up grow
 reads the stored current class directly. Changing the default does not rewrite
 existing character records. Project keys, IDs and ROM/save layouts are unchanged.
 
-The Default current class help also explains the nonzero identity anchor used by
+The explanation directly below Default current class explains the nonzero identity anchor used by
 manual class changes: it preserves the primary identity while current class changes.
 A zero link allows the class change to replace both IDs. The retail Asnabel example
 shows 76/76 -> 76/05 -> 76/76 (hex), with his existing named-class menu mapping
-restoring his special Berserker class. This is separate from class-data storage reuse.
+restoring his special Berserker class. The help distinguishes Asnabel's special
+Berserker record 76 from standard Berserker 06. This is separate from class-data storage reuse.
 
 Classes has a Rename class button beside New class and Copy class. Its dialog
 shows the selected class ID and edits the actual in-game name, with up to two

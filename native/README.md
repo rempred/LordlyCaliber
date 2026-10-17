@@ -87,7 +87,7 @@ actions, family and portrait. Its edit buttons keep the selected class when open
 artwork and animation tools; Back to class setup returns to that overview.
 
 Testing defaults to **Current project — build automatically**. Choose the Project64
-folder once, choose an army, then **Build and seed mission**. Pending forms are resolved
+folder once, choose an army, then **Test mission**. Pending forms are resolved
 first; the editor compiles and validates changed projects, selects the output, and
 assigns the mission save and launches Project64. An unchanged verified build is reused.
 **Test ROM location** shows the persistent output and lets you choose another location.

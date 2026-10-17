@@ -212,33 +212,6 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         edit("Assign class family",
              [this](Promotion &p) { p.assign(id_, families_->currentData().toInt()); });
     });
-    layout->addSpacing(12);
-    linksTitle_ = new QLabel;
-    linksTitle_->setWordWrap(true);
-    layout->addWidget(linksTitle_);
-    links_ = new QListWidget;
-    links_->setObjectName("familyLinks");
-    links_->setMaximumHeight(170);
-    layout->addWidget(links_);
-    auto applyLinks = new QPushButton("Apply family links");
-    applyLinks->setObjectName("applyFamilyLinks");
-    layout->addWidget(applyLinks);
-    connect(applyLinks, &QPushButton::clicked, this, [this] {
-        QSet<int> links;
-        for (int row = 0; row < links_->count(); ++row)
-            if (links_->item(row)->checkState() == Qt::Checked)
-                links.insert(links_->item(row)->data(Qt::UserRole).toInt());
-        edit("Link class-change families", [this, links](Promotion &p) {
-            p.setFamilyLinks(families_->currentData().toInt(), links);
-        });
-    });
-    auto linkHelp =
-        new QLabel("Links work in both directions, including through other linked families. They "
-                   "add destinations to the manual class-change menu; character compatibility, each "
-                   "family's manual-change policy, discovery, stats and equipment still apply. "
-                   "Family None cannot be linked.");
-    linkHelp->setWordWrap(true);
-    layout->addWidget(linkHelp);
     auto automatic = new QLabel(
         "Automatic changes are separate from families. Angel Knight / Zombie creation uses a "
         "dedicated scenario-end function and per-class death-eligibility flags. Fallen non-leader "
@@ -286,6 +259,41 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
                    "compatibility, stats, equipment and story conditions still apply.");
     detail->setWordWrap(true);
     layout->addWidget(detail);
+    layout->addSpacing(18);
+    auto linkHeading = new QLabel("<b>Family links — editor feature</b>");
+    layout->addWidget(linkHeading);
+    auto linkHelp = new QLabel(
+        "<p><b>Retail does not use links between separate class families.</b> This editor feature "
+        "lets you keep separate families while sharing manual class-change choices.</p>"
+        "<p><b>Example:</b> Split Male into <b>Warriors</b> (Knight, Berserker, Paladin) and "
+        "<b>Spellcasters</b> (Wizard, Archmage), both using normal within-family rules. Give each "
+        "family its own icon for separate List Classes tabs, then link them. An eligible Knight "
+        "can still become a Wizard while the two families keep their separate tabs.</p>"
+        "<p>Links apply to every class in both families and extend through other linked families. "
+        "Character compatibility, manual-change rules, discovery, stats and equipment still "
+        "apply. Family None cannot be linked.</p>");
+    linkHelp->setObjectName("familyLinksHelp");
+    linkHelp->setWordWrap(true);
+    layout->addWidget(linkHelp);
+    linksTitle_ = new QLabel;
+    linksTitle_->setWordWrap(true);
+    layout->addWidget(linksTitle_);
+    links_ = new QListWidget;
+    links_->setObjectName("familyLinks");
+    links_->setMaximumHeight(170);
+    layout->addWidget(links_);
+    auto applyLinks = new QPushButton("Apply family links");
+    applyLinks->setObjectName("applyFamilyLinks");
+    layout->addWidget(applyLinks);
+    connect(applyLinks, &QPushButton::clicked, this, [this] {
+        QSet<int> links;
+        for (int row = 0; row < links_->count(); ++row)
+            if (links_->item(row)->checkState() == Qt::Checked)
+                links.insert(links_->item(row)->data(Qt::UserRole).toInt());
+        edit("Link class-change families", [this, links](Promotion &p) {
+            p.setFamilyLinks(families_->currentData().toInt(), links);
+        });
+    });
     layout->addStretch();
     refresh();
 }

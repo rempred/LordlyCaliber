@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -98,35 +99,38 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
     auto p64 = pathRow("Project64 folder…", "seederChooseProject64", p64Label_);
     p64Label_->setText(project64_.isEmpty() ? "Choose the folder containing Project64.exe"
                                             : QFileInfo(project64_).absolutePath());
+    auto assignmentBoxes = new QHBoxLayout;
+    controls->addLayout(assignmentBoxes);
     auto savedGame = new QGroupBox("Assign a saved game to a ROM");
     savedGame->setObjectName("testingCompleteSave");
     auto savedLayout = new QVBoxLayout(savedGame);
-    auto selectors = new QHBoxLayout;
+    auto selectors = new QGridLayout;
+    selectors->setColumnStretch(1, 1);
     auto chooseSave = new QPushButton("Select Save…");
     chooseSave->setObjectName("seederUseSave");
-    selectors->addWidget(chooseSave);
+    selectors->addWidget(chooseSave, 0, 0);
     saveLabel_ =
         new QLabel(savePath_.isEmpty() ? "No save selected" : QFileInfo(savePath_).fileName());
     saveLabel_->setObjectName("testingCompleteSaveName");
     saveLabel_->setToolTip(savePath_);
     saveLabel_->setWordWrap(true);
-    selectors->addWidget(saveLabel_, 1);
+    selectors->addWidget(saveLabel_, 0, 1);
     auto chooseRom = new QPushButton("Select ROM…");
     chooseRom->setObjectName("testingSelectSaveRom");
-    selectors->addWidget(chooseRom);
+    selectors->addWidget(chooseRom, 1, 0);
     saveRomLabel_ =
         new QLabel(saveRomPath_.isEmpty() ? "No ROM selected" : QFileInfo(saveRomPath_).fileName());
     saveRomLabel_->setObjectName("testingCompleteSaveRomName");
     saveRomLabel_->setToolTip(saveRomPath_);
     saveRomLabel_->setWordWrap(true);
-    selectors->addWidget(saveRomLabel_, 1);
+    selectors->addWidget(saveRomLabel_, 1, 1);
     savedLayout->addLayout(selectors);
     saveStatus_ = new QLabel("Select both files to assign the save using the Project64 folder "
                              "above. Then open that ROM in Project64 whenever you want to play.");
     saveStatus_->setObjectName("testingSaveAssignmentStatus");
     saveStatus_->setWordWrap(true);
     savedLayout->addWidget(saveStatus_);
-    controls->addWidget(savedGame);
+    assignmentBoxes->addWidget(savedGame, 1);
     connect(chooseSave, &QPushButton::clicked, this, &TestingEditor::useSave);
     connect(chooseRom, &QPushButton::clicked, this, [this] {
         const auto path = QFileDialog::getOpenFileName(this, "Select the ROM for this saved game",
@@ -145,7 +149,7 @@ TestingEditor::TestingEditor(const QString &romPath, QWidget *parent)
     armyLayout->addWidget(armyHelp);
     auto actions = new QHBoxLayout;
     armyLayout->addLayout(actions);
-    controls->addWidget(missionArmy);
+    assignmentBoxes->addWidget(missionArmy, 1);
     auto add = [&](const QString &title, const char *id) {
         auto b = new QPushButton(title);
         b->setObjectName(id);
@@ -407,11 +411,10 @@ void TestingEditor::updateFreshness() {
               "export or ROM selection is needed.");
 }
 void TestingEditor::updateLaunchControls() {
-    const bool project = sourceMode_->currentIndex() == 0;
     for (int row = 0; row < missions_->topLevelItemCount(); ++row)
         if (auto button =
                 qobject_cast<QPushButton *>(missions_->itemWidget(missions_->topLevelItem(row), 2)))
-            button->setText(project ? "Build and seed mission" : "Seed mission");
+            button->setText("Test mission");
 }
 void TestingEditor::updateArmyLabel() {
     armyLabel_->setText(armyPath_.isEmpty() ? (QFileInfo::exists(defaultArmyPath())
@@ -480,11 +483,11 @@ std::optional<SaveDocument> TestingEditor::army() const {
     return doc;
 }
 void TestingEditor::addLaunchButton(QTreeWidgetItem *item) {
-    auto button = new QPushButton(sourceMode_->currentIndex() == 0 ? "Build and seed mission"
-                                                                   : "Seed mission");
+    auto button = new QPushButton("Test mission");
     button->setObjectName("seederColdBoot");
-    button->setToolTip("Test this mission with the selected mission army. Current project mode "
-                       "builds your latest edits first; unchanged builds are reused.");
+    button->setToolTip("Assign this mission's save using the selected army, then launch Project64. "
+                       "Current project mode builds your latest edits first; unchanged builds "
+                       "are reused.");
     missions_->setItemWidget(item, 2, button);
     connect(button, &QPushButton::clicked, this, [this, item] {
         if (!item->isHidden())
