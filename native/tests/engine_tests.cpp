@@ -72,6 +72,46 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void persuasionMatrixGroups() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); auto model=Persuasion::load(rom);
+        QVERIFY(model.unavailable().isEmpty());
+        const auto legacy=model.json(); const auto runtime=model.runtime();
+        const int beasts=model.groupFor(0x45);
+        auto groupFor=[&](int id) {
+            const auto groups=model.leaderGroups();
+            for(int g=0;g<groups.size();++g) if(groups[g].members.contains(id)) return g;
+            return -1;
+        };
+        const int masters=groupFor(24); QVERIFY(masters>=0);
+        model.setGroupScore(masters,beasts,44);
+        QCOMPARE(model.score(24,beasts),44); QCOMPARE(model.score(0x45,beasts),44); QCOMPARE(model.score(9,beasts),60);
+        model.editLeaderGroup(-1,"Custom leaders",{24,0xa5},256);
+        QCOMPARE(model.score(24,beasts),44); QCOMPARE(model.score(0xa5,beasts),30);
+        model.setGroupScore(groupFor(24),beasts,88);
+        QCOMPARE(model.score(0xa5,beasts),88); QCOMPARE(model.score(0x45,beasts),44);
+        const auto memberships=model.json()["leaderGroups"];
+        model.addGroup("Custom targets",{0xa6,0x45},beasts,256);
+        QCOMPARE(model.json()["leaderGroups"],memberships);
+        QCOMPARE(model.score(24,model.groupFor(0x45)),88);
+        model.editLeaderGroup(groupFor(24),"Only custom",{0xa5},256);
+        QVERIFY(groupFor(24)!=groupFor(0xa5)); QCOMPARE(model.score(24,beasts),88);
+        model.setGroupScore(-1,beasts,12); QCOMPARE(model.score(0xa7,beasts),12); QCOMPARE(model.score(0xa5,beasts),88);
+        const auto saved=model.json(); auto restore=Persuasion::load(rom); restore.apply(saved,256); QCOMPARE(restore.json(),saved);
+        auto bad=saved; auto groups=bad["leaderGroups"].toArray(); groups.append(groups.first()); bad["leaderGroups"]=groups;
+        QVERIFY_THROWS_EXCEPTION(Error,restore.apply(bad,256)); QCOMPARE(restore.json(),saved);
+        groups=saved["leaderGroups"].toArray(); groups.removeLast(); bad["leaderGroups"]=groups;
+        QVERIFY_THROWS_EXCEPTION(Error,restore.apply(bad,256)); QCOMPARE(restore.json(),saved);
+        QVERIFY_THROWS_EXCEPTION(Error,model.editLeaderGroup(-1,"Invalid",{24,24},256)); QCOMPARE(model.json(),saved);
+        QVERIFY_THROWS_EXCEPTION(Error,model.editLeaderGroup(-1,"Empty",{},256)); QCOMPARE(model.json(),saved);
+        QVERIFY_THROWS_EXCEPTION(Error,model.setGroupScore(groupFor(24),beasts,101)); QCOMPARE(model.json(),saved);
+        restore.apply(legacy,256); QCOMPARE(restore.json(),legacy); QCOMPARE(restore.runtime(),runtime);
+        // Old exported metadata must still authenticate byte-for-byte, without new fields being inserted.
+        const quint32 at=0x2800000; auto stored=rom.bytes(); stored.resize(at); stored.append(restore.storage());
+        stored.replace(Persuasion::ownerOffset,Persuasion::ownerSize,restore.owner(at,restore.storage().size()));
+        auto reopened=Persuasion::load(Rom::fromBytes(stored));
+        QVERIFY2(reopened.unavailable().isEmpty(),qPrintable(reopened.unavailable())); QCOMPARE(reopened.json(),legacy);
+    }
     void leaderAffinityAndPersuasion() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
         if(path.isEmpty()) QSKIP("Private ROM required");

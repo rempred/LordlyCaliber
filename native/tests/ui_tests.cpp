@@ -11,6 +11,7 @@
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
+#include "app/persuasion_editor.h"
 #include "app/leader_affinity_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
@@ -154,28 +155,74 @@ class UiTests : public QObject {
     }
     void persuasionEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);
         auto project=Project::fromRom(Rom::open(path)); project.loadEncounters();
         const int custom=project.appendClass(5,"Persuasion tester");
         QUndoStack undo; EncounterEditor editor(&project,&undo,[]{});
-        editor.resize(1200,850); editor.show();
+        editor.resize(1440,950); editor.show();
         auto tabs=editor.findChild<QTabWidget *>("encounterTabs"); QVERIFY(tabs);
         for(int tab=0;tab<tabs->count();++tab) if(tabs->tabText(tab)=="Persuasion") tabs->setCurrentIndex(tab);
-        auto group=editor.findChild<QComboBox *>("persuasionGroup");
-        auto table=editor.findChild<QTableWidget *>("persuasionTable"); QVERIFY(group); QVERIFY(table);
-        const int beasts=project.encounters()->persuasion().groupFor(0x45); group->setCurrentIndex(beasts);
-        QTest::qWait(40); QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/persuasion.png"));
-        auto rowFor=[&](int id) { for(int row=0;row<table->rowCount();++row) if(table->item(row,0)->data(Qt::UserRole).toInt()==id) return row; return -1; };
-        QCOMPARE(table->item(rowFor(24),1)->data(Qt::EditRole).toInt(),80);
-        table->item(rowFor(24),1)->setData(Qt::EditRole,42);
+        auto table=editor.findChild<QTableWidget *>("persuasionTable"); QVERIFY(table);
+        auto columnFor=[&](int id) {
+            const auto groups=project.encounters()->persuasion().leaderGroups();
+            for(int col=0;col<groups.size();++col) if(groups[col].members.contains(id)) return col;
+            return -1;
+        };
+        const int beasts=project.encounters()->persuasion().groupFor(0x45);
+        QCOMPARE(table->rowCount(),project.encounters()->persuasion().groups().size());
+        QCOMPARE(table->columnCount(),project.encounters()->persuasion().leaderGroups().size()+1);
+        const int masters=columnFor(24); QVERIFY(masters>=0);
+        table->setCurrentCell(beasts,masters);
+        QTest::qWait(40); QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/persuasion-matrix.png"));
+        QCOMPARE(table->item(beasts,masters)->data(Qt::EditRole).toInt(),80);
+        table->item(beasts,masters)->setData(Qt::EditRole,42);
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),42);
-        undo.undo(); QCOMPARE(table->item(rowFor(24),1)->data(Qt::EditRole).toInt(),80); undo.redo();
+        QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
+        QCOMPARE(project.encounters()->persuasion().score(9,beasts),60);
+        undo.undo(); QCOMPARE(table->item(beasts,masters)->data(Qt::EditRole).toInt(),80); undo.redo();
+        // A prior individual edit must remain visible, without flattening it on display.
+        auto mixed=project.encounters()->persuasion(); mixed.setScore(24,beasts,73);
+        auto changed=*project.encounters(); changed.setPersuasion(mixed.json(),project.records(Table::Classes).size());
+        project.setEncounters(changed.json());
+        static_cast<PersuasionEditor *>(editor.findChild<QWidget *>("persuasionEditor"))->refresh();
+        QCOMPARE(table->item(beasts,masters)->text(),QString("Mixed"));
+        QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
+        table->editItem(table->item(beasts,masters));
+        auto spin=table->findChild<QSpinBox *>(); QVERIFY(spin); QVERIFY(spin->text().isEmpty());
+        QTest::keyClick(spin,Qt::Key_Escape);
+        QTest::qWait(10);
+        QCOMPARE(project.encounters()->persuasion().score(24,beasts),73);
+        table->editItem(table->item(beasts,masters));
+        spin=table->findChild<QSpinBox *>(); QVERIFY(spin);
+        QTest::keyClick(spin,Qt::Key_Tab); QTest::qWait(10);
+        QCOMPARE(project.encounters()->persuasion().score(24,beasts),73);
+        QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
+        // Close any editor Tab opened in the next cell before editing this one again.
+        if(auto nextSpin=table->findChild<QSpinBox *>()) { QTest::keyClick(nextSpin,Qt::Key_Escape); QTest::qWait(10); }
+        table->editItem(table->item(beasts,masters));
+        spin=table->findChild<QSpinBox *>(); QVERIFY(spin);
+        spin->setValue(55); QTest::keyClick(spin,Qt::Key_Return);
+        QTRY_COMPARE(project.encounters()->persuasion().score(24,beasts),55);
+        QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),55);
+        undo.clear();
         QTimer::singleShot(0,&editor,[&] {
             auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
-            auto choices=dialog->findChild<QComboBox *>("persuasionNewLeader"); QVERIFY(choices);
-            choices->setCurrentIndex(choices->findData(custom)); dialog->accept();
+            dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom leaders");
+            auto list=dialog->findChild<QListWidget *>("persuasionGroupMembers"); QVERIFY(list);
+            for(int row=0;row<list->count();++row) if(list->item(row)->data(Qt::UserRole).toInt()==custom || list->item(row)->data(Qt::UserRole).toInt()==24)
+                list->item(row)->setCheckState(Qt::Checked);
+            dialog->accept();
         });
-        editor.findChild<QPushButton *>("persuasionAddLeader")->click(); QVERIFY(rowFor(custom)>=0);
+        editor.findChild<QPushButton *>("persuasionAddLeader")->click();
+        const int leaders=columnFor(custom); QVERIFY(leaders>=0); QCOMPARE(columnFor(24),leaders);
         QCOMPARE(project.encounters()->persuasion().score(custom,beasts),30);
+        QCOMPARE(table->item(beasts,leaders)->text(),QString("Mixed"));
+        table->item(beasts,leaders)->setData(Qt::EditRole,91);
+        QCOMPARE(project.encounters()->persuasion().score(custom,beasts),91);
+        QCOMPARE(project.encounters()->persuasion().score(24,beasts),91);
+        QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),55);
+        const auto leaderMembership=project.encounters()->persuasion().json()["leaderGroups"];
+        table->setCurrentCell(beasts,leaders);
         QTimer::singleShot(0,&editor,[&] {
             auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
             dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom creatures");
@@ -185,17 +232,31 @@ class UiTests : public QObject {
             dialog->accept();
         });
         editor.findChild<QPushButton *>("persuasionCreateGroup")->click();
-        const int created=group->currentIndex(); QVERIFY(created!=beasts);
+        const int created=table->currentRow(); QVERIFY(created!=beasts);
         QCOMPARE(project.encounters()->persuasion().groupFor(custom),created);
         QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
-        QCOMPARE(project.encounters()->persuasion().score(24,created),42);
-        table->item(rowFor(custom),1)->setData(Qt::EditRole,91);
-        QCOMPARE(project.encounters()->persuasion().score(custom,created),91);
+        QCOMPARE(project.encounters()->persuasion().score(24,created),91);
+        QCOMPARE(project.encounters()->persuasion().json()["leaderGroups"],leaderMembership);
+        table->item(created,leaders)->setData(Qt::EditRole,67);
+        QCOMPARE(project.encounters()->persuasion().score(custom,created),67);
+        QCOMPARE(project.encounters()->persuasion().score(24,created),67);
         const auto manifest=project.manifest(); QTemporaryDir saved; project.saveFolder(saved.path());
         auto reopened=Project::fromRom(Rom::open(path)); reopened.applyManifest(Project::readProject(saved.path()));
         QCOMPARE(reopened.manifest(),manifest);
         undo.undo(); undo.undo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),beasts);
         undo.redo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
+        table->setCurrentCell(created,columnFor(custom));
+        QTimer::singleShot(0,&editor,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom leader only");
+            auto list=dialog->findChild<QListWidget *>("persuasionGroupMembers");
+            for(int row=0;row<list->count();++row) if(list->item(row)->data(Qt::UserRole).toInt()==24) list->item(row)->setCheckState(Qt::Unchecked);
+            dialog->accept();
+        });
+        editor.findChild<QPushButton *>("persuasionEditLeader")->click();
+        QVERIFY(columnFor(24)!=columnFor(custom));
+        QCOMPARE(project.encounters()->persuasion().score(24,beasts),91);
+        QCOMPARE(project.encounters()->persuasion().score(custom,beasts),91);
     }
     void pendingConsumableAndRouteEdits() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

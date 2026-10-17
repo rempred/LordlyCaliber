@@ -43,6 +43,54 @@ int Persuasion::groupFor(int member) const {
         if (groups_[g].members.contains(member)) return g;
     return 0;
 }
+QVector<PersuasionGroup> Persuasion::leaderGroups() const {
+    if (!leaderGroups_.isEmpty()) return leaderGroups_;
+    QVector<PersuasionGroup> result;
+    QSet<int> assigned;
+    for (const auto &target : groups_) {
+        QVector<int> members;
+        for (int id : target.members) if (rows_.contains(id)) { members << id; assigned.insert(id); }
+        if (!members.isEmpty()) result.append(PersuasionGroup{target.name, members});
+    }
+    for (int id : rows_.keys()) if (!assigned.contains(id))
+        result.append(PersuasionGroup{QString("Class %1").arg(id, 2, 16, QChar('0')), {id}});
+    return result;
+}
+void Persuasion::setGroupScore(int leaderGroup, int targetGroup, int value) {
+    const auto groups = leaderGroups();
+    if (leaderGroup < -1 || leaderGroup >= groups.size()) throw Error("Choose a leader group.");
+    if (leaderGroup == -1) { setScore(-1, targetGroup, value); return; }
+    auto next = *this;
+    for (int id : groups[leaderGroup].members) next.setScore(id, targetGroup, value);
+    *this = next;
+}
+void Persuasion::editLeaderGroup(int group, const QString &name, const QVector<int> &members, int classCount) {
+    if (!unavailable_.isEmpty()) throw Error(unavailable_);
+    auto next = *this;
+    auto groups = leaderGroups();
+    if (group < -1 || group >= groups.size() || name.trimmed().isEmpty() || name.trimmed().size() > 80 || members.isEmpty())
+        throw Error("Give the leader group a name and select at least one class.");
+    QSet<int> ids;
+    for (int id : members) {
+        if (id < 1 || id >= classCount || id > 255 || ids.contains(id)) throw Error("Choose distinct existing leader classes.");
+        ids.insert(id);
+        if (!next.rows_.contains(id)) next.rows_[id] = fallback_;
+    }
+    QVector<PersuasionGroup> result;
+    for (int g = 0; g < groups.size(); ++g) {
+        auto remaining = groups[g].members;
+        remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](int id) { return ids.contains(id); }), remaining.end());
+        if (g == group) {
+            result.append(PersuasionGroup{name.trimmed(), members});
+            // Retain removed leaders' individual scores instead of silently resetting them.
+            for (int id : remaining) result.append(PersuasionGroup{QString("Class %1").arg(id, 2, 16, QChar('0')), {id}});
+        } else if (!remaining.isEmpty()) result.append(PersuasionGroup{groups[g].name, remaining});
+    }
+    if (group == -1) result.append(PersuasionGroup{name.trimmed(), members});
+    for (auto &g : result) std::sort(g.members.begin(), g.members.end());
+    next.leaderGroups_ = result;
+    *this = next;
+}
 void Persuasion::setScore(int leader, int group, int value) {
     if (!unavailable_.isEmpty()) throw Error(unavailable_);
     if (group < 0 || group >= groups_.size() || value < 0 || value > 100 ||
@@ -53,12 +101,14 @@ void Persuasion::addLeader(int leader) {
     if (!unavailable_.isEmpty()) throw Error(unavailable_);
     if (leader < 1 || leader > 255 || rows_.contains(leader)) throw Error("Choose a class without a leader row.");
     rows_[leader] = fallback_;
+    if (!leaderGroups_.isEmpty()) leaderGroups_.append(PersuasionGroup{QString("Class %1").arg(leader, 2, 16, QChar('0')), {leader}});
 }
 void Persuasion::addGroup(const QString &name, const QVector<int> &members, int copyGroup, int classCount) {
     if (!unavailable_.isEmpty()) throw Error(unavailable_);
     if (groups_.size() >= 32 || copyGroup < 0 || copyGroup >= groups_.size())
         throw Error("Persuasion supports up to 32 groups; choose a group to copy its starting scores.");
     auto next = *this;
+    next.leaderGroups_ = leaderGroups();
     next.groups_.append(PersuasionGroup{name, {}}); next.fallback_.append(fallback_[copyGroup]);
     for (auto it = next.rows_.begin(); it != next.rows_.end(); ++it) it.value().append(it.value()[copyGroup]);
     next.editGroup(int(next.groups_.size()) - 1, name, members, classCount);
@@ -73,6 +123,7 @@ void Persuasion::editGroup(int group, const QString &name, const QVector<int> &m
         if (id < 1 || id >= classCount || id > 255 || ids.contains(id)) throw Error("Choose distinct existing member classes.");
         ids.insert(id);
     }
+    leaderGroups_ = leaderGroups();
     for (int g = 1; g < groups_.size(); ++g) {
         auto &list = groups_[g].members;
         list.erase(std::remove_if(list.begin(), list.end(), [&](int id) { return ids.contains(id); }), list.end());
@@ -84,14 +135,21 @@ QJsonObject Persuasion::json() const {
     QJsonArray groups; QJsonObject rows;
     for (const auto &g : groups_) groups << QJsonObject{{"name",g.name},{"members",array(g.members)}};
     for (auto it = rows_.begin(); it != rows_.end(); ++it) rows[QString::number(it.key())] = array(it.value());
-    return {{"version",1},{"groups",groups},{"fallback",array(fallback_)},{"leaders",rows}};
+    QJsonObject out{{"version",1},{"groups",groups},{"fallback",array(fallback_)},{"leaders",rows}};
+    if (!leaderGroups_.isEmpty()) {
+        QJsonArray leaders;
+        for (const auto &g : leaderGroups_) leaders << QJsonObject{{"name",g.name},{"members",array(g.members)}};
+        out["leaderGroups"] = leaders;
+    }
+    return out;
 }
 void Persuasion::apply(const QJsonObject &value, int classCount) {
     if (value == json()) return;
     if (!unavailable_.isEmpty()) throw Error(unavailable_);
-    if (value.size() != 4 || value["version"] != 1 || !value["groups"].isArray() ||
+    const bool namedLeaders = value.contains("leaderGroups");
+    if (value.size() != (namedLeaders ? 5 : 4) || value["version"] != 1 || !value["groups"].isArray() ||
         !value["fallback"].isArray() || !value["leaders"].isObject()) throw Error("Invalid persuasion table.");
-    auto next = *this; next.groups_.clear(); next.rows_.clear(); next.fallback_.clear();
+    auto next = *this; next.groups_.clear(); next.rows_.clear(); next.fallback_.clear(); next.leaderGroups_.clear();
     const auto groups = value["groups"].toArray();
     if (groups.size() < 1 || groups.size() > 32) throw Error("Persuasion requires 1–32 groups.");
     QSet<int> used;
@@ -119,6 +177,25 @@ void Persuasion::apply(const QJsonObject &value, int classCount) {
         if (!ok || QString::number(id) != it.key() || id < 1 || id >= classCount || id > 255)
             throw Error("Persuasion references a missing leader class.");
         next.rows_[id] = scores(it.value());
+    }
+    if (namedLeaders) {
+        const auto leaders = value["leaderGroups"].toArray();
+        if (!value["leaderGroups"].isArray() || leaders.isEmpty() || leaders.size() > 255)
+            throw Error("Invalid persuasion leader groups.");
+        QSet<int> assigned;
+        for (const auto &entry : leaders) {
+            const auto item = entry.toObject(); const auto name = item["name"].toString().trimmed();
+            if (item.size() != 2 || name.isEmpty() || name.size() > 80 || !item["members"].isArray() || item["members"].toArray().isEmpty())
+                throw Error("Give each leader group a name and members.");
+            QVector<int> members;
+            for (const auto &member : item["members"].toArray()) {
+                const int id = integer(member, 1, std::min(255, classCount - 1));
+                if (!next.rows_.contains(id) || assigned.contains(id)) throw Error("Each leader belongs to exactly one leader group.");
+                assigned.insert(id); members << id;
+            }
+            std::sort(members.begin(), members.end()); next.leaderGroups_.append(PersuasionGroup{name,members});
+        }
+        if (assigned.size() != next.rows_.size()) throw Error("Every explicit leader needs a leader group.");
     }
     *this = next;
 }
@@ -218,7 +295,7 @@ Persuasion Persuasion::load(const Rom &rom) {
                 out.rows_[leader.key()]=row;
             }
         }
-    } catch(const Error &e) { out.groups_.clear(); out.rows_.clear(); out.fallback_.clear(); out.unavailable_=QString::fromUtf8(e.what()); }
+    } catch(const Error &e) { out.groups_.clear(); out.leaderGroups_.clear(); out.rows_.clear(); out.fallback_.clear(); out.unavailable_=QString::fromUtf8(e.what()); }
     out.original_=out.json(); return out;
 }
 }

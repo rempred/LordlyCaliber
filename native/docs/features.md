@@ -6,10 +6,16 @@ multiplier example. Default-current-class links identify shared values. Edits,
 Retail restore, Undo and project persistence use the Tools model; export replaces
 only the bounded affinity dispatch inside its original routine.
 
-Encounters → Persuasion edits the starting Talk score for a selected target group.
-Add leader row and Create/Edit group support custom classes, named groups and
-explicit class membership. Creating a group copies an existing group's scores;
-membership moves are explicit. Health and temperament remain in the existing
+Encounters → Persuasion shows an editable affinity matrix with leader groups across
+the top and target groups down the left. A cell edits every leader in its group in
+one undoable action. Mixed cells preserve existing individual scores until edited.
+Add/Edit leader group and Add/Edit target group support named groups and explicit
+class membership on both axes. Leader and target membership are independent.
+New leaders start from Other leaders; moving leaders preserves their scores, and
+removing them from a group leaves individual columns. New target groups copy an
+existing target group's scores. Group names and membership persist in projects
+and exported ROMs, including compatibility with earlier persuasion exports.
+Health and temperament remain in the existing
 resolver, and custom squads using a fixed chance retain their override.
 The former Scenario rates sub-tab is named Custom Scenario Rates.
 Built and installed October 17. Focused native, UI and instruction-level checks

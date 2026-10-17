@@ -17,6 +17,7 @@ class Persuasion {
     static constexpr quint32 ownerAddress = 0x801d1480;
     static Persuasion load(const Rom &);
     const QVector<PersuasionGroup> &groups() const { return groups_; }
+    QVector<PersuasionGroup> leaderGroups() const;
     QList<int> leaders() const { return rows_.keys(); }
     int score(int leader, int group) const;
     int groupFor(int member) const;
@@ -24,6 +25,8 @@ class Persuasion {
     bool modified() const { return json() != original_; }
     void setScore(int leader, int group, int score);
     void addLeader(int leader);
+    void setGroupScore(int leaderGroup, int targetGroup, int score);
+    void editLeaderGroup(int group, const QString &name, const QVector<int> &members, int classCount);
     void addGroup(const QString &name, const QVector<int> &members, int copyGroup, int classCount);
     void editGroup(int group, const QString &name, const QVector<int> &members, int classCount);
     QJsonObject json() const;
@@ -37,6 +40,7 @@ class Persuasion {
 
   private:
     QVector<PersuasionGroup> groups_;
+    QVector<PersuasionGroup> leaderGroups_;
     QVector<int> fallback_;
     QMap<int, QVector<int>> rows_;
     QJsonObject original_;

@@ -2,9 +2,8 @@
 #include "engine/project.h"
 #include <QWidget>
 #include <functional>
-class QComboBox;
 class QLabel;
-class QLineEdit;
+class QPlainTextEdit;
 class QPushButton;
 class QTableWidget;
 class QUndoStack;
@@ -14,16 +13,15 @@ class PersuasionEditor : public QWidget {
     PersuasionEditor(Project *, QUndoStack *, std::function<void(const Encounters &, const QString &)>);
     void refresh();
   private:
-    void showGroup();
-    void addLeader();
-    void editGroup(bool create);
+    void showSelection();
+    void editGroup(bool leader, bool create);
+    int selectedLeader() const;
     void commit(const Persuasion &, const QString &);
     Project *project_;
     std::function<void(const Encounters &, const QString &)> commit_;
-    QComboBox *group_;
-    QLineEdit *search_;
-    QLabel *members_, *notice_;
+    QLabel *notice_;
+    QPlainTextEdit *members_;
     QTableWidget *table_;
-    QPushButton *add_, *create_, *edit_;
+    QPushButton *addLeader_, *editLeader_, *addTarget_, *editTarget_;
 };
 }
