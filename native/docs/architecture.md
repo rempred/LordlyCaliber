@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Recovered preview graphics math (October 17)
+
+`game/director/graphics_math.c` adapts the accepted sine/cosine, look-at and
+perspective producers from Decomp `17e07534`. `graphics-imports.json` retains
+their original source baselines. IEEE bit inspection uses memcpy rather than
+target pointer aliasing; float/double evaluation order and original Rev 0
+coefficient values are retained under the existing strict floating-point build.
+Invalid camera input leaves output matrices unchanged.
+
+Actor/channel/sprite rotations and mode-zero CPU projection call the recovered
+sine/cosine. SceneCamera uses the recovered float view and perspective matrices
+for point/plane projection. Picking inverts the actual rounded basis and its
+translation; it does not assume the rounded basis remains exactly orthonormal.
+Desktop plane clipping and rasterization remain host implementations. The
+remaining atan/atan2/tan services, iris math and RSP/FCSR behavior are not covered
+by this adoption.
+
+`graphics_math_tests` compares 2,066 trig inputs, 72 camera-matrix pairs and 54
+rotations against original ROM instructions with the original coefficients;
+all float result bits match. The reference includes 214 host-libm differences.
+It also checks actual camera projection, non-unit up vectors, picking round trips,
+plane homographies and invalid-input rollback. Updated actor/channel/sprite/
+image/stage references execute original sine/cosine instead of supplying host
+results. The 732 world-actor cases (2,196 packed matrices), 468 mode-zero cases,
+and 300 channel matrices report zero fixed-point difference. This does not claim
+pixel-identical console rendering.
+
 ## Persistent Testing assignments and automatic builds (October 16)
 
 Testing keeps mission-army selection separate from complete-save assignment. The

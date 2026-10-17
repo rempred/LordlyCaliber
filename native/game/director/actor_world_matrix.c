@@ -1,6 +1,7 @@
 /* Portable reconstruction from original assembly at Decomp62cc7ef4:
  * ROM2A9AD0,2AA1EC,29D158,29D1B8 and resident11170/2CB50.
- * Host trigonometry replaces target libm. Not accepted matching C. */
+ * Rotations use recovered sine/cosine via scene_matrix; atan/atan2 remain
+ * host services. This complete module is not accepted matching C. */
 #include "actor_world_matrix.h"
 #include "scene_matrix.h"
 #include <math.h>

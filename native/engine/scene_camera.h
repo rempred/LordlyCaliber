@@ -31,8 +31,9 @@ struct CameraPlane {
     std::array<double, 9> mapping{};
     QVector<QPointF> clip;
 };
-// Floating desktop projection. Native 16.16 object matrices are decoded when
-// supplied; this does not emulate RSP clipping, rasterization or depth precision.
+// Recovered float camera/projection math followed by desktop clipping/drawing.
+// Native 16.16 object matrices are decoded when supplied; this does not emulate
+// RSP clipping, rasterization or depth precision.
 class SceneCamera {
   public:
     explicit SceneCamera(QByteArray bank, float modelScale);
@@ -56,14 +57,16 @@ class SceneCamera {
   private:
     SceneCamera() = default;
     void prepare();
+    SceneVector viewPoint(SceneVector world) const;
+    SceneVector inverseViewVector(SceneVector point) const;
     CameraPoint projectWorld(SceneVector world) const;
     QByteArray bank_;
     float modelScale_ = 1;
     bool orthographic_ = false;
-    std::array<float, 16> clipMatrix_{};
+    std::array<float, 16> clipMatrix_{}, viewMatrix_{};
     SceneVector eye_, back_, right_, up_;
-    double aspect_ = 0;
-    float near_ = 0, far_ = 0, focal_ = 0;
+    double projectionX_ = 0, projectionY_ = 0;
+    float near_ = 0, far_ = 0;
 };
 class SceneCameras {
   public:

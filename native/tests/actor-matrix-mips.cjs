@@ -1,6 +1,6 @@
 'use strict';
 // Complete original mode-zero Actor main/shadow matrix construction.
-// Host trigonometry and memory copy only; no projection or matrix results supplied.
+// Original sine/cosine execute; only atan2 and memory copy are supplied.
 const fs=require('node:fs'),assert=require('node:assert/strict'),{FloatMips}=require('./float-mips.cjs');
 class ActorMatrixMips extends FloatMips {
  exec(pc,next){
@@ -24,8 +24,7 @@ for(const [a,b] of [[0x2ae654,0x2aeaa8],[0x2aeb48,0x2aefb8]])m.load(a+0x7ff8b200
 for(const [ram,offset,size] of [[0x800abae0,0x3bee0,4],[0x800a9880,0x39c80,4],[0x800aa750,0x3ab50,4],[0x800ae890,0x3ec90,112],
  [0x802391b0,0x2a89e0,112],[0x80239330,0x2a8b60,32],[0x80243c00,0x2b8a00,120]])m.load(ram,rom.subarray(offset,offset+size));
 m.trap(0x80080998,c=>{const destination=c.get('a0'),source=c.get('a1'),size=c.get('a2');assert.equal(size,64);c.load(destination,Buffer.from(c.ram.subarray(c.phys(source),c.phys(source)+size)));});
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
-m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
 const root=0x80300000,actor=0x80303000,channel=0x80303200,sp=0x803ffe00,output=0x80310000;
 const memory=(p,n)=>Buffer.from(m.ram.subarray(m.phys(p),m.phys(p)+n));
@@ -62,4 +61,4 @@ for(const {eye,position,angles,scale,probeAspect,facing,rotation,flags} of input
  cases.push({probeAspect,camera:camera.toString('hex'),actor:initial.toString('hex'),channel:transform.toString('hex'),prepass,result:result.toString('hex')});
 }
 fs.writeFileSync(process.argv[3],JSON.stringify({cases}));
-console.log(`Original actor main/shadow matrices: ${cases.length} camera/position/rotation/scale cases; trig and copy controlled; complete function and balanced stack.`);
+console.log(`Original actor main/shadow matrices: ${cases.length} camera/position/rotation/scale cases; atan2 and copy controlled; complete function and balanced stack.`);

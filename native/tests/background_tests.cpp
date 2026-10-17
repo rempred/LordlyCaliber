@@ -263,7 +263,11 @@ class BackgroundTests : public QObject {
         QCOMPARE(bg.requests[0].images, SceneImages::environment(rom, 34));
         auto edited = scene;
         edited.program.commands[0].operands[0] = 57;
-        QCOMPARE(SceneImages::backgrounds(rom, edited).mode, -1);
+        // Qualified fresh world scenes retain their launch mode after a
+        // selector edit; preview identity no longer depends on the old hash.
+        const auto changedBackground = SceneImages::backgrounds(rom, edited);
+        QCOMPARE(changedBackground.mode, 2);
+        QCOMPARE(changedBackground.requests[0].images, SceneImages::environment(rom, 57));
         const auto override = SceneImages::backgrounds(rom, edited, 2);
         QCOMPARE(override.requests[0].images, SceneImages::environment(rom, 57));
     }

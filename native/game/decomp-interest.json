@@ -8,8 +8,18 @@
       "symbols": ["func_00020d40", "func_00022720", "func_000228d0", "func_00022e90", "func_00023018", "func_00028740"],
       "editorFiles": ["game/director/scene_matrix.c", "engine/scene_camera.cpp", "game/accepted/library-imports.json"],
       "editorUse": "imported",
-      "benefit": "Matching references for existing reconstructed preview matrices and camera calculations when rendering work resumes. Intake alone does not change preview output.",
+      "symbolUses": {"func_00020d40": "adapted", "func_00022720": "adapted", "func_00022e90": "adapted"},
+      "benefit": "Preview cameras and actor/channel rotations use the recovered look-at, perspective and rotation calculations with the game's sine/cosine. Packed wrappers and concatenation remain available as references.",
       "preserve": "Keep complete producers, target float operation order and external math/data dependencies. Adapt and compare at the host boundary before replacing existing portable code."
+    },
+    {
+      "id": "accepted-library-trigonometry", "priority": 1,
+      "behavior": "Original sine and cosine for preview transforms",
+      "symbols": ["sinf", "func_00020bf0"],
+      "editorFiles": ["game/director/graphics_math.c", "game/director/scene_matrix.c", "game/director/actor_matrices.c", "engine/scene_camera.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Camera projection and actor/channel rotations use the recovered float math instead of host sine/cosine, preserving the original range reduction and polynomial rounding.",
+      "preserve": "Use memcpy for IEEE representation access, retain float/double operation order and Rev 0 coefficient values, and keep invalid camera edits atomic. Host atan/atan2/tan and desktop rasterization remain separate."
     },
     {
       "id": "accepted-library-audio", "priority": 3,

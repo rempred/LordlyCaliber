@@ -2,7 +2,7 @@
 const fs=require('node:fs'),assert=require('node:assert/strict'),{FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
-// Exact constructor/mask code. Allocation and host trigonometry are controlled.
+// Exact constructor/mask code. Only allocation and atan2 are controlled.
 m.load(0x8023d4a4,rom.subarray(0x2b22a4,0x2b2868));
 m.load(0x8023e500,rom.subarray(0x2b3300,0x2b3704));
 m.load(0x80240244,rom.subarray(0x2b5044,0x2b506c));
@@ -11,8 +11,7 @@ m.load(0x801be9a8,rom.subarray(0x201e38,0x201f00));
 for(const [a,b]of [[0x22e90,0x231b0],[0x28740,0x29160]])m.load(a+0x8006fc00,rom.subarray(a,b));
 m.load(0x800aa750,rom.subarray(0x3ab50,0x3ab54));
 m.load(0x80243c98,rom.subarray(0x2b8a98,0x2b8ae8));
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
-m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
 const context=0x80300000,root=0x80302000,source=0x80310000,processed=0x80380000,sp=0x803ffe00;
 const read=(p,n)=>Buffer.from(m.ram.subarray(m.phys(p),m.phys(p)+n));

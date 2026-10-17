@@ -1,6 +1,6 @@
 'use strict';
 // Complete original mode-two camera basis and Actor matrices, including both
-// shadow branches and point-light helpers. Only trig and terrain are controlled.
+// shadow branches and point-light helpers. Only atan/atan2 and terrain are controlled.
 const fs=require('node:fs'),assert=require('node:assert/strict'),{FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
@@ -10,8 +10,7 @@ for(const [a,b] of [[0x29d158,0x29d2b4],[0x29eab0,0x29eafc]])m.load(a+0x7ff907d0
 m.load(0x8023a370,rom.subarray(0x2a9ad0,0x2aa3b0));
 for(const [ram,offset,size] of [[0x800aa750,0x3ab50,4],[0x800ae400,0x3e800,8],
  [0x8023ec10,0x2ae370,64],[0x80239220,0x2a8a50,16]])m.load(ram,rom.subarray(offset,offset+size));
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
-m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
 m.trap(0x8009cfb0,c=>c.setSingle(0,Math.atan(c.single(12))));
 const root=0x80300000,actor=0x80303000,basis=0x80304000,scale=0x80304100,cameraAt=0x80304200,attachment=0x80304300,sp=0x803ffe00;
@@ -48,4 +47,4 @@ for(const input of inputs){
  cases.push({camera:camera.toString('hex'),actor:initial.toString('hex'),point,planar,depth,terrain,result:result.toString('hex')});
 }
 fs.writeFileSync(process.argv[3],JSON.stringify({cases}));
-console.log(`Original mode-two camera/main/two-shadow matrices: ${cases.length} cases; only trig and terrain controlled.`);
+console.log(`Original mode-two camera/main/two-shadow matrices: ${cases.length} cases; only atan/atan2 and terrain controlled.`);

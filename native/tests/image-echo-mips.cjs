@@ -19,7 +19,7 @@ m.load(0x8023e500,rom.subarray(0x2b3300,0x2b3d30));
 m.load(0x8024049c,rom.subarray(0x2b529c,0x2b555c));
 for(const [a,b]of [[0x22e90,0x231b0],[0x28740,0x29160]])m.load(a+0x8006fc00,rom.subarray(a,b));
 m.load(0x800aa750,rom.subarray(0x3ab50,0x3ab54));m.load(0x80243c98,rom.subarray(0x2b8a98,0x2b8ae8));
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
 const context=0x80300000,root=0x80302000,channel=0x80305000,heap=0x80306000,sp=0x803ffe00;
 const read=(p,n)=>Buffer.from(m.ram.subarray(m.phys(p),m.phys(p)+n));

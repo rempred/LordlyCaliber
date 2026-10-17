@@ -1,5 +1,11 @@
 # Feature inventory and completion tracking
 
+Actor, sprite and scene previews use recovered game sine/cosine and camera math
+for rotations and projection. Point placement, plane clipping and mouse picking
+share the same rounded camera basis. Original-instruction comparisons cover
+trigonometry, camera matrices and actor/channel/shadow transforms. Desktop
+rasterization and remaining host math services retain their existing limits.
+
 Classes → Combat includes leader affinity
 strengths for the four native member groups, their class names and a live score
 multiplier example. Default-current-class links identify shared values. Edits,

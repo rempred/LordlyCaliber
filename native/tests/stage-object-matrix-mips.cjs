@@ -1,6 +1,6 @@
 'use strict';
 // Complete original object callback with a controlled empty art lookup. Camera
-// basis, RPY and packing execute; libm and the unrelated variant lookup supplied.
+// basis, RPY, sine/cosine and packing execute; atan2 and variant lookup supplied.
 const fs=require('node:fs'),assert=require('node:assert/strict'),{FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
@@ -9,8 +9,7 @@ m.load(0x8023aa8c,rom.subarray(0x2aa1ec,0x2aa3b0));
 for(const [a,b] of [[0x22e90,0x231b0],[0x28be0,0x28da0]])m.load(a+0x8006fc00,rom.subarray(a,b));
 m.load(0x800aa750,rom.subarray(0x3ab50,0x3ab54));
 m.load(0x8023ec10,rom.subarray(0x2ae370,0x2ae3b0));
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
-m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 m.trap(0x8009cfe0,c=>c.setSingle(0,Math.atan2(c.single(12),c.single(14))));
 m.trap(0x801c8fb8,c=>c.set('v0',0));m.trap(0x801c2224,c=>c.set('v0',2));
 m.trap(0x801c2178,c=>c.set('v0',0));

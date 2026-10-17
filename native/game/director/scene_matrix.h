@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* Row-vector matrices. Host trigonometry replaces the N64 math library. */
+/* Row-vector matrices. Rotations use the recovered N64 sine/cosine routines. */
 void lordly_matrix_identity(float out[16]);
 void lordly_matrix_rotation(float out[16], float x, float y, float z, float radians);
 void lordly_matrix_translate(float out[16], float x, float y, float z);

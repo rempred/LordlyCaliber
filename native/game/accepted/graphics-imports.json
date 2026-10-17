@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "upstream": "OB64 Decomp",
+  "verifiedAt": "2026-10-17T08:35:26.313Z",
+  "fingerprint": "171A02BF4899C1E710A9F6EFE56B8C6110AFAA04171E953E1A2CB27535A3434A",
+  "purpose": "Baselines for portable preview graphics math; original source bytes remain in the accepted library. See game/director/graphics_math.c and decomp-interest.json for actual adopted functions.",
+  "imports": [
+    {
+      "source": "src/lib/sinf_000231b0.c",
+      "revision": "17e07534b545d4c4d5c246961b4e71e1dd164627",
+      "sourceSha256": "1CD17E79D9F43F1E1E67471B5FCC0F15427AFA335F934C8CDAC9F15C059A32CF",
+      "file": "game/accepted/library/src/lib/sinf_000231b0.c",
+      "symbols": [
+        "sinf"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/cosf_00020bf0.c",
+      "revision": "17e07534b545d4c4d5c246961b4e71e1dd164627",
+      "sourceSha256": "C2A70F027EC85E024F6519E3EAC21AEF89FDE94B1468C2FCA4A78969872448F7",
+      "file": "game/accepted/library/src/lib/cosf_00020bf0.c",
+      "symbols": [
+        "func_00020bf0"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/lookat_f_00020d40.c",
+      "revision": "17e07534b545d4c4d5c246961b4e71e1dd164627",
+      "sourceSha256": "965743049ABEE5A8E5A907C5E65AC68AE08B78F11635D98C3CA74AA9BDE0BDFC",
+      "file": "game/accepted/library/src/lib/lookat_f_00020d40.c",
+      "symbols": [
+        "func_00020d40"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/perspective_00022720.c",
+      "revision": "17e07534b545d4c4d5c246961b4e71e1dd164627",
+      "sourceSha256": "FD532DD17CE319FFE4E66D10656608A6A9265FF2909A0EFB5382140E3549CC7E",
+      "file": "game/accepted/library/src/lib/perspective_00022720.c",
+      "symbols": [
+        "func_00022720",
+        "func_000228d0"
+      ],
+      "dependencies": []
+    },
+    {
+      "source": "src/lib/rotaterpy_00022e90.c",
+      "revision": "17e07534b545d4c4d5c246961b4e71e1dd164627",
+      "sourceSha256": "D5685BD927647286C6FD4822D08A7B80D54DBD084C1E8FBD59C8B8E437C0800A",
+      "file": "game/accepted/library/src/lib/rotaterpy_00022e90.c",
+      "symbols": [
+        "func_00022e90",
+        "func_00023018"
+      ],
+      "dependencies": []
+    }
+  ]
+}

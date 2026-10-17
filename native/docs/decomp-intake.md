@@ -31,6 +31,12 @@ All 24 fixture checks, the registered CTest, the 19 new interest entries and the
 real source-selection audit passed for this intake. Native application behavior
 was not changed, so no application rebuild or emulator test was required.
 
+Joe subsequently authorized preview adoption from this batch. Sine/cosine,
+look-at, perspective and RPY rotation now have active portable consumers;
+`game/accepted/graphics-imports.json` records their baselines independently of
+the library. See [the graphics math architecture note](architecture.md) and the
+per-function interest statuses; packed wrappers remain available references.
+
 ## Source selection and lookup
 
 The [native source-selection audit](source-selection-audit.md) records the actual
@@ -70,7 +76,8 @@ Omit `--match` for the full list. `--json` gives structured output; without
 are available and whose listed consumer is reconstructed, partial or a candidate.
 It means ready to assess for integration, not safe to copy directly into PC code.
 `adapted` and `original` consumers remain visible in the full list. For sources
-recorded in `game/accepted/animation-imports.json` or `gameplay-imports.json`, a newer verified source identity
+recorded in `game/accepted/animation-imports.json`, `gameplay-imports.json` or
+`graphics-imports.json`, a newer verified source identity
 is marked **upstream changed** and returns to `--ready`. `companion` marks an empty
 helper retained with its coupled source, rather than a missing editor feature.
 Imports with recorded dependencies also detect changes to included C and headers,

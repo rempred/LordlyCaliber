@@ -1,9 +1,11 @@
 /* Portable reconstruction of ROM 22E90 (RPY), 28CA0 (packing), 28DA0
  * (concatenation), 28F60/29100 (scale/translation), and mode-zero ROM 2AFA68.
- * Reference: Decomp 62cc7ef4 original assembly. Not accepted matching C.
- * Matrix operation order and float widths are retained. Host sin/cos/tan
- * replace the target math library; this is not RSP rasterization. */
+ * RPY now follows accepted Decomp 17e07534 rotaterpy_00022e90.c and uses
+ * the recovered sine/cosine implementation. Remaining composition follows
+ * the original assembly reference at 62cc7ef4; tan remains a host service.
+ * This portable adaptation is not RSP rasterization. */
 #include "scene_matrix.h"
+#include "graphics_math.h"
 #include <math.h>
 #include <string.h>
 static float read_real(const uint8_t *p) {
@@ -17,9 +19,9 @@ void lordly_matrix_identity(float out[16]) {
     out[0] = out[5] = out[10] = out[15] = 1.f;
 }
 void lordly_matrix_rotation(float out[16], float x, float y, float z, float radians) {
-    const float sx = sinf(x * radians), cx = cosf(x * radians);
-    const float sy = sinf(y * radians), cy = cosf(y * radians);
-    const float sz = sinf(z * radians), cz = cosf(z * radians);
+    const float sx = lordly_graphics_sin(x * radians), cx = lordly_graphics_cos(x * radians);
+    const float sy = lordly_graphics_sin(y * radians), cy = lordly_graphics_cos(y * radians);
+    const float sz = lordly_graphics_sin(z * radians), cz = lordly_graphics_cos(z * radians);
     const float cxsy = cx * sy, sxsy = sx * sy;
     lordly_matrix_identity(out);
     out[0] = cy * cz;

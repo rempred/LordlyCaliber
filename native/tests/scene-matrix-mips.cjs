@@ -1,6 +1,6 @@
 'use strict';
 // Original matrix composition and packing, using current-ROM constants.
-// Host trigonometric services are supplied explicitly; this does not verify libm.
+// Original sine/cosine execute; tangent remains an explicit host service.
 const fs=require('node:fs'),assert=require('node:assert/strict'),{FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
@@ -11,8 +11,7 @@ m.load(0x80098340,rom.subarray(0x28740,0x287c0));
 m.load(0x80243c60,rom.subarray(0x2b8a60,0x2b8a78));
 m.load(0x800aa750,rom.subarray(0x3ab50,0x3ab54));
 m.trap(0x8009cc10,c=>c.setDouble(0,Math.tan(c.double(12))));
-m.trap(0x80092db0,c=>c.setSingle(0,Math.sin(c.single(12))));
-m.trap(0x800907f0,c=>c.setSingle(0,Math.cos(c.single(12))));
+require('./graphics-math-reference.cjs').loadGraphicsMath(m,rom);
 const root=0x80300000,base=0x80302000,sp=0x803ffe00;
 const memory=(p,n)=>Buffer.from(m.ram.subarray(m.phys(p),m.phys(p)+n));
 const cases=[];
@@ -40,4 +39,4 @@ for(const fov of [30,45,90])for(const count of [1,4,20]){
  cases.push({camera:camera.toString('hex'),count,layers,initial:Buffer.concat(initial).toString('hex'),result:Buffer.concat(result).toString('hex')});
 }
 fs.writeFileSync(process.argv[3],JSON.stringify({cases}));
-console.log(`Original channel matrices: ${cases.length} camera/count cases, ${cases.reduce((n,c)=>n+c.count,0)} matrices; only trig services supplied.`);
+console.log(`Original channel matrices: ${cases.length} camera/count cases, ${cases.reduce((n,c)=>n+c.count,0)} matrices; only tangent supplied.`);

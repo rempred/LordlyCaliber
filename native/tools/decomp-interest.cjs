@@ -30,7 +30,7 @@ function main(args) {
   if (catalog.schemaVersion !== 1) throw Error('Unsupported interest catalog schema');
   const imported = new Map(), library = new Map();
   // A full source refresh must not replace the baseline of an active adaptation.
-  for (const manifest of ['library-imports.json', 'animation-imports.json', 'gameplay-imports.json']) {
+  for (const manifest of ['library-imports.json', 'animation-imports.json', 'gameplay-imports.json', 'graphics-imports.json']) {
     const importsFile = path.join(native, 'game/accepted', manifest);
     if (fs.existsSync(importsFile))
       for (const entry of read(importsFile).imports)

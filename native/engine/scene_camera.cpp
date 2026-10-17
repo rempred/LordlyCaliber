@@ -1,8 +1,8 @@
 #include "engine/scene_camera.h"
 #include "game/director/scene_matrix.h"
+#include "game/director/graphics_math.h"
 #include <bit>
 #include <cmath>
-#include <numbers>
 namespace lordly {
 namespace {
 float real(const QByteArray &b, int at) {
@@ -72,13 +72,34 @@ void SceneCamera::prepare() {
         real(bank_, 16) <= 0 || (eye - target).length() < 1e-6 ||
         cross(up, eye - target).length() < 1e-6)
         throw Error("Camera view or clipping planes are degenerate");
-    eye_ = eye;
-    aspect_ = aspect;
-    back_ = (eye - target) / (eye - target).length();
-    right_ = cross(up, back_);
-    right_ = right_ / right_.length();
-    up_ = cross(back_, right_);
-    focal_ = float(120.0 / std::tan(double(fov) * std::numbers::pi / 360.0));
+    float values[14];
+    for (int i = 0; i < 14; ++i)
+        values[i] = real(bank_, i * 4);
+    if (!lordly_graphics_look_at(viewMatrix_.data(), values + 5, values + 8, values + 11) ||
+        !lordly_graphics_perspective(clipMatrix_.data(), fov, aspect, near_, far_, values[4]))
+        throw Error("Camera matrices exceed the native floating-point range");
+    right_ = {viewMatrix_[0], viewMatrix_[4], viewMatrix_[8]};
+    up_ = {viewMatrix_[1], viewMatrix_[5], viewMatrix_[9]};
+    back_ = {viewMatrix_[2], viewMatrix_[6], viewMatrix_[10]};
+    // Use the actual inverse of the rounded basis, including its rounded
+    // translation, so mouse picking remains the inverse of displayed positions.
+    eye_ = inverseViewVector({-viewMatrix_[12], -viewMatrix_[13], -viewMatrix_[14]});
+    projectionX_ = 160.0 * clipMatrix_[0] / -clipMatrix_[11];
+    projectionY_ = 120.0 * clipMatrix_[5] / -clipMatrix_[11];
+    if (!finite(eye_) || !std::isfinite(projectionX_) || !std::isfinite(projectionY_) ||
+        projectionX_ <= 0 || projectionY_ <= 0)
+        throw Error("Camera projection is degenerate");
+}
+SceneVector SceneCamera::viewPoint(SceneVector world) const {
+    return {dot(world, right_) + viewMatrix_[12], dot(world, up_) + viewMatrix_[13],
+            dot(world, back_) + viewMatrix_[14]};
+}
+SceneVector SceneCamera::inverseViewVector(SceneVector point) const {
+    const auto yz = cross(up_, back_), zx = cross(back_, right_), xy = cross(right_, up_);
+    const auto determinant = dot(right_, yz);
+    if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12)
+        throw Error("Camera view matrix is singular");
+    return (yz * point.x + zx * point.y + xy * point.z) / determinant;
 }
 void SceneCamera::select(const QVector<quint32> &args) {
     if (orthographic_)
@@ -104,19 +125,19 @@ CameraPoint SceneCamera::projectWorld(SceneVector world) const {
             throw Error("Orthographic projection overflow");
         return {screen, float(-world.z), 120 * m[5], z >= -1 && z <= 1};
     }
-    const auto relative = world - eye_;
-    const double depth = -dot(relative, back_);
+    const auto viewed = viewPoint(world);
+    const double depth = -viewed.z;
     CameraPoint result;
     result.depth = float(depth);
     if (std::abs(depth) < 1e-8)
         return result;
-    result.screen = {160.0 + dot(relative, right_) * (double(focal_) * 4.0 / 3.0) / aspect_ / depth,
-                     120.0 - dot(relative, up_) * focal_ / depth};
+    result.screen = {160.0 + viewed.x * projectionX_ / depth,
+                     120.0 - viewed.y * projectionY_ / depth};
     if (!std::isfinite(result.screen.x()) || !std::isfinite(result.screen.y()))
         throw Error("Camera projection overflow");
     result.visible = result.depth >= near_ && result.depth <= far_;
     if (result.depth > 0)
-        result.pixelsPerUnit = modelScale_ * focal_ / result.depth;
+        result.pixelsPerUnit = float(modelScale_ * projectionY_ / result.depth);
     return result;
 }
 CameraPoint SceneCamera::project(SceneVector point) const {
@@ -161,11 +182,10 @@ CameraPlane SceneCamera::projectPackedPlane(const QByteArray &matrix, SceneVecto
                 throw Error("Orthographic plane projection overflow");
             return result;
         }
-        const auto relative = world - eye_;
-        const auto depth = -dot(relative, back_);
-        const SceneVector result{160 * depth +
-                                     dot(relative, right_) * (double(focal_) * 4 / 3) / aspect_,
-                                 120 * depth - dot(relative, up_) * focal_, depth};
+        const auto viewed = viewPoint(world);
+        const auto depth = -viewed.z;
+        const SceneVector result{160 * depth + viewed.x * projectionX_,
+                                 120 * depth - viewed.y * projectionY_, depth};
         if (!finite(result))
             throw Error("Camera plane projection overflow");
         return PlaneVertex{result, depth};
@@ -223,9 +243,8 @@ SceneVector SceneCamera::unprojectAtHeight(QPointF screen, double height) const 
         throw Error("Screen-space projection has no ray through a world-height plane");
     if (!std::isfinite(screen.x()) || !std::isfinite(screen.y()) || !std::isfinite(height))
         throw Error("Invalid screen coordinate");
-    const auto direction =
-        right_ * ((screen.x() - 160.0) * aspect_ / (double(focal_) * 4.0 / 3.0)) +
-        up_ * ((120.0 - screen.y()) / focal_) - back_;
+    const auto direction = inverseViewVector({(screen.x() - 160.0) / projectionX_,
+                                              (120.0 - screen.y()) / projectionY_, -1});
     if (std::abs(direction.y) < 1e-8)
         throw Error("View ray is parallel to the selected height plane");
     const auto result =
