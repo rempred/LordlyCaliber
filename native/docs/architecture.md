@@ -1485,7 +1485,28 @@ checks continuous/finite loop metadata, tiny scaled output and cancellation.
 PNG decoding of the first APNG frame and unchanged project/undo history. The static
 comparison checks dimensions and RGBA bytes independently of color-space metadata;
 the APNG explicitly declares sRGB. Transparent animation export uses APNG; the
-native app does not currently emit WebM.
+Combat animations also exports WebM through an optional installed FFmpeg, as
+described below.
+
+### Combat frame exports and class search
+
+The guided class picker uses QCompleter's filtered popup instead of inline
+completion and retains its model during result activation. Incomplete input
+continues to disable editing and exporting. PNG and WebM use the same
+`poseAsset()` frame list as the thumbnails, including current private artwork,
+equipment and common bounds. PNG exports the selected card. WebM holds each
+authored frame for its duration at 30 Hz (minimum one tick), once; runtime motion,
+material instructions, loops and sound are outside this frame-list export.
+
+The existing sprite-video API adds an optional WebM encoder: installed FFmpeg on
+PATH receives RGBA frames through a bounded pipe and writes VP9 with alpha to a
+temporary file. No codec is downloaded or bundled. A background export keeps the
+UI responsive; cancellation stops only that encoder, and atomic replacement
+preserves existing output on cancellation or failure. VP9 lossless mode preserves
+the encoded YUV/alpha planes; RGB-to-YUV420 conversion can change colors. See the
+[FFmpeg libvpx options](https://ffmpeg.org/ffmpeg-codecs.html#libvpx).
+Independent decoding covers alpha, order, timing, repeat counts and odd sizes;
+the real-ROM UI check covers search activation, current edits and Undo isolation.
 
 ## Sprite video export
 

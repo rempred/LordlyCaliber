@@ -8,6 +8,7 @@
 #include <QGridLayout>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QScopedValueRollback>
 #include <QSet>
@@ -46,6 +47,10 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     classes_ = combo("combatAnimationClass", "Class", 0);
     classes_->setEditable(true); classes_->setInsertPolicy(QComboBox::NoInsert);
     classes_->completer()->setFilterMode(Qt::MatchContains);
+    classes_->completer()->setCompletionMode(QCompleter::PopupCompletion);
+    classes_->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+    classes_->lineEdit()->setPlaceholderText("Search class name or ID…");
+    classes_->lineEdit()->setClearButtonEnabled(true);
     actions_ = combo("combatAnimationAction", "Action", 1);
     side_ = combo("combatAnimationSide", "Side", 2); side_->addItems({"Player", "Enemy"});
     mode_ = combo("combatAnimationMode", "Mode", 3);
@@ -125,9 +130,22 @@ void CombatAnimationEditor::refresh(bool assigned) {
         const int id = classes_->currentIndex() < 0 ? 2 : classId();
         const int previousAction = actions_->currentIndex() < 0 ? -999 : actions_->currentData().toInt();
         const int previousPose = animations_->currentData().toInt();
-        classes_->clear();
-        for (const auto &row : project_->records(Table::Classes))
-            if (row.id) classes_->addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
+        // Keep the completion model alive while Qt activates a search result.
+        // Rebuild only when the actual class catalog changes (for example after Undo).
+        const auto catalog = project_->records(Table::Classes);
+        bool changed = false;
+        int index = 0;
+        for (const auto &row : catalog) {
+            if (!row.id) continue;
+            if (classes_->itemData(index).toInt() != row.id ||
+                classes_->itemText(index) != QString("%1 · %2").arg(row.id).arg(row.name)) changed = true;
+            ++index;
+        }
+        if (changed || classes_->count() != index) {
+            classes_->clear();
+            for (const auto &row : catalog)
+                if (row.id) classes_->addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
+        }
         classes_->setCurrentIndex(std::max(0, classes_->findData(id)));
         actions_->clear();
         const auto names = actionNames();

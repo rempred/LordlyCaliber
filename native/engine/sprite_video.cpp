@@ -20,9 +20,9 @@
 namespace lordly {
 SpriteVideoPlan spriteVideoPlan(const SpriteAsset &asset, const SpriteVideoOptions &options) {
     asset.validate();
-    const bool alpha = options.format == SpriteVideoFormat::AnimatedPng;
+    const bool alpha = options.format == SpriteVideoFormat::AnimatedPng || options.format == SpriteVideoFormat::Webm;
     if ((!alpha && options.format != SpriteVideoFormat::Mp4) || options.scale < 1 ||
-        options.scale > 16 || options.repeats < (alpha ? 0 : 1) || options.repeats > 100 ||
+        options.scale > 16 || options.repeats < (options.format == SpriteVideoFormat::AnimatedPng ? 0 : 1) || options.repeats > 100 ||
         (!alpha && (!options.background.isValid() || options.background.alpha() != 255)))
         throw Error("Invalid animation export scale, play count, format or background");
     SpriteVideoPlan plan;
@@ -123,6 +123,8 @@ bool exportSpriteVideo(const SpriteAsset &asset, const QString &path,
         return false;
     if (options.format == SpriteVideoFormat::AnimatedPng)
         return exportSpriteAnimatedPng(asset, path, options, progress);
+    if (options.format == SpriteVideoFormat::Webm)
+        return exportSpriteWebm(asset, path, options, progress);
 #ifdef Q_OS_WIN
     ComSession com;
     MediaApi api;

@@ -364,6 +364,11 @@ remain under Advanced animations. Normal assignments retain the existing modes0/
 patch semantics; Blocked is mode2. Linked fixed motions copy both component
 programs. Preview selection does not modify the project, and incomplete class
 searches disable editing instead of leaving the prior class active.
+Class searches show case-insensitive substring matches by name or decimal ID.
+The tab exports selected-frame PNGs and a single pass through the displayed frame
+sequence as transparent WebM at authored timing. Exports include project artwork
+edits and equipment, and leave project/Undo state unchanged. WebM uses an installed
+FFmpeg (`libvpx-vp9`) on PATH; movement instructions, loops and sound are excluded.
 The animation choices contain combat selector targets and the fixed combat
 motions, including private attack assignments; unrelated bank poses are excluded.
 Action descriptions are edited from Classes rather than this animation page.

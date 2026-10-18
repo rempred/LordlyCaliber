@@ -8,6 +8,10 @@
 #include "engine/actor_pose.h"
 #include "engine/animation_transfer.h"
 #include "engine/sprite_object.h"
+#include "engine/sprite_sources.h"
+#include <QCompleter>
+#include <QProcess>
+#include <QStandardPaths>
 #include "rebuild/compiler.h"
 #include <QApplication>
 #include <QCheckBox>
@@ -35,6 +39,104 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void combatSearchAndExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1300, 900);
+            editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            auto sequence = editor.findChild<AnimationSequenceEditor *>();
+            auto frames = editor.findChild<QListWidget *>("sequenceFrames");
+            const auto baseline = project.manifest();
+            classes->setCurrentIndex(classes->findData(2));
+            auto edit = classes->lineEdit();
+            edit->setFocus();
+            edit->selectAll();
+            QTest::keyClicks(edit, "KYR");
+            auto popup = classes->completer()->popup();
+            QTRY_VERIFY(popup->isVisible());
+            QVERIFY(popup->model()->rowCount() > 0);
+            for (int i = 0; i < popup->model()->rowCount(); ++i)
+                QVERIFY(popup->model()->index(i, 0).data().toString().contains(
+                    "kyr", Qt::CaseInsensitive));
+            QVERIFY(!sequence->isEnabled());
+            // Activate a filtered result through the actual popup, not setCurrentIndex.
+            auto result = popup->model()->index(0, 0);
+            const auto chosen = result.data().toString();
+            QTest::mouseClick(popup->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              popup->visualRect(result).center());
+            QTRY_COMPARE(classes->currentText(), chosen);
+            QVERIFY(sequence->isEnabled());
+            QCOMPARE(classes->currentData().toInt(), 15);
+            edit->setFocus();
+            edit->selectAll();
+            QTest::keyClicks(edit, "no-such-class");
+            QCOMPARE(classes->completer()->completionCount(), 0);
+            QVERIFY(!sequence->isEnabled());
+            QVERIFY(!editor.findChild<QPushButton *>("sequenceExportPng")->isEnabled());
+            edit->selectAll();
+            QTest::keyClicks(edit, "123");
+            QTRY_VERIFY(popup->isVisible());
+            QTest::keyClick(popup, Qt::Key_Down);
+            QTest::keyClick(popup, Qt::Key_Return);
+            QTRY_COMPARE(classes->currentData().toInt(), 123);
+            QVERIFY(sequence->isEnabled());
+            // Clearing a query and choosing a class still restores its complete animation list.
+            edit->clear();
+            QVERIFY(!sequence->isEnabled());
+            classes->setCurrentIndex(classes->findData(2));
+            auto choices = editor.findChild<QComboBox *>("combatAnimationChoice");
+            choices->setCurrentIndex(choices->findData(40));
+            QVERIFY(frames->count() > 1);
+            frames->setCurrentRow(1);
+            QTemporaryDir work;
+            const auto png = work.filePath("selected frame.png");
+            sequence->exportFrame(png);
+            const auto art =
+                ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto expected = spriteAssetFromPose(project.rom(), art, 40, "Expected");
+            QCOMPARE(QImage(png).convertToFormat(QImage::Format_RGBA8888), expected.composite(1));
+            QVERIFY_THROWS_EXCEPTION(Error, sequence->exportFrame(path));
+            QVERIFY_THROWS_EXCEPTION(Error, sequence->exportWebm(path));
+            QCOMPARE(project.manifest(), baseline);
+            QCOMPARE(undo.count(), 0);
+            // An authored move must appear in the export and Undo must restore its pixels.
+            const int record = frames->currentItem()->data(Qt::UserRole).toInt();
+            sequence->translateFrames({{40, {record}}}, QPoint(7, 3));
+            const auto editedManifest = project.manifest();
+            const int undoCount = undo.count();
+            const auto moved = work.filePath("edited frame.png");
+            sequence->exportFrame(moved);
+            QVERIFY(QImage(moved) != QImage(png));
+            if (!QStandardPaths::findExecutable("ffprobe").isEmpty()) {
+                const auto webm = work.filePath("combat sequence.webm");
+                QVERIFY(sequence->exportWebm(webm));
+                QProcess probe;
+                probe.start(
+                    QStandardPaths::findExecutable("ffprobe"),
+                    {"-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", webm});
+                QVERIFY(probe.waitForFinished(30000));
+                QCOMPARE(probe.exitCode(), 0);
+                QCOMPARE(probe.readAllStandardOutput().trimmed(), QByteArray("vp9"));
+            }
+            QCOMPARE(project.manifest(), editedManifest);
+            QCOMPARE(undo.count(), undoCount);
+            undo.undo();
+            frames->setCurrentRow(1);
+            sequence->exportFrame(work.filePath("restored.png"));
+            QCOMPARE(QImage(work.filePath("restored.png")), QImage(png));
+            QTest::qWait(30);
+            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
+                                       "/combat-search-export.png"));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
     }

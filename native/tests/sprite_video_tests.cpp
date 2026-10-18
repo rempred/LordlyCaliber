@@ -40,6 +40,95 @@ SpriteAsset example() {
 class SpriteVideoTests : public QObject {
     Q_OBJECT
   private slots:
+    void webmSequence() {
+        const auto ffmpeg = QStandardPaths::findExecutable("ffmpeg"),
+                   probe = QStandardPaths::findExecutable("ffprobe");
+        if (ffmpeg.isEmpty() || probe.isEmpty())
+            QSKIP("FFmpeg and FFprobe required");
+        try {
+            auto asset = example();
+            asset.frames[1].layers[0].image.fill(QColor(40, 80, 120, 73));
+            const SpriteVideoOptions options{1, 2, Qt::black, SpriteVideoFormat::Webm};
+            QTemporaryDir work;
+            const auto path = work.filePath("transparent sequence.webm");
+            int latest = 0;
+            QVERIFY(exportSpriteVideo(asset, path, options, [&](int done, int total) {
+                if (done < latest || total != 12)
+                    throw Error("Invalid WebM progress");
+                latest = done;
+                return true;
+            }));
+            QCOMPARE(latest, 12);
+            const auto metadata =
+                QJsonDocument::fromJson(run(probe, {"-v", "error", "-show_streams", "-show_frames",
+                                                    "-of", "json", path}))
+                    .object();
+            const auto stream = metadata["streams"].toArray().first().toObject();
+            QCOMPARE(stream["codec_name"].toString(), QString("vp9"));
+            QCOMPARE(stream["width"].toInt(), 64);
+            QCOMPARE(stream["height"].toInt(), 64);
+            QCOMPARE(metadata["frames"].toArray().size(), 12);
+            for (int i = 0; i < 12; ++i)
+                QVERIFY(std::abs(metadata["frames"]
+                                     .toArray()[i]
+                                     .toObject()["best_effort_timestamp_time"]
+                                     .toString()
+                                     .toDouble() -
+                                 i / 30.) < .0011);
+            // FFmpeg's native VP9 decoder ignores alpha; libvpx decodes the WebM alpha plane.
+            const auto decoded = run(ffmpeg, {"-v", "error", "-c:v", "libvpx-vp9", "-i", path, "-f",
+                                              "rawvideo", "-pix_fmt", "rgba", "-"});
+            QCOMPARE(decoded.size(), 12 * 64 * 64 * 4);
+            const int sourceFrames[]{0, 1, 1, 2, 2, 2};
+            for (int i = 0; i < 12; ++i) {
+                const auto expected = asset.composite(sourceFrames[i % 6]);
+                const auto *bytes =
+                    reinterpret_cast<const uchar *>(decoded.constData()) + i * 64 * 64 * 4;
+                for (int p = 0; p < 64 * 64; ++p)
+                    QCOMPARE(bytes[p * 4 + 3], expected.constBits()[p * 4 + 3]);
+                for (int c = 0; c < 3; ++c)
+                    QVERIFY(std::abs(int(bytes[(10 * 64 + 10) * 4 + c]) -
+                                     int(expected.constBits()[(10 * 64 + 10) * 4 + c])) <= 4);
+            }
+            QFile saved(path);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            const auto original = saved.readAll();
+            saved.close();
+            QVERIFY(
+                !exportSpriteVideo(asset, path, options, [](int done, int) { return done < 2; }));
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), original);
+            saved.close();
+            // A missing encoder reports a failure without replacing a prior export.
+            const auto priorPath = qgetenv("PATH");
+            qputenv("PATH", work.path().toUtf8());
+            bool failed = false;
+            try {
+                exportSpriteVideo(asset, path, options);
+            } catch (const Error &) {
+                failed = true;
+            }
+            qputenv("PATH", priorPath);
+            QVERIFY(failed);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), original);
+            auto tiny = SpriteAsset::blank("Odd dimensions", {3, 5});
+            tiny.frames[0].layers[0].image.fill(QColor(40, 80, 120, 128));
+            const SpriteVideoOptions scaled{3, 1, Qt::black, SpriteVideoFormat::Webm};
+            QVERIFY(exportSpriteVideo(tiny, work.filePath("odd.webm"), scaled));
+            const auto odd =
+                QJsonDocument::fromJson(run(probe, {"-v", "error", "-show_streams", "-of", "json",
+                                                    work.filePath("odd.webm")}))
+                    .object()["streams"]
+                    .toArray()
+                    .first()
+                    .toObject();
+            QCOMPARE(odd["width"].toInt(), 9);
+            QCOMPARE(odd["height"].toInt(), 15);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void transparentAnimation() {
         const auto ffmpeg = QStandardPaths::findExecutable("ffmpeg"), probe = QStandardPaths::findExecutable("ffprobe");
         if (ffmpeg.isEmpty() || probe.isEmpty()) QSKIP("Independent FFmpeg decoder required for this development check");

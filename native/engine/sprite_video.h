@@ -2,7 +2,7 @@
 #include "engine/sprite_library.h"
 #include <functional>
 namespace lordly {
-enum class SpriteVideoFormat { Mp4, AnimatedPng };
+enum class SpriteVideoFormat { Mp4, AnimatedPng, Webm };
 struct SpriteVideoOptions {
     int scale = 4;
     int repeats = 1; // Animated PNG accepts zero for continuous looping.
@@ -20,4 +20,6 @@ bool exportSpriteVideo(const SpriteAsset &, const QString &path, const SpriteVid
                        const std::function<bool(int completed, int total)> &progress = {});
 bool exportSpriteAnimatedPng(const SpriteAsset &, const QString &, const SpriteVideoOptions &,
                              const std::function<bool(int, int)> &);
+bool exportSpriteWebm(const SpriteAsset &, const QString &, const SpriteVideoOptions &,
+                      const std::function<bool(int, int)> &);
 } // namespace lordly

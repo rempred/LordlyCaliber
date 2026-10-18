@@ -86,6 +86,18 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     qobject_cast<QVBoxLayout *>(layout())->addWidget(frameWorkspace_, 1);
     auto layout = new QVBoxLayout(frameWorkspace_);
     layout->setContentsMargins(0, 0, 0, 0);
+    auto exports = new QHBoxLayout;
+    auto png = new QPushButton("Export Frame PNG…");
+    png->setObjectName("sequenceExportPng");
+    png->setToolTip("Save the selected frame, including equipment and project edits, on a transparent background.");
+    auto webm = new QPushButton("Export Sequence WebM…");
+    webm->setObjectName("sequenceExportWebm");
+    webm->setToolTip("Save one pass through the displayed frames at their authored timing, with transparency. "
+                     "Game movement, loops and sound are not included. Requires FFmpeg on PATH.");
+    exports->addWidget(png); exports->addWidget(webm); exports->addStretch();
+    layout->addLayout(exports);
+    connect(png, &QPushButton::clicked, this, [this] { guarded([this] { chooseFrameExport(); }); });
+    connect(webm, &QPushButton::clicked, this, [this] { guarded([this] { chooseWebmExport(); }); });
     auto split = new QSplitter;
     split->setObjectName("sequenceFrameSplit");
     split->setChildrenCollapsible(false);
@@ -396,6 +408,8 @@ void AnimationSequenceEditor::updateFrameTools() {
     durationTyped_ = false;
     const auto selected = selectedFrameRecords();
     const int index = frames_->currentRow();
+    findChild<QPushButton *>("sequenceExportPng")->setEnabled(index >= 0);
+    findChild<QPushButton *>("sequenceExportWebm")->setEnabled(frames_->count() > 0);
     duration_->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDuplicate")->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDelete")->setEnabled(!selected.isEmpty());

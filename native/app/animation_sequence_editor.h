@@ -29,6 +29,8 @@ class AnimationSequenceEditor : public QWidget {
     void setGuided(bool);
     void assignAnimation(int action, bool blocked, int pose);
     void moveVisibleFrame(int from, int to);
+    void exportFrame(const QString &path) const;
+    bool exportWebm(const QString &path);
 
   private:
     void refresh();
@@ -45,6 +47,8 @@ class AnimationSequenceEditor : public QWidget {
     void edit(const QString &, const std::function<void(PoseBank &, int, int)> &);
     AnimationSequences editableSequences();
     void buildFrameWorkspace();
+    void chooseFrameExport();
+    void chooseWebmExport();
     void refreshFrames();
     void selectVisibleFrames();
     void updateFrameTools();

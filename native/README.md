@@ -40,6 +40,13 @@ filters. Choosing an animation only previews it; **Assign** applies it. Normal
 assignments cover game modes0 and1; Blocked is mode2. Enable frame and sprite editing
 to create an independent class copy, then change timing/order, edit layers or paint
 a frame's sprite. Select a frame to inspect it; Play resumes sequence playback.
+Type part of a class name or its ID to see matching classes, then choose a result.
+**Export Frame PNG** saves the selected frame with transparency. **Export Sequence
+WebM** saves one pass through the displayed frames at their authored timing
+(30 ticks/second), including current artwork and equipment. It excludes game
+movement instructions, loops and sound. WebM requires FFmpeg with `libvpx-vp9`
+available on PATH; PNG has no additional dependency. WebM retains transparency,
+but video color conversion can slightly change colors; PNG retains exact pixels.
 The prior detailed controls remain under Art / Advanced animations.
 
 Art / Army sprites lists classes separately. Editing shared artwork automatically
