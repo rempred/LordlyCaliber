@@ -4,6 +4,7 @@
 #include "engine/director.h"
 #include "engine/sprite_pose.h"
 #include "engine/sprite_library.h"
+#include "engine/pose_preview.h"
 #include <functional>
 #include <QWidget>
 #include <optional>
@@ -35,6 +36,7 @@ class ActorPoseEditor : public QWidget {
     void setPlaybackRate(double);
     void setSpriteLibrary(std::function<void(SpriteAsset)>);
     SpriteAsset poseAsset() const;
+    PosePlaybackSource playbackSource() const;
 
   signals:
     void framePresented(int state, int record, int token, bool playback);

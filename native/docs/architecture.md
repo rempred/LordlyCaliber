@@ -1484,7 +1484,7 @@ checks continuous/finite loop metadata, tiny scaled output and cancellation.
 `ui_tests spriteVideoExport` passed in 271 ms for both formats, including static
 PNG decoding of the first APNG frame and unchanged project/undo history. The static
 comparison checks dimensions and RGBA bytes independently of color-space metadata;
-the APNG explicitly declares sRGB. Transparent animation export uses APNG; the
+the APNG explicitly declares sRGB. Transparent animation export uses APNG;
 Combat animations also exports WebM through an optional installed FFmpeg, as
 described below.
 
@@ -1492,21 +1492,47 @@ described below.
 
 The guided class picker uses QCompleter's filtered popup instead of inline
 completion and retains its model during result activation. Incomplete input
-continues to disable editing and exporting. PNG and WebM use the same
-`poseAsset()` frame list as the thumbnails, including current private artwork,
-equipment and common bounds. PNG exports the selected card. WebM holds each
-authored frame for its duration at 30 Hz (minimum one tick), once; runtime motion,
-material instructions, loops and sound are outside this frame-list export.
+continues to disable editing and exporting. One Export menu offers PNG, APNG,
+frame ZIP and WebM. PNG uses `poseAsset()` to export the selected artwork card.
+Animation formats snapshot `PosePlaybackSource` and advance a fresh
+`ActorPosePlayer` using the same linked-object boundary as preview restart.
+The shared `posePreviewLayers` supplies placement, scale and opacity for both
+the flat preview and capture. This retains movement, waits, state changes,
+project artwork, equipment and material fades. UI guides/onion skins are omitted.
+The preview's nominal steps/second is recorded and used by each encoder;
+the interpreter decrements two game delay units per preview step, so the old
+frame-list exporter did not reproduce preview timing.
+
+Capture stops before opcode zero or the first repeated `(state,cursor,delay)`
+control step, exporting one cycle even if repeated execution drifts or fades.
+Invalid/suspended execution fails explicitly. Limits are 1800 playback steps,
+1024 distinct held frames, 64M retained pixels and 4096 pixels per canvas side.
+Identical consecutive images with the same placement share a hold (at most 255
+steps). The union of all frame bounds supplies one fixed canvas and origin.
+The worker never seeks or changes the live preview. Neither export nor capture
+mutates project data or Undo. Preview playback has no audio rendering.
+
+ZIP writes one PNG per playback step (including duplicated holds) and
+`animation.json` with frame rate, timing, canvas, origin and source identifiers.
+PNG members are already compressed, so a small ZIP32 stored-member writer uses
+Qt's existing zlib CRC32 and QSaveFile atomic replacement. Output is capped at
+512 MiB; no external archive dependency is needed. Container layout follows
+[PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
 
 The existing sprite-video API adds an optional WebM encoder: installed FFmpeg on
 PATH receives RGBA frames through a bounded pipe and writes VP9 with alpha to a
 temporary file. No codec is downloaded or bundled. A background export keeps the
 UI responsive; cancellation stops only that encoder, and atomic replacement
 preserves existing output on cancellation or failure. VP9 lossless mode preserves
-the encoded YUV/alpha planes; RGB-to-YUV420 conversion can change colors. See the
+the encoded YUV/alpha planes; RGB-to-YUV420 conversion can change colors. Alpha
+is extracted and merged separately to avoid conversion rounding at sprite edges. See the
 [FFmpeg libvpx options](https://ffmpeg.org/ffmpeg-codecs.html#libvpx).
 Independent decoding covers alpha, order, timing, repeat counts and odd sizes;
 the real-ROM UI check covers search activation, current edits and Undo isolation.
+`playbackExportsMatchPreview` adds an authored movement/hold/fade/loop fixture
+and compares each captured step against the actual QGraphicsScene rendering.
+`tests/verify-combat-exports.py` reads its ZIP with Python's independent CRC reader
+and decodes APNG/WebM with FFmpeg, comparing exported pixels/order and 15 Hz timing.
 
 ## Sprite video export
 

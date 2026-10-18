@@ -87,17 +87,32 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     auto layout = new QVBoxLayout(frameWorkspace_);
     layout->setContentsMargins(0, 0, 0, 0);
     auto exports = new QHBoxLayout;
-    auto png = new QPushButton("Export Frame PNG…");
+    auto exportButton = new QPushButton("Export…");
+    exportButton->setObjectName("sequenceExport");
+    auto exportMenu = new QMenu(exportButton);
+    auto png = exportMenu->addAction("Selected frame — PNG…");
     png->setObjectName("sequenceExportPng");
     png->setToolTip("Save the selected frame, including equipment and project edits, on a transparent background.");
-    auto webm = new QPushButton("Export Sequence WebM…");
-    webm->setObjectName("sequenceExportWebm");
-    webm->setToolTip("Save one pass through the displayed frames at their authored timing, with transparency. "
-                     "Game movement, loops and sound are not included. Requires FFmpeg on PATH.");
-    exports->addWidget(png); exports->addWidget(webm); exports->addStretch();
+    const auto addAnimation = [&](const QString &label, const char *name, AnimationExport format) {
+        auto action = exportMenu->addAction(label);
+        action->setObjectName(name);
+        action->setToolTip(format == AnimationExport::Webm
+            ? "Preview playback with transparency. Requires FFmpeg; video colors can differ slightly."
+            : "Preview playback with exact rendered colors and transparency. No extra software needed.");
+        connect(action, &QAction::triggered, this, [this, format] {
+            guarded([this, format] { chooseAnimationExport(format); });
+        });
+    };
+    addAnimation("Animation — Animated PNG…", "sequenceExportApng", AnimationExport::AnimatedPng);
+    addAnimation("Frame sequence — ZIP…", "sequenceExportZip", AnimationExport::FramesZip);
+    addAnimation("Video — WebM…", "sequenceExportWebm", AnimationExport::Webm);
+    exportButton->setMenu(exportMenu);
+    exports->addWidget(exportButton);
+    auto exportHint = new QLabel("Animations export preview playback at the selected speed, through one cycle. Transparent background.");
+    exportHint->setWordWrap(true);
+    exports->addWidget(exportHint, 1);
     layout->addLayout(exports);
-    connect(png, &QPushButton::clicked, this, [this] { guarded([this] { chooseFrameExport(); }); });
-    connect(webm, &QPushButton::clicked, this, [this] { guarded([this] { chooseWebmExport(); }); });
+    connect(png, &QAction::triggered, this, [this] { guarded([this] { chooseFrameExport(); }); });
     auto split = new QSplitter;
     split->setObjectName("sequenceFrameSplit");
     split->setChildrenCollapsible(false);
@@ -408,8 +423,8 @@ void AnimationSequenceEditor::updateFrameTools() {
     durationTyped_ = false;
     const auto selected = selectedFrameRecords();
     const int index = frames_->currentRow();
-    findChild<QPushButton *>("sequenceExportPng")->setEnabled(index >= 0);
-    findChild<QPushButton *>("sequenceExportWebm")->setEnabled(frames_->count() > 0);
+    findChild<QAction *>("sequenceExportPng")->setEnabled(index >= 0);
+    findChild<QPushButton *>("sequenceExport")->setEnabled(frames_->count() > 0);
     duration_->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDuplicate")->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDelete")->setEnabled(!selected.isEmpty());

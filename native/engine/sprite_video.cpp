@@ -22,7 +22,8 @@ SpriteVideoPlan spriteVideoPlan(const SpriteAsset &asset, const SpriteVideoOptio
     asset.validate();
     const bool alpha = options.format == SpriteVideoFormat::AnimatedPng || options.format == SpriteVideoFormat::Webm;
     if ((!alpha && options.format != SpriteVideoFormat::Mp4) || options.scale < 1 ||
-        options.scale > 16 || options.repeats < (options.format == SpriteVideoFormat::AnimatedPng ? 0 : 1) || options.repeats > 100 ||
+        options.scale > 16 || options.framesPerSecond < 1 || options.framesPerSecond > 120 ||
+        options.repeats < (options.format == SpriteVideoFormat::AnimatedPng ? 0 : 1) || options.repeats > 100 ||
         (!alpha && (!options.background.isValid() || options.background.alpha() != 255)))
         throw Error("Invalid animation export scale, play count, format or background");
     SpriteVideoPlan plan;
@@ -37,7 +38,7 @@ SpriteVideoPlan spriteVideoPlan(const SpriteAsset &asset, const SpriteVideoOptio
     for (const auto &frame : asset.frames)
         plan.ticks += std::max(1, frame.ticks);
     plan.ticks *= std::max(1, options.repeats);
-    if (plan.ticks > 30 * 60 * 10)
+    if (plan.ticks > options.framesPerSecond * 60 * 10)
         throw Error("Sprite video exports are limited to ten minutes");
     return plan;
 }
@@ -101,14 +102,14 @@ struct MediaSession {
         api.shutdown();
     }
 };
-void format(IMFMediaType *type, REFGUID encoding, QSize size) {
+void format(IMFMediaType *type, REFGUID encoding, QSize size, int fps) {
     checked(type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video), "set media type");
     checked(type->SetGUID(MF_MT_SUBTYPE, encoding), "set video encoding");
     checked(type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive),
             "set progressive video");
     checked(MFSetAttributeSize(type, MF_MT_FRAME_SIZE, UINT32(size.width()), UINT32(size.height())),
             "set video size");
-    checked(MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1), "set video rate");
+    checked(MFSetAttributeRatio(type, MF_MT_FRAME_RATE, UINT32(fps), 1), "set video rate");
     checked(MFSetAttributeRatio(type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1), "set square pixels");
 }
 } // namespace
@@ -142,14 +143,14 @@ bool exportSpriteVideo(const SpriteAsset &asset, const QString &path,
             "create MP4 writer");
     ComPtr<IMFMediaType> output, input;
     checked(api.mediaType(&output), "create output format");
-    format(output.Get(), MFVideoFormat_H264, plan.size);
+    format(output.Get(), MFVideoFormat_H264, plan.size, options.framesPerSecond);
     const auto bitrate = std::clamp<qint64>(qint64(plan.size.width()) * plan.size.height() * 30 * 2,
                                             1000000, 40000000);
     checked(output->SetUINT32(MF_MT_AVG_BITRATE, UINT32(bitrate)), "set video quality");
     DWORD stream = 0;
     checked(writer->AddStream(output.Get(), &stream), "add video stream");
     checked(api.mediaType(&input), "create input format");
-    format(input.Get(), MFVideoFormat_RGB32, plan.size);
+    format(input.Get(), MFVideoFormat_RGB32, plan.size, options.framesPerSecond);
     checked(input->SetUINT32(MF_MT_DEFAULT_STRIDE, UINT32(plan.size.width() * 4)),
             "set image stride");
     checked(writer->SetInputMediaType(stream, input.Get(), nullptr), "configure video converter");
@@ -180,8 +181,8 @@ bool exportSpriteVideo(const SpriteAsset &asset, const QString &path,
                 ComPtr<IMFSample> sample;
                 checked(api.sample(&sample), "create video sample");
                 checked(sample->AddBuffer(buffer.Get()), "attach video pixels");
-                const LONGLONG start = LONGLONG(completed) * 10000000 / 30;
-                const LONGLONG end = LONGLONG(completed + 1) * 10000000 / 30;
+                const LONGLONG start = LONGLONG(completed) * 10000000 / options.framesPerSecond;
+                const LONGLONG end = LONGLONG(completed + 1) * 10000000 / options.framesPerSecond;
                 checked(sample->SetSampleTime(start), "set video timestamp");
                 checked(sample->SetSampleDuration(end - start), "set video duration");
                 checked(writer->WriteSample(stream, sample.Get()), "encode video sample");

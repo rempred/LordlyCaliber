@@ -41,7 +41,7 @@ target_sources(lordly_engine PRIVATE engine/change_report.cpp engine/project_ref
 target_sources(lordly_engine PRIVATE engine/sprite_library.cpp engine/sprite_sources.cpp engine/sprite_colors.cpp)
 target_sources(lordly_engine PRIVATE engine/story_routes.cpp engine/scenario_seeder.cpp)
 qt_add_resources(lordly_engine scenario_seeder PREFIX "/" BASE . FILES game/seeder/story-start.sra game/seeder/default-army.sra game/seeder/mission-labels.json)
-target_sources(lordly_engine PRIVATE engine/sprite_video.cpp engine/sprite_apng.cpp engine/sprite_webm.cpp)
+target_sources(lordly_engine PRIVATE engine/sprite_video.cpp engine/sprite_apng.cpp engine/sprite_webm.cpp engine/sprite_frames_zip.cpp engine/pose_preview.cpp)
 if(WIN32)
   target_link_libraries(lordly_engine PRIVATE mfuuid ole32)
 endif()

@@ -365,10 +365,14 @@ patch semantics; Blocked is mode2. Linked fixed motions copy both component
 programs. Preview selection does not modify the project, and incomplete class
 searches disable editing instead of leaving the prior class active.
 Class searches show case-insensitive substring matches by name or decimal ID.
-The tab exports selected-frame PNGs and a single pass through the displayed frame
-sequence as transparent WebM at authored timing. Exports include project artwork
-edits and equipment, and leave project/Undo state unchanged. WebM uses an installed
-FFmpeg (`libvpx-vp9`) on PATH; movement instructions, loops and sound are excluded.
+One Export menu provides selected-frame PNG, animated PNG, numbered PNG sequence
+ZIP and WebM. Animated exports follow preview playback, including movement,
+waits, state changes and opacity at the selected speed, through one cycle or end.
+They share stable transparent bounds and include project artwork and equipment;
+live playback, project and Undo remain unchanged. ZIP contains one PNG per step
+plus timing and origin metadata. PNG/APNG/ZIP need no external encoder. WebM uses
+installed FFmpeg (`libvpx-vp9`) on PATH. Editor guides, onion skins and sound are
+excluded; WebM color conversion can change RGB values.
 The animation choices contain combat selector targets and the fixed combat
 motions, including private attack assignments; unrelated bank poses are excluded.
 Action descriptions are edited from Classes rather than this animation page.

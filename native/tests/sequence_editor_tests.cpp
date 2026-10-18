@@ -1,5 +1,6 @@
 #include "app/animation_sequence_editor.h"
 #include "app/combat_animation_editor.h"
+#include "app/actor_pose_editor.h"
 #include "app/sprite_editor.h"
 #include "app/recovery_draft.h"
 #include "engine/recovery_store.h"
@@ -9,7 +10,11 @@
 #include "engine/animation_transfer.h"
 #include "engine/sprite_object.h"
 #include "engine/sprite_sources.h"
+#include "engine/sprite_video.h"
 #include <QCompleter>
+#include <QAction>
+#include <QMenu>
+#include <QPainter>
 #include <QProcess>
 #include <QStandardPaths>
 #include "rebuild/compiler.h"
@@ -78,7 +83,7 @@ class SequenceEditorTests : public QObject {
             QTest::keyClicks(edit, "no-such-class");
             QCOMPARE(classes->completer()->completionCount(), 0);
             QVERIFY(!sequence->isEnabled());
-            QVERIFY(!editor.findChild<QPushButton *>("sequenceExportPng")->isEnabled());
+            QVERIFY(!editor.findChild<QPushButton *>("sequenceExport")->isEnabled());
             edit->selectAll();
             QTest::keyClicks(edit, "123");
             QTRY_VERIFY(popup->isVisible());
@@ -139,6 +144,124 @@ class SequenceEditorTests : public QObject {
     }
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
+    }
+    void playbackExportsMatchPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadAnimationRoutes(); project.loadAnimationSequences(); project.loadCombatArtwork();
+            auto sequences = *project.animationSequences();
+            sequences.create(2, 0, *project.animationRoutes());
+            auto descriptor = *sequences.find(2, 0);
+            auto bank = descriptor.poses();
+            int token = -1;
+            for (const auto &record : bank.effective(40).records)
+                if (record.opcode == 1) { token = u8(record.operands, 0); break; }
+            QVERIFY(token >= 0);
+            // Two held steps, move, then three fading steps (frame + wait), then loop.
+            const auto operands = [](std::initializer_list<int> values) {
+                QByteArray bytes;
+                for (int value : values) bytes.append(char(value));
+                return bytes;
+            };
+            const QVector<PoseRecord> program{{1, operands({token, 4})},
+                {12, operands({10, 6, 0})}, {13, operands({255, 192})},
+                {16, operands({255, 224})}, {1, operands({token, 2})},
+                {3, operands({4})}, {4, operands({0})}};
+            bank.setProgram(40, PoseBank::encodeProgram(program));
+            descriptor.setPoses(bank); sequences.setDescriptor(2, 0, descriptor);
+            project.setAnimationSequences(sequences.json());
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1300, 900); editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            classes->setCurrentIndex(classes->findData(2));
+            auto choices = editor.findChild<QComboBox *>("combatAnimationChoice");
+            choices->setCurrentIndex(choices->findData(40));
+            auto sequence = editor.findChild<AnimationSequenceEditor *>();
+            auto preview = editor.findChild<ActorPoseEditor *>();
+            auto menu = editor.findChild<QPushButton *>("sequenceExport")->menu();
+            QCOMPARE(menu->actions().size(), 4);
+            auto source = preview->playbackSource();
+            const auto asset = source.capture();
+            QVERIFY(asset.has_value());
+            QCOMPARE(asset->provenance["steps"].toInt(), 5);
+            QCOMPARE(asset->provenance["stoppedAt"].toString(), QString("cycle"));
+            QCOMPARE(asset->frames.size(), 4);
+            QCOMPARE(asset->frames[0].ticks, 2);
+            QVERIFY(!source.capture([](int step) { return step < 2; }));
+            auto position = preview->findChild<QSpinBox *>("actorPosition");
+            auto view = preview->findChild<QGraphicsView *>();
+            const QRect crop(-asset->anchor, asset->size);
+            int tick = 0;
+            for (int f = 0; f < asset->frames.size(); ++f) {
+                for (int hold = 0; hold < asset->frames[f].ticks; ++hold) {
+                    position->setValue(++tick);
+                    QImage displayed(asset->size, QImage::Format_RGBA8888);
+                    displayed.fill(Qt::transparent);
+                    { QPainter painter(&displayed);
+                      view->scene()->render(&painter, QRectF(QPointF(0, 0), asset->size), crop,
+                                            Qt::IgnoreAspectRatio); }
+                    const auto captured = asset->composite(f);
+                    if (displayed != captured) {
+                        const auto output = QCoreApplication::applicationDirPath();
+                        displayed.save(output + "/capture-actual.png");
+                        captured.save(output + "/capture-expected.png");
+                        qInfo() << "Capture mismatch at step" << tick << "bounds" << crop;
+                    }
+                    QCOMPARE(displayed, captured);
+                }
+            }
+            QCOMPARE(preview->property("poseX").toDouble(), 10.);
+            QCOMPARE(preview->property("poseY").toDouble(), 6.);
+            preview->setPlaybackRate(.5);
+            const auto before = project.manifest();
+            QTemporaryDir work;
+            QVERIFY(sequence->exportAnimation(work.filePath("playback.apng"), AnimationSequenceEditor::AnimationExport::AnimatedPng));
+            QVERIFY(sequence->exportAnimation(work.filePath("playback.zip"), AnimationSequenceEditor::AnimationExport::FramesZip));
+            QVERIFY_THROWS_EXCEPTION(Error, sequence->exportAnimation(path, AnimationSequenceEditor::AnimationExport::AnimatedPng));
+            QVERIFY_THROWS_EXCEPTION(Error, sequence->exportAnimation(path, AnimationSequenceEditor::AnimationExport::FramesZip));
+            QFile zip(work.filePath("playback.zip")); QVERIFY(zip.open(QIODevice::ReadOnly));
+            const auto originalZip = zip.readAll(); zip.close();
+            QVERIFY(!exportSpriteFramesZip(*asset, zip.fileName(), 15,
+                [](int done, int) { return done < 2; }));
+            QVERIFY(zip.open(QIODevice::ReadOnly)); QCOMPARE(zip.readAll(), originalZip); zip.close();
+            QVERIFY(!exportSpriteFramesZip(*asset, zip.fileName(), 15,
+                [](int done, int total) { return done < total; }));
+            QVERIFY(zip.open(QIODevice::ReadOnly)); QCOMPARE(zip.readAll(), originalZip); zip.close();
+            QCOMPARE(position->value(), tick); // Export uses a copy, not live seeking.
+            QCOMPARE(project.manifest(), before); QCOMPARE(undo.count(), 0);
+            QFile apng(work.filePath("playback.apng")); QVERIFY(apng.open(QIODevice::ReadOnly));
+            const auto bytes = apng.readAll();
+            int controls = 0, duration = 0;
+            for (qsizetype at = 8; at + 12 <= bytes.size(); at += u32(bytes, at) + 12)
+                if (bytes.mid(at + 4, 4) == "fcTL") {
+                    QCOMPARE(u16(bytes, at + 8 + 22), 15);
+                    duration += u16(bytes, at + 8 + 20); ++controls;
+                }
+            QCOMPARE(controls, 4); QCOMPARE(duration, 5);
+            // Save inspectable, ignored outputs for independent decoding and visual QA.
+            const auto output = QCoreApplication::applicationDirPath();
+            QFile::remove(output + "/combat-playback.apng");
+            QFile::remove(output + "/combat-playback.zip");
+            QVERIFY(QFile::copy(work.filePath("playback.apng"), output + "/combat-playback.apng"));
+            QVERIFY(QFile::copy(work.filePath("playback.zip"), output + "/combat-playback.zip"));
+            for (int f = 0; f < asset->frames.size(); ++f)
+                QVERIFY(asset->composite(f).save(output + QString("/combat-playback-%1.png").arg(f)));
+            if (!QStandardPaths::findExecutable("ffmpeg").isEmpty())
+                QVERIFY(sequence->exportWebm(output + "/combat-playback.webm"));
+            // An explicit end exports exactly the final frame's hold.
+            bank.setProgram(40, PoseBank::encodeProgram({{1, operands({token, 4})}, {0, {}}}));
+            descriptor.setPoses(bank); sequences.setDescriptor(2, 0, descriptor);
+            project.setAnimationSequences(sequences.json());
+            const auto endedArt = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            PosePlaybackSource ended{project.rom(), endedArt, 40};
+            const auto finite = ended.capture();
+            QCOMPARE(finite->provenance["stoppedAt"].toString(), QString("end"));
+            QCOMPARE(finite->provenance["steps"].toInt(), 2);
+            QVERIFY(editor.grab().save(output + "/combat-export-menu.png"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void combatAnimationChoices() {
         try {

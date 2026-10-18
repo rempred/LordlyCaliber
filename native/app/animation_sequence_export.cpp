@@ -49,31 +49,33 @@ void AnimationSequenceEditor::exportFrame(const QString &path) const {
         throw Error("Cannot encode animation frame");
     atomicWrite(path, bytes);
 }
-void AnimationSequenceEditor::chooseWebmExport() {
-    const auto name = QString("class-%1-animation-%2.webm")
+void AnimationSequenceEditor::chooseAnimationExport(AnimationExport format) {
+    const QString extension = format == AnimationExport::AnimatedPng ? "apng" :
+                              format == AnimationExport::FramesZip ? "zip" : "webm";
+    const QString filter = format == AnimationExport::AnimatedPng ? "Animated PNG (*.apng)" :
+                           format == AnimationExport::FramesZip ? "PNG frame sequence (*.zip)" : "WebM video (*.webm)";
+    const auto name = QString("class-%1-animation-%2.%3")
                           .arg(selectedClass())
-                          .arg(poses_->currentData().toInt());
-    const auto path = QFileDialog::getSaveFileName(this, "Export displayed frame sequence", name,
-                                                   "WebM video (*.webm)");
+                          .arg(poses_->currentData().toInt()).arg(extension);
+    const auto path = QFileDialog::getSaveFileName(this, "Export preview animation", name, filter);
     if (path.isEmpty())
         return;
-    const bool saved = exportWebm(path);
+    const bool saved = exportAnimation(path, format);
     notice_->setText(saved ? "Sequence exported to " + path : "Sequence export canceled.");
     notice_->show();
 }
 bool AnimationSequenceEditor::exportWebm(const QString &path) {
+    return exportAnimation(path, AnimationExport::Webm);
+}
+bool AnimationSequenceEditor::exportAnimation(const QString &path, AnimationExport format) {
     checkDestination(*project_, path);
     if (!isEnabled() || !frames_ || !frames_->count())
         throw Error("Choose a combat animation first");
-    if (auto play = preview_->findChild<QPushButton *>("actorPlay"))
-        play->setChecked(false);
-    const auto asset = preview_->poseAsset();
-    const SpriteVideoOptions options{1, 1, Qt::black, SpriteVideoFormat::Webm};
-    const auto plan = spriteVideoPlan(asset, options);
+    const auto source = preview_->playbackSource();
     std::atomic_bool canceled = false;
-    std::atomic_int completed = 0;
-    QProgressDialog dialog("Exporting frame sequence…", "Cancel", 0, plan.ticks, this);
-    dialog.setWindowTitle("Export Sequence WebM");
+    std::atomic_int completed = 0, total = 0;
+    QProgressDialog dialog("Rendering preview playback…", "Cancel", 0, 0, this);
+    dialog.setWindowTitle("Export animation");
     dialog.setWindowModality(Qt::ApplicationModal);
     dialog.setAutoClose(false);
     dialog.setAutoReset(false);
@@ -85,16 +87,28 @@ bool AnimationSequenceEditor::exportWebm(const QString &path) {
     QFutureWatcher<Result> watcher;
     connect(&watcher, &QFutureWatcher<Result>::finished, &dialog, &QDialog::accept);
     QTimer timer;
-    connect(&timer, &QTimer::timeout, &dialog, [&] { dialog.setValue(completed.load()); });
+    connect(&timer, &QTimer::timeout, &dialog, [&] {
+        if (total.load() > 0) {
+            dialog.setLabelText("Writing animation…");
+            dialog.setMaximum(total.load());
+            dialog.setValue(completed.load());
+        }
+    });
     timer.start(50);
-    watcher.setFuture(QtConcurrent::run([asset, path, options, &canceled, &completed] {
+    watcher.setFuture(QtConcurrent::run([source, path, format, &canceled, &completed, &total] {
         try {
-            return Result{exportSpriteVideo(asset, path, options,
-                                            [&](int value, int) {
-                                                completed = value;
-                                                return !canceled.load();
-                                            }),
-                          {}};
+            const auto asset = source.capture([&](int) { return !canceled.load(); });
+            if (!asset) return Result{false, {}};
+            const auto progress = [&](int value, int maximum) {
+                total = maximum; completed = value;
+                return !canceled.load();
+            };
+            if (format == AnimationExport::FramesZip)
+                return Result{exportSpriteFramesZip(*asset, path, source.stepsPerSecond, progress), {}};
+            const SpriteVideoOptions options{1, 1, Qt::transparent,
+                format == AnimationExport::AnimatedPng ? SpriteVideoFormat::AnimatedPng : SpriteVideoFormat::Webm,
+                source.stepsPerSecond};
+            return Result{exportSpriteVideo(*asset, path, options, progress), {}};
         } catch (const std::exception &e) {
             return Result{false, QString::fromUtf8(e.what())};
         }

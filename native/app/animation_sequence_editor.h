@@ -30,6 +30,8 @@ class AnimationSequenceEditor : public QWidget {
     void assignAnimation(int action, bool blocked, int pose);
     void moveVisibleFrame(int from, int to);
     void exportFrame(const QString &path) const;
+    enum class AnimationExport { AnimatedPng, FramesZip, Webm };
+    bool exportAnimation(const QString &path, AnimationExport);
     bool exportWebm(const QString &path);
 
   private:
@@ -48,7 +50,7 @@ class AnimationSequenceEditor : public QWidget {
     AnimationSequences editableSequences();
     void buildFrameWorkspace();
     void chooseFrameExport();
-    void chooseWebmExport();
+    void chooseAnimationExport(AnimationExport);
     void refreshFrames();
     void selectVisibleFrames();
     void updateFrameTools();

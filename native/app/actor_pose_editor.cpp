@@ -628,6 +628,12 @@ SpriteAsset ActorPoseEditor::poseAsset() const {
                                 (banks_->currentText() + " · pose " + poses_->currentData().toString()).left(120),
                                 variant_->value(), appearance(), artwork_.value(art_->descriptorKey()));
 }
+PosePlaybackSource ActorPoseEditor::playbackSource() const {
+    if (!art_ || !art_->isBody() || poses_->currentIndex() < 0 || projected_->isChecked())
+        throw Error("Choose a combat animation in the frame preview");
+    return {rom_, *art_, poses_->currentData().toInt(), variant_->value(), speed_->value(),
+            sepia_->isChecked(), appearance(), artwork_.value(art_->descriptorKey())};
+}
 void ActorPoseEditor::selectPrivateSequence(int classId,int flags,int state) {
     const auto classes = bodyAnimations_ ? bodyAnimations_->classes() : ClassData::load(rom_);
     if (classId < 0 || classId >= classes.entries().size()) throw Error("Invalid private preview class");
@@ -918,19 +924,16 @@ void ActorPoseEditor::draw() {
             }
         }
         int fallbacks = 0;
+        const auto rendered = posePreviewLayers(frame, a.x, a.y, a.material);
         for (int i = 0; i < frame.size(); ++i) {
             const auto &layer = frame[i];
-            const auto &r = layer.pixels.image;
-            auto pixmap =
-                QPixmap::fromImage(QImage(reinterpret_cast<const uchar *>(r.rgba.constData()),
-                                          r.width, r.height, r.width * 4, QImage::Format_RGBA8888));
+            const auto &visual = rendered[i];
+            auto pixmap = QPixmap::fromImage(visual.image);
             auto item = canvas_->addPixmap(pixmap);
             const auto &m = layer.metadata;
-            item->setPos(m.origin.x() * m.scaleX / 1024. + a.x,
-                         m.origin.y() * m.scaleY / 1024. - a.y);
-            item->setTransform(QTransform::fromScale(m.scaleX / 1024., m.scaleY / 1024.));
-            if (i < 16)
-                item->setOpacity(u8(a.material, i) / 255.);
+            item->setPos(visual.position);
+            item->setTransform(QTransform::fromScale(visual.scaleX, visual.scaleY));
+            item->setOpacity(visual.opacity);
             item->setZValue(i);
             item->setFlag(QGraphicsItem::ItemIsSelectable);
             items_ << item;

@@ -77,7 +77,7 @@ bool exportSpriteAnimatedPng(const SpriteAsset &asset, const QString &path,
         put32(control, 8, quint32(plan.size.height()));
         const int ticks = std::max(1, asset.frames[frame].ticks);
         put16(control, 20, quint16(ticks));
-        put16(control, 22, 30);
+        put16(control, 22, quint16(options.framesPerSecond));
         // Each complete RGBA frame replaces the canvas, avoiding alpha trails.
         chunk(destination, "fcTL", control);
         for (const auto &payload : data) {
