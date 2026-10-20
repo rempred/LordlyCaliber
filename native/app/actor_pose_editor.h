@@ -30,6 +30,7 @@ class ActorPoseEditor : public QWidget {
     void setBodyAnimations(BodyAnimationData::Pointer);
     void selectPrivateSequence(int classId,int flags,int state);
     void showFrame(int frame);
+    void showReplacementPreview();
     void setFrameEditing(bool);
     void setPreviousFrame(std::optional<int>);
     void setFrameBounds(const QRectF &);

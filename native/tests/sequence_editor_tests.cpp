@@ -11,6 +11,9 @@
 #include "engine/sprite_object.h"
 #include "engine/sprite_sources.h"
 #include "engine/sprite_video.h"
+#include "engine/animation_file_import.h"
+#include "engine/combat_animation_edit.h"
+#include <QFileDialog>
 #include <QCompleter>
 #include <QAction>
 #include <QMenu>
@@ -44,6 +47,253 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void replacementEngine() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto p = Project::fromRom(Rom::open(path));
+            p.loadAnimationRoutes();
+            p.loadAnimationOverrides();
+            p.loadCombatArtwork();
+            const auto before = p.animationSequences()->json();
+            auto asset = SpriteAsset::blank("Replacement", {8, 8});
+            asset.anchor = {3, 7};
+            asset.frames[0].ticks = 2;
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            auto second = asset.frames[0];
+            second.id = SpriteLibrary::newId();
+            second.ticks = 3;
+            second.layers[0].id = SpriteLibrary::newId();
+            second.layers[0].image.fill(Qt::blue);
+            asset.frames << second;
+            QTemporaryDir work;
+            const auto zip = work.filePath("sequence.zip");
+            QVERIFY(exportSpriteFramesZip(asset, zip, 15));
+            const auto imported = importAnimationFiles({zip});
+            const auto capture = [&](Project &project, CombatAnimationTarget t) {
+                const int o = u8(project.record(Table::Classes, t.classId).bytes, 69);
+                const auto body =
+                    ActorArt::loadBody(project.rom(), t.classId, o ? o : t.classId, t.flags >> 1,
+                                       t.flags & 1, project.bodyAnimationData());
+                return PosePlaybackSource{project.rom(), body, combatAnimationPose(project, t)}
+                    .capture();
+            };
+            const int action = u8(p.record(Table::Classes, 2).bytes, 55);
+            const CombatAnimationTarget attack{2, 0, action, false};
+            const int old = combatAnimationPose(p, attack),
+                      blocked = combatAnimationPose(p, {2, 0, action, true});
+            auto replaced = replaceCombatAnimation(p, attack, imported, false);
+            QCOMPARE(p.animationSequences()->json(), before);
+            QVERIFY(combatAnimationPose(replaced, attack) != old);
+            QCOMPARE(combatAnimationPose(replaced, {2, 0, action, true}), blocked);
+            QCOMPARE(combatAnimationPose(replaced, {2, 1, action, false}),
+                     combatAnimationPose(p, {2, 1, action, false}));
+            const auto played = capture(replaced, attack);
+            QVERIFY(played);
+            QCOMPARE(played->frames.size(), 2);
+            QCOMPARE(played->anchor, imported.anchor);
+            for (int i = 0; i < 2; ++i) {
+                QCOMPARE(played->composite(i), imported.composite(i));
+                QCOMPARE(played->frames[i].ticks, imported.frames[i].ticks);
+            }
+            // A second replacement remains independent and can still allocate a one-byte attack
+            // selector.
+            replaced = replaceCombatAnimation(replaced, attack, imported, true);
+            QCOMPARE(capture(replaced, attack)->provenance["stoppedAt"].toString(), "cycle");
+            auto copied = copyCombatAnimation(p, {2, 0, -2, false}, {5, 0, -2, false});
+            const auto donorArt = ActorArt::loadBody(p.rom(), 5, 5, 0, 0, p.bodyAnimationData());
+            const auto copyArt =
+                ActorArt::loadBody(copied.rom(), 2, 2, 0, 0, copied.bodyAnimationData());
+            PosePlaybackSource donorSource{p.rom(), donorArt, 5};
+            donorSource.appearance =
+                copyArt.defaultAppearance(p.rom()); // Equipment remains the destination's.
+            auto donor = donorSource.capture(), copy = capture(copied, {2, 0, -2, false});
+            QVERIFY(donor && copy);
+            QCOMPARE(copy->frames.size(), donor->frames.size());
+            for (int i = 0; i < copy->frames.size(); ++i) {
+                QCOMPARE(copy->composite(i), donor->composite(i));
+                QCOMPARE(copy->frames[i].ticks, donor->frames[i].ticks);
+            }
+            auto linked = replaceCombatAnimation(p, {10, 0, -1, false}, imported, true);
+            QVERIFY(capture(linked, {10, 0, -1, false}));
+            // Long imports are split across valid native programs, preserving the timeline.
+            auto longAsset = asset;
+            longAsset.frames.clear();
+            for (int i = 0; i < 270; ++i) {
+                auto f = asset.frames[i % 2];
+                f.id = SpriteLibrary::newId();
+                f.ticks = 1;
+                longAsset.frames << f;
+            }
+            auto longProject = replaceCombatAnimation(p, {2, 0, -1, false}, longAsset, false);
+            const auto longPlayed = capture(longProject, {2, 0, -1, false});
+            QVERIFY(longPlayed);
+            QCOMPARE(longPlayed->frames.size(), 270);
+            for (int i = 0; i < 270; ++i)
+                QCOMPARE(longPlayed->composite(i), longAsset.composite(i));
+            const int created = replaced.createClass("Animation test class");
+            replaced = replaceCombatAnimation(replaced, {created, 0, -1, false}, imported, true);
+            QCOMPARE(capture(replaced, {created, 0, -1, false})->composite(0),
+                     imported.composite(0));
+            replaced = replaceCombatAnimation(replaced, {10,0,-1,false}, imported, true);
+            replaced.saveFolder(work.filePath("project"));
+            auto reopened = Project::fromRom(p.rom());
+            reopened.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopened.animationSequences()->json(), replaced.animationSequences()->json());
+            QCOMPARE(reopened.animationOverrides()->json(), replaced.animationOverrides()->json());
+            const auto built = rebuild(reopened, tools, work.path());
+            QTemporaryDir candidates(QDir(QFileInfo(path).absolutePath())
+                                         .filePath("Test ROMs/combat-replacement-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(reopened, built, output);
+            auto exported = Project::fromRom(Rom::open(output));
+            exported.loadAnimationRoutes();
+            exported.loadAnimationOverrides();
+            exported.loadCombatArtwork();
+            QCOMPARE(capture(exported, attack)->composite(1), imported.composite(1));
+            QCOMPARE(capture(exported, {created, 0, -1, false})->composite(0),
+                     imported.composite(0));
+            QCOMPARE(capture(exported, {10,0,-1,false})->composite(0), imported.composite(0));
+            qInfo().noquote() << "Replacement export candidate:" << output;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void replacementWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+            applyEditorTheme(*qApp);
+            auto p = Project::fromRom(Rom::open(path));
+            auto asset = SpriteAsset::blank("Bright replacement", {8, 8});
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            auto library = p.sprites();
+            library.replace(asset);
+            p.setSprites(library);
+            const int newClass = p.createClass("New animation class");
+            QTemporaryDir work;
+            const auto zip = work.filePath("replacement.zip");
+            QVERIFY(exportSpriteFramesZip(asset, zip, 30));
+            QUndoStack undo;
+            CombatAnimationEditor editor(&p, &undo, [] {});
+            editor.resize(1200, 900);
+            editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            classes->setCurrentIndex(classes->findData(newClass));
+            auto actions = editor.findChild<QComboBox *>("combatAnimationAction");
+            actions->setCurrentIndex(actions->findData(-1));
+            auto replace = editor.findChild<QPushButton *>("combatAnimationReplace");
+            QVERIFY(replace);
+            QCOMPARE(replace->text(), "Create animation…");
+            const auto before = p.animationSequences()->json();
+            const auto overrides = p.animationOverrides()->json();
+            QJsonArray recoveredDraft;
+            for (int source : {2, 0, 1}) {
+                bool selected = false, done = false;
+                QString error;
+                QTimer driver;
+                driver.setInterval(40);
+                QElapsedTimer elapsed;
+                elapsed.start();
+                connect(&driver, &QTimer::timeout, &editor, [&] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    if (!dialog)
+                        return;
+                    if (dialog->objectName() != "combatAnimationReplaceDialog")
+                        return;
+                    try {
+                        if (elapsed.elapsed() > 20000)
+                            throw Error(
+                                "Replacement dialog timed out: " +
+                                dialog->findChild<QLabel *>("combatReplacementStatus")->text());
+                        if (!selected) {
+                            selected = true;
+                            dialog->findChild<QComboBox *>("combatReplacementSource")
+                                ->setCurrentIndex(source);
+                            if (source == 0) {
+                                QTimer::singleShot(0, [&] {
+                                    auto picker = qobject_cast<QFileDialog *>(
+                                        QApplication::activeModalWidget());
+                                    if (picker) {
+                                        picker->selectFile(zip);
+                                        QMetaObject::invokeMethod(picker, "accept");
+                                    }
+                                });
+                                dialog->findChild<QPushButton *>("combatReplacementFiles")->click();
+                            }
+                            if (source == 1) {
+                                auto donor =
+                                    dialog->findChild<QComboBox *>("combatReplacementClass");
+                                donor->setCurrentIndex(donor->findData(2));
+                                auto names =
+                                    dialog->findChild<QComboBox *>("combatReplacementAnimation");
+                                for (int i = 0; i < names->count(); ++i)
+                                    if (names->itemText(i).contains("Pose "))
+                                        throw Error("Unnamed source animation");
+                            }
+                            return;
+                        }
+                        auto buttons =
+                            dialog->findChild<QDialogButtonBox *>("combatReplacementButtons");
+                        if (!buttons->button(QDialogButtonBox::Ok)->isEnabled())
+                            return;
+                        if (source == 2) {
+                            recoveredDraft = captureRecoveryDrafts(&editor, p);
+                            auto preview =
+                                dialog->findChild<ActorPoseEditor *>("combatReplacementPreview");
+                            const auto frame = preview->playbackSource().capture();
+                            if (!frame || frame->composite(0).pixelColor(0, 0) != QColor(Qt::red))
+                                throw Error("New-class preview did not use replacement artwork");
+                            dialog->grab().save("native/build/combat-replacement-dialog.png");
+                        }
+                        done = true;
+                        buttons
+                            ->button(source == 2 ? QDialogButtonBox::Cancel : QDialogButtonBox::Ok)
+                            ->click();
+                    } catch (const std::exception &e) {
+                        error = QString::fromUtf8(e.what());
+                        dialog->reject();
+                    }
+                });
+                driver.start();
+                replace->click();
+                driver.stop();
+                QVERIFY2(error.isEmpty(), qPrintable(error));
+                QVERIFY(done);
+                if (source == 2) {
+                    QCOMPARE(p.animationSequences()->json(), before);
+                    QCOMPARE(undo.count(), 0);
+                    QCOMPARE(recoveredDraft.size(), 1);
+                }
+            }
+            QCOMPARE(undo.count(), 2);
+            const auto after = p.animationSequences()->json();
+            undo.undo();
+            undo.undo();
+            QCOMPARE(p.animationSequences()->json(), before);
+            QCOMPARE(p.animationOverrides()->json(), overrides);
+            undo.redo();
+            undo.redo();
+            QCOMPARE(p.animationSequences()->json(), after);
+            auto restored = Project::fromRom(p.rom());
+            restored.createClass("New animation class");
+            QUndoStack recoveryUndo;
+            restoreRecoveryDrafts(&restored, &recoveryUndo, recoveredDraft);
+            QVERIFY(restored.animationSequences()->find(newClass, 0));
+            recoveryUndo.undo();
+            QVERIFY(!restored.animationSequences()->find(newClass, 0));
+            recoveryUndo.redo();
+            editor.grab().save("native/build/combat-replacement-main.png");
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void combatSearchAndExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

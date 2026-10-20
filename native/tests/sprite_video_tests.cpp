@@ -1,4 +1,6 @@
 #include "engine/sprite_video.h"
+#include "engine/animation_file_import.h"
+#include "engine/project.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -40,6 +42,66 @@ SpriteAsset example() {
 class SpriteVideoTests : public QObject {
     Q_OBJECT
   private slots:
+    void frameZipImport() {
+        QTemporaryDir work;
+        auto original = example();
+        original.anchor = {13, 41};
+        const auto path = work.filePath("frames.zip");
+        QVERIFY(exportSpriteFramesZip(original, path, 15));
+        const auto imported = importAnimationFiles({path});
+        QCOMPARE(imported.size, original.size);
+        QCOMPARE(imported.anchor, original.anchor);
+        QCOMPARE(imported.frames.size(), original.frames.size());
+        for (int i = 0; i < original.frames.size(); ++i) {
+            QCOMPARE(imported.composite(i), original.composite(i));
+            QCOMPARE(imported.frames[i].ticks, std::max(1, original.frames[i].ticks) * 2);
+        }
+        // Readback also accepts a normally deflated ZIP, not only our stored writer.
+        const auto python = QStandardPaths::findExecutable("python");
+        if (!python.isEmpty()) {
+            const auto packed = work.filePath("compressed.zip");
+            run(python, {"-c",
+                         "import zipfile,sys\na=zipfile.ZipFile(sys.argv[1]); "
+                         "b=zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED)\nfor n in "
+                         "a.namelist(): b.writestr(n,a.read(n))\nb.close()",
+                         path, packed});
+            QCOMPARE(importAnimationFiles({packed}).composite(2), original.composite(2));
+        }
+        QFile zip(path);
+        QVERIFY(zip.open(QIODevice::ReadOnly));
+        auto bytes = zip.readAll();
+        zip.close();
+        const int payload = bytes.indexOf(QByteArray::fromHex("89504e470d0a1a0a"));
+        QVERIFY(payload > 0);
+        bytes[payload + 20] ^= 1;
+        const auto corrupt = work.filePath("corrupt.zip");
+        atomicWrite(corrupt, bytes);
+        QVERIFY_EXCEPTION_THROWN(importAnimationFiles({corrupt}), Error);
+        atomicWrite(corrupt, bytes.left(17));
+        QVERIFY_EXCEPTION_THROWN(importAnimationFiles({corrupt}), Error);
+        // Natural order, common canvas and explicit PNG playback speed.
+        const auto first = work.filePath("frame-2.png"), second = work.filePath("frame-10.png");
+        QVERIFY(original.composite(0).save(first));
+        QVERIFY(original.composite(1).save(second));
+        const auto pngs = importAnimationFiles({second, first}, 10);
+        QCOMPARE(pngs.composite(0), original.composite(0));
+        QCOMPARE(pngs.composite(1), original.composite(1));
+        QCOMPARE(pngs.frames[0].ticks, 3);
+        QCOMPARE(pngs.anchor, QPoint(32, 64));
+        auto wrong = QImage(3, 4, QImage::Format_RGBA8888);
+        wrong.fill(Qt::red);
+        QVERIFY(wrong.save(second));
+        QVERIFY_EXCEPTION_THROWN(importAnimationFiles({first, second}), Error);
+        // A long hold in our own export must not count each repeated PNG as
+        // another resident image (80 million decoded pixels, one 1-Mpixel image).
+        auto held = SpriteAsset::blank("Long hold", {1024, 1024});
+        held.frames[0].ticks = 80;
+        held.frames[0].layers[0].image.fill(Qt::red);
+        QVERIFY(exportSpriteFramesZip(held, path, 30));
+        const auto heldImport = importAnimationFiles({path});
+        QCOMPARE(heldImport.frames.size(), 1);
+        QCOMPARE(heldImport.frames[0].ticks, 80);
+    }
     void webmSequence() {
         const auto ffmpeg = QStandardPaths::findExecutable("ffmpeg"),
                    probe = QStandardPaths::findExecutable("ffprobe");

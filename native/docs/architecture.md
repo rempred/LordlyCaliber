@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Combat animation replacement (October 20)
+
+`combat_animation_edit` builds an independent Project candidate for a named
+class/action/body route. Attack replacement allocates a private selector and
+retains the other mode/action assignments. Fixed motions replace their native
+entry; Idle also updates its randomized idle entries. One-byte selector space
+is reserved before copying dependent programs. Imported artwork becomes fresh
+wide-frame programs with 60-unit holds derived from 30 Hz preview steps, split
+into chained programs when needed. Flattened imports clear a linked secondary
+body's artwork while preserving its timing. Class copies retain source control
+flow and native equipment selection; incompatible linked-source to ordinary-body
+copies refuse rather than silently dropping a body part.
+
+`animation_file_import` reads ZIP32 central/local records with stored or raw-deflate
+members, validates CRC and bounded metadata, and never extracts archive paths.
+Only the exported `lordly-frame-sequence` v1 manifest defines ZIP order, timing,
+dimensions and anchor. Cumulative time boundaries resample to 30 Hz. Archive bytes
+are bounded at 512 MiB and imported artwork at the existing 64-Mpixel/1024-hold
+limits; duplicate consecutive PNG payloads are decoded once. Loose PNG files use
+natural filename ordering and an explicit frame rate. Sprite asset files retain
+their existing library import validation.
+
+`combat_animation_replace` previews the candidate using the existing actor player,
+advancing to its first real playback step before display. Only Apply publishes
+both sequences and assignments as one Undo command. Recovery's `privateAnimations`
+section restores these two dependent sections atomically. Focused tests cover ZIP
+CRC/timing/order/holds, all three source flows, new classes, Cancel/Undo/recovery,
+linked destinations, long programs, and compiled ROM export/reopen. This does not
+claim a new emulator playthrough or lossless conversion to the game's color format.
+
 ## Recovered preview graphics math (October 17)
 
 `game/director/graphics_math.c` adapts the accepted sine/cosine, look-at and

@@ -28,6 +28,7 @@ class AnimationSequenceEditor : public QWidget {
     void setContext(int classId, int flags, int pose);
     void setGuided(bool);
     void assignAnimation(int action, bool blocked, int pose);
+    void applyReplacement(const Project &candidate) { publish(candidate, "Replace combat animation"); }
     void moveVisibleFrame(int from, int to);
     void exportFrame(const QString &path) const;
     enum class AnimationExport { AnimatedPng, FramesZip, Webm };

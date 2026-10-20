@@ -854,6 +854,14 @@ void ActorPoseEditor::showFrame(int frame) {
     selectedFrame_ = frame;
     draw();
 }
+void ActorPoseEditor::showReplacementPreview() {
+    setFrameEditing(true);
+    positionControls_->hide();
+    bodyControls_->hide();
+    status_->hide();
+    fit_ = true;
+    seek(1);
+}
 void ActorPoseEditor::setFrameEditing(bool enabled) {
     frameEditing_ = enabled;
     positionControls_->setVisible(enabled);

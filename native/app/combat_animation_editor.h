@@ -24,7 +24,7 @@ class CombatAnimationEditor : public QWidget {
     bool refreshing_ = false;
     QComboBox *classes_, *actions_, *side_, *mode_, *variant_, *animations_;
     QLabel *assignment_, *notice_;
-    QPushButton *assign_;
+    QPushButton *assign_, *replace_;
     AnimationSequenceEditor *sequence_ = nullptr;
 };
 } // namespace lordly

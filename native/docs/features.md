@@ -1,5 +1,22 @@
 # Feature inventory and completion tracking
 
+Combat Animations centers on **Replace animation…**, or **Create animation…** for
+a new class without its own animation set. Choose files (PNG frames, exported
+frame-sequence ZIP, or a sprite asset), another class's named animation, or Art
+Library. Preview the converted result and apply once; Cancel, Undo and unfinished
+dialog recovery preserve the prior project. The dialog names the destination side
+and artwork variant. Existing reassignment controls are under Advanced assignment.
+Class-copy and comparison pickers use animation names instead of raw pose IDs.
+
+ZIP import checks the manifest, frame order, dimensions, origin and checksums;
+stored and deflated archives are supported without extracting files. Frame rate
+converts to the game's 30 preview steps per second. Consecutive identical images
+share their decoded data. PNG files sort naturally by filename. File and library
+imports create fresh frame programs, so baked movement/fades are not applied a
+second time. Long sequences chain native programs. Class copies retain movement,
+sound and loops, with equipment selected for the destination class. File imports
+use the game's sprite color conversion; the dialog previews that result.
+
 Actor, sprite and scene previews use recovered game sine/cosine and camera math
 for rotations and projection. Point placement, plane clipping and mouse picking
 share the same rounded camera basis. Original-instruction comparisons cover

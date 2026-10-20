@@ -2,6 +2,7 @@
 #include "app/recovery_draft.h"
 #include "app/actor_pose_editor.h"
 #include "engine/animation_transfer.h"
+#include "engine/combat_animation_edit.h"
 #include "engine/sprite_sources.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -167,7 +168,7 @@ void AnimationSequenceEditor::chooseSource(bool compare, int destinationRecord, 
     for (const auto &row : project_->records(Table::Classes)) if (row.id > 0)
         classes.addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
     classes.setCurrentIndex(classes.findData(selectedClass()));
-    routes.addItems({"Body 0 / 0", "Body 0 / 1", "Body 1 / 0", "Body 1 / 1"});
+    routes.addItems({"Player · Base", "Enemy · Base", "Player · Alternate", "Enemy · Alternate"});
     routes.setCurrentIndex(routes_->currentIndex());
     choices->addWidget(&classes, 2); choices->addWidget(&routes); choices->addWidget(&poses);
     ActorPoseEditor preview(project_->rom()); preview.setBodyAnimations(project_->bodyAnimationData());
@@ -217,7 +218,10 @@ void AnimationSequenceEditor::chooseSource(bool compare, int destinationRecord, 
             const int previous = poses.currentIndex() < 0 ? poses_->currentData().toInt() : poses.currentData().toInt();
             const QSignalBlocker blocker(&poses); poses.clear();
             const auto art = body(*project_, classes.currentData().toInt(), routes.currentIndex());
-            for (int pose = 0; pose < art.poses().size(); ++pose) poses.addItem(QString("Pose %1").arg(pose), pose);
+            if (guided_) {
+                for (const auto &choice : namedCombatAnimations(*project_, classes.currentData().toInt(), routes.currentIndex()))
+                    poses.addItem(choice.name, choice.pose);
+            } else for (int pose = 0; pose < art.poses().size(); ++pose) poses.addItem(QString("Pose %1").arg(pose), pose);
             poses.setCurrentIndex(std::max(0, poses.findData(previous)));
             select();
         } catch (const std::exception &e) { status.setText(QString::fromUtf8(e.what())); buttons.button(QDialogButtonBox::Ok)->setEnabled(false); }

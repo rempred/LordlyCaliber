@@ -136,11 +136,9 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
         });
         return action;
     };
-    legacyAction("Copy animation from another class…", "sequenceCopyFrom");
     legacyAction("Compare with another animation…", "sequenceCompare");
     menu->addSeparator();
     legacyAction("Save frames to Art Library", "sequenceCopyToLibrary");
-    legacyAction("Replace frames from Art Library…", "sequenceImportAll");
     menu->addSeparator();
     auto restore =
         legacyAction("Restore all animations for this side and variant", "sequenceRemoveCopy");
