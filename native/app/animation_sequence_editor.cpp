@@ -2,6 +2,7 @@
 #include "app/recovery_draft.h"
 #include "app/view_position.h"
 #include "app/animation_sequence_editor.h"
+#include "engine/combat_animation_edit.h"
 #include "app/actor_pose_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/frame_layer_editor.h"
@@ -399,7 +400,7 @@ void AnimationSequenceEditor::assignAnimation(int action, bool blocked, int pose
     if (!sequences.find(id, flags))
         sequences.create(id, flags, *candidate.animationRoutes(), candidate.combatArtwork()->previewEdits());
     if (action < 0) {
-        const QMap<int, int> fixed{{-1, 0}, {-2, 5}, {-3, 11}, {-4, 17}};
+        const auto fixed = combatMotions();
         if (!fixed.contains(action)) throw Error("Unknown combat motion");
         const auto source = *sequences.find(id, flags);
         const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,

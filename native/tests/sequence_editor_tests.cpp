@@ -18,6 +18,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QProcess>
 #include <QStandardPaths>
 #include "rebuild/compiler.h"
@@ -47,6 +48,134 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void inlineFrameDurations() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto asset = SpriteAsset::blank("Timing controls", {8, 8});
+            asset.frames[0].ticks = 2;
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            auto second = asset.frames[0];
+            second.id = SpriteLibrary::newId();
+            second.layers[0].id = SpriteLibrary::newId();
+            second.layers[0].image.fill(Qt::blue);
+            asset.frames << second;
+            auto project = replaceCombatAnimation(Project::fromRom(Rom::open(path)), {2, 0, -1}, asset, true);
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1200, 900); editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            classes->setCurrentIndex(classes->findData(2));
+            auto actions = editor.findChild<QComboBox *>("combatAnimationAction");
+            actions->setCurrentIndex(actions->findData(-1));
+            auto frames = editor.findChild<QListWidget *>("sequenceFrames");
+            const auto value = [&](int row) {
+                const auto records = project.animationSequences()->find(2, 0)->poses().effective(0).records;
+                return int(u8(records[row].operands, records[row].operands.size() - 1));
+            };
+            const auto control = [&](int row) {
+                return qobject_cast<QSpinBox *>(frames->itemWidget(frames->item(row)));
+            };
+            QVERIFY(!editor.findChild<QSpinBox *>("sequenceDuration"));
+            QPointer<QSpinBox> first = control(0);
+            QVERIFY(first && control(1));
+            const auto icon = frames->item(0)->icon().cacheKey();
+            first->setFocus(); first->selectAll();
+            QTest::keyClicks(first, "12");
+            QVERIFY(first->findChild<QLineEdit *>()->text().startsWith("12"));
+            QCOMPARE(value(0), 4); // Incomplete typing must not rebuild the board.
+            QTest::keyClick(first, Qt::Key_Return);
+            QTRY_COMPARE(value(0), 12);
+            QVERIFY(first && first == control(0));
+            QCOMPARE(frames->item(0)->icon().cacheKey(), icon);
+            QCOMPARE(value(1), 4);
+            QCOMPARE(undo.count(), 1);
+            for (int n = 0; n < 10; ++n) QTest::keyClick(first, Qt::Key_Up);
+            QTest::mouseClick(first, Qt::LeftButton, Qt::NoModifier, QPoint(first->width() - 8, 6));
+            QTRY_COMPARE(value(0), 23);
+            QVERIFY(first && first == control(0));
+            QCOMPARE(undo.count(), 2); // A burst is committed once, not once per arrow.
+            QCOMPARE(frames->item(0)->icon().cacheKey(), icon);
+            first->setFocus(); first->selectAll(); QTest::keyClicks(first, "17");
+            control(1)->setFocus();
+            QTRY_COMPARE(value(0), 17);
+            QCOMPARE(value(1), 4);
+            undo.undo(); QCOMPARE(value(0), 23);
+            undo.redo(); QCOMPARE(value(0), 17);
+            QVERIFY(control(0) && control(1));
+            QCOMPARE(control(0)->value(), 17);
+            editor.grab().save("native/build/combat-inline-ticks.png");
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void replacementRestart() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto asset = SpriteAsset::blank("Restart regression", {8, 8});
+            asset.anchor = {4, 8};
+            asset.frames[0].ticks = 2;
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            for (const auto color : {Qt::blue, Qt::green}) {
+                auto frame = asset.frames[0];
+                frame.id = SpriteLibrary::newId();
+                frame.layers[0].id = SpriteLibrary::newId();
+                frame.layers[0].image.fill(color);
+                asset.frames << frame;
+            }
+            auto project = replaceCombatAnimation(Project::fromRom(Rom::open(path)),
+                                                  {2, 0, -1}, asset, true);
+            const auto before = project.manifest();
+            QUndoStack undo;
+            CombatAnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1200, 900);
+            editor.show();
+            auto classes = editor.findChild<QComboBox *>("combatAnimationClass");
+            classes->setCurrentIndex(classes->findData(2));
+            auto animations = editor.findChild<QComboBox *>("combatAnimationAction");
+            animations->setCurrentIndex(animations->findData(-1));
+            auto preview = editor.findChild<ActorPoseEditor *>();
+            auto frames = editor.findChild<QListWidget *>("sequenceFrames");
+            auto position = preview->findChild<QSpinBox *>("actorPosition");
+            auto play = preview->findChild<QPushButton *>("actorPlay");
+            auto restart = preview->findChild<QPushButton *>("actorRestart");
+            auto step = preview->findChild<QPushButton *>("actorStep");
+            auto view = preview->findChild<QGraphicsView *>();
+            const auto displayed = [&] {
+                QImage image(asset.size, QImage::Format_RGBA8888);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                view->scene()->render(&painter, QRectF(QPointF(), asset.size),
+                                      QRectF(-asset.anchor, asset.size), Qt::IgnoreAspectRatio);
+                return image;
+            };
+            QCOMPARE(frames->count(), 3);
+            frames->setCurrentRow(1);
+            QCOMPARE(displayed(), asset.composite(1));
+            play->click();
+            // Inspect the live canvas immediately, before the first timer tick.
+            QCOMPARE(displayed(), asset.composite(0));
+            QTRY_VERIFY(position->value() >= 4);
+            restart->click();
+            QVERIFY(!play->isChecked());
+            QCOMPARE(displayed(), asset.composite(0));
+            QCOMPARE(position->value(), 1);
+            // Two steps per frame, including the primed first step, and no extra
+            // frame or skipped hold at the loop boundary.
+            for (int tick = 2; tick <= 8; ++tick) {
+                step->click();
+                QCOMPARE(position->value(), tick);
+                QCOMPARE(displayed(), asset.composite(((tick - 1) / 2) % 3));
+            }
+            restart->click();
+            QCOMPARE(displayed(), asset.composite(0));
+            position->setValue(5);
+            QCOMPARE(displayed(), asset.composite(2));
+            position->setValue(0);
+            QCOMPARE(displayed(), asset.composite(0));
+            QCOMPARE(project.manifest(), before);
+            QCOMPARE(undo.count(), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void replacementEngine() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -138,6 +267,18 @@ class SequenceEditorTests : public QObject {
             QCOMPARE(capture(replaced, {created, 0, -1, false})->composite(0),
                      imported.composite(0));
             replaced = replaceCombatAnimation(replaced, {10,0,-1,false}, imported, true);
+            // Native dispatch uses these reaction/status slots. Petrification
+            // also supplies frame-substitution markers, including wide tokens.
+            const QVector<int> reactionPoses{18, 21, 22, 23, 24, 25, 26, 29, 32, 33, 34, 35, 38, 39};
+            QMap<int, SpriteAsset> reactionPlayback;
+            for (int pose : reactionPoses) {
+                const CombatAnimationTarget reaction{2, 0, -100 - pose};
+                replaced = replaceCombatAnimation(replaced, reaction, imported, false);
+                const auto playback = capture(replaced, reaction);
+                QVERIFY(playback);
+                reactionPlayback[pose] = *playback;
+            }
+            QVERIFY(replaced.animationSequences()->requiresMarkerRuntime());
             replaced.saveFolder(work.filePath("project"));
             auto reopened = Project::fromRom(p.rom());
             reopened.applyManifest(Project::readProject(work.filePath("project")));
@@ -154,6 +295,16 @@ class SequenceEditorTests : public QObject {
             exported.loadAnimationRoutes();
             exported.loadAnimationOverrides();
             exported.loadCombatArtwork();
+            for (int pose : reactionPoses) {
+                const auto actual = capture(exported, {2, 0, -100 - pose});
+                QVERIFY(actual);
+                const auto &expected = reactionPlayback[pose];
+                QCOMPARE(actual->frames.size(), expected.frames.size());
+                for (int frame = 0; frame < expected.frames.size(); ++frame) {
+                    QCOMPARE(actual->composite(frame), expected.composite(frame));
+                    QCOMPARE(actual->frames[frame].ticks, expected.frames[frame].ticks);
+                }
+            }
             QCOMPARE(capture(exported, attack)->composite(1), imported.composite(1));
             QCOMPARE(capture(exported, {created, 0, -1, false})->composite(0),
                      imported.composite(0));
@@ -525,6 +676,7 @@ class SequenceEditorTests : public QObject {
             auto side = editor.findChild<QComboBox *>("combatAnimationSide");
             auto variant = editor.findChild<QComboBox *>("combatAnimationVariant");
             auto choices = editor.findChild<QComboBox *>("combatAnimationChoice");
+            auto actions = editor.findChild<QComboBox *>("combatAnimationAction");
             QVERIFY(classes && side && variant && choices);
             const auto baseline = project.manifest();
             for (int id : {2, 10, 15, 30, 123}) {
@@ -534,7 +686,8 @@ class SequenceEditorTests : public QObject {
                 auto selectors = project.animationRoutes()->entry(id).selectors;
                 if (copy != owner || selectors.isEmpty())
                     selectors = project.animationRoutes()->entry(owner).selectors;
-                QSet<int> combat{0, 5, 11, 17};
+                QSet<int> combat;
+                for (int pose = 0; pose < 40; ++pose) combat.insert(pose);
                 for (int at = 0; at + 3 < selectors.size(); at += 4)
                     for (int mode = 1; mode <= 3; ++mode)
                         combat.insert(u8(selectors, at + mode));
@@ -550,17 +703,42 @@ class SequenceEditorTests : public QObject {
                                 combat.insert(project.bodyAnimationData()->selector(
                                     id, owner, action, mode, route));
                     }
+                    const int actualRoute = route ^ (((route & 1) && (owner == 15 || owner == 30)) ? 2 : 0);
+                    for (int mode = 0; mode < 3; ++mode)
+                        combat.insert(project.bodyAnimationData()->selector(id, owner,
+                            actions->currentData().toInt(), mode, actualRoute));
                     QVERIFY(choices->count() > 0);
                     for (int row = 0; row < choices->count(); ++row)
                         QVERIFY2(combat.contains(choices->itemData(row).toInt()),
                                  qPrintable(choices->itemText(row)));
-                    QCOMPARE(choices->findData(38), -1);
+                    QVERIFY(choices->findData(38) >= 0); // Native Petrification is playable.
                     QCOMPARE(choices->findData(88), -1);
                 }
             }
             QCOMPARE(project.manifest(),
                      baseline); // Filtering and previewing never rewrite programs.
             classes->setCurrentIndex(classes->findData(2));
+            // Check the named main and donor choices against native call sites.
+            const QMap<QString, int> reactions{{"Guard", 21}, {"Dodge", 23}, {"Death", 29},
+                {"Paralysis", 32}, {"Recover from paralysis", 33}, {"Sleep", 34},
+                {"Wake up", 35}, {"Petrification", 38}, {"Recover from petrification", 39}};
+            const auto donorChoices = namedCombatAnimations(project, 2, 0);
+            const auto donorArt = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto donorBank = AnimationDescriptor::load(project.rom(), donorArt.descriptorKey()).poses();
+            for (auto it = reactions.cbegin(); it != reactions.cend(); ++it) {
+                const int row = actions->findText(it.key());
+                QVERIFY2(row >= 0, qPrintable(it.key()));
+                actions->setCurrentIndex(row);
+                QCOMPARE(choices->currentData().toInt(), it.value());
+                const bool available = std::any_of(donorChoices.cbegin(), donorChoices.cend(), [&](const auto &choice) {
+                    return choice.name == it.key() && choice.pose == it.value();
+                });
+                // Fighter guards instead of dodging: empty native slots still
+                // appear as destinations, but cannot supply a donor animation.
+                QCOMPARE(available, !donorBank.effective(it.value()).records.isEmpty());
+            }
+            for (const auto &entry : AnimationOverrideImage::definition()["actions"].toArray())
+                QVERIFY(actions->findData(entry.toObject()["id"].toInt()) >= 0);
             const auto art =
                 ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
             const auto bank = AnimationDescriptor::load(project.rom(), art.descriptorKey()).poses();
@@ -601,7 +779,9 @@ class SequenceEditorTests : public QObject {
             QVERIFY(choice->findData(40) >= 0); choice->setCurrentIndex(choice->findData(40));
             auto sequence = editor.findChild<AnimationSequenceEditor *>();
             auto frames = editor.findChild<QListWidget *>("sequenceFrames");
-            auto ticks = editor.findChild<QSpinBox *>("sequenceDuration");
+            const auto frameTicks = [&](int index) {
+                return qobject_cast<QSpinBox *>(frames->itemWidget(frames->item(index)));
+            };
             auto preview = editor.findChild<QWidget *>("sequencePreview");
             const auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
             const auto art = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
@@ -621,7 +801,8 @@ class SequenceEditorTests : public QObject {
                 QTest::mouseClick(frames->viewport(), Qt::LeftButton, Qt::NoModifier, frames->visualItemRect(frames->item(i)).center());
                 QCOMPARE(frames->selectedItems().size(), 1);
                 QCOMPARE(preview->property("frameToken").toInt(), token(originalRecords[frameRows[i]]));
-                QCOMPARE(ticks->value(), int(u8(originalRecords[frameRows[i]].operands, originalRecords[frameRows[i]].operands.size() - 1)));
+                QVERIFY(frameTicks(i));
+                QCOMPARE(frameTicks(i)->value(), int(u8(originalRecords[frameRows[i]].operands, originalRecords[frameRows[i]].operands.size() - 1)));
                 QVERIFY(!frames->item(i)->icon().isNull());
             }
             QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
@@ -638,9 +819,9 @@ class SequenceEditorTests : public QObject {
             });
             button("sequencePaint")->click(); QVERIFY(painterOpened);
             QCOMPARE(project.animationSequences()->json(), initial); QCOMPARE(undo.count(), 0);
-            const int editedTicks = (ticks->value() + 5) % 255 + 1;
-            ticks->setValue(editedTicks);
-            QVERIFY2(project.animationSequences()->find(2, 0), qPrintable(editor.findChild<QLabel *>("sequenceNotice")->text()));
+            const int editedTicks = (frameTicks(0)->value() + 5) % 255 + 1;
+            frameTicks(0)->setValue(editedTicks);
+            QTRY_VERIFY(project.animationSequences()->find(2, 0));
             QCOMPARE(undo.count(), 1);
             QVERIFY(!project.animationSequences()->find(3, 0)); QVERIFY(!project.animationSequences()->find(2, 1));
             const auto afterTiming = project.animationSequences()->json();
@@ -653,14 +834,14 @@ class SequenceEditorTests : public QObject {
             undo.redo(); QCOMPARE(project.animationSequences()->json(), afterTiming);
             frames->setCurrentRow(0, QItemSelectionModel::ClearAndSelect); frames->item(1)->setSelected(true);
             QCOMPARE(frames->selectedItems().size(), 2);
-            QCOMPARE(ticks->value(), editedTicks);
-            ticks->setFocus(); frames->setFocus();
+            QCOMPARE(frameTicks(0)->value(), editedTicks);
+            frameTicks(0)->setFocus(); frames->setFocus();
             QCOMPARE(project.animationSequences()->json(), afterTiming);
-            ticks->setFocus();
-            ticks->findChild<QLineEdit *>()->selectAll();
-            QTest::keyClicks(ticks, QString::number(editedTicks));
-            QTest::keyClick(ticks, Qt::Key_Return);
-            QCOMPARE(undo.count(), 2); QCOMPARE(frames->selectedItems().size(), 2);
+            frameTicks(1)->setFocus();
+            frameTicks(1)->findChild<QLineEdit *>()->selectAll();
+            QTest::keyClicks(frameTicks(1), QString::number(editedTicks));
+            QTest::keyClick(frameTicks(1), Qt::Key_Return);
+            QTRY_COMPARE(undo.count(), 2);
             records = project.animationSequences()->find(2, 0)->poses().effective(40).records;
             for (int i : {0, 1}) QCOMPARE(int(u8(records[frameRows[i]].operands, records[frameRows[i]].operands.size() - 1)), editedTicks);
             const auto afterBatch = project.animationSequences()->json();

@@ -5,11 +5,35 @@
 #include <QSet>
 #include <algorithm>
 namespace lordly {
+QVector<NamedCombatAnimation> combatMotionTypes() {
+    // Native reaction dispatch: accepted func_0021EBBC. Idle selection:
+    // func_001F0E64. Return completion and battle-end stances: 2215D0/21840C.
+    // Keep untraced slots explicit; sharing artwork does not prove their role.
+    const QMap<int, QString> names{
+        {0, "Idle"}, {1, "Idle variation 1"}, {2, "Idle variation 2"},
+        {3, "Idle variation 3"}, {4, "Idle variation 4"}, {5, "Advance"},
+        {8, "Battle-end stance"}, {11, "Return to formation"}, {12, "Finish returning"},
+        {17, "Hit / recoil"}, {18, "Recover from hit"},
+        {21, "Guard"}, {22, "Recover from guard"}, {23, "Dodge"}, {24, "Recover from dodge"},
+        {25, "Special hit / recoil"}, {26, "Recover from special hit"}, {29, "Death"},
+        {32, "Paralysis"}, {33, "Recover from paralysis"}, {34, "Sleep"}, {35, "Wake up"},
+        {36, "Alternate battle-end stance"}, {38, "Petrification"}, {39, "Recover from petrification"}};
+    const QMap<int, int> originalIds{{0, -1}, {5, -2}, {11, -3}, {17, -4}};
+    QVector<NamedCombatAnimation> result;
+    for (int pose = 0; pose < 40; ++pose)
+        result << NamedCombatAnimation{names.value(pose, QString("Unidentified animation %1").arg(pose)),
+                                        originalIds.value(pose, -100 - pose), pose, false};
+    return result;
+}
 QMap<int, int> combatMotions() {
-    return {{-1, 0}, {-2, 5}, {-3, 11}, {-4, 17}};
+    QMap<int, int> result;
+    for (const auto &motion : combatMotionTypes()) result[motion.action] = motion.pose;
+    return result;
 }
 QMap<int, QString> combatMotionNames() {
-    return {{-1, "Idle"}, {-2, "Advance"}, {-3, "Return to formation"}, {-4, "Hit / recoil"}};
+    QMap<int, QString> result;
+    for (const auto &motion : combatMotionTypes()) result[motion.action] = motion.name;
+    return result;
 }
 namespace {
 int owner(Project &p, int id) {
@@ -85,10 +109,10 @@ int prepare(Project &p, CombatAnimationTarget t) {
 void finish(Project &p, CombatAnimationTarget t, AnimationDescriptor d, int pose) {
     if (t.action == -1) {
         auto bank = d.poses();
-        for (int idle : {1, 2, 3, 4, 8})
+        for (int idle : {1, 2, 3, 4})
             bank.setProgram(idle, bank.effective(pose).source);
         if (linked(p, t.classId))
-            for (int idle : {51, 52, 53, 54, 58})
+            for (int idle : {51, 52, 53, 54})
                 bank.setProgram(idle, bank.effective(50).source);
         d.setPoses(bank);
     }
@@ -158,7 +182,7 @@ QVector<NamedCombatAnimation> namedCombatAnimations(Project &p, int id, int flag
     const auto add = [&](int action, bool blocked) {
         const CombatAnimationTarget t{id, flags, action, blocked};
         const int pose = combatAnimationPose(p, t);
-        if (pose < 0 || pose >= bank.programs().size() || pose == 38 || pose == 88)
+        if (pose < 0 || pose >= bank.programs().size())
             return;
         try {
             bank.validateEntry(pose);
@@ -169,8 +193,8 @@ QVector<NamedCombatAnimation> namedCombatAnimations(Project &p, int id, int flag
         }
         out << NamedCombatAnimation{combatAnimationName(p, t), action, pose, blocked};
     };
-    for (int motion : {-1, -2, -3, -4})
-        add(motion, false);
+    for (const auto &motion : combatMotionTypes())
+        add(motion.action, false);
     QSet<int> actions;
     const auto current = p.record(Table::Classes, id).bytes,
                base = p.record(Table::Classes, owner(p, id)).bytes;

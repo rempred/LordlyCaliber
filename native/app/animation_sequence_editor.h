@@ -55,7 +55,7 @@ class AnimationSequenceEditor : public QWidget {
     void refreshFrames();
     void selectVisibleFrames();
     void updateFrameTools();
-    void changeFrameDuration(int);
+    void changeFrameDuration(int record, int ticks);
     void duplicateVisibleFrames();
     void removeVisibleFrames();
     void moveFrameArtwork(QPoint, int layer = -1);
@@ -81,12 +81,11 @@ class AnimationSequenceEditor : public QWidget {
     ActorPoseEditor *preview_ = nullptr;
     QVector<QWidget *> advanced_;
     QWidget *assignmentControls_ = nullptr;
-    bool guided_ = false, durationTyped_ = false;
+    bool guided_ = false, durationEdit_ = false;
     QWidget *rawWorkspace_ = nullptr, *frameWorkspace_ = nullptr, *frameTools_ = nullptr;
     QWidget *framePreviewHost_ = nullptr;
     QSplitter *rawSplit_ = nullptr;
     QListWidget *frames_ = nullptr;
-    QSpinBox *duration_ = nullptr;
     QLabel *frameHeading_ = nullptr, *frameSelection_ = nullptr, *frameStatus_ = nullptr;
     QCheckBox *onion_ = nullptr;
     QPushButton *earlier_ = nullptr, *later_ = nullptr, *paint_ = nullptr, *layersButton_ = nullptr;

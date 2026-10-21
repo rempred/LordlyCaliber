@@ -749,11 +749,19 @@ void ActorPoseEditor::restart() {
             }
     }
     step_ = 0;
+    // Frame zero is the actor's unexecuted default, not the first frame of the
+    // selected sequence. Prime combat previews before displaying a restart;
+    // keep the raw inspector's step-zero state available for inspection.
+    const int initialResult = frameEditing_ && art_->isBody() ? advancePose() : LORDLY_POSE_OK;
+    if (frameEditing_ && art_->isBody() && initialResult == LORDLY_POSE_OK)
+        step_ = 1;
     {
         QSignalBlocker block(position_);
-        position_->setValue(0);
+        position_->setValue(step_);
     }
     draw();
+    if (initialResult != LORDLY_POSE_OK)
+        status_->setText(poseError());
 }
 void ActorPoseEditor::seek(int target) {
     stop();

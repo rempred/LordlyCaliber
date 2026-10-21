@@ -7,6 +7,7 @@
 #include <QDropEvent>
 #include <QGridLayout>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
@@ -19,6 +20,7 @@
 #include <QSplitter>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
+#include <QTimer>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -34,15 +36,80 @@ bool visibleFrame(const PoseRecord &r) {
 class FrameDelegate final : public QStyledItemDelegate {
   public:
     using QStyledItemDelegate::QStyledItemDelegate;
+    std::function<void(int, int)> durationChanged;
+    bool eventFilter(QObject *object, QEvent *event) override {
+        auto spin = qobject_cast<QSpinBox *>(object);
+        if (spin && event->type() == QEvent::KeyPress) {
+            const auto key = static_cast<QKeyEvent *>(event)->key();
+            if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+                spin->interpretText();
+                spin->setProperty("pendingTicks", false);
+                for (auto timer : spin->findChildren<QTimer *>()) timer->stop();
+                emit commitData(spin);
+                return true; // Persistent controls stay open; no queued close/commit.
+            }
+        }
+        return QStyledItemDelegate::eventFilter(object, event);
+    }
     void paint(QPainter *p, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override {
-        QStyledItemDelegate::paint(p, option, index);
+        auto card = option;
+        card.rect.adjust(0, 0, 0, -30);
+        QStyledItemDelegate::paint(p, card, index);
         if (index.data(Qt::UserRole + 1).toBool()) {
             p->save();
             p->setPen(QPen(QColor("#62bd91"), 3));
             p->drawRoundedRect(option.rect.adjusted(2, 2, -2, -2), 4, 4);
             p->restore();
         }
+    }
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override {
+        auto spin = new QSpinBox(parent);
+        spin->setObjectName("sequenceFrameTicks");
+        spin->setRange(0, 255);
+        spin->setSuffix(" ticks");
+        spin->setAlignment(Qt::AlignCenter);
+        spin->setKeyboardTracking(false);
+        spin->setToolTip("This frame's duration. Type a value and press Enter, or use the arrows.");
+        auto timer = new QTimer(spin);
+        timer->setSingleShot(true);
+        timer->setInterval(250);
+        const auto commit = [this, spin, timer] {
+            if (!spin->property("pendingTicks").toBool()) return;
+            timer->stop();
+            spin->setProperty("pendingTicks", false);
+            emit const_cast<FrameDelegate *>(this)->commitData(spin);
+        };
+        connect(spin, &QSpinBox::valueChanged, spin, [spin, timer] {
+            spin->setProperty("pendingTicks", true);
+            timer->start();
+        });
+        connect(timer, &QTimer::timeout, spin, commit);
+        connect(spin, &QSpinBox::editingFinished, spin, commit);
+        return spin;
+    }
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override {
+        auto spin = qobject_cast<QSpinBox *>(editor);
+        if (spin->property("pendingTicks").toBool()) return;
+        const QSignalBlocker block(spin);
+        spin->setProperty("frameRecord", index.data(Qt::UserRole));
+        spin->setValue(index.data(Qt::UserRole + 3).toInt());
+        if (!spin->hasFocus()) spin->findChild<QLineEdit *>()->deselect();
+    }
+    void destroyEditor(QWidget *editor, const QModelIndex &index) const override {
+        editor->setProperty("pendingTicks", false);
+        editor->removeEventFilter(const_cast<FrameDelegate *>(this));
+        for (auto timer : editor->findChildren<QTimer *>()) timer->stop();
+        QStyledItemDelegate::destroyEditor(editor, index);
+    }
+    void setModelData(QWidget *editor, QAbstractItemModel *, const QModelIndex &index) const override {
+        if (durationChanged)
+            durationChanged(index.data(Qt::UserRole).toInt(), qobject_cast<QSpinBox *>(editor)->value());
+    }
+    void updateEditorGeometry(QWidget *editor, const QStyleOptionViewItem &option,
+                              const QModelIndex &) const override {
+        editor->setGeometry(option.rect.adjusted(4, option.rect.height() - 29, -4, -2));
     }
 };
 class FrameBoard final : public QListWidget {
@@ -172,14 +239,19 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     frames_->setMovement(QListView::Static);
     frames_->setSpacing(5);
     frames_->setIconSize({104, 100});
-    frames_->setGridSize({124, 145});
+    frames_->setGridSize({124, 160});
+    frames_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     frames_->setUniformItemSizes(true);
     frames_->setWordWrap(false);
     frames_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     frames_->setDragDropMode(QAbstractItemView::InternalMove);
     frames_->setDefaultDropAction(Qt::MoveAction);
     frames_->setDropIndicatorShown(true);
-    frames_->setItemDelegate(new FrameDelegate(frames_));
+    auto delegate = new FrameDelegate(frames_);
+    delegate->durationChanged = [this](int record, int ticks) {
+        if (!refreshing_) guarded([&] { changeFrameDuration(record, ticks); });
+    };
+    frames_->setItemDelegate(delegate);
     frames_->setMinimumHeight(155);
     board->move = [this](int from, int to) { guarded([&] { moveVisibleFrame(from, to); }); };
     column->addWidget(frames_, 1);
@@ -193,29 +265,6 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     frameSelection_ = new QLabel;
     frameSelection_->setObjectName("sequenceFrameSelection");
     toolbar->addWidget(frameSelection_, 0, 0, 1, 2);
-    duration_ = new QSpinBox;
-    duration_->setObjectName("sequenceDuration");
-    duration_->setRange(0, 255);
-    duration_->setSuffix(" ticks");
-    duration_->setKeyboardTracking(false);
-    connect(duration_->findChild<QLineEdit *>(), &QLineEdit::textEdited, this,
-            [this] { durationTyped_ = true; });
-    duration_->setToolTip("How long each selected frame is held. Higher values make it slower. "
-                          "Changes apply immediately.");
-    toolbar->addWidget(new QLabel("Duration"), 0, 2);
-    toolbar->addWidget(duration_, 0, 3);
-    connect(duration_, &QSpinBox::valueChanged, this, [this](int value) {
-        if (!refreshing_) {
-            guarded([&] { changeFrameDuration(value); });
-            updateFrameTools();
-        }
-    });
-    connect(duration_, &QSpinBox::editingFinished, this, [this] {
-        if (!refreshing_ && durationTyped_) {
-            guarded([this] { changeFrameDuration(duration_->value()); });
-            updateFrameTools();
-        }
-    });
     const auto button = [&](const QString &label, const char *name, int row, int col,
                             const std::function<void()> &action) {
         auto b = new QPushButton(label);
@@ -320,14 +369,30 @@ void AnimationSequenceEditor::refreshFrames() {
         context == frameContext_ && pendingRecord_ < 0 ? selectedFrameRecords() : QSet<int>{};
     const int desired =
         context == frameContext_ || pendingRecord_ >= 0 ? records_->currentRow() : -1;
+    const bool timingOnly = durationEdit_ && frameContext_ == context;
     frameContext_ = context;
     pendingRecord_ = -1;
     const QSignalBlocker blocker(frames_);
-    frames_->clear();
     const auto snapshot = descriptor();
     const auto bank = snapshot.poses();
     const auto records = bank.effective(poses_->currentData().toInt()).records;
     int total = 0, controls = 0;
+    if (timingOnly) {
+        // Keep the spinbox receiving input alive. Timing edits do not change
+        // artwork, so there is no reason to decode every thumbnail again.
+        for (int i = 0; i < frames_->count(); ++i) {
+            auto item = frames_->item(i);
+            const auto &record = records[item->data(Qt::UserRole).toInt()];
+            const int ticks = u8(record.operands, record.operands.size() - 1);
+            item->setData(Qt::UserRole + 3, ticks);
+            item->setToolTip(QString("Frame %1 · %2 ticks\nDouble-click artwork to paint.").arg(i + 1).arg(ticks));
+            total += ticks;
+        }
+        frameHeading_->setText(QString("%1 frames · %2 ticks").arg(frames_->count()).arg(total));
+        updateFrameTools();
+        return;
+    }
+    frames_->clear();
     // A common origin and scale make relative motion visible across all cards.
     std::optional<SpriteAsset> asset;
     QString thumbnailError;
@@ -356,10 +421,12 @@ void AnimationSequenceEditor::refreshFrames() {
         QIcon icon(thumb);
         icon.addPixmap(thumb, QIcon::Selected); // Selection must not recolor the artwork.
         auto item = new QListWidgetItem(
-            icon, QString("Frame %1\n%2 ticks").arg(index + 1).arg(ticks), frames_);
+            icon, QString("Frame %1").arg(index + 1), frames_);
+        item->setSizeHint({118, 155});
         item->setTextAlignment(Qt::AlignHCenter);
         item->setData(Qt::UserRole, r);
         item->setData(Qt::UserRole + 2, frameToken(records[r]));
+        item->setData(Qt::UserRole + 3, ticks);
         item->setToolTip(QString("Frame %1 · %2 ticks\nDouble-click to paint.%3")
                              .arg(index + 1)
                              .arg(ticks)
@@ -369,6 +436,9 @@ void AnimationSequenceEditor::refreshFrames() {
         if (r == desired)
             current = index;
         item->setSelected(selection.contains(r));
+        frames_->openPersistentEditor(item);
+        if (auto spin = qobject_cast<QSpinBox *>(frames_->itemWidget(item)))
+            spin->findChild<QLineEdit *>()->deselect();
     }
     if (frames_->count()) {
         if (current < 0)
@@ -390,6 +460,7 @@ void AnimationSequenceEditor::refreshFrames() {
     frameStatus_->setToolTip(
         QString("%1 movement, timing and other control instructions are preserved automatically.")
             .arg(controls));
+    preview_->setVisible(frames_->count() > 0);
     preview_->setFrameEditing(true);
     preview_->setFrameBounds(asset ? QRectF(-asset->anchor, asset->size) : QRectF{});
     updateFrameTools();
@@ -418,12 +489,10 @@ void AnimationSequenceEditor::selectVisibleFrames() {
 void AnimationSequenceEditor::updateFrameTools() {
     if (!frames_ || !guided_)
         return;
-    durationTyped_ = false;
     const auto selected = selectedFrameRecords();
     const int index = frames_->currentRow();
     findChild<QAction *>("sequenceExportPng")->setEnabled(index >= 0);
     findChild<QPushButton *>("sequenceExport")->setEnabled(frames_->count() > 0);
-    duration_->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDuplicate")->setEnabled(!selected.isEmpty());
     findChild<QPushButton *>("sequenceDelete")->setEnabled(!selected.isEmpty());
     paint_->setEnabled(selected.size() == 1);
@@ -434,36 +503,20 @@ void AnimationSequenceEditor::updateFrameTools() {
     frameSelection_->setText(selected.size() == 1
                                  ? QString("Frame %1 selected").arg(index + 1)
                                  : QString("%1 frames selected").arg(selected.size()));
-    if (!selected.isEmpty()) {
-        const auto records = descriptor().poses().effective(poses_->currentData().toInt()).records;
-        const int first = *std::min_element(selected.begin(), selected.end());
-        const int ticks = u8(records[first].operands, records[first].operands.size() - 1);
-        const QSignalBlocker block(duration_);
-        duration_->setValue(ticks);
-        bool mixed = false;
-        for (int row : selected)
-            mixed |= u8(records[row].operands, records[row].operands.size() - 1) != ticks;
-        duration_->setPrefix(mixed ? "Mixed · " : "");
-    }
     preview_->setPreviousFrame(
         onion_->isChecked() && index > 0
             ? std::optional<int>(frames_->item(index - 1)->data(Qt::UserRole + 2).toInt())
             : std::nullopt);
 }
-void AnimationSequenceEditor::changeFrameDuration(int ticks) {
-    const auto selected = selectedFrameRecords();
-    if (selected.isEmpty())
-        return;
+void AnimationSequenceEditor::changeFrameDuration(int row, int ticks) {
     // Avoid detaching untouched artwork when a spinbox commits an unchanged value.
     const auto records = descriptor().poses().effective(poses_->currentData().toInt()).records;
-    bool changed = false;
-    for (int row : selected)
-        changed |= u8(records[row].operands, records[row].operands.size() - 1) != ticks;
-    if (!changed)
+    if (row < 0 || row >= records.size() || !visibleFrame(records[row]) ||
+        u8(records[row].operands, records[row].operands.size() - 1) == ticks)
         return;
+    const QScopedValueRollback timing(durationEdit_, true);
     edit("Change frame duration", [&](PoseBank &bank, int state, int) {
-        for (int row : selected)
-            bank.setFrame(state, row, frameToken(records[row]), ticks);
+        bank.setFrame(state, row, frameToken(records[row]), ticks);
     });
 }
 void AnimationSequenceEditor::duplicateVisibleFrames() {

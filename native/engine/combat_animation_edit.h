@@ -12,6 +12,7 @@ struct NamedCombatAnimation {
 };
 QMap<int, int> combatMotions();
 QMap<int, QString> combatMotionNames();
+QVector<NamedCombatAnimation> combatMotionTypes();
 QVector<NamedCombatAnimation> namedCombatAnimations(Project &, int classId, int flags);
 int combatAnimationPose(Project &, CombatAnimationTarget);
 QString combatAnimationName(Project &, CombatAnimationTarget);

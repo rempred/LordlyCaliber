@@ -7,6 +7,13 @@ Library. Preview the converted result and apply once; Cancel, Undo and unfinishe
 dialog recovery preserve the prior project. The dialog names the destination side
 and artwork variant. Existing reassignment controls are under Advanced assignment.
 Class-copy and comparison pickers use animation names instead of raw pose IDs.
+The main selector includes all forty native motion/reaction slots and every
+named action, including actions not currently equipped by the class. Guard,
+dodge, death, Sleep, Paralysis, Petrification and their recovery sequences have
+named entries; unidentified slots retain their number. Empty destinations offer
+Create animation. Each frame card has its own editable tick control; typing
+commits on Enter or focus change, arrow bursts are combined, and timing changes
+keep the card and thumbnail alive. The separate Duration field is removed.
 
 ZIP import checks the manifest, frame order, dimensions, origin and checksums;
 stored and deflated archives are supported without extracting files. Frame rate

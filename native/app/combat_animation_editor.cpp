@@ -113,8 +113,7 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
         try {
             const CombatAnimationTarget target{classId(), flags(), actions_->currentData().toInt(), mode_->isEnabled() && mode_->currentIndex() == 1};
             const auto before = project_->animationSequences()->json(), overrides = project_->animationOverrides()->json();
-            const bool create = classId() >= ClassData::loadRetail(project_->rom()).entries().size() &&
-                                !project_->animationSequences()->find(classId(), flags());
+            const bool create = replace_->property("createAnimation").toBool();
             const auto next = chooseCombatAnimationReplacement(*project_, target, create, this);
             if (!next) return;
             if (project_->animationSequences()->json() != before || project_->animationOverrides()->json() != overrides)
@@ -183,7 +182,11 @@ void CombatAnimationEditor::refresh(bool assigned) {
         }
         for (auto it = used.cbegin(); it != used.cend(); ++it)
             actions_->addItem(names.value(it.key(), QString("Action %1").arg(it.key())) + " · " + it->join(" / "), it.key());
-        for (int action : {-1, -2, -3, -4}) actions_->addItem(motionNames[action], action);
+        actions_->insertSeparator(actions_->count());
+        for (const auto &motion : combatMotionTypes()) actions_->addItem(motion.name, motion.action);
+        actions_->insertSeparator(actions_->count());
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            if (!used.contains(it.key())) actions_->addItem(it.value(), it.key());
         actions_->setCurrentIndex(std::max(0, actions_->findData(previousAction)));
         const int action = actions_->currentData().toInt(), route = flags();
         mode_->setEnabled(action >= 0);
@@ -194,6 +197,7 @@ void CombatAnimationEditor::refresh(bool assigned) {
         const auto bank = descriptor.poses();
         QMap<int, QStringList> labels;
         for (auto it = motions.cbegin(); it != motions.cend(); ++it) labels[it.value()] << motionNames[it.key()];
+        if (action >= 0) labels[active] << names.value(action, QString("Action %1").arg(action));
         auto selectors = project_->animationRoutes()->entry(classId()).selectors;
         if (u8(record, 69) != owner() || selectors.isEmpty()) selectors = project_->animationRoutes()->entry(owner()).selectors;
         const auto body = project_->bodyAnimationData();
@@ -226,7 +230,6 @@ void CombatAnimationEditor::refresh(bool assigned) {
         animations_->clear();
         for (int pose = 0; pose < bank.programs().size(); ++pose) {
             if (!labels.contains(pose)) continue;
-            if (pose == 38 || pose == 88) continue; // Frame substitution tables, not playable actions.
             try { bank.validateEntry(pose); } catch (const Error &) { continue; }
             auto label = labels[pose].join(", ");
             if (pose == active) label += " — assigned";
@@ -240,8 +243,11 @@ void CombatAnimationEditor::refresh(bool assigned) {
             summary += ". The two normal modes currently differ; replacing or assigning updates both.";
         if (action >= 0) summary += "  Attack assignment exports use the existing Expansion Pak patch.";
         assignment_->setText(summary);
-        const bool create = classId() >= ClassData::loadRetail(project_->rom()).entries().size() && !privateData;
+        const bool empty = active < 0 || active >= bank.programs().size() || bank.effective(active).records.isEmpty();
+        const bool create = empty || (classId() >= ClassData::loadRetail(project_->rom()).entries().size() && !privateData);
+        replace_->setProperty("createAnimation", create);
         replace_->setText(create ? "Create animation…" : "Replace animation…");
+        if (empty) assignment_->setText(summary + ". This animation is empty; use Create animation to add it.");
         replace_->setEnabled(true);
         assign_->setEnabled(selection >= 0 && (active != animations_->currentData().toInt() || (action >= 0 && mode_->currentIndex() == 0 && assignedPose(1) != active)));
         preview();

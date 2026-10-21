@@ -22,13 +22,31 @@ limits; duplicate consecutive PNG payloads are decoded once. Loose PNG files use
 natural filename ordering and an explicit frame rate. Sprite asset files retain
 their existing library import validation.
 
-`combat_animation_replace` previews the candidate using the existing actor player,
-advancing to its first real playback step before display. Only Apply publishes
+Combat frame previews prime the selected sequence's first playback step on every
+restart, including Play after selecting a frame; raw inspection retains step zero.
+This prevents the actor's default frame zero from appearing after a replacement
+without adding a step to its frame holds. `combat_animation_replace` uses the same
+actor preview for its candidate. Only Apply publishes
 both sequences and assignments as one Undo command. Recovery's `privateAnimations`
 section restores these two dependent sections atomically. Focused tests cover ZIP
 CRC/timing/order/holds, all three source flows, new classes, Cancel/Undo/recovery,
 linked destinations, long programs, and compiled ROM export/reopen. This does not
 claim a new emulator playthrough or lossless conversion to the game's color format.
+
+The motion catalog covers native primary slots0..39; known meanings are traced
+to accepted `func_0021EBBC`, `func_001F0E64`, `func_002215D0` and `func_0021840C`.
+Untraced slots have explicit unidentified labels. Petrification38 is playable and
+also supplies native frame-substitution markers; the existing marker runtime
+handles imported wide tokens. Idle copies only randomized slots1..4, preserving
+battle-end slot8. Every action name is available even when not currently equipped.
+Main destinations include empty slots; donor choices require a nonempty program.
+
+Frame cards use persistent delegate spinboxes. Keyboard tracking is disabled,
+Enter/focus-out commits typing, and arrow bursts debounce250ms. A timing-only
+refresh retains the editor widgets, selection and thumbnail pixels; Undo/Redo and
+structural edits rebuild normally. Enter commits synchronously without a queued
+close operation that could outlive the card. Repeated timing input does not
+regenerate all frame images or reset the text being entered.
 
 ## Recovered preview graphics math (October 17)
 

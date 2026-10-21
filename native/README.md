@@ -46,6 +46,11 @@ destination class. **Advanced assignment** retains the existing-animation picker
 and Assign button. Normal assignments cover game modes 0 and 1; Blocked is mode 2.
 Frame and sprite edits automatically create an independent class copy. Select a
 frame to change timing/order, edit layers or paint; Play resumes sequence playback.
+Edit duration directly below each thumbnail. Type ticks and press Enter, or use
+the arrows. Restart shows the selected sequence's first frame. The animation
+selector includes defensive reactions, status effects and recovery, death, all
+native motion slots and all named actions. Unidentified slots are labeled by
+number; empty slots offer Create animation.
 Type part of a class name or its ID to see matching classes, then choose a result.
 **Export…** offers a selected-frame PNG, animated PNG, frame-sequence ZIP and WebM.
 Animated exports run the same interpreter as Play, including movement, waits,
