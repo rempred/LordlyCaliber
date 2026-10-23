@@ -36,15 +36,16 @@ publishing. Standard public-repository GitHub-hosted runners are used.
 
 ## Local checks
 
-Use PowerShell 7 with the supported Visual Studio C++ tools installed:
+Install the prerequisites in the [Windows build instructions](../../README.md#build-from-source-windows-x64),
+then use PowerShell 7 from the repository root:
 
 ```powershell
-native/tools/bootstrap.ps1
-native/tools/bootstrap-n64.ps1
+.\native\tools\bootstrap.ps1
+.\native\tools\bootstrap-n64.ps1
 $env:QT_QPA_PLATFORM = 'offscreen'
-native/tools/build.ps1 -Test
-native/tools/package.ps1 -Destination native/dist/local-check
-native/tools/check-release.ps1 -Zip native/dist/local-check.zip -ExpectedCommit (git rev-parse HEAD)
+.\native\tools\build.ps1 -Test
+.\native\tools\package.ps1 -Destination native/dist/local-check
+.\native\tools\check-release.ps1 -Zip native/dist/local-check.zip -ExpectedCommit (git rev-parse HEAD)
 ```
 
 Use a fresh destination each time. Add `-RequireClean` to the final command when

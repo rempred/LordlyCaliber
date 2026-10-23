@@ -6,9 +6,11 @@ descriptions, save a project, and choose Build and export ROM. The source ROM
 is read-only. The included N64 toolchain compiles game sources and edited data
 during export; no Decomp checkout is required.
 
-For local iteration, run `native/live/LordlyCaliber.exe`. The maintainer command
-`native/tools/package.ps1 -Live` updates that stable folder without creating a ZIP.
-Close the live editor after saving your work before updating it.
+Building from source? Follow the
+[Windows build instructions](https://github.com/rempred/LordlyCaliber#build-from-source-windows-x64).
+The repository does not contain a `native/live/` folder. After compilation,
+`native/tools/package.ps1 -Live` creates it with the editor and runtime files.
+Close the editor after saving your work before updating that generated folder.
 
 Project edits and unfinished animation/sprite dialogs are backed up automatically
 about once a minute. **File → Recover unsaved work** restores a snapshot using
@@ -241,20 +243,13 @@ For scripting:
 .\LordlyCaliber-cli.exe --rom 'source.v64' --project 'project.json' --output 'edited.v64' --report 'build.json'
 ```
 
-For development, install Visual Studio's MSVC 2022 14.44 C++ tools and Windows
-SDK, then run `native/tools/bootstrap.ps1`, `native/tools/bootstrap-n64.ps1` and
-`native/tools/build.ps1` from
-the repository. The bootstrap downloads authenticated Qt/CMake archives and
-uses Windows tar; Node/Python are not application dependencies. The build uses
-the installed Ninja 1.13.2. `native/dependencies.json` records official source
-URLs and compatibility decisions.
-
-Run checks with `native/tools/build.ps1 -Test -RomPath <private-master.v64>`.
-Private-ROM cases need the authenticated tools under
-`native/.local/n64-toolchain`; the portable package carries those same tools.
-`native/tools/package.ps1` creates a fresh development ZIP. Nothing is published
-by these commands. Qt and other dependency notices, sources and toolchain build
-recipes accompany the ZIP. See `THIRD-PARTY.md`.
+For development setup, build/run commands, checks and troubleshooting, use the
+[Windows build instructions](https://github.com/rempred/LordlyCaliber#build-from-source-windows-x64).
+They include the required compiler components and the packaging step that creates
+the runnable application. `native/tools/package.ps1` without `-Live` creates a
+fresh portable ZIP under `native/dist/`. Nothing is published by these commands.
+Qt and other dependency notices, sources and toolchain build recipes accompany
+the ZIP. See [THIRD-PARTY.md](THIRD-PARTY.md).
 
 The [GitHub release workflow](https://github.com/rempred/LordlyCaliber/blob/main/native/docs/releases.md) builds the full ZIP from Main,
 checks package integrity and isolated startup, and attests the ZIP and both editor
