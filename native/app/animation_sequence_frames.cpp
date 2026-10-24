@@ -155,7 +155,7 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     qobject_cast<QVBoxLayout *>(layout())->addWidget(frameWorkspace_, 1);
     auto layout = new QVBoxLayout(frameWorkspace_);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto exports = new QHBoxLayout;
+    auto toolsRow = new QHBoxLayout;
     auto exportButton = exportButton_ = new QPushButton("Export…");
     exportButton->setObjectName("sequenceExport");
     auto exportMenu = new QMenu(exportButton);
@@ -187,9 +187,8 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
                 [this, selected] { guarded([this, selected] { copyToLibrary(selected); }); });
     }
     exportButton->setMenu(exportMenu);
-    exports->addWidget(exportButton);
-    exports->addStretch();
-    layout->addLayout(exports);
+    toolsRow->addStretch();
+    layout->addLayout(toolsRow);
     connect(png, &QAction::triggered, this, [this] { guarded([this] { chooseFrameExport(); }); });
     auto split = new QSplitter;
     split->setObjectName("sequenceFrameSplit");
@@ -234,7 +233,7 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     connect(menu, &QMenu::aboutToShow, this,
             [this, restore] { restore->setEnabled(remove_->isEnabled()); });
     tools->setMenu(menu);
-    exports->insertWidget(1, tools);
+    toolsRow->insertWidget(0, tools);
     auto add = new QPushButton("Add frames…");
     add->setObjectName("sequenceAdd");
     add->setToolTip(
@@ -314,6 +313,10 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     button("Delete", "sequenceDelete", 1, 3, [this] { removeVisibleFrames(); });
     column->addWidget(frameTools_);
     column->addWidget(frames_, 1);
+    auto exports = new QHBoxLayout;
+    exports->addWidget(exportButton);
+    exports->addStretch();
+    column->addLayout(exports);
     auto frameMenu = new QMenu(frames_);
     frameMenu->setObjectName("sequenceFrameMenu");
     for (const auto &entry :
