@@ -1,4 +1,5 @@
 #include "engine/combat_animation_frames.h"
+#include "engine/sprite_colors.h"
 #include "engine/actor_art.h"
 #include "engine/animation_transfer.h"
 #include "engine/sprite_object.h"
@@ -95,8 +96,9 @@ Project importCombatAnimationFrames(Project project, CombatAnimationFrameTarget 
         target.replace ? u8(bank.effective(target.pose).records[target.record].operands,
                             bank.effective(target.pose).records[target.record].operands.size() - 1)
                        : 0;
+    const auto normalized = spriteToSrgb(asset);
     for (const int frame : sourceFrames) {
-        const auto rgba = asset.composite(frame).convertToFormat(QImage::Format_RGBA8888);
+        const auto rgba = normalized.composite(frame);
         const auto sprite = SpriteObject::fromImage(
             {rgba.width(), rgba.height(),
              QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())},

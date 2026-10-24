@@ -1,5 +1,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/animation_sequence_editor.h"
+#include "app/animation_color_comparison.h"
+#include "app/combat_animation_replace.h"
 #include "app/combat_animation_editor.h"
 #include "app/recovery_draft.h"
 #include "app/sprite_editor.h"
@@ -19,6 +21,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QColorSpace>
 #include <QCompleter>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -49,6 +52,88 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void importColorComparison() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);
+        auto asset = SpriteAsset::blank("Soft gradient", {48, 48});
+        auto &source = asset.frames[0].layers[0].image;
+        source.setColorSpace(QColorSpace::SRgbLinear);
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 48; ++x)
+                source.setPixelColor(x, y, QColor(60 + x * 3, 60 + x * 3, 60 + x * 3, 64 + y * 4));
+        auto second = asset.frames[0];
+        second.id = SpriteLibrary::newId();
+        second.layers[0].id = SpriteLibrary::newId();
+        second.layers[0].image.fill(QColor(36, 93, 149, 128));
+        asset.frames << second;
+        AnimationColorComparison comparison;
+        comparison.setAsset(asset);
+        const auto original = comparison.originalImage();
+        QVERIFY(original.pixelColor(24, 24).red() > asset.frames[0].layers[0].image.pixelColor(24, 24).red());
+        comparison.setFrame(1);
+        QVERIFY(comparison.originalImage() != original);
+        comparison.setFrame(0);
+        QCOMPARE(comparison.originalImage(), original);
+        const auto plain = comparison.gameImage();
+        comparison.dither()->setChecked(true);
+        const auto dithered = comparison.gameImage();
+        QVERIFY(plain != dithered);
+        QCOMPARE(comparison.originalImage(), original);
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 48; ++x)
+                QCOMPARE(dithered.pixelColor(x, y).alpha(), asset.frames[0].layers[0].image.pixelColor(x, y).alpha());
+        auto project = Project::fromRom(Rom::open(path));
+        auto library = project.sprites(); library.replace(asset); project.setSprites(library);
+        project = replaceCombatAnimation(project, {2, 0, -1}, asset, false);
+        const auto storedSource = project.sprites().asset(asset.id);
+        for (bool frame : {false, true}) {
+            QTimer driver;
+            driver.setInterval(40);
+            QElapsedTimer elapsed; elapsed.start();
+            int stage = 0;
+            QString problem;
+            connect(&driver, &QTimer::timeout, [&] {
+                auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dialog) return;
+                try {
+                    if (elapsed.elapsed() > 15000) throw Error("Color comparison dialog timed out");
+                    if (stage == 0) {
+                        dialog->findChild<QComboBox *>(frame ? "combatFrameSource" : "combatReplacementSource")
+                            ->setCurrentIndex(2);
+                        stage = 1; return;
+                    }
+                    auto buttons = dialog->findChild<QDialogButtonBox *>(frame ? "combatFrameButtons" : "combatReplacementButtons");
+                    if (!buttons->button(QDialogButtonBox::Ok)->isEnabled()) return;
+                    auto colors = dialog->findChild<AnimationColorComparison *>();
+                    if (!colors || colors->originalImage() != original)
+                        throw Error("Comparison did not normalize the source profile");
+                    if (stage == 1) {
+                        if (colors->gameImage() != plain) throw Error("Plain comparison differs from conversion");
+                        colors->dither()->setChecked(true); stage = 2; return;
+                    }
+                    if (colors->gameImage() != dithered) throw Error("Dither comparison differs from conversion");
+                    if (!dialog->grab().save(frame ? "native/build/frame-import-colors.png" : "native/build/animation-import-colors.png"))
+                        throw Error("Could not save color comparison screenshot");
+                    driver.stop(); buttons->button(QDialogButtonBox::Ok)->click();
+                } catch (const std::exception &e) {
+                    problem = QString::fromUtf8(e.what()); driver.stop(); dialog->reject();
+                }
+            });
+            driver.start();
+            const auto next = frame ? chooseCombatAnimationFrames(project, 2, 0, 0, 0, true, nullptr)
+                                    : chooseCombatAnimationReplacement(project, {2, 0, -1}, false, nullptr);
+            driver.stop();
+            QVERIFY2(problem.isEmpty(), qPrintable(problem)); QVERIFY(next);
+            const auto descriptor = next->animationSequences()->find(2, 0);
+            const auto record = descriptor->poses().effective(0).records[0];
+            const int token = u8(record.operands, 0) + (record.opcode == 21 ? 256 * u8(record.operands, 1) : 0);
+            const auto pixels = SpriteObject::decode(descriptor->sprite(u16(descriptor->frame(token), 2))).frame(0).image;
+            const QImage result(reinterpret_cast<const uchar *>(pixels.rgba.constData()), pixels.width, pixels.height, QImage::Format_RGBA8888);
+            QCOMPARE(result, dithered);
+            QCOMPARE(project.sprites().asset(asset.id), storedSource);
+        }
+    }
     void libraryPlaybackTiming() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

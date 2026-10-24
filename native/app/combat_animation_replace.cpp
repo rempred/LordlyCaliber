@@ -1,10 +1,12 @@
 #include "app/combat_animation_replace.h"
 #include "app/actor_pose_editor.h"
+#include "app/animation_color_comparison.h"
 #include "app/recovery_draft.h"
 #include "engine/actor_art.h"
 #include "engine/animation_file_import.h"
 #include "engine/combat_animation_frames.h"
 #include "engine/sprite_sources.h"
+#include "engine/sprite_colors.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -23,6 +25,7 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -165,9 +168,9 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
     }
     settingsForm->addRow("Anchor X", &originX);
     settingsForm->addRow("Anchor Y", &originY);
-    QCheckBox dither("Dither colors");
+    auto comparison = new AnimationColorComparison;
+    auto &dither = *comparison->dither();
     dither.setObjectName("combatReplacementDither");
-    settingsForm->addRow(&dither);
     layout->addWidget(&settings);
     settings.hide();
     QLabel note("Preview shows the converted game artwork. File and library imports replace the "
@@ -178,7 +181,14 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
     preview.setObjectName("combatReplacementPreview");
     preview.setFrameEditing(true);
     preview.hide();
-    layout->addWidget(&preview, 1);
+    auto previews = new QTabWidget;
+    previews->setObjectName("combatReplacementPreviewTabs");
+    auto playback = new QWidget;
+    auto playbackLayout = new QVBoxLayout(playback);
+    playbackLayout->addWidget(&preview);
+    previews->addTab(comparison, "Original / Game result");
+    previews->addTab(playback, "Animation preview");
+    layout->addWidget(previews, 1);
     QLabel status;
     status.setObjectName("combatReplacementStatus");
     status.setWordWrap(true);
@@ -221,6 +231,7 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
                 asset.anchor = {originX.value(), originY.value()};
                 candidate = replaceCombatAnimation(base, target, asset, loop.isChecked(),
                                                    dither.isChecked());
+                comparison->setAsset(asset);
             }
             preview.setBodyAnimations(candidate->bodyAnimationData());
             preview.setArtwork(candidate->combatArtwork()->previewEdits());
@@ -233,6 +244,7 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
         } catch (const std::exception &e) {
             candidate.reset();
+            comparison->clear();
             preview.hide();
             status.setText(QString::fromUtf8(e.what()));
         }
@@ -259,6 +271,7 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
             schedule();
         } catch (const std::exception &e) {
             debounce.stop();
+            comparison->clear();
             preview.hide();
             buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
             status.setText(QString::fromUtf8(e.what()));
@@ -319,6 +332,9 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
         loop.setVisible(source.currentIndex() != 1);
         imageSettings.setVisible(source.currentIndex() != 1);
         settings.setVisible(source.currentIndex() != 1 && imageSettings.isChecked());
+        previews->setTabVisible(0, source.currentIndex() != 1);
+        previews->setCurrentIndex(source.currentIndex() == 1 ? 1 : 0);
+        comparison->clear();
         note.setText(
             source.currentIndex() == 1
                 ? "Copies artwork, timing, movement, sound and loops. Equipment follows the "
@@ -533,7 +549,16 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
     preview.setObjectName("combatFramePreview");
     preview.setFrameEditing(true);
     preview.hide();
-    previewLayout->addWidget(&preview, 1);
+    auto previews = new QTabWidget;
+    previews->setObjectName("combatFramePreviewTabs");
+    auto comparison = new AnimationColorComparison;
+    comparison->setFrameSelectorVisible(false);
+    auto playback = new QWidget;
+    auto playbackLayout = new QVBoxLayout(playback);
+    playbackLayout->addWidget(&preview);
+    previews->addTab(comparison, "Original / Game result");
+    previews->addTab(playback, "Animation preview");
+    previewLayout->addWidget(previews, 1);
     split->addWidget(previewPage);
     split->setSizes({460, 540});
     QCheckBox imageSettings("Image settings");
@@ -550,9 +575,8 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
     }
     settingsForm->addRow("Anchor X", &anchorX);
     settingsForm->addRow("Anchor Y", &anchorY);
-    QCheckBox dither("Dither colors");
+    auto &dither = *comparison->dither();
     dither.setObjectName("combatFrameDither");
-    settingsForm->addRow(&dither);
     layout->addWidget(&settings);
     settings.hide();
     QLabel status;
@@ -602,6 +626,8 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
                 asset.anchor = {anchorX.value(), anchorY.value()};
                 candidate =
                     importCombatAnimationFrames(base, target, asset, selected, dither.isChecked());
+                comparison->setAsset(asset);
+                comparison->setFrame(std::max(0, frames.currentRow()));
             }
             preview.setBodyAnimations(candidate->bodyAnimationData());
             preview.setArtwork(candidate->combatArtwork()->previewEdits());
@@ -619,6 +645,7 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
         } catch (const std::exception &e) {
             candidate.reset();
+            comparison->clear();
             preview.hide();
             status.setText(QString::fromUtf8(e.what()));
         }
@@ -631,6 +658,7 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
     QObject::connect(&debounce, &QTimer::timeout, &dialog, update);
     const auto reloadFrames = [&] {
         candidate.reset();
+        comparison->clear();
         displayedAsset.reset();
         buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
         const QSignalBlocker blocker(&frames);
@@ -663,6 +691,8 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
                     throw Error("Choose artwork from Art Library");
                 displayedAsset = assets[library.currentData().toInt()];
             }
+            if (source.currentIndex() != 1)
+                displayedAsset = spriteToSrgb(*displayedAsset);
             for (int i = 0; i < displayedAsset->frames.size(); ++i) {
                 const auto image = displayedAsset->composite(i);
                 const int ticks = source.currentIndex() == 1
@@ -754,6 +784,8 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
         fitSourcePage(inputs);
         imageSettings.setVisible(source.currentIndex() != 1);
         settings.setVisible(source.currentIndex() != 1 && imageSettings.isChecked());
+        previews->setTabVisible(0, source.currentIndex() != 1);
+        previews->setCurrentIndex(source.currentIndex() == 1 ? 1 : 0);
         if (source.currentIndex() == 1)
             reloadGame();
         else
@@ -765,6 +797,10 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
     QObject::connect(&animations, &QComboBox::currentIndexChanged, &dialog, reloadFrames);
     QObject::connect(&library, &QComboBox::currentIndexChanged, &dialog, reloadFrames);
     QObject::connect(&frames, &QListWidget::itemSelectionChanged, &dialog, schedule);
+    QObject::connect(&frames, &QListWidget::currentRowChanged, &dialog, [&](int row) {
+        if (source.currentIndex() != 1 && displayedAsset && row >= 0)
+            comparison->setFrame(row);
+    });
     QObject::connect(&selectAll, &QPushButton::clicked, &frames, &QListWidget::selectAll);
     QObject::connect(&imageSettings, &QCheckBox::toggled, &settings, &QWidget::setVisible);
     for (auto value : {&anchorX, &anchorY})

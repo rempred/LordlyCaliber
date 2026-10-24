@@ -37,6 +37,14 @@ Open, Save, Build and Review are at the right of the File/Edit menu bar. The
 workspace tabs and their section tabs remain below it. Advanced animations uses
 the selector at the right of the Art tab row to choose its editing tool.
 
+Data tables support **Copy selection** (Ctrl+C), **Copy with column names**
+(Ctrl+Shift+C), and **Export CSV…** in their context menus. Classes, Items and
+Consumables also have an Export CSV button beside search. Select cells with
+drag, Ctrl or Shift; paste into a spreadsheet as a grid. CSV includes column
+names and all filtered rows, using the visible columns and current display order.
+Choose Stats, Growth or another column view before exporting. Files use UTF-8
+with a byte-order mark for spreadsheet compatibility.
+
 Art / Combat animations: choose a class, named animation, Player/Enemy side,
 mode and artwork variant using the selectors at the top. The preview sits
 beside its frames. Select a frame and choose **Edit sprite…** to paint, or
@@ -49,6 +57,18 @@ frame list. Empty animations offer Add frames and Create animation.
 **Replace animation…** replaces the whole sequence (or **Create animation…**
 for a new class). Import PNG frames, an exported frame-sequence ZIP, a sprite asset,
 another class's named animation, or Art Library. Cancel leaves the project unchanged.
+File and Art Library imports have an **Original / Game result** comparison and a
+separate **Animation preview**. Choose a frame to compare its source artwork with
+the exact converted sprite pixels. **Dither colors** mixes nearby shades to soften
+gradient bands; it can make pixel art look grainy and is off by default.
+
+Use **sRGB** for artwork. Embedded color profiles are converted automatically;
+images without a usable profile are treated as sRGB. The game does not read color
+profiles: it stores 32 levels each of red, green and blue, plus separate
+transparency. Both comparison panes use the normalized sRGB source, with game
+color reduction applied only on the right. Source files and library assets are
+not overwritten by importing an animation.
+
 **Advanced assignment** shows controls for assigning an existing animation.
 **Advanced** contains frame layers, comparison and restoring an entire animation set.
 The import dialog identifies the affected side and artwork variant. Frame files use a

@@ -1,6 +1,14 @@
 #include "engine/sprite_colors.h"
+#include "engine/image_colors.h"
 #include <algorithm>
 namespace lordly {
+SpriteAsset spriteToSrgb(SpriteAsset asset) {
+    asset.validate();
+    for (auto &frame : asset.frames)
+        for (auto &layer : frame.layers)
+            layer.image = imageToSrgb(layer.image);
+    return asset;
+}
 std::optional<QVector<QRgb>> spriteUsedColors(const SpriteAsset &asset, SpriteColorScope scope,
                                               int frame, int layer,
                                               const std::function<bool()> &cancel) {

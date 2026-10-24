@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/table_transfer.h"
 #include "engine/weapon_status.h"
 #include <QSignalBlocker>
 #include "app/pending_edits.h"
@@ -77,6 +78,9 @@ namespace lordly {
 bool MainWindow::eventFilter(QObject *object, QEvent *event) {
     auto widget = qobject_cast<QWidget *>(object);
     if (widget && isAncestorOf(widget)) {
+        if (event->type() == QEvent::Show)
+            if (auto table = qobject_cast<QTableView *>(widget))
+                installTableTransfer(*table);
         auto combo = qobject_cast<QComboBox *>(widget);
         auto spin = qobject_cast<QAbstractSpinBox *>(widget);
         if ((combo || spin) && event->type() == QEvent::Polish)
@@ -395,14 +399,20 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     search->setPlaceholderText("Search names, IDs, and values…");
     search->setObjectName(tableKey(table) + "Search");
     search->setClearButtonEnabled(true);
-    layout->addWidget(search);
+    auto searchRow = new QHBoxLayout;
+    searchRow->addWidget(search, 1);
+    auto exportCsv = new QPushButton("Export CSV…");
+    exportCsv->setObjectName(tableKey(table) + "ExportCsv");
+    exportCsv->setToolTip("Export the filtered rows and visible columns in this table.");
+    searchRow->addWidget(exportCsv);
+    layout->addLayout(searchRow);
     auto split = new QSplitter;
     layout->addWidget(split);
     auto grid = new QTableView;
     grid->setObjectName(tableKey(table) + "Table");
     grid->setAlternatingRowColors(true);
-    grid->setSelectionBehavior(QAbstractItemView::SelectRows);
-    grid->setSelectionMode(QAbstractItemView::SingleSelection);
+    grid->setSelectionBehavior(QAbstractItemView::SelectItems);
+    grid->setSelectionMode(QAbstractItemView::ExtendedSelection);
     grid->setSortingEnabled(true);
     grid->verticalHeader()->hide();
     auto model = new RecordModel(project_.get(), table, undo_, page);
@@ -415,6 +425,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     proxy->setFilterKeyColumn(-1);
     proxy->setSortRole(Qt::EditRole);
     grid->setModel(proxy);
+    installTableTransfer(*grid);
+    connect(exportCsv, &QPushButton::clicked, grid, [grid] { chooseTableCsv(*grid); });
     grid->setColumnWidth(0, 55);
     grid->setColumnWidth(1, 200);
     for (int i = 2; i < model->columnCount(); ++i)

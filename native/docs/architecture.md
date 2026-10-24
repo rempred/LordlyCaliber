@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Import colors and table transfer (October 24)
+
+`imageToSrgb` applies an image's embedded profile before reducing high-depth input
+to RGBA8888. Untagged/invalid-profile input assumes sRGB; a failed transform raises
+an error. It uses Qt's
+[color-space conversion](https://doc.qt.io/qt-6/qimage.html#convertedToColorSpace-2),
+not merely profile assignment. Animation PNG/ZIP loading, new library images and
+image placement use this boundary. `spriteToSrgb` normalizes a copy of each layer
+before combat-frame compositing, including existing tagged library assets.
+Native game-animation copies keep their existing bytes and palettes.
+
+`AnimationColorComparison` draws the same normalized source frame twice with
+matching scale/background. The right image round-trips through
+`SpriteObject::fromImage`/`frame`, the same RGB5 plus separate I8-alpha conversion
+used by imports. Dithering changes RGB only. sRGB is an editor input convention;
+no ICC profile is emitted into the game sprite. The original source/library asset
+is preserved. Failed import candidates clear the comparison and disable Apply.
+
+`table_transfer` reads displayed model values and persistent editor widgets,
+respecting visible header order, filters and selected-cell holes. CSV includes
+headers and named visible row headers, quotes delimiters/newlines/quotes, uses
+UTF-8 BOM and commits with QSaveFile. Clipboard output is tab-separated. Actions
+are installed once when a table is shown under MainWindow; primary record tables
+also have a visible export button and extended cell selection. Ctrl+C uses widget
+scope so active text editors retain their own copying behavior.
+
 ## Combat animation workspace (October 23)
 
 The guided workspace separates whole-animation import/copy from selected-frame

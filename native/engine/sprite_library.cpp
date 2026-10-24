@@ -1,4 +1,5 @@
 #include "engine/sprite_library.h"
+#include "engine/image_colors.h"
 #include <QBuffer>
 #include <QImageReader>
 #include <QJsonArray>
@@ -98,7 +99,7 @@ QImage spritePlaceNearest(const QImage &source, QSize canvas, QRectF placement) 
         throw Error("Invalid sprite placement");
     auto result = transparent(canvas);
     if (placement.isEmpty()) return result;
-    const auto rgba = source.convertToFormat(QImage::Format_RGBA8888);
+    const auto rgba = imageToSrgb(source);
     const double sx = placement.width() / source.width(), sy = placement.height() / source.height();
     // Copy nearest pixel-center samples without premultiplication. Hidden RGB
     // and fractional alpha are editable data, even where they are not visible.
@@ -129,7 +130,7 @@ SpriteAsset SpriteAsset::fromImage(const QString &name, const QImage &image) {
                         "Layer 1",
                         true,
                         {},
-                        image.convertToFormat(QImage::Format_RGBA8888)}}}};
+                        imageToSrgb(image)}}}};
     return result;
 }
 quint64 SpriteAsset::pixels() const {

@@ -1,5 +1,18 @@
 # Feature inventory and completion tracking
 
+Data tables offer selected-cell copying, copying with headers, and CSV export.
+CSV follows filtering, sorting, visible columns and their order; it includes
+headers, UTF-8 encoding with BOM, quoted text and named row headers where present.
+Classes, Items and Consumables expose Export CSV beside search and permit extended
+cell selection. Other data tables expose the actions through their context menus.
+
+Animation file/library imports offer Original / Game result comparison by frame,
+with animation playback in a separate preview tab. Dithering is off by default
+and explained beside its control. Tagged image profiles convert to sRGB before
+channel reduction; untagged input assumes sRGB. Existing tagged library layers
+normalize on a copy before combat compositing. General help explains that sRGB
+is the editor's input convention and the game stores RGB values, not profiles.
+
 Combat Animations keeps class, named animation, Player/Enemy side, mode and artwork
 variant selectors visible above a large preview and frame board. Select a frame
 to **Edit sprite**, **Replace frame**, Duplicate

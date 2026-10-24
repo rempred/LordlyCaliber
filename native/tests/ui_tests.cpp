@@ -15,6 +15,8 @@
 #include "app/leader_affinity_editor.h"
 #include "app/terrain_assignments.h"
 #include "app/main_window.h"
+#include "app/table_transfer.h"
+#include <QFileDialog>
 #include "engine/recovery_store.h"
 #include "app/pending_edits.h"
 #include "app/class_setup.h"
@@ -127,6 +129,47 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void dataTableCopyAndCsv() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        applyEditorTheme(*qApp);
+        MainWindow window; window.loadRom(path); window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("classesTable"), 30000);
+        window.navigateTo({"classes", 5});
+        auto table = window.findChild<QTableView *>("classesTable"); QVERIFY(table);
+        auto columns = window.findChild<QComboBox *>("classesColumnView"); QVERIFY(columns);
+        const auto stats = tableCsv(*table);
+        columns->setCurrentIndex(columns->findData("Growth"));
+        auto search = window.findChild<QLineEdit *>("classesSearch"); QVERIFY(search);
+        search->setText("Knight");
+        QVERIFY(table->model()->rowCount() > 0);
+        QVERIFY(table->model()->rowCount() < 100);
+        const auto growth = tableCsv(*table);
+        QVERIFY(growth != stats);
+        QVERIFY(growth.toLower().contains("growth"));
+        window.activateWindow();
+        QTest::qWait(50);
+        table->selectAll(); table->setFocus();
+        QTRY_VERIFY2(table->hasFocus(), qPrintable(QString("visible=%1 enabled=%2 active=%3 focus=%4")
+            .arg(table->isVisible()).arg(table->isEnabled())
+            .arg(QApplication::activeWindow() ? QApplication::activeWindow()->objectName() : "none")
+            .arg(QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "none")));
+        QTest::keyClick(table, Qt::Key_C, Qt::ControlModifier);
+        const auto copied = QApplication::clipboard()->text();
+        QVERIFY(copied.contains('\t')); QVERIFY(copied.contains("Knight"));
+        QCOMPARE(copied, tableSelectionText(*table));
+        QTemporaryDir directory;
+        const auto output = directory.filePath("growth.csv");
+        QTimer::singleShot(0, [&] {
+            auto picker = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+            if (picker) { picker->selectFile(output); QMetaObject::invokeMethod(picker, "accept"); }
+        });
+        window.findChild<QPushButton *>("classesExportCsv")->click();
+        QFile exported(output); QVERIFY(exported.open(QIODevice::ReadOnly));
+        QCOMPARE(exported.readAll(), growth);
+        QVERIFY(window.grab().save("native/build/data-table-export.png"));
+    }
     void leaderAffinityEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         applyEditorTheme(*qApp);

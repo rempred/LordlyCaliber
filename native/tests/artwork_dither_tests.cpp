@@ -3,6 +3,11 @@
 #include "engine/combat_artwork.h"
 #include "engine/icon_artwork.h"
 #include "engine/sprite_object.h"
+#include "engine/image_colors.h"
+#include "engine/animation_file_import.h"
+#include "engine/sprite_colors.h"
+#include <QColorSpace>
+#include <QTemporaryDir>
 #include <QtTest>
 #include <algorithm>
 using namespace lordly;
@@ -36,6 +41,49 @@ QImage adjusted(const QImage &source) {
 class ArtworkDitherTests : public QObject {
     Q_OBJECT
   private slots:
+    void colorProfiles() {
+        QImage linear(3, 1, QImage::Format_RGBA64);
+        linear.setColorSpace(QColorSpace::SRgbLinear);
+        for (int x = 0; x < 3; ++x)
+            linear.setPixelColor(x, 0, QColor::fromRgbF(.5, .25, .125, x / 2.));
+        const auto result = imageToSrgb(linear);
+        QCOMPARE(result.format(), QImage::Format_RGBA8888);
+        QCOMPARE(result.colorSpace(), QColorSpace(QColorSpace::SRgb));
+        for (int x = 0; x < 3; ++x) {
+            const auto pixel = result.pixelColor(x, 0);
+            QVERIFY(std::abs(pixel.red() - 188) <= 1);
+            QVERIFY(std::abs(pixel.green() - 137) <= 1);
+            QVERIFY(std::abs(pixel.blue() - 99) <= 1);
+            QVERIFY(std::abs(pixel.alpha() - qRound(255 * x / 2.)) <= 1);
+        }
+        QCOMPARE(linear.colorSpace(), QColorSpace(QColorSpace::SRgbLinear));
+        QCOMPARE(linear.format(), QImage::Format_RGBA64);
+        QImage raw(2, 2, QImage::Format_RGBA8888);
+        raw.fill(QColor(91, 127, 173, 129));
+        const auto untagged = imageToSrgb(raw);
+        QCOMPARE(untagged.pixelColor(0, 0), raw.pixelColor(0, 0));
+        QCOMPARE(imageToSrgb(untagged), untagged);
+        QTemporaryDir work;
+        for (auto space : {QColorSpace::AdobeRgb, QColorSpace::DisplayP3}) {
+            auto wide = untagged.convertedToColorSpace(QColorSpace(space), QImage::Format_RGBA64);
+            const auto path = work.filePath(QString::number(int(space)) + ".png");
+            QVERIFY(wide.save(path));
+            const auto imported = importAnimationFiles({path}).composite(0);
+            const auto pixel = imported.pixelColor(0, 0);
+            QVERIFY(std::abs(pixel.red() - 91) <= 1);
+            QVERIFY(std::abs(pixel.green() - 127) <= 1);
+            QVERIFY(std::abs(pixel.blue() - 173) <= 1);
+            QCOMPARE(pixel.alpha(), 129);
+        }
+        auto asset = SpriteAsset::blank("Tagged library asset", {3, 1});
+        asset.frames[0].layers[0].image = linear.convertToFormat(QImage::Format_RGBA8888);
+        const auto original = asset.frames[0].layers[0].image;
+        const auto normalized = spriteToSrgb(asset);
+        QVERIFY(normalized.composite(0).pixelColor(1, 0).red() >= 187);
+        QCOMPARE(asset.frames[0].layers[0].image, original);
+        QCOMPARE(SpriteAsset::fromImage("New asset", linear).composite(0).pixelColor(1, 0),
+                 result.pixelColor(1, 0));
+    }
     void directSprite() {
         RasterImage input{8, 8, QByteArray(8 * 8 * 4, char(-128))};
         for (int i = 0; i < 64; ++i)

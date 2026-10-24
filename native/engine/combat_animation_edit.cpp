@@ -1,4 +1,5 @@
 #include "engine/combat_animation_edit.h"
+#include "engine/sprite_colors.h"
 #include "engine/actor_art.h"
 #include "engine/animation_transfer.h"
 #include <QJsonArray>
@@ -228,8 +229,9 @@ Project replaceCombatAnimation(Project p, CombatAnimationTarget t, const SpriteA
         throw Error("The destination is missing its linked body animation");
     auto d = *p.animationSequences()->find(t.classId, t.flags);
     QVector<QPair<int, int>> frames;
+    const auto normalized = spriteToSrgb(asset);
     for (int i = 0; i < asset.frames.size(); ++i) {
-        const auto rgba = asset.composite(i).convertToFormat(QImage::Format_RGBA8888);
+        const auto rgba = normalized.composite(i);
         const auto sprite = SpriteObject::fromImage(
             {rgba.width(), rgba.height(),
              QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())},

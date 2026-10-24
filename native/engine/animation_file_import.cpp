@@ -1,4 +1,5 @@
 #include "engine/animation_file_import.h"
+#include "engine/image_colors.h"
 #include <QBuffer>
 #include <QCollator>
 #include <QFile>
@@ -135,7 +136,7 @@ QImage png(QByteArray bytes, quint64 &pixels, QSize required = {}) {
     auto image = reader.read();
     if (image.isNull())
         throw Error("Cannot decode animation PNG");
-    return image.convertToFormat(QImage::Format_RGBA8888);
+    return imageToSrgb(image);
 }
 void append(SpriteAsset &asset, const QImage &image, int steps) {
     while (steps > 0) {
