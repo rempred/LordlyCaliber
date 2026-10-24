@@ -62,9 +62,8 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
     layout->addLayout(filters);
     auto primary = new QHBoxLayout;
-    replace_ = new QPushButton("Replace animation…");
+    replace_ = new QPushButton("Replace animation…", this);
     replace_->setObjectName("combatAnimationReplace");
-    replace_->setMinimumHeight(36); primary->addWidget(replace_);
     primary->addStretch();
     auto advanced = new QCheckBox("Advanced assignment");
     advanced->setObjectName("combatAnimationAdvanced");
@@ -96,6 +95,8 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
         project_->loadAnimationRoutes(); project_->loadAnimationOverrides(); project_->loadCombatArtwork();
         sequence_ = new AnimationSequenceEditor(project_, undo, std::move(changed));
         sequence_->setGuided(true); layout->addWidget(sequence_, 1);
+        sequence_->findChild<QHBoxLayout *>("sequenceFrameImportActions")
+            ->insertWidget(0, replace_);
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what())); setEnabled(false); return;
     }

@@ -239,7 +239,6 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
     add->setObjectName("sequenceAdd");
     add->setToolTip(
         "Insert frames after the selected frame, from another animation, Art Library or files.");
-    heading->addWidget(add);
     connect(add, &QPushButton::clicked, this,
             [this] { guarded([this] { chooseFrameSource(false); }); });
     for (bool redo : {false, true}) {
@@ -254,6 +253,11 @@ void AnimationSequenceEditor::buildFrameWorkspace() {
         heading->addWidget(button);
     }
     column->addLayout(heading);
+    auto imports = new QHBoxLayout;
+    imports->setObjectName("sequenceFrameImportActions");
+    imports->addWidget(add);
+    imports->addStretch();
+    column->addLayout(imports);
     auto hint = new QLabel(
         "Select a frame to edit its sprite. Drag to reorder; type ticks below each frame.");
     hint->setWordWrap(true);
