@@ -1,7 +1,7 @@
-#include "app/content_refresh.h"
 #include "app/combat_animation_editor.h"
 #include "app/animation_sequence_editor.h"
 #include "app/combat_animation_replace.h"
+#include "app/content_refresh.h"
 #include "engine/actor_art.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QScopedValueRollback>
 #include <QSet>
@@ -34,13 +35,11 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     : QWidget(parent), project_(project) {
     setObjectName("combatAnimationEditor");
     auto layout = new QVBoxLayout(this);
-    auto description = new QLabel("Choose a class and animation. Replace or create it from files, another class, or Art Library, then preview and apply.");
-    description->setWordWrap(true); layout->addWidget(description);
     auto filters = new QGridLayout;
     const auto combo = [&](const char *name, const QString &label, int column) {
         auto value = new QComboBox; value->setObjectName(name);
         value->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        value->setMinimumContentsLength(column == 0 ? 20 : 12);
+        value->setMinimumContentsLength(column == 0 ? 20 : 28);
         filters->addWidget(new QLabel(label), 0, column); filters->addWidget(value, 1, column);
         return value;
     };
@@ -52,23 +51,45 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     classes_->lineEdit()->setPlaceholderText("Search class name or ID…");
     classes_->lineEdit()->setClearButtonEnabled(true);
     actions_ = combo("combatAnimationAction", "Animation", 1);
-    side_ = combo("combatAnimationSide", "Side", 2); side_->addItems({"Player", "Enemy"});
-    mode_ = combo("combatAnimationMode", "Mode", 3);
-    mode_->addItems({"Normal (modes 0 / 1)", "Blocked (mode 2)"});
-    mode_->setToolTip("Normal assignments apply to both game modes 0 and 1, preserving the existing animation patch behavior.");
-    variant_ = combo("combatAnimationVariant", "Artwork variant", 4);
-    variant_->addItems({"Base", "Alternate"});
-    variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
+    filters->setColumnStretch(0, 2);
+    filters->setColumnStretch(1, 3);
     layout->addLayout(filters);
     auto primary = new QHBoxLayout;
-    replace_ = new QPushButton("Replace animation…"); replace_->setObjectName("combatAnimationReplace");
+    replace_ = new QPushButton("Import / copy animation…");
+    replace_->setObjectName("combatAnimationReplace");
     replace_->setMinimumHeight(36); primary->addWidget(replace_);
-    auto advanced = new QCheckBox("Advanced assignment"); advanced->setObjectName("combatAnimationAdvanced");
-    primary->addStretch(); primary->addWidget(advanced); layout->addLayout(primary);
+    primary->addStretch();
+    assignment_ = new QLabel;
+    assignment_->setObjectName("combatAnimationAssignment");
+    assignment_->setWordWrap(true);
+    primary->addWidget(assignment_);
+    auto advanced = new QCheckBox("Options");
+    advanced->setObjectName("combatAnimationAdvanced");
+    primary->addWidget(advanced);
+    layout->addLayout(primary);
     auto assignmentPanel = new QWidget; auto assignmentLayout = new QVBoxLayout(assignmentPanel);
+    assignmentPanel->setObjectName("combatAnimationOptions");
     assignmentLayout->setContentsMargins(0, 0, 0, 0);
+    auto scope = new QGridLayout;
+    const auto scopeCombo = [&](const char *name, const QString &label, int column) {
+        auto value = new QComboBox;
+        value->setObjectName(name);
+        scope->addWidget(new QLabel(label), 0, column);
+        scope->addWidget(value, 1, column);
+        scope->setColumnStretch(column, 1);
+        return value;
+    };
+    side_ = scopeCombo("combatAnimationSide", "Battle side", 0);
+    side_->addItems({"Player", "Enemy"});
+    variant_ = scopeCombo("combatAnimationVariant", "Artwork", 1);
+    variant_->addItems({"Base", "Alternate"});
+    mode_ = scopeCombo("combatAnimationMode", "Attack outcome", 2);
+    mode_->addItems({"Normal", "When blocked"});
+    mode_->setToolTip("Normal updates both normal attack modes. When blocked edits the blocked "
+                      "attack animation.");
+    assignmentLayout->addLayout(scope);
     auto selection = new QHBoxLayout;
-    selection->addWidget(new QLabel("Use an existing animation"));
+    selection->addWidget(new QLabel("Reassign existing animation"));
     animations_ = new QComboBox; animations_->setObjectName("combatAnimationChoice");
     animations_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     animations_->setMinimumContentsLength(24); selection->addWidget(animations_, 1);
@@ -77,15 +98,19 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     auto current = new QPushButton("Show assigned"); current->setObjectName("combatAnimationShowAssigned");
     selection->addWidget(current); assignmentLayout->addLayout(selection);
     layout->addWidget(assignmentPanel); assignmentPanel->hide();
-    connect(advanced, &QCheckBox::toggled, assignmentPanel, &QWidget::setVisible);
-    assignment_ = new QLabel; assignment_->setObjectName("combatAnimationAssignment");
-    assignment_->setWordWrap(true); layout->addWidget(assignment_);
+    connect(advanced, &QCheckBox::toggled, this, [this, assignmentPanel](bool show) {
+        assignmentPanel->setVisible(show);
+        if (!show)
+            refresh(true);
+    });
     notice_ = new QLabel; notice_->setObjectName("combatAnimationNotice"); notice_->setWordWrap(true);
     layout->addWidget(notice_);
     try {
         project_->loadAnimationRoutes(); project_->loadAnimationOverrides(); project_->loadCombatArtwork();
         sequence_ = new AnimationSequenceEditor(project_, undo, std::move(changed));
         sequence_->setGuided(true); layout->addWidget(sequence_, 1);
+        primary->insertWidget(1, sequence_->findChild<QPushButton *>("sequenceExport"));
+        primary->insertWidget(2, sequence_->findChild<QPushButton *>("sequenceAnimationTools"));
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what())); setEnabled(false); return;
     }
@@ -94,7 +119,7 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     connect(classes_, &QComboBox::editTextChanged, this, [this] {
         if (refreshing_) return;
         const bool chosen = classes_->currentIndex() >= 0 && classes_->currentText() == classes_->itemText(classes_->currentIndex());
-        sequence_->setEnabled(chosen);
+        setEditingEnabled(chosen);
         replace_->setEnabled(chosen);
         if (!chosen) assign_->setEnabled(false);
         else preview();
@@ -129,6 +154,12 @@ int CombatAnimationEditor::classId() const {
         throw Error("Choose a class from the search results");
     return classes_->currentData().toInt();
 }
+void CombatAnimationEditor::setEditingEnabled(bool enabled) {
+    sequence_->setEnabled(enabled);
+    findChild<QPushButton *>("sequenceExport")
+        ->setEnabled(enabled && sequence_->findChild<QListWidget *>("sequenceFrames")->count() > 0);
+    findChild<QPushButton *>("sequenceAnimationTools")->setEnabled(enabled);
+}
 int CombatAnimationEditor::owner() const {
     const int id = classId(), copy = u8(project_->record(Table::Classes, id).bytes, 69);
     return copy ? copy : id;
@@ -146,7 +177,7 @@ int CombatAnimationEditor::assignedPose(int mode) const {
 void CombatAnimationEditor::refresh(bool assigned) {
     if (refreshing_ || !sequence_) return;
     QScopedValueRollback guard(refreshing_, true);
-    sequence_->setEnabled(false);
+    setEditingEnabled(false);
     try {
         notice_->clear(); notice_->hide();
         const int id = classes_->currentIndex() < 0 ? 2 : classId();
@@ -238,33 +269,56 @@ void CombatAnimationEditor::refresh(bool assigned) {
         int selection = animations_->findData(assigned ? active : previousPose);
         if (selection < 0) selection = animations_->findData(active);
         animations_->setCurrentIndex(selection);
-        auto summary = QString("Editing %1 · %2 · %3 artwork").arg(actions_->currentText(), side_->currentText(), variant_->currentText());
+        auto summary = QString("%1 · %2%3")
+                           .arg(side_->currentText(), variant_->currentText(),
+                                action >= 0 ? " · " + mode_->currentText() : QString{});
+        QString details =
+            "Frame edits affect this class, side and artwork variant. Animations using the same "
+            "sequence within this class share frame edits. Import / copy animation replaces just "
+            "the selected animation. Changes are saved with your project.";
         if (action >= 0 && mode_->currentIndex() == 0 && assignedPose(1) != active)
-            summary += ". The two normal modes currently differ; replacing or assigning updates both.";
-        if (action >= 0) summary += "  Attack assignment exports use the existing Expansion Pak patch.";
+            details += " The two normal modes currently differ; importing or assigning an "
+                       "animation updates both.";
+        if (action >= 0)
+            details += " Attack assignment exports require the Expansion Pak patch.";
         assignment_->setText(summary);
+        assignment_->setToolTip(details);
         const bool empty = active < 0 || active >= bank.programs().size() || bank.effective(active).records.isEmpty();
         const bool create = empty || (classId() >= ClassData::loadRetail(project_->rom()).entries().size() && !privateData);
         replace_->setProperty("createAnimation", create);
-        replace_->setText(create ? "Create animation…" : "Replace animation…");
-        if (empty) assignment_->setText(summary + ". This animation is empty; use Create animation to add it.");
+        replace_->setText(create ? "Create animation…" : "Import / copy animation…");
+        replace_->setToolTip("Replace the whole animation with one from another class, Art Library "
+                             "or files. Preview before applying.");
         replace_->setEnabled(true);
         assign_->setEnabled(selection >= 0 && (active != animations_->currentData().toInt() || (action >= 0 && mode_->currentIndex() == 0 && assignedPose(1) != active)));
         preview();
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what())); notice_->show(); assign_->setEnabled(false); replace_->setEnabled(false);
+        setEditingEnabled(false);
     }
 }
 void CombatAnimationEditor::preview() {
     try {
-        if (animations_->currentIndex() < 0) return;
-        notice_->clear(); notice_->hide();
+        if (animations_->currentIndex() < 0)
+            return;
+        notice_->clear();
+        notice_->hide();
         const int pose = animations_->currentData().toInt();
+        sequence_->setProperty("animationName",
+                               pose == assignedPose(mode_->currentIndex() == 1 ? 2 : 0)
+                                   ? actions_->currentText()
+                                   : animations_->currentText());
         sequence_->setContext(classId(), flags(), pose);
-        sequence_->setEnabled(true);
+        setEditingEnabled(true);
         const int active = assignedPose(mode_->currentIndex() == 1 ? 2 : 0);
-        assign_->setEnabled(pose != active || (actions_->currentData().toInt() >= 0 && mode_->currentIndex() == 0 && assignedPose(1) != active));
+        assign_->setEnabled(pose != active ||
+                            (actions_->currentData().toInt() >= 0 && mode_->currentIndex() == 0 &&
+                             assignedPose(1) != active));
         assign_->setToolTip({});
+        assignment_->setText(
+            (pose != active ? "Unassigned preview · " : QString{}) + side_->currentText() + " · " +
+            variant_->currentText() +
+            (actions_->currentData().toInt() >= 0 ? " · " + mode_->currentText() : QString{}));
         const bool linked = owner() == 10 || owner() == 25 || owner() == 123;
         const auto pairs = project_->animationSequences()->groups().value(classId() * 4 + flags()).pairedPoses;
         if (linked && pose >= 50 && pairs.value(pose, -1) < 256) {
@@ -274,6 +328,11 @@ void CombatAnimationEditor::preview() {
             assign_->setEnabled(false);
             assign_->setToolTip("Attack assignments use animation IDs 0–255. This animation can still be previewed and edited.");
         }
-    } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); notice_->show(); assign_->setEnabled(false); sequence_->setEnabled(false); }
+    } catch (const std::exception &e) {
+        notice_->setText(QString::fromUtf8(e.what()));
+        notice_->show();
+        assign_->setEnabled(false);
+        setEditingEnabled(false);
+    }
 }
 } // namespace lordly

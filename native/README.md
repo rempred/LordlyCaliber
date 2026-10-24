@@ -37,15 +37,23 @@ Open, Save, Build and Review are at the right of the File/Edit menu bar. The
 workspace tabs and their section tabs remain below it. Advanced animations uses
 the selector at the right of the Art tab row to choose its editing tool.
 
-Art / Combat animations: choose a class and named animation, then click
-**Replace animation…** (or **Create animation…** for a new class). Import PNG
-frames, a frame-sequence ZIP exported here, a sprite asset, another class's named
-animation, or Art Library. Preview and apply; Cancel leaves the project unchanged.
-The dialog identifies the affected side and artwork variant. Frame files use a
+Art / Combat animations: choose a class and named animation. The preview sits
+beside its frames. Select a frame and choose **Edit sprite…** to paint, or
+**Replace frame…** to change its artwork while keeping its duration. **Add frames…**
+inserts after the selected frame; choose one or several source frames. Both use
+the same **Game animations**, **Art Library** and **Files** choices, with a result
+preview before Apply. Duplicate, Delete and drag-to-reorder work directly in the
+frame list. Empty animations offer Add frames and Create animation.
+
+**Import / copy animation…** replaces the whole sequence (or **Create animation…**
+for a new class). Import PNG frames, an exported frame-sequence ZIP, a sprite asset,
+another class's named animation, or Art Library. Cancel leaves the project unchanged.
+**Options** contains battle side, artwork variant, attack outcome and reassignment.
+**Advanced** contains frame layers, comparison and restoring an entire animation set.
+The import dialog identifies the affected side and artwork variant. Frame files use a
 fresh sequence, preserving imported timing and origin without doubling baked
 movement. Class copies include movement, sound and loops; equipment follows the
-destination class. **Advanced assignment** retains the existing-animation picker
-and Assign button. Normal assignments cover game modes 0 and 1; Blocked is mode 2.
+destination class. Normal assignments cover game modes 0 and 1; Blocked is mode 2.
 Frame and sprite edits automatically create an independent class copy. Select a
 frame to change timing/order, edit layers or paint; Play resumes sequence playback.
 Edit duration directly below each thumbnail. Type ticks and press Enter, or use
@@ -55,6 +63,8 @@ native motion slots and all named actions. Unidentified slots are labeled by
 number; empty slots offer Create animation.
 Type part of a class name or its ID to see matching classes, then choose a result.
 **Export…** offers a selected-frame PNG, animated PNG, frame-sequence ZIP and WebM.
+It also saves the selected frame or one cycle of animation playback to Art Library.
+Library playback preserves the selected preview speed when imported again.
 Animated exports run the same interpreter as Play, including movement, waits,
 state changes and opacity, at the selected preview speed. Capture starts at the
 beginning and stops at the end or after one cycle. Every frame uses a common

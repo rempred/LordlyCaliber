@@ -16,6 +16,7 @@ class CombatAnimationEditor : public QWidget {
   private:
     void refresh(bool assigned = false);
     void preview();
+    void setEditingEnabled(bool);
     int classId() const;
     int owner() const;
     int flags() const;

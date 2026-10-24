@@ -30,21 +30,30 @@ void AnimationSequenceEditor::editSprite() {
     auto frame = snapshot.frame(token);
     if (!u16(frame, 0)) throw Error("This frame has no sprite layers");
     const auto before = project_->animationSequences()->json();
-    QDialog dialog(this); dialog.setWindowTitle("Paint animation sprite");
+    QDialog dialog(this);
+    dialog.setWindowTitle("Edit frame sprite");
     dialog.setObjectName("sequenceSpriteDialog"); dialog.resize(840, 680);
     auto layout = new QVBoxLayout(&dialog);
-    auto note = new QLabel("Paint a sprite layer in this frame. Other frames, classes and child variants retain their pixels. "
-                           "Colors are mapped to the sprite's native palette and opacity precision.");
+    auto note = new QLabel("Edit the selected frame's sprite, then Apply. Choose a part below when "
+                           "the sprite has several pieces. "
+                           "Colors are converted to the game's palette.");
     note->setWordWrap(true); layout->addWidget(note);
     auto choices = new QHBoxLayout; layout->addLayout(choices);
     auto layer = new QComboBox; layer->setObjectName("sequenceSpriteLayer");
     for (int i = 0; i < u16(frame, 0); ++i)
-        layer->addItem(QString("Layer %1 · sprite %2").arg(i + 1).arg(u16(frame, 2 + i * 16)), i);
+        layer->addItem(QString("Sprite part %1").arg(i + 1), i);
     choices->addWidget(layer, 1);
     auto child = new QSpinBox; child->setObjectName("sequenceSpriteChild"); child->setPrefix("Variant "); choices->addWidget(child);
     auto tool = new QComboBox; tool->addItems({"Pencil", "Eraser", "Fill", "Pick color"}); choices->addWidget(tool);
-    auto colorButton = new QPushButton("Ink…"); colorButton->setObjectName("sequenceSpriteInk"); choices->addWidget(colorButton);
-    auto zoom = new QSpinBox; zoom->setRange(1, 24); zoom->setValue(8); zoom->setPrefix("Zoom "); choices->addWidget(zoom);
+    auto colorButton = new QPushButton("Color…");
+    colorButton->setObjectName("sequenceSpriteInk");
+    choices->addWidget(colorButton);
+    auto zoom = new QSpinBox;
+    zoom->setRange(1, 24);
+    zoom->setValue(8);
+    zoom->setPrefix("Zoom ");
+    zoom->setSuffix("×");
+    choices->addWidget(zoom);
     auto canvas = new SpriteCanvas; canvas->setObjectName("sequenceSpriteCanvas"); canvas->setZoom(8);
     auto scroll = new QScrollArea; scroll->setWidget(canvas); scroll->setAlignment(Qt::AlignCenter); layout->addWidget(scroll, 1);
     auto status = new QLabel; status->setWordWrap(true); layout->addWidget(status);
@@ -69,6 +78,8 @@ void AnimationSequenceEditor::editSprite() {
         try {
             const auto sprite = source();
             { const QSignalBlocker block(child); child->setRange(0, int(sprite.children().size()) - 1); }
+            child->setVisible(sprite.children().size() > 1);
+            layer->setVisible(u16(frame, 0) > 1);
             const auto pixels = sprite.frame(child->value(), palette()).image;
             const auto image = QImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()), pixels.width,
                                       pixels.height, pixels.width * 4, QImage::Format_RGBA8888).copy();

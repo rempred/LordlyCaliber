@@ -1,11 +1,21 @@
 # Feature inventory and completion tracking
 
-Combat Animations centers on **Replace animation…**, or **Create animation…** for
-a new class without its own animation set. Choose files (PNG frames, exported
-frame-sequence ZIP, or a sprite asset), another class's named animation, or Art
-Library. Preview the converted result and apply once; Cancel, Undo and unfinished
-dialog recovery preserve the prior project. The dialog names the destination side
-and artwork variant. Existing reassignment controls are under Advanced assignment.
+Combat Animations opens with class and named animation selectors, a large preview
+and a frame board. Select a frame to **Edit sprite**, **Replace frame**, Duplicate
+or Delete; drag to reorder. **Add frames** inserts after selection. Frame add and
+replace share the Game animations / Art Library / Files chooser, with visual
+source frames and a destination preview. Replacement keeps the frame's duration;
+adding frames brings their timing. Native frame copies retain layers and equipment
+policies. Imports and copies are independent, undoable edits; Cancel and unfinished
+dialog recovery preserve the prior project.
+
+**Import / copy animation…**, or **Create animation…** for an empty/new animation,
+replaces a whole sequence using the same source choices. PNG frames, exported
+frame-sequence ZIPs and sprite assets are supported. Options holds battle side,
+artwork, attack outcome and reassignment. Advanced holds layers, comparison and
+restoring the complete side/artwork animation set, with the restore scope explicit.
+Export also saves a selected frame or preview playback to Art Library. Playback
+timing is converted to the library's 30 Hz timebase, including preview speed.
 Class-copy and comparison pickers use animation names instead of raw pose IDs.
 The main selector includes all forty native motion/reaction slots and every
 named action, including actions not currently equipped by the class. Guard,

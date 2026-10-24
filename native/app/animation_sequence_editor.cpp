@@ -1,15 +1,15 @@
-#include "app/content_refresh.h"
-#include "app/recovery_draft.h"
-#include "app/view_position.h"
 #include "app/animation_sequence_editor.h"
-#include "engine/combat_animation_edit.h"
 #include "app/actor_pose_editor.h"
 #include "app/art_image_assignment.h"
+#include "app/content_refresh.h"
 #include "app/frame_layer_editor.h"
+#include "app/recovery_draft.h"
 #include "app/sprite_library_command.h"
+#include "app/view_position.h"
+#include "engine/animation_transfer.h"
+#include "engine/combat_animation_edit.h"
 #include "engine/sprite_object.h"
 #include "engine/sprite_sources.h"
-#include "engine/animation_transfer.h"
 #include <QComboBox>
 #include <QCompleter>
 #include <QFileDialog>
@@ -19,10 +19,11 @@
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QLabel>
+#include <QListWidget>
 #include <QPushButton>
 #include <QScopedValueRollback>
-#include <QSignalBlocker>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
@@ -443,9 +444,9 @@ AnimationDescriptor AnimationSequenceEditor::descriptor() const {
 }
 void AnimationSequenceEditor::guarded(const std::function<void()> &action) {
     try {
-        action();
         notice_->clear();
         notice_->hide();
+        action();
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what()));
         notice_->show();
@@ -613,19 +614,61 @@ void AnimationSequenceEditor::importSequence(const SpriteAsset &asset) {
     if(project_->animationSequences()->json()!=before)throw Error("Private sequences changed while sequence preparation was open");
     apply(candidate(*prepared), "Replace complete animation frame sequence");
 }
-void AnimationSequenceEditor::copyToLibrary() {
-    const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
+void AnimationSequenceEditor::copyToLibrary(bool selectedFrame) {
+    const int id = selectedClass(), flags = routes_->currentIndex(),
+              state = poses_->currentData().toInt();
     project_->loadCombatArtwork();
     const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
-                                       project_->bodyAnimationData());
-    auto asset = spriteAssetFromPose(project_->rom(), art, state,
-                                     (project_->record(Table::Classes, id).name + " · " + poseName(state)).left(120),
-                                     0, {}, project_->combatArtwork()->previewEdits().value(art.descriptorKey()));
+                                        project_->bodyAnimationData());
+    auto asset = spriteAssetFromPose(
+        project_->rom(), art, state,
+        (project_->record(Table::Classes, id).name + " · " + poseName(state)).left(120), 0, {},
+        project_->combatArtwork()->previewEdits().value(art.descriptorKey()));
+    if (guided_) {
+        asset.name = (project_->record(Table::Classes, id).name + " · " +
+                      property("animationName").toString())
+                         .left(120);
+        if (!selectedFrame) {
+            const auto source = preview_->playbackSource();
+            auto captured = source.capture();
+            if (!captured)
+                return;
+            captured->name = asset.name;
+            // Library assets use 30 ticks/second. Match the chosen preview speed
+            // without interpreting native 60 Hz frame holds as library ticks.
+            int sourceTicks = 0, libraryTicks = 0;
+            QVector<SpriteAssetFrame> timedFrames;
+            for (auto frame : captured->frames) {
+                sourceTicks += frame.ticks;
+                const int end = qRound(sourceTicks * 30. / source.stepsPerSecond);
+                frame.ticks = end - libraryTicks;
+                if (frame.ticks > 0)
+                    timedFrames << frame;
+                libraryTicks = end;
+            }
+            captured->frames = timedFrames;
+            captured->provenance["timing"] = "30-hz-preview-steps";
+            asset = *captured;
+        }
+    }
+    if (selectedFrame) {
+        const int index = frames_ ? frames_->currentRow() : -1;
+        if (index < 0 || index >= asset.frames.size())
+            throw Error("Select a frame to save to Art Library");
+        asset.frames = {asset.frames[index]};
+        asset.frames[0].ticks = std::max(1, (asset.frames[0].ticks + 1) / 2);
+        asset.name = (asset.name + QString(" · Frame %1").arg(index + 1)).left(120);
+    }
     auto library = project_->sprites();
     library.replace(asset);
-    undo_->push(new SpriteLibraryCommand(project_, "Copy pose frames to Art Library", std::move(library)));
+    undo_->push(
+        new SpriteLibraryCommand(project_, "Copy pose frames to Art Library", std::move(library)));
     changed_();
     library_->setCurrentIndex(library_->findData(asset.id));
+    if (guided_) {
+        notice_->setText(QString("Saved %1 to Art Library.").arg(asset.name));
+        notice_->show();
+    }
 }
 void AnimationSequenceEditor::prepareImage(const QImage &image) {
     const int id = selectedClass(), flags = routes_->currentIndex(),

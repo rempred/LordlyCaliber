@@ -12,6 +12,7 @@ class QPushButton;
 class QListWidget;
 class QCheckBox;
 class QSplitter;
+class QAction;
 namespace lordly {
 class ActorPoseEditor;
 class AnimationSequenceEditor : public QWidget {
@@ -20,7 +21,7 @@ class AnimationSequenceEditor : public QWidget {
     AnimationSequenceEditor(Project *, QUndoStack *, std::function<void()> changed,
                             QWidget *parent = nullptr);
     void importImage(const QString &);
-    void copyToLibrary();
+    void copyToLibrary(bool selectedFrame = false);
     void importSequence(const SpriteAsset &);
     void copySequence(int sourceClass, int sourceRoute, int sourcePose, bool controls = true);
     void copyFrame(int sourceClass, int sourceRoute, int sourcePose, int sourceRecord, bool duration);
@@ -52,6 +53,7 @@ class AnimationSequenceEditor : public QWidget {
     void buildFrameWorkspace();
     void chooseFrameExport();
     void chooseAnimationExport(AnimationExport);
+    void chooseFrameSource(bool replace);
     void refreshFrames();
     void selectVisibleFrames();
     void updateFrameTools();
@@ -87,8 +89,10 @@ class AnimationSequenceEditor : public QWidget {
     QSplitter *rawSplit_ = nullptr;
     QListWidget *frames_ = nullptr;
     QLabel *frameHeading_ = nullptr, *frameSelection_ = nullptr, *frameStatus_ = nullptr;
+    QLabel *emptyPreview_ = nullptr;
     QCheckBox *onion_ = nullptr;
-    QPushButton *earlier_ = nullptr, *later_ = nullptr, *paint_ = nullptr, *layersButton_ = nullptr;
+    QPushButton *paint_ = nullptr, *exportButton_ = nullptr;
+    QAction *earlier_ = nullptr, *later_ = nullptr, *layersButton_ = nullptr;
     QString frameContext_;
     int pendingRecord_ = -1;
 };

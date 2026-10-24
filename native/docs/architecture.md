@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+## Combat animation workspace (October 23)
+
+The guided workspace separates whole-animation import/copy from selected-frame
+painting/replacement and insertion. Its frame picker uses the same source choices
+as whole replacement. `combat_animation_frames` operates on a Project candidate:
+insertion follows a selected native frame (or the final frame for -1), replacement
+retains destination ticks, and native donor copies use `copyAnimationFrame` to
+retain layers, palettes and equipment policies. Asset holds convert from 30 Hz
+to native game ticks. Existing control instructions and remapped branches remain;
+over-capacity insertion asks for whole-animation import rather than rewriting them.
+Frame edits retain existing pose/route sharing within the selected class.
+
+Dialogs preview the candidate and register atomic private-animation recovery.
+Cancel publishes nothing; Apply uses one Undo command and rejects a stale project.
+Whole replacement retains its existing named-action isolation. Guided Art Library
+sequence export captures the playback interpreter and resamples holds to library
+30 Hz using cumulative boundaries; it does not store native 60 Hz holds as library
+ticks. Raw authored-frame inspection remains available in Advanced animations.
+
 ## Combat animation replacement (October 20)
 
 `combat_animation_edit` builds an independent Project candidate for a named

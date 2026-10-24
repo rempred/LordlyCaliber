@@ -423,11 +423,11 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     positionControls_ = new QWidget;
     auto positioning = new QHBoxLayout(positionControls_);
     positioning->setContentsMargins(0, 0, 0, 0);
-    positioning->addWidget(new QLabel("Move"));
+    positioning->addWidget(new QLabel("Drag"));
     positionLayer_ = new QComboBox;
     positionLayer_->setObjectName("actorPositionLayer");
     positionLayer_->setIconSize(QSize(32, 32));
-    positionLayer_->addItem("Everything", -1);
+    positionLayer_->addItem("Whole sprite", -1);
     positionLayer_->setToolTip("Choose the artwork to drag. A layer number applies to every selected frame; other layers stay in place.");
     positioning->addWidget(positionLayer_, 1);
     positionControls_->hide();
@@ -923,7 +923,7 @@ void ActorPoseEditor::draw() {
         const QSignalBlocker positionBlock(positionLayer_);
         const int positionLayer = positionLayer_->currentData().toInt();
         positionLayer_->clear();
-        positionLayer_->addItem("Everything", -1);
+        positionLayer_->addItem("Whole sprite", -1);
         if (frameEditing_ && selectedFrame_ && previousFrame_ && body) {
             const auto previous = art_->bodyFrame(rom_, *previousFrame_, *body, false,
                                                   artwork_.value(art_->descriptorKey()));
@@ -954,7 +954,7 @@ void ActorPoseEditor::draw() {
             item->setFlag(QGraphicsItem::ItemIsSelectable);
             items_ << item;
             const QString role = body ? (art_->imageKind(m.art) ? "Equipment" : "Body") : "Artwork";
-            positionLayer_->addItem(QIcon(pixmap), QString("%1 · layer %2").arg(role).arg(i + 1), i);
+            positionLayer_->addItem(QIcon(pixmap), QString("%1 · part %2").arg(role).arg(i + 1), i);
             bounds |= item->mapRectToScene(QRectF(0, 0, m.width, m.height));
             auto row = new QListWidgetItem(QString("Layer %1 · art %2").arg(i).arg(m.art), layers_);
             row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
