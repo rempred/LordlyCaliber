@@ -1,4 +1,4 @@
-# Lordly Caliber 0.5.1
+# Lordly Caliber 0.5.3
 
 Windows x64, Qt 6.12 and C++. Extract the portable ZIP and run
 `LordlyCaliber.exe`. Open a US Ogre Battle 64 ROM, edit its records or

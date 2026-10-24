@@ -34,7 +34,7 @@ try {
     }
     $gui.WaitForExit()
     if ($gui.ExitCode -ne 0) { throw "Packaged Qt application failed: $($gui.ExitCode); see $versionErrors" }
-    if ((Get-Content -LiteralPath $versionOutput -Raw).Trim() -ne 'LordlyCaliber 0.5.1') {
+    if ((Get-Content -LiteralPath $versionOutput -Raw).Trim() -ne 'LordlyCaliber 0.5.3') {
         throw 'Packaged Qt application did not report the expected version.'
     }
     & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $RomPath --project $project --output $output --report $report
