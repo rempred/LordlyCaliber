@@ -1,0 +1,134 @@
+name: Publish numbered release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful Windows release ZIP run ID
+        required: true
+        type: string
+      tag:
+        description: Release version, such as v0.5.3
+        required: true
+        type: string
+      notes:
+        description: Release notes in Markdown
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: numbered-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_NOTES: ${{ inputs.notes }}
+    steps:
+      - name: Select a successful Windows build from Main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" > run.json
+          jq -e --arg repo "$GH_REPO" '
+            .status == "completed" and .conclusion == "success" and
+            .head_branch == "main" and .repository.full_name == $repo and
+            .head_repository.full_name == $repo and
+            .path == ".github/workflows/windows-release.yml"' run.json
+          source_sha=$(jq -r .head_sha run.json)
+          attempt=$(jq -r .run_attempt run.json)
+          gh api "repos/$GH_REPO/git/matching-refs/tags/$RELEASE_TAG" | \
+            jq -e --arg ref "refs/tags/$RELEASE_TAG" 'all(.[]; .ref != $ref)'
+          gh api "repos/$GH_REPO/contents/native/CMakeLists.txt?ref=$source_sha" \
+            -H 'Accept: application/vnd.github.raw+json' | \
+            grep -Fx "project(LordlyCaliber VERSION ${RELEASE_TAG#v} LANGUAGES C CXX)"
+          package="LordlyCaliber-main-${source_sha:0:12}-windows-x64"
+          if (( attempt > 1 )); then package+="-attempt$attempt"; fi
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN/artifacts?per_page=100" > artifacts.json
+          artifact_id=$(jq -er --arg name "$package" '
+            [.artifacts[] | select(.name == $name and .expired == false)] |
+            if length == 1 then .[0].id else error("Expected one application artifact") end' artifacts.json)
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=$package" >> "$GITHUB_ENV"
+          mkdir release-files
+          gh run download "$BUILD_RUN" --name "verification-files-$BUILD_RUN-$attempt" --dir release-files
+          gh api "repos/$GH_REPO/actions/artifacts/$artifact_id/zip" > "release-files/$package.zip"
+          printf '%s\n' "$RELEASE_NOTES" > release-notes.md
+
+      - name: Verify the exact ZIP and signed build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-files
+          sha256sum --check "$PACKAGE_NAME.zip.sha256"
+          gh attestation verify "$PACKAGE_NAME.zip" --repo "$GH_REPO" \
+            --source-ref refs/heads/main --source-digest "$SOURCE_SHA" \
+            --signer-workflow "$GH_REPO/.github/workflows/windows-release.yml" \
+            --deny-self-hosted-runners --bundle attestations.jsonl
+          cd ..
+          python3 - <<'PY'
+          import json, os, pathlib, zipfile
+          root = pathlib.Path('release-files')
+          package = os.environ['PACKAGE_NAME']
+          with zipfile.ZipFile(root / (package + '.zip')) as archive:
+              metadata_bytes = archive.read(package + '/build-info.json')
+              metadata = json.loads(metadata_bytes)
+              assert metadata['sourceCommit'] == os.environ['SOURCE_SHA']
+              assert metadata['sourceHasChanges'] is False
+              assert metadata_bytes == (root / 'build-info.json').read_bytes()
+              assert archive.read(package + '/VERIFY-BUILD.md') == (root / 'VERIFY-BUILD.md').read_bytes()
+              (root / 'FILES.sha256').write_bytes(archive.read(package + '/FILES.sha256'))
+              pathlib.Path('executables').mkdir()
+              for name in ('LordlyCaliber.exe', 'LordlyCaliber-cli.exe'):
+                  (pathlib.Path('executables') / name).write_bytes(archive.read(package + '/' + name))
+          expected = {package + '.zip', package + '.zip.sha256', 'FILES.sha256',
+                      'attestations.jsonl', 'build-info.json', 'VERIFY-BUILD.md'}
+          assert {p.name for p in root.iterdir()} == expected
+          PY
+          for subject in release-files/FILES.sha256 executables/*.exe; do
+            gh attestation verify "$subject" --repo "$GH_REPO" \
+              --source-ref refs/heads/main --source-digest "$SOURCE_SHA" \
+              --signer-workflow "$GH_REPO/.github/workflows/windows-release.yml" \
+              --deny-self-hosted-runners --bundle release-files/attestations.jsonl
+          done
+
+      - name: Upload the release and verify every asset before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release-files/* --target "$SOURCE_SHA" \
+            --title "LordlyCaliber $RELEASE_TAG" --notes-file release-notes.md --draft
+          gh release view "$RELEASE_TAG" --json assets,body,isDraft,targetCommitish > release.json
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          release = json.loads(pathlib.Path('release.json').read_text())
+          assert release['isDraft'] is True
+          assert release['targetCommitish'] == os.environ['SOURCE_SHA']
+          assert release['body'].replace('\r\n', '\n').strip() == pathlib.Path('release-notes.md').read_text().strip()
+          files = {p.name: p for p in pathlib.Path('release-files').iterdir()}
+          assert {a['name'] for a in release['assets']} == files.keys()
+          for asset in release['assets']:
+              data = files[asset['name']].read_bytes()
+              assert asset['state'] == 'uploaded' and asset['size'] == len(data)
+              assert asset['digest'] == 'sha256:' + hashlib.sha256(data).hexdigest()
+          PY
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" | \
+            jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha'
+          echo "Published [$RELEASE_TAG]($GITHUB_SERVER_URL/$GH_REPO/releases/tag/$RELEASE_TAG) from verified build [$BUILD_RUN]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$BUILD_RUN)." >> "$GITHUB_STEP_SUMMARY"

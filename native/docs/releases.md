@@ -27,6 +27,15 @@ uploads it with the verification sidecars without repacking. These are
 development prereleases; a numbered release is published separately using the
 same verified application ZIP and its checksum and attestation sidecars.
 
+For a numbered release, run **Actions → Publish numbered release** from `main`.
+Supply a successful **Windows release ZIP** run ID, the version tag (for example,
+`v0.5.3`), and the release notes. This publish-only workflow reuses that run's
+exact ZIP without rebuilding or transferring it to a maintainer's computer.
+It verifies checksums and signed provenance, uploads the six release assets to a
+draft, checks their uploaded hashes and notes, then publishes the release as
+Latest. The tag points to the application build's commit. An existing release is
+never overwritten; a failed upload check leaves its draft available for inspection.
+
 The build job uses Windows Server 2022's MSVC 2022 toolset, pinned Qt/CMake
 archives, and the authenticated N64 dependency in
 [`rebuild/TOOLCHAIN-DISTRIBUTION.md`](../rebuild/TOOLCHAIN-DISTRIBUTION.md).
