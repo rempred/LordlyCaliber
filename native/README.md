@@ -37,7 +37,8 @@ Open, Save, Build and Review are at the right of the File/Edit menu bar. The
 workspace tabs and their section tabs remain below it. Advanced animations uses
 the selector at the right of the Art tab row to choose its editing tool.
 
-Art / Combat animations: choose a class and named animation. The preview sits
+Art / Combat animations: choose a class, named animation, Player/Enemy side,
+mode and artwork variant using the selectors at the top. The preview sits
 beside its frames. Select a frame and choose **Edit sprite…** to paint, or
 **Replace frame…** to change its artwork while keeping its duration. **Add frames…**
 inserts after the selected frame; choose one or several source frames. Both use
@@ -45,10 +46,10 @@ the same **Game animations**, **Art Library** and **Files** choices, with a resu
 preview before Apply. Duplicate, Delete and drag-to-reorder work directly in the
 frame list. Empty animations offer Add frames and Create animation.
 
-**Import / copy animation…** replaces the whole sequence (or **Create animation…**
+**Replace animation…** replaces the whole sequence (or **Create animation…**
 for a new class). Import PNG frames, an exported frame-sequence ZIP, a sprite asset,
 another class's named animation, or Art Library. Cancel leaves the project unchanged.
-**Options** contains battle side, artwork variant, attack outcome and reassignment.
+**Advanced assignment** shows controls for assigning an existing animation.
 **Advanced** contains frame layers, comparison and restoring an entire animation set.
 The import dialog identifies the affected side and artwork variant. Frame files use a
 fresh sequence, preserving imported timing and origin without doubling baked

@@ -35,11 +35,13 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     : QWidget(parent), project_(project) {
     setObjectName("combatAnimationEditor");
     auto layout = new QVBoxLayout(this);
+    auto description = new QLabel("Choose a class and animation. Replace or create it from files, another class, or Art Library, then preview and apply.");
+    description->setWordWrap(true); layout->addWidget(description);
     auto filters = new QGridLayout;
     const auto combo = [&](const char *name, const QString &label, int column) {
         auto value = new QComboBox; value->setObjectName(name);
         value->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        value->setMinimumContentsLength(column == 0 ? 20 : 28);
+        value->setMinimumContentsLength(column == 0 ? 20 : 12);
         filters->addWidget(new QLabel(label), 0, column); filters->addWidget(value, 1, column);
         return value;
     };
@@ -51,45 +53,28 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     classes_->lineEdit()->setPlaceholderText("Search class name or ID…");
     classes_->lineEdit()->setClearButtonEnabled(true);
     actions_ = combo("combatAnimationAction", "Animation", 1);
-    filters->setColumnStretch(0, 2);
-    filters->setColumnStretch(1, 3);
+    side_ = combo("combatAnimationSide", "Side", 2); side_->addItems({"Player", "Enemy"});
+    mode_ = combo("combatAnimationMode", "Mode", 3);
+    mode_->addItems({"Normal (modes 0 / 1)", "Blocked (mode 2)"});
+    mode_->setToolTip("Normal assignments apply to both game modes 0 and 1, preserving the existing animation patch behavior.");
+    variant_ = combo("combatAnimationVariant", "Artwork variant", 4);
+    variant_->addItems({"Base", "Alternate"});
+    variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
     layout->addLayout(filters);
     auto primary = new QHBoxLayout;
-    replace_ = new QPushButton("Import / copy animation…");
+    replace_ = new QPushButton("Replace animation…");
     replace_->setObjectName("combatAnimationReplace");
     replace_->setMinimumHeight(36); primary->addWidget(replace_);
     primary->addStretch();
-    assignment_ = new QLabel;
-    assignment_->setObjectName("combatAnimationAssignment");
-    assignment_->setWordWrap(true);
-    primary->addWidget(assignment_);
-    auto advanced = new QCheckBox("Options");
+    auto advanced = new QCheckBox("Advanced assignment");
     advanced->setObjectName("combatAnimationAdvanced");
     primary->addWidget(advanced);
     layout->addLayout(primary);
     auto assignmentPanel = new QWidget; auto assignmentLayout = new QVBoxLayout(assignmentPanel);
     assignmentPanel->setObjectName("combatAnimationOptions");
     assignmentLayout->setContentsMargins(0, 0, 0, 0);
-    auto scope = new QGridLayout;
-    const auto scopeCombo = [&](const char *name, const QString &label, int column) {
-        auto value = new QComboBox;
-        value->setObjectName(name);
-        scope->addWidget(new QLabel(label), 0, column);
-        scope->addWidget(value, 1, column);
-        scope->setColumnStretch(column, 1);
-        return value;
-    };
-    side_ = scopeCombo("combatAnimationSide", "Battle side", 0);
-    side_->addItems({"Player", "Enemy"});
-    variant_ = scopeCombo("combatAnimationVariant", "Artwork", 1);
-    variant_->addItems({"Base", "Alternate"});
-    mode_ = scopeCombo("combatAnimationMode", "Attack outcome", 2);
-    mode_->addItems({"Normal", "When blocked"});
-    mode_->setToolTip("Normal updates both normal attack modes. When blocked edits the blocked "
-                      "attack animation.");
-    assignmentLayout->addLayout(scope);
     auto selection = new QHBoxLayout;
-    selection->addWidget(new QLabel("Reassign existing animation"));
+    selection->addWidget(new QLabel("Use an existing animation"));
     animations_ = new QComboBox; animations_->setObjectName("combatAnimationChoice");
     animations_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     animations_->setMinimumContentsLength(24); selection->addWidget(animations_, 1);
@@ -103,14 +88,14 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
         if (!show)
             refresh(true);
     });
+    assignment_ = new QLabel; assignment_->setObjectName("combatAnimationAssignment");
+    assignment_->setWordWrap(true); layout->addWidget(assignment_);
     notice_ = new QLabel; notice_->setObjectName("combatAnimationNotice"); notice_->setWordWrap(true);
     layout->addWidget(notice_);
     try {
         project_->loadAnimationRoutes(); project_->loadAnimationOverrides(); project_->loadCombatArtwork();
         sequence_ = new AnimationSequenceEditor(project_, undo, std::move(changed));
         sequence_->setGuided(true); layout->addWidget(sequence_, 1);
-        primary->insertWidget(1, sequence_->findChild<QPushButton *>("sequenceExport"));
-        primary->insertWidget(2, sequence_->findChild<QPushButton *>("sequenceAnimationTools"));
     } catch (const std::exception &e) {
         notice_->setText(QString::fromUtf8(e.what())); setEnabled(false); return;
     }
@@ -274,7 +259,7 @@ void CombatAnimationEditor::refresh(bool assigned) {
                                 action >= 0 ? " · " + mode_->currentText() : QString{});
         QString details =
             "Frame edits affect this class, side and artwork variant. Animations using the same "
-            "sequence within this class share frame edits. Import / copy animation replaces just "
+            "sequence within this class share frame edits. Replace animation replaces just "
             "the selected animation. Changes are saved with your project.";
         if (action >= 0 && mode_->currentIndex() == 0 && assignedPose(1) != active)
             details += " The two normal modes currently differ; importing or assigning an "
@@ -286,7 +271,7 @@ void CombatAnimationEditor::refresh(bool assigned) {
         const bool empty = active < 0 || active >= bank.programs().size() || bank.effective(active).records.isEmpty();
         const bool create = empty || (classId() >= ClassData::loadRetail(project_->rom()).entries().size() && !privateData);
         replace_->setProperty("createAnimation", create);
-        replace_->setText(create ? "Create animation…" : "Import / copy animation…");
+        replace_->setText(create ? "Create animation…" : "Replace animation…");
         replace_->setToolTip("Replace the whole animation with one from another class, Art Library "
                              "or files. Preview before applying.");
         replace_->setEnabled(true);
@@ -316,9 +301,9 @@ void CombatAnimationEditor::preview() {
                              assignedPose(1) != active));
         assign_->setToolTip({});
         assignment_->setText(
-            (pose != active ? "Unassigned preview · " : QString{}) + side_->currentText() + " · " +
-            variant_->currentText() +
-            (actions_->currentData().toInt() >= 0 ? " · " + mode_->currentText() : QString{}));
+            (pose != active ? "Unassigned preview · " + animations_->currentText()
+                            : "Editing " + actions_->currentText()) +
+            " · " + side_->currentText() + " · " + variant_->currentText() + " artwork");
         const bool linked = owner() == 10 || owner() == 25 || owner() == 123;
         const auto pairs = project_->animationSequences()->groups().value(classId() * 4 + flags()).pairedPoses;
         if (linked && pose >= 50 && pairs.value(pose, -1) < 256) {
