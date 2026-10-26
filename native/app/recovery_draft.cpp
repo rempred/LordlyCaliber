@@ -5,6 +5,7 @@
 namespace lordly {
 namespace {
 QJsonObject section(Project &p,const QString &key) {
+    if(key=="attacks"){p.loadAttacks();return p.attacks()->json();}
     if(key=="privateAnimations"){p.loadAnimationRoutes();p.loadAnimationOverrides();return {{"sequences",p.animationSequences()->json()},{"overrides",p.animationOverrides()->json()}};}
     if(key=="animationSequences"){p.loadAnimationSequences();return p.animationSequences()->json();}
     if(key=="spriteLibrary")return p.sprites().json();
@@ -22,7 +23,8 @@ void apply(Project &p,const QJsonObject &sections) {
         section(next,it.key());
         if(!it->isObject())throw Error("Invalid unfinished artwork data");
         const auto value=it->toObject();
-        if(it.key()=="privateAnimations")next.setPrivateAnimationState(value["sequences"].toObject(),value["overrides"].toObject());
+        if(it.key()=="attacks")next.setAttacks(value);
+        else if(it.key()=="privateAnimations")next.setPrivateAnimationState(value["sequences"].toObject(),value["overrides"].toObject());
         else if(it.key()=="animationSequences")next.setAnimationSequences(value);
         else if(it.key()=="spriteLibrary")next.setSprites(SpriteLibrary::fromJson(value));
         else if(it.key()=="combatArtwork")next.setCombatArtwork(value);

@@ -94,6 +94,7 @@ u8 *lc_rules(void *);
 void lc_attack_record(void *,void *,int,int,int,int);
 void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
+int lc_attack_visual_program(int,int);
 int func_0020D4C8(DispatchObject *,int);
 int lc_attack_pedra(u8 *input, int *outTime)
 {
@@ -338,7 +339,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
     }
     lists.flags[i] = -1;
     lists.ids[i] = -1;
-    func_0021D2C0(0x16, time, 0, input[1], lists.single, lists.ids, lists.flags);
+    func_0021D2C0(0x16, time, 0, lc_attack_visual_program(input[2],input[1]), lists.single, lists.ids, lists.flags);
     func_0021D230(0x3E, time, scanObject, 8);
     /* This final maximum update is otherwise dead. KMC late jump cleanup
        leaves its spill reload in the retail code; it does not set outTime. */

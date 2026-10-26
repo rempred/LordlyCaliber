@@ -27,7 +27,26 @@ can assign its own sequence. Duplicating a template retains its resolved-spell
 links, which are identified as shared.
 
 The selected-class preview shows the body sequence, with a direct route to
-Combat Animations. It does not simulate spell particles or defending characters.
+Combat Animations. **Preview / edit attack effect…** opens a separate effects
+window covering all 133 retail visual programs, including spell particles,
+screen effects, breaths, combined spells and Pedra effects. Replace an effect
+from the current ROM's named catalog, an independent Art Library copy, PNG files,
+an exported frame-sequence ZIP, or an asset JSON file. Native effects support a
+visual delay and replacement. Imported frames support painting, per-frame timing,
+resizing and origin placement, with an Original / Game result color comparison.
+Imports use RGBA5551 (5-bit RGB and on/off alpha); embedded profiles convert to
+sRGB, and original artwork remains available for editing. Imported effects are
+screen-centred sequences, not per-target 3D programs.
+
+The effects window has local Undo/Redo and Apply/Cancel; Apply creates one project
+Undo step. Unconfirmed effect and frame-painting changes participate in recovery.
+There are 119 independently edited effect slots. Imported effects accept up to
+300 frames, 256 × 256 pixels, 16 million frame pixels and 900 ticks; export also
+checks the permanent game allocation. Changes are shared by users of that attack
+ID; the source attack and Art Library artwork remain independent when copied.
+Preview uses neutral actor positions, without character motion or sound, and
+approximates console filtering, depth and blending. It is not a full battle replay.
+
 The before/after amount example uses the recovered common calculation with
 explicit power, defense, resistance, Luck and HP inputs. It is a neutral,
 noncritical example, not a full-battle prediction. Advanced shows preserved raw

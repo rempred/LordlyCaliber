@@ -1,0 +1,205 @@
+#include "engine/effect_player.h"
+#include "engine/effect_raster.h"
+#include <QFile>
+#include <QtTest>
+using namespace lordly;
+class EffectRasterTests : public QObject {
+    Q_OBJECT
+  private slots:
+    void importedFrames() {
+        try {
+            QImage red(32, 32, QImage::Format_RGBA8888);
+            red.fill(QColor(255, 0, 0, 255));
+            auto asset = SpriteAsset::fromImage("Red square", red);
+            asset.anchor = {16, 16};
+            asset.frames[0].ticks = 3;
+            AttackVisual visual;
+            visual.frames = asset;
+            visual.delay = 2;
+            const auto bytes = visual.build(0);
+            const auto reopened = AttackVisual::read(bytes);
+            QCOMPARE(reopened.build(0), bytes);
+            QCOMPARE(AttackVisual::fromJson(visual.json()), visual);
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required for native image drawing");
+            EffectPlayer player(Rom::open(path));
+            player.startVisual(visual, 0, {});
+            for (int i = 0; i < 2; ++i) {
+                QVERIFY(player.advance());
+                QCOMPARE(player.draw().triangles, 0);
+            }
+            for (int i = 0; i < 3; ++i) {
+                QVERIFY(player.advance());
+                const auto frame = player.draw();
+                QVERIFY(frame.triangles > 0);
+                int reds = 0;
+                for (int y = 0; y < frame.image.height(); ++y)
+                    for (int x = 0; x < frame.image.width(); ++x)
+                        reds += frame.image.pixelColor(x, y) == QColor(255, 0, 0, 255);
+                QVERIFY(reds > 400);
+                if (i == 0)
+                    QVERIFY(frame.image.save("native/build/imported-effect.png"));
+            }
+            QVERIFY(player.advance());
+            QCOMPARE(player.draw().triangles, 0);
+            QVERIFY(!player.advance());
+            auto broken = bytes;
+            put32(broken, 32, quint32(bytes.size() + 1));
+            QVERIFY_THROWS_EXCEPTION(Error, AttackVisual::read(broken));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void retailPlayback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private US Rev0 ROM required");
+        const auto rom = Rom::open(path);
+        QStringList failures;
+        int rendered = 0;
+        const auto selected = qEnvironmentVariable("LORDLY_EFFECT_ID").split(',');
+        for (int id = 0; id <= 132; ++id) {
+            if (qEnvironmentVariableIsSet("LORDLY_EFFECT_ID") &&
+                !selected.contains(QString::number(id)))
+                continue;
+            try {
+                EffectPlayer player(rom);
+                EffectPlayer::Scene scene;
+                scene.allies = qEnvironmentVariableIsSet("LORDLY_EFFECT_ALLIES");
+                if (qEnvironmentVariableIsSet("LORDLY_EFFECT_TARGETS"))
+                    scene.targetCount = qEnvironmentVariableIntValue("LORDLY_EFFECT_TARGETS");
+                player.start(id, scene);
+                int triangles = 0;
+                bool visible = false;
+                while (player.advance()) {
+                    const auto frame = player.draw({160, 120}, .375);
+                    triangles += frame.triangles;
+                    if (!visible)
+                        for (int y = 0; y < frame.image.height() && !visible; ++y) {
+                            const auto *row = frame.image.constScanLine(y);
+                            for (int x = 0; x < frame.image.width(); ++x)
+                                if (row[x * 4 + 3]) {
+                                    visible = true;
+                                    break;
+                                }
+                        }
+                    if (player.tick() == 56 && qEnvironmentVariableIsSet("LORDLY_EFFECT_CAPTURE"))
+                        QVERIFY(player.draw().image.save(
+                            qEnvironmentVariable("LORDLY_EFFECT_CAPTURE")));
+                }
+                qInfo() << "Effect" << id << "ticks" << player.tick() << "triangles" << triangles;
+                rendered += visible;
+                // A zero-length ribbon can be empty when source equals target;
+                // that regression checks bounded completion instead.
+                if (!visible && !scene.allies)
+                    failures << QString("Effect %1 rendered no visible pixels").arg(id);
+            } catch (const std::exception &e) {
+                failures << QString("Effect %1: %2").arg(id).arg(e.what());
+                qWarning() << failures.last();
+            }
+        }
+        qInfo() << "Effects with visible drawing" << rendered;
+        QVERIFY2(failures.isEmpty(), qPrintable(failures.join('\n')));
+    }
+    void importedTilesAndClipping() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            // Odd width, several TMEM tiles, transparency, and a clipped left
+            // edge exercise source stride and texture coordinates independently.
+            QImage pixels(67, 35, QImage::Format_RGBA8888);
+            const QColor colors[]{Qt::red, Qt::green, Qt::blue, Qt::transparent};
+            for (int y = 0; y < pixels.height(); ++y)
+                for (int x = 0; x < pixels.width(); ++x)
+                    pixels.setPixelColor(x, y, colors[(x / 7 + y / 5) % 4]);
+            AttackVisual visual;
+            visual.frames = SpriteAsset::fromImage("Tiled effect", pixels);
+            visual.frames->anchor = {165, 10};
+            visual.frames->frames[0].ticks = 1;
+            EffectPlayer player(Rom::open(path));
+            player.startVisual(visual, 0, {});
+            QVERIFY(player.advance());
+            const auto image = player.draw({320, 240}, 1).image;
+            for (int y = 0; y < 240; ++y)
+                for (int x = 0; x < 320; ++x) {
+                    const int sx = x + 5, sy = y - 110;
+                    const auto expected = sx < 67 && sy >= 0 && sy < 35 ? pixels.pixelColor(sx, sy)
+                                                                        : QColor(Qt::transparent);
+                    QCOMPARE(image.pixelColor(x, y), expected);
+                }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void texturedTriangleAndBounds() {
+        try {
+            QByteArray memory(0x4000, 0);
+            quint32 at = 0x1000;
+            auto command = [&](quint32 high, quint32 low) {
+                put32(memory, at, high);
+                put32(memory, at + 4, low);
+                at += 8;
+            };
+            // One-cycle direct TEXEL0, a two-by-two RGBA16 red texture, and three
+            // known vertices. The expected pixel position follows world coordinates.
+            command(0xfcffffff, 0xfffffe79);
+            command(0xfd100001, 0x2100);
+            command(0xf5100200, 0x07000000);
+            command(0xf3000000, 0x07003000);
+            command(0xf5100200, 0x00080200);
+            command(0xf2000000, 0x00004004);
+            command(0x01003006, 0x2000);
+            command(0x05000204, 0);
+            for (int y = 0; y < 2; ++y)
+                for (int x = 0; x < 2; ++x)
+                    put16(memory, 0x2100 + y * 8 + x * 2, 0xf801);
+            const std::array<std::array<qint16, 2>, 3> positions{
+                {{-10, 10}, {-10, -10}, {10, -10}}};
+            for (int i = 0; i < 3; ++i) {
+                put16(memory, 0x2000 + i * 16, quint16(positions[i][0]));
+                put16(memory, 0x2002 + i * 16, quint16(positions[i][1]));
+                put32(memory, 0x200c + i * 16, 0xffffffff);
+            }
+            auto rendered = EffectRaster::draw(memory, 0x1000, at, {100, 100}, 1);
+            QCOMPARE(rendered.triangles, 1);
+            QCOMPARE(rendered.image.pixelColor(42, 74), QColor(255, 0, 0, 255));
+            QCOMPARE(rendered.image.pixelColor(10, 10).alpha(), 0);
+            for (int y = 0; y < 2; ++y)
+                for (int x = 0; x < 2; ++x)
+                    put16(memory, 0x2100 + y * 8 + x * 2, 0xf800);
+            rendered = EffectRaster::draw(memory, 0x1000, at, {100, 100}, 1);
+            QCOMPARE(rendered.image.pixelColor(42, 74).alpha(), 0);
+            put32(memory, 0x1034, 0x900000); // Vertex memory must be bounded.
+            QVERIFY_THROWS_EXCEPTION(Error, EffectRaster::draw(memory, 0x1000, at));
+            QVERIFY_THROWS_EXCEPTION(Error, EffectRaster::draw(memory, 0x1000, at + 1));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void nativeDrawingCapture() {
+        try {
+            const auto file = qEnvironmentVariable("LORDLY_EFFECT_RAM");
+            if (file.isEmpty())
+                QSKIP("Private effect drawing capture required");
+            QFile input(file);
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto memory = input.readAll();
+            const auto result = EffectRaster::draw(memory, 0x80600000, u32(memory, 0xe9ba0));
+            QVERIFY(result.commands > 0);
+            QVERIFY(result.triangles > 0);
+            int visible = 0;
+            for (int y = 0; y < result.image.height(); ++y)
+                for (int x = 0; x < result.image.width(); ++x)
+                    visible += result.image.pixelColor(x, y).alpha() > 0;
+            QVERIFY(visible > 20);
+            QVERIFY(result.image.save(file + ".png"));
+            qInfo() << "Native triangles" << result.triangles << "visible pixels" << visible;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+};
+QTEST_GUILESS_MAIN(EffectRasterTests)
+#include "effect_raster_tests.moc"

@@ -1,4 +1,5 @@
 #include "engine/attack_data.h"
+#include "engine/effect_player.h"
 #include "engine/promotion.h"
 #include "engine/resource.h"
 #include "engine/text.h"
@@ -94,8 +95,8 @@ AttackData AttackData::load(const Rom &rom) {
     if (!p)
         return result;
     const auto bytes = rom.bytes().mid(p->romOffset, p->size);
-    if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 || u32(bytes, 8) != 2 ||
-        u32(bytes, 12) != quint32(p->count))
+    if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 ||
+        (u32(bytes, 8) != 2 && u32(bytes, 8) != 3) || u32(bytes, 12) != quint32(p->count))
         throw Error("Unrecognized attack data");
     const auto size = u32(bytes, 16);
     if (size < namesOffset || size > quint32(bytes.size()))
@@ -121,6 +122,15 @@ AttackData AttackData::load(const Rom &rom) {
         if (u8(bytes, at + 20) > 1)
             throw Error("Invalid dynamic attack-name flag");
         a.dynamicName = u8(bytes, at + 20) != 0;
+        if (u32(bytes, 8) >= 3 && u8(bytes, at + 21)) {
+            const auto pointer = u32(bytes, at + 24);
+            if (pointer < p->address + namesOffset || quint64(pointer - p->address) + 32 > size)
+                throw Error("Attack effect lies outside its allocation");
+            const auto offset = pointer - p->address, length = u32(bytes, offset + 8);
+            if (length < 32 || quint64(offset) + length > size)
+                throw Error("Attack effect has an invalid extent");
+            a.visual = AttackVisual::read(bytes.mid(offset, length));
+        }
         const auto pointer = u32(bytes, recordOffset + id * 16);
         if (a.dynamicName) {
             if (pointer != 0x8018feb8)
@@ -187,6 +197,20 @@ QByteArray AttackData::build(quint32 address) const {
     }
     for (int id = int(entries_.size()); id < 256; ++id)
         put32(bytes, recordOffset + id * 16, u32(bytes, recordOffset));
+    int visualSlot = 136;
+    for (int id = 1; id < entries_.size(); ++id) {
+        const auto &a = entries_[id];
+        if (!a.visual.modified())
+            continue;
+        if (visualSlot > 254)
+            throw Error("The battle event format supports 119 independently edited attack effects");
+        bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
+        const auto at = settingsOffset + id * 32;
+        put8(bytes, at + 21, quint8(visualSlot++));
+        put32(bytes, at + 24, address + quint32(bytes.size()));
+        bytes += a.visual.build(EffectPlayer::retailEffect(a.animation));
+        put32(bytes, 8, 3);
+    }
     bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
     put32(bytes, 16, quint32(bytes.size()));
     if (address % 16 || address < 0x80243db0 || quint64(address) + bytes.size() > 0x80400000)
@@ -233,6 +257,7 @@ const Attack &AttackData::entry(int id) const {
     return entries_[id];
 }
 void AttackData::validate(const Attack &a) {
+    a.visual.validate();
     if (a.data.size() != 12 || a.name.isEmpty() || a.name.size() > 128 ||
         a.name.contains(char(0)) || a.nameGroup < 1 || a.nameGroup > 65535 || a.behavior < 1 ||
         a.behavior >= retailCount || a.animation < 1 || a.animation >= retailCount)
@@ -250,6 +275,12 @@ void AttackData::validate(const Attack &a) {
 void AttackData::set(int id, const Attack &a) {
     entry(id);
     validate(a);
+    int visualCount = a.visual.modified();
+    for (int i = 1; i < entries_.size(); ++i)
+        if (i != id)
+            visualCount += entries_[i].visual.modified();
+    if (visualCount > 119)
+        throw Error("All 119 independent attack effect slots are in use");
     for (int i = 1; i < entries_.size(); ++i)
         if (i != id && entries_[i].nameGroup == a.nameGroup &&
             (entries_[i].name != a.name || entries_[i].dynamicName != a.dynamicName))
@@ -290,6 +321,13 @@ int AttackData::duplicate(int source, const QString &name) {
     auto a = entry(source);
     if (entries_.size() >= maximumCount)
         throw Error("All 254 attack IDs are in use");
+    if (a.visual.modified()) {
+        int edited = 0;
+        for (const auto &entry : entries_)
+            edited += entry.visual.modified();
+        if (edited >= 119)
+            throw Error("All 119 independent attack effect slots are in use");
+    }
     a.name = attackName(name);
     a.nameGroup = nextNameGroup();
     a.dynamicName = false;
@@ -320,7 +358,8 @@ QJsonObject AttackData::json() const {
                             {"chance", a.chance},
                             {"afterEffect", a.afterEffect},
                             {"afterBasis", a.afterBasis},
-                            {"afterPercent", a.afterPercent}};
+                            {"afterPercent", a.afterPercent},
+                            {"visual", a.visual.json()}};
     }
     return {{"version", 1}, {"entries", rows}};
 }
@@ -362,6 +401,11 @@ void AttackData::apply(const QJsonObject &object) {
         a.afterEffect = integer(row, "afterEffect", -1);
         a.afterBasis = integer(row, "afterBasis", 0);
         a.afterPercent = integer(row, "afterPercent", 100);
+        if (row.contains("visual")) {
+            if (!row["visual"].isObject())
+                throw Error("Invalid attack visual settings");
+            a.visual = AttackVisual::fromJson(row["visual"].toObject());
+        }
         validate(a);
         const auto name = qMakePair(a.name, a.dynamicName);
         if (groups.contains(a.nameGroup) && groups[a.nameGroup] != name)
@@ -369,6 +413,11 @@ void AttackData::apply(const QJsonObject &object) {
         groups[a.nameGroup] = name;
         next << a;
     }
+    int edited = 0;
+    for (const auto &a : next)
+        edited += a.visual.modified();
+    if (edited > 119)
+        throw Error("The battle event format supports 119 independently edited attack effects");
     entries_ = std::move(next);
 }
 bool AttackData::isTemplate(int id) {

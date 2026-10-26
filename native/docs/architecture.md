@@ -27,7 +27,7 @@ animation and amount consumers. The parent tools `attack-runtime-audit.py` and
 adapted sources; the carried accepted originals remain unchanged. These adapters
 are mod code, not new matching-C claims. Full-function replacements authenticate
 their complete original extent; wrappers preserve the original function body.
-Unknown code is rejected. Fifty table-reference sites and fifteen entry hooks
+Unknown code is rejected. Fifty table-reference sites and twenty entry hooks
 are recorded explicitly, with separate ROM and runtime addresses.
 
 Custom targets use front/middle/rear-major nine-bit masks in each side's own
@@ -48,10 +48,52 @@ Pedra's temporary actor is discarded, so it has no persistent drain/recoil.
 
 New IDs retain their animation donor for spell indexes and missing class routes.
 Explicit per-class/body overrides still win. Special/breath body previews read
-the recovered compound section13 poses with a same-column target; full effect
-replay remains a game-only verification boundary. The amount example is a small
+the recovered compound section13 poses with a same-column target. The amount example is a small
 native calculation port because the current native editor had no reusable
 damage-calculator model; no archived editor implementation was used.
+
+Attack effects have their own bounded execution/rendering path. `EffectMachine`
+executes qualified resident and battle-overlay o32/COP1 instructions in isolated
+memory, with explicit allocation/DMA/body-height services. `EffectPlayer` seeds
+neutral actors and the native task, graphic, transform, resource and screen-draw
+pools, then runs the native update and all three drawing passes. `EffectRaster`
+composes the resulting F3DEX2 matrices, texture/palette loads, color combiners,
+triangles and texture rectangles on the desktop. It is not a console emulator:
+actor motion, sound, battle camera, coverage and exact blending are outside this
+preview. All retail visual slots 0–132 are available; 133–135 are transitions or
+the disabled-animation path and are not artwork choices.
+
+`AttackVisual` persists a native donor/delay or an independent SpriteAsset.
+`LCATDATA` version3 adds slot and configuration pointers at settings-row +21/+24;
+version2 remains readable. `LCFX0001` stores bounded delay, dimensions, origin,
+frame durations and deduplicated LZSS RGBA5551 images. Compressed editable asset
+metadata is also retained and authenticated by rebuilding on ROM read. Configs
+share the checked permanent class/attack allocation. Visual event IDs 136–254
+provide 119 independent slots. Existing 15–19-hook exports upgrade to the 20-hook
+layout without losing original data.
+
+`attack-visual.c` wraps the native effect appender. Native replacements hand off
+to their original callback after the delay; imported frames use the native task
+and screen-drawing pool. `effect-image-draw.c` is compiled both into the desktop
+preview and the exported MIPS module, so tile/stride/clipping commands have one
+implementation. The generic, combined and Pedra adapters change only the visual
+event selection; physical attacks gain a corresponding visual event. Mechanics
+retain their original behavior donor. Three authenticated bounded target-list
+searches in Dark Quest/Lava Flow skip absent neighbours instead of reading past
+the terminator when a custom attack supplies fewer targets.
+Four small wrappers also make zero-length vectors and short projectile paths
+safe for self targeting: a zero vector gets a finite orientation and length,
+and a path too short to cross the native completion interval signals its parent
+once.
+Nonzero normalization and ordinary travel retain the original instructions.
+
+`AttackEffectEditor` keeps local history until Apply, which publishes one shared
+attack-table Undo command. Art Library/file replacements are independent copies.
+RecoveryDraft supports the attacks section and nested frame painting, including
+unconfirmed work. Rendering uses a cancelable worker and never accesses Widgets
+from the worker thread. Focused tests cover native playback, image commands,
+compiled replacement playback, persistence, reopening and editor recovery;
+full-console gameplay remains a separate verification limit.
 
 `attack_data_tests`, `ui_tests attackWorkspaceEditing`,
 `attack-runtime-mips.cjs` and `attack-effects-mips.cjs` cover model validation,

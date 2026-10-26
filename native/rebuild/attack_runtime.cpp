@@ -14,16 +14,33 @@ QByteArray resource(const QString &path) {
         throw Error("Missing attack runtime resource: " + path);
     return file.readAll();
 }
+QByteArray effectTargets(QByteArray bytes, bool install) {
+    const auto sites =
+        QJsonDocument::fromJson(resource("effect-targets.json")).object()["sites"].toArray();
+    for (const auto &value : sites) {
+        const auto site = value.toObject();
+        const auto at = site["rom"].toInt();
+        const auto original = QByteArray::fromHex(site["original"].toString().toLatin1());
+        const auto patched = QByteArray::fromHex(site["patched"].toString().toLatin1());
+        const auto current = bytes.mid(at, original.size());
+        if (original.isEmpty() || original.size() != patched.size() ||
+            (current != original && current != patched))
+            throw Error(
+                "An effect target-list reader contains unrecognized code; it was preserved");
+        bytes.replace(at, original.size(), install ? patched : original);
+    }
+    return bytes;
+}
 QByteArray hooks(const Rom &rom, const AttackPlacement &placement, bool remove) {
     auto bytes = rom.bytes();
     if (!placement.codeSize)
         return bytes;
     const auto catalog =
         QJsonDocument::fromJson(resource("hooks.json")).object()["hooks"].toArray();
-    if (placement.hookCount != quint32(catalog.size()))
+    if (placement.hookCount < 15 || placement.hookCount > quint32(catalog.size()))
         throw Error("Unrecognized attack hook directory");
     const auto directory = placement.romOffset + placement.hooks - placement.address;
-    for (int i = 0; i < catalog.size(); ++i) {
+    for (int i = 0; i < int(placement.hookCount); ++i) {
         const auto s = catalog[i].toObject();
         const auto words = s["words"].toArray();
         const auto at = quint32(s["rom"].toInteger()), first = quint32(words[0].toInteger()),
@@ -112,13 +129,14 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     bytes += QByteArray((sites.size() * 24 + 15) & ~15, 0);
     QMap<QString, quint32> entries;
     for (const auto &name :
-         {QString("attack-runtime"), QString("attack-generic"), QString("attack-select"),
-          QString("attack-combined"), QString("attack-pedra")}) {
+         {QString("attack-runtime"), QString("attack-visual"), QString("attack-generic"),
+          QString("attack-select"), QString("attack-combined"), QString("attack-pedra")}) {
         auto unit = name;
         unit.replace('-', '_');
-        const auto module =
-            compiler.compileModule(resource(name + ".c"), directory, unit,
-                                   p.address + quint32(bytes.size()), {}, symbols, true);
+        const auto module = compiler.compileModule(
+            (name == "attack-visual" ? resource("effect-image-draw.c") + "\n" : QByteArray{}) +
+                resource(name + ".c"),
+            directory, unit, p.address + quint32(bytes.size()), {}, symbols, true);
         bytes += module.bytes;
         bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
         for (auto it = module.entries.begin(); it != module.entries.end(); ++it) {
@@ -155,9 +173,10 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
 }
 QByteArray removeAttackReferences(const Rom &rom) {
     const auto placement = AttackPlacement::read(rom);
-    return placement ? references(Rom::fromBytes(hooks(rom, *placement, true)), placement->records,
-                                  AttackData::retailBase)
-                     : rom.bytes();
+    return placement
+               ? references(Rom::fromBytes(effectTargets(hooks(rom, *placement, true), false)),
+                            placement->records, AttackData::retailBase)
+               : rom.bytes();
 }
 QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placement) {
     // Whole-function replacements must not silently bypass an unknown patch.
@@ -174,7 +193,9 @@ QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placem
                 QString("Cannot replace unrecognized attack code at ROM %1; its code was preserved")
                     .arg(at, 0, 16));
     }
-    return hooks(Rom::fromBytes(references(rom, AttackData::retailBase, placement.records)),
-                 placement, false);
+    return effectTargets(
+        hooks(Rom::fromBytes(references(rom, AttackData::retailBase, placement.records)), placement,
+              false),
+        true);
 }
 } // namespace lordly

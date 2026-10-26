@@ -74,6 +74,7 @@ void lc_attack_begin(void *);
 void lc_attack_record(void *,void *,int,int,int,int);
 void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
+int lc_attack_visual_program(int,int);
 
 s32 lc_attack_generic(void *arg0, s32 *arg1) {
     s32 lc_before;
@@ -867,7 +868,7 @@ output_copy:
     ids[var_a2_1641] = -1;
     pair[1] = -1;
     temp_s0_1700 = sp16C + sp184;
-    func_0021D2C0(0x16, temp_s0_1700 + prefix.buffer[0], 0, sp164, (s32) &pair[0], (s32) &ids[0], (s32)&effects[0]);
+    func_0021D2C0(0x16, temp_s0_1700 + prefix.buffer[0], 0, lc_attack_visual_program(*(s32 *)((u8 *)arg0+0x7c),sp164), (s32) &pair[0], (s32) &ids[0], (s32)&effects[0]);
     if ((func_0020BFE4() != 0) && ((*(u8 *)((s8 *)(arg0) + (0x78))) == 5) && (func_0020C24C(arg0) == 0)) {
         sp194 = func_00222344(arg0, sp19C, sp1A4, (*(s32 *)((s8 *)(arg0) + (0x5C))), (*(s32 *)((s8 *)(arg0) + (0x64))));
         func_0021D28C(0xA, temp_s0_1700 + sp17C, (s32)(arg0), 0xFF, 0xB, sp194);

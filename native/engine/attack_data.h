@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/attack_visual.h"
 #include <QJsonObject>
 #include <QMap>
 #include <QVector>
@@ -27,6 +28,7 @@ struct Attack {
     // -1 retains the retail secondary-effect rules. Chance is an explicit percentage.
     int status = -1, condition = 1, chance = 100;
     int afterEffect = -1, afterBasis = 0, afterPercent = 100;
+    AttackVisual visual;
     bool operator==(const Attack &) const = default;
 };
 class AttackData {

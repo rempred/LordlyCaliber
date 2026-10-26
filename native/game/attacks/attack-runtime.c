@@ -47,6 +47,12 @@ int lc_attack_amount(void *source, void *target, float power,
 #define H(p,n) (*(u16 *)((u8 *)(p)+(n)))
 #define B(p,n) (*(u8 *)((u8 *)(p)+(n)))
 extern u8 lc_attack_records[], lc_attack_scratch[];
+int lc_attack_visual_program(int action,int original){
+    int value;
+    if(action<1||action>254)return original;
+    value=lc_attack_settings[action*32+21];
+    return value?value:original;
+}
 typedef struct {
     void *source;
     s32 action, forced, total, last, initialHP, initialMaxHP, hit, time, synthetic;
@@ -64,6 +70,7 @@ void func_0021D200(int,int,void *);
 void func_0021D230(int,int,void *,int);
 void func_0021D25C(int,int,void *,int,int);
 void func_0021D28C(int,int,void *,int,int,int);
+void func_0021D2C0(int,int,void *,int,void *,void *,void *);
 void func_0021D334(int,int,void *,int,int,int,int,int,int);
 int func_0022257C(void *,int,int *);
 u32 rand(void);
@@ -300,11 +307,12 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
 }
 int lc_attack_physical(void *source,int *time,int route) {
     int ids[9],n,i,result,count,anchor,hit;
+    int visualIds[10],visualFlags[10],visualSource[2],visualCount,visualSlot;
     void *target;
     u8 *rules;
     rules=lc_rules(source);
     lc_attack_begin(source);
-    count=W(source,0x6c); result=0;
+    count=W(source,0x6c); result=0;visualCount=0;visualSlot=rules[21];
     if(rules[2] || rules[3]) {
         anchor=route==1?lc_original_ranged_anchor(source):lc_original_anchor(source);
         n=lc_attack_target_list(source,ids,anchor);
@@ -317,9 +325,15 @@ int lc_attack_physical(void *source,int *time,int route) {
         else result|=lc_original_alternate(source,time);
         hit=CTX->hit;
         target=func_0020C478(W(source,0x68));
+        if(target&&visualSlot&&visualCount<9){visualIds[visualCount]=func_0020D72C(target);visualFlags[visualCount++]=0;}
         if(!hit && target) lc_attack_record(source,target,0,H(target,0x20),0,W(target,0x94));
     }
     W(source,0x6c)=count+1;
+    if(visualSlot&&visualCount){
+        visualSource[0]=func_0020D72C(source);visualSource[1]=-1;
+        visualIds[visualCount]=-1;visualFlags[visualCount]=-1;
+        func_0021D2C0(0x16,*time>0?*time-1:0,0,visualSlot,visualSource,visualIds,visualFlags);
+    }
     lc_attack_finish(source,*time);
     return result;
 }

@@ -161,6 +161,56 @@
       ],
       "size": 2340,
       "sha256": "4a08a333b36b9a92a1f80d6da0a055c78a242bdc981569a82b471ace53b8c9ae"
+    },
+    {
+      "rom": 2503680,
+      "address": 2149640272,
+      "entry": "lc_attack_visual_submit",
+      "original": "lc_original_visual_submit",
+      "words": [
+        1006862370,
+        2355301808
+      ]
+    },
+    {
+      "rom": 2486216,
+      "address": 2149622808,
+      "entry": "lc_attack_visual_normalize",
+      "original": "lc_original_visual_normalize",
+      "words": [
+        666763240,
+        2947547152
+      ]
+    },
+    {
+      "rom": 2453796,
+      "address": 2149590372,
+      "entry": "lc_attack_visual_travel",
+      "original": "lc_original_visual_travel",
+      "words": [
+        666763200,
+        2947743796
+      ]
+    },
+    {
+      "rom": 2486136,
+      "address": 2149622728,
+      "entry": "lc_attack_visual_distance",
+      "original": "lc_original_visual_distance",
+      "words": [
+        666763240,
+        2948530192
+      ]
+    },
+    {
+      "rom": 2568576,
+      "address": 2149705168,
+      "entry": "lc_attack_visual_projectile",
+      "original": "lc_original_visual_projectile",
+      "words": [
+        666763184,
+        2947612740
+      ]
     }
   ],
   "symbols": {

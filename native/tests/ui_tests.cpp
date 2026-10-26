@@ -1,5 +1,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/attack_editor.h"
+#include "app/attack_effect_editor.h"
+#include "app/recovery_draft.h"
 #include "app/change_report_dialog.h"
 #include "app/project_review_dialog.h"
 #include "app/animation_editor.h"
@@ -130,6 +132,114 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void attackEffectWorkflow() {
+        applyEditorTheme(*qobject_cast<QApplication *>(QCoreApplication::instance()));
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadAttacks();
+        const auto original = project.attacks()->entry(55);
+        QImage image(24, 24, QImage::Format_RGBA8888);
+        image.fill(QColor(246, 80, 17, 255));
+        auto asset = SpriteAsset::fromImage("Effect source", image);
+        asset.anchor = {12, 12};
+        asset.frames[0].ticks = 3;
+        auto library = project.sprites();
+        library.replace(asset);
+        project.setSprites(library);
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        const auto png = folder.filePath("effect.png");
+        QVERIFY(image.save(png));
+        QUndoStack undo;
+        AttackEditor editor(&project, &undo, [] {});
+        editor.resize(1300, 900);
+        editor.show();
+        editor.selectAttack(55);
+        bool edited = false;
+        QTimer::singleShot(0, &editor, [&] {
+            auto dialog = editor.findChild<AttackEffectEditor *>("attackEffectEditor");
+            QVERIFY(dialog);
+            auto close = qScopeGuard([&] { dialog->reject(); });
+            try {
+                dialog->importLibrary(asset.id);
+                QVERIFY(dialog->visual().frames);
+                QCOMPARE(project.attacks()->entry(55), original);
+                dialog->findChild<QSpinBox *>("effectDelay")->setValue(2);
+                dialog->findChild<QSpinBox *>("effectFrameTicks")->setValue(7);
+                QCOMPARE(dialog->visual().frames->frames[0].ticks, 7);
+                dialog->findChild<QPushButton *>("effectUndo")->click();
+                QCOMPARE(dialog->visual().frames->frames[0].ticks, 3);
+                dialog->findChild<QPushButton *>("effectRedo")->click();
+                QCOMPARE(dialog->visual().frames->frames[0].ticks, 7);
+                const auto pending = captureRecoveryDrafts(&editor, project);
+                QVERIFY(!pending.isEmpty());
+                auto recovered = Project::fromRom(Rom::open(path));
+                QUndoStack recoveryUndo;
+                restoreRecoveryDrafts(&recovered, &recoveryUndo, pending);
+                QCOMPARE(recovered.attacks()->entry(55).visual, dialog->visual());
+                recoveryUndo.undo();
+                QCOMPARE(recovered.attacks()->entry(55), original);
+                bool painted = false;
+                QTimer::singleShot(0, dialog, [&] {
+                    auto painting = dialog->findChild<QDialog *>("attackEffectFramePaint");
+                    QVERIFY(painting);
+                    auto closePaint = qScopeGuard([&] { painting->reject(); });
+                    auto canvas = painting->findChild<SpriteCanvas *>();
+                    QVERIFY(canvas);
+                    auto blue = image;
+                    blue.fill(Qt::blue);
+                    canvas->committed(blue, {});
+                    const auto unfinished = captureRecoveryDrafts(&editor, project);
+                    QCOMPARE(unfinished.size(), 2);
+                    auto restoredDraft = Project::fromRom(Rom::open(path));
+                    QUndoStack draftUndo;
+                    restoreRecoveryDrafts(&restoredDraft, &draftUndo, unfinished);
+                    QCOMPARE(restoredDraft.attacks()->entry(55).visual.frames->composite(0), blue);
+                    painted = true;
+                });
+                dialog->findChild<QPushButton *>("effectPaintFrame")->click();
+                QVERIFY(painted);
+                QCOMPARE(dialog->visual().frames->composite(0), image);
+                dialog->importFiles({png});
+                QCOMPARE(dialog->visual().frames->composite(0), image);
+                const auto canvas = dialog->findChild<QLabel *>("attackEffectPreview");
+                QVERIFY(canvas);
+                QTRY_VERIFY_WITH_TIMEOUT(!canvas->pixmap().isNull(), 10000);
+                QVERIFY(dialog->grab().save("native/build/attack-effects-editor.png"));
+                edited = true;
+                close.dismiss();
+                dialog->accept();
+            } catch (const std::exception &e) {
+                QFAIL(e.what());
+            }
+        });
+        editor.findChild<QPushButton *>("attackEditEffect")->click();
+        QVERIFY(edited);
+        QVERIFY(project.attacks()->entry(55).visual.frames);
+        QCOMPARE(project.attacks()->entry(56).visual, AttackVisual{});
+        QCOMPARE(project.sprites().asset(asset.id), asset);
+        const auto applied = project.attacks()->entry(55);
+        undo.undo();
+        QCOMPARE(project.attacks()->entry(55), original);
+        undo.redo();
+        QCOMPARE(project.attacks()->entry(55), applied);
+        QTimer::singleShot(0, &editor, [&] {
+            auto d = editor.findChild<AttackEffectEditor *>("attackEffectEditor");
+            QVERIFY(d);
+            auto changed = d->visual();
+            changed.delay = 17;
+            d->setVisual(changed);
+            d->reject();
+        });
+        editor.findChild<QPushButton *>("attackEditEffect")->click();
+        QCOMPARE(project.attacks()->entry(55), applied);
+        project.saveFolder(folder.path());
+        auto restored = Project::fromRom(Rom::open(path));
+        restored.applyManifest(Project::readProject(folder.filePath("project.json")));
+        QCOMPARE(restored.attacks()->entry(55), applied);
+    }
     void attackPatternSwitching() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

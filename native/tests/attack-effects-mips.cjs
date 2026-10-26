@@ -30,6 +30,14 @@ m.trap(services.dead,c=>c.set('v0',!c.get('a0')||!!(c.r32(c.get('a0')+0x40)&1)))
 let immunity=true;m.trap(services.immune,c=>c.set('v0',immunity?1:0));
 m.trap(0x801c8d24,c=>c.set('v0',0)); // Undead predicate.
 const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),extra:c.r32(c.get('sp')+32)}));
+const visualEvents=[];
+function captureVisual(c){
+ events.push({event:c.get('a0'),pose:c.r32(c.get('sp')+24)});
+ if(c.get('a0')!==0x16)return;
+ const list=at=>{const result=[];for(let i=0;i<10;i++){const id=c.r32(at+i*4)|0;if(id===-1)return result;result.push(id);}throw Error('Unterminated visual actor list');};
+ visualEvents.push({slot:c.get('a3'),sources:list(c.r32(c.get('sp')+16)),targets:list(c.r32(c.get('sp')+20))});
+}
+m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
 m.trap(0x22257c+0x7ffbcd30,c=>c.set('v0',4));
 m.trap(0x2224f4+0x7ffbcd30,c=>c.set('v0',0));
 for(const [pc,delta] of [[services.up,1],[services.down,-1]])m.trap(pc,c=>c.w32(c.get('a0')+0x24,c.r32(c.get('a0')+0x24)+delta));
@@ -120,7 +128,9 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
   for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
   m.w8(records+159*16+4,3);m.w8(records+159*16+6,1);m.w8(records+159*16+7,effect);m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
   m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,0);m.w8(rules+11,0);m.w16(rules+6,100);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;
+  m.w8(rules+21,136);visualEvents.length=0;
   assert.equal(call(generic.lc_attack_generic,[source,ids]),1,`generic effect ${effect}`);
+  assert.deepEqual(visualEvents,[{slot:136,sources:[4],targets:[9,17]}],'generic visual handoff');
   for(const i of [9,17]){
     const expectedHp=effect===1?40:effect===2?160:effect===16?0:100;
     assert.equal(m.r16(actor(i)+0x20),expectedHp,`generic effect ${effect}, target ${i}`);
@@ -143,7 +153,7 @@ m.trap(0x801ae4ec,c=>{const p=c.get('a2');if(p){c.w32(p,10);c.w32(p+4,-1);}c.set
 m.w32(source,global+0x2000);m.w32(source+0x48,2);m.w32(source+0x4c,2);
 for(const i of [9,17]){m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);}
 m.trap(e.lc_original_ranged_anchor,c=>c.set('v0',13));
-m.trap(0x21d2c0+0x7ffbcd30,()=>{});
+m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
 // Animation duration / impact marker services used by ranged and alternate bodies.
 m.trap(0x22257c+0x7ffbcd30,c=>{if(c.get('a2')){c.w32(c.get('a2'),10);c.w32(c.get('a2')+4,-1);}c.set('v0',20);});
 for(const route of ['melee','ranged','alternate'])for(const effect of [1,2,10])for(const action of [159,254]){
@@ -152,7 +162,9 @@ for(const route of ['melee','ranged','alternate'])for(const effect of [1,2,10])f
   m.w8(rules+2,12);m.w8(rules+3,1);m.w16(rules+4,257);m.w8(rules+8,0);m.w8(rules+11,0);
   if(action!==159){for(let i=0;i<16;i++)m.w8(records+action*16+i,m.r8(records+159*16+i));for(let i=0;i<32;i++)m.w8(settings+action*32+i,m.r8(rules+i));}
   for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
+  visualEvents.length=0;
   assert.equal(call(e['lc_attack_'+route],[source,ids]),1,route);
+  assert.deepEqual(visualEvents,[{slot:136,sources:[4],targets:[9,17]}],`${route} visual handoff`);
   for(const i of [9,17]){assert.equal(m.r16(actor(i)+0x20),effect===1?40:effect===2?160:100,`${route} main ${effect}`);assert.equal(m.r32(actor(i)+0x40)&16,effect===10?16:0);}
   assert.equal(m.r32(source+0x6c),1,'one action count for the whole custom pattern');
 }
@@ -178,7 +190,7 @@ console.log('Physical misses: successful-hit condition skips status; after-attem
 // Execute its native direction helper with a same-column opposing target;
 // only the downstream visual event sink is replaced.
 m.trap(0x20bfe4+0x7ffbcb70,c=>c.set('v0',1));
-m.trap(0x21d2c0+0x7ffbcd30,c=>events.push({event:c.get('a0'),pose:c.r32(c.get('sp')+24)}));
+m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
 const specialTable=global+0x2600;m.w32(0x801d073c,specialTable);
 for(const [donor,owner,poseFlags,side,expected] of [[17,22,42,0,42],[32,57,170,0,43],[32,57,170,1,42]]){
  m.load(specialTable,Buffer.from([donor,owner,poseFlags,75,0,0,0,0]));
@@ -191,7 +203,7 @@ for(const [donor,owner,poseFlags,side,expected] of [[17,22,42,0,42],[32,57,170,0
  assert.equal(call(generic.lc_attack_generic,[source,ids]),1);
  assert(events.some(x=>x.event===11 && x.pose===expected),`copied special ${donor}, side ${side}, expected pose ${expected}`);
 }
-m.trap(0x20bfe4+0x7ffbcb70,c=>c.set('v0',0));m.trap(0x21d2c0+0x7ffbcd30,()=>{});
+m.trap(0x20bfe4+0x7ffbcb70,c=>c.set('v0',0));m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
 console.log('Special animation donor and both same-column facing variants PASS through the generic executor.');
 
 const combined=entries('attack_combined.elf');
@@ -213,7 +225,9 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
  for(const i of [9,17]){m.w32(actor(i)+0x40,effect===11?4:0);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
  const rule=settings+110*32;m.w8(rule+2,12);m.w8(rule+3,1);m.w16(rule+4,257);m.w8(rule+8,0);m.w8(rule+11,1);m.w8(rule+12,0);m.w16(rule+14,50);
  m.w8(records+110*16+7,effect);m.w8(records+110*16+9,1);m.w8(records+110*16+10,255);m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);
+ m.w8(rule+21,137);visualEvents.length=0;
  assert.equal(call(combined.lc_attack_combined,[input,ids]),1,`combined effect ${effect}`);
+ assert.deepEqual(visualEvents,[{slot:137,sources:[4,5],targets:[9,17]}],'combined visual handoff');
  for(const i of [9,17]){assert.equal(m.r16(actor(i)+0x20),effect===1?40:effect===2?160:effect===16?0:100,`combined main ${effect}`);assert.equal(m.r32(actor(i)+0x40)&0x1f,({3:2,4:4,8:8,10:16,16:1})[effect]||0);}
  assert.equal(m.r16(source+0x20),effect===1?260:effect===16?300:200,'combined drain uses the first caster');
  assert.equal(m.r16(caster2+0x20),200);assert.equal(m.r32(source+0x6c),1);assert.equal(m.r32(caster2+0x6c),1);
@@ -231,11 +245,14 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
  for(const i of [9,17]){m.w32(actor(i)+0x40,effect===11?4:0);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
  m.w8(records+159*16+7,effect);m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
  m.w8(rules+2,12);m.w8(rules+3,1);m.w16(rules+4,257);m.w8(rules+8,0);m.w8(rules+11,1);m.w8(rules+12,0);m.w16(rules+14,50);
+ m.w8(rules+21,138);visualEvents.length=0;
  assert.equal(call(pedra.lc_attack_pedra,[pedraInput,ids]),1,`Pedra effect ${effect}`);
+ assert.equal(visualEvents.length,1);assert.equal(visualEvents[0].slot,138);assert.deepEqual(visualEvents[0].targets,[9,17],'Pedra visual handoff');
  for(const i of [9,17]){assert.equal(m.r16(actor(i)+0x20),effect===1?40:effect===2?160:effect===16?0:100,`Pedra main ${effect}`);assert.equal(m.r32(actor(i)+0x40)&0x1f,({3:2,4:4,8:8,10:16,16:1})[effect]||0);}
  assert.equal(m.r32(scratch),0);assert.equal(m.r16(global+0x1c4+0x20),0,'temporary actor cleared');
 }
 console.log('Full Pedra executor: 11 effects and custom targets PASS; temporary actor cleared, no persistent-attacker drain.');
+console.log('Assigned visual events: generic, melee/ranged/alternate, combined and Pedra select independent slots and retain target IDs PASS.');
 
 if(process.env.LORDLY_ATTACK_PATTERN_AUDIT){
  m.trap(0x20d770+0x7ffbcb70,c=>{let found=0;for(let i=0;i<18;i++)if(c.r32(actor(i)+0x54)===c.get('a0')&&c.r32(actor(i)+0x58)===c.get('a1'))found=actor(i);c.set('v0',found);});

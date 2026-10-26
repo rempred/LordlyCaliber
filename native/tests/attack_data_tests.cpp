@@ -1,4 +1,5 @@
 #include "engine/attack_data.h"
+#include "engine/effect_player.h"
 #include "engine/project.h"
 #include "rebuild/attack_runtime.h"
 #include "rebuild/compiler.h"
@@ -14,6 +15,114 @@ class AttackDataTests : public QObject {
         return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
     }
   private slots:
+    void visualExportAndPlayback() {
+        try {
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (tools.isEmpty())
+                QSKIP("Private compiler required");
+            auto project = Project::fromRom(source());
+            project.loadAttacks();
+            auto data = *project.attacks();
+            auto native = data.entry(55);
+            native.visual.nativeEffect = 8;
+            native.visual.delay = 3;
+            data.set(55, native);
+            QImage pixels(32, 32, QImage::Format_RGBA8888);
+            pixels.fill(QColor(255, 0, 0, 255));
+            auto asset = SpriteAsset::fromImage("Test effect", pixels);
+            asset.anchor = {16, 16};
+            asset.frames[0].ticks = 3;
+            auto imported = data.entry(56);
+            imported.visual.frames = asset;
+            imported.visual.delay = 2;
+            data.set(56, imported);
+            for (const auto [id, effect] : {std::pair{57, 97}, std::pair{58, 123}}) {
+                auto a = data.entry(id);
+                a.visual.nativeEffect = effect;
+                a.visual.delay = 1;
+                data.set(id, a);
+            }
+            QImage tiled(67, 35, QImage::Format_RGBA8888);
+            const QColor colors[]{Qt::red, Qt::green, Qt::blue, Qt::transparent};
+            for (int y = 0; y < tiled.height(); ++y)
+                for (int x = 0; x < tiled.width(); ++x)
+                    tiled.setPixelColor(x, y, colors[(x / 7 + y / 5) % 4]);
+            auto multiple = data.entry(59);
+            multiple.visual.frames = SpriteAsset::fromImage("Tiled frames", tiled);
+            multiple.visual.frames->anchor = {165, 10};
+            multiple.visual.frames->frames[0].ticks = 2;
+            auto second = multiple.visual.frames->frames[0];
+            second.id = "second";
+            second.layers[0].image = tiled.flipped(Qt::Horizontal);
+            second.ticks = 3;
+            multiple.visual.frames->frames.append(second);
+            multiple.visual.frames->kind = "sequence";
+            data.set(59, multiple);
+            project.setAttacks(data.json());
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
+                                     .absoluteDir()
+                                     .filePath("Test ROMs/native-attack-visuals-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            project.saveFolder(output.path());
+            auto restored = Project::fromRom(source());
+            restored.applyManifest(Project::readProject(output.filePath("project.json")));
+            QCOMPARE(restored.attacks()->entries(), data.entries());
+            const auto built = rebuild(restored, tools, output.path());
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, built.image);
+            exportRom(
+                restored, built,
+                output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName()));
+            const auto rom = Rom::fromBytes(built.image);
+            const auto reopened = Project::fromRom(rom);
+            QCOMPARE(reopened.attacks()->entry(55), native);
+            QCOMPARE(reopened.attacks()->entry(56).visual.build(1), imported.visual.build(1));
+            const auto p = AttackPlacement::read(rom);
+            QVERIFY(p);
+            for (int id : {55, 56, 57, 58, 59}) {
+                const int slot =
+                    u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
+                EffectPlayer actual(rom);
+                actual.start(slot, {});
+                int ticks = 0, triangles = 0;
+                EffectPlayer expected(source());
+                expected.startVisual(data.entry(id).visual,
+                                     EffectPlayer::retailEffect(data.entry(id).animation), {});
+                while (actual.advance()) {
+                    QVERIFY(expected.advance());
+                    const auto frame = actual.draw({320, 240}, .75);
+                    triangles += frame.triangles;
+                    ++ticks;
+                    QCOMPARE(frame.image, expected.draw({320, 240}, .75).image);
+                }
+                QVERIFY(!expected.advance());
+                QVERIFY(triangles > 0);
+                if (id == 56)
+                    QCOMPARE(ticks, 6);
+                qInfo() << "Compiled effect for attack" << id << "ticks" << ticks << "triangles"
+                        << triangles;
+            }
+            auto again = reopened;
+            const auto secondExport = rebuild(again, tools, output.path());
+            const auto secondOpen = Project::fromRom(Rom::fromBytes(secondExport.image));
+            QCOMPARE(secondOpen.attacks()->entries(), reopened.attacks()->entries());
+            for (int effect : {42, 68}) {
+                EffectPlayer actual(rom);
+                EffectPlayer::Scene scene;
+                scene.targetCount = 1;
+                actual.start(effect, scene);
+                while (actual.advance())
+                    actual.draw({160, 120}, .375);
+                QVERIFY(actual.tick() > 20);
+                qInfo() << "Sparse-target native effect" << effect << "completed" << actual.tick();
+            }
+            qInfo().noquote() << "Attack visual candidate:" << output.path();
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void initTestCase() {
         if (qEnvironmentVariableIsEmpty("LORDLY_TEST_ROM"))
             QSKIP("Private original ROM required");

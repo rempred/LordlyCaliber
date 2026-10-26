@@ -30,6 +30,7 @@ class AttackEditor : public QWidget {
     void showUsers();
     void assignClass();
     void preview();
+    void editEffect();
     void comparison();
     int selected() const;
     Project *project_;

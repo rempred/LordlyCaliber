@@ -165,6 +165,7 @@ u8 *lc_rules(void *);
 void lc_attack_record(void *,void *,int,int,int,int);
 void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
+int lc_attack_visual_program(int,int);
 int lc_attack_combined(ResolutionObject **input, int *outTime)
 {
     ResolutionScratch local;
@@ -691,7 +692,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
     }
     local.tail.fields.flags[outputCount] = -1;
     local.tail.fields.ids[outputCount] = -1;
-    func_0021D2C0(0x16, time + local.tail.words[0], 0, rawResult,
+    func_0021D2C0(0x16, time + local.tail.words[0], 0, lc_attack_visual_program(rawInput,rawResult),
         (u32)local.tail.fields.selectedIds, (u32)local.tail.fields.ids, (u32)local.tail.fields.flags);
     if (maximum < time + local.tail.words[0])
         maximum = time + local.tail.words[0];

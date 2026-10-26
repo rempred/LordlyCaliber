@@ -1,5 +1,6 @@
 #include "app/attack_editor.h"
 #include "app/actor_pose_editor.h"
+#include "app/attack_effect_editor.h"
 #include "app/content_refresh.h"
 #include "engine/combat_animation_edit.h"
 #include <QCheckBox>
@@ -435,7 +436,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     previewClass_->setObjectName("attackPreviewClass");
     previewClass_->setMinimumContentsLength(16);
     previewClass_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    auto previewButton = new QPushButton("Preview…"),
+    auto previewButton = new QPushButton("Preview class motion…"),
          animationButton = new QPushButton("Edit in Combat Animations…");
     previewButton->setObjectName("attackPreview");
     animationButton->setObjectName("attackEditAnimation");
@@ -443,10 +444,13 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     animationRow->addWidget(previewButton);
     animationRow->addWidget(animationButton);
     animationLayout->addLayout(animationRow);
-    text("Animation assignments belong to a class, side and artwork variant. Two classes using the "
-         "same attack can use different animations. Preview uses a same-column target and shows "
-         "the class's body sequence; spell effects and target reactions play in game.",
+    text("Class motion belongs to a class, side and artwork variant. Two classes using the "
+         "same attack can use different body animations. Edit the attack's visual effect below.",
          animationLayout);
+    auto effectButton = new QPushButton("Preview / edit attack effect…");
+    effectButton->setObjectName("attackEditEffect");
+    animationLayout->addWidget(effectButton);
+    connect(effectButton, &QPushButton::clicked, this, &AttackEditor::editEffect);
     right->addWidget(animation);
     auto example = new QGroupBox("Before / after example");
     auto exampleLayout = new QVBoxLayout(example);
@@ -811,6 +815,30 @@ void AttackEditor::edit(const QString &title, const std::function<void(Attack &)
         fn(a);
         next.set(selected(), a);
         publish(next, title);
+    } catch (const std::exception &e) {
+        notice_->setText(e.what());
+    }
+}
+void AttackEditor::editEffect() {
+    if (selected() < 1)
+        return;
+    try {
+        const int id = selected();
+        const auto before = project_->attacks()->entry(id);
+        if (AttackData::isTemplate(before.behavior)) {
+            notice_->setText("Choose a resolved spell above to edit its visual effect.");
+            return;
+        }
+        AttackEffectEditor dialog(project_, id, previewClass_->currentData().toInt(), this);
+        if (dialog.exec() != QDialog::Accepted || dialog.visual() == before.visual)
+            return;
+        if (project_->attacks()->entry(id) != before)
+            throw Error("The attack changed while its effect editor was open");
+        auto next = *project_->attacks();
+        auto edited = before;
+        edited.visual = dialog.visual();
+        next.set(id, edited);
+        publish(next, "Edit attack visual effect");
     } catch (const std::exception &e) {
         notice_->setText(e.what());
     }
