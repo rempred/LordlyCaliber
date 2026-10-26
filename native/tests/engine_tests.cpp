@@ -258,7 +258,7 @@ class EngineTests : public QObject {
             auto added = project.record(Table::Items, 278).bytes;
             put8(added, WeaponStatus::offset, WeaponStatus::replace(u8(added, WeaponStatus::offset), 32));
             project.replaceBytes(Table::Items, 278, added);
-            QVERIFY(project.changeReport().text().contains("Status effect on hit: None â†’ Poison"));
+            QVERIFY(project.changeReport().text().contains("Status effect on hit: None \u2192 Poison"));
             QTemporaryDir work, output(QFileInfo(path).absolutePath() + "/Test ROMs/weapon-status-XXXXXX");
             QVERIFY(work.isValid()); QVERIFY(output.isValid()); output.setAutoRemove(false);
             project.saveFolder(work.filePath("project"));

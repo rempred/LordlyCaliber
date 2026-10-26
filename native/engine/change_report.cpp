@@ -197,6 +197,13 @@ ChangeReport Project::changeReport(const Project *reference) const {
             add(area, QString("%1 (ID %2)").arg(row.name).arg(row.id), lines, {tableKey(table), row.id});
         }
     }
+    {
+        const auto before = reference ? reference->weaponTypes_.names()
+                            : originalItems_ ? originalItems_->weaponTypes().names() : QJsonObject{};
+        QStringList lines;
+        settings(lines, before, weaponTypes_.names(), "Weapon type");
+        add("Items and equipment", "Named weapon types", lines, {"items"});
+    }
     for (const auto &bank : texts_) {
         for (int id = 0; id < bank.entries.size(); ++id) {
             const auto &entry = bank.entries[id];

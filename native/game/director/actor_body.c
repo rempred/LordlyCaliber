@@ -33,7 +33,7 @@ int lordly_body_equipment(const uint8_t *items, int count, const uint16_t appear
         uint8_t type;
         if (appearance[i] >= count) return 1;
         type = items[appearance[i] * 32 + 16];
-        if ((type > 0 && type < 14) || type == 24) {
+        if ((type > 0 && type < 14) || type == 24 || (type >= 26 && type < 255)) {
             *equipment = appearance[i]; return 0;
         }
     }

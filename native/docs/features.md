@@ -1,5 +1,20 @@
 # Feature inventory and completion tracking
 
+Items offers **Create weapon type…**. A new named category is assigned to the
+selected item and becomes available in equipment-type dropdowns. Creation is
+undoable; names persist in projects and exported ROMs. Give a class a default
+weapon of that category to allow its weapons in the corresponding equipment
+slot. For a golem-only set, create new items, assign the new category, and use
+one as the golem's unlocked default weapon. Other classes retain their existing
+categories. A category does not create animations or weapon artwork.
+
+US Rev0 supports 230 new weapon categories (ID6 and IDs26–254), for 243 weapon
+categories including the 13 used by retail. Equipment items share a separate
+limit of 510 usable IDs across weapons, armor and accessories; retaining all
+277 retail items leaves 233 additions. Existing raw category assignments are
+reserved when allocating a new name. The game still has 278 inventory entries
+holding item IDs and quantities; adding categories does not enlarge that list.
+
 Data tables offer selected-cell copying, copying with headers, and CSV export.
 CSV follows filtering, sorting, visible columns and their order; it includes
 headers, UTF-8 encoding with BOM, quoted text and named row headers where present.

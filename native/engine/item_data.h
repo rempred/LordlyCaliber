@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/weapon_types.h"
 #include <QVector>
 namespace lordly {
 struct ItemAsset {
@@ -18,9 +19,15 @@ class ItemData {
     void set(int id, const ItemAsset &);
     QByteArray build(quint32 base) const;
     QByteArray recordsWithPrefix() const;
+    const WeaponTypes &weaponTypes() const { return weaponTypes_; }
+    void setWeaponTypes(const WeaponTypes &types) { weaponTypes_ = types; }
+    qsizetype weaponTypesOffset() const;
+    qsizetype loadedTypesOffset() const { return loadedTypesOffset_; }
 
   private:
     QByteArray prefix_;
     QVector<ItemAsset> entries_;
+    WeaponTypes weaponTypes_;
+    qsizetype loadedTypesOffset_ = 0;
 };
 } // namespace lordly

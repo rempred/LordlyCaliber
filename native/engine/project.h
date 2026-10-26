@@ -204,6 +204,9 @@ class Project {
     int createClass(const QString &name);
     int appendItem(int templateId, const QString &name);
     int createItem(const QString &name);
+    const WeaponTypes &weaponTypes() const { return weaponTypes_; }
+    void setWeaponTypes(const QJsonObject &names);
+    int createWeaponType(const QString &name);
     ItemData itemData() const;
     void validateItemReferences() const;
     QByteArray itemNameBytes(int row) const;
@@ -212,7 +215,8 @@ class Project {
         return originalItems_.has_value();
     }
     bool itemNamesModified() const {
-        return !itemNames_.isEmpty() || !addedItems_.isEmpty();
+        return !itemNames_.isEmpty() || !addedItems_.isEmpty() ||
+               (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names());
     }
     bool itemNameModified(int row) const {
         return itemNames_.contains(row) ||
@@ -269,6 +273,7 @@ class Project {
     std::optional<ScenePrograms> scenePrograms_;
     std::optional<SceneEvents> sceneEvents_;
     std::optional<ItemData> originalItems_;
+    WeaponTypes weaponTypes_;
     QVector<ItemAsset> addedItems_;
     QMap<int, QByteArray> itemNames_;
     int appendItemAsset(const ItemAsset &, const QByteArray &description);

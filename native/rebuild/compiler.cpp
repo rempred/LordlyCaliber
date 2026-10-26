@@ -3,6 +3,7 @@
 #include "rebuild/compiler.h"
 #include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
+#include "rebuild/weapon_types.h"
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
 #include "rebuild/body_selection.h"
@@ -613,6 +614,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
+    result.image = removeWeaponTypes(p.rom(), compiler, directory);
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
     const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
@@ -661,7 +663,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (customSquads)
         p.encounters()->customSquads().validateFormations(p.classData());
     if (priorCustom)
-        result.image = removeCustomInstallation(p.rom(), *priorCustom, compiler, directory);
+        result.image = removeCustomInstallation(Rom::fromBytes(result.image), *priorCustom, compiler, directory);
     if (priorShopPlacement && priorShopPlacement->version < 4)
         p.loadShops();
     if (p.rom().revision() == 0 &&
@@ -929,7 +931,19 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr);
         }
-        if(capacityRuntime && custom && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
+        // The save codec/adapters also grow a newly appended class allocation.
+        // Reserve the squad library after the complete linked data, not just
+        // the initial record/name estimate used before compilation.
+        if (custom && custom->indexRomOffset >= offset &&
+            custom->indexRomOffset < quint64(offset) + classes.data.bytes.size()) {
+            customIndex = quint32((qMax(quint64(result.image.size()),
+                quint64(offset) + std::max<qsizetype>(classes.data.bytes.size(), expandedArmies ? 0x40000 : 0)) + 15) & ~quint64(15));
+            if (capacityRuntime) capacityRuntime = prepareCapacityRuntime(capacityRuntime->base, p.rom());
+            classes = buildClassRuntime(data, compiler, directory, offset,
+                expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
+                residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr);
+        }
+        if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
         classes.removeResident = priorCustom.has_value() && !customSquads;
         const auto menus = expandedClasses
@@ -1250,9 +1264,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report<<"Compiled 30 enemy/allied squad slots and a separate temporary encounter slot; retained the 99-character player roster, all 30 organized player squads and 32 KB battery saves.";
     }
     rebuildWeaponStatus(p, compiler, directory, result);
+    rebuildWeaponTypes(p, compiler, directory, result);
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (reopened.weaponTypes().names() != p.weaponTypes().names())
+        throw Error("Exported weapon type names differ from the project");
     if (p.world()) {
         reopened.loadWorld();
         if (reopened.world()->json() != p.world()->json())

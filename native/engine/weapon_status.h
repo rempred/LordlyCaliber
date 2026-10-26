@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/weapon_types.h"
 #include <QStringList>
 
 namespace lordly::WeaponStatus {
@@ -7,7 +8,7 @@ constexpr int offset = 27, mask = 0xee, poison = 0x20, powerUp = 0x40, powerDown
 constexpr int extensionMask = poison | powerUp | powerDown;
 inline bool isWeapon(const QByteArray &record) {
     const auto type = u8(record, 4);
-    return (type >= 1 && type <= 13) || type == 24;
+    return WeaponTypes::isWeapon(type);
 }
 inline QString name(int flags) {
     QStringList names;

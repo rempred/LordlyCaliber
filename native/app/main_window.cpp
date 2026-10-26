@@ -628,6 +628,24 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                             "Set its equipment type and other fields after creation.");
         actions->addWidget(newItem);
         actions->addWidget(addItem);
+        auto createType = new QPushButton("Create weapon type…");
+        createType->setObjectName("createWeaponType");
+        createType->setToolTip("Create a named weapon category. Classes can equip it when their default weapon uses this type.");
+        actions->addWidget(createType);
+        connect(createType, &QPushButton::clicked, page, [this, model, selected, grid, proxy] {
+            const int item = *selected;
+            bool accepted = false;
+            const auto name = QInputDialog::getText(this, "Create weapon type",
+                QString("Weapon type name (for example, Golem Arms)\n"
+                        "Classes accept weapons matching their default weapon's type.\n"
+                        "For golem-only weapons, use a new item and make it the golem's default weapon.\n") +
+                    (item >= 1 ? "The selected item will use this new type."
+                               : "Choose this type on an item after creating it."),
+                QLineEdit::Normal, {}, &accepted);
+            if (!accepted) return;
+            if (model->createWeaponType(name, item) >= 0 && item >= 1)
+                grid->setCurrentIndex(proxy->mapFromSource(model->index(item, 1)));
+        });
         connect(newItem, &QPushButton::clicked, page, [this, model, proxy, grid, search] {
             bool accepted = false;
             const auto name = QInputDialog::getText(this, "New item", "Item name",

@@ -1,4 +1,5 @@
 #include "engine/class_text.h"
+#include "engine/weapon_types.h"
 #include "engine/class_data.h"
 #include "engine/promotion.h"
 #include <QFile>
@@ -76,6 +77,7 @@ static void verifyOwners(const Rom &rom, quint32 key, bool items) {
         const auto owner = value.toObject();
         const auto start = owner["start"].toInt();
         auto bytes = rom.bytes().mid(start, owner["size"].toInt());
+        bytes = canonicalWeaponTypeText(rom, bytes, start);
         if (classes)
             bytes = classes->canonicalReferences(bytes, start);
         bytes =

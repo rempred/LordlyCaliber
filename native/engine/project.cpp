@@ -177,6 +177,8 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     if (!p.rom_.revision()) {
         try {
             p.originalItems_ = ItemData::load(p.rom_);
+            p.weaponTypes_ = p.originalItems_->weaponTypes();
+            p.setWeaponTypes(p.weaponTypes_.names());
         } catch (const Error &) {
             if (classPlacement && classPlacement->layout.items)
                 throw;
@@ -311,6 +313,7 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
 int Project::changedRecords() const {
     int count =
         int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size());
+    if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names()) ++count;
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -458,7 +461,33 @@ ItemData Project::itemData() const {
     }
     for (int id = 0; id < records(Table::Items).size(); ++id)
         result.set(id, {record(Table::Items, id).bytes, itemNameBytes(id)});
+    result.setWeaponTypes(weaponTypes_);
     return result;
+}
+void Project::setWeaponTypes(const QJsonObject &names) {
+    if (!originalItems_) throw Error("Custom weapon types require a supported US revision 0 ROM");
+    auto next = weaponTypes_;
+    next.setNames(names);
+    auto labels = catalog_["EQUIP_TYPES"].toObject();
+    for (auto it = labels.begin(); it != labels.end();)
+        if (WeaponTypes::customId(it.key().toInt())) it = labels.erase(it);
+        else ++it;
+    for (auto it = names.begin(); it != names.end(); ++it) labels[it.key()] = it.value();
+    weaponTypes_ = std::move(next);
+    catalog_["EQUIP_TYPES"] = labels;
+}
+int Project::createWeaponType(const QString &name) {
+    const auto trimmed = name.trimmed();
+    const auto labels = catalog_["EQUIP_TYPES"].toObject();
+    for (const auto &label : labels)
+        if (label.toString().compare(trimmed, Qt::CaseInsensitive) == 0)
+            throw Error("An equipment type already uses this name");
+    QSet<int> used;
+    for (const auto &record : records(Table::Items)) used.insert(u8(record.bytes, 4));
+    auto next = weaponTypes_;
+    const auto id = next.create(trimmed, used);
+    setWeaponTypes(next.names());
+    return id;
 }
 void Project::setItemNameBytes(int row, const QByteArray &name) {
     auto data = itemData();
@@ -1009,6 +1038,9 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names())
+        result["weaponTypes"] = weaponTypes_.names();
+    else result.remove("weaponTypes");
     result["spriteLibrary"] = sprites_.json();
     if (categoryIcons_ && categoryIcons_->modified())
         result["categoryIcons"] = categoryIcons_->json();
@@ -1207,6 +1239,10 @@ void Project::applyManifest(const QJsonObject &object) {
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
     auto candidate = Project::fromRom(runtimeRom(), catalog_);
+    if (object.contains("weaponTypes")) {
+        if (!object["weaponTypes"].isObject()) throw Error("Weapon types must be an object");
+        candidate.setWeaponTypes(object["weaponTypes"].toObject());
+    }
     if (!texts_.isEmpty())
         candidate.loadTexts();
     if (promotion_)

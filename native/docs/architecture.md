@@ -1,5 +1,40 @@
 # Native Lordly Caliber
 
+## Named weapon categories (October 25)
+
+`WeaponTypes` persists the user-named categories in the project manifest and an
+`LCWTYPE1` block after the relocated item names. The block uses the class/item
+allocation and boot loader; its bounds and bytes are covered by that allocation's
+checksum. It carries all 256 category-label pointers, shop group bytes, a private
+category-help bank, names, and authenticated original classification owners.
+Original category strings and unrelated help resources remain intact.
+
+`game/items/weapon-types.c` compiles into the four original weapon predicate,
+first-weapon selector, shop classifier and shop-sort extents. Shop ordering
+follows accepted `func_0019B800`. Bitwise combination of the three boolean type
+ranges keeps the predicate inside its 68-byte allocation. Before reexport,
+`rebuild/weapon_types.cpp` authenticates and restores the prior installation;
+ordinary class/item/shop relocation then runs, followed by fresh category code
+and text references. Class-description and shop readers canonicalize only the
+explicit original/installed category-text words before their owner checks.
+
+The unsigned item type byte remains the game's equipment restriction: default
+equipment determines accepted types per slot. The expansion reserves type0 and
+255, preserves the 24 retail categories, and allocates unused6 then26–254.
+No additional class permission mask is introduced. Host preview weapon selection
+uses the same expanded ranges. New types alone do not change the class's sprite
+or the weapon child artwork.
+
+`weapon_types_tests` checks capacity, input validation, dropdown labels, atomic
+Undo, project persistence, and three real-ROM exports including reexport and
+all230 names. `weapon-types-mips.cjs` executes the exported equipment selection,
+assignment, shop grouping/sort, physical attack and damage arithmetic, and help
+row selection. Inputs include two golem weapons, an incompatible group and a
+Knight; retail shop order is compared against original instructions. Context
+modifiers are held at zero. These are isolated routine checks, not rendered
+battle or whole-console tests. Private inputs use `LORDLY_TEST_ROM` and
+`LORDLY_N64_TOOLCHAIN`; outputs stay in a unique parent `Test ROMs/` directory.
+
 ## Import colors and table transfer (October 24)
 
 `imageToSrgb` applies an image's embedded profile before reducing high-depth input

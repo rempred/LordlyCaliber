@@ -1,4 +1,5 @@
 #include "engine/shop_runtime.h"
+#include "engine/weapon_types.h"
 #include "engine/class_data.h"
 #include "engine/promotion.h"
 #include <QFile>
@@ -58,6 +59,7 @@ void verifyShopRuntime(const Rom &rom, int version) {
         const auto owner = value.toObject();
         const auto start = owner["start"].toInt(), size = owner["size"].toInt();
         auto bytes = rom.bytes().mid(start, size);
+        bytes = canonicalWeaponTypeText(rom, bytes, start);
         if (bytes.size() != size)
             throw Error("Truncated shop runtime owner");
         // Version 4 owns the complete accepted-C stock function; its descriptor

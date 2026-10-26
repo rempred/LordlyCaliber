@@ -19,6 +19,7 @@ ItemData ItemData::load(const Rom &rom) {
     const quint32 end = placed ? p->layout.end : 0x8018c40c;
     ItemData result;
     result.prefix_ = rom.bytes().mid(at, 12);
+    qsizetype namesEnd = 0;
     for (int id = 0; id < count; ++id) {
         ItemAsset a;
         a.record = rom.bytes().mid(at + 12 + id * 32, 32);
@@ -32,7 +33,12 @@ ItemData ItemData::load(const Rom &rom) {
         a.name = rom.bytes().mid(start, stop - start);
         validateItem(a);
         result.entries_ << a;
+        namesEnd = qMax(namesEnd, stop + 1);
     }
+    const qsizetype metadata = placed ? (namesEnd + 15) & ~qsizetype(15) : 0;
+    result.weaponTypes_ = WeaponTypes::load(rom, metadata,
+        placed ? qsizetype(p->dataRomOffset) + p->layout.end - p->layout.indexBase : 0);
+    if (!result.weaponTypes_.empty()) result.loadedTypesOffset_ = metadata;
     return result;
 }
 void ItemData::set(int id, const ItemAsset &a) {
@@ -65,8 +71,14 @@ QByteArray ItemData::build(quint32 base) const {
         bytes += char(0);
     }
     bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
+    bytes += weaponTypes_.build(base + quint32(bytes.size()));
     if (base % 16 || quint64(base) + bytes.size() > 0x80400000)
         throw Error("Expanded items exceed the reserved 4 MB RAM allocation");
     return bytes;
+}
+qsizetype ItemData::weaponTypesOffset() const {
+    qsizetype size = 12 + entries_.size() * 32;
+    for (const auto &entry : entries_) size += entry.name.size() + 1;
+    return (size + 15) & ~qsizetype(15);
 }
 } // namespace lordly

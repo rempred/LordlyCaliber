@@ -266,6 +266,23 @@ void RecordModel::applyProject(const Project &project) {
     emit replaced();
     emit edited();
 }
+int RecordModel::createWeaponType(const QString &name, int item) {
+    try {
+        if (table_ != Table::Items) throw Error("Weapon types belong to the Items workspace");
+        auto after = *project_;
+        const int id = after.createWeaponType(name);
+        if (item >= 1) {
+            auto bytes = after.record(Table::Items, item).bytes;
+            put8(bytes, 4, quint8(id));
+            after.replaceBytes(Table::Items, item, bytes);
+        }
+        undo_->push(new AddClass(this, *project_, std::move(after), "Create weapon type"));
+        return id;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return -1;
+    }
+}
 QWidget *WeaponStatusDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &,
                                             const QModelIndex &) const {
     auto choice = new QComboBox(parent);

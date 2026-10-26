@@ -21,6 +21,7 @@ class RecordModel : public QAbstractTableModel {
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
     int appendItem(int source, const QString &name);
+    int createWeaponType(const QString &name, int item = -1);
     int createItem(const QString &name);
     void applyProject(const Project &project);
   signals:
