@@ -544,6 +544,7 @@ int Project::createItem(const QString &name) {
     ItemAsset asset{QByteArray(32, 0), encodeItemName(name)};
     // An uneventful accessory: no inherited stats, effects, description or artwork.
     put8(asset.record, 4, 25);
+    put8(asset.record, 6, 1); // Zero prevents selection in the game's Equip menu.
     const int id = next.appendItemAsset(asset, {});
     if (next.icons_->equipmentCount() + 1 != id)
         throw Error("Item and icon counts disagree");

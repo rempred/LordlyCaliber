@@ -741,6 +741,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         editor->setEnabled(false);
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
+        if (table == Table::Items && f.key == "grade") {
+            auto help = new QLabel(
+                "0 blocks selection in the Equip menu (used by special default gear). "
+                "Retail examples: Sonic Blade 0, Short Sword 1, Ji'ylga's Bow 10. "
+                "Positive values appear to behave alike; new items default to 1.");
+            help->setWordWrap(true);
+            groups[f.group]->addRow(help);
+        }
         if (f.key == "classCopyMatch") {
             auto help = new QLabel(
                 "<p><b>Default class and identity anchor</b><br>"

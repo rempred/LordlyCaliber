@@ -12818,6 +12818,7 @@ class UiTests : public QObject {
         QCOMPARE(model.createItem("Empty accessory"), 278);
         auto expected = QByteArray(32, 0);
         put8(expected, 4, 25);
+        put8(expected, 6, 1);
         QCOMPARE(project.record(Table::Items, 278).bytes, expected);
         const auto blankIcon = project.iconArtwork()->image(278);
         for (int y = 0; y < 16; ++y)
