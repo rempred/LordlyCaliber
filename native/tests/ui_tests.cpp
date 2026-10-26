@@ -130,6 +130,79 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void attackNativeRuleDisplay() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        AttackEditor editor(&project, &undo, [] {});
+        const auto before = project.manifest();
+        const auto choice = [&](const char *name) { return editor.findChild<QComboBox *>(name); };
+        const auto detail = [&](const char *name) { return editor.findChild<QLabel *>(name)->text(); };
+        editor.selectAttack(4); // Slash: one opponent and weapon-dependent on-hit effect.
+        QVERIFY(choice("attackSide")->currentText().startsWith("Opponents"));
+        QVERIFY(choice("attackPattern")->currentText().startsWith("One target"));
+        QVERIFY(choice("attackStatus")->currentText().startsWith("From equipped weapon"));
+        QVERIFY(choice("attackAfter")->currentText().startsWith("None"));
+        editor.selectAttack(21); // Mesmerize: a cross and Sleep on success, then half accuracy.
+        QVERIFY(choice("attackPattern")->currentText().startsWith("Cross through target"));
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Sleep"));
+        QVERIFY(detail("attackNativeStatus").contains("80% hit chance → 40% effect chance"));
+        editor.selectAttack(22); // Life Drain uses calculated amount, not clipped HP loss.
+        QVERIFY(choice("attackAfter")->currentText().startsWith("Heal the attacker (drain)"));
+        QVERIFY(detail("attackNativeAfter").contains("Last target's calculated amount"));
+        editor.selectAttack(17);
+        QVERIFY(choice("attackAfter")->currentText().startsWith("Damage the attacker (recoil)"));
+        QVERIFY(detail("attackNativeAfter").contains("alternate physical power / 6"));
+        editor.selectAttack(23); // Friendly and hostile Throw a Kiss must remain distinct.
+        QVERIFY(choice("attackSide")->currentText().startsWith("Allies"));
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Power Up"));
+        editor.selectAttack(24);
+        QVERIFY(choice("attackSide")->currentText().startsWith("Opponents"));
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Power Down"));
+        QVERIFY(detail("attackNativeStatus").contains("100% of eligible hits"));
+        editor.selectAttack(28);
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Banish eligible undead"));
+        editor.selectAttack(55);
+        QVERIFY(choice("attackStatus")->currentText().startsWith("None"));
+        editor.selectAttack(60);
+        QVERIFY(choice("attackPattern")->currentText().startsWith("Six strikes"));
+        editor.selectAttack(88);
+        QVERIFY(choice("attackSide")->currentText().startsWith("Allies"));
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Remove ailments"));
+        editor.selectAttack(125);
+        QVERIFY(choice("attackStatus")->currentText().startsWith("Poison"));
+        QVERIFY(detail("attackNativeStatus").contains("80% hit chance → 20% effect chance"));
+        editor.selectAttack(45);
+        QCOMPARE(choice("attackPattern")->currentText(), QString("From resolved spell"));
+        QVERIFY(!choice("attackPattern")->isEnabled());
+        QCOMPARE(project.manifest(), before);
+        QCOMPARE(undo.count(), 0);
+
+        editor.selectAttack(21);
+        auto status = choice("attackStatus");
+        status->setCurrentIndex(status->findData(0));
+        emit status->activated(status->currentIndex());
+        QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(21).status, 0);
+        undo.undo();
+        QCoreApplication::processEvents();
+        QVERIFY(status->currentText().startsWith("Sleep"));
+        QCOMPARE(project.manifest(), before);
+
+        // A main-effect edit must not falsely relabel the untouched native target rule.
+        editor.selectAttack(55);
+        auto effect = choice("attackEffect");
+        effect->setCurrentIndex(effect->findData(2));
+        emit effect->activated(effect->currentIndex());
+        QCoreApplication::processEvents();
+        QVERIFY(choice("attackSide")->currentText().startsWith("Opponents"));
+        auto pattern = choice("attackPattern");
+        pattern->setCurrentIndex(pattern->findData(2));
+        emit pattern->activated(pattern->currentIndex());
+        QCoreApplication::processEvents();
+        QVERIFY(choice("attackSide")->currentText().startsWith("Allies"));
+    }
     void attackWorkspaceEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         applyEditorTheme(*qApp);auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
@@ -138,6 +211,8 @@ class UiTests : public QObject {
         QCOMPARE(project.attacks()->entry(4).powerPercent,175);undo.undo();QCOMPARE(project.attacks()->entry(4).powerPercent,100);undo.redo();QCOMPARE(project.attacks()->entry(4).powerPercent,175);QCoreApplication::processEvents();
         auto select=[&](const char *name,int value){auto box=editor.findChild<QComboBox *>(name);QVERIFY(box);const int index=box->findData(value);QVERIFY(index>=0);box->setCurrentIndex(index);emit box->activated(index);QCoreApplication::processEvents();};
         select("attackPattern",12);select("attackSide",2);QCOMPARE(project.attacks()->entry(4).targetMask,16);
+        select("attackPattern",9);select("attackPattern",12);
+        QCOMPARE(project.attacks()->entry(4).targetSide,2);
         editor.findChild<QCheckBox *>("attackCell0")->click();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(4).targetMask,17);
         select("attackStatus",10);auto chance=editor.findChild<QSpinBox *>("attackChance");chance->setValue(35);emit chance->editingFinished();QCOMPARE(project.attacks()->entry(4).chance,35);
         select("attackAfter",1);select("attackAfterBasis",0);QCOMPARE(project.attacks()->entry(4).afterEffect,1);
@@ -5222,6 +5297,7 @@ class UiTests : public QObject {
             return finish.isAccepted();
         };
         const QPoint reserveTarget = reserves->viewport()->rect().center();
+        QImage dragPreview;
         auto startAndCancel = [&](QWidget *source, QPoint from, QPoint to, int unit, int id) {
             bool started = false;
             const auto previousDrags = panel->findChildren<QDrag *>();
@@ -5229,8 +5305,10 @@ class UiTests : public QObject {
                 for (auto drag : panel->findChildren<QDrag *>()) {
                     if (previousDrags.contains(drag)) continue;
                     const auto data = dynamic_cast<const SaveArmyDrag *>(drag->mimeData());
-                    if (data && data->unit == unit && data->id == id && data->owner == panel)
+                    if (data && data->unit == unit && data->id == id && data->owner == panel) {
                         started = true;
+                        dragPreview = drag->pixmap().toImage();
+                    }
                 }
                 QDrag::cancel();
             });
@@ -5245,6 +5323,15 @@ class UiTests : public QObject {
         auto sourceCell = board->cell(4);
         QVERIFY(startAndCancel(sourceCell, sourceCell->mapFrom(board, board->cellCenter(4)),
                                sourceCell->mapFrom(board, QPoint(-20, 60)), 0, 2));
+        QVERIFY(!dragPreview.isNull());
+        QCOMPARE(dragPreview.pixelColor(0, 0).alpha(), 0);
+        QCOMPARE(dragPreview.pixelColor(dragPreview.width() - 1, dragPreview.height() - 1).alpha(), 0);
+        bool visibleSprite = false;
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < dragPreview.width(); ++x)
+                visibleSprite |= dragPreview.pixelColor(x, y).alpha() > 0;
+        QVERIFY(visibleSprite);
+        QVERIFY(dragPreview.save("native/build/save-unit-drag-preview.png"));
         auto memberIcons = editor.findChild<QListWidget *>("saveUnitMembers");
         const auto memberPoint = memberIcons->visualItemRect(memberIcons->item(1)).center();
         QVERIFY(startAndCancel(memberIcons->viewport(), memberPoint, memberPoint + QPoint(25, 0), 0, 2));

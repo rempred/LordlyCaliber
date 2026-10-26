@@ -526,14 +526,20 @@ void SaveUnitEditor::startMemberDrag(int unit, int member, int id) {
     drag->setMimeData(new SaveArmyDrag(this, unit, member, id));
     const auto sprite = memberSprite(id);
     QPixmap preview(160, 96);
-    preview.fill(palette().color(QPalette::Base));
+    preview.fill(Qt::transparent);
     QPainter painter(&preview);
     if (!sprite.isNull()) {
         const auto scaled = sprite.scaled(64, 64, Qt::KeepAspectRatio, Qt::FastTransformation);
         painter.drawImage(QPoint((160 - scaled.width()) / 2, 0), scaled);
     }
-    painter.setPen(palette().color(QPalette::Text));
-    painter.drawText(QRect(2, 64, 156, 30), Qt::AlignCenter, memberName(id));
+    const QRect nameRect(2, 66, 156, 26);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(34, 39, 48, 225));
+    painter.drawRoundedRect(nameRect, 5, 5);
+    painter.setPen(QColor("#fff2d1"));
+    painter.drawText(nameRect.adjusted(4, 0, -4, 0), Qt::AlignCenter,
+                     painter.fontMetrics().elidedText(memberName(id), Qt::ElideRight,
+                                                      nameRect.width() - 8));
     painter.end();
     drag->setPixmap(preview);
     drag->setHotSpot({80, 32});

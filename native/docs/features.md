@@ -8,7 +8,10 @@ ID0 is the empty entry and ID255 remains the class-inheritance sentinel.
 
 Named controls cover elements, main effects, the recovered amount rules, incoming
 power percentage, target side and formation patterns. A nine-position diagram
-edits custom masks. Additional ailments have per-target activation and percentage
+edits custom masks. Original targeting, additional effects and drain/recoil show
+their decoded game rules, including equipment-based effects and accuracy-based
+activation, without changing the attack while it is viewed. Unidentified rules
+retain their IDs. Additional ailments have per-target activation and percentage
 chance controls; immunity, ailment priority and natural recovery still use game
 rules. Drain/recoil can use total main-effect HP lost, the last calculated amount,
 or the attacker's current/maximum HP. Combined spells apply that after-effect to

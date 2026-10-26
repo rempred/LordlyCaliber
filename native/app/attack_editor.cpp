@@ -100,19 +100,22 @@ QString attackName(const AttackData &attacks, int id) {
     return id > 0 && id < attacks.entries().size() ? AttackData::displayName(attacks.entry(id))
                                                    : QString("ID %1").arg(id);
 }
+int nativeSpellIndex(const Attack &a) {
+    const int id = a.animation;
+    return quint8(id - 17) < 28   ? quint8(id + 80)
+           : quint8(id + 110) < 8 ? quint8(id + 235)
+           : quint8(id - 55) < 36 ? quint8(id + 201)
+           : quint8(id - 91) < 54 ? quint8(id + 204)
+           : quint8(id + 102) < 3 ? quint8(id + 138)
+                                  : 1;
+}
 int nativePattern(const Project &project, const Attack &a) {
     if (!u8(a.data, 2))
         return 0;
     if (u8(a.data, 0) < 2)
         return 1;
     if (u8(a.data, 0) == 3) {
-        const int id = a.animation;
-        const int index = quint8(id - 17) < 28   ? quint8(id + 80)
-                          : quint8(id + 110) < 8 ? quint8(id + 235)
-                          : quint8(id - 55) < 36 ? quint8(id + 201)
-                          : quint8(id - 91) < 54 ? quint8(id + 204)
-                          : quint8(id + 102) < 3 ? quint8(id + 138)
-                                                 : 1;
+        const int index = nativeSpellIndex(a);
         return u8(project.rom().bytes(), 0x212181 + 2 * index) & 15;
     }
     const int selector = u8(a.data, 2);
@@ -122,6 +125,113 @@ int nativePattern(const Project &project, const Attack &a) {
            : selector == 5 ? 10
            : selector == 6 ? 5
                            : 1;
+}
+QString nativeSideName(const Attack &a) {
+    if (!u8(a.data, 2))
+        return "No targets";
+    if (u8(a.data, 0) > 5)
+        return QString("Unknown target side (execution ID %1)").arg(u8(a.data, 0));
+    // Native target builder 00238D94 uses 0020C364's spell-index predicate,
+    // not D3. Changing a spell's main effect alone does not change its side.
+    const int index = nativeSpellIndex(a);
+    return u8(a.data, 0) >= 2 && ((index >= 32 && index <= 35) || index == 103)
+               ? "Allies (including user)"
+               : "Opponents";
+}
+QString nativePatternName(int pattern) {
+    switch (pattern) {
+    case 0: return "No targets";
+    case 1:
+    case 8: return "One target";
+    case 2:
+    case 3:
+    case 4:
+    case 7: return "Cross through target";
+    case 5:
+    case 6:
+    case 11: return "3 × 3 area around target";
+    case 9:
+    case 10: return "Six strikes (game-selected targets)";
+    case 12: return "User's opposing column (eligible targets)";
+    case 14: return "One opponent";
+    default: return QString("Unknown pattern ID %1").arg(pattern);
+    }
+}
+QString nativePatternDetail(int pattern) {
+    switch (pattern) {
+    case 0: return "This entry has no direct targets.";
+    case 1:
+    case 8:
+    case 14: return "The game chooses one eligible target.";
+    case 2:
+    case 3:
+    case 4:
+    case 7:
+        return "Affects the chosen position and its four adjacent positions. "
+               "The original calculation gives the outer positions reduced amounts.";
+    case 5:
+    case 6:
+        return "Affects the chosen position and its eight surrounding positions. "
+               "The original calculation gives the outer positions reduced amounts.";
+    case 11:
+        return "Affects the chosen position and its eight surrounding positions, "
+               "using the same calculation rule at each position.";
+    case 9:
+    case 10:
+        return "Selects six strikes from eligible targets around the chosen position. "
+               "The same unit can be hit more than once. The diagram shows the possible area, "
+               "not six fixed targets.";
+    case 12:
+        return "Selects eligible opponents in the user's column. The diagram assumes the user "
+               "is in the center column; the game's eligibility checks still apply.";
+    default: return QString("Pattern ID %1 is preserved; its area is not identified.").arg(pattern);
+    }
+}
+QPair<QString, QString> nativeStatusRule(const Attack &a) {
+    const int kind = u8(a.data, 6), effect = u8(a.data, 7), activation = u8(a.data, 9);
+    if (kind == 12)
+        return {"From equipped weapon",
+                "Uses the equipped weapon's on-hit effect and activation rule. "
+                "An additional effect selected here is separate from the weapon's effect."};
+    if (kind == 0 || kind == 255 || kind == 11)
+        return {"None", "No additional status effect is built into this attack. "
+                        "Weapon on-hit effects remain separate."};
+    if (kind != 8)
+        return {QString("Unknown secondary rule ID %1").arg(kind),
+                "This unidentified rule is preserved. Raw field IDs are available in Advanced."};
+    const auto name = effect == 7 ? QString("Banish eligible undead")
+                                  : AttackData::statuses().value(effect, QString("Unknown effect ID %1").arg(effect));
+    QString condition;
+    switch (activation) {
+    case 2: condition = "After each target attempt; no extra chance roll."; break;
+    case 4: condition = "After a successful hit; chance is half the calculated hit chance, "
+                        "rounded down (80% hit chance → 40% effect chance)."; break;
+    case 5: condition = "After a successful hit; no extra chance roll (100% of eligible hits)."; break;
+    case 6: condition = "After a successful hit whose calculated amount is at least the target's "
+                        "remaining HP; no extra chance roll."; break;
+    case 11: condition = "After a successful hit; chance is one quarter of the calculated hit chance, "
+                         "rounded down (80% hit chance → 20% effect chance)."; break;
+    default: condition = QString("Unknown activation rule ID %1 (preserved).").arg(activation); break;
+    }
+    return {name, condition + " Target eligibility and immunity still apply."};
+}
+QPair<QString, QString> nativeAfterRule(const Attack &a) {
+    const int kind = u8(a.data, 6), effect = u8(a.data, 7), calculation = u8(a.data, 8);
+    if (kind == 0 || kind == 255 || kind == 8 || kind == 12)
+        return {"None", "This attack has no built-in drain or recoil."};
+    if (kind != 11)
+        return {QString("Unknown secondary rule ID %1").arg(kind), "The original rule is preserved."};
+    const auto name = effect == 1 ? QString("Damage the attacker (recoil)")
+                      : effect == 2 ? QString("Heal the attacker (drain)")
+                                    : QString("Unknown after-effect ID %1").arg(effect);
+    const auto amount = calculation == 6 ? QString("Last target's calculated amount, including any failed-hit reduction; "
+                                                   "not total HP lost or damage capped to remaining HP")
+                         : calculation == 5 ? QString("Attacker's alternate physical power / 6")
+                                             : AttackData::calculations().value(calculation,
+                                                   QString("Unknown calculation ID %1").arg(calculation));
+    return {name, amount + ". Applied once after the target loop. " +
+                      (effect == 2 ? "Healing is capped by the attacker's missing HP."
+                       : effect == 1 ? "Recoil can defeat the attacker." : "")};
 }
 } // namespace
 AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> changed,
@@ -198,12 +308,12 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     auto targeting = new QGroupBox("Who it affects");
     auto targetLayout = new QVBoxLayout(targeting);
     auto targetForm = new QFormLayout;
-    side_ = choices({{0, "Existing target side"},
+    side_ = choices({{0, "Original target side"},
                      {1, "Opponents"},
                      {2, "Allies (including user)"},
                      {3, "User only"}},
                     "attackSide");
-    pattern_ = choices({{0, "Existing game pattern"},
+    pattern_ = choices({{0, "Original target pattern"},
                         {1, "One target"},
                         {2, "All occupied positions"},
                         {3, "Front row"},
@@ -254,7 +364,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     auto secondaryLayout = new QVBoxLayout(secondary);
     auto statusForm = new QFormLayout;
     auto statuses = AttackData::statuses();
-    statuses[-1] = "Keep existing game rule";
+    statuses[-1] = "Original additional effect";
     status_ = choices(statuses, "attackStatus");
     statusForm->addRow("Effect", status_);
     secondaryLayout->addLayout(statusForm);
@@ -269,11 +379,12 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     conditionLayout->addRow("Chance per eligible target", chance_);
     secondaryLayout->addWidget(conditionPanel_);
     nativeStatus_ = text({}, secondaryLayout);
+    nativeStatus_->setObjectName("attackNativeStatus");
     right->addWidget(secondary);
     auto aftermath = new QGroupBox("Drain and recoil");
     auto afterLayout = new QVBoxLayout(aftermath);
     auto afterForm = new QFormLayout;
-    after_ = choices({{-1, "Keep existing game rule"},
+    after_ = choices({{-1, "Original drain / recoil"},
                       {0, "None"},
                       {1, "Heal the attacker (drain)"},
                       {2, "Damage the attacker (recoil)"}},
@@ -294,6 +405,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     basisLayout->addRow("Share of that amount", afterPercent_);
     afterLayout->addWidget(afterPanel_);
     nativeAfter_ = text({}, afterLayout);
+    nativeAfter_->setObjectName("attackNativeAfter");
     right->addWidget(aftermath);
     auto used = new QGroupBox("Used by these classes");
     auto usedLayout = new QVBoxLayout(used);
@@ -412,11 +524,11 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     connect(pattern_, &QComboBox::activated, this, [this] {
         const int n = pattern_->currentData().toInt();
         edit("Change target pattern", [=](Attack &a) {
+            if (a.targetPattern == 9 && a.targetSide == 3 && n != 9)
+                a.targetSide = 0;
             a.targetPattern = n;
             if (n == 12 && !a.targetMask)
                 a.targetMask = 16;
-            if (n == 9)
-                a.targetSide = 3;
         });
     });
     const auto choice = [this](QComboBox *box, int Attack::*member, const QString &title) {
@@ -581,8 +693,16 @@ void AttackEditor::showAttack() {
                                       "keeps the assigned animation.")
                                   .arg(AttackData::elements().value(reduced[element - 9])));
     }
-    side_->setItemText(side_->findData(0),
-                       a.targetPattern ? "Automatic (from main effect)" : "Existing target side");
+    const int originalPattern = nativePattern(*project_, a);
+    const QString automaticSide = effect == 2 || effect == 5 || effect == 6 || effect == 11
+                                      ? "Allies (including user)" : "Opponents";
+    side_->setItemText(side_->findData(0), templ ? "From resolved spell"
+                         : a.targetPattern || a.targetSide
+                             ? automaticSide + " (from main effect)"
+                             : nativeSideName(a) + " (game rule)");
+    pattern_->setItemText(pattern_->findData(0), templ ? "From resolved spell"
+                          : a.targetSide ? "One target (chosen side)"
+                                         : nativePatternName(originalPattern) + " (game rule)");
     choose(side_, a.targetPattern == 9 ? 3 : a.targetSide);
     choose(pattern_, a.targetPattern);
     side_->setEnabled(!templ && a.targetPattern != 9);
@@ -594,27 +714,26 @@ void AttackEditor::showAttack() {
                : a.targetPattern == 7                         ? 56
                : a.targetPattern == 8                         ? 186
                                                               : 16;
-    const int originalPattern = nativePattern(*project_, a);
-    if (!a.targetPattern)
+    if (!a.targetPattern && !a.targetSide)
         mask = originalPattern == 1 || originalPattern == 8                            ? 16
                : originalPattern >= 2 && originalPattern <= 4                          ? 186
                : originalPattern == 5 || originalPattern == 6 || originalPattern == 11 ? 511
                : originalPattern == 7                                                  ? 186
+               : originalPattern == 9 || originalPattern == 10                        ? 511
+               : originalPattern == 12                                                 ? 146
+               : originalPattern == 14                                                 ? 16
                                                                                        : 0;
+    if (templ)
+        mask = 0;
     for (int i = 0; i < 9; ++i) {
         cells_[i]->setChecked(mask & (1 << i));
         cells_[i]->setEnabled(!templ && a.targetPattern == 12);
     }
     targetHelp_->setText(
-        a.targetPattern == 0
-            ? (mask ? QString("Existing pattern %1, shown around a center target. The game chooses "
-                              "the target; outer positions may receive reduced amounts. Choose a "
-                              "named pattern to replace this rule.")
-                          .arg(originalPattern)
-                    : QString("Existing pattern %1 selects positions during combat; no fixed area "
-                              "is assumed here. Choose a named pattern to edit and preview a "
-                              "specific area.")
-                          .arg(originalPattern))
+        templ ? "Select a resolved spell above to see its targets and effects."
+        : a.targetPattern == 0 && !a.targetSide
+            ? nativePatternDetail(originalPattern) +
+                  " The diagram assumes a center target. Selecting another pattern replaces this game rule."
         : a.targetPattern == 12 ? "Checked positions are fixed in the chosen side's formation. "
                                   "Empty cells are skipped. Front is nearest the opposing squad."
                                 : "Diagram uses a center target. Row, column and cross patterns "
@@ -623,36 +742,33 @@ void AttackEditor::showAttack() {
         targetHelp_->setText(targetHelp_->text() +
                              " Physical attacks strike each selected target in turn, spending one "
                              "attack count for the whole pattern.");
+    const auto originalStatus = nativeStatusRule(a);
+    status_->setItemText(status_->findData(-1), templ ? "From resolved spell"
+                                                     : originalStatus.first + " (game rule)");
     choose(status_, a.status);
     choose(condition_, a.condition);
     chance_->setValue(a.chance);
     conditionPanel_->setVisible(a.status > 0);
     status_->setEnabled(!templ);
     nativeStatus_->setText(
-        a.status < 0
-            ? QString("Existing rule: secondary kind ID %1, effect %2, activation ID %3. Choose an "
-                      "effect to set an explicit chance.")
-                  .arg(u8(a.data, 6))
-                  .arg(AttackData::statuses().value(u8(a.data, 7),
-                                                    QString("ID %1").arg(u8(a.data, 7))))
-                  .arg(u8(a.data, 9))
+        templ ? "The resolved spell supplies its additional effect and activation rule."
+        : a.status < 0
+            ? originalStatus.second
             : "Weapon on-hit effects remain separate. Chance is rolled separately for each "
               "eligible target. Immunity and existing ailment "
               "restrictions still apply. Status strength and natural recovery use Tools → Status "
               "effects; effects without a recovery timer keep that behavior.");
+    const auto originalAfter = nativeAfterRule(a);
+    after_->setItemText(after_->findData(-1), templ ? "From resolved spell"
+                                                   : originalAfter.first + " (game rule)");
     choose(after_, a.afterEffect);
     choose(basis_, a.afterBasis);
     afterPercent_->setValue(a.afterPercent);
     afterPanel_->setVisible(a.afterEffect > 0);
     after_->setEnabled(!templ);
     nativeAfter_->setText(
-        a.afterEffect < 0 ? (u8(a.data, 6) == 11
-                                 ? QString("Existing %1: %2. The supplied-amount rule uses the "
-                                           "LAST target's calculated amount, not total HP lost.")
-                                       .arg(u8(a.data, 7) == 2 ? "drain" : "recoil",
-                                            AttackData::calculations().value(
-                                                u8(a.data, 8), QString("ID %1").arg(u8(a.data, 8))))
-                                 : "No native drain or recoil for this attack.")
+        templ ? "The resolved spell supplies its drain or recoil rule."
+        : a.afterEffect < 0 ? originalAfter.second
                           : "Applied once after all targets. Drain is capped by missing HP; recoil "
                             "can defeat the attacker. Total HP lost counts the main effect only, "
                             "before additional status effects.");
