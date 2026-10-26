@@ -109,6 +109,7 @@ ChangeReport Project::compareWithRom(Rom rom) const {
         p.loadScenePrograms(); p.loadSceneEvents(); p.loadDialogues(); p.loadCategoryIcons();
         p.loadIconArtwork(); p.loadAvatarArtwork(); p.loadArmyArtwork(); p.loadCombatArtwork();
         p.loadAnimationRoutes(); p.loadAnimationOverrides(); p.loadAnimationSequences();
+        if (!p.rom().revision()) p.loadAttacks();
     };
     load(current); load(reference);
     return current.changeReport(&reference);
@@ -195,6 +196,41 @@ ChangeReport Project::changeReport(const Project *reference) const {
                 }
             }
             add(area, QString("%1 (ID %2)").arg(row.name).arg(row.id), lines, {tableKey(table), row.id});
+        }
+    }
+    if (attacks_ && (reference || attacks_->modified())) {
+        const auto original = reference && reference->attacks_ ? *reference->attacks_ : AttackData::load(baseRom);
+        for (int id = 1; id < attacks_->entries().size(); ++id) {
+            const auto &after = attacks_->entry(id);
+            const bool added = id >= original.entries().size();
+            if (!added && after == original.entry(id)) continue;
+            QStringList lines;
+            if (added) lines << "Added independent attack.";
+            const auto before = added ? Attack{} : original.entry(id);
+            if (added || before.name != after.name || before.dynamicName != after.dynamicName)
+                lines << (added ? "Name: " + AttackData::displayName(after)
+                                : transition("Name", AttackData::displayName(before), AttackData::displayName(after)));
+            if (added || before.nameGroup != after.nameGroup) lines << "Name sharing updated.";
+            const QMap<int, QString> fields{{0,"Execution family ID"},{1,"Element"},{2,"Native target selector ID"},
+                {3,"Main effect"},{4,"Calculation"},{5,"Native condition ID"},{6,"Native secondary kind ID"},
+                {7,"Native secondary effect ID"},{8,"Native secondary calculation ID"},{9,"Native secondary activation ID"},
+                {10,"D10 (unidentified)"},{11,"D11 (unidentified)"}};
+            for (auto it = fields.begin(); it != fields.end(); ++it) {
+                const int value = u8(after.data, it.key());
+                if (!added && value == u8(before.data, it.key())) continue;
+                const auto choices = it.key()==1 ? AttackData::elements() : it.key()==3 ? AttackData::effects() :
+                                     it.key()==4 ? AttackData::calculations() : QMap<int,QString>{};
+                const auto name = [&](int n) { return choices.value(n, number(n)); };
+                lines << (added ? it.value()+": "+name(value) : transition(it.value(),name(u8(before.data,it.key())),name(value)));
+            }
+            const auto describe = [](const Attack &a) {
+                return QJsonObject{{"targetPattern",a.targetPattern},{"targetSide",a.targetSide},{"targetPositionsMask",a.targetMask},
+                    {"incomingPowerPercent",a.powerPercent},{"additionalStatusId",a.status},{"activationConditionId",a.condition},
+                    {"chancePercent",a.chance},{"drainOrRecoilId",a.afterEffect},{"amountBasisId",a.afterBasis},
+                    {"amountPercent",a.afterPercent},{"behaviorOrigin",a.behavior},{"animationOrigin",a.animation}};
+            };
+            settings(lines, added ? QJsonObject{} : describe(before), describe(after));
+            add("Attacks", QString("%1 (ID %2)").arg(AttackData::displayName(after)).arg(id),lines,{"attacks",id});
         }
     }
     {

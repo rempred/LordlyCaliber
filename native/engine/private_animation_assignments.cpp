@@ -173,8 +173,8 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
     sequences.rememberAttackBaseline(id, flags, action,
                                      exactPair(animationOverrides_->entries(), id, flags, action));
     const auto current = bodyAnimationData();
-    QJsonObject pair{{"normalSelector", current->selector(id, owner, action, 0, flags)},
-                     {"blockedSelector", current->selector(id, owner, action, 2, flags)}};
+    QJsonObject pair{{"normalSelector", current->attackSelector(id, owner, action, 0, flags)},
+                     {"blockedSelector", current->attackSelector(id, owner, action, 2, flags)}};
     pair[blocked ? "blockedSelector" : "normalSelector"] = selected;
     auto overrides = *animationOverrides_;
     overrides.setEntries(replacePair(overrides.entries(), id, flags, action, pair), rom_, classes,

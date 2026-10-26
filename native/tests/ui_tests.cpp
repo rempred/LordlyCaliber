@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include "app/attack_editor.h"
 #include "app/change_report_dialog.h"
 #include "app/project_review_dialog.h"
 #include "app/animation_editor.h"
@@ -129,6 +130,42 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void attackWorkspaceEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        applyEditorTheme(*qApp);auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        AttackEditor editor(&project,&undo,[]{});editor.resize(1400,940);editor.show();editor.selectAttack(4);
+        auto power=editor.findChild<QSpinBox *>("attackPower");QVERIFY(power);power->setValue(175);emit power->editingFinished();
+        QCOMPARE(project.attacks()->entry(4).powerPercent,175);undo.undo();QCOMPARE(project.attacks()->entry(4).powerPercent,100);undo.redo();QCOMPARE(project.attacks()->entry(4).powerPercent,175);QCoreApplication::processEvents();
+        auto select=[&](const char *name,int value){auto box=editor.findChild<QComboBox *>(name);QVERIFY(box);const int index=box->findData(value);QVERIFY(index>=0);box->setCurrentIndex(index);emit box->activated(index);QCoreApplication::processEvents();};
+        select("attackPattern",12);select("attackSide",2);QCOMPARE(project.attacks()->entry(4).targetMask,16);
+        editor.findChild<QCheckBox *>("attackCell0")->click();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(4).targetMask,17);
+        select("attackStatus",10);auto chance=editor.findChild<QSpinBox *>("attackChance");chance->setValue(35);emit chance->editingFinished();QCOMPARE(project.attacks()->entry(4).chance,35);
+        select("attackAfter",1);select("attackAfterBasis",0);QCOMPARE(project.attacks()->entry(4).afterEffect,1);
+        auto users=editor.findChild<QTableWidget *>("attackUsers");QVERIFY(users->rowCount()>0);const int classId=users->item(0,0)->data(Qt::UserRole).toInt();
+        auto count=qobject_cast<QSpinBox *>(users->cellWidget(0,2));QVERIFY(count);const auto before=project.record(Table::Classes,classId).bytes;count->setValue(7);emit count->editingFinished();QCOMPARE(u8(project.record(Table::Classes,classId).bytes,56),quint8(7));undo.undo();QCOMPARE(project.record(Table::Classes,classId).bytes,before);QCoreApplication::processEvents();
+        // Classes edits must become visible in this workspace after the shared undo signal.
+        RecordModel classes(&project,Table::Classes,&undo);int front=-1;for(int i=0;i<fields(Table::Classes).size();++i)if(fields(Table::Classes)[i].key=="attack0")front=i;
+        int otherClass=1;while(otherClass<project.records(Table::Classes).size()&&u8(project.record(Table::Classes,otherClass).bytes,55)==4)++otherClass;
+        QVERIFY(otherClass<project.records(Table::Classes).size());QVERIFY(front>=0);QVERIFY(classes.setData(classes.index(otherClass,front+2),4,Qt::EditRole));QCoreApplication::processEvents();bool found=false;for(int i=0;i<users->rowCount();++i)found|=users->item(i,0)->data(Qt::UserRole).toInt()==otherClass;QVERIFY(found);
+        QTimer::singleShot(0,[&]{auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);dialog->findChild<QLineEdit *>("attackNewName")->setText("New spell");auto starter=dialog->findChild<QComboBox *>("attackStartingPoint");starter->setCurrentIndex(starter->findData(55));dialog->accept();});editor.findChild<QPushButton *>("createAttack")->click();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(159).behavior,55);QCOMPARE(u8(project.attacks()->entry(159).data,0),quint8(3));undo.undo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entries().size(),159);editor.selectAttack(4);
+        QTimer::singleShot(0,[&]{auto dialog=qobject_cast<QInputDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);dialog->setTextValue("Independent test attack");dialog->accept();});editor.findChild<QPushButton *>("duplicateAttack")->click();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entries().size(),160);QCOMPARE(AttackData::displayName(project.attacks()->entry(159)),QString("Independent test attack"));QCOMPARE(AttackData::displayName(project.attacks()->entry(4)),QString("Slash"));
+        auto search=editor.findChild<QLineEdit *>("attackSearch");search->setText("Independent test");auto list=editor.findChild<QListWidget *>("attackList");int visible=0;for(int i=0;i<list->count();++i)visible+=!list->item(i)->isHidden();QCOMPARE(visible,1);search->clear();
+        editor.selectAttack(159);QVERIFY(editor.grab().save("native/build/attacks-workspace.png"));
+        auto scroll=editor.findChild<QScrollArea *>();QVERIFY(scroll);scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());QCoreApplication::processEvents();QVERIFY(editor.grab().save("native/build/attacks-workspace-bottom.png"));
+        const auto beforePreview=project.manifest();editor.findChild<QPushButton *>("attackPreview")->click();QCoreApplication::processEvents();
+        auto preview=editor.findChild<QDialog *>();QVERIFY(preview);QVERIFY(preview->isVisible());QVERIFY(preview->grab().save("native/build/attack-preview.png"));preview->close();QCOMPARE(project.manifest(),beforePreview);
+        const auto json=project.manifest();auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(json);QCOMPARE(reopened.attacks()->json(),project.attacks()->json());
+    }
+    void attackAnimationNavigation() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        MainWindow window;window.resize(1400,940);window.show();window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<AttackEditor *>(),30000);
+        auto attacks=window.findChild<AttackEditor *>();window.navigateTo({"attacks",4});QVERIFY(attacks->isVisible());
+        auto previewClass=attacks->findChild<QComboBox *>("attackPreviewClass");previewClass->setCurrentIndex(previewClass->findData(2));
+        attacks->findChild<QPushButton *>("attackEditAnimation")->click();QCoreApplication::processEvents();
+        auto action=window.findChild<QComboBox *>("combatAnimationAction");auto cls=window.findChild<QComboBox *>("combatAnimationClass");QVERIFY(action);QVERIFY(cls);
+        QCOMPARE(cls->currentData().toInt(),2);QCOMPARE(action->currentData().toInt(),4);QVERIFY(action->isVisible());
+    }
     void dataTableCopyAndCsv() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

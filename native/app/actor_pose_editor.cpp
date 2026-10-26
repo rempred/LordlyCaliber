@@ -808,7 +808,7 @@ void ActorPoseEditor::resolveAction() {
     if (kinds_->currentIndex()!=1 || actions_->currentData().toInt()<0) { restart(); return; }
     try {
         const int source=banks_->currentData().toInt(), owner=owners_->currentData().toInt();
-        const int state=bodyAnimations_->selector(source,owner<0?source:owner,actions_->currentData().toInt(),actionModes_->currentIndex(),flags_->currentIndex());
+        const int state=bodyAnimations_->attackSelector(source,owner<0?source:owner,actions_->currentData().toInt(),actionModes_->currentIndex(),flags_->currentIndex());
         const int index=poses_->findData(state);
         if (index<0) throw Error("The selected action refers to an absent pose in this body");
         const QSignalBlocker block(poses_); poses_->setCurrentIndex(index); restart();

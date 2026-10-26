@@ -490,8 +490,8 @@ void AnimationSequenceEditor::refreshAssignments() {
             QString("%1 · Normal: pose %2 · Blocked: pose %3\n"
                     "Expansion Pak required for attack assignments.")
                 .arg(assigned ? "Private assignment" : "Current assignment")
-                .arg(poseLabel(animations->selector(id, owner, action, 0, flags)))
-                .arg(poseLabel(animations->selector(id, owner, action, 2, flags))));
+                .arg(poseLabel(animations->attackSelector(id, owner, action, 0, flags)))
+                .arg(poseLabel(animations->attackSelector(id, owner, action, 2, flags))));
     } catch (const std::exception &e) {
         assignmentSummary_->setText(QString::fromUtf8(e.what()));
     }

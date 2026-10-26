@@ -14,6 +14,7 @@
 #include "app/project_review_dialog.h"
 #include "app/combat_editor.h"
 #include "app/combat_animation_editor.h"
+#include "app/attack_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
@@ -272,6 +273,20 @@ void MainWindow::installProject(Project project) {
     }
     project_ = std::make_unique<Project>(std::move(project));
     addRecordWorkspace(Table::Classes, "Classes");
+    if(project_->rom().revision()==0) {
+        auto attacks=new AttackEditor(project_.get(),undo_,[this]{updateStatus();});
+        workspaces_->addTab(attacks,"Attacks");
+        connect(attacks,&AttackEditor::editAnimation,this,[this](int classId,int attackId){
+            if(auto editor=findChild<CombatAnimationEditor *>()) {
+                for (auto parent = editor->parentWidget(); parent; parent = parent->parentWidget())
+                    if (auto tabs = qobject_cast<QTabWidget *>(parent))
+                        for (int i = 0; i < tabs->count(); ++i)
+                            if (tabs->widget(i) == editor || tabs->widget(i)->isAncestorOf(editor))
+                                tabs->setCurrentIndex(i);
+                editor->selectAttack(classId,attackId);
+            }
+        });
+    }
     addRecordWorkspace(Table::Items, "Items");
     addRecordWorkspace(Table::Consumables, "Consumables");
     if (project_->shops())
@@ -943,6 +958,10 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     connect(model, &RecordModel::edited, page, [this, refresh] {
         refresh();
         updateStatus();
+    });
+    watchContentChanges(undo_,page,[model,refresh] {
+        emit model->dataChanged(model->index(0,0),model->index(model->rowCount()-1,model->columnCount()-1));
+        refresh();
     });
     if (table != Table::Consumables) {
         const auto showColumns = [=](const QString &group) {

@@ -264,6 +264,7 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         if (table == Table::Items)
             p.catalog_["ITEM_NAMES"] = names;
     }
+    if (!p.rom_.revision() && AttackPlacement::read(p.rom_)) p.loadAttacks();
     return p;
 }
 const Record &Project::record(Table t, int row) const {
@@ -298,6 +299,22 @@ void Project::setValue(Table t, int row, int column, int value) {
         put8(bytes, f.offset, quint8(value));
     replaceBytes(t, row, bytes);
 }
+void Project::loadAttacks() {
+    if (!attacks_) {
+        attacks_ = AttackData::load(rom_);
+        setAttacks(attacks_->json());
+    }
+}
+void Project::setAttacks(const QJsonObject &value) {
+    auto next = attacks_ ? *attacks_ : AttackData::load(rom_);
+    next.apply(value);
+    QJsonObject names;
+    names["0"] = "None";
+    for (int id = 1; id < next.entries().size(); ++id)
+        names[QString::number(id)] = AttackData::displayName(next.entry(id));
+    catalog_["ACTION_NAMES"] = names;
+    attacks_ = std::move(next);
+}
 void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
     if (bytes.size() != record(t, row).bytes.size())
         throw Error("Record size changed unexpectedly");
@@ -314,6 +331,7 @@ int Project::changedRecords() const {
     int count =
         int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size());
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names()) ++count;
+    if (attacks_ && attacks_->modified()) ++count;
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -899,8 +917,10 @@ BodyAnimationData::Pointer Project::bodyAnimationData() {
     for(auto it=animationSequences_->groups().cbegin();it!=animationSequences_->groups().cend();++it)descriptors[it.key()]=it->descriptor;
     auto routes = *animationRoutes_;
     routes.setPrivatePoses(privatePoseMappings());
+    QMap<int,int> aliases;
+    if(attacks_) for(int id=159;id<attacks_->entries().size();++id) aliases[id]=attacks_->entry(id).animation;
     return std::make_shared<const BodyAnimationData>(
-        classData(), std::move(routes), *animationOverrides_, std::move(descriptors), itemData());
+        classData(), std::move(routes), *animationOverrides_, std::move(descriptors), itemData(), aliases);
 }
 void Project::loadAnimationSequences() {
     if(!animationSequences_)animationSequences_=AnimationSequences::load(rom_);
@@ -1039,6 +1059,8 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    if (attacks_ && attacks_->modified()) result["attacks"] = attacks_->json();
+    else result.remove("attacks");
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names())
         result["weaponTypes"] = weaponTypes_.names();
     else result.remove("weaponTypes");
@@ -1240,6 +1262,11 @@ void Project::applyManifest(const QJsonObject &object) {
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
     auto candidate = Project::fromRom(runtimeRom(), catalog_);
+    if (attacks_) candidate.loadAttacks();
+    if (object.contains("attacks")) {
+        if (!object["attacks"].isObject()) throw Error("Attacks must be an object");
+        candidate.setAttacks(object["attacks"].toObject());
+    }
     if (object.contains("weaponTypes")) {
         if (!object["weaponTypes"].isObject()) throw Error("Weapon types must be an object");
         candidate.setWeaponTypes(object["weaponTypes"].toObject());

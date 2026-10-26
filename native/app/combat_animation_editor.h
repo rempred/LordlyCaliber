@@ -13,6 +13,7 @@ class CombatAnimationEditor : public QWidget {
   public:
     CombatAnimationEditor(Project *, QUndoStack *, std::function<void()> changed,
                           QWidget *parent = nullptr);
+    void selectAttack(int classId, int actionId);
   private:
     void refresh(bool assigned = false);
     void preview();

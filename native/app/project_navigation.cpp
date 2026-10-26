@@ -4,6 +4,7 @@
 #include "app/text_workspace.h"
 #include "app/dialogue_inspector.h"
 #include "app/army_editor.h"
+#include "app/attack_editor.h"
 #include <QTabBar>
 #include <QScrollArea>
 #include "app/project_review_dialog.h"
@@ -74,6 +75,11 @@ void MainWindow::navigateTo(const EditLocation &location) {
                         destination = section;
                     }
                 }
+            }
+        } else if (kind == "attacks") {
+            if (auto editor = findChild<AttackEditor *>()) {
+                editor->selectAttack(id);
+                destination = editor;
             }
         } else if (kind == "family") {
             // Open a member of this family; this selects the family without changing assignment.

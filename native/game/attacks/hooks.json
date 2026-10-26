@@ -1,0 +1,250 @@
+{
+  "generator": "tools/generate-attack-adapters.py (parent repository)",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "hooks": [
+    {
+      "rom": 2102348,
+      "address": 2149310396,
+      "entry": "lc_attack_spell_index",
+      "original": "",
+      "words": [
+        612564975,
+        809631999
+      ],
+      "size": 120,
+      "sha256": "31fc6cd1dbb2577e5f40bb492fe1b4c9f7ecc5e635fe28cc346f197c01ed5e61"
+    },
+    {
+      "rom": 2320764,
+      "address": 2149529260,
+      "entry": "lc_attack_amount",
+      "original": "lc_original_amount",
+      "words": [
+        666763176,
+        2947940400
+      ]
+    },
+    {
+      "rom": 2103192,
+      "address": 2149311240,
+      "entry": "lc_attack_animation",
+      "original": "lc_original_animation",
+      "words": [
+        266432,
+        4460577
+      ]
+    },
+    {
+      "rom": 279564,
+      "address": 2148984076,
+      "entry": "lc_attack_resolve",
+      "original": "lc_original_resolve",
+      "words": [
+        666763200,
+        2947547160
+      ]
+    },
+    {
+      "rom": 2289488,
+      "address": 2149497984,
+      "entry": "lc_attack_select",
+      "original": "",
+      "words": [
+        666763184,
+        2947612724
+      ],
+      "size": 876,
+      "sha256": "6c293fe0d42b51a596626ed8f94bc6d27e68ad63a8e510b131c4dda6701775f2"
+    },
+    {
+      "rom": 2281804,
+      "address": 2149490300,
+      "entry": "lc_attack_generic",
+      "original": "",
+      "words": [
+        666762648,
+        2947940952
+      ],
+      "size": 6844,
+      "sha256": "7d0ec732e0837e12cd37ac674eeb9b64ed6b7eb8c53a7ed10d9da91823d28caa"
+    },
+    {
+      "rom": 2330004,
+      "address": 2149538500,
+      "entry": "lc_attack_targets",
+      "original": "lc_original_targets",
+      "words": [
+        666763176,
+        2947743804
+      ]
+    },
+    {
+      "rom": 2309844,
+      "address": 2149518340,
+      "entry": "lc_attack_anchor",
+      "original": "lc_original_anchor",
+      "words": [
+        666763216,
+        2947547176
+      ]
+    },
+    {
+      "rom": 2309944,
+      "address": 2149518440,
+      "entry": "lc_attack_ranged_anchor",
+      "original": "lc_original_ranged_anchor",
+      "words": [
+        666763216,
+        2947547176
+      ]
+    },
+    {
+      "rom": 2272764,
+      "address": 2149481260,
+      "entry": "lc_attack_hit",
+      "original": "lc_original_hit",
+      "words": [
+        666763192,
+        2947874868
+      ]
+    },
+    {
+      "rom": 2273780,
+      "address": 2149482276,
+      "entry": "lc_attack_melee",
+      "original": "lc_original_melee",
+      "words": [
+        666762984,
+        2947678456
+      ]
+    },
+    {
+      "rom": 2277368,
+      "address": 2149485864,
+      "entry": "lc_attack_ranged",
+      "original": "lc_original_ranged",
+      "words": [
+        666763120,
+        2947678320
+      ]
+    },
+    {
+      "rom": 2279308,
+      "address": 2149487804,
+      "entry": "lc_attack_alternate",
+      "original": "lc_original_alternate",
+      "words": [
+        666763024,
+        2947678416
+      ]
+    },
+    {
+      "rom": 2291072,
+      "address": 2149499568,
+      "entry": "lc_attack_combined",
+      "original": "",
+      "words": [
+        666762560,
+        2947613340
+      ],
+      "size": 5404,
+      "sha256": "67d12b7c85632621e2adc9f77021475871881fec5145430b7d74d278c9228b7f"
+    },
+    {
+      "rom": 2303064,
+      "address": 2149511560,
+      "entry": "lc_attack_pedra",
+      "original": "",
+      "words": [
+        666762856,
+        2946760988
+      ],
+      "size": 2340,
+      "sha256": "4a08a333b36b9a92a1f80d6da0a055c78a242bdc981569a82b471ace53b8c9ae"
+    }
+  ],
+  "symbols": {
+    "func_0022F580": 2149499568,
+    "func_00023780": 2148086656,
+    "func_00023460": 2148085856,
+    "func_00022e60": 2148084320,
+    "func_0020C014": 2149354372,
+    "func_0020C2C0": 2149355056,
+    "func_0020C32C": 2149355164,
+    "func_0020C2F4": 2149355108,
+    "func_0020C310": 2149355136,
+    "func_0020C364": 2149355220,
+    "func_0020C1B4": 2149354788,
+    "func_0020C478": 2149355496,
+    "func_0020D434": 2149359524,
+    "func_0020D4C8": 2149359672,
+    "func_0020D72C": 2149360284,
+    "func_0020D770": 2149360352,
+    "func_0020D814": 2149360516,
+    "func_0020F8DC": 2149368908,
+    "func_0020BFE4": 2149354324,
+    "func_002014C4": 2149310516,
+    "func_00201798": 2149311240,
+    "func_00044130": 2148983344,
+    "func_001F0E64": 2149243348,
+    "func_001F197C": 2149246188,
+    "func_0021D200": 2149424944,
+    "func_0021D230": 2149424992,
+    "func_0021D2C0": 2149425136,
+    "func_0021D334": 2149425252,
+    "func_0022A7B8": 2149479656,
+    "func_0022B06C": 2149481884,
+    "func_0022EF50": 2149497984,
+    "func_0022F2BC": 2149498860,
+    "func_00233210": 2149515072,
+    "func_00233568": 2149515928,
+    "func_00233F94": 2149518532,
+    "func_002340EC": 2149518876,
+    "func_0023422C": 2149519196,
+    "func_002363FC": 2149527852,
+    "func_002365BC": 2149528300,
+    "func_002379AC": 2149533404,
+    "func_00237AF8": 2149533736,
+    "func_00237D5C": 2149534348,
+    "func_00237E2C": 2149534556,
+    "func_0023887C": 2149537196,
+    "func_00239338": 2149539944,
+    "func_002397D4": 2149541124,
+    "func_0025FD00": 2149626192,
+    "func_0022D14C": 2149490300,
+    "func_00043ad8": 2148981720,
+    "func_0020144C": 2149310396,
+    "func_0020BF50": 2149354176,
+    "func_0020C104": 2149354612,
+    "func_0020C24C": 2149354940,
+    "func_0020C3B4": 2149355300,
+    "func_0020D6F8": 2149360232,
+    "func_0021D25C": 2149425036,
+    "func_0021D28C": 2149425084,
+    "func_0021D7CC": 2149426428,
+    "func_00222190": 2149445312,
+    "func_00222344": 2149445748,
+    "func_002224F4": 2149446180,
+    "func_0022257C": 2149446316,
+    "func_00237750": 2149532800,
+    "func_00238D94": 2149538500,
+    "memset_00023780": 2148086656,
+    "func_00232458": 2149511560,
+    "func_0020D870": 2149360608,
+    "func_0021D1CC": 2149424892,
+    "func_0020C0CC": 2149354556,
+    "func_0020BFF8": 2149354344,
+    "func_00044358": 2148983896,
+    "func_0004440c": 2148984076,
+    "func_000454e0": 2148988384,
+    "func_0020C448": 2149355448,
+    "rand": 2148124620,
+    "D_801CE8C0": 2149378240,
+    "D_8018AA80": 2149100160,
+    "D_801971F0": 2149151216,
+    "D_801976DC": 2149152476,
+    "D_801976E8": 2149152488,
+    "D_801F6C74": 2149543028,
+    "D_801CE8BC": 2149378236
+  }
+}

@@ -56,12 +56,14 @@ AnimationDescriptor descriptor(Project &p, CombatAnimationTarget t) {
                              p.rom(), art(p, t).descriptorKey(),
                              p.combatArtwork()->previewEdits().value(art(p, t).descriptorKey()));
 }
-QMap<int, QString> actionNames() {
+QMap<int, QString> actionNames(Project &project) {
     QMap<int, QString> names;
     for (const auto &v : AnimationOverrideImage::definition()["actions"].toArray()) {
         const auto r = v.toObject();
         names[r["id"].toInt()] = r["name"].toString();
     }
+    const auto catalog=project.catalog()["ACTION_NAMES"].toObject();
+    for(auto it=catalog.begin();it!=catalog.end();++it) names[it.key().toInt()]=it->toString();
     return names;
 }
 int companion(Project &p, CombatAnimationTarget t, int pose) {
@@ -165,12 +167,12 @@ int combatAnimationPose(Project &p, CombatAnimationTarget t) {
             throw Error("Unknown combat animation");
         return combatMotions()[t.action];
     }
-    return p.bodyAnimationData()->selector(t.classId, owner(p, t.classId), t.action,
+    return p.bodyAnimationData()->attackSelector(t.classId, owner(p, t.classId), t.action,
                                            t.blocked ? 2 : 0, t.flags);
 }
-QString combatAnimationName(Project &, CombatAnimationTarget t) {
+QString combatAnimationName(Project &p, CombatAnimationTarget t) {
     return t.action < 0 ? combatMotionNames().value(t.action)
-                        : actionNames().value(t.action, QString("Action %1").arg(t.action)) +
+                        : actionNames(p).value(t.action, QString("Action %1").arg(t.action)) +
                               (t.blocked ? " — blocked" : "");
 }
 QVector<NamedCombatAnimation> namedCombatAnimations(Project &p, int id, int flags) {

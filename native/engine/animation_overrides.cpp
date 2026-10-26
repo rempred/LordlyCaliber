@@ -19,6 +19,7 @@ QSet<int> actions() {
     QSet<int> result;
     for (const auto &value : AnimationOverrideImage::definition()["actions"].toArray())
         result.insert(value.toObject()["id"].toInt());
+    for(int id=159;id<255;++id) result.insert(id);
     return result;
 }
 QJsonObject logical(const AnimationOverrideImage::Row &row) {

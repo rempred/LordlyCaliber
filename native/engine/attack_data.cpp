@@ -1,0 +1,456 @@
+#include "engine/attack_data.h"
+#include "engine/promotion.h"
+#include "engine/resource.h"
+#include "engine/text.h"
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QSet>
+#include <cmath>
+
+namespace lordly {
+namespace {
+QByteArray attackName(const QString &text) {
+    if (text.trimmed().isEmpty() || text.contains('\n') || text.contains('\r'))
+        throw Error("Enter a one-line attack name");
+    auto bytes = encodeText(text.trimmed(), false);
+    if (bytes.isEmpty() || bytes.size() > 128 || bytes.contains(char(0)))
+        throw Error("Attack names may contain up to 128 encoded bytes");
+    return bytes;
+}
+int integer(const QJsonObject &o, const char *key, int fallback) {
+    if (!o.contains(key))
+        return fallback;
+    const auto v = o[key];
+    if (!v.isDouble() || !std::isfinite(v.toDouble()) || v.toDouble() != v.toInt())
+        throw Error(QString("Invalid attack setting: %1").arg(key));
+    return v.toInt();
+}
+} // namespace
+std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
+    const auto h = rom.bytes().mid(descriptorOffset, descriptorSize);
+    if (!h.startsWith("LCATK001"))
+        return {};
+    if (h.size() != descriptorSize || u32(h, 8) != 1 || u32(h, 92) != crc32(h.first(92)))
+        throw Error("Damaged attack allocation descriptor");
+    AttackPlacement p;
+    p.romOffset = u32(h, 12);
+    p.address = u32(h, 16);
+    p.size = u32(h, 20);
+    p.records = u32(h, 28);
+    p.settings = u32(h, 32);
+    p.count = int(u32(h, 36));
+    p.code = u32(h, 40);
+    p.codeSize = u32(h, 44);
+    p.spellIndexEntry = u32(h, 48);
+    p.amountEntry = u32(h, 52);
+    p.amountOriginal = u32(h, 56);
+    p.hooks = u32(h, 60);
+    p.hookCount = u32(h, 64);
+    if (p.romOffset < 0x2800000 || (p.romOffset & 15) || (p.address & 15) ||
+        p.address < 0x80243db0 || quint64(p.address) + p.size > 0x80400000 ||
+        quint64(p.romOffset) + p.size > quint64(rom.bytes().size()) ||
+        p.records != p.address + AttackData::recordOffset ||
+        p.settings != p.address + AttackData::settingsOffset || p.count < AttackData::retailCount ||
+        p.count > AttackData::maximumCount ||
+        (p.codeSize &&
+         (p.code < p.address || quint64(p.code) + p.codeSize > quint64(p.address) + p.size)) ||
+        (!p.codeSize && p.code) || p.hookCount > 32 ||
+        (p.hookCount &&
+         (p.hooks < p.code || quint64(p.hooks) + p.hookCount * 24 > quint64(p.code) + p.codeSize)))
+        throw Error("Attack allocation is outside its declared bounds");
+    if (u32(h, 24) != crc32(rom.bytes().mid(p.romOffset, p.size)))
+        throw Error("Attack allocation checksum mismatch");
+    for (const auto entry : {p.spellIndexEntry, p.amountEntry, p.amountOriginal})
+        if (p.codeSize && (entry < p.code || entry >= p.code + p.codeSize || entry % 4))
+            throw Error("Attack entry lies outside its code allocation");
+    return p;
+}
+QByteArray AttackPlacement::descriptor(const QByteArray &data) const {
+    if (data.size() != size)
+        throw Error("Attack allocation size mismatch");
+    QByteArray h(descriptorSize, 0);
+    h.replace(0, 8, "LCATK001");
+    put32(h, 8, 1);
+    put32(h, 12, romOffset);
+    put32(h, 16, address);
+    put32(h, 20, size);
+    put32(h, 24, crc32(data));
+    put32(h, 28, records);
+    put32(h, 32, settings);
+    put32(h, 36, count);
+    put32(h, 40, code);
+    put32(h, 44, codeSize);
+    put32(h, 48, spellIndexEntry);
+    put32(h, 52, amountEntry);
+    put32(h, 56, amountOriginal);
+    put32(h, 60, hooks);
+    put32(h, 64, hookCount);
+    put32(h, 92, crc32(h.first(92)));
+    return h;
+}
+AttackData AttackData::load(const Rom &rom) {
+    auto result = loadRetail(rom);
+    const auto p = AttackPlacement::read(rom);
+    if (!p)
+        return result;
+    const auto bytes = rom.bytes().mid(p->romOffset, p->size);
+    if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 || u32(bytes, 8) != 2 ||
+        u32(bytes, 12) != quint32(p->count))
+        throw Error("Unrecognized attack data");
+    const auto size = u32(bytes, 16);
+    if (size < namesOffset || size > quint32(bytes.size()))
+        throw Error("Attack data lies outside its allocation");
+    result.entries_.clear();
+    for (int id = 0; id < p->count; ++id) {
+        Attack a;
+        const int at = settingsOffset + id * 32;
+        a.data = bytes.mid(recordOffset + id * 16 + 4, 12);
+        a.behavior = u8(bytes, at);
+        a.animation = u8(bytes, at + 1);
+        a.targetPattern = u8(bytes, at + 2);
+        a.targetSide = u8(bytes, at + 3);
+        a.targetMask = u16(bytes, at + 4);
+        a.powerPercent = u16(bytes, at + 6);
+        a.status = u8(bytes, at + 8) == 255 ? -1 : u8(bytes, at + 8);
+        a.condition = u8(bytes, at + 9);
+        a.chance = u8(bytes, at + 10);
+        a.afterEffect = u8(bytes, at + 11) == 255 ? -1 : u8(bytes, at + 11);
+        a.afterBasis = u8(bytes, at + 12);
+        a.afterPercent = u16(bytes, at + 14);
+        a.nameGroup = int(u32(bytes, at + 16));
+        if (u8(bytes, at + 20) > 1)
+            throw Error("Invalid dynamic attack-name flag");
+        a.dynamicName = u8(bytes, at + 20) != 0;
+        const auto pointer = u32(bytes, recordOffset + id * 16);
+        if (a.dynamicName) {
+            if (pointer != 0x8018feb8)
+                throw Error("Invalid dynamic attack-name pointer");
+            a.name = "[Elemental Magic]";
+        } else {
+            if (pointer < p->address + namesOffset || pointer >= p->address + size)
+                throw Error("Attack name lies outside its allocation");
+            const auto begin = pointer - p->address;
+            const auto end = bytes.indexOf(char(0), begin);
+            if (end < begin || end - begin > 128 || quint64(end) >= size)
+                throw Error("Unterminated relocated attack name");
+            a.name = bytes.mid(begin, end - begin);
+        }
+        if (id)
+            validate(a);
+        result.entries_ << a;
+    }
+    result.apply(result.json()); // Validate name sharing as well as individual rows.
+    const auto expected = result.build(p->address);
+    if (bytes.first(expected.size()) != expected)
+        throw Error("Attack records disagree with their metadata");
+    result.original_ = result.entries_;
+    return result;
+}
+QByteArray AttackData::build(quint32 address) const {
+    QByteArray bytes(namesOffset, 0);
+    bytes.replace(0, 8, "LCATDATA");
+    put32(bytes, 8, 2);
+    put32(bytes, 12, quint32(entries_.size()));
+    // Every byte-sized index has a bounded record, including unused/sentinel IDs.
+    for (int id = 0; id < 256; ++id)
+        bytes.replace(recordOffset + id * 16 + 4, 12, entries_.at(0).data);
+    QMap<int, quint32> names;
+    for (int id = 0; id < entries_.size(); ++id) {
+        const auto &a = entries_[id];
+        if (id)
+            validate(a);
+        quint32 pointer = 0x8018feb8;
+        if (!a.dynamicName) {
+            if (!names.contains(a.nameGroup)) {
+                names[a.nameGroup] = address + quint32(bytes.size());
+                bytes += a.name + char(0);
+            }
+            pointer = names[a.nameGroup];
+        }
+        put32(bytes, recordOffset + id * 16, pointer);
+        bytes.replace(recordOffset + id * 16 + 4, 12, a.data);
+        const int at = settingsOffset + id * 32;
+        put8(bytes, at, a.behavior);
+        put8(bytes, at + 1, a.animation);
+        put8(bytes, at + 2, a.targetPattern);
+        put8(bytes, at + 3, a.targetSide);
+        put16(bytes, at + 4, a.targetMask);
+        put16(bytes, at + 6, a.powerPercent);
+        put8(bytes, at + 8, quint8(a.status));
+        put8(bytes, at + 9, a.condition);
+        put8(bytes, at + 10, a.chance);
+        put8(bytes, at + 11, quint8(a.afterEffect));
+        put8(bytes, at + 12, a.afterBasis);
+        put16(bytes, at + 14, a.afterPercent);
+        put32(bytes, at + 16, a.nameGroup);
+        put8(bytes, at + 20, a.dynamicName ? 1 : 0);
+    }
+    for (int id = int(entries_.size()); id < 256; ++id)
+        put32(bytes, recordOffset + id * 16, u32(bytes, recordOffset));
+    bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
+    put32(bytes, 16, quint32(bytes.size()));
+    if (address % 16 || address < 0x80243db0 || quint64(address) + bytes.size() > 0x80400000)
+        throw Error("Attack data exceeds the permanent RAM allocation");
+    return bytes;
+}
+AttackData AttackData::loadRetail(const Rom &rom) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Attack editing requires the US revision 0 ROM");
+    AttackData result;
+    QMap<quint32, int> groups;
+    for (int id = 0; id < retailCount; ++id) {
+        const auto at = retailOffset + id * 16;
+        Attack a;
+        a.data = rom.bytes().mid(at + 4, 12);
+        a.behavior = a.animation = id;
+        const auto pointer = u32(rom.bytes(), at);
+        if (!groups.contains(pointer))
+            groups[pointer] = int(groups.size()) + 1;
+        a.nameGroup = groups[pointer];
+        a.dynamicName = pointer == 0x8018feb8;
+        if (a.dynamicName)
+            a.name = "[Elemental Magic]";
+        else {
+            if (pointer < 0x8016af80 || pointer >= 0x80190f10)
+                throw Error(QString("Attack %1 has an unrecognized name pointer").arg(id));
+            const auto begin = pointer - 0x8012a100;
+            const auto end = rom.bytes().indexOf(char(0), begin);
+            if (end < begin || end - begin > 128)
+                throw Error("Unterminated attack name");
+            a.name = rom.bytes().mid(begin, end - begin);
+        }
+        if (id)
+            validate(a);
+        result.entries_ << a;
+    }
+    result.original_ = result.entries_;
+    return result;
+}
+const Attack &AttackData::entry(int id) const {
+    if (id < 1 || id >= entries_.size())
+        throw Error("Choose an existing attack");
+    return entries_[id];
+}
+void AttackData::validate(const Attack &a) {
+    if (a.data.size() != 12 || a.name.isEmpty() || a.name.size() > 128 ||
+        a.name.contains(char(0)) || a.nameGroup < 1 || a.nameGroup > 65535 || a.behavior < 1 ||
+        a.behavior >= retailCount || a.animation < 1 || a.animation >= retailCount)
+        throw Error("Invalid attack record or source behavior");
+    if (a.targetPattern < 0 || a.targetPattern > 12 || a.targetPattern == 10 ||
+        a.targetPattern == 11 || a.targetSide < 0 || a.targetSide > 3 || a.targetMask < 0 ||
+        a.targetMask > 511 || (a.targetPattern == 12 && !a.targetMask))
+        throw Error("Choose a valid target pattern with at least one position");
+    if (a.powerPercent < 0 || a.powerPercent > 1000 ||
+        (a.status != -1 && !statuses().contains(a.status)) || a.condition < 0 || a.condition > 2 ||
+        a.chance < 0 || a.chance > 100 || a.afterEffect < -1 || a.afterEffect > 2 ||
+        a.afterBasis < 0 || a.afterBasis > 3 || a.afterPercent < 0 || a.afterPercent > 1000)
+        throw Error("Attack effect setting is outside its supported range");
+}
+void AttackData::set(int id, const Attack &a) {
+    entry(id);
+    validate(a);
+    for (int i = 1; i < entries_.size(); ++i)
+        if (i != id && entries_[i].nameGroup == a.nameGroup &&
+            (entries_[i].name != a.name || entries_[i].dynamicName != a.dynamicName))
+            throw Error("Shared attack names must be changed together or made independent");
+    entries_[id] = a;
+}
+int AttackData::nextNameGroup() const {
+    int next = 1;
+    for (const auto &a : entries_)
+        next = qMax(next, a.nameGroup + 1);
+    if (next > 65535)
+        throw Error("Too many independent name revisions in this project");
+    return next;
+}
+QVector<int> AttackData::sharingName(int id) const {
+    const auto group = entry(id).nameGroup;
+    QVector<int> result;
+    for (int i = 1; i < entries_.size(); ++i)
+        if (entries_[i].nameGroup == group)
+            result << i;
+    return result;
+}
+void AttackData::rename(int id, const QString &name, bool shared) {
+    auto a = entry(id);
+    a.name = attackName(name);
+    a.dynamicName = false;
+    if (!shared)
+        a.nameGroup = nextNameGroup();
+    validate(a);
+    const auto users = shared ? sharingName(id) : QVector<int>{id};
+    for (int user : users) {
+        entries_[user].name = a.name;
+        entries_[user].nameGroup = a.nameGroup;
+        entries_[user].dynamicName = false;
+    }
+}
+int AttackData::duplicate(int source, const QString &name) {
+    auto a = entry(source);
+    if (entries_.size() >= maximumCount)
+        throw Error("All 254 attack IDs are in use");
+    a.name = attackName(name);
+    a.nameGroup = nextNameGroup();
+    a.dynamicName = false;
+    validate(a);
+    entries_ << a;
+    return int(entries_.size()) - 1;
+}
+int AttackData::create(const QString &name) {
+    // Cleave is a valid ordinary attack with complete native artwork and execution.
+    return duplicate(5, name);
+}
+QJsonObject AttackData::json() const {
+    QJsonArray rows;
+    for (int i = 1; i < entries_.size(); ++i) {
+        const auto &a = entries_[i];
+        rows << QJsonObject{{"data", QString::fromLatin1(a.data.toHex())},
+                            {"name", QString::fromLatin1(a.name.toHex())},
+                            {"nameGroup", a.nameGroup},
+                            {"dynamicName", a.dynamicName},
+                            {"behavior", a.behavior},
+                            {"animation", a.animation},
+                            {"targetPattern", a.targetPattern},
+                            {"targetSide", a.targetSide},
+                            {"targetMask", a.targetMask},
+                            {"powerPercent", a.powerPercent},
+                            {"status", a.status},
+                            {"condition", a.condition},
+                            {"chance", a.chance},
+                            {"afterEffect", a.afterEffect},
+                            {"afterBasis", a.afterBasis},
+                            {"afterPercent", a.afterPercent}};
+    }
+    return {{"version", 1}, {"entries", rows}};
+}
+void AttackData::apply(const QJsonObject &object) {
+    if (integer(object, "version", 0) != 1 || !object["entries"].isArray())
+        throw Error("Unsupported attack data version");
+    const auto rows = object["entries"].toArray();
+    if (rows.size() < retailCount - 1 || rows.size() >= maximumCount)
+        throw Error("Attack table must contain 158–254 records");
+    QVector<Attack> next{entries_.at(0)};
+    QMap<int, QPair<QByteArray, bool>> groups;
+    for (const auto &value : rows) {
+        if (!value.isObject())
+            throw Error("Invalid attack entry");
+        const auto row = value.toObject();
+        Attack a;
+        auto decode = [&](const char *key) {
+            const auto text = row[key].toString().toLatin1();
+            const auto bytes = QByteArray::fromHex(text);
+            if (bytes.toHex() != text.toLower())
+                throw Error("Invalid encoded attack data");
+            return bytes;
+        };
+        a.data = decode("data");
+        a.name = decode("name");
+        a.nameGroup = integer(row, "nameGroup", 0);
+        if (!row["dynamicName"].isBool())
+            throw Error("Invalid dynamic attack name");
+        a.dynamicName = row["dynamicName"].toBool();
+        a.behavior = integer(row, "behavior", 0);
+        a.animation = integer(row, "animation", 0);
+        a.targetPattern = integer(row, "targetPattern", 0);
+        a.targetSide = integer(row, "targetSide", 0);
+        a.targetMask = integer(row, "targetMask", 0);
+        a.powerPercent = integer(row, "powerPercent", 100);
+        a.status = integer(row, "status", -1);
+        a.condition = integer(row, "condition", 1);
+        a.chance = integer(row, "chance", 100);
+        a.afterEffect = integer(row, "afterEffect", -1);
+        a.afterBasis = integer(row, "afterBasis", 0);
+        a.afterPercent = integer(row, "afterPercent", 100);
+        validate(a);
+        const auto name = qMakePair(a.name, a.dynamicName);
+        if (groups.contains(a.nameGroup) && groups[a.nameGroup] != name)
+            throw Error("Inconsistent shared attack names");
+        groups[a.nameGroup] = name;
+        next << a;
+    }
+    entries_ = std::move(next);
+}
+bool AttackData::isTemplate(int id) {
+    return (id >= 45 && id <= 54) || id == 145;
+}
+QMap<int, int> AttackData::templateTargets(int id) {
+    // Accepted func_0004440c, resident element maps at z64 0x6136c.
+    if (id >= 45 && id <= 48) {
+        const int targets[4][6] = {{55, 63, 71, 79, 87, 91},
+                                   {57, 65, 73, 81, 89, 93},
+                                   {59, 67, 75, 83, 87, 95},
+                                   {60, 68, 76, 84, 154, 96}};
+        QMap<int, int> result;
+        for (int i = 0; i < 6; ++i)
+            result[i + 1] = targets[id - 45][i];
+        for (int item = 249; item <= 252; ++item)
+            result[-item] = 99 + item - 249;
+        return result;
+    }
+    if (id == 145)
+        return {{0, 146}, {1, 147}, {2, 148}, {3, 149}, {4, 150}, {5, 151}, {6, 152}};
+    if (id >= 51 && id <= 54)
+        return {{-1, QVector<int>{55, 87, 89, 95}[id - 51]},
+                {-249, 99},
+                {-250, 100},
+                {-251, 101},
+                {-252, 102}};
+    if (id == 49 || id == 50)
+        return {{1, 57}, {2, 65}, {3, 73}, {4, 81}, {6, 93}};
+    return {};
+}
+QString AttackData::displayName(const Attack &a) {
+    return decodeText(a.name).simplified();
+}
+QMap<int, QString> AttackData::elements() {
+    return {{0, "Physical"},
+            {1, "Wind"},
+            {2, "Flame"},
+            {3, "Earth"},
+            {4, "Water"},
+            {5, "Virtue"},
+            {6, "Bane"},
+            {7, "No elemental resistance (ID 7)"},
+            {8, "Resolved by template"},
+            {9, "Wind + Water"},
+            {10, "Wind + Flame"},
+            {11, "Flame + Earth"},
+            {12, "Earth + Water"},
+            {13, "Wind + Bane"},
+            {14, "Flame + Bane"},
+            {15, "From equipment"},
+            {255, "From equipment (alternate ID)"}};
+}
+QMap<int, QString> AttackData::effects() {
+    return {{0, "No main effect"},
+            {1, "Damage"},
+            {2, "Healing"},
+            {3, "Petrification"},
+            {4, "Sleep"},
+            {5, "Power Up"},
+            {6, "Power Down"},
+            {8, "Paralysis"},
+            {10, "Poison"},
+            {11, "Remove ailments"},
+            {16, "Death (HP to zero)"}};
+}
+QMap<int, QString> AttackData::calculations() {
+    return {{0, "Ordinary calculation (ID 0)"},
+            {1, "Ordinary calculation"},
+            {2, "Half calculated amount"},
+            {3, "Attacker current HP / 20"},
+            {4, "Target current HP / 2"},
+            {5, "Incoming power / 6"},
+            {6, "Amount supplied by the preceding effect"},
+            {7, "Enhanced incoming power (×1.5)"},
+            {8, "Enhanced incoming power (×1.6)"},
+            {9, "Attacker current HP / 2"},
+            {10, "80% of calculated amount"}};
+}
+QMap<int, QString> AttackData::statuses() {
+    return {{0, "None"},     {3, "Petrification"},    {4, "Sleep"},
+            {5, "Power Up"}, {6, "Power Down"},       {8, "Paralysis"},
+            {10, "Poison"},  {11, "Remove ailments"}, {16, "Death (HP to zero)"}};
+}
+} // namespace lordly

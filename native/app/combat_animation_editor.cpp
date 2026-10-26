@@ -21,14 +21,22 @@ namespace lordly {
 namespace {
 const auto motions = combatMotions();
 const auto motionNames = combatMotionNames();
-QMap<int, QString> actionNames() {
+QMap<int, QString> actionNames(Project *project) {
     QMap<int, QString> result;
     for (const auto &entry : AnimationOverrideImage::definition()["actions"].toArray()) {
         const auto row = entry.toObject();
         result[row["id"].toInt()] = row["name"].toString();
     }
+    const auto names=project->catalog()["ACTION_NAMES"].toObject();
+    for(auto it=names.begin();it!=names.end();++it) result[it.key().toInt()]=it->toString();
     return result;
 }
+}
+void CombatAnimationEditor::selectAttack(int classId,int actionId) {
+    classes_->setCurrentIndex(classes_->findData(classId));
+    refresh(true);
+    actions_->setCurrentIndex(actions_->findData(actionId));
+    refresh(true);
 }
 CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
                                                std::function<void()> changed, QWidget *parent)
@@ -158,7 +166,7 @@ int CombatAnimationEditor::flags() const {
 int CombatAnimationEditor::assignedPose(int mode) const {
     const int action = actions_->currentData().toInt();
     return action < 0 ? motions.value(action)
-                      : project_->bodyAnimationData()->selector(classId(), owner(), action, mode, flags());
+                      : project_->bodyAnimationData()->attackSelector(classId(), owner(), action, mode, flags());
 }
 void CombatAnimationEditor::refresh(bool assigned) {
     if (refreshing_ || !sequence_) return;
@@ -187,7 +195,7 @@ void CombatAnimationEditor::refresh(bool assigned) {
         }
         classes_->setCurrentIndex(std::max(0, classes_->findData(id)));
         actions_->clear();
-        const auto names = actionNames();
+        const auto names = actionNames(project_);
         const auto record = project_->record(Table::Classes, classId()).bytes;
         const auto base = project_->record(Table::Classes, owner()).bytes;
         QMap<int, QStringList> used;
@@ -239,7 +247,7 @@ void CombatAnimationEditor::refresh(bool assigned) {
         }
         for (int key : combatActions) {
             for (int mode = 0; mode < 3; ++mode) {
-                const int pose = body->selector(classId(), owner(), key, mode, route);
+                const int pose = body->attackSelector(classId(), owner(), key, mode, route);
                 const auto label = names.value(key, QString("Action %1").arg(key)) + (mode == 2 ? " (blocked)" : "");
                 if (!labels[pose].contains(label)) labels[pose] << label;
             }

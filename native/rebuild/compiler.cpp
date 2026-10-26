@@ -4,6 +4,7 @@
 #include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
 #include "rebuild/weapon_types.h"
+#include "rebuild/attack_runtime.h"
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
 #include "rebuild/body_selection.h"
@@ -615,6 +616,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
     result.image = removeWeaponTypes(p.rom(), compiler, directory);
+    const auto priorAttacks = AttackPlacement::read(p.rom());
+    if (priorAttacks) p.loadAttacks();
+    const bool relocateAttacks = p.attacks() && (p.attacks()->modified() || priorAttacks.has_value());
+    result.image = removeAttackReferences(Rom::fromBytes(result.image));
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
     const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
@@ -711,7 +716,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     const bool relocateClasses = relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || expandedClasses || customSquads ||
-                                 avatarEdits || armyRoutes || expandedArmies;
+                                 avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -869,8 +874,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                           : quint32((result.image.size() + 15) & ~qsizetype(15));
         const auto &data = classData;
         const auto classImage = data.build(0x80243db0);
-        const auto dataSize = classImage.bytes.size() +
+        auto dataSize = classImage.bytes.size() +
                               (itemData ? itemData->build(classImage.layout.end).size() : 0);
+        if (relocateAttacks)
+            dataSize += p.attacks()->build(classImage.layout.indexBase + quint32(dataSize)).size() +
+                        AttackPlacement::codeCapacity;
         if(expandedArmies) {
             const auto capacityBase=(classImage.layout.indexBase+quint32(dataSize)+65535U)&~65535U;
             capacityRuntime=prepareCapacityRuntime(capacityBase,p.rom());
@@ -917,7 +925,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         auto classes = buildClassRuntime(
             data, compiler, directory, offset,
             expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
-            residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr);
+            residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
+            relocateAttacks ? &*p.attacks() : nullptr);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -929,7 +938,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if(capacityRuntime)capacityRuntime=prepareCapacityRuntime(capacityRuntime->base,p.rom());
             classes=buildClassRuntime(data,compiler,directory,offset,
                 expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
-                itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr);
+                itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
+                relocateAttacks ? &*p.attacks() : nullptr);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -941,7 +951,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if (capacityRuntime) capacityRuntime = prepareCapacityRuntime(capacityRuntime->base, p.rom());
             classes = buildClassRuntime(data, compiler, directory, offset,
                 expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
-                residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr);
+                residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
+                relocateAttacks ? &*p.attacks() : nullptr);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
@@ -1265,9 +1276,18 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     rebuildWeaponStatus(p, compiler, directory, result);
     rebuildWeaponTypes(p, compiler, directory, result);
+    if (relocateAttacks) {
+        const auto placement = AttackPlacement::read(Rom::fromBytes(result.image));
+        if (!placement) throw Error("Missing compiled attack allocation");
+        result.image = installAttackReferences(Rom::fromBytes(result.image), *placement);
+        result.report << QString("Compiled %1 attack records and independent names into permanent storage")
+                             .arg(p.attacks()->entries().size() - 1);
+    }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (relocateAttacks && (!reopened.attacks() || reopened.attacks()->json() != p.attacks()->json()))
+        throw Error("Exported attacks differ from the project");
     if (reopened.weaponTypes().names() != p.weaponTypes().names())
         throw Error("Exported weapon type names differ from the project");
     if (p.world()) {

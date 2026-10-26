@@ -12,7 +12,7 @@ class BodyAnimationData {
     BodyAnimationData(ClassData classes, AnimationRoutes routes,
                       std::optional<AnimationOverrides> overrides = {},
                       QMap<int, AnimationDescriptor> privateDescriptors = {},
-                      std::optional<ItemData> items = {});
+                      std::optional<ItemData> items = {}, QMap<int,int> attackAliases = {});
     static Pointer load(const Rom &);
     const ClassData &classes() const {
         return classes_;
@@ -26,6 +26,8 @@ class BodyAnimationData {
     quint16 handle(int source, int owner, int flagA, int flagB) const;
     const AnimationDescriptor *descriptor(int source,int owner,int flagA,int flagB)const;
     int selector(int source, int owner, int action, int mode, int bodyFlags) const;
+    // Full attack-body selection also covers the generic executor's special table.
+    int attackSelector(int source, int owner, int action, int mode, int bodyFlags) const;
 
   private:
     std::optional<ItemData> items_;
@@ -34,5 +36,6 @@ class BodyAnimationData {
     QVector<AnimationOverrideImage::Row> overrides_;
     QString overrideError_;
     QMap<int,AnimationDescriptor> privateDescriptors_;
+    QMap<int,int> attackAliases_;
 };
 } // namespace lordly

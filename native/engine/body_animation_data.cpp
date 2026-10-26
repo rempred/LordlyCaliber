@@ -2,14 +2,15 @@
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
 #include "engine/body_visual_policy.h"
+#include "engine/attack_data.h"
 #include "game/art/animation_readers.h"
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
                                      std::optional<AnimationOverrides> overrides,
                                      QMap<int, AnimationDescriptor> privateDescriptors,
-                                     std::optional<ItemData> items)
+                                     std::optional<ItemData> items, QMap<int,int> attackAliases)
     : items_(std::move(items)), classes_(std::move(classes)), routes_(std::move(routes)),
-      privateDescriptors_(std::move(privateDescriptors)) {
+      privateDescriptors_(std::move(privateDescriptors)), attackAliases_(std::move(attackAliases)) {
     if (!overrides)
         return;
     if (!overrides->available()) {
@@ -33,9 +34,14 @@ BodyAnimationData::Pointer BodyAnimationData::load(const Rom &rom) {
     BodySelectionImage::validate(rom, routes.privatePoses());
     PoseRuntimeImage::validate(rom, routes.privatePoses(), false, routes.hasBodyPolicies());
     auto overrides = AnimationOverrides::load(rom, classes, routes);
+    QMap<int,int> aliases;
+    if(AttackPlacement::read(rom)) {
+        const auto attacks=AttackData::load(rom);
+        for(int id=159;id<attacks.entries().size();++id) aliases[id]=attacks.entry(id).animation;
+    }
     return std::make_shared<const BodyAnimationData>(
         std::move(classes), std::move(routes), std::move(overrides),
-        QMap<int, AnimationDescriptor>{}, ItemData::load(rom));
+        QMap<int, AnimationDescriptor>{}, ItemData::load(rom), aliases);
 }
 quint16 BodyAnimationData::handle(int source, int owner, int flagA, int flagB) const {
     if (source < 0 || source >= classes_.entries().size() || owner < 0 || owner > 255 ||
@@ -62,12 +68,36 @@ int BodyAnimationData::selector(int source, int owner, int action, int mode, int
             reinterpret_cast<const uint8_t *>(ownerRow.constData()), size_t(ownerRow.size()),
             unsigned(action), unsigned(mode), &original))
         throw Error("This owner has no valid action selector group");
+    if(original==40 && attackAliases_.contains(action))
+        if(lordly_action_selector(sourceMatches,
+            reinterpret_cast<const uint8_t *>(sourceRow.constData()),size_t(sourceRow.size()),
+            reinterpret_cast<const uint8_t *>(ownerRow.constData()),size_t(ownerRow.size()),
+            unsigned(attackAliases_[action]),unsigned(mode),&original))
+            throw Error("This owner has no valid action selector group");
     // OBSO uses first match in canonical order, with exact-body rows first.
     for (const auto &entry : overrides_)
         if (entry[0] == source && entry[1] == owner && entry[2] == action &&
             (!(entry[3] & 1) || entry[4] == original) && (!(entry[3] & 2) || entry[7] == bodyFlags))
             return entry[mode == 2 ? 6 : 5];
     return original;
+}
+int BodyAnimationData::attackSelector(int source,int owner,int action,int mode,int bodyFlags)const {
+    // Validate ordinary context first, but don't conflate its native 201798
+    // contract with the special pose selection performed by accepted 22D14C.
+    const int ordinary=selector(source,owner,action,mode,bodyFlags);
+    const auto special=routes_.section(13);
+    const int donor=attackAliases_.value(action,action);
+    for(int at=0;at+3<special.size() && u8(special,at);at+=4)
+        if(u8(special,at)==donor && u8(special,at+1)==owner) {
+            const int flags=u8(special,at+2),direction=bodyFlags&1;
+            const int original=(flags&63)+(((flags&128)&&!direction)||((flags&64)&&direction)?1:0);
+            for(const auto &entry:overrides_)
+                if(entry[0]==source && entry[1]==owner && entry[2]==action &&
+                   (!(entry[3]&1)||entry[4]==original) && (!(entry[3]&2)||entry[7]==bodyFlags))
+                    return entry[mode==2?6:5];
+            return original;
+        }
+    return ordinary;
 }
 const AnimationDescriptor *BodyAnimationData::descriptor(int source,int owner,int flagA,int flagB)const {
     handle(source,owner,flagA,flagB);

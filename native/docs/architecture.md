@@ -1,5 +1,74 @@
 # Native Lordly Caliber
 
+## Attack authoring (October 26)
+
+`AttackData` preserves each retail action's twelve D bytes and encoded name,
+including shared-name groups and dynamic spell-template names. Extension fields
+carry targeting, incoming-power percentage, secondary status/chance and after-hit
+amount rules. The manifest's `attacks` object is validated atomically. Attack
+names refresh the shared action catalog; class assignments remain ordinary class
+record bytes. `AttackEditor` uses the project Undo stack, so Classes and Combat
+Animations observe the same state. Unknown native D bytes remain intact.
+
+The action byte supports IDs1–254. `LCATK001` at z64 ROM `0x27C5300` describes a
+versioned, checksummed allocation appended to the existing class/item permanent
+DMA block. `LCATDATA` contains 256 bounded 16-byte records, 32-byte extension rows,
+128 bytes of transient battle scratch and deduplicated names, followed by a 32 KiB
+code reservation. Both ROM and 4 MiB RAM bounds are checked. No separate loader
+or overlay-address assumption is introduced. Prior attack hooks and references
+are restored before other source rebuilds, then installed last; this avoids
+contaminating existing class-reader authentication. Original records remain in
+place for comparison and canonical restoration.
+
+`game/attacks` contains explicitly adapted accepted generic, combined-spell,
+Pedra and attack-selection C plus small wrappers around native physical, target,
+animation and amount consumers. The parent tools `attack-runtime-audit.py` and
+`generate-attack-adapters.py` produce qualified references, hook metadata and
+adapted sources; the carried accepted originals remain unchanged. These adapters
+are mod code, not new matching-C claims. Full-function replacements authenticate
+their complete original extent; wrappers preserve the original function body.
+Unknown code is rejected. Fifty table-reference sites and fifteen entry hooks
+are recorded explicitly, with separate ROM and runtime addresses.
+
+Custom targets use front/middle/rear-major nine-bit masks in each side's own
+mirrored formation. At most nine live actors are selected. Physical patterns run
+the original hit/critical executor for each target but spend one action count.
+The power multiplier changes the input to the original amount kernel, before
+defense/resistance; it is not a multiplier on final damage. Explicit status
+chance uses fresh per-target random draws and the native status applier. No new
+recovery timer is added. Summed drain counts actual main-effect HP loss, excluding
+overkill and additional status effects. Combined spells use the first caster;
+Pedra's temporary actor is discarded, so it has no persistent drain/recoil.
+
+New IDs retain their animation donor for spell indexes and missing class routes.
+Explicit per-class/body overrides still win. Special/breath body previews read
+the recovered compound section13 poses with a same-column target; full effect
+replay remains a game-only verification boundary. The amount example is a small
+native calculation port because the current native editor had no reusable
+damage-calculator model; no archived editor implementation was used.
+
+`attack_data_tests`, `ui_tests attackWorkspaceEditing`,
+`attack-runtime-mips.cjs` and `attack-effects-mips.cjs` cover model validation,
+shared/independent names, Undo, class synchronization, capacity, native consumers,
+effect execution and real-ROM export/reopen. Instruction tests use isolated RAM
+and controlled context/timing/event services. They do not prove full-console
+boot, complete visual replay or every natural battle context. Private inputs
+use `LORDLY_TEST_ROM` and `LORDLY_N64_TOOLCHAIN`; candidates remain in a unique
+parent `Test ROMs/` directory.
+
+Final checks include a full 254-ID export, a private class 2 animation for ID254,
+project folder/archive reopening, ROM reopening and a second export. New IDs159
+and254 execute through the original melee/ranged/alternate loops. Generic,
+combined and Pedra adapters exercise all 11 main effects. The source-instruction
+suite also covers 88 template resolutions, 21 best-spell/breath selections,
+316 spell-index cases, 264 amount cases, 23 formation cases, 600 chance boundaries,
+physical misses, capped healing, actual-loss drain and lethal recoil. The existing
+4824 ordinary-preview comparisons and 9216 override lookups still pass. Special
+pose previews use a separate `attackSelector` path, with same-column variants
+checked against the adapted generic executor. With OBSO present the harness
+loads its existing 8 MiB module as well; the new attack allocation itself remains
+bounds-checked below 4 MiB. No live editor deployment or full-console test was run.
+
 ## Named weapon categories (October 25)
 
 `WeaponTypes` persists the user-named categories in the project manifest and an

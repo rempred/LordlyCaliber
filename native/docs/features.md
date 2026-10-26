@@ -1,5 +1,36 @@
 # Feature inventory and completion tracking
 
+The **Attacks** workspace edits US Rev0 physical attacks, spells, healing and
+status abilities. Search by name, effect, element or ID; rename a shared name or
+make it independent; choose a starting attack for Create or duplicate the selected entry.
+There are 254 usable attack IDs, including the 158 retail entries (96 additions).
+ID0 is the empty entry and ID255 remains the class-inheritance sentinel.
+
+Named controls cover elements, main effects, the recovered amount rules, incoming
+power percentage, target side and formation patterns. A nine-position diagram
+edits custom masks. Additional ailments have per-target activation and percentage
+chance controls; immunity, ailment priority and natural recovery still use game
+rules. Drain/recoil can use total main-effect HP lost, the last calculated amount,
+or the attacker's current/maximum HP. Combined spells apply that after-effect to
+the first caster; Pedra items have no persistent acting character.
+
+“Used by these classes” edits all three formation-row assignments and counts
+through the same records and Undo stack as Classes. Elemental templates identify
+their resolved spells and link to them; the template's own effect controls are
+disabled because combat uses the resolved spell. Behavior edits are shared by
+all users of that attack ID. A duplicate has independent behavior and name but
+starts with its donor's class-specific animation routes; the animation editor
+can assign its own sequence. Duplicating a template retains its resolved-spell
+links, which are identified as shared.
+
+The selected-class preview shows the body sequence, with a direct route to
+Combat Animations. It does not simulate spell particles or defending characters.
+The before/after amount example uses the recovered common calculation with
+explicit power, defense, resistance, Luck and HP inputs. It is a neutral,
+noncritical example, not a full-battle prediction. Advanced shows preserved raw
+field IDs, including unidentified D10/D11. All authored settings use project
+folder/archive persistence, shared Undo/Redo, compiled ROM export and reopening.
+
 Items offers **Create weapon type…**. A new named category is assigned to the
 selected item and becomes available in equipment-type dropdowns. Creation is
 undoable; names persist in projects and exported ROMs. Give a class a default

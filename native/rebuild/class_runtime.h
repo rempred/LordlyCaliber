@@ -14,6 +14,7 @@ struct ClassRuntimeBuild {
     ClassPlacement placement;
     QByteArray descriptor;
     std::optional<SaveRuntimeBuild> saves;
+    std::optional<AttackPlacement> attacks;
     QByteArray resident;
     bool removeResident = false;
     quint32 dataRomOffset = 0;
@@ -28,7 +29,8 @@ ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves = false,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder = {},
-                  const ItemData *items = nullptr, CapacityRuntimeBuild *capacity = nullptr);
+                  const ItemData *items = nullptr, CapacityRuntimeBuild *capacity = nullptr,
+                  const AttackData *attacks = nullptr);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

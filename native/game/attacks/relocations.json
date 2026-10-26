@@ -1,0 +1,553 @@
+{
+  "generator": "tools/attack-runtime-audit.py --write-relocations (parent repository)",
+  "inputRomSha256": "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "originalBases": {
+    "attacks": 2149100156
+  },
+  "owners": [
+    {
+      "start": 279360,
+      "size": 24,
+      "retailSha256": "78c0c5aaa09ad48ce9268028e96acb41386aeddd3d301d75c05bb67886f6bb25",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 8,
+          "low": 20,
+          "highWord": 1006796825,
+          "lowWord": 2353179260,
+          "addend": 0
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 279384,
+      "size": 24,
+      "retailSha256": "fcbb3ac42ee4dd54cdd407752fa09649827c9fa1232b45bfb35a3746ffa0ccaa",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 8,
+          "low": 20,
+          "highWord": 1006796825,
+          "lowWord": 2420288128,
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 279408,
+      "size": 156,
+      "retailSha256": "f1a9a9fb1371da7284a3e0550910ada879ec3fca3f31f350b545a570012f614c",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 16,
+          "low": 24,
+          "highWord": 1007190041,
+          "lowWord": 2433264257,
+          "addend": 5
+        },
+        {
+          "group": "attacks",
+          "high": 64,
+          "low": 72,
+          "highWord": 1006862361,
+          "lowWord": 2422450816,
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 279564,
+      "size": 1320,
+      "retailSha256": "308cc213afcb0a7492cd4c3f4929a634891ec146d9680a42f0d2896da498beed",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 100,
+          "low": 108,
+          "highWord": 1006993433,
+          "lowWord": 2426776192,
+          "addend": 4
+        },
+        {
+          "group": "attacks",
+          "high": 1260,
+          "low": 1268,
+          "highWord": 1006731289,
+          "lowWord": 2418190976,
+          "addend": 4
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 562500,
+      "size": 2544,
+      "retailSha256": "42401ca2e333e5a7b95ed40f3350aec139e48248e0b0a39178c7b0f0ae9027f4",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 596,
+          "low": 604,
+          "highWord": 1006796825,
+          "lowWord": 2420288131,
+          "addend": 7
+        },
+        {
+          "group": "attacks",
+          "high": 1132,
+          "low": 1140,
+          "highWord": 1006796825,
+          "lowWord": 2420288131,
+          "addend": 7
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 789608,
+      "size": 628,
+      "retailSha256": "5f7af638b0a8c36ef532c7487705db9a0d59a34449a2819a46f88fac52b0cdbe",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 236,
+          "low": 244,
+          "highWord": 1006731289,
+          "lowWord": 2418256515,
+          "addend": 7
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1611640,
+      "size": 8788,
+      "retailSha256": "f9ea06bfe40205113026a0fc7dbe93696503a23ece4ef355c978b047ee49cacb",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 5976,
+          "low": 5984,
+          "highWord": 1006731289,
+          "lowWord": 2418190979,
+          "addend": 7
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 1712476,
+      "size": 932,
+      "retailSha256": "94cefc73bbe2e889a69e6d8009b1f4c22fd1086ba0b91b3b296ddeb0d872854a",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 668,
+          "low": 676,
+          "highWord": 1006731289,
+          "lowWord": 2418256515,
+          "addend": 7
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2041436,
+      "size": 1380,
+      "retailSha256": "1236646671e2daf9c6315479c12fd92dd364d29166b0d63f5280f75cd0559099",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 72,
+          "low": 80,
+          "highWord": 1006927897,
+          "lowWord": 2357504636,
+          "addend": 0
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2102320,
+      "size": 28,
+      "retailSha256": "d0e775f60d0c8bb86c46b2a02e5af061059154d12a3df25597e162ab18ef6802",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 12,
+          "low": 24,
+          "highWord": 1006796825,
+          "lowWord": 2353179260,
+          "addend": 0
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2273780,
+      "size": 3588,
+      "retailSha256": "941f4d5f16cf28d8563659924ab11fee3b9bb4f89eb35c7fcda81d5e820926cf",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 76,
+          "low": 84,
+          "highWord": 1007714329,
+          "lowWord": 2450565762,
+          "addend": 6
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2281804,
+      "size": 6844,
+      "retailSha256": "7d0ec732e0837e12cd37ac674eeb9b64ed6b7eb8c53a7ed10d9da91823d28caa",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 140,
+          "low": 148,
+          "highWord": 1006731289,
+          "lowWord": 2418190977,
+          "addend": 5
+        },
+        {
+          "group": "attacks",
+          "high": 3536,
+          "low": 3544,
+          "highWord": 1006927897,
+          "lowWord": 2424613505,
+          "addend": 5
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2291072,
+      "size": 5404,
+      "retailSha256": "67d12b7c85632621e2adc9f77021475871881fec5145430b7d74d278c9228b7f",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 412,
+          "low": 420,
+          "highWord": 1006731289,
+          "lowWord": 2418190977,
+          "addend": 5
+        },
+        {
+          "group": "attacks",
+          "high": 1120,
+          "low": 1128,
+          "highWord": 1006731289,
+          "lowWord": 2418190977,
+          "addend": 5
+        },
+        {
+          "group": "attacks",
+          "high": 1204,
+          "low": 1212,
+          "highWord": 1006862361,
+          "lowWord": 2422450818,
+          "addend": 6
+        },
+        {
+          "group": "attacks",
+          "high": 1220,
+          "low": 1228,
+          "highWord": 1006862361,
+          "lowWord": 2422450819,
+          "addend": 7
+        },
+        {
+          "group": "attacks",
+          "high": 1236,
+          "low": 1244,
+          "highWord": 1006862361,
+          "lowWord": 2422450820,
+          "addend": 8
+        },
+        {
+          "group": "attacks",
+          "high": 1252,
+          "low": 1260,
+          "highWord": 1006862361,
+          "lowWord": 2422450821,
+          "addend": 9
+        },
+        {
+          "group": "attacks",
+          "high": 1268,
+          "low": 1276,
+          "highWord": 1006862361,
+          "lowWord": 2422450822,
+          "addend": 10
+        },
+        {
+          "group": "attacks",
+          "high": 1284,
+          "low": 1292,
+          "highWord": 1006862361,
+          "lowWord": 2422450823,
+          "addend": 11
+        },
+        {
+          "group": "attacks",
+          "high": 1300,
+          "low": 1308,
+          "highWord": 1006862361,
+          "lowWord": 2422450824,
+          "addend": 12
+        },
+        {
+          "group": "attacks",
+          "high": 1316,
+          "low": 1324,
+          "highWord": 1006731289,
+          "lowWord": 2418190985,
+          "addend": 13
+        },
+        {
+          "group": "attacks",
+          "high": 3476,
+          "low": 3484,
+          "highWord": 1006862361,
+          "lowWord": 2422450817,
+          "addend": 5
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2303064,
+      "size": 2340,
+      "retailSha256": "4a08a333b36b9a92a1f80d6da0a055c78a242bdc981569a82b471ace53b8c9ae",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 76,
+          "low": 84,
+          "highWord": 1006731289,
+          "lowWord": 2418190978,
+          "addend": 6
+        },
+        {
+          "group": "attacks",
+          "high": 100,
+          "low": 108,
+          "highWord": 1006731289,
+          "lowWord": 2418190979,
+          "addend": 7
+        },
+        {
+          "group": "attacks",
+          "high": 124,
+          "low": 132,
+          "highWord": 1006731289,
+          "lowWord": 2418190980,
+          "addend": 8
+        },
+        {
+          "group": "attacks",
+          "high": 148,
+          "low": 156,
+          "highWord": 1006731289,
+          "lowWord": 2418190981,
+          "addend": 9
+        },
+        {
+          "group": "attacks",
+          "high": 172,
+          "low": 180,
+          "highWord": 1006731289,
+          "lowWord": 2418190982,
+          "addend": 10
+        },
+        {
+          "group": "attacks",
+          "high": 196,
+          "low": 204,
+          "highWord": 1006731289,
+          "lowWord": 2418190983,
+          "addend": 11
+        },
+        {
+          "group": "attacks",
+          "high": 220,
+          "low": 228,
+          "highWord": 1006731289,
+          "lowWord": 2418190984,
+          "addend": 12
+        },
+        {
+          "group": "attacks",
+          "high": 256,
+          "low": 264,
+          "highWord": 1006862361,
+          "lowWord": 2422450825,
+          "addend": 13
+        },
+        {
+          "group": "attacks",
+          "high": 1432,
+          "low": 1440,
+          "highWord": 1006862361,
+          "lowWord": 2422450817,
+          "addend": 5
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2320764,
+      "size": 3540,
+      "retailSha256": "8663632580b6d1fc796df4827eef2fec0656551b9fefbb243b13e00889ef46ed",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 88,
+          "low": 96,
+          "highWord": 1006862361,
+          "lowWord": 2422450820,
+          "addend": 8
+        },
+        {
+          "group": "attacks",
+          "high": 136,
+          "low": 144,
+          "highWord": 1006862361,
+          "lowWord": 2422450824,
+          "addend": 12
+        },
+        {
+          "group": "attacks",
+          "high": 3108,
+          "low": 3116,
+          "highWord": 1006731289,
+          "lowWord": 2418190980,
+          "addend": 8
+        },
+        {
+          "group": "attacks",
+          "high": 3164,
+          "low": 3172,
+          "highWord": 1006731289,
+          "lowWord": 2418190984,
+          "addend": 12
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2330004,
+      "size": 1444,
+      "retailSha256": "62c424ffe63a1ab8488ea04ef375721c97dff3ee2f55c650c349ae7d442a68b4",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 72,
+          "low": 80,
+          "highWord": 1006796825,
+          "lowWord": 2420288130,
+          "addend": 6
+        },
+        {
+          "group": "attacks",
+          "high": 88,
+          "low": 96,
+          "highWord": 1006796825,
+          "lowWord": 2420288131,
+          "addend": 7
+        },
+        {
+          "group": "attacks",
+          "high": 104,
+          "low": 112,
+          "highWord": 1006796825,
+          "lowWord": 2420288132,
+          "addend": 8
+        },
+        {
+          "group": "attacks",
+          "high": 120,
+          "low": 128,
+          "highWord": 1006796825,
+          "lowWord": 2420288133,
+          "addend": 9
+        },
+        {
+          "group": "attacks",
+          "high": 136,
+          "low": 144,
+          "highWord": 1006796825,
+          "lowWord": 2420288134,
+          "addend": 10
+        },
+        {
+          "group": "attacks",
+          "high": 152,
+          "low": 160,
+          "highWord": 1006796825,
+          "lowWord": 2420288135,
+          "addend": 11
+        },
+        {
+          "group": "attacks",
+          "high": 168,
+          "low": 176,
+          "highWord": 1006796825,
+          "lowWord": 2420288136,
+          "addend": 12
+        },
+        {
+          "group": "attacks",
+          "high": 184,
+          "low": 192,
+          "highWord": 1006796825,
+          "lowWord": 2420288137,
+          "addend": 13
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2342884,
+      "size": 304,
+      "retailSha256": "acc3ec1689e75fa4422e2542c0409f598fb646d50d6631c329c5cbdcf55b1852",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 256,
+          "low": 264,
+          "highWord": 1006731289,
+          "lowWord": 2418256513,
+          "addend": 5
+        }
+      ],
+      "calls": []
+    },
+    {
+      "start": 2482144,
+      "size": 732,
+      "retailSha256": "f689eb8afd4dd16a02d78f6891c4c885ddbf04360df6e40caf204f095ff3e8f5",
+      "references": [
+        {
+          "group": "attacks",
+          "high": 272,
+          "low": 280,
+          "highWord": 1006862361,
+          "lowWord": 2422450818,
+          "addend": 6
+        }
+      ],
+      "calls": []
+    }
+  ]
+}

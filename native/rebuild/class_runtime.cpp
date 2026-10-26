@@ -1,5 +1,6 @@
 #include "engine/scenario_member_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/attack_runtime.h"
 #include "rebuild/capacity_runtime.h"
 #include "engine/class_text.h"
 #include "engine/art_resource_links.h"
@@ -17,7 +18,7 @@ ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder,
-                  const ItemData *items, CapacityRuntimeBuild *capacity) {
+                  const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -25,6 +26,19 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.layout.itemCount = int(items->entries().size());
         result.data.bytes += items->build(result.data.layout.items);
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+    }
+    if (attacks) {
+        AttackPlacement placed;
+        placed.address = result.data.layout.end;
+        placed.romOffset = dataRomOffset + quint32(result.data.bytes.size());
+        placed.records = placed.address + AttackData::recordOffset;
+        placed.settings = placed.address + AttackData::settingsOffset;
+        placed.count = int(attacks->entries().size());
+        const auto bytes = compileAttackRuntime(*attacks, placed, compiler, directory);
+        placed.size = quint32(bytes.size());
+        result.data.bytes += bytes;
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        result.attacks = placed;
     }
     if(capacity) {
         if(capacity->base<result.data.layout.end || capacity->storage.isEmpty())
@@ -318,6 +332,14 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     const auto descriptor = placement.descriptor(build.compiledData, build.code.bytes);
     image.replace(ClassPlacement::descriptorRomOffset, descriptor.size(), descriptor);
     image.replace(at, bytes, build.compiledData);
+    if (build.attacks) {
+        const auto old = rom.bytes().mid(AttackPlacement::descriptorOffset, AttackPlacement::descriptorSize);
+        if (!AttackPlacement::read(rom) && old != QByteArray(AttackPlacement::descriptorSize, char(-1)))
+            throw Error("The attack descriptor area contains unrelated data");
+        const auto &p = *build.attacks;
+        const auto h = p.descriptor(build.compiledData.mid(p.address - build.data.layout.indexBase, p.size));
+        image.replace(AttackPlacement::descriptorOffset, h.size(), h);
+    }
     if (menus) {
         const auto resource = ExpandedPromotionResource::decode(menus->container);
         resource.inventory.requireComplete();

@@ -14,6 +14,7 @@
 #include "engine/encounters.h"
 #include "engine/icon_artwork.h"
 #include "engine/item_data.h"
+#include "engine/attack_data.h"
 #include "engine/map_edits.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
@@ -69,6 +70,9 @@ class Project {
     const Record &record(Table table, int row) const;
     int value(Table table, int row, int field) const;
     void setValue(Table table, int row, int field, int value);
+    void loadAttacks();
+    const std::optional<AttackData> &attacks() const { return attacks_; }
+    void setAttacks(const QJsonObject &);
     void replaceBytes(Table table, int row, const QByteArray &bytes);
     int changedRecords() const;
     ChangeReport changeReport(const Project *reference = nullptr) const;
@@ -273,6 +277,7 @@ class Project {
     std::optional<ScenePrograms> scenePrograms_;
     std::optional<SceneEvents> sceneEvents_;
     std::optional<ItemData> originalItems_;
+    std::optional<AttackData> attacks_;
     WeaponTypes weaponTypes_;
     QVector<ItemAsset> addedItems_;
     QMap<int, QByteArray> itemNames_;
