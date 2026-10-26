@@ -524,6 +524,8 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     connect(pattern_, &QComboBox::activated, this, [this] {
         const int n = pattern_->currentData().toInt();
         edit("Change target pattern", [=](Attack &a) {
+            // Self is implied by pattern 9. Do not persist that implication as
+            // a side override; clear the old UI's redundant override on exit.
             if (a.targetPattern == 9 && a.targetSide == 3 && n != 9)
                 a.targetSide = 0;
             a.targetPattern = n;

@@ -38,6 +38,50 @@ m.trap(0x20d4c8+0x7ffbcb70,c=>c.set('v0',Math.max(0,Math.min(c.get('a1'),c.r16(c
 m.trap(0x22a7b8+0x7ffbcd30,c=>{const a=c.get('a0'),hp=Math.max(0,c.r16(a+0x20)-c.get('a3'));c.w16(a+0x20,hp);if(!hp)c.w32(a+0x40,c.r32(a+0x40)|1);});
 for(let i=0;i<18;i++){const own=i<9,cell=i%9,row=Math.floor(cell/3),col=cell%3;m.w32(actor(i)+0x40,own?0x100:0);m.w32(actor(i)+0x54,own?col:2-col);m.w32(actor(i)+0x58,own?2-row:6+row);m.w16(actor(i)+0x20,100);m.w16(actor(i)+0x22,500);m.w32(actor(i)+0x7c,159);assert.equal(call('lc_attack_cell',[actor(i)]),cell);}
 const rules=settings+159*32,source=actor(4),target=actor(13);
+// An enemy selected by the original damage routine cannot anchor a self/allied
+// row. In particular, a front-row dragon must not lose its action against a
+// middle-row enemy when the authored side is User only.
+m.w8(rules+2,7);m.w8(rules+3,3);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),1,'self row with enemy anchor');
+assert.equal(m.r32(ids),0);
+m.w8(rules+3,2);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'allied row with enemy anchor');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[0,1,2]);
+// Keep a valid native anchor, including one on a different row from the user.
+assert.equal(call('lc_attack_target_list',[actor(0),ids,7]),3,'valid allied rear-row anchor');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[6,7,8]);
+m.w8(rules+3,1);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'ordinary enemy middle row');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[12,13,14]);
+// A wrong-side or invalid anchor must be replaced with a live actor in formation.
+for(const anchor of [-1,20,4]){
+ assert.equal(call('lc_attack_target_list',[actor(0),ids,anchor]),3,`enemy row fallback ${anchor}`);
+ assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[9,10,11]);
+}
+m.w32(actor(13)+0x40,1);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'dead enemy anchor');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[9,10,11]);
+m.w32(actor(13)+0x40,0);m.w32(actor(13)+0x54,99);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'off-formation enemy anchor');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[9,10,11]);
+m.w32(actor(13)+0x54,1);
+// Columns use the corrected anchor too; mirrored formation coordinates apply.
+m.w8(rules+2,6);m.w8(rules+3,3);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),1,'self column with enemy anchor');
+assert.equal(m.r32(ids),0);
+m.w8(rules+3,2);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'allied column with enemy anchor');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[0,3,6]);
+// Automatic side follows the authored main effect, not the old anchor.
+const mainAddress=records+159*16+7,originalMain=m.r8(mainAddress);
+m.w8(rules+2,7);m.w8(rules+3,0);m.w8(mainAddress,2);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'automatic healing side');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[0,1,2]);
+m.w8(mainAddress,1);
+assert.equal(call('lc_attack_target_list',[actor(0),ids,13]),3,'automatic damage side');
+assert.deepEqual([0,1,2].map(i=>m.r32(ids+i*4)),[12,13,14]);
+m.w8(mainAddress,originalMain);
+console.log('Target-side anchors: self/allies/enemies, rows/columns, valid/dead/missing/off-formation anchors PASS.');
 for(const side of [1,2])for(const [pattern,expected] of [[1,[4]],[2,[0,1,2,3,4,5,6,7,8]],[3,[0,1,2]],[4,[3,4,5]],[5,[6,7,8]],[6,[1,4,7]],[7,[3,4,5]],[8,[1,3,4,5,7]],[12,[0,8]]]){
  m.w8(rules+2,pattern);m.w8(rules+3,side);m.w16(rules+4,257);const n=call('lc_attack_target_list',[source,ids,side===1?13:4]);const actual=Array.from({length:n},(_,i)=>m.r32(ids+i*4));assert.deepEqual(actual,expected.map(x=>x+(side===1?9:0)),`side ${side}, pattern ${pattern}`);
 }

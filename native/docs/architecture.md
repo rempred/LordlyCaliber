@@ -33,6 +33,12 @@ are recorded explicitly, with separate ROM and runtime addresses.
 Custom targets use front/middle/rear-major nine-bit masks in each side's own
 mirrored formation. At most nine live actors are selected. Physical patterns run
 the original hit/critical executor for each target but spend one action count.
+Row/column anchors must be live, in formation, and on the effective target side.
+A valid native anchor is preserved; otherwise the first eligible actor on that
+side is used. Self targeting always anchors on the acting unit. The User only
+pattern implies self without changing the stored side; leaving an older User
+only pattern clears its redundant self override. Explicit self targeting on
+other patterns remains a saved choice.
 The power multiplier changes the input to the original amount kernel, before
 defense/resistance; it is not a multiplier on final damage. Explicit status
 chance uses fresh per-target random draws and the native status applier. No new
@@ -55,6 +61,12 @@ and controlled context/timing/event services. They do not prove full-console
 boot, complete visual replay or every natural battle context. Private inputs
 use `LORDLY_TEST_ROM` and `LORDLY_N64_TOOLCHAIN`; candidates remain in a unique
 parent `Test ROMs/` directory.
+
+The differing-row regression is covered by `ui_tests attackPatternSwitching`,
+`attack_data_tests targetingExportAndReopen`, and `attack-effects-mips.cjs` run
+against newly compiled exports. Coverage includes retained valid anchors,
+wrong-side/dead/missing/off-formation anchors, automatic damage/healing sides,
+pattern switching, Undo/Redo, class65 using attack159, and project/ROM reopening.
 
 Final checks include a full 254-ID export, a private class 2 animation for ID254,
 project folder/archive reopening, ROM reopening and a second export. New IDs159

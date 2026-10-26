@@ -139,6 +139,24 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
     main=lc_attack_records[lc_effective_action(source)*16+7];
     if (!side) side=(main==2 || main==5 || main==6 || main==11)?2:1;
     selected=anchor>=0 && anchor<20?func_0020C478(anchor):0;
+    /* Native damage targeting may have chosen an opponent even when the
+     * authored rule targets allies or the user. Anchor on the requested side
+     * before applying row/column filters, or a valid action can become empty. */
+    if(side==3) selected=source;
+    else {
+        same=selected?((W(selected,0x40)^W(source,0x40))&0x100)==0:0;
+        if(!selected || func_0020C2C0(selected) || lc_attack_cell(selected)<0 ||
+           (side==1 && same) || (side==2 && !same)) {
+            selected=0;
+            for(i=0;i<20;i++) {
+                actor=func_0020C478(i);
+                if(!actor || func_0020C2C0(actor) || lc_attack_cell(actor)<0) continue;
+                same=((W(actor,0x40)^W(source,0x40))&0x100)==0;
+                if((side==1 && same) || (side==2 && !same)) continue;
+                selected=actor; anchor=i; break;
+            }
+        }
+    }
     anchorCell=selected?lc_attack_cell(selected):4;
     if (anchorCell<0) anchorCell=4;
     mask=H(rules,4); n=0;

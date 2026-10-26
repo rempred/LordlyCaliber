@@ -130,6 +130,67 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void attackPatternSwitching() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadAttacks();
+        auto attacks = *project.attacks();
+        const int id = attacks.duplicate(124, "Liquification");
+        auto attack = attacks.entry(id);
+        attack.targetPattern = 7;
+        attack.targetSide = 1;
+        attacks.set(id, attack);
+        project.setAttacks(attacks.json());
+        QUndoStack undo;
+        AttackEditor editor(&project, &undo, [] {});
+        editor.selectAttack(id);
+        auto pattern = editor.findChild<QComboBox *>("attackPattern");
+        auto side = editor.findChild<QComboBox *>("attackSide");
+        const auto select = [&](QComboBox *box, int value) {
+            box->setCurrentIndex(box->findData(value));
+            emit box->activated(box->currentIndex());
+            QCoreApplication::processEvents();
+        };
+        select(pattern, 9);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 1); // Effective self, retained opponent choice.
+        QCOMPARE(side->currentData().toInt(), 3);
+        QVERIFY(!side->isEnabled());
+        select(pattern, 7);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 1);
+        QCOMPARE(side->currentData().toInt(), 1);
+        QVERIFY(side->isEnabled());
+        undo.undo(); QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(id).targetPattern, 9);
+        QCOMPARE(side->currentData().toInt(), 3);
+        undo.redo(); QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(id).targetPattern, 7);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 1);
+        select(side, 0);
+        select(pattern, 9);
+        select(pattern, 6);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 0);
+        QVERIFY(side->currentText().startsWith("Opponents"));
+        // Old projects contain the redundant pair 9/3. Leaving it resets to auto.
+        select(side, 3);
+        select(pattern, 9);
+        const auto legacy = project.manifest();
+        select(pattern, 7);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 0);
+        const auto corrected = project.manifest();
+        undo.undo(); QCoreApplication::processEvents();
+        QCOMPARE(project.manifest(), legacy);
+        undo.redo(); QCoreApplication::processEvents();
+        QCOMPARE(project.manifest(), corrected);
+        auto reopened = Project::fromRom(Rom::open(path));
+        reopened.applyManifest(corrected);
+        QCOMPARE(reopened.attacks()->entry(id).targetSide, 0);
+        QCOMPARE(reopened.attacks()->entry(id).targetPattern, 7);
+        // An explicit self side on a non-self pattern remains a deliberate edit.
+        select(side, 3);
+        select(pattern, 8);
+        QCOMPARE(project.attacks()->entry(id).targetSide, 3);
+    }
     void attackNativeRuleDisplay() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

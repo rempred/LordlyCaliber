@@ -123,6 +123,52 @@ class AttackDataTests : public QObject {
         project.setAnimationOverrides(overrides.json());
         QCOMPARE(project.bodyAnimationData()->selector(2, 2, ordinary, 0, 0), 41);
     }
+    void targetingExportAndReopen() {
+        try {
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (tools.isEmpty()) QSKIP("Private compiler required");
+            auto project = Project::fromRom(source());
+            project.loadAttacks();
+            auto attacks = *project.attacks();
+            const int id = attacks.duplicate(124, "Liquification");
+            QCOMPARE(id, 159);
+            auto attack = attacks.entry(id);
+            attack.targetPattern = 7;
+            attack.status = 8;
+            attack.chance = 25;
+            attack.afterEffect = 0;
+            auto dragon = project.record(Table::Classes, 65).bytes;
+            put8(dragon, 55, id);
+            put8(dragon, 56, 1);
+            project.replaceBytes(Table::Classes, 65, dragon);
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
+                                     .absoluteDir().filePath("Test ROMs/native-attack-targets-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            // Each side is retained through both project and compiled-ROM reopening.
+            for (int side : {3, 2, 1}) {
+                attack.targetSide = side;
+                attacks.set(id, attack);
+                project.setAttacks(attacks.json());
+                const auto archive = output.filePath(QString("side-%1.lcproject").arg(side));
+                project.saveArchive(archive);
+                auto restored = Project::fromRom(source());
+                restored.applyManifest(Project::readProject(archive));
+                QCOMPARE(restored.attacks()->entry(id), attack);
+                const auto built = rebuild(restored, tools, output.path());
+                auto checksum = built.image;
+                Rom::updateChecksum(checksum);
+                QCOMPARE(checksum, built.image);
+                const auto reopened = Project::fromRom(Rom::fromBytes(built.image));
+                QCOMPARE(reopened.attacks()->entry(id), attack);
+                QCOMPARE(u8(reopened.record(Table::Classes, 65).bytes, 55), quint8(159));
+                QCOMPARE(u8(reopened.record(Table::Classes, 65).bytes, 56), quint8(1));
+                exportRom(restored, built,
+                          output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName()));
+            }
+            qInfo().noquote() << "Attack targeting candidate:" << output.path();
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void projectAndRelocatedRecordExport() {
         try {
             const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
