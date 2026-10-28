@@ -12,6 +12,11 @@ Windows, integrated graphics, project folders with sharing archives, and portabl
 ZIP delivery are agreed. No Chromium, external Decomp dependency for users, full
 game playback, or full-console emulation in the present scope.
 
+Unless Joe explicitly says otherwise, build authorized editor changes and update
+`native/live/` so he can test them. Link the live executable when reporting the
+update. This does not authorize pushes, releases, or discarding unsaved work
+(Joe, 2026-10-27).
+
 Verify dependency releases and supported combinations in official online sources
 before pinning. Explain intentional older versions. The historical N64 matching
 toolchain is a separate compatibility requirement from the PC application tools.
