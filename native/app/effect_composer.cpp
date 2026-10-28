@@ -60,6 +60,11 @@ class EffectCanvas : public QWidget {
             for (int x = 0; x < 320; x += 8)
                 p.fillRect(x, y, 8, 8,
                            ((x / 8 + y / 8) & 1) ? QColor("#303641") : QColor("#242932"));
+        p.setPen(QColor("#e7d8bd"));
+        p.drawText(QPoint(8, 16), model.placement == 1   ? "Origin: each affected unit"
+                                  : model.placement == 2 ? "Origin: caster"
+                                  : model.placement == 3 ? "Origin: target squad centre"
+                                                         : "Origin: screen centre");
         p.drawImage(QPointF(160 - model.size.width() / 2.0, 120 - model.size.height() / 2.0),
                     model.render(tick));
         p.setPen(QPen(QColor("#a5a5aa"), .8, Qt::DashLine));
@@ -329,6 +334,20 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     dimensions->addWidget(height_);
     setup->addRow("Canvas", dimensions);
     setup->addRow("Effect length", length_);
+    placement_ = new QComboBox;
+    placement_->setObjectName("compositionPlacement");
+    placement_->addItem("Each target", 1);
+    placement_->addItem("Caster", 2);
+    placement_->addItem("Target side · once over the squad", 3);
+    placement_->addItem("Screen centre", 0);
+    setup->addRow("Place effect at", placement_);
+    connect(placement_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!refreshing_) {
+            auto m = model_;
+            m.placement = placement_->currentData().toInt();
+            record(m);
+        }
+    });
     auto changeSetup = [this] {
         if (refreshing_)
             return;
@@ -343,8 +362,10 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     connect(height_, &QSpinBox::valueChanged, this, changeSetup);
     connect(length_, &QSpinBox::valueChanged, this, changeSetup);
     note("30 ticks = 1 second. The dashed box is your canvas; artwork outside it is clipped. "
-         "The effect appears at the centre of the battle and retains this orientation on either "
-         "side.",
+         "Each target repeats the complete effect over every affected unit, including allies for "
+         "healing. "
+         "Target side plays once over that squad. Movement is relative to the chosen position; "
+         "artwork retains its orientation on either side.",
          preview);
     pieceControls_ = new QWidget;
     auto form = new QFormLayout(pieceControls_);
@@ -511,6 +532,7 @@ void EffectComposer::refresh() {
     width_->setValue(model_.size.width());
     height_->setValue(model_.size.height());
     length_->setValue(model_.duration);
+    placement_->setCurrentIndex(placement_->findData(model_.placement));
     time_->setMaximum(model_.duration - 1);
     pieces_->clear();
     for (int at = int(model_.pieces.size()) - 1; at >= 0; --at) {
@@ -575,7 +597,15 @@ void EffectComposer::addPiece(SpriteAsset artwork) {
     p.name = artwork.name;
     p.artwork = std::move(artwork);
     p.start = time_->value();
-    p.duration = std::min(30, m.duration - p.start);
+    int sourceTicks = 0;
+    for (const auto &frame : p.artwork.frames)
+        sourceTicks += std::max(1, frame.ticks);
+    const bool sequence = p.artwork.kind == "sequence" || p.artwork.frames.size() > 1;
+    if (sequence && m.pieces.isEmpty())
+        m.duration = std::max(
+            m.duration,
+            std::min({300, sourceTicks, 16 * 1024 * 1024 / (m.size.width() * m.size.height())}));
+    p.duration = std::min(sequence ? sourceTicks : 30, m.duration - p.start);
     p.fromScale = p.toScale =
         std::clamp(96 * 100 / std::max(p.artwork.size.width(), p.artwork.size.height()), 1, 100);
     m.pieces << p;

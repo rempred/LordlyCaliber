@@ -20,6 +20,7 @@ class EffectLibraryEditor : public QWidget {
     SpriteAsset selectedPiece() const;
     QString saveArtwork(const QString &name = {});
     void exportArtwork(const QString &) const;
+    bool exportSequence(const QString &, EffectExport);
   signals:
     void editArtwork(const QString &id);
     void pieceChosen(const SpriteAsset &);
@@ -49,6 +50,7 @@ class EffectLibraryEditor : public QWidget {
     QElapsedTimer clock_;
     AttackVisual visual_;
     EffectClip clip_;
+    std::optional<SpriteAsset> rendered_;
     QMap<quint32, QImage> images_;
     std::shared_ptr<std::atomic_bool> canceled_;
 };

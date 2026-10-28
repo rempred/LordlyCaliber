@@ -47,6 +47,8 @@ class EffectPlayer {
     AttackVisual visual_;
     int delay_ = 0, frame_ = 0, hold_ = 0;
     quint32 frameDraw_ = 0;
+    std::array<int, 40> origins_{};
+    int originCount_ = 0;
     QMap<quint32, quint32> allocations_;
     QVector<Resource> resources_;
     void loadFrame();

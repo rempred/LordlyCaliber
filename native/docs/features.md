@@ -59,8 +59,11 @@ retain full RGBA32 colour/alpha in the exported game frames.
 
 Compositions support up to 24 pieces, a 256 × 240 canvas, 300 ticks (10 seconds),
 four million source pixels and sixteen million rendered pixels. Larger canvas
-sizes therefore allow shorter effects. They are screen-centred 2D effects with
-the same orientation on either side. Saved effects retain their editable pieces,
+sizes therefore allow shorter effects. Placement defaults to **Each target**, including
+allied healing targets; multi-target attacks repeat the complete effect. **Caster**,
+**Target side** (one copy over the affected squad), and **Screen centre** are also
+available. Movement is relative to that position; artwork retains its orientation.
+Older compositions retain screen-centred placement. Saved effects retain their editable pieces,
 local Undo/Redo and recovery drafts. They appear at the top of Effects; More
 provides duplicate/delete, and Edit effect reopens the composer. Artwork keeps
 ordinary images/sequences separate from these composed effects.
@@ -74,8 +77,14 @@ Apply/Cancel and project Undo workflow.
 
 The Effects browser still covers all 133 retail programs and edited attacks.
 Use artwork offers Create effect from this piece or Save piece to Artwork;
-Export PNG retains full dimensions/alpha. Geometry-only programs state that
-they have no image artwork to extract. Ordinary Artwork can still combine saved
+Export PNG retains full dimensions/alpha. Animated models such as Fenrir's creature
+are not sprite textures. **Full rendered animation** makes a fixed-view copy of
+the whole visible effect available as a piece, fitted to composition limits.
+**Export sequence** in the library and **Export** in the attack effect window save
+the complete preview as animated PNG, PNG frame-sequence ZIP, or WebM, retaining
+320×240 output and 30-Hz timing. ZIPs can be reimported; WebM uses the existing
+FFmpeg requirement. These captures include every visible part, not isolated models.
+Ordinary Artwork can still combine saved
 pieces as layers for replacing a native texture while retaining native motion.
 
 The full effect preview has **Step frame** (one game tick at 30 fps, paused) and

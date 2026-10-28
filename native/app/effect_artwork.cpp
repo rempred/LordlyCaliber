@@ -1,9 +1,102 @@
 #include "app/effect_artwork.h"
 #include "engine/attack_data.h"
 #include "engine/effect_resources.h"
+#include "engine/sprite_video.h"
+#include <QFutureWatcher>
 #include <QPainter>
+#include <QProgressDialog>
+#include <QTimer>
+#include <QtConcurrent>
+#include <algorithm>
 extern "C" unsigned int lc_effect_color(unsigned int, int, int, unsigned int);
 namespace lordly {
+bool effectTargetsAllies(const Attack &attack) {
+    const int main = u8(attack.data, 7), spell = EffectPlayer::retailEffect(attack.animation);
+    return attack.targetPattern == 9 || attack.targetSide >= 2 ||
+           (!attack.targetSide &&
+            (attack.targetPattern ? (main == 2 || main == 5 || main == 6 || main == 11)
+                                  : (u8(attack.data, 0) >= 2 &&
+                                     ((spell >= 32 && spell <= 35) || spell == 103))));
+}
+SpriteAsset effectSequence(const QVector<QImage> &images, const QVector<int> &holds,
+                           const QString &name) {
+    if (images.isEmpty() || images.size() != holds.size())
+        throw Error("Wait for the complete effect preview");
+    auto asset = SpriteAsset::blank(name.left(120), images.first().size());
+    asset.kind = "sequence";
+    asset.anchor = {asset.size.width() / 2, asset.size.height() / 2};
+    asset.frames.clear();
+    for (int i = 0; i < images.size(); ++i) {
+        if (images[i].size() != asset.size || holds[i] < 1)
+            throw Error("Invalid effect preview timing");
+        for (int remaining = holds[i]; remaining > 0;) {
+            const int hold = std::min(remaining, 255);
+            remaining -= hold;
+            const auto id = QString::number(asset.frames.size());
+            asset.frames.append({"frame-" + id,
+                                 "Frame " + QString::number(asset.frames.size() + 1),
+                                 hold,
+                                 {{"layer-" + id, "Rendered effect", true, {}, images[i]}}});
+        }
+    }
+    asset.provenance = {
+        {"source", "rendered-effect"}, {"framesPerSecond", 30}, {"effectRgba32", true}};
+    asset.validate();
+    return asset;
+}
+bool exportEffectSequence(const SpriteAsset &asset, const QString &path, EffectExport format,
+                          QWidget *parent) {
+    std::atomic_bool canceled = false;
+    std::atomic_int completed = 0, total = 0;
+    QProgressDialog dialog("Writing full effect sequence…", "Cancel", 0, 0, parent);
+    dialog.setWindowTitle("Export effect");
+    dialog.setWindowModality(Qt::ApplicationModal);
+    dialog.setAutoClose(false);
+    dialog.setAutoReset(false);
+    QObject::connect(&dialog, &QProgressDialog::canceled, &dialog, [&] { canceled = true; });
+    struct Result {
+        bool saved;
+        QString error;
+    };
+    QFutureWatcher<Result> watcher;
+    QObject::connect(&watcher, &QFutureWatcher<Result>::finished, &dialog, &QDialog::accept);
+    QTimer timer;
+    QObject::connect(&timer, &QTimer::timeout, &dialog, [&] {
+        if (total > 0) {
+            dialog.setMaximum(total);
+            dialog.setValue(completed);
+        }
+    });
+    timer.start(50);
+    watcher.setFuture(QtConcurrent::run([asset, path, format, &canceled, &completed, &total] {
+        try {
+            const auto progress = [&](int value, int maximum) {
+                completed = value;
+                total = maximum;
+                return !canceled.load();
+            };
+            if (format == EffectExport::FramesZip)
+                return Result{exportSpriteFramesZip(asset, path, 30, progress), {}};
+            SpriteVideoOptions options{1, 1, Qt::transparent,
+                                       format == EffectExport::Webm
+                                           ? SpriteVideoFormat::Webm
+                                           : SpriteVideoFormat::AnimatedPng,
+                                       30};
+            return Result{exportSpriteVideo(asset, path, options, progress), {}};
+        } catch (const std::exception &e) {
+            return Result{false, QString::fromUtf8(e.what())};
+        }
+    }));
+    dialog.exec();
+    if (!watcher.isFinished()) {
+        canceled = true;
+        watcher.waitForFinished();
+    }
+    const auto result = watcher.result();
+    if (!result.error.isEmpty())
+        throw Error(result.error);
+    return result.saved;
+}
 QMap<int, QString> effectNames(const Rom &rom) {
     QMap<int, QString> names;
     const auto data = AttackData::loadRetail(rom);

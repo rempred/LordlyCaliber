@@ -1,4 +1,5 @@
 #pragma once
+#include "app/effect_artwork.h"
 #include "engine/project.h"
 #include <QDialog>
 #include <QElapsedTimer>
@@ -27,6 +28,8 @@ class AttackEffectEditor : public QDialog {
     void replaceArtwork(quint32 key, const QImage &);
     void exportRenderedFrame(const QString &) const;
     QImage renderedFrame() const;
+    SpriteAsset renderedSequence() const;
+    bool exportRenderedSequence(const QString &, EffectExport);
 
   private:
     void refresh();

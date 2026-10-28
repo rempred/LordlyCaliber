@@ -20,7 +20,7 @@ int number(const QJsonObject &o, const char *field, int fallback) {
 void EffectComposition::validate() const {
     if (id.isEmpty() || id.size() > 120 || name.trimmed().isEmpty() || name.size() > 120 ||
         size.width() < 1 || size.height() < 1 || size.width() > 256 || size.height() > 240 ||
-        duration < 1 || duration > 300 || pieces.size() > 24)
+        duration < 1 || duration > 300 || pieces.size() > 24 || placement < 0 || placement > 3)
         throw Error(
             "Effects support 24 pieces, a canvas up to 256 × 240, and 300 ticks (10 seconds)");
     if (qint64(size.width()) * size.height() * duration > 16 * 1024 * 1024)
@@ -113,6 +113,7 @@ QJsonObject EffectComposition::json() const {
             {"width", size.width()},
             {"height", size.height()},
             {"duration", duration},
+            {"placement", placement},
             {"pieces", list}};
 }
 EffectComposition EffectComposition::fromJson(const QJsonObject &o) {
@@ -123,6 +124,7 @@ EffectComposition EffectComposition::fromJson(const QJsonObject &o) {
     result.name = o["name"].toString();
     result.size = {number(o, "width", 0), number(o, "height", 0)};
     result.duration = number(o, "duration", 0);
+    result.placement = number(o, "placement", 0); // Older compositions stay screen-centred.
     for (const auto &v : o["pieces"].toArray()) {
         if (!v.isObject())
             throw Error("Invalid effect piece");
@@ -174,7 +176,8 @@ SpriteAsset EffectComposition::bake() const {
                                          1,
                                          {{"layer-" + suffix, "Effect", true, {}, image}}};
     }
-    asset.provenance = {{"effectComposition", json()}, {"effectRgba32", true}};
+    asset.provenance = {
+        {"effectComposition", json()}, {"effectRgba32", true}, {"effectPlacement", placement}};
     AttackVisual visual;
     visual.frames = asset;
     visual.validate();

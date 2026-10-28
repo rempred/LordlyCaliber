@@ -164,6 +164,9 @@ class EffectRasterTests : public QObject {
                 }
                 int editable = 0;
                 for (const auto &r : player.resources()) editable += !r.size.isEmpty();
+                if (qEnvironmentVariableIsSet("LORDLY_EFFECT_RESOURCES"))
+                    for (const auto &r : player.resources())
+                        qInfo() << "Resource" << r.type << r.id << r.bytes.size() << r.size;
                 qInfo() << "Effect" << id << "ticks" << player.tick() << "triangles" << triangles
                         << "artwork" << editable;
                 rendered += visible;

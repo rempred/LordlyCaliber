@@ -43,7 +43,12 @@ class AttackDataTests : public QObject {
         AttackVisual visual;visual.frames=asset;QVERIFY(visual.fullColorFrames());
         const auto decoded=decodeN64Image(AttackVisual::gameImage(red,true));
         QCOMPARE(decoded.rgba,QByteArray::fromHex("ff000080ff000080ff000080ff000080"));
-        const auto bytes=visual.build(8);QCOMPARE(u16(bytes,30),quint16(3));
+        const auto bytes = visual.build(8);
+        QCOMPARE(u16(bytes, 30), quint16(0x103));
+        QCOMPARE(model.placement, 1);
+        auto legacy = model.json();
+        legacy.remove("placement");
+        QCOMPARE(EffectComposition::fromJson(legacy).placement, 0);
         const auto read=AttackVisual::read(bytes);QCOMPARE(read,visual);
         QCOMPARE(EffectComposition::fromAsset(*read.frames),model);
         auto invalid=model;invalid.pieces[0].start=6;QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
@@ -154,10 +159,25 @@ class AttackDataTests : public QObject {
             moving.artwork=SpriteAsset::fromImage("Soft red",soft);moving.from={-20,0};moving.to={20,0};
             auto later=moving;later.id="later";later.name="Later blue";later.start=3;later.duration=4;later.from=later.to={0,10};later.toOpacity=0;
             soft.fill(QColor(11,63,249,197));later.artwork=SpriteAsset::fromImage("Soft blue",soft);
-            composition.pieces={moving,later};
+            composition.pieces = {moving, later};
+            composition.placement = 0;
             auto composed=data.entry(62);composed.visual={};composed.visual.frames=composition.bake();data.set(62,composed);
             const int composedCopy=data.duplicate(62,"Copied composition");QCOMPARE(composedCopy,161);
             auto different=data.entry(161);auto changedComposition=EffectComposition::fromAsset(*different.visual.frames);changedComposition.pieces[0].to={0,-10};different.visual.frames=changedComposition.bake();data.set(161,different);
+            for (int placement = 1; placement <= 3; ++placement) {
+                const int id = data.duplicate(62, QString("Placement %1").arg(placement));
+                QCOMPARE(id, 161 + placement);
+                auto placed = data.entry(id);
+                auto model = composition;
+                model.placement = placement;
+                model.size = {4, 4};
+                model.duration = 2;
+                model.pieces = {moving};
+                model.pieces[0].duration = 2;
+                model.pieces[0].from = model.pieces[0].to = {};
+                placed.visual.frames = model.bake();
+                data.set(id, placed);
+            }
             project.setAttacks(data.json());
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
                                      .absoluteDir()
@@ -271,6 +291,61 @@ class AttackDataTests : public QObject {
             const auto slotFor = [&](int id) {
                 return u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
             };
+            for (int id : {162, 163, 164})
+                for (bool enemyCaster : {false, true})
+                    for (bool allies : {false, true})
+                        for (bool special : {false, true}) {
+                            QCOMPARE(reopened.attacks()->entry(id).visual, data.entry(id).visual);
+                            EffectPlayer::Scene scene;
+                            scene.enemyCaster = enemyCaster;
+                            scene.allies = allies;
+                            scene.targetCount = 3;
+                            EffectPlayer actual(rom), expected(source());
+                            actual.start(slotFor(id), scene);
+                            expected.startVisual(data.entry(id).visual, 0, scene);
+                            // A defeated target remains an effect anchor (revival/status cleanup).
+                            const int targetBase =
+                                allies ? (enemyCaster ? 0 : 9) : (enemyCaster ? 9 : 0);
+                            put16(const_cast<QByteArray &>(actual.memory()),
+                                  0x740000 + 0x1c4 + targetBase * 0xf8 + 0x20, 0);
+                            put16(const_cast<QByteArray &>(expected.memory()),
+                                  0x740000 + 0x1c4 + targetBase * 0xf8 + 0x20, 0);
+                            if (special)
+                                for (auto player : {&actual, &expected}) {
+                                    auto &memory = const_cast<QByteArray &>(player->memory());
+                                    const int actor = 0x740000 + 0x1c4 + 18 * 0xf8;
+                                    memory.replace(
+                                        actor, 0xf8,
+                                        memory.mid(0x740000 + 0x1c4 + targetBase * 0xf8, 0xf8));
+                                    put32(memory, actor + 0x5c, 15);
+                                    put32(memory, actor + 0x64, 22);
+                                    put8(memory, 0x72000c, 18);
+                                }
+                            int ticks = 0;
+                            while (actual.advance()) {
+                                QVERIFY(expected.advance());
+                                const auto frame = actual.draw({320, 240}, .75).image;
+                                QCOMPARE(frame, expected.draw({320, 240}, .75).image);
+                                if (++ticks == 1 && id != 164) {
+                                    const bool right = id == 163 ? !enemyCaster : targetBase == 9;
+                                    const int x = right ? 220 : 100;
+                                    if (special && id == 162)
+                                        QCOMPARE(frame.pixelColor(171, 152),
+                                                 QColor(231, 43, 17, 93));
+                                    else
+                                        QCOMPARE(frame.pixelColor(x, 143), QColor(231, 43, 17, 93));
+                                    if (id == 162) {
+                                        QCOMPARE(frame.pixelColor(x, 148), QColor(231, 43, 17, 93));
+                                        QCOMPARE(frame.pixelColor(x, 154), QColor(231, 43, 17, 93));
+                                    }
+                                }
+                                if (ticks == 1 && id == 164 && !special)
+                                    QCOMPARE(frame.pixelColor(targetBase == 9 ? 231 : 88, 147),
+                                             QColor(231, 43, 17, 93));
+                            }
+                            QVERIFY(!expected.advance());
+                            QVERIFY(ticks >= 2);
+                        }
             shared.start(slotFor(55), {});
             shared.append(slotFor(159));
             shared.append(8);

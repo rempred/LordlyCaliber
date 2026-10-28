@@ -2,7 +2,13 @@
 #include "engine/effect_player.h"
 #include <atomic>
 #include <memory>
+class QWidget;
 namespace lordly {
+struct Attack;
+bool effectTargetsAllies(const Attack &);
+enum class EffectExport { AnimatedPng, FramesZip, Webm };
+SpriteAsset effectSequence(const QVector<QImage> &, const QVector<int> &, const QString &name);
+bool exportEffectSequence(const SpriteAsset &, const QString &, EffectExport, QWidget *parent);
 struct EffectClip {
     QVector<QImage> images;
     QVector<int> holds;

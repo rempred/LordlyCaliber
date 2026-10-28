@@ -15,6 +15,7 @@ struct EffectComposition {
     QString id = SpriteLibrary::newId(), name = "New effect";
     QSize size{128, 128};
     int duration = 90;
+    int placement = 1; // 0 screen (legacy), 1 each target, 2 caster, 3 target side.
     QVector<EffectPiece> pieces;
     bool operator==(const EffectComposition &) const = default;
     void validate() const;

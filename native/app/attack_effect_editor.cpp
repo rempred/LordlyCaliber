@@ -178,17 +178,41 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     framePosition_->setObjectName("effectFramePosition");
     exportRow->addWidget(framePosition_);
     exportRow->addStretch();
-    exportFrame_ = new QPushButton("Export frame PNG…");
+    exportFrame_ = new QPushButton("Export…");
     exportFrame_->setObjectName("effectExportFrame");
     exportRow->addWidget(exportFrame_);
-    connect(exportFrame_, &QPushButton::clicked, this, [this] {
-        if (playing_) { pausedMs_ += clock_.elapsed(); playing_ = false; play_->setText("Play"); }
+    auto exports = new QMenu(exportFrame_);
+    exportFrame_->setMenu(exports);
+    exports->addAction("Current frame · PNG…", this, [this] {
+        if (playing_) {
+            pausedMs_ += clock_.elapsed();
+            playing_ = false;
+            play_->setText("Play");
+        }
         showFrame();
         guarded([this] {
             const auto path = QFileDialog::getSaveFileName(this, "Export displayed effect frame", "effect-frame.png", "PNG image (*.png)");
             if (!path.isEmpty()) exportRenderedFrame(path);
         });
     });
+    for (const auto format :
+         {EffectExport::AnimatedPng, EffectExport::FramesZip, EffectExport::Webm}) {
+        const QString title = format == EffectExport::AnimatedPng ? "Full sequence · Animated PNG…"
+                              : format == EffectExport::FramesZip ? "Full sequence · PNG frame ZIP…"
+                                                                  : "Full sequence · WebM…";
+        exports->addAction(title, this, [this, format] {
+            guarded([this, format] {
+                const QString filter = format == EffectExport::AnimatedPng ? "Animated PNG (*.png)"
+                                       : format == EffectExport::FramesZip
+                                           ? "PNG frame sequence (*.zip)"
+                                           : "WebM video (*.webm)";
+                const auto path = QFileDialog::getSaveFileName(this, "Export full effect sequence",
+                                                               "effect-sequence", filter);
+                if (!path.isEmpty() && exportRenderedSequence(path, format))
+                    notice_->setText("Full effect sequence exported at 30 ticks per second.");
+            });
+        });
+    }
     note("Neutral five-unit squads and a preview background. Character motion and sound are "
          "omitted. Desktop filtering and blending approximate the game.",
          scene);
@@ -526,6 +550,9 @@ void AttackEffectEditor::render() {
     const auto visual = visual_;
     const bool enemyPreview = enemyPreview_;
     const int inherited = std::max(0, inherited_), classId = classId_;
+    const auto attack = project_->attacks()->entry(attack_);
+    const bool allies = effectTargetsAllies(attack);
+    const int targetCount = attack.targetPattern == 9 || attack.targetSide == 3 || attack.targetPattern == 1 ? 1 : 5;
     connect(watcher, &QFutureWatcher<EffectClip>::finished, this, [this, watcher, generation] {
         const auto result = watcher->result();
         watcher->deleteLater();
@@ -548,15 +575,27 @@ void AttackEffectEditor::render() {
         clock_.restart();
         showFrame();
     });
-    watcher->setFuture(QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview] {
-        EffectPlayer::Scene scene;
-        scene.sourceClass = classId;
-        scene.enemyCaster = enemyPreview;
-        return renderEffectClip(rom, visual, inherited, scene, cancel);
-    }));
+    watcher->setFuture(
+        QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview, allies, targetCount] {
+            EffectPlayer::Scene scene;
+            scene.sourceClass = classId;
+            scene.enemyCaster = enemyPreview;
+            scene.allies = allies;
+            scene.targetCount = targetCount;
+            return renderEffectClip(rom, visual, inherited, scene, cancel);
+        }));
 }
 int AttackEffectEditor::currentTick() const {
     return clipTicks_ <= 0 ? 0 : int((pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000) % clipTicks_;
+}
+SpriteAsset AttackEffectEditor::renderedSequence() const {
+    return effectSequence(clip_, holds_, "Rendered attack effect");
+}
+bool AttackEffectEditor::exportRenderedSequence(const QString &path, EffectExport format) {
+    if (QFileInfo(path).exists() && QFileInfo(path).canonicalFilePath() ==
+                                        QFileInfo(project_->rom().sourcePath()).canonicalFilePath())
+        throw Error("Cannot overwrite the source ROM");
+    return exportEffectSequence(renderedSequence(), path, format, this);
 }
 QImage AttackEffectEditor::renderedFrame() const {
     if (clip_.isEmpty() || clipTicks_ <= 0)

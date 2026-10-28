@@ -1,9 +1,8 @@
 #include "app/effect_library_editor.h"
-#include "app/effect_composer.h"
-#include "engine/effect_composition.h"
-#include <QMenu>
 #include "app/content_refresh.h"
+#include "app/effect_composer.h"
 #include "app/sprite_library_command.h"
+#include "engine/effect_composition.h"
 #include "engine/image_colors.h"
 #include <QFileDialog>
 #include <QFileInfo>
@@ -11,6 +10,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QShowEvent>
@@ -19,6 +19,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+#include <algorithm>
+#include <cmath>
 namespace lordly {
 namespace {
 QLabel *note(const QString &text, QLayout *layout) {
@@ -92,6 +94,31 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
     play_ = new QPushButton("Play");
     auto restart = new QPushButton("Restart");
     playback->addWidget(play_); playback->addWidget(restart); playback->addStretch();
+    auto exportSequenceButton = new QPushButton("Export sequence…");
+    exportSequenceButton->setObjectName("effectLibraryExportSequence");
+    exportSequenceButton->setEnabled(false);
+    playback->addWidget(exportSequenceButton);
+    auto exports = new QMenu(exportSequenceButton);
+    exportSequenceButton->setMenu(exports);
+    for (const auto format :
+         {EffectExport::AnimatedPng, EffectExport::FramesZip, EffectExport::Webm}) {
+        const QString title = format == EffectExport::AnimatedPng ? "Animated PNG…"
+                              : format == EffectExport::FramesZip ? "PNG frame sequence ZIP…"
+                                                                  : "WebM…";
+        exports->addAction(title, this, [this, format] {
+            guarded([this, format] {
+                const QString filter = format == EffectExport::AnimatedPng ? "Animated PNG (*.png)"
+                                       : format == EffectExport::FramesZip
+                                           ? "PNG frame sequence (*.zip)"
+                                           : "WebM video (*.webm)";
+                const auto path = QFileDialog::getSaveFileName(this, "Export full rendered effect",
+                                                               "effect-sequence", filter);
+                if (!path.isEmpty() && exportSequence(path, format))
+                    notice_->setText(
+                        "Full effect sequence exported at its original preview size and timing.");
+            });
+        });
+    }
     connect(play_, &QPushButton::clicked, this, [this] {
         if (playing_) pausedMs_ += clock_.elapsed(); else clock_.restart();
         playing_ = !playing_; play_->setText(playing_ ? "Pause" : "Play");
@@ -124,7 +151,7 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
         if (!path.isEmpty()) { exportArtwork(path); notice_->setText("Artwork exported to " + path); }
     }); });
     connect(edit_, &QPushButton::clicked, this, [this] { emit editArtwork(savedId_); });
-    note("Artwork pieces · original dimensions and transparency", content);
+    note("Textures and rendered animation", content);
     pieces_ = new QListWidget;
     pieces_->setObjectName("effectLibraryPieces");
     pieces_->setViewMode(QListView::IconMode);
@@ -135,8 +162,8 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
     pieces_->setWordWrap(true);
     pieces_->setMinimumHeight(140);
     content->addWidget(pieces_, 1);
-    note("Artwork copies contain the image pixels. Movement, placement and blending belong to the effect. "
-         "Replace a texture in an existing effect to keep its movement and timing.", content);
+    note("Texture copies contain image pixels; their original movement stays with the effect. "
+         "Full rendered animation keeps movement and timing in the copied frames.", content);
     notice_ = note({}, root);
     notice_->setObjectName("effectLibraryNotice");
     connect(search_, &QLineEdit::textChanged, this, &EffectLibraryEditor::filter);
@@ -196,6 +223,9 @@ void EffectLibraryEditor::selectSavedEffect(const QString &id) {
     throw Error("Saved effect is not in the library");
 }
 SpriteAsset EffectLibraryEditor::selectedPiece() const {
+    if (pieces_->currentItem() &&
+        pieces_->currentItem()->data(Qt::UserRole).toUInt() == 0xffffffffU && rendered_)
+        return *rendered_;
     const auto image=selectedImage();
     auto asset=SpriteAsset::fromImage((sourceName_+" · "+pieces_->currentItem()->text().section('\n',0,0)).left(120),image);
     asset.kind="frame";asset.provenance={{"source","effect-artwork"},{"effectSource",requested_},
@@ -233,7 +263,12 @@ void EffectLibraryEditor::loadSelection() {
     canceled_ = std::make_shared<std::atomic_bool>(false);
     const auto cancel = canceled_;
     const int generation = ++generation_;
-    clip_ = {}; images_.clear(); pieces_->clear(); savedId_.clear();
+    clip_ = {};
+    images_.clear();
+    pieces_->clear();
+    savedId_.clear();
+    rendered_.reset();
+    findChild<QPushButton *>("effectLibraryExportSequence")->setEnabled(false);
     refreshPiece(); preview_->setText("Preparing effect and artwork…");
     play_->setEnabled(false); playing_ = false; pausedMs_ = 0;
     notice_->clear();
@@ -244,6 +279,8 @@ void EffectLibraryEditor::loadSelection() {
         if (generation != generation_) return;
         if (!result.error.isEmpty()) { preview_->setText(result.error); requested_ = -1; return; }
         clip_ = result;
+        findChild<QPushButton *>("effectLibraryExportSequence")
+            ->setEnabled(!clip_.images.isEmpty());
         if (visual_.frames) {
             for (int i = 0; i < visual_.frames->frames.size(); ++i) images_[i] = visual_.frames->composite(i);
         } else for (auto it = clip_.artwork.begin(); it != clip_.artwork.end(); ++it)
@@ -256,13 +293,56 @@ void EffectLibraryEditor::loadSelection() {
                 QString("%1\n%2 × %3").arg(label).arg(it->width()).arg(it->height()), pieces_);
             item->setData(Qt::UserRole, it.key());
         }
+        if (!visual_.frames && !clip_.images.isEmpty()) guarded([&] {
+            // Rendered models are a fixed-view sequence, not editable sprite textures.
+            // Fit a reusable copy to the composer; export retains all original pixels.
+            auto sequence = effectSequence(clip_.images, clip_.holds,
+                                           (sourceName_ + " · rendered animation").left(120));
+            const double scale =
+                std::min({1.0, 256.0 / sequence.size.width(), 240.0 / sequence.size.height(),
+                          std::sqrt(double(4 * 1024 * 1024) / sequence.pixels())});
+            const QSize size(std::max(1, int(sequence.size.width() * scale)),
+                             std::max(1, int(sequence.size.height() * scale)));
+            if (size != sequence.size)
+                for (auto &frame : sequence.frames)
+                    frame.layers[0].image = frame.layers[0].image.scaled(
+                        size, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+            sequence.size = size;
+            sequence.anchor = {size.width() / 2, size.height() / 2};
+            sequence.validate();
+            rendered_ = sequence;
+            images_[0xffffffffU] = sequence.composite(sequence.frames.size() / 2);
+            auto item = new QListWidgetItem(
+                QIcon(QPixmap::fromImage(effectChecker(images_[0xffffffffU]))
+                          .scaled(64, 64, Qt::KeepAspectRatio)),
+                QString("Full rendered animation\n%1 × %2 · %3 ticks · fixed view")
+                    .arg(size.width())
+                    .arg(size.height())
+                    .arg(clip_.ticks),
+                pieces_);
+            item->setData(Qt::UserRole, 0xffffffffU);
+            notice_->setText("Some pieces, including Fenrir's creature, are animated models rather "
+                             "than sprite images. "
+                             "Full rendered animation includes every visible piece and is fitted "
+                             "to the composer's size budget. "
+                             "Export sequence keeps the complete preview at its original size.");
+        });
         if (!images_.isEmpty()) pieces_->setCurrentRow(0);
-        else notice_->setText("This effect uses coloured geometry and has no image artwork to extract.");
+        else
+            notice_->setText("No visible artwork was produced by this effect.");
         playing_ = !clip_.images.isEmpty(); play_->setEnabled(playing_); play_->setText("Pause");
         clock_.restart(); showFrame();
     });
-    watcher->setFuture(QtConcurrent::run([rom, visual, inherited, cancel] {
+    bool allies = (inherited >= 32 && inherited <= 35) || inherited == 103;
+    int targetCount = 5;
+    if (requested_ >= 1000) {
+        const auto &attack = project_->attacks()->entry(requested_ - 1000);
+        allies = effectTargetsAllies(attack);
+        if (attack.targetPattern == 9 || attack.targetSide == 3 || attack.targetPattern == 1) targetCount = 1;
+    }
+    watcher->setFuture(QtConcurrent::run([rom, visual, inherited, cancel, allies, targetCount] {
         EffectPlayer::Scene scene; scene.enemyCaster = false;
+        scene.allies = allies; scene.targetCount = targetCount;
         return renderEffectClip(rom, visual, inherited, scene, cancel);
     }));
 }
@@ -290,17 +370,22 @@ void EffectLibraryEditor::refreshPiece() {
     details_->setText(pieces_->currentItem()->text());
 }
 QString EffectLibraryEditor::saveArtwork(const QString &name) {
-    const auto image = selectedImage();
-    auto asset = SpriteAsset::fromImage(name.isEmpty()
-        ? (sourceName_ + " · " + pieces_->currentItem()->text().section('\n', 0, 0)).left(120) : name, image);
-    asset.kind = "frame";
-    asset.provenance = {{"source", "effect-artwork"}, {"effectSource", requested_},
-                        {"resource", int(pieces_->currentItem()->data(Qt::UserRole).toUInt())}};
+    auto asset = selectedPiece();
+    asset.id = SpriteLibrary::newId();
+    if (!name.isEmpty())
+        asset.name = name;
     auto library = project_->sprites(); library.replace(asset);
     undo_->push(new SpriteLibraryCommand(project_, "Save effect artwork to library", std::move(library)));
     savedId_ = asset.id; refreshPiece();
     notice_->setText("Saved “" + asset.name + "” in Artwork. This is an independent copy.");
     return asset.id;
+}
+bool EffectLibraryEditor::exportSequence(const QString &path, EffectExport format) {
+    if (QFileInfo(path).exists() && QFileInfo(path).canonicalFilePath() ==
+                                        QFileInfo(project_->rom().sourcePath()).canonicalFilePath())
+        throw Error("Cannot overwrite the source ROM");
+    return exportEffectSequence(effectSequence(clip_.images, clip_.holds, sourceName_), path,
+                                format, this);
 }
 void EffectLibraryEditor::exportArtwork(const QString &path) const {
     const auto image = imageToSrgb(selectedImage());

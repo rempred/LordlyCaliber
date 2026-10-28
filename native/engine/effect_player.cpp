@@ -5,6 +5,8 @@
 #include "rebuild/effect_preview_runtime.h"
 #include <algorithm>
 extern "C" int lc_visual_image_commands_format(unsigned int *, unsigned int, int, int, int, int, int, int);
+extern "C" int lc_visual_origins(int, const unsigned char *, const unsigned char *, const float *,
+                                 unsigned int, unsigned int, const float *, const float *, int *);
 namespace lordly {
 EffectPlayer::EffectPlayer(const Rom &rom) : rom_(rom.bytes()) {
     rom.requireSupported();
@@ -111,6 +113,16 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     m.number(0x80220ea4, 1.f / 120);
     m.number(0x80220eb8, 1.f / 1000);
     m.number(0x80220ecc, 1);
+    // The isolated scene's camera matches the raster's default oblique view.
+    // Exported effects use the actual game camera, established by func_0025F800.
+    for (int i = 0; i < 16; ++i)
+        m.number(0x80220e20 + i * 4, 0);
+    m.number(0x80220e20, .75f);
+    m.number(0x80220e34, .75f);
+    m.number(0x80220e44, -.15f);
+    m.number(0x80220e48, 1);
+    m.number(0x80220e54, -43.2f);
+    m.number(0x80220e5c, 1);
     m.service(0x80070f30, [this] {
         auto &c = *machine_;
         const quint64 size = (quint64(c.registers[4]) + 15) & ~15ULL;
@@ -264,15 +276,19 @@ void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const 
             auto &c = *machine_;
             std::array<unsigned int, 2048> commands{};
             const auto &asset = *visual_.frames;
-            const int count = lc_visual_image_commands_format(commands.data(), 0x80500008,
-                                                       asset.size.width(), asset.size.height(),
-                                                       asset.anchor.x(), asset.anchor.y(), 2048, visual_.fullColorFrames());
-            if (count < 0)
-                throw Error("Imported effect drawing exceeds its command budget");
             auto at = c.word(0x800e9ba0);
-            for (int i = 0; i < count; ++i) {
-                c.word(at, commands[i]);
-                at += 4;
+            for (int origin = 0; origin < originCount_; ++origin) {
+                const int count = lc_visual_image_commands_format(
+                    commands.data(), 0x80500008, asset.size.width(), asset.size.height(),
+                    asset.anchor.x() + 160 - origins_[origin * 2],
+                    asset.anchor.y() + 120 - origins_[origin * 2 + 1], 2048,
+                    visual_.fullColorFrames());
+                if (count < 0)
+                    throw Error("Imported effect drawing exceeds its command budget");
+                for (int i = 0; i < count; ++i) {
+                    c.word(at, commands[i]);
+                    at += 4;
+                }
             }
             c.word(0x800e9ba0, at);
         });
@@ -318,6 +334,37 @@ bool EffectPlayer::advance() {
     } else {
         m.call(0x8020d9fc);
         m.call(0x8020d3d4);
+    }
+    if (visual_.frames) {
+        std::array<float, 60> positions{};
+        std::array<float, 16> view{}, projection{};
+        std::array<unsigned char, 20> targets{};
+        const unsigned char caster = m.byte(0x80720000);
+        unsigned int occupied = 0, opponents = 0;
+        for (int i = 0; i < 20; ++i) {
+            targets[i] = m.byte(0x8072000c + i);
+            if (visual_.framePlacement()) {
+                const auto actor = 0x80740000 + 0x1c4 + i * 0xf8;
+                if (!m.word(actor + 0x48))
+                    continue;
+                occupied |= 1U << i;
+                if (m.word(actor + 0x40) & 0x100)
+                    opponents |= 1U << i;
+                m.registers[4] = i;
+                m.registers[5] = 0x80720100;
+                m.registers[6] = 0x10;
+                m.call(0x801f7344);
+                for (int j = 0; j < 3; ++j)
+                    positions[i * 3 + j] = m.number(0x80720100 + j * 4);
+            }
+        }
+        for (int i = 0; i < 16; ++i) {
+            view[i] = m.number(0x80220e20 + i * 4);
+            projection[i] = m.number(0x80220e90 + i * 4);
+        }
+        originCount_ =
+            lc_visual_origins(visual_.framePlacement(), &caster, targets.data(), positions.data(),
+                              occupied, opponents, view.data(), projection.data(), origins_.data());
     }
     m.word(0x800e9ba0, 0x80600000);
     m.word(0x801969b0, 0x80680000);

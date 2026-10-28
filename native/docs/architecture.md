@@ -125,13 +125,20 @@ The composition's ID is the saved asset ID; assigned attacks get a separate ID.
 Limits are24 pieces,256x240 canvas,300 ticks,4M source pixels and16M output pixels.
 The ordinary Artwork editor excludes compositions so edits stay in the composer.
 
-Composed assets carry provenance `effectRgba32=true`. LCFX0001 header+30 is3 for
-RGBA32 and0 for legacy RGBA5551. Rows retain their existing offsets; decoded
+Composed assets carry provenance `effectRgba32=true` and `effectPlacement`0–3
+(screen,each target,caster,target side). New composition JSON defaults to1;
+missing fields in older JSON retain0. LCFX0001 header+30 low byte is3 for
+RGBA32 and0 for legacy RGBA5551; its high byte carries placement. Rows retain their existing offsets; decoded
 image format/stride, full-colour flag and bounded editable metadata are validated
 on reopen. Native and host drawing use `lc_visual_image_commands_format`, with
 RGBA32 SetTextureImage/SetTile and a16-bit per-bank line width. Each32x32 tile
 fits4KiB TMEM, split over RG/BA banks. Temporary frame allocation follows the
-format; command limits and the existing task/drawing lifecycle stay unchanged.
+format. A bounded private display list is shared across up to20 actor anchors,
+with one branch in the battle drawing list. Placement uses native position helper
+RAM801F7344, presence from accepted func_0020C478, actual side flags, and view/
+projection matrices documented by newly accepted func_0025F800 (Decomp4a5c2668).
+Dead actors remain valid anchors. Host/MIPS share projection and origin selection.
+The existing task/drawing lifecycle is retained.
 Old frame exports retain zero+30 and RGBA5551; no existing effect is upgraded
 implicitly. Editable metadata is limited to64MiB before compression.
 

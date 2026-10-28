@@ -55,18 +55,50 @@ int lc_attack_visual_projectile(int state, void *data) {
 }
 typedef void (*VisualCallback)(int, void *);
 int lc_visual_image_commands_format(u32 *, u32, int, int, int, int, int, int);
+int lc_visual_origins(int, const u8 *, const u8 *, const float *, u32, u32, const float *,
+                      const float *, int *);
 #define pending_config (*(u8 **)(lc_attack_scratch + 64))
 #define pending_source (*(u8 **)(lc_attack_scratch + 68))
 #define pending_targets (*(u8 **)(lc_attack_scratch + 72))
 #define pending_extra (*(u8 **)(lc_attack_scratch + 76))
 static void visual_draw(void *node) {
-    int words;
+    int words, i, count, used = 0, origins[40];
+    float positions[60];
+    u32 occupied = 0, opponents = 0;
+    u8 *actor;
     u8 *config = (u8 *)W(node, 24);
     u32 *list = (u32 *)GLOBAL(0x800e9ba0);
-    words = lc_visual_image_commands_format(list, W(node, 20) + 8, H(config, 20), H(config, 22),
-                                     (s16)H(config, 24), (s16)H(config, 26), 2048, H(config, 30) == 3);
-    if (words > 0)
-        GLOBAL(0x800e9ba0) = (u32)(list + words);
+    u32 *commands = (u32 *)W(node, 36);
+    const int placement = H(config, 30) >> 8;
+    if (placement)
+        for (i = 0; i < 20; ++i) {
+            actor = (u8 *)(GLOBAL(0x801ce8bc) + 0x1c4 + i * 0xf8);
+            /* Accepted func_0020C478 uses +48 to distinguish an empty actor slot.
+             * Never call the native position reader for an empty slot. */
+            if (!W(actor, 0x48))
+                continue;
+            occupied |= 1U << i;
+            if (W(actor, 0x40) & 0x100)
+                opponents |= 1U << i;
+            ((void (*)(int, float *, int))0x801f7344)(i, positions + i * 3, 0x10);
+        }
+    count = lc_visual_origins(placement, (u8 *)W(node, 28), (u8 *)W(node, 32), positions, occupied,
+                              opponents, (float *)0x80220e20, (float *)0x80220e90, origins);
+    for (i = 0; i < count; ++i) {
+        words = lc_visual_image_commands_format(
+            commands + used, W(node, 20) + 8, H(config, 20), H(config, 22),
+            (s16)H(config, 24) + 160 - origins[i * 2],
+            (s16)H(config, 26) + 120 - origins[i * 2 + 1], 2048, (H(config, 30) & 255) == 3);
+        if (words > 0)
+            used += words;
+    }
+    commands[used++] = 0xdf000000;
+    commands[used] = 0;
+    /* One bounded private display list avoids multiplying the battle's shared
+     * command-buffer consumption for multi-target effects. */
+    list[0] = 0xde000000;
+    list[1] = (u32)commands;
+    GLOBAL(0x800e9ba0) = (u32)(list + 2);
 }
 
 /* data fits the native task's 120-byte private storage. */
@@ -74,6 +106,7 @@ typedef struct {
     u8 *config, *source, *targets, *extra;
     u8 *pixels;
     void *drawing;
+    u32 *commands;
     int frame, hold, delay;
 } VisualState;
 
@@ -142,6 +175,10 @@ static void finish(VisualState *s) {
         ((void (*)(void *))0x800712c4)(s->pixels);
         s->pixels = 0;
     }
+    if (s->commands) {
+        ((void (*)(void *))0x800712c4)(s->commands);
+        s->commands = 0;
+    }
     ((void (*)(void))0x8020dfb8)();
 }
 static int load_frame(VisualState *s) {
@@ -165,6 +202,7 @@ static void visual_task(int state, void *data) {
         s->extra = pending_extra;
         s->pixels = 0;
         s->drawing = 0;
+        s->commands = 0;
         s->frame = 0;
         s->hold = 0;
         s->delay = H(s->config, 18);
@@ -208,9 +246,16 @@ static void visual_task(int state, void *data) {
         return;
     }
     if (!s->drawing) {
-        s->pixels = (u8 *)((void *(*)(int))0x80070f30)(8 + ((H(s->config, 20) + 3) & ~3) *
-                                                               (H(s->config, 30) == 3 ? 4 : 2) * H(s->config, 22));
+        s->pixels = (u8 *)((void *(*)(int))0x80070f30)(
+            8 + ((H(s->config, 20) + 3) & ~3) * ((H(s->config, 30) & 255) == 3 ? 4 : 2) *
+                    H(s->config, 22));
         if (!s->pixels) {
+            finish(s);
+            return;
+        }
+        s->commands = (u32 *)((void *(*)(int))0x80070f30)(
+            ((H(s->config, 30) >> 8) == 1 ? 20 * 2048 + 2 : 2048 + 2) * 4);
+        if (!s->commands) {
             finish(s);
             return;
         }
@@ -227,6 +272,9 @@ static void visual_task(int state, void *data) {
         F(drawing, 8) = 1000.0f;
         W(drawing, 20) = (u32)s->pixels;
         W(drawing, 24) = (u32)s->config;
+        W(drawing, 28) = (u32)s->source;
+        W(drawing, 32) = (u32)s->targets;
+        W(drawing, 36) = (u32)s->commands;
         if (!load_frame(s)) {
             finish(s);
             return;

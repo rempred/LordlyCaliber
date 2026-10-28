@@ -26,6 +26,9 @@ struct AttackVisual {
     QByteArray build(int inheritedEffect) const;
     static AttackVisual read(const QByteArray &);
     bool fullColorFrames() const { return frames && frames->provenance["effectRgba32"].toBool(); }
+    int framePlacement() const {
+        return frames ? frames->provenance["effectPlacement"].toInt() : 0;
+    }
     static QByteArray gameImage(const QImage &, bool rgba32 = false);
 };
 } // namespace lordly

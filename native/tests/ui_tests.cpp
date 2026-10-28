@@ -1,78 +1,78 @@
 #include "app/actor_pose_editor.h"
-#include "app/attack_editor.h"
-#include "app/attack_effect_editor.h"
-#include "app/effect_library_editor.h"
-#include "app/effect_composer.h"
-#include "app/sprite_library_command.h"
-#include "engine/effect_resources.h"
-#include "app/recovery_draft.h"
-#include "app/change_report_dialog.h"
-#include "app/project_review_dialog.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/army_editor.h"
 #include "app/art_editor.h"
+#include "app/attack_editor.h"
+#include "app/attack_effect_editor.h"
+#include "app/category_icon_editor.h"
+#include "app/change_report_dialog.h"
+#include "app/class_setup.h"
 #include "app/combat_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
 #include "app/dialogue_preview.h"
+#include "app/effect_composer.h"
+#include "app/effect_library_editor.h"
 #include "app/encounter_editor.h"
-#include "app/persuasion_editor.h"
-#include "app/leader_affinity_editor.h"
-#include "app/terrain_assignments.h"
-#include "app/main_window.h"
-#include "app/table_transfer.h"
-#include <QFileDialog>
-#include "engine/recovery_store.h"
-#include "app/pending_edits.h"
-#include "app/class_setup.h"
-#include "engine/project_references.h"
-#include "app/scenario_route_editor.h"
-#include "app/theme.h"
 #include "app/formation_board.h"
+#include "app/leader_affinity_editor.h"
+#include "app/main_window.h"
+#include "app/pending_edits.h"
+#include "app/persuasion_editor.h"
 #include "app/portrait_editor.h"
+#include "app/project_review_dialog.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
-#include "app/save_editor.h"
+#include "app/recovery_draft.h"
+#include "app/rom_art_import.h"
 #include "app/save_army_drag.h"
+#include "app/save_editor.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_event_editor.h"
-#include "engine/event_script.h"
 #include "app/scenario_map_editor.h"
-#include "app/squad_route_steps.h"
-#include "engine/squad_members.h"
-#include "app/scene_command_editor.h"
+#include "app/scenario_route_editor.h"
 #include "app/scene_action_editor.h"
+#include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
 #include "app/scene_preview.h"
 #include "app/shop_editor.h"
 #include "app/sprite_editor.h"
-#include "app/rom_art_import.h"
+#include "app/sprite_library_command.h"
+#include "app/squad_route_steps.h"
+#include "app/table_transfer.h"
+#include "app/terrain_assignments.h"
 #include "app/testing_editor.h"
-#include "engine/project64_session.h"
 #include "app/text_workspace.h"
+#include "app/theme.h"
 #include "app/tools_editor.h"
 #include "app/transform_preview.h"
 #include "app/value_editor.h"
+#include "engine/animation_file_import.h"
+#include "engine/effect_resources.h"
+#include "engine/event_script.h"
+#include "engine/project64_session.h"
+#include "engine/project_references.h"
+#include "engine/recovery_store.h"
 #include "engine/scene_import.h"
 #include "engine/scene_timed_authoring.h"
 #include "engine/sprite_sources.h"
+#include "engine/squad_members.h"
+#include "engine/weapon_status.h"
 #include "game/classes/save_format.h"
 #include "rebuild/compiler.h"
-#include "engine/weapon_status.h"
-#include <QAction>
-#include <cmath>
 #include <QAbstractProxyModel>
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
-#include <QTimeEdit>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QFileDialog>
 #include <QFontDatabase>
 #include <QGraphicsItem>
 #include <QGraphicsPixmapItem>
@@ -88,30 +88,30 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPlainTextEdit>
-#include <QPushButton>
 #include <QProcess>
+#include <QPushButton>
 #include <QScopeGuard>
-#include <QSortFilterProxyModel>
-#include <QScrollBar>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QSettings>
+#include <QSortFilterProxyModel>
 #include <QSpinBox>
-#include <QTabWidget>
-#include <QTabBar>
 #include <QStackedWidget>
+#include <QStandardPaths>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTableView>
-#include <QTreeWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTextBrowser>
+#include <QTimeEdit>
 #include <QTimer>
 #include <QTreeWidget>
-#include <QSettings>
-#include <QStandardPaths>
 #include <QUndoGroup>
 #include <QWheelEvent>
 #include <QtTest>
 #include <bit>
-#include "app/category_icon_editor.h"
+#include <cmath>
 using namespace lordly;
 static bool selectMapObject(QWidget &editor, MapObject kind, int row) {
     auto objects = editor.findChild<QListWidget *>("mapObjects");
@@ -136,6 +136,114 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void fullEffectSequenceExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadAttacks();
+            QUndoStack undo;
+            AttackEffectEditor dialog(&project, 63, 2);
+            dialog.show();
+            QImage red(4, 4, QImage::Format_RGBA8888);
+            red.fill(QColor(255, 0, 0, 128));
+            AttackVisual visual;
+            visual.frames = SpriteAsset::fromImage("Two frames", red);
+            visual.frames->anchor = {2, 2};
+            visual.frames->provenance["effectRgba32"] = true;
+            visual.frames->frames[0].ticks = 2;
+            auto frame = visual.frames->frames[0];
+            frame.id = "green";
+            frame.ticks = 3;
+            frame.layers[0].image.fill(Qt::green);
+            visual.frames->frames << frame;
+            dialog.setVisual(visual);
+            QTRY_VERIFY_WITH_TIMEOUT(
+                dialog.findChild<QPushButton *>("effectExportFrame")->isEnabled(), 20000);
+            const auto sequence = dialog.renderedSequence();
+            QCOMPARE(sequence.size, QSize(320, 240));
+            QTemporaryDir folder;
+            QVERIFY(folder.isValid());
+            const auto zip = folder.filePath("effect.zip");
+            QVERIFY(dialog.exportRenderedSequence(zip, EffectExport::FramesZip));
+            const auto read = importAnimationFiles({zip});
+            QCOMPARE(read.frames.size(), sequence.frames.size());
+            for (int i = 0; i < read.frames.size(); ++i) {
+                QCOMPARE(read.frames[i].ticks, sequence.frames[i].ticks);
+                QCOMPARE(read.composite(i), sequence.composite(i));
+            }
+            const auto png = folder.filePath("effect.png");
+            QVERIFY(dialog.exportRenderedSequence(png, EffectExport::AnimatedPng));
+            QFile file(png);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QVERIFY(file.readAll().contains("acTL"));
+            if (!QStandardPaths::findExecutable("ffmpeg").isEmpty()) {
+                const auto webm = folder.filePath("effect.webm");
+                QVERIFY(dialog.exportRenderedSequence(webm, EffectExport::Webm));
+                QVERIFY(QFileInfo(webm).size() > 100);
+                QProcess decode;
+                decode.start("ffmpeg",
+                             {"-v", "error", "-i", png, "-f", "rawvideo", "-pix_fmt", "rgba", "-"});
+                QVERIFY(decode.waitForFinished(20000));
+                QCOMPARE(decode.exitCode(), 0);
+                auto pixels = decode.readAllStandardOutput();
+                QByteArray expected;
+                for (int i = 0; i < sequence.frames.size(); ++i) {
+                    const auto image =
+                        sequence.composite(i).convertToFormat(QImage::Format_RGBA8888);
+                    const QByteArray bytes(reinterpret_cast<const char *>(image.constBits()),
+                                           image.sizeInBytes());
+                    for (int j = 0; j < sequence.frames[i].ticks; ++j)
+                        expected += bytes;
+                }
+                QCOMPARE(pixels, expected);
+            }
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     dialog.exportRenderedSequence(path, EffectExport::FramesZip));
+            auto data = *project.attacks();
+            auto healing = data.entry(63); healing.targetSide = 2; healing.targetPattern = 1;
+            data.set(63, healing); project.setAttacks(data.json());
+            visual.frames->provenance["effectPlacement"] = 1;
+            dialog.setVisual(visual);
+            QTRY_VERIFY_WITH_TIMEOUT(dialog.findChild<QPushButton *>("effectExportFrame")->isEnabled(),20000);
+            const auto healed = dialog.renderedSequence().composite(0);
+            QCOMPARE(healed.pixelColor(220,143),QColor(255,0,0,128));
+            QCOMPARE(healed.pixelColor(100,143).alpha(),0);
+            QCOMPARE(healed.pixelColor(220,148).alpha(),0);
+            dialog.hide();
+            EffectLibraryEditor library(&project, &undo, [] {}, nullptr, true);
+            library.resize(1050, 720);
+            library.show();
+            library.selectEffect(29);
+            auto pieces = library.findChild<QListWidget *>("effectLibraryPieces");
+            QTRY_VERIFY_WITH_TIMEOUT(pieces->count() > 1, 20000);
+            pieces->setCurrentRow(pieces->count() - 1);
+            QVERIFY(pieces->currentItem()->text().startsWith("Full rendered animation"));
+            const auto fenrir = library.selectedPiece();
+            QVERIFY(fenrir.frames.size() > 10);
+            QVERIFY(fenrir.pixels() <= 4 * 1024 * 1024);
+            int ticks = 0;
+            for (const auto &f : fenrir.frames)
+                ticks += f.ticks;
+            QCOMPARE(ticks, 278);
+            EffectComposer composer(&project, {});
+            composer.addPiece(fenrir);
+            QCOMPARE(composer.composition().pieces.size(), 1);
+            QCOMPARE(composer.composition().pieces[0].duration, 278);
+            QVERIFY(library.grab().save("native/build/fenrir-library.png"));
+            const auto fullZip = folder.filePath("fenrir.zip");
+            QVERIFY(library.exportSequence(fullZip, EffectExport::FramesZip));
+            const auto full = importAnimationFiles({fullZip});
+            QCOMPARE(full.size, QSize(320, 240));
+            int fullTicks = 0;
+            for (const auto &f : full.frames)
+                fullTicks += f.ticks;
+            QCOMPARE(fullTicks, 278);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void composedEffectWorkflow() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         try {
@@ -150,6 +258,15 @@ class UiTests : public QObject {
             QVERIFY(fire.frames[0].layers[0].image!=poison.frames[0].layers[0].image);browser.hide();
             EffectComposer dialog(&project,{});dialog.show();QVERIFY(dialog.findChild<RecoveryDraft *>()->capture().isEmpty());dialog.addPiece(fire);dialog.addPiece(poison);
             QCOMPARE(dialog.composition().pieces.size(),2);
+            auto placement = dialog.findChild<QComboBox *>("compositionPlacement");
+            QVERIFY(placement);
+            QCOMPARE(placement->currentData().toInt(), 1);
+            placement->setCurrentIndex(placement->findData(3));
+            QCOMPARE(dialog.composition().placement, 3);
+            dialog.findChild<QPushButton *>("compositionUndo")->click();
+            QCOMPARE(dialog.composition().placement, 1);
+            dialog.findChild<QPushButton *>("compositionRedo")->click();
+            QCOMPARE(dialog.composition().placement, 3);
             auto start=dialog.findChild<QSpinBox *>("compositionStart");auto fromX=dialog.findChild<QSpinBox *>("compositionFromX");auto toX=dialog.findChild<QSpinBox *>("compositionToX");
             start->setValue(40);fromX->setValue(-24);toX->setValue(24);
             QCOMPARE(dialog.composition().pieces[0].start,0);QCOMPARE(dialog.composition().pieces[0].from,QPoint());

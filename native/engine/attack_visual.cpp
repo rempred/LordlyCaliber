@@ -28,6 +28,12 @@ void AttackVisual::validate() const {
     if (!frames)
         return;
     frames->validate();
+    if (frames->provenance.contains("effectPlacement")) {
+        const auto value = frames->provenance["effectPlacement"];
+        if (!value.isDouble() || value.toDouble() != framePlacement() || framePlacement() < 0 ||
+            framePlacement() > 3)
+            throw Error("Invalid effect placement");
+    }
     if (frames->size.width() > 256 || frames->size.height() > 256 || frames->frames.size() > 300 ||
         frames->pixels() > 16 * 1024 * 1024)
         throw Error("An imported effect may use up to 300 frames, 256 × 256 pixels, and 16 million "
@@ -178,7 +184,7 @@ QByteArray AttackVisual::build(int inherited) const {
         put16(bytes, 24, quint16(frames->anchor.x()));
         put16(bytes, 26, quint16(frames->anchor.y()));
         put16(bytes, 28, quint16(frames->frames.size()));
-        put16(bytes, 30, fullColorFrames() ? 3 : 0);
+        put16(bytes, 30, (fullColorFrames() ? 3 : 0) | (framePlacement() << 8));
         bytes += QByteArray(frames->frames.size() * 16, 0);
         QMap<QByteArray, QPair<quint32, quint32>> images;
         for (int i = 0; i < frames->frames.size(); ++i) {
@@ -241,9 +247,9 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
     }
     if (u16(bytes, 12)) {
         const int w = u16(bytes, 20), h = u16(bytes, 22), count = u16(bytes, 28);
-        const int format = u16(bytes, 30);
-        if ((format != 0 && format != 3) || w < 1 || h < 1 || w > 256 || h > 256 || count < 1 || count > 300 ||
-            32 + count * 16 > bytes.size())
+        const int flags = u16(bytes, 30), format = flags & 255, placement = flags >> 8;
+        if ((format != 0 && format != 3) || placement > 3 || w < 1 || h < 1 || w > 256 || h > 256 ||
+            count < 1 || count > 300 || 32 + count * 16 > bytes.size())
             throw Error("Invalid exported effect dimensions");
         SpriteAsset asset = SpriteAsset::blank("Imported attack effect", {w, h});
         asset.frames.clear();
@@ -286,7 +292,8 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
         if (!document.isObject())
             throw Error("Invalid editable effect frame document");
         result.frames = SpriteAsset::fromAssetFile(document.object());
-        if (result.fullColorFrames() != (format == 3) || result.frames->size != QSize(w, h) || result.frames->frames.size() != count ||
+        if (result.framePlacement() != placement || result.fullColorFrames() != (format == 3) ||
+            result.frames->size != QSize(w, h) || result.frames->frames.size() != count ||
             result.frames->anchor != asset.anchor)
             throw Error("Editable effect metadata disagrees with its game frames");
     }

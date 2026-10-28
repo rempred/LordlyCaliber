@@ -56,7 +56,7 @@ class EffectComposer : public QDialog {
     QLineEdit *name_, *pieceName_;
     QSpinBox *width_, *height_, *length_, *start_, *duration_, *fromX_, *fromY_, *toX_, *toY_;
     QSpinBox *fromScale_, *toScale_, *fromAngle_, *toAngle_, *fromOpacity_, *toOpacity_;
-    QComboBox *easing_;
+    QComboBox *easing_, *placement_;
     QCheckBox *loop_;
     QWidget *pieceControls_;
     QPushButton *play_, *undo_, *redo_;
