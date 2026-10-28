@@ -134,17 +134,20 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     });
     m.service(0x801ca100, [this] {
         auto &c = *machine_;
-        c.registers[2] = c.registers[4] < 9 ? scene_.sourceHeight : scene_.targetHeight;
+        c.registers[2] = (c.registers[4] < 9) == scene_.enemyCaster
+                             ? scene_.sourceHeight : scene_.targetHeight;
     });
     constexpr quint32 inputs = 0x80720000, battle = 0x80740000;
     for (int i = 0; i < 36; ++i)
         m.byte(inputs + i, 255);
-    m.byte(inputs, 0);
+    const int sourceBase = scene.enemyCaster ? 0 : 9;
+    const int targetBase = scene.allies ? sourceBase : 9 - sourceBase;
+    m.byte(inputs, quint8(sourceBase));
     // Area effects use neighbouring actors for their visual choreography.
     // This neutral full formation never changes the attack's damage targets.
     for (int i = 0; i < scene.targetCount; ++i) {
-        m.byte(inputs + 12 + i, quint8(scene.allies ? i : i + 9));
-        m.byte(inputs + 24 + i, quint8(scene.allies ? i : i + 9));
+        m.byte(inputs + 12 + i, quint8(targetBase + i));
+        m.byte(inputs + 24 + i, quint8(targetBase + i));
     }
     m.word(0x801ce8bc, battle);
     m.word(0x801ce8c0, battle + 0x57e0);
@@ -168,7 +171,8 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         const auto a = battle + 0x1c4 + i * 0xf8;
         const int cell = i % 9, row = cell / 3, col = cell % 3;
         const bool occupied = cell < 5;
-        const int classId = occupied ? (i < 9 ? scene.sourceClass : scene.targetClass) : 0;
+        const bool casterSide = (i < 9) == scene.enemyCaster;
+        const int classId = occupied ? (casterSide ? scene.sourceClass : scene.targetClass) : 0;
         m.word(a + 0x48, classId);
         m.word(a + 0x4c, classId);
         m.word(a + 0x40, i < 9 ? 0x100 : 0);

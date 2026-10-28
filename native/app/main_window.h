@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMainWindow>
+#include <QPointer>
 #include <memory>
 #include <atomic>
 class QTabWidget;
@@ -11,6 +12,7 @@ class QUndoGroup;
 class QLockFile;
 class QTimer;
 class QToolBar;
+class QComboBox;
 namespace lordly {
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -51,6 +53,7 @@ class MainWindow : public QMainWindow {
     QUndoGroup *undoGroup_;
     QTabWidget *workspaces_;
     QLabel *summary_;
+    QPointer<QComboBox> wheelCombo_;
     bool loading_ = false;
     quint64 projectRevision_ = 0;
     QString testBuildPath_, testBuildSettingsKey_;

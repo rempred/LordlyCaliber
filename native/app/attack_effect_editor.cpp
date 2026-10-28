@@ -5,6 +5,7 @@
 #include "engine/effect_player.h"
 #include "engine/image.h"
 #include <QColorDialog>
+#include <QButtonGroup>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -136,6 +137,21 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     playback->addWidget(play_);
     playback->addWidget(restart);
     playback->addStretch();
+    playback->addWidget(new QLabel("View"));
+    auto sides = new QButtonGroup(this);
+    for (int side = 0; side < 2; ++side) {
+        auto button = new QPushButton(side ? "Enemy" : "Player");
+        button->setObjectName(side ? "effectPreviewEnemy" : "effectPreviewPlayer");
+        button->setCheckable(true);
+        sides->addButton(button, side);
+        playback->addWidget(button);
+        button->setChecked(!side);
+    }
+    connect(sides, &QButtonGroup::idClicked, this, [this](int side) {
+        if (enemyPreview_ == bool(side)) return;
+        enemyPreview_ = bool(side);
+        render();
+    });
     connect(play_, &QPushButton::clicked, this, [this] {
         if (playing_)
             pausedMs_ += clock_.elapsed();
@@ -176,7 +192,8 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     frameLayout->setContentsMargins(0, 0, 0, 0);
     options->addWidget(frameControls_, 1);
     note("Imported frames appear over the centre of the battle. The origin places the image "
-         "relative to that centre.",
+         "relative to that centre. They keep the same orientation in Player and Enemy views; "
+         "the game does not automatically mirror imported sequences.",
          frameLayout);
     frames_ = new QListWidget;
     frames_->setObjectName("effectFrames");
@@ -375,6 +392,7 @@ void AttackEffectEditor::render() {
     auto watcher = new QFutureWatcher<Clip>(this);
     const auto rom = project_->rom();
     const auto visual = visual_;
+    const bool enemyPreview = enemyPreview_;
     const int inherited = std::max(0, inherited_), classId = classId_;
     connect(watcher, &QFutureWatcher<Clip>::finished, this, [this, watcher, generation] {
         const auto result = watcher->result();
@@ -395,12 +413,13 @@ void AttackEffectEditor::render() {
         clock_.restart();
         showFrame();
     });
-    watcher->setFuture(QtConcurrent::run([rom, visual, inherited, classId, cancel] {
+    watcher->setFuture(QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview] {
         Clip clip;
         try {
             EffectPlayer player(rom);
             EffectPlayer::Scene scene;
             scene.sourceClass = classId;
+            scene.enemyCaster = enemyPreview;
             player.startVisual(visual, inherited, scene);
             quint64 pixels = 0;
             while (player.advance()) {

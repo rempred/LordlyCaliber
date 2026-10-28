@@ -31,6 +31,7 @@
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
 #include <QAbstractSpinBox>
+#include <QAbstractScrollArea>
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
@@ -52,6 +53,7 @@
 #include <QLockFile>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QPlainTextEdit>
 #include <QScrollArea>
@@ -76,20 +78,65 @@
 #include "app/category_icon_editor.h"
 
 namespace lordly {
+namespace {
+bool ownedBy(const QObject *object, const QObject *owner) {
+    for (; object; object = object->parent())
+        if (object == owner)
+            return true;
+    return false;
+}
+} // namespace
 bool MainWindow::eventFilter(QObject *object, QEvent *event) {
     auto widget = qobject_cast<QWidget *>(object);
-    if (widget && isAncestorOf(widget)) {
+    // A popup temporarily takes focus from its combo. Keep the click active
+    // within that control, including its separate popup window.
+    if (widget && event->type() == QEvent::FocusIn && wheelCombo_ &&
+        !ownedBy(widget, wheelCombo_))
+        wheelCombo_.clear();
+    if (widget && ownedBy(widget, this)) {
         if (event->type() == QEvent::Show)
             if (auto table = qobject_cast<QTableView *>(widget))
                 installTableTransfer(*table);
         auto combo = qobject_cast<QComboBox *>(widget);
+        auto clickedCombo = combo;
+        if (!clickedCombo) {
+            auto parentCombo = qobject_cast<QComboBox *>(widget->parentWidget());
+            if (parentCombo && parentCombo->lineEdit() == widget)
+                clickedCombo = parentCombo;
+        }
+        if (clickedCombo && event->type() == QEvent::MouseButtonPress &&
+            static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton)
+            wheelCombo_ = clickedCombo;
         auto spin = qobject_cast<QAbstractSpinBox *>(widget);
         if ((combo || spin) && event->type() == QEvent::Polish)
             widget->setFocusPolicy(Qt::StrongFocus);
-        if ((combo || spin) && event->type() == QEvent::Wheel && !widget->hasFocus() &&
-            !(combo && combo->view()->isVisible())) {
-            event->ignore();
-            return true;
+        // Automatic or keyboard focus is not an invitation to edit while scrolling.
+        // A click enables the focused dropdown until focus moves elsewhere; its
+        // open list continues to handle scrolling normally.
+        if (event->type() == QEvent::Wheel) {
+            const bool passiveCombo = combo &&
+                (!combo->hasFocus() || wheelCombo_ != combo) &&
+                !combo->view()->isVisible();
+            if (passiveCombo || (spin && !widget->hasFocus())) {
+                const auto wheel = static_cast<QWheelEvent *>(event);
+                for (auto parent = widget->parentWidget(); parent; parent = parent->parentWidget()) {
+                    if (auto area = qobject_cast<QAbstractScrollArea *>(parent)) {
+                        auto viewport = area->viewport();
+                        QWheelEvent forwarded(viewport->mapFromGlobal(wheel->globalPosition()),
+                                              wheel->globalPosition(), wheel->pixelDelta(),
+                                              wheel->angleDelta(), wheel->buttons(), wheel->modifiers(),
+                                              wheel->phase(), wheel->inverted(), wheel->source(),
+                                              wheel->pointingDevice());
+                        QApplication::sendEvent(viewport, &forwarded);
+                        if (forwarded.isAccepted()) {
+                            event->accept();
+                            return true;
+                        }
+                    }
+                }
+                event->ignore();
+                return true;
+            }
         }
     }
     return QMainWindow::eventFilter(object, event);

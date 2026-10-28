@@ -38,7 +38,7 @@ class AttackEffectEditor : public QDialog {
     AttackVisual visual_;
     QVector<AttackVisual> history_;
     int historyIndex_ = 0;
-    bool refreshing_ = false, playing_ = false;
+    bool refreshing_ = false, playing_ = false, enemyPreview_ = false;
     QLabel *preview_, *source_, *notice_, *comparison_;
     QListWidget *frames_;
     QSpinBox *delay_, *ticks_, *originX_, *originY_;

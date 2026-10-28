@@ -12,6 +12,7 @@ class EffectPlayer {
         int sourceClass = 2, targetClass = 2, sourceHeight = 38, targetHeight = 38, attack = 55,
             targetCount = 5;
         bool allies = false;
+        bool enemyCaster = true; // Native actor slots 0–8 have opponent flag 0x100.
     };
     explicit EffectPlayer(const Rom &);
     void start(int effect, const Scene &);

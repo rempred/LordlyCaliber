@@ -29,7 +29,10 @@ links, which are identified as shared.
 The selected-class preview shows the body sequence, with a direct route to
 Combat Animations. **Preview / edit attack effect…** opens a separate effects
 window covering all 133 retail visual programs, including spell particles,
-screen effects, breaths, combined spells and Pedra effects. Replace an effect
+screen effects, breaths, combined spells and Pedra effects. The Player / Enemy
+view toggle defaults to Player; the native program receives the selected caster
+side and opposing targets. The toggle affects the preview only. Imported
+sequences retain their game orientation on both sides. Replace an effect
 from the current ROM's named catalog, an independent Art Library copy, PNG files,
 an exported frame-sequence ZIP, or an asset JSON file. Native effects support a
 visual delay and replacement. Imported frames support painting, per-frame timing,
@@ -546,8 +549,11 @@ stats and equipment still apply. Automatic death/attack transformations remain
 separate and are explained in the panel. Items has New item (blank accessory)
 as well as copy. Shop stock filters use the first ROM icon in each type; the
 stronghold picker lists every stronghold by scenario and follows the selected
-shop. Refreshing lists retains view positions; unfocused numeric/choice controls
-ignore wheel edits. Custom rewards are edited independently under leader-based
+shop. Refreshing lists retains view positions. A dropdown accepts wheel selection
+changes only after an explicit click, until focus moves elsewhere. Hovering or
+automatic/keyboard focus leaves the wheel available to scroll the page; open
+option lists still scroll normally. Unfocused numeric controls also ignore wheel
+edits. Custom rewards are edited independently under leader-based
 squad names, with numbering for repeated leaders. Both squad editors support five
 individual members; Scenario export extends the original follower-cohort format
 when needed. Talk affinity has an explicit heading for neutral encounters.

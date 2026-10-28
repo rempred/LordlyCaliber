@@ -132,6 +132,88 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void dropdownWheelRequiresClick() {
+        MainWindow window;
+        window.show();
+        QScrollArea page(&window);
+        page.setGeometry(20, 100, 360, 240);
+        page.setWidgetResizable(true);
+        auto body = new QWidget;
+        auto layout = new QVBoxLayout(body);
+        auto combo = new QComboBox;
+        for (int i = 0; i < 60; ++i)
+            combo->addItem(QString("Choice %1").arg(i));
+        combo->setCurrentIndex(2);
+        layout->addWidget(combo);
+        auto other = new QLineEdit;
+        layout->addWidget(other);
+        layout->addStretch();
+        body->setMinimumHeight(1600);
+        page.setWidget(body);
+        page.show();
+        QTest::qWait(30);
+        auto wheel = [](QWidget *target) {
+            const auto point = target->rect().center();
+            QWheelEvent event(point, target->mapToGlobal(point), {}, {0, -120},
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(target, &event);
+        };
+        for (bool focused : {false, true}) {
+            page.verticalScrollBar()->setValue(0);
+            (focused ? static_cast<QWidget *>(combo) : static_cast<QWidget *>(other))->setFocus();
+            QCOMPARE(combo->hasFocus(), focused);
+            QSignalSpy changes(combo, &QComboBox::currentIndexChanged);
+            wheel(combo);
+            QCOMPARE(combo->currentIndex(), 2);
+            QCOMPARE(changes.count(), 0);
+            QVERIFY(page.verticalScrollBar()->value() > 0);
+        }
+        page.verticalScrollBar()->setValue(0);
+        combo->setFocus();
+        QTest::keyClick(combo, Qt::Key_Down);
+        QCOMPARE(combo->currentIndex(), 3);
+        QTest::mouseClick(combo, Qt::LeftButton, Qt::NoModifier, combo->rect().center());
+        auto view = combo->view();
+        QTRY_VERIFY(view->isVisible());
+        QVERIFY(view->verticalScrollBar()->maximum() > 0);
+        view->verticalScrollBar()->setValue(0);
+        wheel(view->viewport());
+        QVERIFY(view->verticalScrollBar()->value() > 0);
+        QCOMPARE(combo->currentIndex(), 3);
+        const auto choice = view->indexAt(view->viewport()->rect().center());
+        QVERIFY(choice.isValid());
+        QVERIFY(choice.row() != 3);
+        QTest::mouseMove(view->viewport(), view->visualRect(choice).center());
+        QTest::qWait(QApplication::doubleClickInterval() + 1);
+        QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          view->visualRect(choice).center());
+        QCOMPARE(combo->currentIndex(), choice.row());
+        QTRY_VERIFY(combo->hasFocus());
+        wheel(combo);
+        QCOMPARE(combo->currentIndex(), choice.row() + 1);
+        other->setFocus(Qt::TabFocusReason);
+        combo->setFocus(Qt::TabFocusReason);
+        const auto chosen = combo->currentIndex();
+        wheel(combo);
+        QCOMPARE(combo->currentIndex(), chosen);
+        QDialog dialog(&window);
+        auto form = new QVBoxLayout(&dialog);
+        auto nested = new QComboBox;
+        nested->addItems({"One", "Two", "Three"});
+        nested->setCurrentIndex(1);
+        form->addWidget(nested);
+        dialog.show();
+        dialog.activateWindow();
+        nested->setFocus();
+        QTRY_VERIFY(nested->hasFocus());
+        wheel(nested);
+        QCOMPARE(nested->currentIndex(), 1);
+        QTest::mouseClick(nested, Qt::LeftButton, Qt::NoModifier, nested->rect().center());
+        QTest::keyClick(nested->view(), Qt::Key_Escape);
+        QTRY_VERIFY(nested->hasFocus());
+        wheel(nested);
+        QCOMPARE(nested->currentIndex(), 2);
+    }
     void attackEffectWorkflow() {
         applyEditorTheme(*qobject_cast<QApplication *>(QCoreApplication::instance()));
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -163,6 +245,12 @@ class UiTests : public QObject {
             QVERIFY(dialog);
             auto close = qScopeGuard([&] { dialog->reject(); });
             try {
+                auto playerView = dialog->findChild<QPushButton *>("effectPreviewPlayer");
+                auto enemyView = dialog->findChild<QPushButton *>("effectPreviewEnemy");
+                QVERIFY(playerView); QVERIFY(enemyView); QVERIFY(playerView->isChecked());
+                enemyView->click(); QVERIFY(enemyView->isChecked());
+                QCOMPARE(dialog->visual(), original.visual);
+                playerView->click(); QVERIFY(playerView->isChecked());
                 dialog->importLibrary(asset.id);
                 QVERIFY(dialog->visual().frames);
                 QCOMPARE(project.attacks()->entry(55), original);

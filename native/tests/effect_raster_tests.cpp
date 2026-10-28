@@ -6,6 +6,42 @@ using namespace lordly;
 class EffectRasterTests : public QObject {
     Q_OBJECT
   private slots:
+    void previewSides() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            QImage nativeViews[2], importedViews[2];
+            QImage pixels(20, 16, QImage::Format_RGBA8888);
+            pixels.fill(Qt::transparent);
+            pixels.setPixelColor(1, 2, Qt::red);
+            pixels.setPixelColor(17, 12, Qt::blue);
+            AttackVisual imported;
+            imported.frames = SpriteAsset::fromImage("Asymmetric effect", pixels);
+            for (int side = 0; side < 2; ++side) {
+                EffectPlayer::Scene scene;
+                scene.enemyCaster = bool(side);
+                scene.sourceClass = 2; scene.targetClass = 5;
+                EffectPlayer player(Rom::open(path));
+                player.start(8, scene);
+                const int sourceId = side ? 0 : 9, targetId = side ? 9 : 0;
+                QCOMPARE(u8(player.memory(), 0x720000), quint8(sourceId));
+                QCOMPARE(u8(player.memory(), 0x72000c), quint8(targetId));
+                const auto sourceActor = 0x740000 + 0x1c4 + sourceId * 0xf8;
+                const auto targetActor = 0x740000 + 0x1c4 + targetId * 0xf8;
+                QCOMPARE(u32(player.memory(), sourceActor + 0x40) & 0x100, side ? 0x100U : 0U);
+                QCOMPARE(u32(player.memory(), sourceActor + 0x48), 2U);
+                QCOMPARE(u32(player.memory(), targetActor + 0x48), 5U);
+                while (player.advance()) if (player.tick() == 56)
+                    nativeViews[side] = player.draw({320, 240}, .75).image;
+                player.startVisual(imported, 8, scene);
+                QVERIFY(player.advance());
+                importedViews[side] = player.draw({320, 240}, .75).image;
+            }
+            QVERIFY(!nativeViews[0].isNull()); QVERIFY(!nativeViews[1].isNull());
+            QVERIFY(nativeViews[0] != nativeViews[1]);
+            QCOMPARE(importedViews[0], importedViews[1]);
+        } catch(const std::exception &e) { QFAIL(e.what()); }
+    }
     void importedFrames() {
         try {
             QImage red(32, 32, QImage::Format_RGBA8888);
@@ -67,6 +103,7 @@ class EffectRasterTests : public QObject {
                 EffectPlayer player(rom);
                 EffectPlayer::Scene scene;
                 scene.allies = qEnvironmentVariableIsSet("LORDLY_EFFECT_ALLIES");
+                scene.enemyCaster = !qEnvironmentVariableIsSet("LORDLY_EFFECT_PLAYER");
                 if (qEnvironmentVariableIsSet("LORDLY_EFFECT_TARGETS"))
                     scene.targetCount = qEnvironmentVariableIntValue("LORDLY_EFFECT_TARGETS");
                 player.start(id, scene);
