@@ -9,6 +9,8 @@ class QSpinBox;
 class QListWidget;
 class QPushButton;
 class QTimer;
+class QComboBox;
+class QFormLayout;
 namespace lordly {
 class AttackEffectEditor : public QDialog {
     Q_OBJECT
@@ -21,6 +23,8 @@ class AttackEffectEditor : public QDialog {
     void setVisual(const AttackVisual &);
     void importFiles(const QStringList &);
     void importLibrary(const QString &);
+    void copyFromAttack(int attack);
+    void replaceArtwork(quint32 key, const QImage &);
 
   private:
     void refresh();
@@ -28,6 +32,10 @@ class AttackEffectEditor : public QDialog {
     void showFrame();
     void chooseRom();
     void chooseLibrary();
+    void chooseAttack();
+    void refreshArtwork();
+    void chooseArtworkFile();
+    void chooseArtworkLibrary();
     void paintFrame();
     void resizeFrames();
     void record(const AttackVisual &);
@@ -44,6 +52,13 @@ class AttackEffectEditor : public QDialog {
     QSpinBox *delay_, *ticks_, *originX_, *originY_;
     QPushButton *play_, *undo_, *redo_, *paint_, *resize_;
     QWidget *frameControls_;
+    QWidget *nativeControls_;
+    QFormLayout *nativeForm_;
+    QComboBox *colourMode_;
+    QSpinBox *hue_, *effectSize_, *effectX_, *effectY_;
+    QPushButton *effectColour_, *replaceArtwork_, *restoreArtwork_;
+    QListWidget *artworkList_;
+    QMap<quint32, EffectArtwork> sourceArtwork_;
     QTimer *timer_;
     QElapsedTimer clock_;
     QVector<QImage> clip_;

@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/effect_resources.h"
 #include "engine/capacity_placement.h"
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
@@ -308,6 +309,7 @@ void Project::loadAttacks() {
 void Project::setAttacks(const QJsonObject &value) {
     auto next = attacks_ ? *attacks_ : AttackData::load(rom_);
     next.apply(value);
+    for (const auto &attack : next.entries()) validateEffectArtwork(rom_, attack.visual);
     QJsonObject names;
     names["0"] = "None";
     for (int id = 1; id < next.entries().size(); ++id)

@@ -132,6 +132,57 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void retailEffectAppearanceWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadAttacks();
+            auto data = *project.attacks();
+            auto source = data.entry(63);
+            source.visual.hue = 120; source.visual.sizePercent = 150;
+            source.visual.offsetX = 12; source.visual.offsetY = -6;
+            data.set(63, source);
+            const auto target = data.create("New visual copy");
+            project.setAttacks(data.json());
+            AttackEffectEditor dialog(&project, target, 2);
+            dialog.show();
+            dialog.copyFromAttack(63);
+            QCOMPARE(dialog.visual().nativeEffect, 8);
+            QCOMPARE(dialog.visual().hue, 120);
+            QCOMPARE(project.attacks()->entry(63), source);
+            auto size = dialog.findChild<QSpinBox *>("effectSize");
+            auto x = dialog.findChild<QSpinBox *>("effectOffsetX");
+            auto y = dialog.findChild<QSpinBox *>("effectOffsetY");
+            auto mode = dialog.findChild<QComboBox *>("effectColourMode");
+            QVERIFY(size); QVERIFY(x); QVERIFY(y); QVERIFY(mode);
+            size->setValue(175); x->setValue(-18); y->setValue(9); mode->setCurrentIndex(2);
+            QCOMPARE(dialog.visual().sizePercent, 175);
+            QCOMPARE(dialog.visual().offsetX, -18); QCOMPARE(dialog.visual().offsetY, 9);
+            QVERIFY(dialog.visual().color >= 0);
+            auto list = dialog.findChild<QListWidget *>("effectRetailArtwork");
+            QVERIFY(list);
+            QTRY_VERIFY_WITH_TIMEOUT(list->count() > 0, 20000);
+            const auto key = list->item(0)->data(Qt::UserRole).toUInt();
+            QImage image(8, 8, QImage::Format_RGBA8888);
+            image.fill(Qt::green);
+            const auto before = dialog.visual();
+            dialog.replaceArtwork(key, image);
+            QVERIFY(dialog.visual().artwork.contains(key));
+            const auto replaced = dialog.visual();
+            dialog.findChild<QPushButton *>("effectUndo")->click();
+            QCOMPARE(dialog.visual(), before);
+            dialog.findChild<QPushButton *>("effectRedo")->click();
+            QCOMPARE(dialog.visual(), replaced);
+            QCOMPARE(AttackVisual::fromJson(dialog.visual().json()), replaced);
+            QCOMPARE(project.attacks()->entry(63), source);
+            QVERIFY(project.attacks()->entry(target).visual == AttackVisual{});
+            const auto preview = dialog.findChild<QLabel *>("attackEffectPreview");
+            QTRY_VERIFY_WITH_TIMEOUT(!preview->pixmap().isNull(), 20000);
+            QVERIFY(dialog.grab().save("native/build/retail-effect-appearance.png"));
+            dialog.reject();
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void dropdownWheelRequiresClick() {
         MainWindow window;
         window.show();

@@ -9,7 +9,7 @@
 namespace lordly {
 struct AttackPlacement {
     static constexpr quint32 descriptorOffset = 0x27c5300, descriptorSize = 96;
-    static constexpr quint32 codeCapacity = 0x8000;
+    static constexpr quint32 codeCapacity = 0x10000;
     quint32 romOffset = 0, address = 0, size = 0;
     quint32 records = 0, settings = 0, code = 0, codeSize = 0;
     quint32 spellIndexEntry = 0, amountEntry = 0, amountOriginal = 0;

@@ -111,6 +111,8 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     symbols["lc_attack_records"] = p.records;
     symbols["D_8018AA80"] = p.records + 4;
     symbols["lc_attack_scratch"] = p.address + AttackData::scratchOffset;
+    symbols["lc_effect_state"] = p.address + quint32(bytes.size());
+    bytes += QByteArray(8208, 0);
     for (const auto &value : sites) {
         const auto site = value.toObject();
         const auto words = site["words"].toArray();
@@ -129,12 +131,13 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     bytes += QByteArray((sites.size() * 24 + 15) & ~15, 0);
     QMap<QString, quint32> entries;
     for (const auto &name :
-         {QString("attack-runtime"), QString("attack-visual"), QString("attack-generic"),
+         {QString("attack-runtime"), QString("effect-edits"), QString("attack-visual"), QString("attack-generic"),
           QString("attack-select"), QString("attack-combined"), QString("attack-pedra")}) {
         auto unit = name;
         unit.replace('-', '_');
         const auto module = compiler.compileModule(
-            (name == "attack-visual" ? resource("effect-image-draw.c") + "\n" : QByteArray{}) +
+            (name == "attack-visual" ? resource("effect-image-draw.c") + "\n" :
+             name == "effect-edits" ? resource("effect-colors.c") + "\n" : QByteArray{}) +
                 resource(name + ".c"),
             directory, unit, p.address + quint32(bytes.size()), {}, symbols, true);
         bytes += module.bytes;

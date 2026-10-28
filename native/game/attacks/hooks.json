@@ -211,6 +211,196 @@
         666763184,
         2947612740
       ]
+    },
+    {
+      "rom": 2500700,
+      "address": 2149637292,
+      "entry": "lc_attack_edit_task",
+      "original": "lc_original_edit_task",
+      "words": [
+        8394785,
+        1006796834
+      ]
+    },
+    {
+      "rom": 2500880,
+      "address": 2149637472,
+      "entry": "lc_attack_edit_task_alloc",
+      "original": "lc_original_edit_task_alloc",
+      "words": [
+        1007058978,
+        2496007822
+      ]
+    },
+    {
+      "rom": 2499368,
+      "address": 2149635960,
+      "entry": "lc_attack_edit_graphic",
+      "original": "lc_original_edit_graphic",
+      "words": [
+        8400929,
+        1006927906
+      ]
+    },
+    {
+      "rom": 2492456,
+      "address": 2149629048,
+      "entry": "lc_attack_edit_cache",
+      "original": "lc_original_edit_cache",
+      "words": [
+        1007517730,
+        2376928428
+      ]
+    },
+    {
+      "rom": 2493336,
+      "address": 2149629928,
+      "entry": "lc_attack_edit_cache_alloc",
+      "original": "lc_original_edit_cache_alloc",
+      "words": [
+        1006862370,
+        2355301540
+      ]
+    },
+    {
+      "rom": 2494256,
+      "address": 2149630848,
+      "entry": "lc_attack_edit_resource",
+      "original": "lc_original_edit_resource",
+      "words": [
+        666763232,
+        2947612692
+      ]
+    },
+    {
+      "rom": 2494964,
+      "address": 2149631556,
+      "entry": "lc_attack_edit_model",
+      "original": "lc_original_edit_model",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2495156,
+      "address": 2149631748,
+      "entry": "lc_attack_edit_texture",
+      "original": "lc_original_edit_texture",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2495336,
+      "address": 2149631928,
+      "entry": "lc_attack_edit_material",
+      "original": "lc_original_edit_material",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2495504,
+      "address": 2149632096,
+      "entry": "lc_attack_edit_geometry",
+      "original": "lc_original_edit_geometry",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2495672,
+      "address": 2149632264,
+      "entry": "lc_attack_edit_frame",
+      "original": "lc_original_edit_frame",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2495840,
+      "address": 2149632432,
+      "entry": "lc_attack_edit_strip",
+      "original": "lc_original_edit_strip",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2496008,
+      "address": 2149632600,
+      "entry": "lc_attack_edit_texture_kind",
+      "original": "lc_original_edit_texture_kind",
+      "words": [
+        666763232,
+        2947678232
+      ]
+    },
+    {
+      "rom": 2497828,
+      "address": 2149634420,
+      "entry": "lc_attack_edit_packet",
+      "original": "lc_original_edit_packet",
+      "words": [
+        1006862370,
+        2489519440
+      ]
+    },
+    {
+      "rom": 2497960,
+      "address": 2149634552,
+      "entry": "lc_attack_edit_packet_callback",
+      "original": "lc_original_edit_packet_callback",
+      "words": [
+        666763240,
+        1006862370
+      ]
+    },
+    {
+      "rom": 2502772,
+      "address": 2149639364,
+      "entry": "lc_attack_edit_screen",
+      "original": "lc_original_edit_screen",
+      "words": [
+        1006927906,
+        2491682208
+      ]
+    },
+    {
+      "rom": 2502944,
+      "address": 2149639536,
+      "entry": "lc_attack_edit_screen_callback",
+      "original": "lc_original_edit_screen_callback",
+      "words": [
+        1007058978,
+        2496007584
+      ]
+    },
+    {
+      "rom": 2045840,
+      "address": 2149253888,
+      "entry": "lc_attack_edit_scene_draw",
+      "original": "lc_original_edit_scene_draw",
+      "words": [
+        666763184,
+        4155768904
+      ]
+    },
+    {
+      "rom": 2502100,
+      "address": 2149638692,
+      "entry": "lc_attack_edit_screen_draw",
+      "original": "lc_original_edit_screen_draw",
+      "words": [
+        1006796834,
+        2353139108
+      ]
     }
   ],
   "symbols": {

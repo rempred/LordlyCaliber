@@ -64,6 +64,7 @@ class Raster {
     bool zBuffer = false;
     quint32 lowerMode = 0;
     double primitiveDepth = 0;
+    double viewportScaleX = 1, viewportScaleY = 1, viewportOffsetX = 0, viewportOffsetY = 0;
     int activeTile = 0;
     double scaleS = 1, scaleT = 1;
     quint32 combineHigh = 0xfcffffff, combineLow = 0xfffdf6fb;
@@ -158,6 +159,16 @@ class Raster {
         throw Error(
             QString("Unsupported effect texture format %1/%2").arg(tile.format).arg(tile.size));
     }
+    void rememberTexture(int index) {
+        const auto &tile = tiles[index & 7];
+        const auto &source = textures[tile.tmem];
+        if (!textureEnabled || !tile.configured || !source.address) return;
+        const int bits = 4 << tile.size;
+        const int rowBytes = source.rowBytes ? source.rowBytes : tile.line ? tile.line * 8 * (tile.size == 3 ? 2 : 1)
+                                                                                      : (tile.width * bits + 7) / 8;
+        EffectRaster::TextureUse use{physical(source.address), tile.format, bits, rowBytes};
+        if (!result.textures.contains(use)) result.textures.append(use);
+    }
     void vertex(quint32 address, int first, int count) {
         if (first < 0 || count < 1 || first + count > int(vertices.size()))
             throw Error("Effect vertex command exceeds its cache");
@@ -188,6 +199,8 @@ class Raster {
                 v.y = viewport.height() * .68 - p[1] * zoom + p[2] * zoom * .2;
                 v.z = p[2];
             }
+            v.x = (v.x - viewport.width() / 2.) * viewportScaleX + viewport.width() / 2. + viewportOffsetX;
+            v.y = (v.y - viewport.height() / 2.) * viewportScaleY + viewport.height() / 2. + viewportOffsetY;
             v.s = qint16(half(at + 8)) / 32. * scaleS;
             v.t = qint16(half(at + 10)) / 32. * scaleT;
             for (int c = 0; c < 4; ++c)
@@ -196,6 +209,8 @@ class Raster {
         }
     }
     void triangle(int a, int b, int c) {
+        rememberTexture(activeTile);
+        if (twoCycles) rememberTexture((activeTile + 1) & 7);
         if (a >= int(vertices.size()) || b >= int(vertices.size()) || c >= int(vertices.size()))
             throw Error("Effect triangle references an invalid vertex");
         const auto &p = vertices[a], &q = vertices[b], &r = vertices[c];
@@ -273,6 +288,12 @@ class Raster {
                     return;
             } else if (op == 0xdb && ((high >> 16) & 255) == 6) {
                 segments[(high & 65535) / 4 & 15] = low;
+            } else if (op == 0xdc && (high & 255) == 8) {
+                const auto at = physical(low, 16);
+                viewportScaleX = qint16(half(at)) / 640.;
+                viewportScaleY = qint16(half(at + 2)) / 480.;
+                viewportOffsetX = (qint16(half(at + 8)) - 640) * viewport.width() / 1280.;
+                viewportOffsetY = (qint16(half(at + 10)) - 480) * viewport.height() / 960.;
             } else if (op == 0xda) {
                 const auto at = physical(low, 64);
                 Matrix incoming;
@@ -377,6 +398,8 @@ class Raster {
                 const double right = (high >> 12 & 4095) / 4. + (copyCycle ? 1 : 0),
                              bottom = (high & 4095) / 4. + (copyCycle ? 1 : 0);
                 const int tile = low >> 24 & 7;
+                rememberTexture(tile);
+                if (twoCycles) rememberTexture((tile + 1) & 7);
                 ColorCombiner combiner(combineHigh, combineLow, twoCycles);
                 for (int y = std::max(0, int(std::ceil(top * viewport.height() / 240.)));
                      y <

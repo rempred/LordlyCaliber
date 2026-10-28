@@ -4,6 +4,8 @@
 #include "engine/animation_file_import.h"
 #include "engine/effect_player.h"
 #include "engine/image.h"
+#include "engine/image_colors.h"
+#include "engine/effect_resources.h"
 #include <QColorDialog>
 #include <QButtonGroup>
 #include <QComboBox>
@@ -11,6 +13,8 @@
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QFutureWatcher>
+#include <QImageReader>
+#include <QInputDialog>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -19,6 +23,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScopedValueRollback>
+#include <QSignalBlocker>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QSplitter>
@@ -26,6 +31,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent>
 #include <algorithm>
+extern "C" unsigned int lc_effect_color(unsigned int, int, int, unsigned int);
 namespace lordly {
 namespace {
 QLabel *note(const QString &text, QLayout *layout) {
@@ -68,6 +74,7 @@ struct Clip {
     QVector<int> holds;
     int ticks = 0;
     QString error;
+    QMap<quint32, EffectArtwork> artwork;
 };
 } // namespace
 AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWidget *parent)
@@ -100,6 +107,10 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     });
     replace->setMenu(menu);
     commands->addWidget(replace);
+    auto copy = new QPushButton("Copy effect from attack…");
+    copy->setObjectName("copyAttackEffect");
+    commands->addWidget(copy);
+    connect(copy, &QPushButton::clicked, this, [this] { guarded([this] { chooseAttack(); }); });
     auto restore = new QPushButton("Restore original effect");
     restore->setObjectName("restoreAttackEffect");
     commands->addWidget(restore);
@@ -170,7 +181,11 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
          scene);
     auto right = new QWidget;
     auto options = new QVBoxLayout(right);
-    split->addWidget(right);
+    auto optionsScroll = new QScrollArea;
+    optionsScroll->setWidgetResizable(true);
+    optionsScroll->setWidget(right);
+    optionsScroll->setMinimumWidth(330);
+    split->addWidget(optionsScroll);
     split->setSizes({570, 400});
     auto timing = new QFormLayout;
     options->addLayout(timing);
@@ -187,6 +202,81 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
             record(v);
         }
     });
+    nativeControls_ = new QGroupBox("Retail effect appearance");
+    auto nativeLayout = new QVBoxLayout(nativeControls_);
+    options->addWidget(nativeControls_, 1);
+    nativeForm_ = new QFormLayout;
+    nativeLayout->addLayout(nativeForm_);
+    colourMode_ = new QComboBox;
+    colourMode_->setObjectName("effectColourMode");
+    colourMode_->addItems({"Original colours", "Shift colours", "Single colour"});
+    nativeForm_->addRow("Recolour", colourMode_);
+    hue_ = spin("effectHue", -180, 180);
+    hue_->setSuffix("°");
+    nativeForm_->addRow("Colour shift", hue_);
+    effectColour_ = new QPushButton("Choose colour…");
+    effectColour_->setObjectName("effectColour");
+    nativeForm_->addRow("Colour", effectColour_);
+    effectSize_ = spin("effectSize", 25, 400); effectSize_->setSuffix("%");
+    effectX_ = spin("effectOffsetX", -320, 320); effectX_->setSuffix(" px");
+    effectY_ = spin("effectOffsetY", -240, 240); effectY_->setSuffix(" px");
+    nativeForm_->addRow("Size", effectSize_);
+    nativeForm_->addRow("Horizontal offset", effectX_);
+    nativeForm_->addRow("Vertical offset", effectY_);
+    note("Size scales the effect around the screen centre. Positive offsets move it right or down. "
+         "These change the visual only; targeting and damage stay the same.", nativeLayout);
+    connect(colourMode_, &QComboBox::currentIndexChanged, this, [this](int mode) {
+        if (refreshing_) return;
+        auto v = visual_;
+        v.hue = mode == 1 ? (v.hue ? v.hue : 120) : 0;
+        v.color = mode == 2 ? (v.color >= 0 ? v.color : 0x4080ff) : -1;
+        record(v);
+    });
+    connect(effectColour_, &QPushButton::clicked, this, [this] {
+        const auto color = QColorDialog::getColor(QColor::fromRgb(visual_.color < 0 ? 0x4080ff : visual_.color),
+                                                   this, "Effect colour");
+        if (color.isValid()) {
+            auto v = visual_; v.color = color.rgb() & 0xffffff; v.hue = 0; record(v);
+        }
+    });
+    auto nativeValue = [this](QSpinBox *control, int AttackVisual::*member) {
+        connect(control, &QSpinBox::valueChanged, this, [this, member](int value) {
+            if (!refreshing_) { auto v = visual_; v.*member = value; record(v); }
+        });
+    };
+    nativeValue(hue_, &AttackVisual::hue); nativeValue(effectSize_, &AttackVisual::sizePercent);
+    nativeValue(effectX_, &AttackVisual::offsetX); nativeValue(effectY_, &AttackVisual::offsetY);
+    note("Artwork used by this effect", nativeLayout);
+    artworkList_ = new QListWidget;
+    artworkList_->setObjectName("effectRetailArtwork");
+    artworkList_->setIconSize({64, 64});
+    artworkList_->setWordWrap(true);
+    artworkList_->setMinimumHeight(150);
+    nativeLayout->addWidget(artworkList_, 1);
+    auto artworkButtons = new QHBoxLayout;
+    nativeLayout->addLayout(artworkButtons);
+    replaceArtwork_ = new QPushButton("Replace artwork…");
+    replaceArtwork_->setObjectName("effectReplaceArtwork");
+    auto artworkMenu = new QMenu(replaceArtwork_);
+    artworkMenu->addAction("From file…", this, [this] { guarded([this] { chooseArtworkFile(); }); });
+    artworkMenu->addAction("From Art Library…", this, [this] { guarded([this] { chooseArtworkLibrary(); }); });
+    replaceArtwork_->setMenu(artworkMenu);
+    restoreArtwork_ = new QPushButton("Restore artwork");
+    restoreArtwork_->setObjectName("effectRestoreArtwork");
+    artworkButtons->addWidget(replaceArtwork_); artworkButtons->addWidget(restoreArtwork_);
+    connect(artworkList_, &QListWidget::currentRowChanged, this, [this] {
+        const auto item = artworkList_->currentItem();
+        replaceArtwork_->setEnabled(item);
+        restoreArtwork_->setEnabled(item && visual_.artwork.contains(item->data(Qt::UserRole).toUInt()));
+    });
+    connect(restoreArtwork_, &QPushButton::clicked, this, [this] {
+        if (const auto item = artworkList_->currentItem()) {
+            auto v = visual_; v.artwork.remove(item->data(Qt::UserRole).toUInt()); record(v);
+        }
+    });
+    note("Replacements fit the selected texture's original dimensions and keep the retail movement "
+         "and timing. Each texture may appear several times during the effect. Colours and alpha "
+         "use the retail effect's RGBA32 format.", nativeLayout);
     frameControls_ = new QWidget;
     auto frameLayout = new QVBoxLayout(frameControls_);
     frameLayout->setContentsMargins(0, 0, 0, 0);
@@ -309,12 +399,14 @@ void AttackEffectEditor::record(const AttackVisual &v) {
     notice_->clear();
     try {
         v.validate();
+        validateEffectArtwork(project_->rom(), v);
         if (v == visual_)
             return;
         auto candidate = *project_->attacks();
         auto attack = candidate.entry(attack_);
         attack.visual = v;
         candidate.set(attack_, attack); // Check capacity before accepting an unfinished draft.
+        if (v.frames || v.nativeEffect != visual_.nativeEffect) sourceArtwork_.clear();
         visual_ = v;
         history_.resize(historyIndex_ + 1);
         history_ << v;
@@ -331,6 +423,7 @@ void AttackEffectEditor::history(int n) {
     if (at < 0 || at >= history_.size())
         return;
     historyIndex_ = at;
+    if (visual_.nativeEffect != history_[at].nativeEffect || history_[at].frames) sourceArtwork_.clear();
     visual_ = history_[at];
     refresh();
     render();
@@ -342,6 +435,14 @@ void AttackEffectEditor::refresh() {
     const int selected = frames_->currentRow();
     frames_->clear();
     frameControls_->setVisible(visual_.frames.has_value());
+    nativeControls_->setVisible(!visual_.frames && (inherited_ >= 0 || visual_.nativeEffect >= 0));
+    colourMode_->setCurrentIndex(visual_.color >= 0 ? 2 : visual_.hue ? 1 : 0);
+    hue_->setValue(visual_.hue); effectSize_->setValue(visual_.sizePercent);
+    effectX_->setValue(visual_.offsetX); effectY_->setValue(visual_.offsetY);
+    nativeForm_->setRowVisible(hue_, colourMode_->currentIndex() == 1);
+    nativeForm_->setRowVisible(effectColour_, colourMode_->currentIndex() == 2);
+    effectColour_->setText(visual_.color >= 0 ? QColor::fromRgb(visual_.color).name() + "…" : "Choose colour…");
+    refreshArtwork();
     if (visual_.frames) {
         const auto &asset = *visual_.frames;
         source_->setText(QString("Independent imported sequence · %1 frames · %2 × %3")
@@ -408,6 +509,8 @@ void AttackEffectEditor::render() {
         clip_ = result.images;
         holds_ = result.holds;
         clipTicks_ = result.ticks;
+        sourceArtwork_ = result.artwork;
+        refreshArtwork();
         playing_ = true;
         play_->setText("Pause");
         clock_.restart();
@@ -436,6 +539,14 @@ void AttackEffectEditor::render() {
                     clip.holds << 1;
                 }
                 ++clip.ticks;
+            }
+            for (const auto &r : player.resources()) {
+                if (r.size.isEmpty() || r.size.width() > 256 || r.size.height() > 4096 ||
+                    (r.type != 4 && r.type != 7 && r.type != 8)) continue;
+                const auto key = quint32(r.type << 16 | (r.id & 65535));
+                const auto original = retailEffectResource(rom, r.type, r.id & 65535);
+                if (original.size() == qint64(r.size.width()) * r.size.height() * 4)
+                    clip.artwork[key] = {r.size.width(), r.size.height(), original, sha256(original)};
             }
         } catch (const std::exception &e) {
             clip.error = QString::fromUtf8(e.what());
@@ -480,8 +591,8 @@ void AttackEffectEditor::chooseRom() {
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
     if (dialog.exec() == QDialog::Accepted && list->currentItem()) {
-        auto v = visual_;
-        v.frames.reset();
+        AttackVisual v;
+        v.delay = visual_.delay;
         v.nativeEffect = list->currentItem()->data(Qt::UserRole).toInt();
         record(v);
     }
@@ -514,15 +625,144 @@ void AttackEffectEditor::chooseLibrary() {
     if (dialog.exec() == QDialog::Accepted && list->currentItem())
         importLibrary(list->currentItem()->data(Qt::UserRole).toString());
 }
-void AttackEffectEditor::importLibrary(const QString &id) {
+void AttackEffectEditor::refreshArtwork() {
+    const auto selected = artworkList_->currentItem()
+        ? artworkList_->currentItem()->data(Qt::UserRole).toUInt() : 0;
+    QSignalBlocker blocker(artworkList_);
+    artworkList_->clear();
+    for (auto i = sourceArtwork_.begin(); i != sourceArtwork_.end(); ++i) {
+        const auto art = visual_.artwork.value(i.key(), i.value());
+        auto pixels = art.rgba;
+        const int mode = visual_.color >= 0 ? 2 : visual_.hue ? 1 : 0;
+        if (mode) for (int at = 0; at < pixels.size(); at += 4)
+            put32(pixels, at, lc_effect_color(u32(pixels, at), mode, visual_.hue, quint32(visual_.color)));
+        const QImage image(reinterpret_cast<const uchar *>(pixels.constData()), art.width, art.height,
+                           art.width * 4, QImage::Format_RGBA8888);
+        auto item = new QListWidgetItem(QIcon(QPixmap::fromImage(checker(image).scaled(
+            64, 64, Qt::KeepAspectRatio, Qt::FastTransformation))),
+            QString("Texture %1:%2 · %3 × %4%5").arg(i.key() >> 16).arg(i.key() & 65535)
+                .arg(art.width).arg(art.height).arg(visual_.artwork.contains(i.key()) ? " · replaced" : ""));
+        item->setData(Qt::UserRole, i.key());
+        artworkList_->addItem(item);
+        if (i.key() == selected) artworkList_->setCurrentItem(item);
+    }
+    if (sourceArtwork_.isEmpty() && clipTicks_ > 0 && !visual_.frames) {
+        auto item = new QListWidgetItem("No image textures in this effect. Use Replace effect… to supply new artwork.", artworkList_);
+        item->setFlags(Qt::NoItemFlags);
+    }
+    if (!artworkList_->currentItem() && !sourceArtwork_.isEmpty()) artworkList_->setCurrentRow(0);
+    const auto item = artworkList_->currentItem();
+    const bool selectedArtwork = item && item->data(Qt::UserRole).isValid();
+    replaceArtwork_->setEnabled(selectedArtwork);
+    restoreArtwork_->setEnabled(selectedArtwork && visual_.artwork.contains(item->data(Qt::UserRole).toUInt()));
+}
+void AttackEffectEditor::replaceArtwork(quint32 key, const QImage &image) {
+    if (!sourceArtwork_.contains(key)) throw Error("Choose artwork from the current effect preview");
+    if (image.isNull() || qint64(image.width()) * image.height() > 16 * 1024 * 1024)
+        throw Error("Choose an image with at most 16 million pixels");
+    auto art = sourceArtwork_.value(key);
+    const auto pixels = imageToSrgb(image).convertToFormat(QImage::Format_RGBA8888)
+        .scaled(art.width, art.height, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+    art.rgba = QByteArray(reinterpret_cast<const char *>(pixels.constBits()), art.width * art.height * 4);
     auto v = visual_;
+    v.artwork[key] = std::move(art);
+    record(v);
+}
+void AttackEffectEditor::chooseArtworkFile() {
+    const auto item = artworkList_->currentItem();
+    if (!item) return;
+    const auto key = item->data(Qt::UserRole).toUInt();
+    const auto path = QFileDialog::getOpenFileName(this, "Replace selected effect artwork", {}, "PNG image (*.png)");
+    if (path.isEmpty()) return;
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const auto image = reader.read();
+    if (image.isNull()) throw Error("Cannot read artwork: " + reader.errorString());
+    replaceArtwork(key, image);
+}
+void AttackEffectEditor::chooseArtworkLibrary() {
+    const auto item = artworkList_->currentItem();
+    if (!item) return;
+    const auto key = item->data(Qt::UserRole).toUInt();
+    QStringList labels, ids;
+    for (const auto &asset : project_->sprites().assets()) {
+        labels << QString("%1 · %2 (%3 frames)").arg(labels.size() + 1).arg(asset.name).arg(asset.frames.size());
+        ids << asset.id;
+    }
+    if (labels.isEmpty()) throw Error("The Art Library is empty. Add artwork there or choose From file.");
+    bool ok = false;
+    const auto selection = QInputDialog::getItem(this, "Choose replacement artwork", "Art Library", labels, 0, false, &ok);
+    if (!ok) return;
+    const auto asset = project_->sprites().asset(ids.at(labels.indexOf(selection)));
+    int frame = 0;
+    if (asset.frames.size() > 1) {
+        QStringList frames;
+        for (int i = 0; i < asset.frames.size(); ++i) frames << QString("Frame %1").arg(i + 1);
+        const auto selected = QInputDialog::getItem(this, "Choose a frame", "Replacement artwork", frames, 0, false, &ok);
+        if (!ok) return;
+        frame = frames.indexOf(selected);
+    }
+    replaceArtwork(key, asset.composite(frame));
+}
+void AttackEffectEditor::copyFromAttack(int id) {
+    const auto &source = project_->attacks()->entry(id);
+    auto visual = source.visual;
+    if (!visual.frames && visual.nativeEffect < 0) {
+        if (u8(source.data, 0) < 2 || AttackData::isTemplate(id))
+            throw Error("Choose an attack with a visual effect");
+        visual.nativeEffect = EffectPlayer::retailEffect(source.animation);
+    }
+    if (visual.frames)
+        visual.frames->id = SpriteLibrary::newId();
+    record(visual);
+}
+void AttackEffectEditor::chooseAttack() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("Copy an attack's edited effect");
+    dialog.resize(460, 560);
+    auto layout = new QVBoxLayout(&dialog);
+    note("Copies the effect and its edits into this attack. Later edits to either copy stay independent.", layout);
+    auto search = new QLineEdit;
+    search->setPlaceholderText("Search attacks or IDs…");
+    layout->addWidget(search);
+    auto list = new QListWidget;
+    layout->addWidget(list, 1);
+    const auto &attacks = *project_->attacks();
+    for (int id = 1; id < attacks.entries().size(); ++id) {
+        const auto &a = attacks.entry(id);
+        if (id == attack_ || AttackData::isTemplate(id) ||
+            (!a.visual.frames && a.visual.nativeEffect < 0 && u8(a.data, 0) < 2))
+            continue;
+        auto item = new QListWidgetItem(QString("%1 · ID %2%3")
+            .arg(AttackData::displayName(a)).arg(id).arg(a.visual.modified() ? " · edited effect" : ""));
+        item->setData(Qt::UserRole, id);
+        list->addItem(item);
+    }
+    if (list->count()) list->setCurrentRow(0);
+    connect(search, &QLineEdit::textChanged, &dialog, [list](const QString &query) {
+        for (int i = 0; i < list->count(); ++i)
+            list->item(i)->setHidden(!list->item(i)->text().contains(query, Qt::CaseInsensitive));
+    });
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(list->count() > 0);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
+    if (dialog.exec() == QDialog::Accepted && list->currentItem())
+        copyFromAttack(list->currentItem()->data(Qt::UserRole).toInt());
+}
+void AttackEffectEditor::importLibrary(const QString &id) {
+    AttackVisual v;
+    v.delay = visual_.delay;
     v.frames = project_->sprites().asset(id);
     v.frames->id = SpriteLibrary::newId();
     v.validate();
     record(v);
 }
 void AttackEffectEditor::importFiles(const QStringList &paths) {
-    auto v = visual_;
+    AttackVisual v;
+    v.delay = visual_.delay;
     v.frames = importAnimationFiles(paths);
     v.validate();
     record(v);

@@ -6,6 +6,37 @@ using namespace lordly;
 class EffectRasterTests : public QObject {
     Q_OBJECT
   private slots:
+    void retailAppearanceTransform() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            QRect bounds[2];
+            for (int variant = 0; variant < 2; ++variant) {
+                AttackVisual visual;
+                visual.nativeEffect = 8;
+                visual.hue = 120;
+                if (variant) { visual.sizePercent = 150; visual.offsetX = 12; visual.offsetY = -6; }
+                EffectPlayer player(Rom::open(path));
+                player.startVisual(visual, 8, {});
+                while (player.advance()) {
+                    if (player.tick() != 56) continue;
+                    const auto image = player.draw({320, 240}, .75).image;
+                    for (int y = 0; y < image.height(); ++y)
+                        for (int x = 0; x < image.width(); ++x)
+                            if (image.pixelColor(x,y).alpha() > 10)
+                                bounds[variant] |= QRect(x,y,1,1);
+                }
+            }
+            QVERIFY(!bounds[0].isEmpty()); QVERIFY(!bounds[1].isEmpty());
+            const QRectF expected((bounds[0].left()-160)*1.5+172,
+                (bounds[0].top()-120)*1.5+114, bounds[0].width()*1.5, bounds[0].height()*1.5);
+            const auto clipped = expected.intersected(QRectF(0,0,320,240));
+            QVERIFY(std::abs(bounds[1].left()-clipped.left()) <= 3);
+            QVERIFY(std::abs(bounds[1].top()-clipped.top()) <= 3);
+            QVERIFY(std::abs(bounds[1].width()-clipped.width()) <= 3);
+            QVERIFY(std::abs(bounds[1].height()-clipped.height()) <= 3);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void previewSides() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -106,7 +137,13 @@ class EffectRasterTests : public QObject {
                 scene.enemyCaster = !qEnvironmentVariableIsSet("LORDLY_EFFECT_PLAYER");
                 if (qEnvironmentVariableIsSet("LORDLY_EFFECT_TARGETS"))
                     scene.targetCount = qEnvironmentVariableIntValue("LORDLY_EFFECT_TARGETS");
-                player.start(id, scene);
+                if (qEnvironmentVariableIsSet("LORDLY_EFFECT_EDITED")) {
+                    AttackVisual appearance;
+                    appearance.nativeEffect = id;
+                    appearance.hue = 120; appearance.sizePercent = 125;
+                    appearance.offsetX = 12; appearance.offsetY = -6;
+                    player.startVisual(appearance, id, scene);
+                } else player.start(id, scene);
                 int triangles = 0;
                 bool visible = false;
                 while (player.advance()) {
@@ -125,7 +162,10 @@ class EffectRasterTests : public QObject {
                         QVERIFY(player.draw().image.save(
                             qEnvironmentVariable("LORDLY_EFFECT_CAPTURE")));
                 }
-                qInfo() << "Effect" << id << "ticks" << player.tick() << "triangles" << triangles;
+                int editable = 0;
+                for (const auto &r : player.resources()) editable += !r.size.isEmpty();
+                qInfo() << "Effect" << id << "ticks" << player.tick() << "triangles" << triangles
+                        << "artwork" << editable;
                 rendered += visible;
                 // A zero-length ribbon can be empty when source equals target;
                 // that regression checks bounded completion instead.

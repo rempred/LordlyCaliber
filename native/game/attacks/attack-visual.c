@@ -11,6 +11,9 @@ void lc_original_visual_normalize(float *);
 int lc_original_visual_travel(int, void *);
 float lc_original_visual_distance(float *);
 int lc_original_visual_projectile(int, void *);
+void lc_effect_bind_current(void *);
+int lc_effect_push(void *);
+void lc_effect_pop(int);
 #define W(p, n) (*(u32 *)((u8 *)(p) + (n)))
 #define H(p, n) (*(u16 *)((u8 *)(p) + (n)))
 #define F(p, n) (*(float *)((u8 *)(p) + (n)))
@@ -165,6 +168,7 @@ static void visual_task(int state, void *data) {
         s->frame = 0;
         s->hold = 0;
         s->delay = H(s->config, 18);
+        lc_effect_bind_current(s->config);
         ((void (*)(int))0x8020dc80)(4096);
         return;
     }
@@ -241,7 +245,7 @@ static void visual_task(int state, void *data) {
     s->hold--;
 }
 void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
-    int i, donor, ringIndex;
+    int i, donor, ringIndex, owner;
     u8 *config = 0, *ring;
     u32 saved;
     u32 *table = (u32 *)0x8021fcc0;
@@ -264,7 +268,10 @@ void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
     ringIndex = GLOBAL(0x80220db0);
     saved = table[donor];
     table[donor] = (u32)visual_task;
+    /* Scope native initialization and child resource loads from submission. */
+    owner = lc_effect_push(config);
     lc_original_visual_submit(donor, source, targets, extra);
+    lc_effect_pop(owner);
     table[donor] = saved;
     ring = (u8 *)0x80220db8 + ringIndex * 20;
     H(ring, 2) |= 1;

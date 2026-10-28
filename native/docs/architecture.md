@@ -13,8 +13,8 @@ Animations observe the same state. Unknown native D bytes remain intact.
 The action byte supports IDs1–254. `LCATK001` at z64 ROM `0x27C5300` describes a
 versioned, checksummed allocation appended to the existing class/item permanent
 DMA block. `LCATDATA` contains 256 bounded 16-byte records, 32-byte extension rows,
-128 bytes of transient battle scratch and deduplicated names, followed by a 32 KiB
-code reservation. Both ROM and 4 MiB RAM bounds are checked. No separate loader
+128 bytes of transient battle scratch and deduplicated names, followed by a 64 KiB
+code/state reservation. Both ROM and 4 MiB RAM bounds are checked. No separate loader
 or overlay-address assumption is introduced. Prior attack hooks and references
 are restored before other source rebuilds, then installed last; this avoids
 contaminating existing class-reader authentication. Original records remain in
@@ -27,7 +27,7 @@ animation and amount consumers. The parent tools `attack-runtime-audit.py` and
 adapted sources; the carried accepted originals remain unchanged. These adapters
 are mod code, not new matching-C claims. Full-function replacements authenticate
 their complete original extent; wrappers preserve the original function body.
-Unknown code is rejected. Fifty table-reference sites and twenty entry hooks
+Unknown code is rejected. Fifty table-reference sites and thirty-nine entry hooks
 are recorded explicitly, with separate ROM and runtime addresses.
 
 Custom targets use front/middle/rear-major nine-bit masks in each side's own
@@ -69,7 +69,7 @@ version2 remains readable. `LCFX0001` stores bounded delay, dimensions, origin,
 frame durations and deduplicated LZSS RGBA5551 images. Compressed editable asset
 metadata is also retained and authenticated by rebuilding on ROM read. Configs
 share the checked permanent class/attack allocation. Visual event IDs 136–254
-provide 119 independent slots. Existing 15–19-hook exports upgrade to the 20-hook
+provide 119 independent slots. Existing 15–20-hook exports upgrade to the current hook
 layout without losing original data.
 
 `attack-visual.c` wraps the native effect appender. Native replacements hand off
@@ -86,6 +86,39 @@ safe for self targeting: a zero vector gets a finite orientation and length,
 and a path too short to cross the native completion interval signals its parent
 once.
 Nonzero normalization and ordinary travel retain the original instructions.
+
+Retail appearance edits use `LCFX0002`: hue/single-colour mode, screen-centred
+size/offsets, two aligned F3DEX2 viewports, and bounded replacement RGBA32 texture
+resources. Each replacement retains the original resource type/ID, dimensions
+and SHA-256. Original type3..8 directories and resources are read from overlay12;
+only colour resources4/7/8 are offered as artwork. Width is established from the
+native draw's texture stride; unobserved layouts remain untouched. Images convert
+to sRGB and fit the original dimensions, with at most512 KiB replaced per effect.
+Project import and ROM reopening validate source identity and binary layout.
+Effect94/model243 is untextured: its seven geometry resources647–653 use prelit
+RGBA vertices (the native802202D0 preset disables lighting and uses SHADE). Their
+vertex colours are recoloured on the private resource copy; other geometry
+colour/normal bytes remain untouched. There is no separate image to replace, so
+the picker directs the user to whole-effect replacement.
+
+`effect-edits.c` scopes native task/graphic/draw callbacks to an edited attack.
+Cache IDs include the attack ID so models and child resources are independent;
+the common lookup covers both fetch and release-by-ID. Native inline preloaders
+are qualified before lookup, and child creation is wrapped because its initializer
+bypasses the usual task dispatcher. Reference counts, relocation and freeing stay
+native. An8208-byte state block records ownership without altering native object
+layouts. Colour conversion is shared integer C. Scale/offset use scoped viewports
+for geometry and transformed rectangle coordinates/texture steps for screen draws.
+No character position or damage/target calculation is changed.
+
+Edited preview installs the same compiled C modules in isolated RAM, rather than
+applying a desktop-only image filter. Preview pools match retail:24 tasks,32 graphic
+objects,128 cached resources and256 drawing packets/screen nodes. The preview's
+camera-bookkeeping entries retire when tasks finish; full-game camera operation
+is still outside this runner. Focused checks compare fresh exports frame by frame,
+check exact replacement pixels, run differently edited copies alongside the original,
+and repeat them through retained native caches. Console heap pressure and exact
+RDP blending remain gameplay verification limits.
 
 `AttackEffectEditor` keeps local history until Apply, which publishes one shared
 attack-table Undo command. Art Library/file replacements are independent copies.

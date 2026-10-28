@@ -26,7 +26,33 @@ class AttackDataTests : public QObject {
             auto native = data.entry(55);
             native.visual.nativeEffect = 8;
             native.visual.delay = 3;
+            native.visual.hue = 120;
+            native.visual.sizePercent = 125;
+            native.visual.offsetX = 12;
+            native.visual.offsetY = -6;
+            EffectPlayer originalEffect(source());
+            originalEffect.start(8, {});
+            while (originalEffect.advance()) {}
+            for (const auto &resource : originalEffect.resources())
+                if (resource.type == 4 && resource.id == 1) {
+                    EffectArtwork art{32, 32, resource.bytes, sha256(resource.bytes)};
+                    for (int i = 0; i < art.rgba.size(); i += 4) {
+                        put8(art.rgba, i, 32); put8(art.rgba, i + 1, 160);
+                        put8(art.rgba, i + 2, 240);
+                    }
+                    native.visual.artwork[0x40001] = art;
+                }
+            QVERIFY(native.visual.artwork.contains(0x40001));
+            QCOMPARE(AttackVisual::read(native.visual.build(8)), native.visual);
+            QCOMPARE(AttackVisual::fromJson(native.visual.json()), native.visual);
             data.set(55, native);
+            const int copied = data.duplicate(55, "Copied edited Fireball");
+            QCOMPARE(copied, 159);
+            auto copy = data.entry(copied);
+            copy.visual.color = 0xff8000;
+            copy.visual.hue = 0;
+            data.set(copied, copy);
+            QCOMPARE(data.entry(55), native);
             QImage pixels(32, 32, QImage::Format_RGBA8888);
             pixels.fill(QColor(255, 0, 0, 255));
             auto asset = SpriteAsset::fromImage("Test effect", pixels);
@@ -58,6 +84,10 @@ class AttackDataTests : public QObject {
             multiple.visual.frames->frames.append(second);
             multiple.visual.frames->kind = "sequence";
             data.set(59, multiple);
+            auto geometry = data.entry(60);
+            geometry.visual.nativeEffect = 94;
+            geometry.visual.color = 0xff0000;
+            data.set(60, geometry);
             project.setAttacks(data.json());
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
                                      .absoluteDir()
@@ -81,7 +111,7 @@ class AttackDataTests : public QObject {
             QCOMPARE(reopened.attacks()->entry(56).visual.build(1), imported.visual.build(1));
             const auto p = AttackPlacement::read(rom);
             QVERIFY(p);
-            for (int id : {55, 56, 57, 58, 59}) {
+            for (int id : {55, 56, 57, 58, 59, 60, 159}) {
                 const int slot =
                     u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
                 EffectPlayer actual(rom);
@@ -99,11 +129,91 @@ class AttackDataTests : public QObject {
                 }
                 QVERIFY(!expected.advance());
                 QVERIFY(triangles > 0);
+                if (id == 60) {
+                    bool found = false;
+                    for (const auto &r : actual.resources())
+                        if (r.type == 6 && (r.id & 65535) == 647) {
+                            found = true;
+                            // Original first vertex is RGBA FAE755FF. Red tint
+                            // keeps brightness FA and alpha FF, not its yellow.
+                            QCOMPARE(u32(r.bytes, 40 + 12), 0xfa0000ffU);
+                        }
+                    QVERIFY(found);
+                }
+                if (id == 55 || id == 159) {
+                    bool found = false;
+                    for (const auto &r : actual.resources())
+                        if (r.type == 4 && (r.id & 65535) == 1) {
+                            found = true;
+                            const auto &original = native.visual.artwork[0x40001].rgba;
+                            // Independently specified RGB after a 120-degree hue
+                            // rotation, or brightness-preserving orange tint.
+                            for (int j = 0; j < r.bytes.size(); j += 4) {
+                                QCOMPARE(u8(r.bytes, j), quint8(240));
+                                QCOMPARE(u8(r.bytes, j + 1), quint8(id == 55 ? 32 : 120));
+                                QCOMPARE(u8(r.bytes, j + 2), quint8(id == 55 ? 160 : 0));
+                                QCOMPARE(u8(r.bytes, j + 3), u8(original, j + 3));
+                            }
+                        }
+                    QVERIFY(found);
+                }
                 if (id == 56)
                     QCOMPARE(ticks, 6);
                 qInfo() << "Compiled effect for attack" << id << "ticks" << ticks << "triangles"
                         << triangles;
             }
+            // Run edited copies and the untouched donor in one machine. This
+            // exercises real shared caches, task ownership and slot recycling.
+            EffectPlayer shared(rom);
+            const auto slotFor = [&](int id) {
+                return u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
+            };
+            shared.start(slotFor(55), {});
+            shared.append(slotFor(159));
+            shared.append(8);
+            while (shared.advance()) shared.draw({160, 120}, .375);
+            bool red = false, orange = false, untouched = false;
+            for (const auto &r : shared.resources())
+                if (r.type == 4 && (r.id & 65535) == 1) {
+                    red |= u8(r.bytes, 0) == 240 && u8(r.bytes, 1) == 32;
+                    orange |= u8(r.bytes, 0) == 240 && u8(r.bytes, 1) == 120;
+                    untouched |= sha256(r.bytes) == native.visual.artwork[0x40001].originalHash;
+                }
+            QVERIFY(red); QVERIFY(orange); QVERIFY(untouched);
+            for (int next : {8, int(slotFor(159)), 8}) {
+                shared.append(next);
+                int triangles = 0, checked = 0;
+                while (shared.advance()) {
+                    triangles += shared.draw({160, 120}, .375).triangles;
+                    const auto &memory = shared.memory();
+                    const auto cache = u32(memory, 0x220ca8) & 0x1fffffff;
+                    for (int i = 0; i < 128; ++i) {
+                        const auto row = cache + i * 20;
+                        if (!u16(memory, row) || u16(memory, row + 2) != 4 ||
+                            (u32(memory, row + 4) & 65535) != 1) continue;
+                        const auto owner = u32(memory, row + 4) >> 16;
+                        const auto image = u32(memory, row + 12) & 0x1fffffff;
+                        if (owner == 159) {
+                            QCOMPARE(u8(memory, image), quint8(240));
+                            QCOMPARE(u8(memory, image + 1), quint8(120));
+                            QCOMPARE(u8(memory, image + 2), quint8(0));
+                        } else if (!owner) {
+                            QCOMPARE(sha256(memory.mid(image, 4096)), native.visual.artwork[0x40001].originalHash);
+                        }
+                        ++checked;
+                    }
+                }
+                // Native RNG advances across uses, so repeated frames need not
+                // equal a freshly initialized battle. The live texture data must.
+                QVERIFY(triangles > 0); QVERIFY(checked > 0);
+            }
+            EffectPlayer clean(source()), unchanged(rom);
+            clean.start(8, {}); unchanged.start(8, {});
+            while (clean.advance()) {
+                QVERIFY(unchanged.advance());
+                QCOMPARE(clean.draw({160, 120}, .375).image, unchanged.draw({160, 120}, .375).image);
+            }
+            QVERIFY(!unchanged.advance());
             auto again = reopened;
             const auto secondExport = rebuild(again, tools, output.path());
             const auto secondOpen = Project::fromRom(Rom::fromBytes(secondExport.image));

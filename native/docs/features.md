@@ -35,7 +35,14 @@ side and opposing targets. The toggle affects the preview only. Imported
 sequences retain their game orientation on both sides. Replace an effect
 from the current ROM's named catalog, an independent Art Library copy, PNG files,
 an exported frame-sequence ZIP, or an asset JSON file. Native effects support a
-visual delay and replacement. Imported frames support painting, per-frame timing,
+visual delay, colour shifting or a single-colour tint, size (25–400%), and horizontal/vertical
+offsets. Size scales around the screen centre; offsets are screen pixels. The artwork
+list shows the original textures used by the effect. Replace a selected texture
+from PNG or Art Library, fitted to its original dimensions, while retaining the
+native movement and timing. Retail artwork retains RGBA32 colour and alpha.
+**Copy effect from attack…** copies a complete edited effect onto the selected
+attack, including a newly created attack, without linking subsequent edits.
+Imported frames support painting, per-frame timing,
 resizing and origin placement, with an Original / Game result color comparison.
 Imports use RGBA5551 (5-bit RGB and on/off alpha); embedded profiles convert to
 sRGB, and original artwork remains available for editing. Imported effects are

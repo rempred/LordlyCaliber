@@ -1,5 +1,6 @@
 #include "engine/attack_data.h"
 #include "engine/effect_player.h"
+#include "engine/effect_resources.h"
 #include "engine/promotion.h"
 #include "engine/resource.h"
 #include "engine/text.h"
@@ -55,7 +56,7 @@ std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
         p.count > AttackData::maximumCount ||
         (p.codeSize &&
          (p.code < p.address || quint64(p.code) + p.codeSize > quint64(p.address) + p.size)) ||
-        (!p.codeSize && p.code) || p.hookCount > 32 ||
+        (!p.codeSize && p.code) || p.hookCount > 64 ||
         (p.hookCount &&
          (p.hooks < p.code || quint64(p.hooks) + p.hookCount * 24 > quint64(p.code) + p.codeSize)))
         throw Error("Attack allocation is outside its declared bounds");
@@ -130,6 +131,7 @@ AttackData AttackData::load(const Rom &rom) {
             if (length < 32 || quint64(offset) + length > size)
                 throw Error("Attack effect has an invalid extent");
             a.visual = AttackVisual::read(bytes.mid(offset, length));
+            validateEffectArtwork(rom, a.visual);
         }
         const auto pointer = u32(bytes, recordOffset + id * 16);
         if (a.dynamicName) {

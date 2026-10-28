@@ -1,6 +1,8 @@
 #include "engine/effect_player.h"
 #include "engine/attack_data.h"
 #include "engine/class_data.h"
+#include "engine/effect_resources.h"
+#include "rebuild/effect_preview_runtime.h"
 #include <algorithm>
 extern "C" int lc_visual_image_commands(unsigned int *, unsigned int, int, int, int, int, int);
 namespace lordly {
@@ -35,6 +37,8 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     visual_ = {};
     delay_ = frame_ = hold_ = 0;
     frameDraw_ = 0;
+    allocations_.clear();
+    resources_.clear();
     machine_ = std::make_unique<EffectMachine>();
     auto &m = *machine_;
     auto load = [&](quint32 ram, quint32 begin, quint32 end, bool code = true) {
@@ -57,33 +61,25 @@ void EffectPlayer::start(int effect, const Scene &scene) {
             placement->layout.indexBase,
             rom_.mid(placement->dataRomOffset, placement->layout.end - placement->layout.indexBase),
             true);
-    if (effect >= 136) {
-        const auto attacks = AttackPlacement::read(Rom::fromBytes(rom_));
-        bool assigned = false;
-        if (attacks)
-            for (int i = 1; i < attacks->count; ++i)
-                assigned |= m.byte(attacks->settings + i * 32 + 21) == effect;
-        if (!assigned)
-            throw Error("The exported effect slot is not assigned to an attack");
-    }
     m.registers[29] = 0x807ff000;
     auto chain = [&](quint32 base, int count, int stride, int offset = 0) {
         for (int i = 0; i < count; ++i)
             m.half(base + i * stride + offset, quint16(i == count - 1 ? 65535 : i + 1));
     };
-    m.word(0x80220d80, 256);
+    // Match the retail initializers, so a preview cannot hide pool exhaustion.
+    m.word(0x80220d80, 24);
     m.word(0x80220d84, 0x80700000);
     m.word(0x80220d88, 0);
     m.word(0x80220d8c, 0);
-    m.word(0x80220d90, 256);
-    m.word(0x80220d94, 0x80700000 + 256 * 156);
+    m.word(0x80220d90, 24);
+    m.word(0x80220d94, 0x80700000 + 24 * 156);
     m.half(0x80220e8e, 0);
-    chain(0x80700000, 256, 156);
-    m.word(0x80220d68, 256);
+    chain(0x80700000, 24, 156);
+    m.word(0x80220d68, 32);
     m.word(0x80220d6c, 0x80760000);
     m.half(0x80220d64, 0);
     m.word(0x80220d70, 0x807a0000);
-    chain(0x80760000, 256, 148);
+    chain(0x80760000, 32, 148);
     m.half(0x80220da0, 0);
     m.word(0x80220da4, 256);
     m.word(0x80220da8, 0x80790000);
@@ -96,12 +92,12 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     m.half(0x80220e10, 0);
     m.word(0x80220e14, 0x807c0000);
     chain(0x807c0000, 64, 16, 12);
-    m.word(0x80220ca0, 256);
+    m.word(0x80220ca0, 128);
     m.word(0x80220ca4, 0);
     m.word(0x80220ca8, 0x80770000);
-    m.word(0x80220cac, 16);
-    m.word(0x80220cb0, 0xffffffff);
-    chain(0x80770000, 256, 20, 16);
+    m.word(0x80220cac, 32);
+    m.word(0x80220cb0, 0);
+    chain(0x80770000, 128, 20, 16);
     m.word(0x80220f20, 0x80780000);
     for (quint32 base : {0x80220ee0U, 0x80220ff0U})
         for (int i = 0; i < 16; ++i)
@@ -121,6 +117,7 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         if (size > 0x200000 || heap_ + size > 0x80600000)
             throw Error("Effect allocation exceeds its preview budget");
         c.registers[2] = heap_;
+        allocations_[heap_] = c.registers[4];
         heap_ += quint32(size);
     });
     // Retain native frees until restart; each effect has a bounded lifetime.
@@ -136,6 +133,34 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         auto &c = *machine_;
         c.registers[2] = (c.registers[4] < 9) == scene_.enemyCaster
                              ? scene_.sourceHeight : scene_.targetHeight;
+    });
+    // Capture the unrelocated resource before the native consumer fixes its
+    // internal pointers. The original loader and its cache remain in use.
+    constexpr quint32 resourceLoader = 0x8020c380, resourceTrampoline = 0x80001000;
+    QByteArray trampoline(16, 0);
+    put32(trampoline, 0, m.word(resourceLoader));
+    put32(trampoline, 4, m.word(resourceLoader + 4));
+    put32(trampoline, 8, 0x08000000 | ((resourceLoader + 8) >> 2 & 0x3ffffff));
+    m.mount(resourceTrampoline, trampoline, true);
+    m.service(resourceLoader, [this] {
+        auto &c = *machine_;
+        const auto type = int(c.registers[4]), id = int(c.registers[5]);
+        const auto returnAddress = c.registers[31];
+        c.word(0x80001000, c.word(0x8020c380));
+        c.word(0x80001004, c.word(0x8020c384));
+        c.call(0x80001000);
+        c.registers[31] = returnAddress;
+        const auto pointer = c.registers[2], length = allocations_.value(pointer);
+        if (length) {
+            const auto bytes = c.memory.mid(c.physical(pointer, length), length);
+            auto found = std::find_if(resources_.begin(), resources_.end(), [=](const Resource &r) {
+                // Inline native preloaders can pass the same raw ID for two
+                // independent edited owners. Retain both captured artworks.
+                return r.type == type && r.id == id && r.bytes == bytes;
+            });
+            if (found == resources_.end()) resources_.append({type, id, bytes, pointer, {}});
+            else found->address = pointer;
+        }
     });
     constexpr quint32 inputs = 0x80720000, battle = 0x80740000;
     for (int i = 0; i < 36; ++i)
@@ -186,16 +211,50 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         m.word(a + 0x64, quint32((col - 1) * 38));
     }
     if (effect >= 0) {
-        m.registers[4] = quint32(effect);
-        m.registers[5] = inputs;
-        m.registers[6] = inputs + 12;
-        m.registers[7] = inputs + 24;
-        m.call(0x8020e850);
+        append(effect);
     }
     m.word(0x800e9ba0, 0x80600000);
 }
+void EffectPlayer::append(int effect) {
+    if (!machine_ || visual_.frames || effect < 0 || effect > 254 ||
+        (effect > 132 && effect < 136))
+        throw Error("Choose a native attack effect before continuing playback");
+    auto &m = *machine_;
+    if (effect >= 136) {
+        const auto attacks = AttackPlacement::read(Rom::fromBytes(rom_));
+        bool assigned = false;
+        if (attacks)
+            for (int i = 1; i < attacks->count; ++i)
+                assigned |= m.byte(attacks->settings + i * 32 + 21) == effect;
+        if (!assigned)
+            throw Error("The exported effect slot is not assigned to an attack");
+    }
+    if (!running()) {
+        tick_ = 0;
+        // The full battle loop retires these camera/transition bookkeeping
+        // entries after the root task finishes. This preview omits that camera
+        // loop, but must retire completed entries before another submission.
+        for (int i = 0; i < 4; ++i) m.half(0x80220db8 + i * 20, 0);
+    }
+    m.registers[4] = quint32(effect);
+    m.registers[5] = 0x80720000;
+    m.registers[6] = 0x8072000c;
+    m.registers[7] = 0x80720018;
+    m.call(0x8020e850);
+}
 void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const Scene &scene) {
     visual.validate();
+    validateEffectArtwork(Rom::fromBytes(rom_), visual);
+    if (visual.nativeEdited()) {
+        start(-1, scene);
+        installEffectPreviewRuntime(*machine_, visual, inherited);
+        machine_->registers[4] = 136;
+        machine_->registers[5] = 0x80720000;
+        machine_->registers[6] = 0x8072000c;
+        machine_->registers[7] = 0x80720018;
+        machine_->call(0x8020e850);
+        return;
+    }
     start(visual.frames ? -1 : visual.nativeEffect < 0 ? inherited : visual.nativeEffect, scene);
     visual_ = visual;
     delay_ = visual.delay;
@@ -274,9 +333,19 @@ bool EffectPlayer::advance() {
     ++tick_;
     return true;
 }
-EffectRaster::Result EffectPlayer::draw(QSize size, double zoom) const {
+EffectRaster::Result EffectPlayer::draw(QSize size, double zoom) {
     if (!machine_)
         throw Error("No effect is selected");
-    return EffectRaster::draw(machine_->memory, 0x80600000, machine_->word(0x800e9ba0), size, zoom);
+    auto result = EffectRaster::draw(machine_->memory, 0x80600000, machine_->word(0x800e9ba0), size, zoom);
+    for (const auto &texture : result.textures) {
+        if (texture.format || texture.bits != 32 || texture.rowBytes <= 0 || texture.rowBytes % 4) continue;
+        for (auto &r : resources_) {
+            const auto address = r.address & 0x1fffffff;
+            if ((r.type == 4 || r.type == 7 || r.type == 8) && texture.address >= address &&
+                texture.address < address + r.bytes.size() && r.bytes.size() % texture.rowBytes == 0 && r.size.isEmpty())
+                r.size = {texture.rowBytes / 4, int(r.bytes.size() / texture.rowBytes)};
+        }
+    }
+    return result;
 }
 } // namespace lordly

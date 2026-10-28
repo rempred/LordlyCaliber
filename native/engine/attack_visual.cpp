@@ -8,6 +8,22 @@ namespace lordly {
 void AttackVisual::validate() const {
     if (nativeEffect < -1 || nativeEffect > 132 || delay < 0 || delay > 300)
         throw Error("Choose a retail effect and a delay between 0 and 300 ticks");
+    if (hue < -180 || hue > 180 || color < -1 || color > 0xffffff ||
+        sizePercent < 25 || sizePercent > 400 || offsetX < -320 || offsetX > 320 || offsetY < -240 || offsetY > 240 ||
+        artwork.size() > 256 || (frames && nativeEdited()))
+        throw Error("Invalid retail effect appearance settings");
+    quint64 artworkBytes = 0;
+    for (auto i = artwork.begin(); i != artwork.end(); ++i) {
+        const auto &a = i.value();
+        const int type = i.key() >> 16, id = i.key() & 65535;
+        if ((type != 4 && type != 7 && type != 8) || !id || a.width < 1 || a.height < 1 ||
+            a.width > 256 || a.height > 4096 || a.rgba.size() != qint64(a.width) * a.height * 4 ||
+            a.originalHash.size() != 64 || QByteArray::fromHex(a.originalHash).size() != 32)
+            throw Error("Invalid retail effect artwork");
+        artworkBytes += a.rgba.size();
+    }
+    if (artworkBytes > 512 * 1024)
+        throw Error("An edited retail effect may contain up to 512 KiB of replacement artwork");
     if (!frames)
         return;
     frames->validate();
@@ -31,6 +47,16 @@ QJsonObject AttackVisual::json() const {
     QJsonObject result{{"nativeEffect", nativeEffect}, {"delay", delay}};
     if (frames)
         result["frames"] = frames->assetFile();
+    if (nativeEdited()) {
+        QJsonArray replacements;
+        for (auto i = artwork.begin(); i != artwork.end(); ++i)
+            replacements.append(QJsonObject{{"key", double(i.key())}, {"width", i->width},
+                {"height", i->height}, {"rgba", QString::fromLatin1(i->rgba.toBase64())},
+                {"originalHash", QString::fromLatin1(i->originalHash)}});
+        result["retailEdits"] = QJsonObject{{"hue", hue}, {"color", color},
+            {"sizePercent", sizePercent}, {"offsetX", offsetX}, {"offsetY", offsetY},
+            {"artwork", replacements}};
+    }
     return result;
 }
 AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
@@ -45,6 +71,34 @@ AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
     };
     result.nativeEffect = integer("nativeEffect", -1);
     result.delay = integer("delay", 0);
+    if (o.contains("retailEdits")) {
+        if (!o["retailEdits"].isObject()) throw Error("Invalid retail effect edits");
+        const auto edits = o["retailEdits"].toObject();
+        auto value = [&](const char *key, int fallback) {
+            if (!edits.contains(key)) return fallback;
+            const auto v = edits[key];
+            if (!v.isDouble() || !std::isfinite(v.toDouble()) || v.toDouble() != v.toInt())
+                throw Error("Invalid retail effect setting");
+            return v.toInt();
+        };
+        result.hue = value("hue", 0); result.color = value("color", -1);
+        result.sizePercent = value("sizePercent", 100);
+        result.offsetX = value("offsetX", 0); result.offsetY = value("offsetY", 0);
+        if (edits.contains("artwork") && !edits["artwork"].isArray()) throw Error("Invalid effect artwork list");
+        for (const auto &entry : edits["artwork"].toArray()) {
+            const auto a = entry.toObject();
+            const auto key = a["key"].toDouble(-1);
+            if (!std::isfinite(key) || key < 0 || key > 0xffffffffULL || key != quint32(key) ||
+                result.artwork.contains(quint32(key))) throw Error("Invalid effect artwork ID");
+            for (const auto field : {"width", "height"})
+                if (!a[field].isDouble() || a[field].toDouble() != a[field].toInt())
+                    throw Error("Invalid effect artwork dimensions");
+            EffectArtwork art{a["width"].toInt(), a["height"].toInt(),
+                QByteArray::fromBase64(a["rgba"].toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors),
+                a["originalHash"].toString().toLatin1()};
+            result.artwork[quint32(key)] = art;
+        }
+    }
     if (o.contains("frames")) {
         if (!o["frames"].isObject())
             throw Error("Invalid effect frames");
@@ -76,12 +130,38 @@ QByteArray AttackVisual::build(int inherited) const {
     validate();
     if (inherited < 0 || inherited > 132)
         throw Error("Invalid inherited attack effect");
-    QByteArray bytes(32, 0);
-    bytes.replace(0, 8, "LCFX0001");
+    const bool native = nativeEdited();
+    QByteArray bytes(native ? 96 : 32, 0);
+    bytes.replace(0, 8, native ? "LCFX0002" : "LCFX0001");
     put16(bytes, 12, frames ? 1 : 0);
     put16(bytes, 14, nativeEffect < 0 ? inherited : nativeEffect);
     put16(bytes, 16, quint16(nativeEffect));
     put16(bytes, 18, delay);
+    if (native) {
+        put16(bytes, 32, color >= 0 ? 2 : hue ? 1 : 0);
+        put16(bytes, 34, quint16(hue)); put32(bytes, 36, quint32(color));
+        put16(bytes, 40, quint16(sizePercent)); put16(bytes, 42, quint16(offsetX));
+        put16(bytes, 44, quint16(offsetY)); put16(bytes, 46, quint16(artwork.size()));
+        // F3DEX2 viewports use quarter-pixel coordinates. Keep Z unchanged.
+        for (int offset : {64, 80}) {
+            put16(bytes, offset, quint16(offset == 64 ? 640 * sizePercent / 100 : 640));
+            put16(bytes, offset + 2, quint16(offset == 64 ? 480 * sizePercent / 100 : 480));
+            put16(bytes, offset + 4, 511);
+            put16(bytes, offset + 8, quint16(640 + (offset == 64 ? offsetX * 4 : 0)));
+            put16(bytes, offset + 10, quint16(480 + (offset == 64 ? offsetY * 4 : 0)));
+            put16(bytes, offset + 12, 511);
+        }
+        bytes += QByteArray(artwork.size() * 64, 0);
+        int row = 96;
+        for (auto i = artwork.begin(); i != artwork.end(); ++i, row += 64) {
+            put32(bytes, row, i.key());
+            put16(bytes, row + 4, quint16(i->width)); put16(bytes, row + 6, quint16(i->height));
+            put32(bytes, row + 8, quint32(bytes.size())); put32(bytes, row + 12, quint32(i->rgba.size()));
+            bytes.replace(row + 16, 32, QByteArray::fromHex(i->originalHash));
+            bytes += i->rgba;
+            bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
+        }
+    }
     if (frames) {
         put16(bytes, 20, frames->size.width());
         put16(bytes, 22, frames->size.height());
@@ -123,12 +203,29 @@ QByteArray AttackVisual::build(int inherited) const {
     return bytes;
 }
 AttackVisual AttackVisual::read(const QByteArray &bytes) {
-    if (bytes.size() < 32 || !bytes.startsWith("LCFX0001") ||
+    const bool native = bytes.startsWith("LCFX0002");
+    if (bytes.size() < (native ? 96 : 32) || (!native && !bytes.startsWith("LCFX0001")) ||
         u32(bytes, 8) != quint32(bytes.size()) || u16(bytes, 12) > 1 || u16(bytes, 14) > 132)
         throw Error("Invalid exported attack effect");
     AttackVisual result;
     result.nativeEffect = qint16(u16(bytes, 16));
     result.delay = u16(bytes, 18);
+    if (native) {
+        if (u16(bytes, 12) || u16(bytes, 32) > 2 || 96 + u16(bytes, 46) * 64 > bytes.size())
+            throw Error("Invalid retail effect configuration");
+        result.hue = qint16(u16(bytes, 34)); result.color = qint32(u32(bytes, 36));
+        result.sizePercent = u16(bytes, 40); result.offsetX = qint16(u16(bytes, 42));
+        result.offsetY = qint16(u16(bytes, 44));
+        for (int i = 0; i < u16(bytes, 46); ++i) {
+            const int row = 96 + i * 64;
+            const auto key = u32(bytes, row);
+            const auto at = u32(bytes, row + 8), size = u32(bytes, row + 12);
+            if (at < quint32(96 + u16(bytes, 46) * 64) || quint64(at) + size > quint64(bytes.size()) ||
+                result.artwork.contains(key)) throw Error("Effect artwork lies outside its allocation");
+            result.artwork[key] = {u16(bytes, row + 4), u16(bytes, row + 6), bytes.mid(at, size),
+                bytes.mid(row + 16, 32).toHex()};
+        }
+    }
     if (u16(bytes, 12)) {
         const int w = u16(bytes, 20), h = u16(bytes, 22), count = u16(bytes, 28);
         if (w < 1 || h < 1 || w > 256 || h > 256 || count < 1 || count > 300 ||
@@ -179,6 +276,8 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
             throw Error("Editable effect metadata disagrees with its game frames");
     }
     result.validate();
+    if (native && result.build(u16(bytes, 14)) != bytes)
+        throw Error("Retail effect data disagrees with its editable settings");
     return result;
 }
 } // namespace lordly
