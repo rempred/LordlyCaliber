@@ -83,6 +83,7 @@ class SpriteEditor : public QWidget {
     void selectAsset(const QString &);
     void importFile(const QString &);
     void importLayerImage(const QString &);
+    void addLibraryLayer(const QString &, int frame = 0);
     void exportAsset(const QString &, bool browserCompatible) const;
     void exportImage(const QString &, const QByteArray &format) const;
     bool exportVideo(const QString &, const SpriteVideoOptions &);

@@ -1,6 +1,8 @@
 #include "app/actor_pose_editor.h"
 #include "app/attack_editor.h"
 #include "app/attack_effect_editor.h"
+#include "app/effect_library_editor.h"
+#include "engine/effect_resources.h"
 #include "app/recovery_draft.h"
 #include "app/change_report_dialog.h"
 #include "app/project_review_dialog.h"
@@ -132,6 +134,106 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void effectLibraryArtworkWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            applyEditorTheme(*qobject_cast<QApplication *>(QCoreApplication::instance()));
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            EffectLibraryEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 720); editor.show();
+            editor.selectEffect(8);
+            auto sources = editor.findChild<QListWidget *>("effectLibrarySources");
+            auto pieces = editor.findChild<QListWidget *>("effectLibraryPieces");
+            QCOMPARE(sources->count(), 133);
+            QTRY_VERIFY_WITH_TIMEOUT(pieces->count() > 1, 20000);
+            pieces->setCurrentRow(0);
+            const auto key = pieces->currentItem()->data(Qt::UserRole).toUInt();
+            const auto raw = retailEffectResource(project.rom(), key >> 16, key & 65535);
+            const auto id = editor.saveArtwork("Fireball piece");
+            const auto asset = project.sprites().asset(id);
+            // Stored/raw PNG pixels retain RGB even where alpha is zero.
+            // Compositing a layer correctly discards those invisible colours.
+            const auto image = asset.frames[0].layers[0].image.convertToFormat(QImage::Format_RGBA8888);
+            QCOMPARE(QByteArray(reinterpret_cast<const char *>(image.constBits()), image.sizeInBytes()), raw);
+            QCOMPARE(asset.provenance["source"].toString(), "effect-artwork");
+            undo.undo(); QVERIFY(project.sprites().assets().isEmpty());
+            undo.redo(); QCOMPARE(project.sprites().asset(id), asset);
+            QTemporaryDir folder; QVERIFY(folder.isValid());
+            const auto png = folder.filePath("piece.png");
+            editor.exportArtwork(png);
+            QCOMPARE(QImage(png).convertToFormat(QImage::Format_RGBA8888), image);
+            QVERIFY_THROWS_EXCEPTION(Error, editor.exportArtwork(path));
+            // Compose a donor as a new layer without changing the saved piece.
+            SpriteEditor artwork(&project, &undo, [] {});
+            const auto base = SpriteAsset::blank("Mixed artwork", {64, 64});
+            artwork.addAsset(base);
+            artwork.addLibraryLayer(id);
+            const auto mixed = project.sprites().asset(base.id);
+            QCOMPARE(mixed.frames[0].layers.size(), 2);
+            QCOMPARE(mixed.frames[0].layers.last().image, asset.composite(0));
+            QCOMPARE(project.sprites().asset(id), asset);
+            undo.undo(); QCOMPARE(project.sprites().asset(base.id), base);
+            undo.redo(); QCOMPARE(project.sprites().asset(base.id), mixed);
+            // The saved piece can replace a texture in a different native effect.
+            AttackEffectEditor target(&project, 55, 2);
+            auto targetVisual = target.visual(); targetVisual.nativeEffect = 9; target.setVisual(targetVisual);
+            auto targetPieces = target.findChild<QListWidget *>("effectRetailArtwork");
+            QTRY_VERIFY_WITH_TIMEOUT(targetPieces->count() > 0, 20000);
+            const auto targetKey = targetPieces->item(0)->data(Qt::UserRole).toUInt();
+            target.replaceArtwork(targetKey, project.sprites().asset(id).composite(0));
+            targetVisual = target.visual(); targetVisual.artwork[targetKey].color = 0x00ff00;
+            target.setVisual(targetVisual);
+            auto data = *project.attacks(); auto a = data.entry(55);
+            a.visual = target.visual(); data.set(55, a);
+            data.rename(55, QString(110, 'A'), false);
+            project.setAttacks(data.json());
+            project.saveFolder(folder.filePath("project"));
+            auto reopened = Project::fromRom(Rom::open(path));
+            reopened.applyManifest(Project::readProject(folder.filePath("project")));
+            QCOMPARE(reopened.sprites().asset(id), asset);
+            QCOMPARE(reopened.sprites().asset(base.id), mixed);
+            QCOMPARE(reopened.attacks()->entry(55).visual, target.visual());
+            QCOMPARE(retailEffectResource(project.rom(), key >> 16, key & 65535), raw);
+            QUndoStack editedUndo;
+            EffectLibraryEditor edited(&reopened, &editedUndo, [] {});
+            edited.resize(1100, 720); edited.show(); edited.selectAttack(55);
+            auto editedPieces = edited.findChild<QListWidget *>("effectLibraryPieces");
+            QTRY_VERIFY_WITH_TIMEOUT(editedPieces->count() > 0, 20000);
+            bool found = false;
+            for (int row = 0; row < editedPieces->count(); ++row)
+                if (editedPieces->item(row)->data(Qt::UserRole).toUInt() == targetKey) {
+                    editedPieces->setCurrentRow(row); found = true; break;
+                }
+            QVERIFY(found);
+            const auto editedId = edited.saveArtwork();
+            const auto editedAsset = reopened.sprites().asset(editedId);
+            QVERIFY(editedAsset.name.size() <= 120);
+            const auto &rgba = targetVisual.artwork[targetKey].rgba;
+            const auto extracted = editedAsset.frames[0].layers[0].image.convertToFormat(QImage::Format_RGBA8888);
+            QCOMPARE(extracted.sizeInBytes(), rgba.size());
+            for (int at = 0; at < rgba.size(); at += 4) {
+                const auto out = extracted.constBits() + at;
+                QCOMPARE(out[0], uchar(0)); QCOMPARE(out[2], uchar(0));
+                QCOMPARE(out[1], std::max({u8(rgba, at), u8(rgba, at + 1), u8(rgba, at + 2)}));
+                QCOMPARE(out[3], u8(rgba, at + 3));
+            }
+            edited.hide();
+            // Only geometry is reported as such, with no fake image to export.
+            editor.selectEffect(94);
+            QTRY_VERIFY_WITH_TIMEOUT(editor.findChild<QLabel *>("effectLibraryNotice")->text().contains("no image artwork"), 20000);
+            QCOMPARE(pieces->count(), 0);
+            QVERIFY(!editor.findChild<QPushButton *>("effectLibrarySave")->isEnabled());
+            editor.selectEffect(8);
+            QTRY_VERIFY_WITH_TIMEOUT(pieces->count() > 1, 20000);
+            auto search = editor.findChild<QLineEdit *>("effectLibrarySearch");
+            search->setText("Effect 8");
+            QVERIFY(!sources->item(8)->isHidden()); QVERIFY(sources->item(1)->isHidden());
+            search->clear();
+            QVERIFY(editor.grab().save("native/build/effects-library.png"));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void retailEffectAppearanceWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -156,19 +258,42 @@ class UiTests : public QObject {
             auto y = dialog.findChild<QSpinBox *>("effectOffsetY");
             auto mode = dialog.findChild<QComboBox *>("effectColourMode");
             QVERIFY(size); QVERIFY(x); QVERIFY(y); QVERIFY(mode);
-            size->setValue(175); x->setValue(-18); y->setValue(9); mode->setCurrentIndex(2);
+            size->setValue(175); x->setValue(-18); y->setValue(9);
             QCOMPARE(dialog.visual().sizePercent, 175);
             QCOMPARE(dialog.visual().offsetX, -18); QCOMPARE(dialog.visual().offsetY, 9);
-            QVERIFY(dialog.visual().color >= 0);
+            auto clearLegacy = dialog.findChild<QPushButton *>("effectClearLegacyColour");
+            QVERIFY(clearLegacy->isVisible());
+            clearLegacy->click();
+            QCOMPARE(dialog.visual().hue, 0); QCOMPARE(dialog.visual().color, -1);
             auto list = dialog.findChild<QListWidget *>("effectRetailArtwork");
             QVERIFY(list);
-            QTRY_VERIFY_WITH_TIMEOUT(list->count() > 0, 20000);
+            QTRY_VERIFY_WITH_TIMEOUT(list->count() > 1, 20000);
+            list->setCurrentRow(0);
             const auto key = list->item(0)->data(Qt::UserRole).toUInt();
+            const auto secondKey = list->item(1)->data(Qt::UserRole).toUInt();
+            mode->setCurrentIndex(2);
+            QCOMPARE(dialog.visual().artwork[key].color, 0x4080ff);
+            QVERIFY(!dialog.visual().artwork.contains(secondKey));
+            list->setCurrentRow(1);
+            QCOMPARE(mode->currentIndex(), 0);
+            mode->setCurrentIndex(1);
+            dialog.findChild<QSpinBox *>("effectHue")->setValue(30);
+            QCOMPARE(dialog.visual().artwork[secondKey].hue, 30);
+            QCOMPARE(dialog.visual().artwork[key].color, 0x4080ff);
+            list->setCurrentRow(0);
+            QCOMPARE(mode->currentIndex(), 2);
+            mode->setCurrentIndex(0);
+            QVERIFY(!dialog.visual().artwork.contains(key));
+            QCOMPARE(dialog.visual().artwork[secondKey].hue, 30);
+            dialog.findChild<QPushButton *>("effectUndo")->click();
+            QCOMPARE(dialog.visual().artwork[key].color, 0x4080ff);
+            QCOMPARE(dialog.visual().hue, 0); QCOMPARE(dialog.visual().color, -1);
             QImage image(8, 8, QImage::Format_RGBA8888);
             image.fill(Qt::green);
             const auto before = dialog.visual();
             dialog.replaceArtwork(key, image);
             QVERIFY(dialog.visual().artwork.contains(key));
+            QCOMPARE(dialog.visual().artwork[key].color, 0x4080ff);
             const auto replaced = dialog.visual();
             dialog.findChild<QPushButton *>("effectUndo")->click();
             QCOMPARE(dialog.visual(), before);
@@ -179,6 +304,24 @@ class UiTests : public QObject {
             QVERIFY(project.attacks()->entry(target).visual == AttackVisual{});
             const auto preview = dialog.findChild<QLabel *>("attackEffectPreview");
             QTRY_VERIFY_WITH_TIMEOUT(!preview->pixmap().isNull(), 20000);
+            auto play = dialog.findChild<QPushButton *>("effectPlay");
+            if (play->text() == "Pause") play->click();
+            dialog.findChild<QPushButton *>("effectRestart")->click();
+            auto framePosition = dialog.findChild<QLabel *>("effectFramePosition");
+            QVERIFY(framePosition->text().startsWith("Frame 1 /"));
+            auto step = dialog.findChild<QPushButton *>("effectStep");
+            step->click();
+            QVERIFY(framePosition->text().startsWith("Frame 2 /"));
+            QCOMPARE(play->text(), "Play");
+            for (int i = 0; i < 12; ++i) step->click();
+            QVERIFY(framePosition->text().startsWith("Frame 14 /"));
+            const auto rendered = dialog.renderedFrame();
+            QCOMPARE(rendered.size(), QSize(320, 240));
+            QTemporaryDir exportFolder; QVERIFY(exportFolder.isValid());
+            const auto framePath = exportFolder.filePath("render.png");
+            dialog.exportRenderedFrame(framePath);
+            QCOMPARE(QImage(framePath).convertToFormat(QImage::Format_RGBA8888), rendered.convertToFormat(QImage::Format_RGBA8888));
+            QVERIFY_THROWS_EXCEPTION(Error, dialog.exportRenderedFrame(path));
             QVERIFY(dialog.grab().save("native/build/retail-effect-appearance.png"));
             dialog.reject();
         } catch (const std::exception &e) { QFAIL(e.what()); }
@@ -13404,6 +13547,10 @@ class UiTests : public QObject {
         window.show();
         window.loadRom(path);
         QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QListWidget *>("encounterPools"), 10000);
+        auto libraryTabs = window.findChild<QTabWidget *>("artLibraryTabs");
+        QVERIFY(libraryTabs);
+        QCOMPARE(libraryTabs->tabText(0), "Artwork");
+        QCOMPARE(libraryTabs->tabText(1), "Effects");
         auto classes = window.findChild<QTableView *>("classesTable");
         auto items = window.findChild<QTableView *>("itemsTable");
         auto consumables = window.findChild<QTableView *>("consumablesTable");

@@ -101,6 +101,21 @@ vertex colours are recoloured on the private resource copy; other geometry
 colour/normal bytes remain untouched. There is no separate image to replace, so
 the picker directs the user to whole-effect replacement.
 
+Each 64-byte LCFX0002 artwork row now uses its previously-zero reserved fields:
+signed hue at +48 and RGB+1 at +52 (zero means no tint). Older zero-filled rows
+remain byte-identical. JSON artwork entries carry optional hue/color fields.
+Whole-effect colour fields remain backward compatible; ordinary UI colour controls
+now author selected-texture values. Runtime and thumbnails apply a legacy global
+transform first, then the selected texture's transform, preserving alpha.
+
+`app/effect_artwork` shares bounded preview rendering, resource extraction and
+colour rendering between the effect dialog and Art Library's Effects subtab.
+Only RGBA resource types4/7/8 become artwork pieces; no geometry is presented as
+an image. Each saved piece is a fresh SpriteAsset with provenance and one project
+Undo command. Layer composition copies pixels, preserving source independence.
+Resource PNG export preserves dimensions/alpha. Full-scene PNG export captures
+the paused 320x240 render; frame stepping advances one 30-Hz native tick.
+
 `effect-edits.c` scopes native task/graphic/draw callbacks to an edited attack.
 Cache IDs include the attack ID so models and child resources are independent;
 the common lookup covers both fetch and release-by-ID. Native inline preloaders

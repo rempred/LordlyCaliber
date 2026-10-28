@@ -18,7 +18,8 @@ void AttackVisual::validate() const {
         const int type = i.key() >> 16, id = i.key() & 65535;
         if ((type != 4 && type != 7 && type != 8) || !id || a.width < 1 || a.height < 1 ||
             a.width > 256 || a.height > 4096 || a.rgba.size() != qint64(a.width) * a.height * 4 ||
-            a.originalHash.size() != 64 || QByteArray::fromHex(a.originalHash).size() != 32)
+            a.originalHash.size() != 64 || QByteArray::fromHex(a.originalHash).size() != 32 ||
+            a.hue < -180 || a.hue > 180 || a.color < -1 || a.color > 0xffffff)
             throw Error("Invalid retail effect artwork");
         artworkBytes += a.rgba.size();
     }
@@ -52,7 +53,7 @@ QJsonObject AttackVisual::json() const {
         for (auto i = artwork.begin(); i != artwork.end(); ++i)
             replacements.append(QJsonObject{{"key", double(i.key())}, {"width", i->width},
                 {"height", i->height}, {"rgba", QString::fromLatin1(i->rgba.toBase64())},
-                {"originalHash", QString::fromLatin1(i->originalHash)}});
+                {"originalHash", QString::fromLatin1(i->originalHash)}, {"hue", i->hue}, {"color", i->color}});
         result["retailEdits"] = QJsonObject{{"hue", hue}, {"color", color},
             {"sizePercent", sizePercent}, {"offsetX", offsetX}, {"offsetY", offsetY},
             {"artwork", replacements}};
@@ -96,6 +97,10 @@ AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
             EffectArtwork art{a["width"].toInt(), a["height"].toInt(),
                 QByteArray::fromBase64(a["rgba"].toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors),
                 a["originalHash"].toString().toLatin1()};
+            for (const auto field : {"hue", "color"})
+                if (a.contains(field) && (!a[field].isDouble() || a[field].toDouble() != a[field].toInt()))
+                    throw Error("Invalid artwork colour setting");
+            art.hue = a["hue"].toInt(0); art.color = a["color"].toInt(-1);
             result.artwork[quint32(key)] = art;
         }
     }
@@ -158,6 +163,9 @@ QByteArray AttackVisual::build(int inherited) const {
             put16(bytes, row + 4, quint16(i->width)); put16(bytes, row + 6, quint16(i->height));
             put32(bytes, row + 8, quint32(bytes.size())); put32(bytes, row + 12, quint32(i->rgba.size()));
             bytes.replace(row + 16, 32, QByteArray::fromHex(i->originalHash));
+            put16(bytes, row + 48, quint16(i->hue));
+            // Zero keeps the earlier format's reserved bytes/default colours.
+            put32(bytes, row + 52, quint32(i->color + 1));
             bytes += i->rgba;
             bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
         }
@@ -223,7 +231,8 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
             if (at < quint32(96 + u16(bytes, 46) * 64) || quint64(at) + size > quint64(bytes.size()) ||
                 result.artwork.contains(key)) throw Error("Effect artwork lies outside its allocation");
             result.artwork[key] = {u16(bytes, row + 4), u16(bytes, row + 6), bytes.mid(at, size),
-                bytes.mid(row + 16, 32).toHex()};
+                bytes.mid(row + 16, 32).toHex(), qint16(u16(bytes, row + 48)),
+                int(qint64(u32(bytes, row + 52)) - 1)};
         }
     }
     if (u16(bytes, 12)) {

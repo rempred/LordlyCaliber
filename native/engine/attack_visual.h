@@ -5,6 +5,7 @@ namespace lordly {
 struct EffectArtwork {
     int width = 0, height = 0;
     QByteArray rgba, originalHash;
+    int hue = 0, color = -1;
     bool operator==(const EffectArtwork &) const = default;
 };
 struct AttackVisual {

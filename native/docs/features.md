@@ -35,8 +35,9 @@ side and opposing targets. The toggle affects the preview only. Imported
 sequences retain their game orientation on both sides. Replace an effect
 from the current ROM's named catalog, an independent Art Library copy, PNG files,
 an exported frame-sequence ZIP, or an asset JSON file. Native effects support a
-visual delay, colour shifting or a single-colour tint, size (25–400%), and horizontal/vertical
-offsets. Size scales around the screen centre; offsets are screen pixels. The artwork
+visual delay, size (25–400%), and horizontal/vertical offsets. Colour shift and
+Single colour apply only to the selected artwork; each texture keeps its own settings.
+Older whole-effect colour edits are preserved and have an explicit removal control. Size scales around the screen centre; offsets are screen pixels. The artwork
 list shows the original textures used by the effect. Replace a selected texture
 from PNG or Art Library, fitted to its original dimensions, while retaining the
 native movement and timing. Retail artwork retains RGBA32 colour and alpha.
@@ -47,6 +48,17 @@ resizing and origin placement, with an Original / Game result color comparison.
 Imports use RGBA5551 (5-bit RGB and on/off alpha); embedded profiles convert to
 sRGB, and original artwork remains available for editing. Imported effects are
 screen-centred sequences, not per-target 3D programs.
+
+**Art Library → Effects** browses all 133 retail programs and edited attacks,
+with effect playback and their individual image resources. Save a piece as an
+independent library asset or export its full-resolution RGBA PNG. **Artwork →
+Add layer from Library** combines saved pieces as independently editable layers.
+Assign the result through the effect window's selected-artwork replacement.
+Geometry-only effects clearly report that there is no image artwork to extract.
+
+The full effect preview has **Step frame** (one game tick at 30 fps, paused) and
+**Export frame PNG**. PNG output captures the complete displayed scene at the
+preview render's 320 × 240 resolution, including the chosen Player/Enemy side.
 
 The effects window has local Undo/Redo and Apply/Cancel; Apply creates one project
 Undo step. Unconfirmed effect and frame-painting changes participate in recovery.

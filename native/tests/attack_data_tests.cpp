@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <algorithm>
 using namespace lordly;
 class AttackDataTests : public QObject {
     Q_OBJECT
@@ -88,6 +89,24 @@ class AttackDataTests : public QObject {
             geometry.visual.nativeEffect = 94;
             geometry.visual.color = 0xff0000;
             data.set(60, geometry);
+            auto coloured = data.entry(61);
+            coloured.visual.nativeEffect = 8;
+            for (const auto &r : originalEffect.resources())
+                if (r.type == 4 && (r.id == 1 || r.id == 2)) {
+                    const int width = r.id == 1 ? 32 : 16;
+                    EffectArtwork art{width, width, r.bytes, sha256(r.bytes)};
+                    if (r.id == 1) art.hue = 120;
+                    else art.color = 0xff8000;
+                    coloured.visual.artwork[quint32(4 << 16 | r.id)] = art;
+                }
+            QCOMPARE(coloured.visual.artwork.size(), 2);
+            data.set(61, coloured);
+            const int textureCopy = data.duplicate(61, "Independent artwork colours");
+            QCOMPARE(textureCopy, 160);
+            auto secondColours = data.entry(textureCopy);
+            secondColours.visual.artwork[0x40002].color = 0x00ff00;
+            data.set(textureCopy, secondColours);
+            QCOMPARE(data.entry(61), coloured);
             project.setAttacks(data.json());
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
                                      .absoluteDir()
@@ -111,7 +130,7 @@ class AttackDataTests : public QObject {
             QCOMPARE(reopened.attacks()->entry(56).visual.build(1), imported.visual.build(1));
             const auto p = AttackPlacement::read(rom);
             QVERIFY(p);
-            for (int id : {55, 56, 57, 58, 59, 60, 159}) {
+            for (int id : {55, 56, 57, 58, 59, 60, 61, 159, 160}) {
                 const int slot =
                     u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
                 EffectPlayer actual(rom);
@@ -129,6 +148,33 @@ class AttackDataTests : public QObject {
                 }
                 QVERIFY(!expected.advance());
                 QVERIFY(triangles > 0);
+                if (id == 61 || id == 160) {
+                    int checked = 0;
+                    for (const auto &r : actual.resources()) {
+                        if (r.type != 4 && r.type != 7 && r.type != 8) continue;
+                        const int resourceId = r.id & 65535;
+                        if (r.type == 4 && resourceId == 1) {
+                            // Original A0FF060B rotated120 degrees -> 06A0FF0B.
+                            QCOMPARE(u32(r.bytes, 0), 0x06a0ff0bU);
+                        } else if (r.type == 4 && resourceId == 2) {
+                            const auto original = coloured.visual.artwork[0x40002].rgba;
+                            for (int j = 0; j < r.bytes.size(); j += 4) {
+                                const int hi = std::max({u8(original,j), u8(original,j+1), u8(original,j+2)});
+                                QCOMPARE(u8(r.bytes,j), quint8(id == 61 ? hi : 0));
+                                QCOMPARE(u8(r.bytes,j+1), quint8(id == 61 ? hi * 128 / 255 : hi));
+                                QCOMPARE(u8(r.bytes,j+2), quint8(0));
+                                QCOMPARE(u8(r.bytes,j+3), u8(original,j+3));
+                            }
+                        } else {
+                            auto sourceResource = std::find_if(originalEffect.resources().begin(), originalEffect.resources().end(),
+                                [&](const EffectPlayer::Resource &source) { return source.type == r.type && source.id == resourceId; });
+                            QVERIFY(sourceResource != originalEffect.resources().end());
+                            QCOMPARE(r.bytes, sourceResource->bytes);
+                        }
+                        ++checked;
+                    }
+                    QVERIFY(checked > 2);
+                }
                 if (id == 60) {
                     bool found = false;
                     for (const auto &r : actual.resources())

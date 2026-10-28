@@ -24,6 +24,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QInputDialog>
 #include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
@@ -356,6 +357,27 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
                                                        "Images (*.png *.jpg *.jpeg)");
         if (!path.isEmpty()) guarded([&] { importLayerImage(path); });
     });
+    auto libraryLayer = new QPushButton("Add layer from Library…");
+    libraryLayer->setObjectName("spriteAddLibraryLayer");
+    sideLayout->addWidget(libraryLayer);
+    connect(libraryLayer, &QPushButton::clicked, this, [this] { guarded([this] {
+        if (!current()) throw Error("Select the artwork to add a layer to first");
+        QStringList labels, ids;
+        for (const auto &a : project_->sprites().assets()) {
+            labels << QString("%1 · %2 (%3 frames)").arg(labels.size() + 1).arg(a.name).arg(a.frames.size());
+            ids << a.id;
+        }
+        bool ok = false;
+        const auto choice = QInputDialog::getItem(this, "Add artwork as a new layer", "Art Library", labels, 0, false, &ok);
+        if (!ok) return;
+        const auto &a = project_->sprites().asset(ids.at(labels.indexOf(choice)));
+        int frame = 0;
+        if (a.frames.size() > 1) {
+            frame = QInputDialog::getInt(this, "Choose artwork frame", "Frame", 1, 1, int(a.frames.size()), 1, &ok) - 1;
+            if (!ok) return;
+        }
+        addLibraryLayer(a.id, frame);
+    }); });
     auto transforms = new QHBoxLayout;
     sideLayout->addLayout(transforms);
     for (bool horizontal : {true, false})
@@ -822,6 +844,21 @@ void SpriteEditor::importFile(const QString &path) {
     library.replace(asset);
     selected_ = asset.id;
     commit("Import sprite asset", std::move(library));
+}
+void SpriteEditor::addLibraryLayer(const QString &id, int frame) {
+    if (!current()) throw Error("Select the artwork to add a layer to first");
+    const auto source = project_->sprites().asset(id);
+    if (frame < 0 || frame >= source.frames.size()) throw Error("Choose a valid artwork frame");
+    play_->setChecked(false);
+    canvas_->cancelStroke();
+    change("Add library artwork as layer", [&](SpriteAsset &a) {
+        auto layer = newLayer(source.size);
+        layer.name = source.name.left(120);
+        layer.image = source.composite(frame);
+        a.frames[frames_->currentRow()].layers.append(layer);
+        a.kind = a.frames.size() > 1 ? "sequence" : "frame";
+    });
+    layers_->setCurrentRow(0);
 }
 void SpriteEditor::importLayerImage(const QString &path) {
     if (!current() || frames_->currentRow() < 0 || layers_->currentRow() < 0)

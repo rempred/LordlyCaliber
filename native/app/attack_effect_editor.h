@@ -25,15 +25,20 @@ class AttackEffectEditor : public QDialog {
     void importLibrary(const QString &);
     void copyFromAttack(int attack);
     void replaceArtwork(quint32 key, const QImage &);
+    void exportRenderedFrame(const QString &) const;
+    QImage renderedFrame() const;
 
   private:
     void refresh();
     void render();
     void showFrame();
+    int currentTick() const;
     void chooseRom();
     void chooseLibrary();
     void chooseAttack();
     void refreshArtwork();
+    void refreshArtworkColour();
+    void editArtworkColour(const std::function<void(EffectArtwork &)> &);
     void chooseArtworkFile();
     void chooseArtworkLibrary();
     void paintFrame();
@@ -48,15 +53,18 @@ class AttackEffectEditor : public QDialog {
     int historyIndex_ = 0;
     bool refreshing_ = false, playing_ = false, enemyPreview_ = false;
     QLabel *preview_, *source_, *notice_, *comparison_;
+    QLabel *framePosition_;
+    QPushButton *step_, *exportFrame_;
     QListWidget *frames_;
     QSpinBox *delay_, *ticks_, *originX_, *originY_;
     QPushButton *play_, *undo_, *redo_, *paint_, *resize_;
     QWidget *frameControls_;
     QWidget *nativeControls_;
-    QFormLayout *nativeForm_;
+    QFormLayout *nativeForm_, *artworkColourForm_;
     QComboBox *colourMode_;
     QSpinBox *hue_, *effectSize_, *effectX_, *effectY_;
     QPushButton *effectColour_, *replaceArtwork_, *restoreArtwork_;
+    QWidget *legacyColour_;
     QListWidget *artworkList_;
     QMap<quint32, EffectArtwork> sourceArtwork_;
     QTimer *timer_;

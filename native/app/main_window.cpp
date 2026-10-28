@@ -25,6 +25,7 @@
 #include "app/scenario_editor.h"
 #include "app/shop_editor.h"
 #include "app/sprite_editor.h"
+#include "app/effect_library_editor.h"
 #include "app/text_workspace.h"
 #include "app/tools_editor.h"
 #include "app/testing_editor.h"
@@ -448,8 +449,19 @@ void MainWindow::installProject(Project project) {
                         workspaces_->setCurrentWidget(save);
                 });
     }
-    workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                        "Art Library");
+    auto library = new QTabWidget;
+    library->setObjectName("artLibraryTabs");
+    auto artwork = new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); });
+    library->addTab(artwork, "Artwork");
+    if (project_->rom().revision() == 0) {
+        auto effects = new EffectLibraryEditor(project_.get(), undo_, [this] { updateStatus(); });
+        library->addTab(effects, "Effects");
+        connect(effects, &EffectLibraryEditor::editArtwork, this, [library, artwork](const QString &id) {
+            artwork->selectAsset(id);
+            library->setCurrentWidget(artwork);
+        });
+    }
+    workspaces_->addTab(library, "Art Library");
     for (auto drafts : workspaces_->findChildren<PendingEdits *>())
         connect(drafts, &PendingEdits::changed, this, &MainWindow::updateStatus);
     updateStatus();

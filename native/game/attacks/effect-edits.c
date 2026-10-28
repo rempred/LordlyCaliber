@@ -123,8 +123,8 @@ void *lc_attack_edit_texture_kind(int type,int id) {
 }
 void *lc_attack_edit_resource(int type,int id) {
     u8 *c, *data, *row;
-    int size,i,j;
-    u32 key;
+    int size,i,j,art_hue=0;
+    u32 key,art_color=0;
     if(type>=3 && type<=8) id=named(id);
     c=config((u32)id>>16);
     data=lc_original_edit_resource(type,c ? id&65535 : id);
@@ -148,11 +148,14 @@ void *lc_attack_edit_resource(int type,int id) {
         row=c+96+i*64;
         if(W(row,0)==key && W(row,12)==(u32)size) {
             for(j=0;j<size;j++) data[j]=c[W(row,8)+j];
+            art_hue=(s16)H(row,48); art_color=W(row,52);
             break;
         }
     }
     if(H(c,32)) for(i=0;i<size;i+=4)
         W(data,i)=lc_effect_color(W(data,i),H(c,32),(s16)H(c,34),W(c,36));
+    if(art_color || art_hue) for(i=0;i<size;i+=4)
+        W(data,i)=lc_effect_color(W(data,i),art_color?2:1,art_hue,art_color-1);
     return data;
 }
 void *lc_attack_edit_packet(void) {

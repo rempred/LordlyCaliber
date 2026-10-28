@@ -1,4 +1,5 @@
 #include "app/attack_effect_editor.h"
+#include "app/effect_artwork.h"
 #include "app/recovery_draft.h"
 #include "app/sprite_editor.h"
 #include "engine/animation_file_import.h"
@@ -25,13 +26,14 @@
 #include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QScrollArea>
+#include <QSaveFile>
+#include <QFileInfo>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 #include <algorithm>
-extern "C" unsigned int lc_effect_color(unsigned int, int, int, unsigned int);
 namespace lordly {
 namespace {
 QLabel *note(const QString &text, QLayout *layout) {
@@ -47,35 +49,6 @@ QSpinBox *spin(const char *name, int lo, int hi) {
     s->setKeyboardTracking(false);
     return s;
 }
-QMap<int, QString> effectNames(const Rom &rom) {
-    QMap<int, QString> names;
-    const auto data = AttackData::loadRetail(rom);
-    for (int i = 0; i <= 132; ++i)
-        names[i] = QString("Effect ID %1").arg(i);
-    for (int i = 1; i < 159; ++i) {
-        const auto &a = data.entry(i);
-        if (u8(a.data, 0) < 2 || AttackData::isTemplate(i))
-            continue;
-        names[EffectPlayer::retailEffect(i)] = AttackData::displayName(a);
-    }
-    return names;
-}
-QImage checker(QImage image) {
-    QImage composed(image.size(), QImage::Format_RGBA8888);
-    QPainter p(&composed);
-    for (int y = 0; y < image.height(); y += 8)
-        for (int x = 0; x < image.width(); x += 8)
-            p.fillRect(x, y, 8, 8, ((x / 8 + y / 8) & 1) ? QColor("#303641") : QColor("#242932"));
-    p.drawImage(0, 0, image);
-    return composed;
-}
-struct Clip {
-    QVector<QImage> images;
-    QVector<int> holds;
-    int ticks = 0;
-    QString error;
-    QMap<quint32, EffectArtwork> artwork;
-};
 } // namespace
 AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWidget *parent)
     : QDialog(parent), project_(p), attack_(attack), classId_(classId) {
@@ -145,7 +118,12 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     play_ = new QPushButton("Play");
     play_->setObjectName("effectPlay");
     auto restart = new QPushButton("Restart");
+    restart->setObjectName("effectRestart");
+    step_ = new QPushButton("Step frame");
+    step_->setObjectName("effectStep");
+    step_->setToolTip("Pause and advance one game tick (1/30 second).");
     playback->addWidget(play_);
+    playback->addWidget(step_);
     playback->addWidget(restart);
     playback->addStretch();
     playback->addWidget(new QLabel("View"));
@@ -175,6 +153,31 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         pausedMs_ = 0;
         clock_.restart();
         showFrame();
+    });
+    connect(step_, &QPushButton::clicked, this, [this] {
+        if (clipTicks_ <= 0) return;
+        const int next = (currentTick() + 1) % clipTicks_;
+        pausedMs_ = (qint64(next) * 1000 + 29) / 30;
+        playing_ = false;
+        play_->setText("Play");
+        showFrame();
+    });
+    auto exportRow = new QHBoxLayout;
+    scene->addLayout(exportRow);
+    framePosition_ = new QLabel;
+    framePosition_->setObjectName("effectFramePosition");
+    exportRow->addWidget(framePosition_);
+    exportRow->addStretch();
+    exportFrame_ = new QPushButton("Export frame PNG…");
+    exportFrame_->setObjectName("effectExportFrame");
+    exportRow->addWidget(exportFrame_);
+    connect(exportFrame_, &QPushButton::clicked, this, [this] {
+        if (playing_) { pausedMs_ += clock_.elapsed(); playing_ = false; play_->setText("Play"); }
+        showFrame();
+        guarded([this] {
+            const auto path = QFileDialog::getSaveFileName(this, "Export displayed effect frame", "effect-frame.png", "PNG image (*.png)");
+            if (!path.isEmpty()) exportRenderedFrame(path);
+        });
     });
     note("Neutral five-unit squads and a preview background. Character motion and sound are "
          "omitted. Desktop filtering and blending approximate the game.",
@@ -207,16 +210,6 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     options->addWidget(nativeControls_, 1);
     nativeForm_ = new QFormLayout;
     nativeLayout->addLayout(nativeForm_);
-    colourMode_ = new QComboBox;
-    colourMode_->setObjectName("effectColourMode");
-    colourMode_->addItems({"Original colours", "Shift colours", "Single colour"});
-    nativeForm_->addRow("Recolour", colourMode_);
-    hue_ = spin("effectHue", -180, 180);
-    hue_->setSuffix("°");
-    nativeForm_->addRow("Colour shift", hue_);
-    effectColour_ = new QPushButton("Choose colour…");
-    effectColour_->setObjectName("effectColour");
-    nativeForm_->addRow("Colour", effectColour_);
     effectSize_ = spin("effectSize", 25, 400); effectSize_->setSuffix("%");
     effectX_ = spin("effectOffsetX", -320, 320); effectX_->setSuffix(" px");
     effectY_ = spin("effectOffsetY", -240, 240); effectY_->setSuffix(" px");
@@ -225,34 +218,63 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     nativeForm_->addRow("Vertical offset", effectY_);
     note("Size scales the effect around the screen centre. Positive offsets move it right or down. "
          "These change the visual only; targeting and damage stay the same.", nativeLayout);
-    connect(colourMode_, &QComboBox::currentIndexChanged, this, [this](int mode) {
-        if (refreshing_) return;
-        auto v = visual_;
-        v.hue = mode == 1 ? (v.hue ? v.hue : 120) : 0;
-        v.color = mode == 2 ? (v.color >= 0 ? v.color : 0x4080ff) : -1;
-        record(v);
-    });
-    connect(effectColour_, &QPushButton::clicked, this, [this] {
-        const auto color = QColorDialog::getColor(QColor::fromRgb(visual_.color < 0 ? 0x4080ff : visual_.color),
-                                                   this, "Effect colour");
-        if (color.isValid()) {
-            auto v = visual_; v.color = color.rgb() & 0xffffff; v.hue = 0; record(v);
-        }
-    });
     auto nativeValue = [this](QSpinBox *control, int AttackVisual::*member) {
         connect(control, &QSpinBox::valueChanged, this, [this, member](int value) {
             if (!refreshing_) { auto v = visual_; v.*member = value; record(v); }
         });
     };
-    nativeValue(hue_, &AttackVisual::hue); nativeValue(effectSize_, &AttackVisual::sizePercent);
+    nativeValue(effectSize_, &AttackVisual::sizePercent);
     nativeValue(effectX_, &AttackVisual::offsetX); nativeValue(effectY_, &AttackVisual::offsetY);
     note("Artwork used by this effect", nativeLayout);
     artworkList_ = new QListWidget;
     artworkList_->setObjectName("effectRetailArtwork");
     artworkList_->setIconSize({64, 64});
     artworkList_->setWordWrap(true);
-    artworkList_->setMinimumHeight(150);
+    artworkList_->setMinimumHeight(120);
     nativeLayout->addWidget(artworkList_, 1);
+    artworkColourForm_ = new QFormLayout;
+    nativeLayout->addLayout(artworkColourForm_);
+    colourMode_ = new QComboBox;
+    colourMode_->setObjectName("effectColourMode");
+    colourMode_->addItems({"Original colours", "Shift colours", "Single colour"});
+    artworkColourForm_->addRow("Selected artwork", colourMode_);
+    hue_ = spin("effectHue", -180, 180);
+    hue_->setSuffix("°");
+    artworkColourForm_->addRow("Colour shift", hue_);
+    effectColour_ = new QPushButton("Choose colour…");
+    effectColour_->setObjectName("effectColour");
+    artworkColourForm_->addRow("Colour", effectColour_);
+    note("Colour changes affect only the highlighted artwork. Each texture keeps its own settings.", nativeLayout);
+    connect(colourMode_, &QComboBox::currentIndexChanged, this, [this](int mode) {
+        editArtworkColour([mode](EffectArtwork &art) {
+            art.hue = mode == 1 ? (art.hue ? art.hue : 120) : 0;
+            art.color = mode == 2 ? (art.color >= 0 ? art.color : 0x4080ff) : -1;
+        });
+    });
+    connect(hue_, &QSpinBox::valueChanged, this, [this](int hue) {
+        editArtworkColour([hue](EffectArtwork &art) { art.hue = hue; art.color = -1; });
+    });
+    connect(effectColour_, &QPushButton::clicked, this, [this] {
+        const auto item = artworkList_->currentItem();
+        if (!item || !item->data(Qt::UserRole).isValid()) return;
+        const auto art = visual_.artwork.value(item->data(Qt::UserRole).toUInt());
+        const auto colour = QColorDialog::getColor(QColor::fromRgb(art.color < 0 ? 0x4080ff : art.color),
+                                                     this, "Selected artwork colour");
+        if (colour.isValid()) editArtworkColour([colour](EffectArtwork &a) {
+            a.color = colour.rgb() & 0xffffff; a.hue = 0;
+        });
+    });
+    legacyColour_ = new QWidget;
+    auto legacyLayout = new QVBoxLayout(legacyColour_);
+    legacyLayout->setContentsMargins(0, 0, 0, 0);
+    note("This effect also has a whole-effect colour edit saved by an earlier version.", legacyLayout);
+    auto clearLegacy = new QPushButton("Remove earlier whole-effect colour");
+    clearLegacy->setObjectName("effectClearLegacyColour");
+    legacyLayout->addWidget(clearLegacy);
+    connect(clearLegacy, &QPushButton::clicked, this, [this] {
+        auto v = visual_; v.color = -1; v.hue = 0; record(v);
+    });
+    nativeLayout->addWidget(legacyColour_);
     auto artworkButtons = new QHBoxLayout;
     nativeLayout->addLayout(artworkButtons);
     replaceArtwork_ = new QPushButton("Replace artwork…");
@@ -264,11 +286,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     restoreArtwork_ = new QPushButton("Restore artwork");
     restoreArtwork_->setObjectName("effectRestoreArtwork");
     artworkButtons->addWidget(replaceArtwork_); artworkButtons->addWidget(restoreArtwork_);
-    connect(artworkList_, &QListWidget::currentRowChanged, this, [this] {
-        const auto item = artworkList_->currentItem();
-        replaceArtwork_->setEnabled(item);
-        restoreArtwork_->setEnabled(item && visual_.artwork.contains(item->data(Qt::UserRole).toUInt()));
-    });
+    connect(artworkList_, &QListWidget::currentRowChanged, this, [this] { refreshArtworkColour(); });
     connect(restoreArtwork_, &QPushButton::clicked, this, [this] {
         if (const auto item = artworkList_->currentItem()) {
             auto v = visual_; v.artwork.remove(item->data(Qt::UserRole).toUInt()); record(v);
@@ -314,9 +332,9 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         painter.setPen(palette().color(QPalette::WindowText));
         painter.drawText(0, 0, 155, 22, Qt::AlignCenter, "Original");
         painter.drawText(165, 0, 155, 22, Qt::AlignCenter, "Game result");
-        painter.drawImage(QPoint(0, 26), checker(original).scaled(150, 100, Qt::KeepAspectRatio,
+        painter.drawImage(QPoint(0, 26), effectChecker(original).scaled(150, 100, Qt::KeepAspectRatio,
                                                                   Qt::FastTransformation));
-        painter.drawImage(QPoint(165, 26), checker(game).scaled(150, 100, Qt::KeepAspectRatio,
+        painter.drawImage(QPoint(165, 26), effectChecker(game).scaled(150, 100, Qt::KeepAspectRatio,
                                                                 Qt::FastTransformation));
         painter.end();
         comparison_->setPixmap(QPixmap::fromImage(comparison));
@@ -436,12 +454,9 @@ void AttackEffectEditor::refresh() {
     frames_->clear();
     frameControls_->setVisible(visual_.frames.has_value());
     nativeControls_->setVisible(!visual_.frames && (inherited_ >= 0 || visual_.nativeEffect >= 0));
-    colourMode_->setCurrentIndex(visual_.color >= 0 ? 2 : visual_.hue ? 1 : 0);
-    hue_->setValue(visual_.hue); effectSize_->setValue(visual_.sizePercent);
+    effectSize_->setValue(visual_.sizePercent);
     effectX_->setValue(visual_.offsetX); effectY_->setValue(visual_.offsetY);
-    nativeForm_->setRowVisible(hue_, colourMode_->currentIndex() == 1);
-    nativeForm_->setRowVisible(effectColour_, colourMode_->currentIndex() == 2);
-    effectColour_->setText(visual_.color >= 0 ? QColor::fromRgb(visual_.color).name() + "…" : "Choose colour…");
+    legacyColour_->setVisible(visual_.hue != 0 || visual_.color >= 0);
     refreshArtwork();
     if (visual_.frames) {
         const auto &asset = *visual_.frames;
@@ -454,7 +469,7 @@ void AttackEffectEditor::refresh() {
         for (int i = 0; i < asset.frames.size(); ++i) {
             auto item = new QListWidgetItem(
                 QIcon(QPixmap::fromImage(
-                    checker(asset.composite(i))
+                    effectChecker(asset.composite(i))
                         .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation))),
                 QString("Frame %1 · %2 ticks").arg(i + 1).arg(asset.frames[i].ticks));
             frames_->addItem(item);
@@ -481,6 +496,8 @@ void AttackEffectEditor::render() {
     clip_.clear();
     holds_.clear();
     clipTicks_ = 0;
+    play_->setEnabled(false); step_->setEnabled(false); exportFrame_->setEnabled(false);
+    framePosition_->clear();
     pausedMs_ = 0;
     playing_ = false;
     play_->setText("Play");
@@ -490,12 +507,12 @@ void AttackEffectEditor::render() {
             "This attack uses its class animation.\nChoose Replace effect to add a visual effect.");
         return;
     }
-    auto watcher = new QFutureWatcher<Clip>(this);
+    auto watcher = new QFutureWatcher<EffectClip>(this);
     const auto rom = project_->rom();
     const auto visual = visual_;
     const bool enemyPreview = enemyPreview_;
     const int inherited = std::max(0, inherited_), classId = classId_;
-    connect(watcher, &QFutureWatcher<Clip>::finished, this, [this, watcher, generation] {
+    connect(watcher, &QFutureWatcher<EffectClip>::finished, this, [this, watcher, generation] {
         const auto result = watcher->result();
         watcher->deleteLater();
         if (generation != generation_)
@@ -509,6 +526,7 @@ void AttackEffectEditor::render() {
         clip_ = result.images;
         holds_ = result.holds;
         clipTicks_ = result.ticks;
+        play_->setEnabled(clipTicks_ > 0); step_->setEnabled(clipTicks_ > 0); exportFrame_->setEnabled(clipTicks_ > 0);
         sourceArtwork_ = result.artwork;
         refreshArtwork();
         playing_ = true;
@@ -517,52 +535,38 @@ void AttackEffectEditor::render() {
         showFrame();
     });
     watcher->setFuture(QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview] {
-        Clip clip;
-        try {
-            EffectPlayer player(rom);
-            EffectPlayer::Scene scene;
-            scene.sourceClass = classId;
-            scene.enemyCaster = enemyPreview;
-            player.startVisual(visual, inherited, scene);
-            quint64 pixels = 0;
-            while (player.advance()) {
-                if (cancel->load())
-                    return Clip{};
-                auto image = player.draw({320, 240}, .75).image;
-                if (!clip.images.isEmpty() && clip.images.last() == image)
-                    ++clip.holds.last();
-                else {
-                    pixels += 320 * 240;
-                    if (pixels > 64 * 1024 * 1024)
-                        throw Error("Effect preview exceeds its image budget");
-                    clip.images << image;
-                    clip.holds << 1;
-                }
-                ++clip.ticks;
-            }
-            for (const auto &r : player.resources()) {
-                if (r.size.isEmpty() || r.size.width() > 256 || r.size.height() > 4096 ||
-                    (r.type != 4 && r.type != 7 && r.type != 8)) continue;
-                const auto key = quint32(r.type << 16 | (r.id & 65535));
-                const auto original = retailEffectResource(rom, r.type, r.id & 65535);
-                if (original.size() == qint64(r.size.width()) * r.size.height() * 4)
-                    clip.artwork[key] = {r.size.width(), r.size.height(), original, sha256(original)};
-            }
-        } catch (const std::exception &e) {
-            clip.error = QString::fromUtf8(e.what());
-        }
-        return clip;
+        EffectPlayer::Scene scene;
+        scene.sourceClass = classId;
+        scene.enemyCaster = enemyPreview;
+        return renderEffectClip(rom, visual, inherited, scene, cancel);
     }));
 }
-void AttackEffectEditor::showFrame() {
+int AttackEffectEditor::currentTick() const {
+    return clipTicks_ <= 0 ? 0 : int((pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000) % clipTicks_;
+}
+QImage AttackEffectEditor::renderedFrame() const {
     if (clip_.isEmpty() || clipTicks_ <= 0)
-        return;
-    int tick = int((pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000) % clipTicks_,
-        index = 0;
+        return {};
+    int tick = currentTick(), index = 0;
     while (index + 1 < holds_.size() && tick >= holds_[index])
         tick -= holds_[index++];
-    preview_->setPixmap(QPixmap::fromImage(checker(clip_[index]))
+    return clip_[index];
+}
+void AttackEffectEditor::showFrame() {
+    const auto image = renderedFrame();
+    if (image.isNull()) return;
+    framePosition_->setText(QString("Frame %1 / %2 · 30 fps").arg(currentTick() + 1).arg(clipTicks_));
+    preview_->setPixmap(QPixmap::fromImage(effectChecker(image))
                             .scaled(preview_->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+}
+void AttackEffectEditor::exportRenderedFrame(const QString &path) const {
+    const auto image = renderedFrame();
+    if (image.isNull()) throw Error("Wait for the effect preview to finish loading");
+    if (QFileInfo(path).exists() && QFileInfo(path).canonicalFilePath() == QFileInfo(project_->rom().sourcePath()).canonicalFilePath())
+        throw Error("Cannot overwrite the source ROM");
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || !image.save(&file, "PNG") || !file.commit())
+        throw Error("Cannot export frame: " + file.errorString());
 }
 void AttackEffectEditor::chooseRom() {
     QDialog dialog(this);
@@ -632,16 +636,13 @@ void AttackEffectEditor::refreshArtwork() {
     artworkList_->clear();
     for (auto i = sourceArtwork_.begin(); i != sourceArtwork_.end(); ++i) {
         const auto art = visual_.artwork.value(i.key(), i.value());
-        auto pixels = art.rgba;
-        const int mode = visual_.color >= 0 ? 2 : visual_.hue ? 1 : 0;
-        if (mode) for (int at = 0; at < pixels.size(); at += 4)
-            put32(pixels, at, lc_effect_color(u32(pixels, at), mode, visual_.hue, quint32(visual_.color)));
-        const QImage image(reinterpret_cast<const uchar *>(pixels.constData()), art.width, art.height,
-                           art.width * 4, QImage::Format_RGBA8888);
-        auto item = new QListWidgetItem(QIcon(QPixmap::fromImage(checker(image).scaled(
+        const bool localMode = art.color >= 0 || art.hue != 0;
+        const auto image = effectArtworkImage(art, visual_);
+        auto item = new QListWidgetItem(QIcon(QPixmap::fromImage(effectChecker(image).scaled(
             64, 64, Qt::KeepAspectRatio, Qt::FastTransformation))),
             QString("Texture %1:%2 · %3 × %4%5").arg(i.key() >> 16).arg(i.key() & 65535)
-                .arg(art.width).arg(art.height).arg(visual_.artwork.contains(i.key()) ? " · replaced" : ""));
+                .arg(art.width).arg(art.height).arg((art.rgba != i->rgba ? QString(" · replaced") : QString()) +
+                    (localMode ? QString(" · recoloured") : QString())));
         item->setData(Qt::UserRole, i.key());
         artworkList_->addItem(item);
         if (i.key() == selected) artworkList_->setCurrentItem(item);
@@ -651,16 +652,42 @@ void AttackEffectEditor::refreshArtwork() {
         item->setFlags(Qt::NoItemFlags);
     }
     if (!artworkList_->currentItem() && !sourceArtwork_.isEmpty()) artworkList_->setCurrentRow(0);
+    refreshArtworkColour();
+}
+void AttackEffectEditor::refreshArtworkColour() {
+    QScopedValueRollback guard(refreshing_, true);
     const auto item = artworkList_->currentItem();
     const bool selectedArtwork = item && item->data(Qt::UserRole).isValid();
     replaceArtwork_->setEnabled(selectedArtwork);
     restoreArtwork_->setEnabled(selectedArtwork && visual_.artwork.contains(item->data(Qt::UserRole).toUInt()));
+    const auto art = selectedArtwork ? visual_.artwork.value(item->data(Qt::UserRole).toUInt()) : EffectArtwork{};
+    colourMode_->setEnabled(selectedArtwork);
+    colourMode_->setCurrentIndex(art.color >= 0 ? 2 : art.hue ? 1 : 0);
+    hue_->setValue(art.hue);
+    artworkColourForm_->setRowVisible(hue_, selectedArtwork && art.hue != 0 && art.color < 0);
+    artworkColourForm_->setRowVisible(effectColour_, selectedArtwork && art.color >= 0);
+    effectColour_->setText(art.color >= 0 ? QColor::fromRgb(art.color).name() + "…" : "Choose colour…");
+
+}
+void AttackEffectEditor::editArtworkColour(const std::function<void(EffectArtwork &)> &edit) {
+    if (refreshing_) return;
+    const auto item = artworkList_->currentItem();
+    if (!item || !item->data(Qt::UserRole).isValid()) return;
+    const auto key = item->data(Qt::UserRole).toUInt();
+    if (!sourceArtwork_.contains(key)) return;
+    const auto source = sourceArtwork_.value(key);
+    auto art = visual_.artwork.value(key, source);
+    edit(art);
+    auto v = visual_;
+    if (art == source) v.artwork.remove(key);
+    else v.artwork[key] = std::move(art);
+    record(v);
 }
 void AttackEffectEditor::replaceArtwork(quint32 key, const QImage &image) {
     if (!sourceArtwork_.contains(key)) throw Error("Choose artwork from the current effect preview");
     if (image.isNull() || qint64(image.width()) * image.height() > 16 * 1024 * 1024)
         throw Error("Choose an image with at most 16 million pixels");
-    auto art = sourceArtwork_.value(key);
+    auto art = visual_.artwork.value(key, sourceArtwork_.value(key));
     const auto pixels = imageToSrgb(image).convertToFormat(QImage::Format_RGBA8888)
         .scaled(art.width, art.height, Qt::IgnoreAspectRatio, Qt::FastTransformation);
     art.rgba = QByteArray(reinterpret_cast<const char *>(pixels.constBits()), art.width * art.height * 4);
