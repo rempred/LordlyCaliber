@@ -1,6 +1,6 @@
 /* Independent visual programs. The original battle appender, lifecycle,
  * texture parser and image drawing callback are retained. Imported images are
- * bounded native RGBA5551 frames; attack mechanics never read these settings. */
+ * bounded native RGBA5551 or RGBA32 frames; attack mechanics never read these settings. */
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -54,7 +54,7 @@ int lc_attack_visual_projectile(int state, void *data) {
     return result;
 }
 typedef void (*VisualCallback)(int, void *);
-int lc_visual_image_commands(u32 *, u32, int, int, int, int, int);
+int lc_visual_image_commands_format(u32 *, u32, int, int, int, int, int, int);
 #define pending_config (*(u8 **)(lc_attack_scratch + 64))
 #define pending_source (*(u8 **)(lc_attack_scratch + 68))
 #define pending_targets (*(u8 **)(lc_attack_scratch + 72))
@@ -63,8 +63,8 @@ static void visual_draw(void *node) {
     int words;
     u8 *config = (u8 *)W(node, 24);
     u32 *list = (u32 *)GLOBAL(0x800e9ba0);
-    words = lc_visual_image_commands(list, W(node, 20) + 8, H(config, 20), H(config, 22),
-                                     (s16)H(config, 24), (s16)H(config, 26), 2048);
+    words = lc_visual_image_commands_format(list, W(node, 20) + 8, H(config, 20), H(config, 22),
+                                     (s16)H(config, 24), (s16)H(config, 26), 2048, H(config, 30) == 3);
     if (words > 0)
         GLOBAL(0x800e9ba0) = (u32)(list + words);
 }
@@ -208,8 +208,8 @@ static void visual_task(int state, void *data) {
         return;
     }
     if (!s->drawing) {
-        s->pixels = (u8 *)((void *(*)(int))0x80070f30)(8 + ((H(s->config, 20) * 2 + 7) & ~7) *
-                                                               H(s->config, 22));
+        s->pixels = (u8 *)((void *(*)(int))0x80070f30)(8 + ((H(s->config, 20) + 3) & ~3) *
+                                                               (H(s->config, 30) == 3 ? 4 : 2) * H(s->config, 22));
         if (!s->pixels) {
             finish(s);
             return;

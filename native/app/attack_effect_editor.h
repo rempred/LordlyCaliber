@@ -54,7 +54,8 @@ class AttackEffectEditor : public QDialog {
     bool refreshing_ = false, playing_ = false, enemyPreview_ = false;
     QLabel *preview_, *source_, *notice_, *comparison_;
     QLabel *framePosition_;
-    QPushButton *step_, *exportFrame_;
+    QPushButton *step_, *exportFrame_, *compose_;
+    QLabel *compositionHelp_;
     QListWidget *frames_;
     QSpinBox *delay_, *ticks_, *originX_, *originY_;
     QPushButton *play_, *undo_, *redo_, *paint_, *resize_;

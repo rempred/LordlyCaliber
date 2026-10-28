@@ -25,6 +25,7 @@ struct AttackVisual {
     static AttackVisual fromJson(const QJsonObject &);
     QByteArray build(int inheritedEffect) const;
     static AttackVisual read(const QByteArray &);
-    static QByteArray gameImage(const QImage &);
+    bool fullColorFrames() const { return frames && frames->provenance["effectRgba32"].toBool(); }
+    static QByteArray gameImage(const QImage &, bool rgba32 = false);
 };
 } // namespace lordly

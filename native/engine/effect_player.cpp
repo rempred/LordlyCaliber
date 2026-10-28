@@ -4,7 +4,7 @@
 #include "engine/effect_resources.h"
 #include "rebuild/effect_preview_runtime.h"
 #include <algorithm>
-extern "C" int lc_visual_image_commands(unsigned int *, unsigned int, int, int, int, int, int);
+extern "C" int lc_visual_image_commands_format(unsigned int *, unsigned int, int, int, int, int, int, int);
 namespace lordly {
 EffectPlayer::EffectPlayer(const Rom &rom) : rom_(rom.bytes()) {
     rom.requireSupported();
@@ -264,9 +264,9 @@ void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const 
             auto &c = *machine_;
             std::array<unsigned int, 2048> commands{};
             const auto &asset = *visual_.frames;
-            const int count = lc_visual_image_commands(commands.data(), 0x80500008,
+            const int count = lc_visual_image_commands_format(commands.data(), 0x80500008,
                                                        asset.size.width(), asset.size.height(),
-                                                       asset.anchor.x(), asset.anchor.y(), 2048);
+                                                       asset.anchor.x(), asset.anchor.y(), 2048, visual_.fullColorFrames());
             if (count < 0)
                 throw Error("Imported effect drawing exceeds its command budget");
             auto at = c.word(0x800e9ba0);
@@ -286,7 +286,7 @@ void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const 
 }
 void EffectPlayer::loadFrame() {
     auto &m = *machine_;
-    m.mount(0x80500000, AttackVisual::gameImage(visual_.frames->composite(frame_)));
+    m.mount(0x80500000, AttackVisual::gameImage(visual_.frames->composite(frame_), visual_.fullColorFrames()));
     hold_ = visual_.frames->frames[frame_].ticks;
 }
 bool EffectPlayer::running() const {

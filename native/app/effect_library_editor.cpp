@@ -1,4 +1,7 @@
 #include "app/effect_library_editor.h"
+#include "app/effect_composer.h"
+#include "engine/effect_composition.h"
+#include <QMenu>
 #include "app/content_refresh.h"
 #include "app/sprite_library_command.h"
 #include "engine/image_colors.h"
@@ -26,12 +29,34 @@ QLabel *note(const QString &text, QLayout *layout) {
 }
 }
 EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
-    std::function<void()> changed, QWidget *parent) : QWidget(parent), project_(project), undo_(undo) {
+    std::function<void()> changed, QWidget *parent, bool picker) : QWidget(parent), project_(project), undo_(undo), picker_(picker) {
     setObjectName("effectLibrary");
     project_->loadAttacks();
     auto root = new QVBoxLayout(this);
-    note("Choose an effect, then select an artwork piece to save or export. Mix pieces in Artwork, "
-         "or use them in Attacks → Preview / edit attack effect → Replace artwork → From Art Library.", root);
+    auto commands = new QHBoxLayout; root->addLayout(commands);
+    auto create = new QPushButton("Create effect…"); create->setObjectName("effectLibraryCreate"); commands->addWidget(create);
+    editEffect_ = new QPushButton("Edit effect…"); editEffect_->setObjectName("effectLibraryEdit"); commands->addWidget(editEffect_);
+    assignEffect_ = new QPushButton("Assign to attack…"); assignEffect_->setObjectName("effectLibraryAssign"); commands->addWidget(assignEffect_);
+    moreEffect_=new QPushButton("More…");commands->addWidget(moreEffect_);auto more=new QMenu(moreEffect_);moreEffect_->setMenu(more);commands->addStretch();
+    more->addAction("Duplicate effect",this,[this]{guarded([this]{
+        auto model=EffectComposition::fromAsset(project_->sprites().asset(sources_->currentItem()->data(Qt::UserRole+1).toString()));
+        model.id=SpriteLibrary::newId();model.name=model.name.left(110)+" copy";
+        auto library=project_->sprites();library.replace(model.bake());undo_->push(new SpriteLibraryCommand(project_,"Duplicate composed effect",library));selectSavedEffect(model.id);
+    });});
+    more->addAction("Delete effect",this,[this]{guarded([this]{
+        auto library=project_->sprites();library.remove(sources_->currentItem()->data(Qt::UserRole+1).toString());
+        undo_->push(new SpriteLibraryCommand(project_,"Delete composed effect",library));
+    });});
+    for(auto button : {create,editEffect_,assignEffect_,moreEffect_}) button->setVisible(!picker_);
+    connect(create,&QPushButton::clicked,this,[this]{guarded([this]{compose(false);});});
+    connect(editEffect_,&QPushButton::clicked,this,[this]{guarded([this]{compose(false,true);});});
+    connect(assignEffect_,&QPushButton::clicked,this,[this]{guarded([this]{
+        const auto id=sources_->currentItem()->data(Qt::UserRole+1).toString();
+        chooseEffectAttack(project_,undo_,project_->sprites().asset(id),this);
+    });});
+    note(picker_ ? "Choose an effect and an artwork piece, then click Add selected piece."
+        : "Create an effect, add pieces from any source, and give each piece its own movement and timing. "
+          "Your saved effects appear first in the list. Game effects below provide reusable artwork.", root);
     auto split = new QSplitter;
     root->addWidget(split, 1);
     auto left = new QWidget;
@@ -80,13 +105,20 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
     piecePreview_->setStyleSheet("background:#242932;");
     piece->addWidget(piecePreview_, 1);
     details_ = note("Select an artwork piece below", piece);
-    save_ = new QPushButton("Save to Library");
+    save_ = new QPushButton(picker_ ? "Add selected piece" : "Use artwork…");
     save_->setObjectName("effectLibrarySave");
     export_ = new QPushButton("Export PNG…");
     export_->setObjectName("effectLibraryExport");
     edit_ = new QPushButton("Edit saved artwork");
     piece->addWidget(save_); piece->addWidget(export_); piece->addWidget(edit_);
-    connect(save_, &QPushButton::clicked, this, [this] { guarded([this] { saveArtwork(); }); });
+    if(picker_) {
+        connect(save_, &QPushButton::clicked, this, [this] { guarded([this] { emit pieceChosen(selectedPiece()); }); });
+        export_->hide(); edit_->hide();
+    } else {
+        auto use = new QMenu(save_); save_->setMenu(use);
+        use->addAction("Create effect from this piece…",this,[this]{guarded([this]{compose(true);});});
+        use->addAction("Save piece to Artwork",this,[this]{guarded([this]{saveArtwork();});});
+    }
     connect(export_, &QPushButton::clicked, this, [this] { guarded([this] {
         const auto path = QFileDialog::getSaveFileName(this, "Export selected artwork", "effect-artwork.png", "PNG image (*.png)");
         if (!path.isEmpty()) { exportArtwork(path); notice_->setText("Artwork exported to " + path); }
@@ -119,10 +151,16 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
 EffectLibraryEditor::~EffectLibraryEditor() { if (canceled_) canceled_->store(true); }
 void EffectLibraryEditor::showEvent(QShowEvent *event) { QWidget::showEvent(event); loadSelection(); }
 void EffectLibraryEditor::refreshSources() {
+    const auto savedSelection = sources_->currentItem() ? sources_->currentItem()->data(Qt::UserRole+1).toString() : QString();
     const int selected = sources_->currentItem() ? sources_->currentItem()->data(Qt::UserRole).toInt() : 8;
     {
         QSignalBlocker blocker(sources_);
         sources_->clear();
+        int custom = -1;
+        if(!picker_) for(const auto &asset : project_->sprites().assets()) if(EffectComposition::contains(asset)) {
+            auto item = new QListWidgetItem("My effect · " + asset.name,sources_);
+            item->setData(Qt::UserRole,custom--); item->setData(Qt::UserRole+1,asset.id);
+        }
         const auto names = effectNames(project_->rom());
         auto add = [this](int id, const QString &name) {
             auto item = new QListWidgetItem(name, sources_); item->setData(Qt::UserRole, id);
@@ -135,7 +173,8 @@ void EffectLibraryEditor::refreshSources() {
         }
         sources_->setCurrentRow(8);
         for (int i = 0; i < sources_->count(); ++i)
-            if (sources_->item(i)->data(Qt::UserRole).toInt() == selected) sources_->setCurrentRow(i);
+            if ((!savedSelection.isEmpty() && sources_->item(i)->data(Qt::UserRole+1).toString() == savedSelection) ||
+                (savedSelection.isEmpty() && sources_->item(i)->data(Qt::UserRole).toInt() == selected)) sources_->setCurrentRow(i);
     }
     filter();
     loadSelection();
@@ -151,13 +190,39 @@ void EffectLibraryEditor::selectEffect(int id) {
     throw Error("Effect is not in the library catalog");
 }
 void EffectLibraryEditor::selectAttack(int id) { selectEffect(1000 + id); }
+void EffectLibraryEditor::selectSavedEffect(const QString &id) {
+    search_->clear();
+    for(int i=0;i<sources_->count();++i)if(sources_->item(i)->data(Qt::UserRole+1).toString()==id){sources_->setCurrentRow(i);loadSelection();return;}
+    throw Error("Saved effect is not in the library");
+}
+SpriteAsset EffectLibraryEditor::selectedPiece() const {
+    const auto image=selectedImage();
+    auto asset=SpriteAsset::fromImage((sourceName_+" · "+pieces_->currentItem()->text().section('\n',0,0)).left(120),image);
+    asset.kind="frame";asset.provenance={{"source","effect-artwork"},{"effectSource",requested_},
+        {"resource",int(pieces_->currentItem()->data(Qt::UserRole).toUInt())}};
+    return asset;
+}
+void EffectLibraryEditor::compose(bool fromPiece, bool editSaved) {
+    EffectComposition composition;
+    if(editSaved)composition=EffectComposition::fromAsset(project_->sprites().asset(sources_->currentItem()->data(Qt::UserRole+1).toString()));
+    EffectComposer dialog(project_,composition,this,true);
+    if(fromPiece)dialog.addPiece(selectedPiece());
+    if(dialog.exec()!=QDialog::Accepted)return;
+    const auto asset=dialog.asset();auto library=project_->sprites();library.replace(asset);
+    undo_->push(new SpriteLibraryCommand(project_,"Save composed effect",std::move(library)));
+    selectSavedEffect(asset.id);
+    if(dialog.assignAfterSave())chooseEffectAttack(project_,undo_,asset,this);
+}
 void EffectLibraryEditor::loadSelection() {
+    const bool saved = sources_->currentItem() && !sources_->currentItem()->data(Qt::UserRole+1).toString().isEmpty();
+    editEffect_->setEnabled(saved); assignEffect_->setEnabled(saved); moreEffect_->setEnabled(saved);
     if (!isVisible() || !sources_->currentItem()) return;
     const auto item = sources_->currentItem();
     const int id = item->data(Qt::UserRole).toInt();
     AttackVisual visual;
     int inherited = id;
-    if (id >= 1000) {
+    if(id < 0) { visual.frames=project_->sprites().asset(item->data(Qt::UserRole+1).toString()); inherited=0; }
+    else if (id >= 1000) {
         const auto &a = project_->attacks()->entry(id - 1000);
         visual = a.visual;
         inherited = EffectPlayer::retailEffect(a.animation);

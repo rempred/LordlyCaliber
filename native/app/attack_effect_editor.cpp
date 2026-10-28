@@ -1,5 +1,6 @@
 #include "app/attack_effect_editor.h"
 #include "app/effect_artwork.h"
+#include "app/effect_composer.h"
 #include "app/recovery_draft.h"
 #include "app/sprite_editor.h"
 #include "engine/animation_file_import.h"
@@ -83,6 +84,15 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     auto copy = new QPushButton("Copy effect from attack…");
     copy->setObjectName("copyAttackEffect");
     commands->addWidget(copy);
+    compose_=new QPushButton("Create effect…");compose_->setObjectName("composeAttackEffect");commands->addWidget(compose_);
+    connect(compose_,&QPushButton::clicked,this,[this]{guarded([this]{
+        EffectComposition model;
+        const bool existing=visual_.frames && EffectComposition::contains(*visual_.frames);
+        if(existing)model=EffectComposition::fromAsset(*visual_.frames);
+        EffectComposer dialog(project_,model,this);
+        if(!existing && visual_.frames)dialog.addPiece(*visual_.frames);
+        if(dialog.exec()==QDialog::Accepted){AttackVisual v;v.delay=visual_.delay;v.frames=dialog.asset();record(v);}
+    });});
     connect(copy, &QPushButton::clicked, this, [this] { guarded([this] { chooseAttack(); }); });
     auto restore = new QPushButton("Restore original effect");
     restore->setObjectName("restoreAttackEffect");
@@ -295,6 +305,8 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     note("Replacements fit the selected texture's original dimensions and keep the retail movement "
          "and timing. Each texture may appear several times during the effect. Colours and alpha "
          "use the retail effect's RGBA32 format.", nativeLayout);
+    compositionHelp_=note("This effect has independent pieces. Use Edit pieces… to change movement, timing, size or fades. "
+        "Full colour and partial transparency are retained in the game.", options);
     frameControls_ = new QWidget;
     auto frameLayout = new QVBoxLayout(frameControls_);
     frameLayout->setContentsMargins(0, 0, 0, 0);
@@ -321,7 +333,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         QScopedValueRollback guard(refreshing_, true);
         ticks_->setValue(visual_.frames->frames[row].ticks);
         const auto original = visual_.frames->composite(row);
-        const auto decoded = decodeN64Image(AttackVisual::gameImage(original));
+        const auto decoded = decodeN64Image(AttackVisual::gameImage(original, visual_.fullColorFrames()));
         const auto game =
             QImage(reinterpret_cast<const uchar *>(decoded.rgba.constData()), decoded.width,
                    decoded.height, decoded.width * 4, QImage::Format_RGBA8888)
@@ -452,7 +464,9 @@ void AttackEffectEditor::refresh() {
     delay_->setEnabled(inherited_ >= 0 || visual_.nativeEffect >= 0 || visual_.frames.has_value());
     const int selected = frames_->currentRow();
     frames_->clear();
-    frameControls_->setVisible(visual_.frames.has_value());
+    const bool composed=visual_.frames && EffectComposition::contains(*visual_.frames);
+    frameControls_->setVisible(visual_.frames.has_value() && !composed);
+    compositionHelp_->setVisible(composed);compose_->setText(composed?"Edit pieces…":"Create effect…");
     nativeControls_->setVisible(!visual_.frames && (inherited_ >= 0 || visual_.nativeEffect >= 0));
     effectSize_->setValue(visual_.sizePercent);
     effectX_->setValue(visual_.offsetX); effectY_->setValue(visual_.offsetY);
@@ -460,7 +474,7 @@ void AttackEffectEditor::refresh() {
     refreshArtwork();
     if (visual_.frames) {
         const auto &asset = *visual_.frames;
-        source_->setText(QString("Independent imported sequence · %1 frames · %2 × %3")
+        source_->setText(QString(composed ? "Composed effect · %1 frames · %2 × %3" : "Independent imported sequence · %1 frames · %2 × %3")
                              .arg(asset.frames.size())
                              .arg(asset.size.width())
                              .arg(asset.size.height()));

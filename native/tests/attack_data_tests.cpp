@@ -1,5 +1,7 @@
 #include "engine/attack_data.h"
 #include "engine/effect_player.h"
+#include "engine/effect_composition.h"
+#include "engine/image.h"
 #include "engine/project.h"
 #include "rebuild/attack_runtime.h"
 #include "rebuild/compiler.h"
@@ -16,6 +18,45 @@ class AttackDataTests : public QObject {
         return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
     }
   private slots:
+    void compositionTimingAndPixels() {
+        EffectComposition model; model.name="Moving sparks";model.size={32,32};model.duration=7;
+        QImage red(2,2,QImage::Format_RGBA8888);red.fill(QColor(255,0,0,128));
+        EffectPiece first;first.id="red";first.name="Red spark";first.artwork=SpriteAsset::fromImage("Red",red);
+        first.start=1;first.duration=3;first.from={-6,0};first.to={6,0};
+        QImage green(2,2,QImage::Format_RGBA8888);green.fill(Qt::green);
+        EffectPiece second;second.id="green";second.name="Green spark";second.artwork=SpriteAsset::fromImage("Green",green);
+        second.start=3;second.duration=3;second.from=second.to={0,6};second.toOpacity=0;
+        model.pieces={first,second};model.validate();
+        QCOMPARE(model.render(0).pixelColor(9,15).alpha(),0);
+        QCOMPARE(model.render(1).pixelColor(9,15),QColor(255,0,0,128));
+        QCOMPARE(model.render(2).pixelColor(15,15),QColor(255,0,0,128));
+        QCOMPARE(model.render(3).pixelColor(21,15),QColor(255,0,0,128));
+        QCOMPARE(model.render(3).pixelColor(15,21),QColor(0,255,0,255));
+        QCOMPARE(model.render(4).pixelColor(21,15).alpha(),0);
+        QVERIFY(std::abs(model.render(4).pixelColor(15,21).alpha()-128)<=1);
+        QCOMPARE(model.render(5).pixelColor(15,21).alpha(),0);
+        auto changed=model;changed.pieces[0].to={0,-6};
+        QCOMPARE(changed.render(3).pixelColor(15,21),model.render(3).pixelColor(15,21));
+        QCOMPARE(EffectComposition::fromJson(model.json()),model);
+        const auto asset=model.bake();QCOMPARE(EffectComposition::fromAsset(asset),model);
+        int tick=0;for(const auto &f:asset.frames){for(int n=0;n<f.ticks;++n)QCOMPARE(f.layers[0].image,model.render(tick++));}QCOMPARE(tick,7);
+        AttackVisual visual;visual.frames=asset;QVERIFY(visual.fullColorFrames());
+        const auto decoded=decodeN64Image(AttackVisual::gameImage(red,true));
+        QCOMPARE(decoded.rgba,QByteArray::fromHex("ff000080ff000080ff000080ff000080"));
+        const auto bytes=visual.build(8);QCOMPARE(u16(bytes,30),quint16(3));
+        const auto read=AttackVisual::read(bytes);QCOMPARE(read,visual);
+        QCOMPARE(EffectComposition::fromAsset(*read.frames),model);
+        auto invalid=model;invalid.pieces[0].start=6;QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
+        invalid=model;invalid.pieces[0].duration=2147483647;QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
+        invalid=model;invalid.size={256,240};invalid.duration=300;QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
+        invalid=model;while(invalid.pieces.size()<25){auto p=first;p.id=SpriteLibrary::newId();invalid.pieces<<p;}QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
+        auto animated=first;animated.start=0;animated.duration=5;animated.from=animated.to={0,0};
+        animated.artwork.frames[0].ticks=1;auto frame=animated.artwork.frames[0];frame.id="green";frame.layers[0].image=green;animated.artwork.frames<<frame;
+        model.pieces={animated};model.duration=5;
+        QCOMPARE(model.render(2).pixelColor(15,15),QColor(255,0,0,128));
+        model.pieces[0].loop=false;QCOMPARE(model.render(2).pixelColor(15,15),QColor(0,255,0,255));
+        auto raw=bytes;put16(raw,30,2);QVERIFY_THROWS_EXCEPTION(Error,AttackVisual::read(raw));
+    }
     void visualExportAndPlayback() {
         try {
             const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -107,6 +148,16 @@ class AttackDataTests : public QObject {
             secondColours.visual.artwork[0x40002].color = 0x00ff00;
             data.set(textureCopy, secondColours);
             QCOMPARE(data.entry(61), coloured);
+            EffectComposition composition;composition.name="Mixed independent pieces";composition.size={67,35};composition.duration=7;
+            EffectPiece moving;moving.id="moving";moving.name="Moving red";moving.start=0;moving.duration=5;
+            QImage soft(10,6,QImage::Format_RGBA8888);soft.fill(QColor(231,43,17,93));
+            moving.artwork=SpriteAsset::fromImage("Soft red",soft);moving.from={-20,0};moving.to={20,0};
+            auto later=moving;later.id="later";later.name="Later blue";later.start=3;later.duration=4;later.from=later.to={0,10};later.toOpacity=0;
+            soft.fill(QColor(11,63,249,197));later.artwork=SpriteAsset::fromImage("Soft blue",soft);
+            composition.pieces={moving,later};
+            auto composed=data.entry(62);composed.visual={};composed.visual.frames=composition.bake();data.set(62,composed);
+            const int composedCopy=data.duplicate(62,"Copied composition");QCOMPARE(composedCopy,161);
+            auto different=data.entry(161);auto changedComposition=EffectComposition::fromAsset(*different.visual.frames);changedComposition.pieces[0].to={0,-10};different.visual.frames=changedComposition.bake();data.set(161,different);
             project.setAttacks(data.json());
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM"))
                                      .absoluteDir()
@@ -130,7 +181,9 @@ class AttackDataTests : public QObject {
             QCOMPARE(reopened.attacks()->entry(56).visual.build(1), imported.visual.build(1));
             const auto p = AttackPlacement::read(rom);
             QVERIFY(p);
-            for (int id : {55, 56, 57, 58, 59, 60, 61, 159, 160}) {
+            QCOMPARE(reopened.attacks()->entry(62).visual,composed.visual);
+            QCOMPARE(EffectComposition::fromAsset(*reopened.attacks()->entry(62).visual.frames),composition);
+            for (int id : {55, 56, 57, 58, 59, 60, 61, 62, 159, 160, 161}) {
                 const int slot =
                     u8(built.image, p->romOffset + AttackData::settingsOffset + id * 32 + 21);
                 EffectPlayer actual(rom);
@@ -145,6 +198,10 @@ class AttackDataTests : public QObject {
                     triangles += frame.triangles;
                     ++ticks;
                     QCOMPARE(frame.image, expected.draw({320, 240}, .75).image);
+                    if(id==62 && ticks==1) {
+                        // The first piece's original 93/255 alpha and unquantized RGB survive MIPS drawing.
+                        QCOMPARE(frame.image.pixelColor(140,120),QColor(231,43,17,93));
+                    }
                 }
                 QVERIFY(!expected.advance());
                 QVERIFY(triangles > 0);

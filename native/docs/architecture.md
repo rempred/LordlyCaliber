@@ -116,6 +116,31 @@ Undo command. Layer composition copies pixels, preserving source independence.
 Resource PNG export preserves dimensions/alpha. Full-scene PNG export captures
 the paused 320x240 render; frame stepping advances one 30-Hz native tick.
 
+`EffectComposition` authors independent 2D pieces: copied SpriteAssets, exclusive
+start/end timing, interpolated centre coordinates/scale/rotation/opacity, easing
+and optional source-frame looping. Canvas drawing clips to its bounds. Baking
+creates deterministic frame/layer IDs, coalesces identical adjacent frames and
+retains the source pieces in SpriteAsset provenance `effectComposition` version1.
+The composition's ID is the saved asset ID; assigned attacks get a separate ID.
+Limits are24 pieces,256x240 canvas,300 ticks,4M source pixels and16M output pixels.
+The ordinary Artwork editor excludes compositions so edits stay in the composer.
+
+Composed assets carry provenance `effectRgba32=true`. LCFX0001 header+30 is3 for
+RGBA32 and0 for legacy RGBA5551. Rows retain their existing offsets; decoded
+image format/stride, full-colour flag and bounded editable metadata are validated
+on reopen. Native and host drawing use `lc_visual_image_commands_format`, with
+RGBA32 SetTextureImage/SetTile and a16-bit per-bank line width. Each32x32 tile
+fits4KiB TMEM, split over RG/BA banks. Temporary frame allocation follows the
+format; command limits and the existing task/drawing lifecycle stay unchanged.
+Old frame exports retain zero+30 and RGBA5551; no existing effect is upgraded
+implicitly. Editable metadata is limited to64MiB before compression.
+
+`EffectComposer` owns local history and a recovery snapshot until Save. Gallery
+Save makes one SpriteLibraryCommand; assignment is a separate attack-table Undo
+command, including creation when requested. The gallery's read-only picker can
+supply a piece directly without saving a temporary library asset. Nested attack
+effect editing retains Apply/Cancel. Source libraries/attacks remain independent.
+
 `effect-edits.c` scopes native task/graphic/draw callbacks to an edited attack.
 Cache IDs include the attack ID so models and child resources are independent;
 the common lookup covers both fetch and release-by-ID. Native inline preloaders

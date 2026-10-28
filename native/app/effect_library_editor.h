@@ -12,18 +12,22 @@ namespace lordly {
 class EffectLibraryEditor : public QWidget {
     Q_OBJECT
   public:
-    EffectLibraryEditor(Project *, QUndoStack *, std::function<void()> changed, QWidget * = nullptr);
+    EffectLibraryEditor(Project *, QUndoStack *, std::function<void()> changed, QWidget * = nullptr, bool picker = false);
     ~EffectLibraryEditor() override;
     void selectEffect(int);
     void selectAttack(int);
+    void selectSavedEffect(const QString &);
+    SpriteAsset selectedPiece() const;
     QString saveArtwork(const QString &name = {});
     void exportArtwork(const QString &) const;
   signals:
     void editArtwork(const QString &id);
+    void pieceChosen(const SpriteAsset &);
   protected:
     void showEvent(QShowEvent *) override;
   private:
     void refreshSources();
+    void compose(bool fromPiece, bool editSaved = false);
     void loadSelection();
     void filter();
     void refreshPiece();
@@ -37,6 +41,8 @@ class EffectLibraryEditor : public QWidget {
     QLabel *preview_, *piecePreview_, *details_, *notice_;
     QPushButton *save_, *export_, *edit_, *play_;
     QString sourceName_, savedId_;
+    QPushButton *editEffect_, *assignEffect_, *moreEffect_;
+    bool picker_ = false;
     int requested_ = -1, generation_ = 0;
     bool playing_ = false;
     qint64 pausedMs_ = 0;

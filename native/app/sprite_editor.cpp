@@ -1,6 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/sprite_editor.h"
+#include "engine/effect_composition.h"
 #include "app/recovery_draft.h"
 #include "app/rom_art_import.h"
 #include "app/art_image_assignment.h"
@@ -554,7 +555,7 @@ SpriteEditor::~SpriteEditor() {
 }
 const SpriteAsset *SpriteEditor::current() const {
     for (const auto &asset : project_->sprites().assets())
-        if (asset.id == selected_)
+        if (asset.id == selected_ && !EffectComposition::contains(asset))
             return &asset;
     return nullptr;
 }
@@ -608,14 +609,15 @@ void SpriteEditor::refresh() {
     const int oldFrame = frames_->currentRow(), oldLayer = layers_->currentRow();
     assets_->clear();
     for (const auto &asset : project_->sprites().assets()) {
+        if (EffectComposition::contains(asset)) continue;
         auto item = new QListWidgetItem(asset.name, assets_);
         item->setData(Qt::UserRole, asset.id);
         item->setHidden(!asset.name.contains(search_->text(), Qt::CaseInsensitive));
         if (asset.id == selected_)
             assets_->setCurrentItem(item);
     }
-    if (!current() && !project_->sprites().assets().isEmpty()) {
-        selected_ = project_->sprites().assets().first().id;
+    if (!current() && assets_->count() > 0) {
+        selected_ = assets_->item(0)->data(Qt::UserRole).toString();
         assets_->setCurrentRow(0);
     }
     const auto asset = current();

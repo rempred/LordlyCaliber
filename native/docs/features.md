@@ -49,12 +49,34 @@ Imports use RGBA5551 (5-bit RGB and on/off alpha); embedded profiles convert to
 sRGB, and original artwork remains available for editing. Imported effects are
 screen-centred sequences, not per-target 3D programs.
 
-**Art Library → Effects** browses all 133 retail programs and edited attacks,
-with effect playback and their individual image resources. Save a piece as an
-independent library asset or export its full-resolution RGBA PNG. **Artwork →
-Add layer from Library** combines saved pieces as independently editable layers.
-Assign the result through the effect window's selected-artwork replacement.
-Geometry-only effects clearly report that there is no image artwork to extract.
+**Art Library → Effects → Create effect** builds a new effect from independent
+artwork pieces. Add pieces directly from the game-effect browser, Art Library
+or files; no intermediate PNG export is needed. Each piece has its own appearance
+time, duration, start/end position, size, rotation, opacity and movement easing.
+Drag start/end positions on the preview, scrub or step the timeline, repeat a
+piece's artwork sequence, and change the drawing order. Soft glows and fades
+retain full RGBA32 colour/alpha in the exported game frames.
+
+Compositions support up to 24 pieces, a 256 × 240 canvas, 300 ticks (10 seconds),
+four million source pixels and sixteen million rendered pixels. Larger canvas
+sizes therefore allow shorter effects. They are screen-centred 2D effects with
+the same orientation on either side. Saved effects retain their editable pieces,
+local Undo/Redo and recovery drafts. They appear at the top of Effects; More
+provides duplicate/delete, and Edit effect reopens the composer. Artwork keeps
+ordinary images/sequences separate from these composed effects.
+
+**Save and assign…** or **Assign to attack…** can create a new attack using a
+selected attack's mechanics as a starting point, or replace an existing attack's
+visual. Assignment copies the composition independently, is undoable, and does
+not assign the new attack to classes automatically. The attack effect window
+also has Create effect / Edit pieces, applying its result through the normal
+Apply/Cancel and project Undo workflow.
+
+The Effects browser still covers all 133 retail programs and edited attacks.
+Use artwork offers Create effect from this piece or Save piece to Artwork;
+Export PNG retains full dimensions/alpha. Geometry-only programs state that
+they have no image artwork to extract. Ordinary Artwork can still combine saved
+pieces as layers for replacing a native texture while retaining native motion.
 
 The full effect preview has **Step frame** (one game tick at 30 fps, paused) and
 **Export frame PNG**. PNG output captures the complete displayed scene at the

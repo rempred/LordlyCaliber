@@ -112,21 +112,23 @@ AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
     result.validate();
     return result;
 }
-QByteArray AttackVisual::gameImage(const QImage &source) {
+QByteArray AttackVisual::gameImage(const QImage &source, bool rgba32) {
     const auto image = imageToSrgb(source).convertToFormat(QImage::Format_RGBA8888);
     if (image.isNull() || image.width() > 256 || image.height() > 256)
         throw Error("Invalid effect image dimensions");
-    const int stride = (image.width() * 2 + 7) & ~7;
+    const int stride = ((image.width() + 3) & ~3) * (rgba32 ? 4 : 2);
     QByteArray data(8 + stride * image.height(), 0);
     put16(data, 0, 0x3634);
     put8(data, 2, 0);
-    put8(data, 3, 2);
+    put8(data, 3, rgba32 ? 3 : 2);
     put16(data, 4, image.width());
     put16(data, 6, image.height());
     for (int y = 0; y < image.height(); ++y)
         for (int x = 0; x < image.width(); ++x) {
             const auto *p = image.constScanLine(y) + x * 4;
-            put16(data, 8 + y * stride + x * 2,
+            if (rgba32) {
+                for (int c = 0; c < 4; ++c) put8(data, 8 + y * stride + x * 4 + c, p[c]);
+            } else put16(data, 8 + y * stride + x * 2,
                   quint16((p[0] >> 3) << 11 | (p[1] >> 3) << 6 | (p[2] >> 3) << 1 | (p[3] >= 128)));
         }
     return data;
@@ -176,10 +178,11 @@ QByteArray AttackVisual::build(int inherited) const {
         put16(bytes, 24, quint16(frames->anchor.x()));
         put16(bytes, 26, quint16(frames->anchor.y()));
         put16(bytes, 28, quint16(frames->frames.size()));
+        put16(bytes, 30, fullColorFrames() ? 3 : 0);
         bytes += QByteArray(frames->frames.size() * 16, 0);
         QMap<QByteArray, QPair<quint32, quint32>> images;
         for (int i = 0; i < frames->frames.size(); ++i) {
-            const auto raw = gameImage(frames->composite(i));
+            const auto raw = gameImage(frames->composite(i), fullColorFrames());
             const auto hash = sha256(raw);
             if (!images.contains(hash)) {
                 const auto compressed = encodeLzss(raw);
@@ -195,8 +198,9 @@ QByteArray AttackVisual::build(int inherited) const {
         }
     }
     if (frames) {
-        const auto metadata =
-            qCompress(QJsonDocument(frames->assetFile()).toJson(QJsonDocument::Compact), 9);
+        const auto editable = QJsonDocument(frames->assetFile()).toJson(QJsonDocument::Compact);
+        if (editable.size() > 64 * 1024 * 1024) throw Error("Editable effect metadata exceeds 64 MiB");
+        const auto metadata = qCompress(editable, 9);
         const auto at = quint32(bytes.size());
         bytes += metadata;
         bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
@@ -237,7 +241,8 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
     }
     if (u16(bytes, 12)) {
         const int w = u16(bytes, 20), h = u16(bytes, 22), count = u16(bytes, 28);
-        if (w < 1 || h < 1 || w > 256 || h > 256 || count < 1 || count > 300 ||
+        const int format = u16(bytes, 30);
+        if ((format != 0 && format != 3) || w < 1 || h < 1 || w > 256 || h > 256 || count < 1 || count > 300 ||
             32 + count * 16 > bytes.size())
             throw Error("Invalid exported effect dimensions");
         SpriteAsset asset = SpriteAsset::blank("Imported attack effect", {w, h});
@@ -250,10 +255,11 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
             const auto at = u32(bytes, row), size = u32(bytes, row + 4),
                        rawSize = u32(bytes, row + 12);
             if (at < quint32(32 + count * 16) || quint64(at) + size > quint64(bytes.size()) ||
-                rawSize != quint32(8 + ((w * 2 + 7) & ~7) * h))
+                rawSize != quint32(8 + ((w + 3) & ~3) * (format == 3 ? 4 : 2) * h))
                 throw Error("Exported effect frame lies outside its allocation");
             if (!images.contains(at)) {
                 const auto raw = decodeLzss(bytes.mid(at, size), rawSize);
+                if (u8(raw, 2) != 0 || u8(raw, 3) != (format == 3 ? 3 : 2)) throw Error("Effect image format mismatch");
                 const auto decoded = decodeN64Image(raw);
                 if (decoded.width != w || decoded.height != h)
                     throw Error("Exported effect frame has inconsistent dimensions");
@@ -280,7 +286,7 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
         if (!document.isObject())
             throw Error("Invalid editable effect frame document");
         result.frames = SpriteAsset::fromAssetFile(document.object());
-        if (result.frames->size != QSize(w, h) || result.frames->frames.size() != count ||
+        if (result.fullColorFrames() != (format == 3) || result.frames->size != QSize(w, h) || result.frames->frames.size() != count ||
             result.frames->anchor != asset.anchor)
             throw Error("Editable effect metadata disagrees with its game frames");
     }

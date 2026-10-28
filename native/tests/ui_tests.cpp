@@ -2,6 +2,8 @@
 #include "app/attack_editor.h"
 #include "app/attack_effect_editor.h"
 #include "app/effect_library_editor.h"
+#include "app/effect_composer.h"
+#include "app/sprite_library_command.h"
 #include "engine/effect_resources.h"
 #include "app/recovery_draft.h"
 #include "app/change_report_dialog.h"
@@ -134,6 +136,62 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void composedEffectWorkflow() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        try {
+            applyEditorTheme(*qobject_cast<QApplication *>(QCoreApplication::instance()));
+            auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+            EffectLibraryEditor browser(&project,&undo,[]{},nullptr,true);browser.resize(1050,720);browser.show();browser.selectEffect(8);
+            auto pieces=browser.findChild<QListWidget *>("effectLibraryPieces");QTRY_VERIFY_WITH_TIMEOUT(pieces->count()>0,20000);
+            const auto fire=browser.selectedPiece();browser.selectEffect(20);
+            QTRY_VERIFY_WITH_TIMEOUT(pieces->count()>0,20000);auto poison=browser.selectedPiece();
+            // Retail programs share some textures. Choose genuinely different artwork.
+            for(int row=0;row<pieces->count() && fire.frames[0].layers[0].image==poison.frames[0].layers[0].image;++row){pieces->setCurrentRow(row);poison=browser.selectedPiece();}
+            QVERIFY(fire.frames[0].layers[0].image!=poison.frames[0].layers[0].image);browser.hide();
+            EffectComposer dialog(&project,{});dialog.show();QVERIFY(dialog.findChild<RecoveryDraft *>()->capture().isEmpty());dialog.addPiece(fire);dialog.addPiece(poison);
+            QCOMPARE(dialog.composition().pieces.size(),2);
+            auto start=dialog.findChild<QSpinBox *>("compositionStart");auto fromX=dialog.findChild<QSpinBox *>("compositionFromX");auto toX=dialog.findChild<QSpinBox *>("compositionToX");
+            start->setValue(40);fromX->setValue(-24);toX->setValue(24);
+            QCOMPARE(dialog.composition().pieces[0].start,0);QCOMPARE(dialog.composition().pieces[0].from,QPoint());
+            QCOMPARE(dialog.composition().pieces[1].start,40);QCOMPARE(dialog.composition().pieces[1].from.x(),-24);
+            const auto before=dialog.composition();toX->setValue(40);dialog.findChild<QPushButton *>("compositionUndo")->click();QCOMPARE(dialog.composition(),before);
+            dialog.findChild<QPushButton *>("compositionRedo")->click();QCOMPARE(dialog.composition().pieces[1].to.x(),40);
+            // Typed values commit on Enter and invalid timing is rejected without losing the draft.
+            start->setFocus();start->selectAll();QTest::keyClicks(start,"45");QTest::keyClick(start,Qt::Key_Return);QCOMPARE(dialog.composition().pieces[1].start,45);QVERIFY(dialog.isVisible());
+            start->setValue(89);QCOMPARE(dialog.composition().pieces[1].start,45);
+            QVERIFY(dialog.findChild<QLabel *>("compositionNotice")->text().contains("timing"));
+            dialog.findChild<QPushButton *>("compositionPlaceEnd")->click();
+            auto canvas=dialog.findChild<QWidget *>("compositionCanvas");const double scale=std::min((canvas->width()-24)/320.0,(canvas->height()-24)/240.0);
+            const auto point=canvas->rect().center()+QPoint(qRound(-24*scale),qRound(-12*scale));
+            QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,point);QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,point);
+            QVERIFY(std::abs(dialog.composition().pieces[1].to.x()+24)<=1);QVERIFY(std::abs(dialog.composition().pieces[1].to.y()+12)<=1);
+            const auto model=dialog.composition();const auto asset=dialog.asset();
+            QCOMPARE(EffectComposition::fromAsset(asset),model);
+            const auto recovery=dialog.findChild<RecoveryDraft *>()->capture();QVERIFY(!recovery.isEmpty());
+            validateRecoveryDrafts(project,QJsonArray{recovery});
+            QVERIFY(dialog.grab().save("native/build/effect-composer.png"));
+            auto library=project.sprites();library.replace(asset);undo.push(new SpriteLibraryCommand(&project,"Save effect",library));
+            undo.undo();QVERIFY(project.sprites().assets().isEmpty());undo.redo();QCOMPARE(project.sprites().asset(asset.id),asset);
+            const auto donor=project.attacks()->entry(55);
+            const int id=assignComposedEffect(&project,&undo,asset,55,true);QCOMPARE(id,159);QCOMPARE(project.attacks()->entry(55),donor);
+            const auto assigned=project.attacks()->entry(id);QVERIFY(assigned.visual.fullColorFrames());
+            undo.undo();QCOMPARE(project.attacks()->entries().size(),159);undo.redo();QCOMPARE(project.attacks()->entry(id),assigned);
+            auto updated=model;updated.pieces[0].to={12,10};auto changedLibrary=project.sprites();changedLibrary.replace(updated.bake());
+            undo.push(new SpriteLibraryCommand(&project,"Edit saved effect",changedLibrary));QCOMPARE(project.attacks()->entry(id),assigned);
+            QTemporaryDir folder;QVERIFY(folder.isValid());project.saveFolder(folder.path());
+            auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(EffectComposition::fromAsset(reopened.sprites().asset(asset.id)),updated);
+            QCOMPARE(reopened.attacks()->entry(id),assigned);
+            EffectLibraryEditor gallery(&project,&undo,[]{});gallery.resize(1100,720);gallery.show();gallery.selectSavedEffect(asset.id);
+            QVERIFY(gallery.findChild<QPushButton *>("effectLibraryEdit")->isEnabled());QVERIFY(gallery.findChild<QPushButton *>("effectLibraryAssign")->isEnabled());
+            AttackEffectEditor attack(&project,id,2);attack.show();
+            QCOMPARE(attack.findChild<QPushButton *>("composeAttackEffect")->text(),"Edit pieces…");
+            QVERIFY(!attack.findChild<QListWidget *>("effectFrames")->isVisible());
+            QTimer::singleShot(0,&attack,[&]{auto composer=attack.findChild<EffectComposer *>();QVERIFY(composer);QCOMPARE(composer->composition().pieces,model.pieces);composer->reject();});
+            attack.findChild<QPushButton *>("composeAttackEffect")->click();QCOMPARE(attack.visual(),assigned.visual);
+            dialog.reject();
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
     void effectLibraryArtworkWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
