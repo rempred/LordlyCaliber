@@ -14,8 +14,15 @@ game playback, or full-console emulation in the present scope.
 
 Unless Joe explicitly says otherwise, build authorized editor changes and update
 `native/live/` so he can test them. Link the live executable when reporting the
-update. This does not authorize pushes, releases, or discarding unsaved work
-(Joe, 2026-10-27).
+update. This does not authorize pushes or releases (Joe, 2026-10-27).
+
+Joe gives standing permission to close the live editor for authorized updates
+without asking again, including discarding unsaved session changes. He does not
+keep real work in the editor during these updates. Do not create extra project
+saves, backups or recovery snapshots just to preserve the session before an
+update. Reopen the updated editor and link its executable afterward. This
+permission applies to editor updates; honor any later instruction to retain
+specific work (Joe, 2026-10-28).
 
 Verify dependency releases and supported combinations in official online sources
 before pinning. Explain intentional older versions. The historical N64 matching
