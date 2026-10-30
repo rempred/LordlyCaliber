@@ -1,3 +1,4 @@
+#include "game/effect_math_e04.h"
 typedef struct TerminalMotionActor {
     unsigned char prefix[0x48];
     int sourceArt;
@@ -62,7 +63,6 @@ int resource_free(unsigned char *resource);
 void *resource_alloc(unsigned int bytes);
 void memset_00023780(void *destination, int bytes);
 void memcpy(void *source, void *destination, unsigned int bytes);
-void func_0026C9CC(int count, float *first, float *second, float *output);
 extern void *D_801CE8BC;
 /* Bounded views of retained float_00228f94 storage; these emit no data. */
 extern float D_801E5D70[5];

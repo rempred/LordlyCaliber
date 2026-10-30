@@ -19,6 +19,7 @@ includes its runtime libraries and N64 export tools.
 Install these prerequisites:
 
 - **Git** and **PowerShell 7**. Run the commands below in PowerShell 7 (`pwsh`).
+- **Node.js**, available as `node` on PATH, for the accepted-C compilation step.
 - **Visual Studio or Visual Studio Build Tools**, with the **Desktop development
   with C++** workload. In the installer's Individual components, include the
   **MSVC v143 / VS 2022 x64/x86 tools, version 14.44**, a **Windows 10 or 11 SDK**,
@@ -65,8 +66,10 @@ a directory name and does not require Codex. To use another location, pass the
 same `-ToolsRoot` path to `bootstrap.ps1`, `build.ps1` and `package.ps1`.
 The N64 tools go into `native/.local/n64-toolchain/`. Dependency versions and
 checksums are recorded in [dependencies.json](native/dependencies.json).
-No ROM, Node.js, Python or separate Decomp checkout is needed to compile and
-package the editor. Node.js enables additional checks when installed.
+Node.js must be available on PATH: the build uses it to compile and authenticate
+the accepted game C used by effect previews. No ROM, Python or separate Decomp
+checkout is needed to compile and package the editor. The portable editor does
+not require Node.js on the user's computer.
 
 After changing source, rerun `build.ps1`, close the editor, then rerun
 `package.ps1 -Live` to update the runnable folder. To create a portable ZIP

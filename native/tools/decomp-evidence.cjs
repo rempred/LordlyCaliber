@@ -47,19 +47,33 @@ function exactOwners(owners, symbol) {
   }
 }
 function readAcceptedEvidence(root) {
-  const reportPaths = ['state', 'verification', 'fresh-compilation'].map(name => path.join(root, 'build/current', name + '.json'));
-  const raw = reportPaths.map(file => fs.readFileSync(file));
-  const [state, verification, fresh] = raw.map(bytes => JSON.parse(bytes));
+  const reportPaths = [path.join(root, 'build/current/state.json')];
+  const raw = [fs.readFileSync(reportPaths[0])];
+  const state = JSON.parse(raw[0]);
   const version = state.schemaVersion;
-  requireEvidence([5, 6].includes(version) && verification.schemaVersion === version && fresh.schemaVersion === version &&
+  for (const [name, field] of [['verification', 'verificationReport'], ['fresh-compilation', 'freshCompilationReport']]) {
+    if (version === 7) {
+      requireEvidence(typeof state.output === 'string' && path.isAbsolute(state.output) &&
+        typeof state[field] === 'string' && path.resolve(state[field]) === path.join(path.resolve(state.output), name + '.json'),
+      'Acceptance report is outside its build: ' + field);
+      reportPaths.push(state[field]);
+      raw.push(confinedFile(state.output, name + '.json'));
+    } else {
+      reportPaths.push(path.join(root, 'build/current', name + '.json'));
+      raw.push(fs.readFileSync(reportPaths.at(-1)));
+    }
+  }
+  const [verification, fresh] = raw.slice(1).map(bytes => JSON.parse(bytes));
+  requireEvidence([5, 6, 7].includes(version) && verification.schemaVersion === version && fresh.schemaVersion === version &&
     state.verifiedAt && isHash(state.fingerprint) && digest(raw[1]) === state.verificationSha256 &&
     digest(raw[2]) === state.freshCompilationSha256 && verification.status === 'pass' &&
     verification.verification?.status === 'pass' && fresh.status === 'pass',
   'Missing, changed or unsupported accepted Decomp evidence');
   const linked = indexed(verification.verification.targets), compiled = indexed(fresh.targets);
   requireEvidence(linked.size === compiled.size, 'Fresh/linked target census differs');
-  if (version === 6) {
-    requireEvidence(verification.verification.schemaVersion === 6 &&
+  let build;
+  if (version >= 6) {
+    requireEvidence(verification.verification.schemaVersion === version &&
       same(state.buildReport, verification.buildReport) && same(state.buildReport, fresh.buildReport) &&
       isHash(state.buildReport?.sha256) && state.buildReport.bytes > 0 &&
       typeof state.output === 'string' && path.isAbsolute(state.output) &&
@@ -67,14 +81,30 @@ function readAcceptedEvidence(root) {
       state.rom.bytes === verification.verification.outputs.rom.bytes,
     'Acceptance reports refer to different builds');
   }
+  if (version === 7) {
+    const bytes = confinedFile(state.output, 'build-report.json');
+    requireEvidence(bytes.length === state.buildReport.bytes && digest(bytes) === state.buildReport.sha256,
+      'Changed accepted build report');
+    build = JSON.parse(bytes);
+    requireEvidence(state.status === 'verified' && build.schemaVersion === 8 && build.status === 'constructed' &&
+      verification.output === '.' && fresh.mode === 'single-isolated-build' && fresh.emptyOutputAtLaunch === true &&
+      fresh.inputFingerprint === state.fingerprint && isHash(state.baselineFingerprint) &&
+      fresh.baselineFingerprint === state.baselineFingerprint && isHash(fresh.outputSealSha256) &&
+      fresh.compilerSha256 === build.compiler?.sha256 && same(fresh.linkerInputs, build.objects?.manifest) &&
+      verification.verification.elfRomBinding?.status === 'pass' &&
+      verification.verification.elfRomBinding.bytes === state.rom.bytes,
+    'Missing isolated-build acceptance binding');
+    reportPaths.push(path.join(state.output, 'build-report.json')); raw.push(bytes);
+  }
   const targets = [];
   for (const target of compiled.values()) {
     const match = linked.get(target.symbol);
     requireEvidence(match?.source === target.source && ['PURE_C', 'HYBRID_C'].includes(target.sourceClass) &&
       isHash(target.sourceSha256), 'Missing accepted source binding: ' + target.symbol);
     sourcePath(target.source);
-    requireEvidence(Array.isArray(target.dependencies), 'Missing dependency census: ' + target.symbol);
-    for (const dependency of target.dependencies) {
+    const dependencies = version === 7 ? match.sourceObjectEvidence?.dependencies : target.dependencies;
+    requireEvidence(Array.isArray(dependencies), 'Missing dependency census: ' + target.symbol);
+    for (const dependency of dependencies) {
       sourcePath(dependency.path);
       requireEvidence(isHash(dependency.sha256), 'Missing dependency identity: ' + dependency.path);
     }
@@ -104,7 +134,7 @@ function readAcceptedEvidence(root) {
         identity.sourcePolicyDigest === target.sourcePolicyDigest && identity.sourcePolicyDigest === binding.sourcePolicyDigest &&
         isHash(identity.sourcePolicyDigest) && identity.sectionName === match.sectionName &&
         same(identity.ownerSections, match.owners.map(owner => owner.sectionName)) &&
-        same(identity.dependencies, target.dependencies) && same(identity.dependencies, binding.dependencies) &&
+        same(identity.dependencies, dependencies) && same(identity.dependencies, binding.dependencies) &&
         same(identity.compilationInput, binding.compilationInput) &&
         same(target.compilationInput, {path: target.source, ...identity.compilationInput}) &&
         proof.linkEvidence?.fullOwnerExact === true && proof.assemblyContract?.compilerAssemblyRewritten === false &&
@@ -125,14 +155,17 @@ function readAcceptedEvidence(root) {
       const compiler = proof.toolchain?.compiler;
       requireEvidence(isHash(compiler?.executableSha256) && compiler.executableSha256 === fresh.compilerSha256 &&
         isHash(compiler.manifestSha256) && nonempty(compiler.flags) &&
-        same(proof.toolchain.assembler, fresh.toolchain), 'Missing compiler identity: ' + target.symbol);
+        (version === 7 ? same(compiler.flags, build.compiler.compileFlags) &&
+          isHash(proof.toolchain.assembler?.assemblerExecutableSha256) &&
+          isHash(proof.toolchain.assembler?.manifestSha256) : same(proof.toolchain.assembler, fresh.toolchain)),
+      'Missing compiler identity: ' + target.symbol);
       const producer = proof.textContract.producer;
       provenance = {proof: descriptor, compiler, textMode: proof.textContract.mode,
         ...(producer ? {producer: {id: producer.id, mode: producer.mode, source: producer.source, members: producer.members}} : {})};
     }
     requireEvidence(nonempty(functions) && functions.every(f => typeof f.symbol === 'string') && nonempty(owners),
       'Missing compiler function/owner census: ' + target.symbol);
-    targets.push({...target, functions, owners, provenance});
+    targets.push({...target, dependencies, functions, owners, provenance});
   }
   const bySymbol = new Map(targets.map(t => [t.symbol, t]));
   for (const target of targets) {

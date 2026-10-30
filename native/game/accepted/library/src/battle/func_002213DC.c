@@ -1,3 +1,4 @@
+#include "game/effect_math_e04.h"
 typedef struct TerminalProfile {
     int index;
     int count;
@@ -41,7 +42,6 @@ unsigned char func_00043ad8(int sourceArt, int ownerContext);
 void func_001F10F0(void *state, void *destination);
 int func_00222530(TerminalPosition *first, TerminalPosition *second);
 float func_001FF7EC(short x, short z);
-float func_0026CBDC(float position, int count, float *first, float *second, float *output);
 
 int func_002213DC(TerminalUpdateContext *context)
 {

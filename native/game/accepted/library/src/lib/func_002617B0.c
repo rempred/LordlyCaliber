@@ -1,0 +1,140 @@
+#include "common/types.h"
+
+typedef struct ResourceSlot {
+    u16 unknown00;
+    u16 code02;
+    s32 key04;
+    s32 key08;
+    void *data0C;
+    u16 next;
+    u16 unknown12;
+} ResourceSlot;
+
+extern void *func_00260B0C(u16 code, s32 key04, s32 key08);
+extern void func_00260B44(void *data);
+extern ResourceSlot *func_00260B98(void);
+extern void *func_00260F30(u16 code, s32 index);
+
+
+typedef struct ResourceRecord10 {
+    u16 unknown00;
+    u16 flags02;
+    u16 unknown04;
+    u16 unknown06;
+    u16 unknown08;
+} ResourceRecord10;
+
+typedef struct ResourceBlock {
+    u32 unknown00;
+    u32 count04;
+    u32 **tables08;
+    ResourceRecord10 *records0C;
+    void *data10;
+    u32 *offsets14;
+    u32 *offsets18;
+} ResourceBlock;
+
+/* Literal-code helpers avoid a code parameter kept live across the calls. */
+static inline void *load_resource_5(s32 key04)
+{
+    void *data = 0;
+    ResourceSlot *slot;
+
+    if (key04 > 0) {
+        data = func_00260B0C(5, key04, 0);
+        if (data != 0) {
+            func_00260B44(data);
+            return data;
+        }
+        slot = func_00260B98();
+        if (slot != 0) {
+            data = func_00260F30(5, key04);
+            if (data != 0) {
+                slot->unknown00 = 1;
+                slot->data0C = data;
+                slot->code02 = 5;
+                slot->key04 = key04;
+                slot->key08 = 0;
+            }
+        }
+    }
+    return data;
+}
+
+
+static inline void *load_resource_6(s32 key04)
+{
+    void *data = 0;
+    ResourceSlot *slot;
+
+    if (key04 > 0) {
+        data = func_00260B0C(6, key04, 0);
+        if (data != 0) {
+            func_00260B44(data);
+            return data;
+        }
+        slot = func_00260B98();
+        if (slot != 0) {
+            data = func_00260F30(6, key04);
+            if (data != 0) {
+                slot->unknown00 = 1;
+                slot->data0C = data;
+                slot->code02 = 6;
+                slot->key04 = key04;
+                slot->key08 = 0;
+            }
+        }
+    }
+    return data;
+}
+
+
+s32 func_002617B0(ResourceBlock *block)
+{
+    s32 remaining = block->count04;
+    ResourceRecord10 *record = block->records0C;
+    s32 foundFlag = 0;
+    u16 code;
+
+    for (; remaining > 0; remaining--, record++) {
+        if (record->unknown06 != 0) {
+            load_resource_6(record->unknown06);
+            load_resource_5(record->unknown00);
+            code = record->flags02;
+            if (code & 0x8000) {
+                foundFlag = 1;
+            } else if (code != 0) {
+                /* Keep this final load in the record loop: these early exits
+                 * use its update path. An inline return changes KMC's delay slots. */
+                s32 key04 = code;
+                void *data;
+                ResourceSlot *slot;
+
+                if (key04 <= 0) {
+                    continue;
+                }
+                data = func_00260B0C(4, key04, 0);
+                if (data != 0) {
+                    func_00260B44(data);
+                    continue;
+                }
+                slot = func_00260B98();
+                if (slot == 0) {
+                    continue;
+                }
+                data = func_00260F30(4, key04);
+                if (data != 0) {
+                    slot->unknown00 = 1;
+                    slot->data0C = data;
+                    slot->code02 = 4;
+                    slot->key04 = key04;
+                    slot->key08 = 0;
+                } else {
+                    for (;;) {
+                    }
+                }
+            }
+        }
+    }
+    return foundFlag;
+}

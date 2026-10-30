@@ -24,7 +24,9 @@ int lordly_body_appearance(const uint8_t *classes, int count, int source, int ow
     }
     return 0;
 }
-/* Portable reconstruction of ROM 45934..45A50. */
+/* Adapted accepted func_00045934 (Decomp 76b2ce11). The native item pointer
+ * starts at record+16. Preserve the editor's additional weapon categories26..254
+ * and bounded host access; retail recognizes1..13 and24 in first-slot order. */
 int lordly_body_equipment(const uint8_t *items, int count, const uint16_t appearance[4],
                           uint16_t *equipment) {
     int i;

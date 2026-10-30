@@ -1,5 +1,42 @@
 # Native Lordly Caliber
 
+## Accepted effect C integration (October 30)
+
+The accepted library imports Decomp snapshot502EF944/76b2ce11:1264 PURE_C owners,
+1309 compiler functions. Intake supports evidence schemas5/6/7. Schema7 follows
+the current state's output-local reports, authenticates their build identity,
+isolated compilation lineage, ELF/ROM binding and named source-object proofs,
+and verifies source/header bytes before writing. Stale build/current summary
+copies are not used. Decomp tools are never invoked by intake.
+
+`tools/generate-effect-owners.cjs` derives the preview link manifest from those
+authenticated proofs. It selects all223 accepted effect-program owners plus
+four older movement callers and nine equipment/save helpers. The normal CMake
+build compiles all236 carried C sources with the pinned N64 toolchain and checks
+each physical text owner and switch table against its accepted hash. No original
+ROM, Decomp checkout or precompiled object is needed. Multiple contiguous owners,
+compiler alignment and the switch table's terminal padding are checked separately;
+retained assembly tails are never synthesized. The237 resulting code/table blocks
+are an untracked build artifact embedded in the application.
+
+`installAcceptedEffectCode` mounts this compiled C in EffectMachine before actor
+setup and effect hooks. It replaces only an already-loaded owner identical to
+the compiled baseline. Modified ROM owners, modified tables, relocated mod code,
+RAM hooks and unconverted original instructions remain as loaded. This avoids
+first-preview compilation latency and keeps edited-ROM playback intact. These
+byte-exact replacements do not change gameplay or promise pixel-exact rasterization.
+
+Older consumer review:func_0025F73C's u32 return and the four callers' shared
+effect_math_e04 declarations preserve identical instructions. Accepted45934
+confirms first matching equipment slot, retail categories1..13/24; the host's
+record+16 view, bounds and custom26..254 categories are intentional. Accepted
+42DC4/42E64 and42F68/43000 confirm56/52-byte descriptor rows and name conversion
+before packing/restoration after saving; expanded-capacity wrappers retain their
+larger counts and permanent scratch. Accepted260F30/26109C confirm resource
+directory indexing and typed pointer relocation; host invalid-data exceptions
+replace retail spin loops. Existing zero-length/short-path visual wrappers remain
+necessary; the accepted vector and interpolation C does not make those inputs safe.
+
 ## Attack authoring (October 26)
 
 `AttackData` preserves each retail action's twelve D bytes and encoded name,

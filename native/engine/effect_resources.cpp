@@ -1,5 +1,8 @@
 #include "engine/effect_resources.h"
 namespace lordly {
+// Accepted func_00260F30 confirms the type directory and positive entry index.
+// This host reader returns unrelocated bytes; typed native loaders perform the
+// model/material fixups. Bad data throws here instead of the retail spin loop.
 QByteArray retailEffectResource(const Rom &rom, int type, int id) {
     rom.requireSupported();
     if (rom.revision() || type < 3 || type > 8 || id < 1 || id > 65535)

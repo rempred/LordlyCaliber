@@ -310,8 +310,9 @@
       "behavior": "Weapon/body equipment selection and classification",
       "symbols": ["func_00045934", "func_0020C120"],
       "editorFiles": ["game/director/actor_body.c", "engine/actor_art.cpp"],
-      "editorUse": "reconstructed",
-      "benefit": "Replace reconstructed predicates for equipment choice and linked body classification.",
+      "editorUse": "partial",
+      "symbolUses": {"func_00045934": "adapted", "func_0020C120": "reconstructed"},
+      "benefit": "Equipment selection confirmed against accepted C 76b2ce11; linked body classification remains reconstructed.",
       "preserve": "Expanded item limits, host bounds and primary/secondary body distinction."
     },
     {

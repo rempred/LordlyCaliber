@@ -1,11 +1,51 @@
 #include "engine/effect_player.h"
 #include "engine/effect_raster.h"
+#include "engine/accepted_effect_code.h"
 #include <QFile>
 #include <QtTest>
 using namespace lordly;
 class EffectRasterTests : public QObject {
     Q_OBJECT
   private slots:
+    void acceptedCAndModifiedRom() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private US Rev0 ROM required");
+        try {
+            const auto rom = Rom::open(path).bytes();
+            QFile input(":/generated/accepted-effects.bin");
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto code = input.readAll();
+            QCOMPARE(code.first(8), QByteArray("LCCODE01"));
+            const auto count = u32(code, 8);
+            QVERIFY(count >= 237);
+            EffectMachine machine;
+            int at = 44;
+            for (quint32 i = 0; i < count; ++i) {
+                const auto start = u32(code, at), address = u32(code, at + 4), size = u32(code, at + 8);
+                at += 16;
+                // Independent retail ROM input, not another build of the C.
+                QCOMPARE(code.mid(at, size), rom.mid(start, size));
+                machine.mount(address, rom.mid(start, size), u32(code, at - 4) != 0);
+                at += int(size);
+            }
+            QCOMPARE(at, code.size());
+            const auto before = machine.memory;
+            QCOMPARE(installAcceptedEffectCode(machine, rom), int(count));
+            QCOMPARE(machine.memory, before); // Includes all retained tails and unrelated data.
+            const auto start = u32(code, 44), address = u32(code, 48);
+            auto patchedRom = rom;
+            patchedRom[start] ^= 1;
+            machine.byte(address, machine.byte(address) ^ 1);
+            const auto patchedMemory = machine.memory;
+            QCOMPARE(installAcceptedEffectCode(machine, patchedRom), int(count) - 1);
+            QCOMPARE(machine.memory, patchedMemory);
+            // A RAM-only installed hook also survives even with a retail input.
+            QCOMPARE(installAcceptedEffectCode(machine, rom), int(count) - 1);
+            QCOMPARE(machine.memory, patchedMemory);
+            EffectMachine unloaded;
+            QCOMPARE(installAcceptedEffectCode(unloaded, rom), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void retailAppearanceTransform() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

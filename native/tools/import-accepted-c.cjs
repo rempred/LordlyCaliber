@@ -1,6 +1,6 @@
 'use strict';
 // Import only the source identities authenticated by Decomp's completed verifier.
-// Never invokes its tools; v6 reads only named, authenticated proof files.
+// Never invokes its tools; v6/v7 read only named, authenticated proof files.
 const fs = require('node:fs'), path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {readAcceptedEvidence, sourcePath, digest, same} = require('./decomp-evidence.cjs');

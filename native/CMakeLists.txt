@@ -13,6 +13,22 @@ target_sources(lordly_engine PRIVATE engine/attack_data.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_raster.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_machine.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_player.cpp engine/effect_composition.cpp)
+target_sources(lordly_engine PRIVATE engine/accepted_effect_code.cpp)
+find_program(NODE_EXECUTABLE node REQUIRED)
+set(LORDLY_N64_TOOLS "${CMAKE_CURRENT_SOURCE_DIR}/.local/n64-toolchain" CACHE PATH "Authenticated N64 compiler directory")
+file(GLOB_RECURSE accepted_effect_inputs CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/game/accepted/library/*.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/game/accepted/library/*.h")
+set(accepted_effect_binary "${CMAKE_CURRENT_BINARY_DIR}/accepted-effects.bin")
+add_custom_command(OUTPUT "${accepted_effect_binary}"
+  COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-accepted-effects.cjs"
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${LORDLY_N64_TOOLS}" "${accepted_effect_binary}"
+  DEPENDS ${accepted_effect_inputs} game/accepted/effect-owners.json
+    tools/build-accepted-effects.cjs tools/decomp-evidence.cjs rebuild/toolchain.json
+  COMMENT "Compiling and authenticating accepted effect C" VERBATIM)
+set_source_files_properties("${accepted_effect_binary}" PROPERTIES GENERATED TRUE)
+qt_add_resources(lordly_engine accepted_effects PREFIX "/generated"
+  BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES "${accepted_effect_binary}")
 target_sources(lordly_engine PRIVATE rebuild/effect_preview_runtime.cpp)
 target_sources(lordly_engine PRIVATE engine/attack_visual.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_resources.cpp)

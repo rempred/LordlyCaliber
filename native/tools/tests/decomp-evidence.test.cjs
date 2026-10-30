@@ -34,12 +34,25 @@ function fixture(t, version = 6) {
   const producer = {id: 'paired', source: 'src/lib/pair.c', mode: 'native-text-owner-projection',
     members: [{symbol: 'alpha', functionSymbols: ['alpha', 'interior']}, {symbol: 'beta', functionSymbols: ['beta']}]};
   const compiler = {executableSha256: hash, manifestSha256: hash, flags: ['-O2', '-funsigned-char']};
-  const buildReport = {bytes: 100, sha256: hash};
-  const state = {schemaVersion: version, fingerprint: hash, verifiedAt: '2026-10-17T00:00:00Z',
+  const build = {schemaVersion: 8, status: 'constructed', compiler: {sha256: hash, compileFlags: compiler.flags},
+    objects: {manifest: {path: 'objects/manifest.json', bytes: 10, sha256: hash}}};
+  const buildBytes = Buffer.from(JSON.stringify(build));
+  const buildReport = version === 7 ? {bytes: buildBytes.length, sha256: digest(buildBytes)} : {bytes: 100, sha256: hash};
+  const state = {schemaVersion: version, status: 'verified', fingerprint: hash, verifiedAt: '2026-10-17T00:00:00Z',
     output, buildReport, rom: {bytes: 40, sha256: hash}};
   const verification = {schemaVersion: version, status: 'pass', buildReport,
     verification: {schemaVersion: version, status: 'pass', outputs: {rom: state.rom}, targets: []}};
   const fresh = {schemaVersion: version, status: 'pass', buildReport, compilerSha256: hash, toolchain: {id: 'fixture'}, targets: []};
+  if (version === 7) {
+    state.verificationReport = path.join(output, 'verification.json');
+    state.freshCompilationReport = path.join(output, 'fresh-compilation.json');
+    state.baselineFingerprint = hash;
+    verification.output = '.';
+    verification.verification.elfRomBinding = {status: 'pass', bytes: 40};
+    Object.assign(fresh, {mode: 'single-isolated-build', emptyOutputAtLaunch: true,
+      inputFingerprint: hash, baselineFingerprint: hash, outputSealSha256: hash, linkerInputs: build.objects.manifest});
+    write('proofs/build-report.json', buildBytes);
+  }
   const proofs = [];
   for (const [index, symbol] of ['alpha', 'beta'].entries()) {
     const functions = (index ? ['beta'] : ['alpha', 'interior']).map((symbol, i) => ({symbol, offset: i * 4, bytes: 4}));
@@ -61,8 +74,9 @@ function fixture(t, version = 6) {
         sectionName: match.sectionName, ownerSections: owners.map(o => o.sectionName)},
       textContract: {mode: 'native', owners, compilerTextFunctions: functions, producer}, objectEvidence: {},
       linkEvidence: {fullOwnerExact: true}, assemblyContract: {compilerAssemblyRewritten: false},
-      toolchain: {compiler, assembler: fresh.toolchain}, finalTarget: {compilerTextFunctions: linkedFunctions,
+      toolchain: {compiler, assembler: version === 7 ? {assemblerExecutableSha256: hash, manifestSha256: hash} : fresh.toolchain}, finalTarget: {compilerTextFunctions: linkedFunctions,
         textOwners: owners.map(({romStart, romEndExclusive, ...o}) => o)}};
+    if (version === 7) delete target.dependencies;
     fresh.targets.push(target); verification.verification.targets.push(match); proofs.push(proof);
   }
   function publish() {
@@ -88,19 +102,20 @@ function fixture(t, version = 6) {
   function reports() {
     const v = Buffer.from(JSON.stringify(verification)), f = Buffer.from(JSON.stringify(fresh));
     state.verificationSha256 = digest(v); state.freshCompilationSha256 = digest(f);
-    write('build/current/verification.json', v); write('build/current/fresh-compilation.json', f);
+    const directory = version === 7 ? 'proofs/' : 'build/current/';
+    write(directory + 'verification.json', v); write(directory + 'fresh-compilation.json', f);
     write('build/current/state.json', JSON.stringify(state));
   }
   publish();
   return {root, destination, state, verification, fresh, proofs, source, header, write, publish, reports};
 }
-for (const version of [5, 6]) test(`schema ${version}: complete producer, interior function and exact source bytes import`, t => {
+for (const version of [5, 6, 7]) test(`schema ${version}: complete producer, interior function and exact source bytes import`, t => {
   const f = fixture(t, version), manifest = importAccepted(f.root, f.destination, true);
   assert.deepEqual(manifest.counts, {owners: 2, functions: 3, producerSources: 1, sourceAndHeaderFiles: 2});
   assert.deepEqual(fs.readFileSync(path.join(f.destination, 'game/accepted/library/src/lib/pair.c')), f.source);
   assert.deepEqual(fs.readFileSync(path.join(f.destination, 'game/accepted/library/include/pair.h')), f.header);
   assert.deepEqual(manifest.imports[0].symbols, ['alpha', 'beta', 'interior']);
-  if (version === 6) {
+  if (version >= 6) {
     assert.equal(manifest.imports[0].producer.members.length, 2);
     assert.equal(manifest.imports[0].owners[0].physicalOwners.length, 2);
     assert.deepEqual(manifest.imports[0].compiler.flags, ['-O2', '-funsigned-char']);
@@ -111,7 +126,7 @@ test('dry run does not create a destination', t => {
   assert.equal(fs.existsSync(f.destination), false);
 });
 const failures = [
-  ['unsupported schema', f => { f.state.schemaVersion = 7; f.reports(); }, /unsupported/],
+  ['unsupported schema', f => { f.state.schemaVersion = 8; f.reports(); }, /unsupported/],
   ['changed report', f => f.write('build/current/verification.json', '{}'), /unsupported/],
   ['different build identity', f => { f.fresh.buildReport = {bytes: 9, sha256: hash}; f.reports(); }, /different builds/],
   ['missing linked target', f => { f.verification.verification.targets.pop(); f.reports(); }, /census differs/],
@@ -143,6 +158,27 @@ test('an acceptance change after read is detected', t => {
   const f = fixture(t), snapshot = readAcceptedEvidence(f.root);
   f.state.verifiedAt = '2026-10-18T00:00:00Z'; f.reports();
   assert.throws(() => snapshot.assertStable(), /changed during read/);
+});
+test('schema 7 uses authoritative reports and ignores stale compatibility copies', t => {
+  const f = fixture(t, 7);
+  f.write('build/current/verification.json', '{}');
+  f.write('build/current/fresh-compilation.json', '{}');
+  assert.equal(importAccepted(f.root, f.destination, true).counts.functions, 3);
+});
+for (const [name, change, message] of [
+  ['relocated report changed', f => f.write('proofs/verification.json', '{}'), /unsupported/],
+  ['report outside build', f => { f.state.verificationReport = path.join(f.root, 'elsewhere.json'); f.reports(); }, /outside its build/],
+  ['build changed', f => f.write('proofs/build-report.json', '{}'), /Changed accepted build/],
+  ['wrong input fingerprint', f => { f.fresh.inputFingerprint = digest(Buffer.from('wrong')); f.reports(); }, /isolated-build/],
+  ['nonempty build', f => { f.fresh.emptyOutputAtLaunch = false; f.reports(); }, /isolated-build/],
+  ['missing ELF binding', f => { delete f.verification.verification.elfRomBinding; f.reports(); }, /isolated-build/],
+  ['unbound dependencies', f => { f.verification.verification.targets[0].sourceObjectEvidence.dependencies = []; f.reports(); }, /proof binding/],
+  ['changed header', f => f.write('include/pair.h', 'unfinished work'), /Checkout differs/],
+  ['changed proof', f => f.write('proofs/generated/c/alpha.source-object-proof.json', '{}'), /Changed source-object proof/]
+]) test(`schema 7 rejects ${name} before writing`, t => {
+  const f = fixture(t, 7); change(f);
+  assert.throws(() => importAccepted(f.root, f.destination, true), message);
+  assert.equal(fs.existsSync(f.destination), false);
 });
 for (const modified of [false, true]) test(`retired source refresh ${modified ? 'preserves local edits' : 'removes only prior imports'}`, t => {
   const f = fixture(t), manifest = importAccepted(f.root, f.destination, true);

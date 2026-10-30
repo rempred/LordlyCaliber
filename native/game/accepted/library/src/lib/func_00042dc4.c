@@ -1,0 +1,33 @@
+typedef unsigned char u8;
+typedef struct { u8 bytes[56]; } Record56;
+typedef struct BitRecordSet BitRecordSet;
+
+extern Record56 g_func_0019554C_records_56[];
+extern BitRecordSet D_80187444;
+extern u8 D_80196A28[];
+extern void boot_bitstream_descriptor_decode(u8 *buffer, BitRecordSet *set);
+extern void *func_00001330(int size);
+extern void func_000016C4(void *pointer);
+extern void func_00023460(void *source, void *destination, int size);
+extern void func_000509f4(u8 *bytes, void *record);
+extern void func_8016B774(void);
+extern void func_8016BA10(int value);
+extern void func_8016CC2C(void *value);
+
+void func_00042dc4(u8 *buffer)
+{
+    u8 *bytes;
+    int i;
+    Record56 *record;
+
+    boot_bitstream_descriptor_decode(buffer, &D_80187444);
+    bytes = func_00001330(16);
+    for (i = 0, record = g_func_0019554C_records_56; i < 100; i++, record++) {
+        func_00023460(record, bytes, 16);
+        func_000509f4(bytes, record);
+    }
+    func_000016C4(bytes);
+    func_8016B774();
+    func_8016BA10(1);
+    func_8016CC2C(D_80196A28);
+}

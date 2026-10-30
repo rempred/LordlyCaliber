@@ -2,6 +2,7 @@
 #include "engine/attack_data.h"
 #include "engine/class_data.h"
 #include "engine/effect_resources.h"
+#include "engine/accepted_effect_code.h"
 #include "rebuild/effect_preview_runtime.h"
 #include <algorithm>
 extern "C" int lc_visual_image_commands_format(unsigned int *, unsigned int, int, int, int, int, int, int);
@@ -57,6 +58,7 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         const auto at = 0x387c0 + id * 40;
         load(u32(rom_, at), u32(rom_, at + 8), u32(rom_, at + 12));
     }
+    installAcceptedEffectCode(m, rom_);
     const auto placement = ClassPlacement::read(Rom::fromBytes(rom_));
     if (placement)
         m.mount(
