@@ -55,6 +55,13 @@ int lc_effect_push(void *p) {
     return old;
 }
 void lc_effect_pop(int old) { active=old; }
+void lc_effect_start(void *p) {
+    /* Reserved config words are RAM-only scratch; every submission resets them
+     * after its visual delay, before the retail root creates its children. */
+    if(W(p,0)==0x4c434658 && W(p,4)==0x30303032) {
+        W(p,48)=0; W(p,52)=1;
+    }
+}
 void lc_effect_bind_current(void *p) {
     int at=index((void *)G(0x80220fe8),G(0x80220d84),156,0);
     lc_effect_push(p);
@@ -187,10 +194,36 @@ static int coordinate(int value,int centre,int scale,int offset) {
     return (value-centre)*scale/100+centre+offset*4;
 }
 static int clamp(int value,int maximum) { return value<0 ? 0 : value>maximum ? maximum : value; }
+static void motion(u8 *c,int *x,int *y) {
+    int elapsed,t,mode,duration=H(c,20);
+    *x=(s16)H(c,42); *y=(s16)H(c,44);
+    if(!duration || !W(c,52)) return;
+    elapsed=(int)W(c,48)-(int)H(c,22);
+    if(elapsed<0) return;
+    t=duration<=1 ? 1000 : clamp(elapsed*1000/(duration-1),1000);
+    mode=H(c,28);
+    if(mode==1) t=t*t/1000;
+    else if(mode==2) t=1000-(1000-t)*(1000-t)/1000;
+    else if(mode==3) t=t*t*(3000-2*t)/1000000;
+    *x+=((s16)H(c,24)-*x)*t/1000;
+    *y+=((s16)H(c,26)-*y)*t/1000;
+}
+static void moving_viewport(u8 *c,int x,int y) {
+    u32 *out=(u32 *)G(0x800e9ba0);
+    u8 *view=(u8 *)(out+2); int i;
+    /* Keep the viewport in this frame's display list, not mutable shared RAM:
+     * the RSP can still be reading the previous frame. Branch over its data. */
+    out[0]=0xde010000; out[1]=(u32)(out+6);
+    for(i=0;i<16;i++) view[i]=c[64+i];
+    H(view,8)=640+x*4; H(view,10)=480+y*4;
+    out[6]=0xdc080008; out[7]=(u32)view;
+    G(0x800e9ba0)=(u32)(out+8);
+}
 static void appearance(u32 *first,u32 *end,u8 *c) {
     int scale=H(c,40), dx=(s16)H(c,42),dy=(s16)H(c,44),op;
     int left,top,right,bottom,x,y,s,t,ds,dt;
     if(end<first || end-first>65536) return;
+    motion(c,&dx,&dy);
     for(;first+1<end;first+=2) {
         op=first[0]>>24;
         if((op==0xfa || op==0xfb) && H(c,32))
@@ -215,13 +248,17 @@ static void appearance(u32 *first,u32 *end,u8 *c) {
 }
 static int draw(void *node,int screen) {
     int at=index(node,G(screen?0x80220da8:0x80220d58),screen?120:128,screen?0:4);
-    int old=active, changed, result;
+    int old=active, changed, result,dx=0,dy=0;
     u8 *c; u32 fn,*first;
     if(at<0) return 0;
     active=screen?screen_id(at):packet_id(at);
     fn=screen?screen_fn(at):packet_fn(at); c=config(active);
-    changed=c && (H(c,40)!=100 || H(c,42) || H(c,44));
-    if(changed) viewport(c+64);
+    if(c) motion(c,&dx,&dy);
+    changed=c && (H(c,40)!=100 || dx || dy);
+    if(changed) {
+        if(H(c,20)) moving_viewport(c,dx,dy);
+        else viewport(c+64);
+    }
     first=(u32 *)G(0x800e9ba0);
     result=((int (*)(void *))fn)(node);
     if(c) appearance(first,(u32 *)G(0x800e9ba0),c);
@@ -250,4 +287,8 @@ void lc_attack_edit_screen_draw(int layer) {
     }
     lc_original_edit_screen_draw(layer);
     for(i=0;i<count;i++) { p=base+i*120; if(W(p,4)==(u32)screen_draw) W(p,4)=screen_fn(i); }
+    if(layer==1) for(i=1;i<255;i++) {
+        p=config(i);
+        if(p && H(p,20) && W(p,52) && W(p,48)<600) W(p,48)++;
+    }
 }

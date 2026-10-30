@@ -25,6 +25,7 @@ class EffectComposer : public QDialog {
         return model_.bake();
     }
     void addPiece(SpriteAsset);
+    void replacePiece(int index, SpriteAsset);
     void setComposition(const EffectComposition &);
     bool assignAfterSave() const {
         return assignAfter_;
@@ -42,6 +43,7 @@ class EffectComposer : public QDialog {
     void chooseLibrary();
     void chooseEffect();
     void chooseFile();
+    void importPiece(SpriteAsset);
     void guarded(const std::function<void()> &);
     void finish(bool assign);
     Project *project_;
@@ -49,6 +51,7 @@ class EffectComposer : public QDialog {
     QVector<EffectComposition> history_;
     int historyAt_ = 0;
     bool refreshing_ = false, playing_ = false, editEnd_ = false, assignAfter_ = false;
+    bool replacing_ = false;
     int playFrom_ = 0;
     QElapsedTimer clock_;
     EffectCanvas *canvas_;
@@ -56,6 +59,7 @@ class EffectComposer : public QDialog {
     QLineEdit *name_, *pieceName_;
     QSpinBox *width_, *height_, *length_, *start_, *duration_, *fromX_, *fromY_, *toX_, *toY_;
     QSpinBox *fromScale_, *toScale_, *fromAngle_, *toAngle_, *fromOpacity_, *toOpacity_;
+    QSpinBox *speed_;
     QComboBox *easing_, *placement_;
     QCheckBox *loop_;
     QWidget *pieceControls_;

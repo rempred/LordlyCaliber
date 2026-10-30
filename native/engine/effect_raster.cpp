@@ -42,7 +42,8 @@ class Raster {
     EffectRaster::Result run(quint32 begin, quint32 end) {
         if (end < begin || end - begin > 1024 * 1024 || (end - begin) % 8)
             throw Error("Invalid effect drawing-list extent");
-        list(begin, end, 0);
+        const auto start = physical(begin, end - begin);
+        list(start, start + (end - begin), 0);
         return result;
     }
 
@@ -283,6 +284,13 @@ class Raster {
                 return;
             if (op == 0xde) {
                 const auto at = physical(low, 8);
+                // A no-push branch can skip inline data in the current list.
+                // Keep its original extent; following it as a sub-list would
+                // run past the submitted frame looking for a terminator.
+                if ((high & 0x10000) && at >= begin && at < end) {
+                    pc = at - 8;
+                    continue;
+                }
                 list(at, quint32(ram.size()) & ~7U, nesting + 1);
                 if (high & 0x10000)
                     return;

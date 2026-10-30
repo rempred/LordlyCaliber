@@ -8,6 +8,7 @@ struct EffectPiece {
     QPoint from, to;
     int fromScale = 100, toScale = 100, fromAngle = 0, toAngle = 0;
     int fromOpacity = 100, toOpacity = 100, easing = 0;
+    int speedPercent = 100;
     bool loop = true;
     bool operator==(const EffectPiece &) const = default;
 };

@@ -12,6 +12,7 @@ int lc_original_visual_travel(int, void *);
 float lc_original_visual_distance(float *);
 int lc_original_visual_projectile(int, void *);
 void lc_effect_bind_current(void *);
+void lc_effect_start(void *);
 int lc_effect_push(void *);
 void lc_effect_pop(int);
 #define W(p, n) (*(u32 *)((u8 *)(p) + (n)))
@@ -221,6 +222,7 @@ static void visual_task(int state, void *data) {
         return;
     }
     if (H(s->config, 12) == 0) {
+        lc_effect_start(s->config);
         index = H(s->config, 14);
         table = (u32 *)0x8021fcc0;
         original = (VisualCallback)table[index];

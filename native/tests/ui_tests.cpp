@@ -275,8 +275,22 @@ class UiTests : public QObject {
             dialog.findChild<QPushButton *>("compositionRedo")->click();QCOMPARE(dialog.composition().pieces[1].to.x(),40);
             // Typed values commit on Enter and invalid timing is rejected without losing the draft.
             start->setFocus();start->selectAll();QTest::keyClicks(start,"45");QTest::keyClick(start,Qt::Key_Return);QCOMPARE(dialog.composition().pieces[1].start,45);QVERIFY(dialog.isVisible());
-            start->setValue(89);QCOMPARE(dialog.composition().pieces[1].start,45);
-            QVERIFY(dialog.findChild<QLabel *>("compositionNotice")->text().contains("timing"));
+            start->setValue(89);QCOMPARE(dialog.composition().pieces[1].start,89);
+            QCOMPARE(dialog.composition().duration,119);
+            dialog.findChild<QPushButton *>("compositionUndo")->click();
+            QCOMPARE(dialog.composition().pieces[1].start,45);QCOMPARE(dialog.composition().duration,90);
+            auto tabs=dialog.findChild<QTabWidget *>("compositionPieceTabs");QVERIFY(tabs);QCOMPARE(tabs->count(),3);
+            auto replacement=poison;replacement.frames.append(replacement.frames[0]);replacement.frames[1].id=SpriteLibrary::newId();replacement.kind="sequence";
+            const auto beforeReplace=dialog.composition().pieces[1];
+            dialog.replacePiece(1,replacement);
+            QCOMPARE(dialog.composition().pieces[1].from,beforeReplace.from);
+            QCOMPARE(dialog.composition().pieces[1].to,beforeReplace.to);
+            QCOMPARE(dialog.composition().pieces[1].start,beforeReplace.start);
+            auto speed=dialog.findChild<QSpinBox *>("compositionSpeed");QVERIFY(speed->isEnabled());speed->setValue(50);
+            QCOMPARE(dialog.composition().pieces[1].speedPercent,50);
+            dialog.findChild<QPushButton *>("compositionUndo")->click();QCOMPARE(dialog.composition().pieces[1].speedPercent,100);
+            dialog.findChild<QPushButton *>("compositionRedo")->click();QCOMPARE(dialog.composition().pieces[1].speedPercent,50);
+            tabs->setCurrentIndex(1);
             dialog.findChild<QPushButton *>("compositionPlaceEnd")->click();
             auto canvas=dialog.findChild<QWidget *>("compositionCanvas");const double scale=std::min((canvas->width()-24)/320.0,(canvas->height()-24)/240.0);
             const auto point=canvas->rect().center()+QPoint(qRound(-24*scale),qRound(-12*scale));
@@ -436,6 +450,16 @@ class UiTests : public QObject {
             size->setValue(175); x->setValue(-18); y->setValue(9);
             QCOMPARE(dialog.visual().sizePercent, 175);
             QCOMPARE(dialog.visual().offsetX, -18); QCOMPARE(dialog.visual().offsetY, 9);
+            auto nativeTabs=dialog.findChild<QTabWidget *>("effectRetailTabs");QVERIFY(nativeTabs);nativeTabs->setCurrentIndex(1);
+            auto motionMode=dialog.findChild<QComboBox *>("effectMotionMode");QVERIFY(motionMode);motionMode->setCurrentIndex(1);
+            dialog.findChild<QSpinBox *>("effectMotionX")->setValue(25);
+            dialog.findChild<QSpinBox *>("effectMotionTicks")->setValue(60);
+            dialog.findChild<QSpinBox *>("effectMotionStart")->setValue(10);
+            dialog.findChild<QComboBox *>("effectMotionEasing")->setCurrentIndex(3);
+            QCOMPARE(dialog.visual().motionTicks,60);QCOMPARE(dialog.visual().motionX,25);QCOMPARE(dialog.visual().motionEasing,3);
+            const auto movedVisual=dialog.visual();motionMode->setCurrentIndex(0);QCOMPARE(dialog.visual().motionTicks,0);
+            dialog.findChild<QPushButton *>("effectUndo")->click();QCOMPARE(dialog.visual(),movedVisual);
+            nativeTabs->setCurrentIndex(0);
             auto clearLegacy = dialog.findChild<QPushButton *>("effectClearLegacyColour");
             QVERIFY(clearLegacy->isVisible());
             clearLegacy->click();
@@ -498,6 +522,9 @@ class UiTests : public QObject {
             QCOMPARE(QImage(framePath).convertToFormat(QImage::Format_RGBA8888), rendered.convertToFormat(QImage::Format_RGBA8888));
             QVERIFY_THROWS_EXCEPTION(Error, dialog.exportRenderedFrame(path));
             QVERIFY(dialog.grab().save("native/build/retail-effect-appearance.png"));
+            for (int i=14;i<55;++i) step->click();
+            nativeTabs->setCurrentIndex(1);
+            QVERIFY(dialog.grab().save("native/build/retail-effect-motion.png"));
             dialog.reject();
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }

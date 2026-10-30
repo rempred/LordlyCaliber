@@ -7,6 +7,59 @@ using namespace lordly;
 class EffectRasterTests : public QObject {
     Q_OBJECT
   private slots:
+    void nativeMotion_data() {
+        QTest::addColumn<int>("easing");
+        QTest::addColumn<QPoint>("halfway");
+        QTest::newRow("linear") << 0 << QPoint(20,-6);
+        QTest::newRow("ease-in") << 1 << QPoint(10,-3);
+        QTest::newRow("ease-out") << 2 << QPoint(30,-9);
+        QTest::newRow("ease-in-out") << 3 << QPoint(20,-6);
+    }
+    void nativeMotion() {
+        QFETCH(int, easing);
+        QFETCH(QPoint, halfway);
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom=Rom::open(path);
+            AttackVisual baseline;baseline.nativeEffect=8;baseline.sizePercent=101;baseline.delay=3;
+            auto motion=baseline;motion.motionStart=45;motion.motionTicks=11;motion.motionX=40;motion.motionY=-12;
+            motion.motionEasing=easing;
+            QCOMPARE(AttackVisual::fromJson(motion.json()),motion);
+            QCOMPARE(AttackVisual::read(motion.build(8)),motion);
+            const auto oldBytes=baseline.build(8);
+            QCOMPARE(oldBytes.mid(20,12),QByteArray(12,0));
+            QCOMPARE(AttackVisual::read(oldBytes),baseline);
+            auto invalid=motion;invalid.motionEasing=4;QVERIFY_THROWS_EXCEPTION(Error,invalid.validate());
+            auto bounds=[](const QImage &image) {
+                QRect result;
+                for(int y=0;y<image.height();++y) for(int x=0;x<image.width();++x)
+                    if(image.pixelColor(x,y).alpha()>10) result|=QRect(x,y,1,1);
+                return result;
+            };
+            EffectPlayer original(rom),moving(rom);
+            original.startVisual(baseline,8,{});moving.startVisual(motion,8,{});
+            int checked=0;
+            while(original.advance()) {
+                QVERIFY(moving.advance());
+                const int tick=moving.tick();
+                QCOMPARE(u32(moving.memory(),0x430030),quint32(std::max(0,tick-3)));
+                if(tick!=49 && tick!=54 && tick!=59) continue;
+                const auto a=bounds(original.draw({320,240},.75).image);
+                const auto b=bounds(moving.draw({320,240},.75).image);
+                QVERIFY(!a.isEmpty());QVERIFY(!b.isEmpty());
+                const QPoint shift=tick==49?QPoint(0,0):tick==54?halfway:QPoint(40,-12);
+                QVERIFY(std::abs((b.left()-a.left())-shift.x())<=1);
+                QVERIFY(std::abs((b.top()-a.top())-shift.y())<=1);
+                // Dynamic viewports live in each display list. The saved original
+                // viewport stays unchanged while frames are submitted to the RSP.
+                QCOMPARE(u16(moving.memory(),0x430048),quint16(640));
+                ++checked;
+            }
+            QCOMPARE(checked,3);QVERIFY(!moving.advance());
+            moving.startVisual(motion,8,{});QCOMPARE(u32(moving.memory(),0x430030),0U);
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void acceptedCAndModifiedRom() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private US Rev0 ROM required");
@@ -182,6 +235,10 @@ class EffectRasterTests : public QObject {
                     appearance.nativeEffect = id;
                     appearance.hue = 120; appearance.sizePercent = 125;
                     appearance.offsetX = 12; appearance.offsetY = -6;
+                    if(qEnvironmentVariableIsSet("LORDLY_EFFECT_MOTION")) {
+                        appearance.motionStart=10;appearance.motionTicks=40;
+                        appearance.motionX=-24;appearance.motionY=12;appearance.motionEasing=3;
+                    }
                     player.startVisual(appearance, id, scene);
                 } else player.start(id, scene);
                 int triangles = 0;

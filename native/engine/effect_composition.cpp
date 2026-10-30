@@ -37,7 +37,7 @@ void EffectComposition::validate() const {
             p.fromScale < 1 || p.fromScale > 400 || p.toScale < 1 || p.toScale > 400 ||
             p.fromAngle < -1080 || p.fromAngle > 1080 || p.toAngle < -1080 || p.toAngle > 1080 ||
             p.fromOpacity < 0 || p.fromOpacity > 100 || p.toOpacity < 0 || p.toOpacity > 100 ||
-            p.easing < 0 || p.easing > 3 || std::abs(qint64(p.from.x())) > 512 ||
+            p.easing < 0 || p.easing > 3 || p.speedPercent < 25 || p.speedPercent > 400 || std::abs(qint64(p.from.x())) > 512 ||
             std::abs(qint64(p.from.y())) > 512 || std::abs(qint64(p.to.x())) > 512 ||
             std::abs(qint64(p.to.y())) > 512)
             throw Error("Invalid piece timing or movement. Each piece must fit within the effect "
@@ -67,7 +67,7 @@ QImage EffectComposition::render(int tick) const {
         int total = 0;
         for (const auto &frame : p.artwork.frames)
             total += std::max(frame.ticks, 1);
-        int frameTick = tick - p.start;
+        int frameTick = (tick - p.start) * p.speedPercent / 100;
         frameTick = p.loop ? frameTick % total : std::min(frameTick, total - 1);
         int frame = 0;
         while (frame + 1 < p.artwork.frames.size() &&
@@ -106,6 +106,7 @@ QJsonObject EffectComposition::json() const {
                                 {"fromOpacity", p.fromOpacity},
                                 {"toOpacity", p.toOpacity},
                                 {"easing", p.easing},
+                                {"speedPercent", p.speedPercent},
                                 {"loop", p.loop}});
     return {{"version", 1},
             {"id", id},
@@ -137,6 +138,7 @@ EffectComposition EffectComposition::fromJson(const QJsonObject &o) {
         p.artwork.provenance.remove("effectComposition");
         p.start = number(a, "start", 0);
         p.duration = number(a, "duration", 30);
+        p.speedPercent = number(a, "speedPercent", 100);
         p.from = {number(a, "fromX", 0), number(a, "fromY", 0)};
         p.to = {number(a, "toX", 0), number(a, "toY", 0)};
         p.fromScale = number(a, "fromScale", 100);

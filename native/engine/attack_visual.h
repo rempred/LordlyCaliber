@@ -12,9 +12,10 @@ struct AttackVisual {
     int nativeEffect = -1, delay = 0;
     std::optional<SpriteAsset> frames;
     int hue = 0, color = -1, sizePercent = 100, offsetX = 0, offsetY = 0;
+    int motionTicks = 0, motionStart = 0, motionX = 0, motionY = 0, motionEasing = 0;
     QMap<quint32, EffectArtwork> artwork; // Native resource type:ID, independently copied.
     bool nativeEdited() const {
-        return hue || color >= 0 || sizePercent != 100 || offsetX || offsetY || !artwork.isEmpty();
+        return hue || color >= 0 || sizePercent != 100 || offsetX || offsetY || motionTicks || !artwork.isEmpty();
     }
     bool operator==(const AttackVisual &) const = default;
     bool modified() const {

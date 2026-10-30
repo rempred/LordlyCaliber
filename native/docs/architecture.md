@@ -39,6 +39,27 @@ necessary; the accepted vector and interpolation C does not make those inputs sa
 
 ## Attack authoring (October 26)
 
+Retail effect movement now uses optional LCFX0002 header fields 20/22/24/26/28
+(duration/start/endX/endY/easing). Zero duration preserves earlier static files.
+Words 48/52 are RAM-only elapsed/started state, reset when the delayed retail root
+starts, then advanced once after screen pass 1. Each attack's child drawings use
+the same visual timeline. The transform changes screen offsets; original native
+stages, event signals and completion remain intact. Dynamic viewports are copied
+into the current display list behind a skip branch, so an asynchronously running
+RSP never reads a viewport overwritten for a subsequent frame. Texture rectangle
+coordinates receive the same interpolation; original static viewports remain
+unchanged. The preview reader follows inline skip branches within the submitted
+list's bounds. Project/Undo/recovery and ROM readers retain every motion setting.
+
+Composed pieces have optional speedPercent (25..400, default 100), applied to
+source-frame sampling independently of the movement interpolation. Baking uses
+the resulting pixels and existing full-colour effect runtime. The composer groups
+controls into Timing/Movement/Appearance, shows relative timeline bars, and can
+replace source artwork while retaining timing and movement. Extending a piece
+extends the effect timeline within existing duration/pixel caps; start-position
+edits keep a stationary piece stationary. These controls do not edit retail
+internal stage speeds or expose unknown model fields.
+
 `AttackData` preserves each retail action's twelve D bytes and encoded name,
 including shared-name groups and dynamic spell-template names. Extension fields
 carry targeting, incoming-power percentage, secondary status/chance and after-hit

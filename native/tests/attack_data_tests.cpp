@@ -18,6 +18,29 @@ class AttackDataTests : public QObject {
         return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
     }
   private slots:
+    void piecePlaybackSpeed() {
+        EffectComposition model; model.size={8,8}; model.duration=12;
+        EffectPiece p; p.id="sequence";p.name="Colours";p.duration=12;
+        QImage image(2,2,QImage::Format_RGBA8888); image.fill(Qt::red);
+        p.artwork=SpriteAsset::fromImage("Colours",image);p.artwork.frames[0].ticks=2;
+        for (const auto colour : {Qt::green, Qt::blue}) {
+            auto frame=p.artwork.frames[0];frame.id=SpriteLibrary::newId();frame.layers[0].image.fill(colour);
+            p.artwork.frames.append(frame);
+        }
+        p.artwork.kind="sequence";
+        model.pieces={p}; model.pieces[0].speedPercent=50;
+        for (int tick=0;tick<12;++tick)
+            QCOMPARE(model.render(tick).pixelColor(3,3),QColor(tick<4?Qt::red:tick<8?Qt::green:Qt::blue));
+        model.pieces[0].speedPercent=200;
+        for (int tick=0;tick<12;++tick)
+            QCOMPARE(model.render(tick).pixelColor(3,3),QColor(tick%3==0?Qt::red:tick%3==1?Qt::green:Qt::blue));
+        QCOMPARE(model.pieces[0].artwork,p.artwork);
+        QCOMPARE(EffectComposition::fromAsset(model.bake()),model);
+        auto legacy=model.json();auto pieces=legacy["pieces"].toArray();auto first=pieces[0].toObject();
+        first.remove("speedPercent");pieces[0]=first;legacy["pieces"]=pieces;
+        QCOMPARE(EffectComposition::fromJson(legacy).pieces[0].speedPercent,100);
+        model.pieces[0].speedPercent=0;QVERIFY_THROWS_EXCEPTION(Error,model.validate());
+    }
     void compositionTimingAndPixels() {
         EffectComposition model; model.name="Moving sparks";model.size={32,32};model.duration=7;
         QImage red(2,2,QImage::Format_RGBA8888);red.fill(QColor(255,0,0,128));
@@ -77,6 +100,8 @@ class AttackDataTests : public QObject {
             native.visual.sizePercent = 125;
             native.visual.offsetX = 12;
             native.visual.offsetY = -6;
+            native.visual.motionStart=15; native.visual.motionTicks=20;
+            native.visual.motionX=40; native.visual.motionY=-20; native.visual.motionEasing=3;
             EffectPlayer originalEffect(source());
             originalEffect.start(8, {});
             while (originalEffect.advance()) {}
@@ -157,6 +182,9 @@ class AttackDataTests : public QObject {
             EffectPiece moving;moving.id="moving";moving.name="Moving red";moving.start=0;moving.duration=5;
             QImage soft(10,6,QImage::Format_RGBA8888);soft.fill(QColor(231,43,17,93));
             moving.artwork=SpriteAsset::fromImage("Soft red",soft);moving.from={-20,0};moving.to={20,0};
+            auto movingFrame=moving.artwork.frames[0];movingFrame.id="green";
+            movingFrame.layers[0].image.fill(QColor(11,249,63,93));
+            moving.artwork.frames.append(movingFrame);moving.artwork.kind="sequence";moving.speedPercent=50;
             auto later=moving;later.id="later";later.name="Later blue";later.start=3;later.duration=4;later.from=later.to={0,10};later.toOpacity=0;
             soft.fill(QColor(11,63,249,197));later.artwork=SpriteAsset::fromImage("Soft blue",soft);
             composition.pieces = {moving, later};

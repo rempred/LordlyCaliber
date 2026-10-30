@@ -18,6 +18,7 @@
 #include <QImageReader>
 #include <QInputDialog>
 #include <QGroupBox>
+#include <QTabWidget>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -81,9 +82,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     });
     replace->setMenu(menu);
     commands->addWidget(replace);
-    auto copy = new QPushButton("Copy effect from attack…");
-    copy->setObjectName("copyAttackEffect");
-    commands->addWidget(copy);
+    menu->addAction("Copy from another attack…", this, [this] { guarded([this] { chooseAttack(); }); });
     compose_=new QPushButton("Create effect…");compose_->setObjectName("composeAttackEffect");commands->addWidget(compose_);
     connect(compose_,&QPushButton::clicked,this,[this]{guarded([this]{
         EffectComposition model;
@@ -93,7 +92,6 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         if(!existing && visual_.frames)dialog.addPiece(*visual_.frames);
         if(dialog.exec()==QDialog::Accepted){AttackVisual v;v.delay=visual_.delay;v.frames=dialog.asset();record(v);}
     });});
-    connect(copy, &QPushButton::clicked, this, [this] { guarded([this] { chooseAttack(); }); });
     auto restore = new QPushButton("Restore original effect");
     restore->setObjectName("restoreAttackEffect");
     commands->addWidget(restore);
@@ -176,8 +174,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     scene->addLayout(exportRow);
     framePosition_ = new QLabel;
     framePosition_->setObjectName("effectFramePosition");
-    exportRow->addWidget(framePosition_);
-    exportRow->addStretch();
+    exportRow->addWidget(framePosition_, 1);
     exportFrame_ = new QPushButton("Export…");
     exportFrame_->setObjectName("effectExportFrame");
     exportRow->addWidget(exportFrame_);
@@ -239,11 +236,20 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
             record(v);
         }
     });
-    nativeControls_ = new QGroupBox("Retail effect appearance");
-    auto nativeLayout = new QVBoxLayout(nativeControls_);
+    nativeControls_ = new QGroupBox("Retail effect");
+    auto nativeRoot = new QVBoxLayout(nativeControls_);
+    auto nativeTabs = new QTabWidget;
+    nativeTabs->setObjectName("effectRetailTabs");
+    nativeRoot->addWidget(nativeTabs);
+    auto artworkPage = new QWidget;
+    auto nativeLayout = new QVBoxLayout(artworkPage);
+    nativeTabs->addTab(artworkPage, "Artwork");
+    auto placementPage = new QWidget;
+    auto placementLayout = new QVBoxLayout(placementPage);
+    nativeTabs->addTab(placementPage, "Position and movement");
     options->addWidget(nativeControls_, 1);
     nativeForm_ = new QFormLayout;
-    nativeLayout->addLayout(nativeForm_);
+    placementLayout->addLayout(nativeForm_);
     effectSize_ = spin("effectSize", 25, 400); effectSize_->setSuffix("%");
     effectX_ = spin("effectOffsetX", -320, 320); effectX_->setSuffix(" px");
     effectY_ = spin("effectOffsetY", -240, 240); effectY_->setSuffix(" px");
@@ -251,7 +257,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     nativeForm_->addRow("Horizontal offset", effectX_);
     nativeForm_->addRow("Vertical offset", effectY_);
     note("Size scales the effect around the screen centre. Positive offsets move it right or down. "
-         "These change the visual only; targeting and damage stay the same.", nativeLayout);
+         "These change the visual only; targeting and damage stay the same.", placementLayout);
     auto nativeValue = [this](QSpinBox *control, int AttackVisual::*member) {
         connect(control, &QSpinBox::valueChanged, this, [this, member](int value) {
             if (!refreshing_) { auto v = visual_; v.*member = value; record(v); }
@@ -259,6 +265,41 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     };
     nativeValue(effectSize_, &AttackVisual::sizePercent);
     nativeValue(effectX_, &AttackVisual::offsetX); nativeValue(effectY_, &AttackVisual::offsetY);
+    motionMode_ = new QComboBox;
+    motionMode_->setObjectName("effectMotionMode");
+    motionMode_->addItems({"Keep position", "Move to position"});
+    nativeForm_->addRow("Movement", motionMode_);
+    motionControls_ = new QWidget;
+    auto motionForm = new QFormLayout(motionControls_);
+    motionForm->setContentsMargins(0, 0, 0, 0);
+    placementLayout->addWidget(motionControls_);
+    motionX_ = spin("effectMotionX", -320, 320); motionX_->setSuffix(" px");
+    motionY_ = spin("effectMotionY", -240, 240); motionY_->setSuffix(" px");
+    motionStart_ = spin("effectMotionStart", 0, 300); motionStart_->setSuffix(" ticks");
+    motionTicks_ = spin("effectMotionTicks", 1, 300); motionTicks_->setSuffix(" ticks");
+    motionEasing_ = new QComboBox;
+    motionEasing_->setObjectName("effectMotionEasing");
+    motionEasing_->addItems({"Constant speed", "Start slowly", "Finish slowly", "Start and finish slowly"});
+    motionForm->addRow("End horizontal offset", motionX_);
+    motionForm->addRow("End vertical offset", motionY_);
+    motionForm->addRow("Start moving after", motionStart_);
+    motionForm->addRow("Move over", motionTicks_);
+    motionForm->addRow("Motion curve", motionEasing_);
+    nativeValue(motionX_, &AttackVisual::motionX); nativeValue(motionY_, &AttackVisual::motionY);
+    nativeValue(motionStart_, &AttackVisual::motionStart); nativeValue(motionTicks_, &AttackVisual::motionTicks);
+    connect(motionEasing_, &QComboBox::currentIndexChanged, this, [this](int n) {
+        if (!refreshing_) { auto v=visual_; v.motionEasing=n; record(v); }
+    });
+    connect(motionMode_, &QComboBox::currentIndexChanged, this, [this](int n) {
+        if (refreshing_) return;
+        auto v=visual_;
+        v.motionTicks=n ? 30 : 0; v.motionStart=v.motionEasing=0;
+        v.motionX=n ? v.offsetX : 0; v.motionY=n ? v.offsetY : 0;
+        record(v);
+    });
+    note("Move the whole effect from its current offsets to the end offsets. Timing starts after "
+         "the effect delay; 30 ticks = 1 second. The original animation and its ending stay intact.", placementLayout);
+    placementLayout->addStretch();
     note("Artwork used by this effect", nativeLayout);
     artworkList_ = new QListWidget;
     artworkList_->setObjectName("effectRetailArtwork");
@@ -494,6 +535,11 @@ void AttackEffectEditor::refresh() {
     nativeControls_->setVisible(!visual_.frames && (inherited_ >= 0 || visual_.nativeEffect >= 0));
     effectSize_->setValue(visual_.sizePercent);
     effectX_->setValue(visual_.offsetX); effectY_->setValue(visual_.offsetY);
+    motionMode_->setCurrentIndex(visual_.motionTicks ? 1 : 0);
+    motionControls_->setVisible(visual_.motionTicks != 0);
+    motionX_->setValue(visual_.motionX); motionY_->setValue(visual_.motionY);
+    motionStart_->setValue(visual_.motionStart); motionTicks_->setValue(std::max(1, visual_.motionTicks));
+    motionEasing_->setCurrentIndex(visual_.motionEasing);
     legacyColour_->setVisible(visual_.hue != 0 || visual_.color >= 0);
     refreshArtwork();
     if (visual_.frames) {

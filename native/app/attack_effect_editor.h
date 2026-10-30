@@ -67,6 +67,9 @@ class AttackEffectEditor : public QDialog {
     QFormLayout *nativeForm_, *artworkColourForm_;
     QComboBox *colourMode_;
     QSpinBox *hue_, *effectSize_, *effectX_, *effectY_;
+    QComboBox *motionMode_, *motionEasing_;
+    QSpinBox *motionTicks_, *motionStart_, *motionX_, *motionY_;
+    QWidget *motionControls_;
     QPushButton *effectColour_, *replaceArtwork_, *restoreArtwork_;
     QWidget *legacyColour_;
     QListWidget *artworkList_;

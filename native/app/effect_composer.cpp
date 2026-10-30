@@ -24,6 +24,8 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStyledItemDelegate>
+#include <QTabWidget>
 #include <QTimer>
 #include <QUndoStack>
 #include <QVBoxLayout>
@@ -88,6 +90,7 @@ class EffectCanvas : public QWidget {
             return;
         if (startDrag)
             startDrag();
+        moveBoth_ = !end && model.pieces[selected].from == model.pieces[selected].to;
         dragging_ = true;
         drag(e->position());
     }
@@ -106,6 +109,7 @@ class EffectCanvas : public QWidget {
 
   private:
     bool dragging_ = false;
+    bool moveBoth_ = false;
     void drag(QPointF at) {
         const auto r = scene();
         const auto point = (at - r.topLeft()) / (r.width() / 320);
@@ -113,12 +117,34 @@ class EffectCanvas : public QWidget {
                            std::clamp(qRound(point.y()) - 120, -512, 512));
         if (end)
             model.pieces[selected].to = value;
-        else
+        else {
+            if (moveBoth_) model.pieces[selected].to = value;
             model.pieces[selected].from = value;
+        }
         update();
     }
 };
 namespace {
+class PieceTimeline : public QStyledItemDelegate {
+    QListWidget *list_;
+  public:
+    explicit PieceTimeline(QListWidget *list) : QStyledItemDelegate(list), list_(list) {}
+    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override { return {200, 76}; }
+    void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
+        auto text = option; text.rect.adjust(0, 0, 0, -19);
+        QStyledItemDelegate::paint(p, text, index);
+        const QRect track = option.rect.adjusted(8, option.rect.height()-16, -8, -5);
+        const int duration = std::max(1, list_->property("duration").toInt());
+        const auto scale = double(track.width()) / duration;
+        p->save();
+        p->fillRect(track, QColor("#d4c6a7"));
+        p->fillRect(QRectF(track.left()+index.data(Qt::UserRole+1).toInt()*scale,track.top(),
+            index.data(Qt::UserRole+2).toInt()*scale,track.height()), QColor("#aa6a2c"));
+        const int x = track.left()+qRound(list_->property("tick").toInt()*scale);
+        p->setPen(QColor("#332313")); p->drawLine(x,track.top()-2,x,track.bottom()+2);
+        p->restore();
+    }
+};
 QLabel *note(const QString &text, QLayout *layout) {
     auto label = new QLabel(text);
     label->setWordWrap(true);
@@ -176,15 +202,29 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     split->addWidget(left);
     auto add = new QPushButton("Add piece…");
     add->setObjectName("compositionAddPiece");
-    listLayout->addWidget(add);
-    auto menu = new QMenu(add);
-    add->setMenu(menu);
-    menu->addAction("From game effects…", this, [this] { guarded([this] { chooseEffect(); }); });
-    menu->addAction("From Art Library…", this, [this] { guarded([this] { chooseLibrary(); }); });
-    menu->addAction("From files…", this, [this] { guarded([this] { chooseFile(); }); });
+    auto addRow = new QHBoxLayout;
+    listLayout->addLayout(addRow);
+    addRow->addWidget(add);
+    auto replace = new QPushButton("Replace piece…");
+    replace->setObjectName("compositionReplacePiece");
+    addRow->addWidget(replace);
+    for (auto button : {add, replace}) {
+        auto menu = new QMenu(button); button->setMenu(menu);
+        auto action = [this, menu, button, replace](const QString &text, void (EffectComposer::*choose)()) {
+            menu->addAction(text, this, [this, choose, replacing=button==replace] {
+                QScopedValueRollback guard(replacing_, replacing);
+                guarded([this, choose] { (this->*choose)(); });
+            });
+        };
+        action("From game effects…", &EffectComposer::chooseEffect);
+        action("From Art Library…", &EffectComposer::chooseLibrary);
+        action("From files…", &EffectComposer::chooseFile);
+    }
+    note("Pieces · timing", listLayout);
     pieces_ = new QListWidget;
     pieces_->setObjectName("compositionPieces");
     pieces_->setWordWrap(true);
+    pieces_->setItemDelegate(new PieceTimeline(pieces_));
     listLayout->addWidget(pieces_, 1);
     auto actions = new QHBoxLayout;
     listLayout->addLayout(actions);
@@ -269,8 +309,10 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
         editPiece([this, p](EffectPiece &piece) {
             if (editEnd_)
                 piece.to = p;
-            else
+            else {
+                if (piece.to == piece.from) piece.to = p;
                 piece.from = p;
+            }
         });
     };
     auto playback = new QHBoxLayout;
@@ -368,7 +410,19 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
          "artwork retains its orientation on either side.",
          preview);
     pieceControls_ = new QWidget;
-    auto form = new QFormLayout(pieceControls_);
+    auto pieceLayout = new QVBoxLayout(pieceControls_);
+    auto titleForm = new QFormLayout;
+    pieceLayout->addLayout(titleForm);
+    auto tabs = new QTabWidget;
+    tabs->setObjectName("compositionPieceTabs");
+    pieceLayout->addWidget(tabs);
+    auto page = [&](const QString &label) {
+        auto widget = new QWidget; auto form = new QFormLayout(widget);
+        tabs->addTab(widget, label); return form;
+    };
+    auto timingForm = page("Timing"), movementForm = page("Movement"), appearanceForm = page("Appearance");
+    auto form = timingForm;
+    pieceLayout->addStretch();
     auto scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setWidget(pieceControls_);
@@ -378,11 +432,11 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     pieceName_ = new QLineEdit;
     pieceName_->setMaxLength(120);
     pieceName_->setObjectName("compositionPieceName");
-    form->addRow("Selected piece", pieceName_);
+    titleForm->addRow("Selected piece", pieceName_);
     connect(pieceName_, &QLineEdit::editingFinished, this, [this] {
         editPiece([this](EffectPiece &p) { p.name = pieceName_->text().trimmed(); });
     });
-    auto value = [this, form](const QString &label, const char *id, int lo, int hi,
+    auto value = [this, &form](const QString &label, const char *id, int lo, int hi,
                               int EffectPiece::*member, const QString &suffix = {}) {
         auto s = spin(id, lo, hi, suffix);
         form->addRow(label, s);
@@ -394,6 +448,11 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     start_ = value("Appears at", "compositionStart", 0, 299, &EffectPiece::start, " ticks");
     duration_ =
         value("Visible for", "compositionVisible", 1, 300, &EffectPiece::duration, " ticks");
+    speed_ = value("Artwork speed", "compositionSpeed", 25, 400, &EffectPiece::speedPercent, "%");
+    auto timingHelp = new QLabel("100% = original speed; 50% = half speed; 200% = double speed. "
+        "Movement still takes the full Visible for time. 30 ticks = 1 second.");
+    timingHelp->setWordWrap(true); timingForm->addRow(timingHelp);
+    form = movementForm;
     auto position = [this, form](const QString &label, bool end) {
         auto row = new QHBoxLayout;
         auto x = spin(end ? "compositionToX" : "compositionFromX", -512, 512);
@@ -404,10 +463,16 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
         row->addWidget(y);
         form->addRow(label, row);
         connect(x, &QSpinBox::valueChanged, this, [this, end](int n) {
-            editPiece([end, n](EffectPiece &p) { (end ? p.to : p.from).setX(n); });
+            editPiece([end, n](EffectPiece &p) {
+                if (!end && p.from==p.to) p.to.setX(n);
+                (end ? p.to : p.from).setX(n);
+            });
         });
         connect(y, &QSpinBox::valueChanged, this, [this, end](int n) {
-            editPiece([end, n](EffectPiece &p) { (end ? p.to : p.from).setY(n); });
+            editPiece([end, n](EffectPiece &p) {
+                if (!end && p.from==p.to) p.to.setY(n);
+                (end ? p.to : p.from).setY(n);
+            });
         });
         if (end) {
             toX_ = x;
@@ -419,6 +484,7 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     };
     position("Start position", false);
     position("End position", true);
+    form = appearanceForm;
     fromScale_ = value("Start size", "compositionFromScale", 1, 400, &EffectPiece::fromScale, "%");
     toScale_ = value("End size", "compositionToScale", 1, 400, &EffectPiece::toScale, "%");
     fromAngle_ =
@@ -431,18 +497,18 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     easing_->setObjectName("compositionEasing");
     easing_->addItems(
         {"Constant speed", "Start slowly", "Finish slowly", "Start and finish slowly"});
-    form->addRow("Movement", easing_);
+    movementForm->addRow("Motion curve", easing_);
     connect(easing_, &QComboBox::currentIndexChanged, this,
             [this](int n) { editPiece([n](EffectPiece &p) { p.easing = n; }); });
     loop_ = new QCheckBox("Repeat artwork frames");
-    form->addRow(loop_);
+    timingForm->addRow(loop_);
     connect(loop_, &QCheckBox::toggled, this,
             [this](bool b) { editPiece([b](EffectPiece &p) { p.loop = b; }); });
     auto coordinates = new QLabel(
         "X = 0, Y = 0 is the centre. Positive X moves right; positive Y moves down. "
         "Each piece has its own timeline. Size, rotation and opacity change from Start to End.");
     coordinates->setWordWrap(true);
-    form->addRow(coordinates);
+    movementForm->addRow(coordinates);
     connect(pieces_, &QListWidget::currentRowChanged, this, [this] {
         if (!refreshing_)
             refresh();
@@ -522,6 +588,10 @@ void EffectComposer::editPiece(const std::function<void(EffectPiece &)> &fn) {
     guarded([&] {
         auto m = model_;
         fn(m.pieces[pieces_->currentItem()->data(Qt::UserRole).toInt()]);
+        const auto &piece = m.pieces[pieces_->currentItem()->data(Qt::UserRole).toInt()];
+        // Moving or extending one piece grows the canvas timeline instead of
+        // rejecting an ordinary edit. The model still enforces the total budget.
+        m.duration = std::max(m.duration, piece.start + piece.duration);
         record(m);
     });
 }
@@ -535,21 +605,27 @@ void EffectComposer::refresh() {
     placement_->setCurrentIndex(placement_->findData(model_.placement));
     time_->setMaximum(model_.duration - 1);
     pieces_->clear();
+    pieces_->setProperty("duration", model_.duration);
     for (int at = int(model_.pieces.size()) - 1; at >= 0; --at) {
         const auto &p = model_.pieces[at];
         auto item = new QListWidgetItem(
-            QString("%1\n%2–%3 ticks").arg(p.name).arg(p.start).arg(p.start + p.duration - 1),
+            QString("%1\n%2–%3 s").arg(p.name).arg(p.start/30.0,0,'f',2).arg((p.start+p.duration)/30.0,0,'f',2),
             pieces_);
         item->setData(Qt::UserRole, at);
+        item->setData(Qt::UserRole+1, p.start); item->setData(Qt::UserRole+2, p.duration);
+        item->setToolTip(QString("Start %1 · %2 ticks · artwork %3%").arg(p.start).arg(p.duration).arg(p.speedPercent));
     }
     if (!model_.pieces.isEmpty())
         pieces_->setCurrentRow(std::clamp(row, 0, int(model_.pieces.size()) - 1));
     pieceControls_->setEnabled(!model_.pieces.isEmpty());
+    findChild<QPushButton *>("compositionReplacePiece")->setEnabled(!model_.pieces.isEmpty());
     if (pieces_->currentItem()) {
         const auto &p = model_.pieces[pieces_->currentItem()->data(Qt::UserRole).toInt()];
         pieceName_->setText(p.name);
         start_->setValue(p.start);
         duration_->setValue(p.duration);
+        speed_->setValue(p.speedPercent);
+        speed_->setEnabled(p.artwork.frames.size() > 1);
         fromX_->setValue(p.from.x());
         fromY_->setValue(p.from.y());
         toX_->setValue(p.to.x());
@@ -577,6 +653,8 @@ void EffectComposer::refresh() {
     updatePreview();
 }
 void EffectComposer::updatePreview() {
+    pieces_->setProperty("tick", time_->value());
+    pieces_->viewport()->update();
     canvas_->model = model_;
     canvas_->tick = time_->value();
     canvas_->end = editEnd_;
@@ -612,6 +690,18 @@ void EffectComposer::addPiece(SpriteAsset artwork) {
     record(m);
     pieces_->setCurrentRow(0);
 }
+void EffectComposer::replacePiece(int index, SpriteAsset artwork) {
+    if (index < 0 || index >= model_.pieces.size()) throw Error("Select a piece to replace");
+    artwork.provenance.remove("effectComposition");
+    artwork.id = SpriteLibrary::newId();
+    auto m = model_;
+    m.pieces[index].artwork = std::move(artwork);
+    record(m);
+}
+void EffectComposer::importPiece(SpriteAsset artwork) {
+    if (replacing_) replacePiece(pieces_->currentItem() ? pieces_->currentItem()->data(Qt::UserRole).toInt() : -1, std::move(artwork));
+    else addPiece(std::move(artwork));
+}
 void EffectComposer::chooseEffect() {
     QDialog dialog(this);
     dialog.setWindowTitle("Choose a piece from an effect");
@@ -623,7 +713,7 @@ void EffectComposer::chooseEffect() {
     connect(browser, &EffectLibraryEditor::pieceChosen, &dialog,
             [this, &dialog](const SpriteAsset &piece) {
                 guarded([&] {
-                    addPiece(piece);
+                    importPiece(piece);
                     dialog.accept();
                 });
             });
@@ -642,15 +732,15 @@ void EffectComposer::chooseLibrary() {
         throw Error("The Art Library is empty. Add a piece from game effects or files.");
     bool ok = false;
     const auto name =
-        QInputDialog::getItem(this, "Add a library piece", "Artwork", labels, 0, false, &ok);
+        QInputDialog::getItem(this, "Choose library artwork", "Artwork", labels, 0, false, &ok);
     if (ok)
-        addPiece(project_->sprites().asset(ids[labels.indexOf(name)]));
+        importPiece(project_->sprites().asset(ids[labels.indexOf(name)]));
 }
 void EffectComposer::chooseFile() {
     const auto paths = QFileDialog::getOpenFileNames(
-        this, "Add effect artwork", {}, "Artwork and sequences (*.png *.zip *.json *.lcsprite)");
+        this, "Choose effect artwork", {}, "Artwork and sequences (*.png *.zip *.json *.lcsprite)");
     if (!paths.isEmpty())
-        addPiece(importAnimationFiles(paths));
+        importPiece(importAnimationFiles(paths));
 }
 void EffectComposer::finish(bool assign) {
     guarded([this, assign] {

@@ -12,6 +12,11 @@ void AttackVisual::validate() const {
         sizePercent < 25 || sizePercent > 400 || offsetX < -320 || offsetX > 320 || offsetY < -240 || offsetY > 240 ||
         artwork.size() > 256 || (frames && nativeEdited()))
         throw Error("Invalid retail effect appearance settings");
+    if (motionTicks < 0 || motionTicks > 300 || motionStart < 0 || motionStart > 300 ||
+        motionX < -320 || motionX > 320 || motionY < -240 || motionY > 240 ||
+        motionEasing < 0 || motionEasing > 3 ||
+        (!motionTicks && (motionStart || motionX || motionY || motionEasing)))
+        throw Error("Invalid effect movement settings");
     quint64 artworkBytes = 0;
     for (auto i = artwork.begin(); i != artwork.end(); ++i) {
         const auto &a = i.value();
@@ -63,6 +68,12 @@ QJsonObject AttackVisual::json() const {
         result["retailEdits"] = QJsonObject{{"hue", hue}, {"color", color},
             {"sizePercent", sizePercent}, {"offsetX", offsetX}, {"offsetY", offsetY},
             {"artwork", replacements}};
+        if (motionTicks) {
+            auto edits = result["retailEdits"].toObject();
+            edits["motion"] = QJsonObject{{"ticks", motionTicks}, {"start", motionStart},
+                {"x", motionX}, {"y", motionY}, {"easing", motionEasing}};
+            result["retailEdits"] = edits;
+        }
     }
     return result;
 }
@@ -91,6 +102,19 @@ AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
         result.hue = value("hue", 0); result.color = value("color", -1);
         result.sizePercent = value("sizePercent", 100);
         result.offsetX = value("offsetX", 0); result.offsetY = value("offsetY", 0);
+        if (edits.contains("motion")) {
+            if (!edits["motion"].isObject()) throw Error("Invalid effect movement");
+            const auto motion = edits["motion"].toObject();
+            auto integer = [&](const char *key) {
+                const auto n = motion[key];
+                if (!n.isDouble() || !std::isfinite(n.toDouble()) || n.toDouble() != n.toInt())
+                    throw Error("Invalid effect movement value");
+                return n.toInt();
+            };
+            result.motionTicks = integer("ticks"); result.motionStart = integer("start");
+            result.motionX = integer("x"); result.motionY = integer("y");
+            result.motionEasing = integer("easing");
+        }
         if (edits.contains("artwork") && !edits["artwork"].isArray()) throw Error("Invalid effect artwork list");
         for (const auto &entry : edits["artwork"].toArray()) {
             const auto a = entry.toObject();
@@ -151,6 +175,9 @@ QByteArray AttackVisual::build(int inherited) const {
     put16(bytes, 16, quint16(nativeEffect));
     put16(bytes, 18, delay);
     if (native) {
+        put16(bytes, 20, motionTicks); put16(bytes, 22, motionStart);
+        put16(bytes, 24, quint16(motionX)); put16(bytes, 26, quint16(motionY));
+        put16(bytes, 28, motionEasing);
         put16(bytes, 32, color >= 0 ? 2 : hue ? 1 : 0);
         put16(bytes, 34, quint16(hue)); put32(bytes, 36, quint32(color));
         put16(bytes, 40, quint16(sizePercent)); put16(bytes, 42, quint16(offsetX));
@@ -231,6 +258,9 @@ AttackVisual AttackVisual::read(const QByteArray &bytes) {
     if (native) {
         if (u16(bytes, 12) || u16(bytes, 32) > 2 || 96 + u16(bytes, 46) * 64 > bytes.size())
             throw Error("Invalid retail effect configuration");
+        result.motionTicks = u16(bytes, 20); result.motionStart = u16(bytes, 22);
+        result.motionX = qint16(u16(bytes, 24)); result.motionY = qint16(u16(bytes, 26));
+        result.motionEasing = u16(bytes, 28);
         result.hue = qint16(u16(bytes, 34)); result.color = qint32(u32(bytes, 36));
         result.sizePercent = u16(bytes, 40); result.offsetX = qint16(u16(bytes, 42));
         result.offsetY = qint16(u16(bytes, 44));
