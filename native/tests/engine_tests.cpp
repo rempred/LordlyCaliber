@@ -917,6 +917,91 @@ class EngineTests : public QObject {
         QVERIFY2(!instructions.exitCode(), instructions.readAllStandardError().constData());
         qInfo().noquote() << instructions.readAllStandardOutput();
     }
+    void scenarioOriginalSupplyAllowance() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            const auto source = *project.scenarios();
+            const auto classes = project.classData();
+            const auto &scene = source.scenario(39);
+            int row = -1;
+            for (int i=0; i<scene.squads.size(); ++i)
+                if ((u8(scene.layout.deployments[i],0)&127)==31) row=i;
+            QVERIFY(row>=0);
+            const auto originalRow = scene.layout.deployments[row];
+            QCOMPARE(originalRow.mid(13,3), QByteArray::fromHex("010102")); // Five supplies.
+            const int cap = Scenarios::carryingCapacity(scene.squads[row], classes);
+            QVERIFY(cap>0 && cap<5);
+            auto members = squadMembers(scene.squads[row]);
+            QCOMPARE(members.size(), 1);
+            qInfo() << "Retail Amrius: five supplies, capacity" << cap << "class" << members[0].classId;
+            const int oldCell = members[0].cell;
+            members[0].cell = (oldCell+1)%9;
+            auto model = source;
+            model.setSquad(39,row,editSquadMembers(scene.squads[row],members),classes);
+            QCOMPARE(squadMembers(model.scenario(39).squads[row])[0].cell,members[0].cell);
+            QCOMPARE(model.scenario(39).layout.deployments[row],originalRow);
+
+            // Every dropdown must accept a reduction independently, even when
+            // the other two categories still exceed this original capacity.
+            for (int field : {13,14,15}) {
+                auto changed=source;
+                auto d=originalRow; put8(d,field,0);
+                changed.setDeployment(39,row,d,classes);
+                QCOMPARE(changed.scenario(39).layout.deployments[row],d);
+                changed.validateForExport(classes);
+            }
+            auto d=originalRow; put8(d,13,0); put8(d,3,100); put8(d,4,120);
+            model.setDeployment(39,row,d,classes); // Four supplies retained, map move accepted.
+            const auto saved=model.json();
+            auto invalid=d; put8(invalid,13,3); // Seven supplies would increase the original overload.
+            QVERIFY_THROWS_EXCEPTION(Error,model.setDeployment(39,row,invalid,classes));
+            QCOMPARE(model.json(),saved);
+            invalid=d; put8(invalid,13,7);
+            QVERIFY_THROWS_EXCEPTION(Error,model.setDeployment(39,row,invalid,classes));
+            auto reduced=classes; auto leader=reduced.entries()[members[0].classId];
+            put8(leader.record,ClassData::itemCapacityOffset,cap-1);
+            reduced.set(members[0].classId,leader);
+            QVERIFY_THROWS_EXCEPTION(Error,model.validateForExport(reduced));
+            auto added=source;
+            const int newRow=added.addSquad(39,row,classes);
+            auto newDeployment=added.scenario(39).layout.deployments[newRow];
+            newDeployment.replace(13,3,originalRow.mid(13,3));
+            QVERIFY_THROWS_EXCEPTION(Error,added.setDeployment(39,newRow,newDeployment,classes));
+            auto emptied=model;
+            for (int field : {13,14,15}) {
+                auto next=emptied.scenario(39).layout.deployments[row]; put8(next,field,0);
+                emptied.setDeployment(39,row,next,classes);
+            }
+            QCOMPARE(emptied.scenario(39).layout.deployments[row].mid(13,3),QByteArray(3,0));
+            // Scripts, the other Amrius deployment, and every unrelated squad stay intact.
+            QCOMPARE(model.scenario(39).layout.nodes,scene.layout.nodes);
+            QCOMPARE(model.scenario(39).layout.conditions,scene.layout.conditions);
+            for (int i=0;i<scene.squads.size();++i) if(i!=row) {
+                QCOMPARE(model.scenario(39).squads[i],scene.squads[i]);
+                QCOMPARE(model.scenario(39).layout.deployments[i],scene.layout.deployments[i]);
+            }
+            project.setScenarios(saved);
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-scenario-supplies-XXXXXX");
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            project.saveFolder(output.filePath("project"));
+            auto restored=Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(output.filePath("project")));
+            QCOMPARE(restored.scenarios()->json(),saved);
+            const auto built=rebuild(restored,tools,output.path());
+            auto checksum=built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum,built.image);
+            const auto candidate=output.filePath(QFileInfo(path).fileName());
+            exportRom(restored,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate)); reopened.loadScenarios();
+            QCOMPARE(reopened.scenarios()->json(),saved);
+            QCOMPARE(Rom::open(path).bytes(),rom.bytes());
+            qInfo().noquote()<<"Original supply allowance candidate:"<<candidate;
+        } catch (const Error &error) { QFAIL(error.what()); }
+    }
     void scenarioAuthoring() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -111,6 +111,15 @@ int Scenarios::carryingCapacity(const QByteArray &record, const ClassData &class
     }
     return result;
 }
+static int initialSupplyCount(const QByteArray &row) {
+    if (row.isEmpty())
+        return -1;
+    const std::array<int, 7> healing{0, 1, 2, 3, 2, 3, 2};
+    const int heal = u8(row, 13), fruit = u8(row, 14), revive = u8(row, 15);
+    if (heal > 6 || fruit > 4 || revive > 2)
+        return -1;
+    return healing[heal] + ((fruit > 0 && fruit < 4) ? 2 : 0) + revive;
+}
 void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
     const auto &base = original(s.key);
     const auto &e = s.layout;
@@ -175,16 +184,28 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
         if (changedComposition || changedCapacity || beforeRow.isEmpty() ||
             row.mid(13, 3) != beforeRow.mid(13, 3)) {
             const int cap = carryingCapacity(record, classes);
-            if (cap < 1 || cap > 10)
-                throw Error("Squad composition must carry between one and ten supplies");
-            const std::array<int, 7> healing{0, 1, 2, 3, 2, 3, 2};
-            const int heal = u8(row, 13), fruit = u8(row, 14), revive = u8(row, 15);
-            if (heal > 6 || fruit > 4 || revive > 2 ||
-                (fruit == 4 && (beforeRow.isEmpty() || u8(beforeRow, 14) != 4)))
-                throw Error("Choose a supported initial-supply preset");
-            const int count = healing[heal] + ((fruit > 0 && fruit < 4) ? 2 : 0) + revive;
-            if (count > cap)
-                throw Error("Initial supplies exceed this squad's carrying capacity");
+            int beforeCap = 0;
+            for (const auto &member : previous)
+                beforeCap += originalClassLimits_.value(member.classId).second;
+            // Formation positions do not change capacity. Preserve unrelated
+            // original presets, including unknown ones, when moving members.
+            if (beforeRow.isEmpty() || cap != beforeCap ||
+                row.mid(13, 3) != beforeRow.mid(13, 3)) {
+                if (cap < 1 || cap > 10)
+                    throw Error("Squad composition must carry between one and ten supplies");
+                const int count = initialSupplyCount(row);
+                if (count < 0 ||
+                    (u8(row, 14) == 4 && (beforeRow.isEmpty() || u8(beforeRow, 14) != 4)))
+                    throw Error("Choose a supported initial-supply preset");
+                // Retail includes overloaded deployments (for example Amrius).
+                // Keep/reduce their original allowance without requiring all
+                // three preset controls to be corrected in one atomic edit.
+                // Do not grant this allowance to new squads or reduced capacity.
+                const bool retainedAllowance = !beforeRow.isEmpty() && cap >= beforeCap &&
+                                               count <= initialSupplyCount(beforeRow);
+                if (count > cap && !retainedAllowance)
+                    throw Error("Initial supplies exceed this squad's carrying capacity");
+            }
         }
         if (beforeRow.isEmpty() || row.mid(10, 3) != beforeRow.mid(10, 3)) {
             const int value = u16(row, 11), id = value & 0x7fff;

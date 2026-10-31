@@ -1,5 +1,17 @@
 # Scenario resource rebuild
 
+## Original supply allowances
+
+Some original deployments carry more initial supplies than their members' normal
+capacity. Scenario validation preserves that allowance when capacity is unchanged
+or increased, and permits reducing healing, fruit and revival presets separately.
+Formation-only moves do not revalidate unchanged supply presets. Newly added
+squads must fit their capacity; edits cannot increase an existing overload, and
+reducing capacity requires supplies to fit the new capacity. Checks use the
+opened ROM's original members and class capacities, so they are consistent across
+Undo, project reopening and export. No story-specific exception or game-code
+patch is involved. Original script data is preserved.
+
 ## Independent squad members
 
 `SquadMembersEditor` supplies the common member table and formation controls for

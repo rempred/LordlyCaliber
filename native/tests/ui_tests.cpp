@@ -12717,6 +12717,48 @@ class UiTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void scenarioOverloadedSupplyEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project=Project::fromRom(Rom::open(path)); project.loadScenarios();
+            const auto original=project.scenarios()->json();
+            const auto &scene=project.scenarios()->scenario(39);
+            int row=-1;
+            for(int i=0;i<scene.squads.size();++i)
+                if((u8(scene.layout.deployments[i],0)&127)==31) row=i;
+            QVERIFY(row>=0);
+            const auto originalRow=scene.layout.deployments[row];
+            const int cell=squadMembers(scene.squads[row])[0].cell;
+            QUndoStack undo; ScenarioEditor editor(&project,&undo,[]{});
+            editor.resize(1100,800); editor.show();
+            auto scenarios=editor.findChild<QListWidget *>("scenarioList");
+            for(int i=0;i<scenarios->count();++i)
+                if(scenarios->item(i)->data(Qt::UserRole).toInt()==39) scenarios->setCurrentRow(i);
+            editor.findChild<QListWidget *>("scenarioSquads")->setCurrentRow(row);
+            for(const QString prefix : {QString("scenario"),QString("mapSquad")}) {
+                auto board=editor.findChild<FormationBoard *>(prefix+"Cell_Board"); QVERIFY(board);
+                QVERIFY(QMetaObject::invokeMethod(board,"cellMoved",Q_ARG(int,cell),Q_ARG(int,(cell+1)%9)));
+                QCOMPARE(squadMembers(project.scenarios()->scenario(39).squads[row])[0].cell,(cell+1)%9);
+                QCOMPARE(project.scenarios()->scenario(39).layout.deployments[row].mid(13,3),originalRow.mid(13,3));
+                undo.undo(); QCOMPARE(project.scenarios()->json(),original);
+                const QStringList fields{"Healing","Fruit","Revival"};
+                for(int i=0;i<fields.size();++i) {
+                    auto box=editor.findChild<QComboBox *>(prefix+fields[i]); QVERIFY(box);
+                    box->setCurrentIndex(box->findData(0));
+                    QVERIFY(QMetaObject::invokeMethod(box,"activated",Q_ARG(int,box->currentIndex())));
+                    QCOMPARE(u8(project.scenarios()->scenario(39).layout.deployments[row],13+i),0);
+                    QCOMPARE(box->currentData().toInt(),0);
+                    const auto reduced=project.scenarios()->json();
+                    undo.undo(); QCOMPARE(project.scenarios()->json(),original);
+                    QCOMPARE(box->currentData().toInt(),u8(originalRow,13+i));
+                    undo.redo(); QCOMPARE(project.scenarios()->json(),reduced);
+                    QCOMPARE(box->currentData().toInt(),0);
+                    undo.undo();
+                }
+            }
+        } catch(const Error &error) { QFAIL(error.what()); }
+    }
     void scenarioSquadEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadScenarios();QCOMPARE(project.appendClass(5,"Scenario fighter"),165);
