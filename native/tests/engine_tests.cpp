@@ -917,6 +917,100 @@ class EngineTests : public QObject {
         QVERIFY2(!instructions.exitCode(), instructions.readAllStandardError().constData());
         qInfo().noquote() << instructions.readAllStandardOutput();
     }
+    void scenarioSquadValidationAudit() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom=Rom::open(path);
+            const auto source=Scenarios::load(rom);
+            const auto classes=ClassData::load(rom);
+            QMap<QString,int> errors;
+            int squads=0, probes=0, above=0, oddFormation=0, oddLevel=0, soldierLimits=0, fruitLimits=0;
+            auto probe=[&](int key,int squad,const QString &name,const auto &fn,bool soldierSplit=false) {
+                ++probes; auto model=source;
+                try { fn(model); }
+                catch(const Error &e) {
+                    const auto message=QString::fromUtf8(e.what());
+                    QCOMPARE(model.json(),source.json());
+                    if(soldierSplit && message.startsWith("Soldier groups retain")) {++soldierLimits;return;}
+                    ++errors[message];
+                    qInfo().noquote()<<QString("BLOCKED scenario %1 squad %2: %3: %4").arg(key).arg(squad).arg(name,message);
+                }
+            };
+            for(const auto &s:source.entries()) for(int row=0;row<s.squads.size();++row) {
+                ++squads;
+                const auto d=s.layout.deployments[row], record=s.squads[row];
+                const int id=u8(d,0)&127;
+                const auto members=squadMembers(record);
+                const int cap=Scenarios::carryingCapacity(record,classes);
+                const bool soldiers=std::any_of(members.begin(),members.end(),[](const auto &m){return m.classId==1;});
+                if(s.key==39 && (id==30 || id==31))qInfo()<<"AMRIUS"<<id<<"members"<<members.size()<<"class"<<members[0].classId<<"capacity"<<cap<<"presets"<<d.mid(13,3).toHex();
+                const std::array<int,7> healing{0,1,2,3,2,3,2};
+                if(u8(d,13)<7 && u8(d,14)<5 && u8(d,15)<3 &&
+                   healing[u8(d,13)]+(u8(d,14)>0 && u8(d,14)<4?2:0)+u8(d,15)>cap) {
+                    ++above; qInfo()<<"PRESETS ABOVE CAPACITY"<<s.key<<id<<cap<<d.mid(13,3).toHex();
+                }
+                try {validateSquadFormation(members,classes);}
+                catch(const Error &e){++oddFormation;qInfo()<<"ORIGINAL FORMATION"<<s.key<<id<<e.what();}
+                for(const auto &m:members) if(s.layout.baseLevel()+m.levelOffset<1 || s.layout.baseLevel()+m.levelOffset>99) {
+                    ++oddLevel; qInfo()<<"ORIGINAL LEVEL"<<s.key<<id<<m.classId<<s.layout.baseLevel()<<m.levelOffset;
+                }
+                probe(s.key,id,"unchanged",[&](Scenarios &m){m.editSquad(s.key,row,editSquadMembers(record,members),d,classes);QCOMPARE(m.json(),source.json());});
+                for(int field:{0,3,5,6,8,13,14,15}) {
+                    auto next=d;
+                    const int value=field==0 ? u8(d,0)^128 : field==3 ? (u8(d,field)%254)+1 : field==5 ? (u8(d,field)%8)+1 : field==6 ? 1 : field==8 ? (u8(d,field)%4)+1 : 0;
+                    put8(next,field,value);
+                    if(field==3) put8(next,4,120);
+                    if(next==d)continue;
+                    if(cap && !u8(next,13) && u8(next,14)==4 && !u8(next,15)) {
+                        // Independently established nontermination in the native
+                        // test: reject it, and verify the suggested None repair.
+                        auto unsafe=source;
+                        QVERIFY_THROWS_EXCEPTION(Error,unsafe.setDeployment(s.key,row,next,classes));
+                        QCOMPARE(unsafe.json(),source.json());
+                        ++fruitLimits; qInfo()<<"UNUSED FRUIT GUARD"<<s.key<<id;
+                        put8(next,14,0);
+                    }
+                    probe(s.key,id,QString("deployment byte %1").arg(field),[&](Scenarios &m){m.setDeployment(s.key,row,next,classes);QCOMPARE(m.scenario(s.key).layout.deployments[row],next);});
+                }
+                auto drop=d;put8(drop,10,0);put16(drop,11,1);
+                probe(s.key,id,"drop",[&](Scenarios &m){m.setDeployment(s.key,row,drop,classes);});
+                auto supply=d;put8(supply,13,3);put8(supply,14,3);put8(supply,15,2);
+                probe(s.key,id,"maximum supply presets",[&](Scenarios &m){m.setDeployment(s.key,row,supply,classes);});
+                for(int member=0;member<members.size();++member) {
+                    for(int slot=0;slot<2;++slot) {
+                        auto next=members;next[member].equipment[slot]=0;
+                        probe(s.key,id,QString("equipment %1/%2").arg(member).arg(slot),[&](Scenarios &m){m.setSquad(s.key,row,editSquadMembers(record,next),classes);});
+                    }
+                    auto next=members;
+                    const int level=std::clamp(s.layout.baseLevel()+next[member].levelOffset,1,98);
+                    next[member].levelOffset=level+1-s.layout.baseLevel();
+                    if(!(s.key==25 && id==40 && member>0)) {
+                        probe(s.key,id,QString("level %1").arg(member),[&](Scenarios &m){m.setSquad(s.key,row,editSquadMembers(record,next),classes);},soldiers);
+                        if(soldiers) {
+                            auto grouped=members;
+                            for(auto &f:grouped) if(f.classId==members[member].classId && f.levelOffset==members[member].levelOffset && f.equipment==members[member].equipment)
+                                f.levelOffset=next[member].levelOffset;
+                            probe(s.key,id,"shared Soldier-format level",[&](Scenarios &m){m.setSquad(s.key,row,editSquadMembers(record,grouped),classes);});
+                        }
+                    }
+                    for(int cell=0;cell<9;++cell) {
+                        if(cell==members[member].cell)continue;
+                        next=members;
+                        for(int other=0;other<next.size();++other)
+                            if(other!=member && next[other].cell==cell)next[other].cell=next[member].cell;
+                        next[member].cell=cell;
+                        try{validateSquadFormation(next,classes);}catch(const Error &){continue;}
+                        probe(s.key,id,QString("formation %1 to %2").arg(member).arg(cell),[&](Scenarios &m){m.setSquad(s.key,row,editSquadMembers(record,next),classes);});
+                    }
+                }
+            }
+            qInfo()<<"AUDIT scenarios"<<source.entries().size()<<"squads"<<squads<<"probes"<<probes<<"preset sums above capacity"<<above<<"original formation exceptions"<<oddFormation<<"level exceptions"<<oddLevel<<"Soldier format limits"<<soldierLimits<<"unsafe fruit combinations guarded"<<fruitLimits;
+            for(auto i=errors.begin();i!=errors.end();++i)qInfo()<<"BLOCKER"<<i.key()<<i.value();
+            QVERIFY(squads>800);
+            QVERIFY2(errors.isEmpty(),qPrintable(errors.keys().join('\n')));
+        } catch(const Error &e){QFAIL(e.what());}
+    }
     void scenarioOriginalSupplyAllowance() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -933,12 +1027,12 @@ class EngineTests : public QObject {
                 if ((u8(scene.layout.deployments[i],0)&127)==31) row=i;
             QVERIFY(row>=0);
             const auto originalRow = scene.layout.deployments[row];
-            QCOMPARE(originalRow.mid(13,3), QByteArray::fromHex("010102")); // Five supplies.
+            QCOMPARE(originalRow.mid(13,3), QByteArray::fromHex("010102")); // Presets, not five actual items.
             const int cap = Scenarios::carryingCapacity(scene.squads[row], classes);
             QVERIFY(cap>0 && cap<5);
             auto members = squadMembers(scene.squads[row]);
             QCOMPARE(members.size(), 1);
-            qInfo() << "Retail Amrius: five supplies, capacity" << cap << "class" << members[0].classId;
+            qInfo() << "Retail Amrius presets 1/1/2, capacity" << cap << "class" << members[0].classId;
             const int oldCell = members[0].cell;
             members[0].cell = (oldCell+1)%9;
             auto model = source;
@@ -956,22 +1050,36 @@ class EngineTests : public QObject {
                 changed.validateForExport(classes);
             }
             auto d=originalRow; put8(d,13,0); put8(d,3,100); put8(d,4,120);
-            model.setDeployment(39,row,d,classes); // Four supplies retained, map move accepted.
+            model.setDeployment(39,row,d,classes);
+            put8(d,13,3); // A preset combination above capacity is valid native input.
+            model.setDeployment(39,row,d,classes);
             const auto saved=model.json();
-            auto invalid=d; put8(invalid,13,3); // Seven supplies would increase the original overload.
-            QVERIFY_THROWS_EXCEPTION(Error,model.setDeployment(39,row,invalid,classes));
-            QCOMPARE(model.json(),saved);
-            invalid=d; put8(invalid,13,7);
+            auto invalid=d; put8(invalid,13,7);
             QVERIFY_THROWS_EXCEPTION(Error,model.setDeployment(39,row,invalid,classes));
             auto reduced=classes; auto leader=reduced.entries()[members[0].classId];
             put8(leader.record,ClassData::itemCapacityOffset,cap-1);
             reduced.set(members[0].classId,leader);
-            QVERIFY_THROWS_EXCEPTION(Error,model.validateForExport(reduced));
+            model.validateForExport(reduced);
+            put8(leader.record,ClassData::itemCapacityOffset,0);
+            reduced.set(members[0].classId,leader);
+            model.validateForExport(reduced); // Zero capacity safely creates an empty supply list.
             auto added=source;
             const int newRow=added.addSquad(39,row,classes);
             auto newDeployment=added.scenario(39).layout.deployments[newRow];
             newDeployment.replace(13,3,originalRow.mid(13,3));
-            QVERIFY_THROWS_EXCEPTION(Error,added.setDeployment(39,newRow,newDeployment,classes));
+            added.setDeployment(39,newRow,newDeployment,classes);
+            QCOMPARE(added.scenario(39).layout.deployments[newRow],newDeployment);
+            // An original fruit-4 setting is preservable with a productive
+            // preset, but removing the last productive preset would hang retail.
+            const auto resources=ScenarioResources::load(rom);
+            auto layout=Eset::decode(resources.scenario(rom,39));
+            put8(layout.deployments[row],14,4); put8(layout.deployments[row],15,0);
+            const auto fruitRom=Rom::fromBytes(resources.rebuild(rom,resources.enemyData(),{{39,layout.encode()}}));
+            auto retained=Scenarios::load(fruitRom);
+            auto emptyFruit=retained.scenario(39).layout.deployments[row]; put8(emptyFruit,13,0);
+            QVERIFY_THROWS_EXCEPTION(Error,retained.setDeployment(39,row,emptyFruit,classes));
+            put8(emptyFruit,14,0);
+            retained.setDeployment(39,row,emptyFruit,classes);
             auto emptied=model;
             for (int field : {13,14,15}) {
                 auto next=emptied.scenario(39).layout.deployments[row]; put8(next,field,0);
@@ -999,6 +1107,11 @@ class EngineTests : public QObject {
             auto reopened=Project::fromRom(Rom::open(candidate)); reopened.loadScenarios();
             QCOMPARE(reopened.scenarios()->json(),saved);
             QCOMPARE(Rom::open(path).bytes(),rom.bytes());
+            QProcess native;
+            native.start("node",{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("scenario-supplies-mips.cjs"),candidate});
+            QVERIFY(native.waitForFinished(30000));
+            QVERIFY2(native.exitCode()==0,native.readAllStandardError().constData());
+            qInfo().noquote()<<native.readAllStandardOutput();
             qInfo().noquote()<<"Original supply allowance candidate:"<<candidate;
         } catch (const Error &error) { QFAIL(error.what()); }
     }
@@ -1091,8 +1204,8 @@ class EngineTests : public QObject {
             deployment[13] = 3;
             deployment[14] = 3;
             deployment[15] = 2;
-            QVERIFY_THROWS_EXCEPTION(Error, model.setDeployment(10, 0, deployment, classes));
-            QCOMPARE(model.json(), beforeAdd);
+            model.setDeployment(10, 0, deployment, classes);
+            QCOMPARE(model.scenario(10).layout.deployments[0],deployment);
             auto saved = Scenarios::load(rom);
             saved.apply(model.json(), classes);
             QCOMPARE(saved.json(), model.json());

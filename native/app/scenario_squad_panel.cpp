@@ -49,6 +49,9 @@ ScenarioSquadPanel::ScenarioSquadPanel(Project *project,
     healing_=choice("Healing","Healing supplies",{"None","Heal Leaf","2 Heal Leaves","2 Heal Leaves + Heal Seed","2 Heal Seeds","2 Heal Seeds + Heal Pack","2 Heal Packs"});
     fruit_=choice("Fruit","Fruit supplies",{"None","2 Power Fruits","Power Fruit + Angel Fruit","2 Angel Fruits"});
     revival_=choice("Revival","Revival supplies",{"None","1 Revive Stone","2 Revive Stones"});
+    auto suppliesHelp=new QLabel("These are game presets, not fixed item counts. The game fills available supply slots using the selected presets.");
+    suppliesHelp->setWordWrap(true); suppliesHelp->setObjectName(prefix+"SuppliesHelp");
+    form->addRow(suppliesHelp);
     drop_=choice("Drop","Defeat drop",{});
     drop_->setEditable(true);drop_->setInsertPolicy(QComboBox::NoInsert);
     drop_->completer()->setCompletionMode(QCompleter::PopupCompletion);drop_->completer()->setFilterMode(Qt::MatchContains);drop_->completer()->setCaseSensitivity(Qt::CaseInsensitive);

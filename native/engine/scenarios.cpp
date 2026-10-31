@@ -111,15 +111,6 @@ int Scenarios::carryingCapacity(const QByteArray &record, const ClassData &class
     }
     return result;
 }
-static int initialSupplyCount(const QByteArray &row) {
-    if (row.isEmpty())
-        return -1;
-    const std::array<int, 7> healing{0, 1, 2, 3, 2, 3, 2};
-    const int heal = u8(row, 13), fruit = u8(row, 14), revive = u8(row, 15);
-    if (heal > 6 || fruit > 4 || revive > 2)
-        return -1;
-    return healing[heal] + ((fruit > 0 && fruit < 4) ? 2 : 0) + revive;
-}
 void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
     const auto &base = original(s.key);
     const auto &e = s.layout;
@@ -191,20 +182,18 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
             // original presets, including unknown ones, when moving members.
             if (beforeRow.isEmpty() || cap != beforeCap ||
                 row.mid(13, 3) != beforeRow.mid(13, 3)) {
-                if (cap < 1 || cap > 10)
-                    throw Error("Squad composition must carry between one and ten supplies");
-                const int count = initialSupplyCount(row);
-                if (count < 0 ||
-                    (u8(row, 14) == 4 && (beforeRow.isEmpty() || u8(beforeRow, 14) != 4)))
+                if (cap < 0 || cap > 10)
+                    throw Error("Squad carrying capacity exceeds the game's ten supply slots");
+                const int heal=u8(row,13), fruit=u8(row,14), revive=u8(row,15);
+                if (heal > 6 || fruit > 4 || revive > 2 ||
+                    (fruit == 4 && (beforeRow.isEmpty() || u8(beforeRow, 14) != 4)))
                     throw Error("Choose a supported initial-supply preset");
-                // Retail includes overloaded deployments (for example Amrius).
-                // Keep/reduce their original allowance without requiring all
-                // three preset controls to be corrected in one atomic edit.
-                // Do not grant this allowance to new squads or reduced capacity.
-                const bool retainedAllowance = !beforeRow.isEmpty() && cap >= beforeCap &&
-                                               count <= initialSupplyCount(beforeRow);
-                if (count > cap && !retainedAllowance)
-                    throw Error("Initial supplies exceed this squad's carrying capacity");
+                // These are construction presets, not fixed inventory counts.
+                // The native initializer repeats their padded pattern and sorts
+                // only its first cap slots. All supported combinations fit.
+                // Original fruit 4 emits nothing; alone it cannot advance the loop.
+                if (cap && !heal && fruit == 4 && !revive)
+                    throw Error("Choose None or another fruit preset before removing the last healing or revival preset; original fruit preset 4 alone would hang the game");
             }
         }
         if (beforeRow.isEmpty() || row.mid(10, 3) != beforeRow.mid(10, 3)) {

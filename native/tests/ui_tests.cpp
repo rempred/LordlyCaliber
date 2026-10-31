@@ -12743,17 +12743,17 @@ class UiTests : public QObject {
                 QCOMPARE(project.scenarios()->scenario(39).layout.deployments[row].mid(13,3),originalRow.mid(13,3));
                 undo.undo(); QCOMPARE(project.scenarios()->json(),original);
                 const QStringList fields{"Healing","Fruit","Revival"};
-                for(int i=0;i<fields.size();++i) {
+                for(int i=0;i<fields.size();++i) for(int value:{0,i==2?1:3}) {
                     auto box=editor.findChild<QComboBox *>(prefix+fields[i]); QVERIFY(box);
-                    box->setCurrentIndex(box->findData(0));
+                    box->setCurrentIndex(box->findData(value));
                     QVERIFY(QMetaObject::invokeMethod(box,"activated",Q_ARG(int,box->currentIndex())));
-                    QCOMPARE(u8(project.scenarios()->scenario(39).layout.deployments[row],13+i),0);
-                    QCOMPARE(box->currentData().toInt(),0);
+                    QCOMPARE(u8(project.scenarios()->scenario(39).layout.deployments[row],13+i),value);
+                    QCOMPARE(box->currentData().toInt(),value);
                     const auto reduced=project.scenarios()->json();
                     undo.undo(); QCOMPARE(project.scenarios()->json(),original);
                     QCOMPARE(box->currentData().toInt(),u8(originalRow,13+i));
                     undo.redo(); QCOMPARE(project.scenarios()->json(),reduced);
-                    QCOMPARE(box->currentData().toInt(),0);
+                    QCOMPARE(box->currentData().toInt(),value);
                     undo.undo();
                 }
             }
