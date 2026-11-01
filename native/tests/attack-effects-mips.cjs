@@ -32,7 +32,7 @@ m.trap(0x801c8d24,c=>c.set('v0',0)); // Undead predicate.
 const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),extra:c.r32(c.get('sp')+32)}));
 const visualEvents=[];
 function captureVisual(c){
- events.push({event:c.get('a0'),pose:c.r32(c.get('sp')+24)});
+ events.push({event:c.get('a0'),pose:c.r32(c.get('sp')+24),nameToken:c.r32(c.get('sp')+20)});
  if(c.get('a0')!==0x16)return;
  const list=at=>{const result=[];for(let i=0;i<10;i++){const id=c.r32(at+i*4)|0;if(id===-1)return result;result.push(id);}throw Error('Unterminated visual actor list');};
  visualEvents.push({slot:c.get('a3'),sources:list(c.r32(c.get('sp')+16)),targets:list(c.r32(c.get('sp')+20))});
@@ -94,6 +94,13 @@ for(const side of [1,2])for(const [pattern,expected] of [[1,[4]],[2,[0,1,2,3,4,5
  m.w8(rules+2,pattern);m.w8(rules+3,side);m.w16(rules+4,257);const n=call('lc_attack_target_list',[source,ids,side===1?13:4]);const actual=Array.from({length:n},(_,i)=>m.r32(ids+i*4));assert.deepEqual(actual,expected.map(x=>x+(side===1?9:0)),`side ${side}, pattern ${pattern}`);
 }
 m.w8(rules+2,9);for(const side of [0,1,2,3]){m.w8(rules+3,side);assert.equal(call('lc_attack_target_list',[source,ids,4]),1);assert.equal(m.r32(ids),4);}
+for(const side of [1,2])for(const [anchor,expected] of [[0,[0,1,3,4]],[1,[0,1,2,3,4,5]],[4,[0,1,2,3,4,5,6,7,8]],[8,[4,5,7,8]]]) {
+ m.w8(rules+2,10);m.w8(rules+3,side);m.w32(ids+36,0xfeedface);
+ const shift=side===1?9:0,n=call('lc_attack_target_list',[source,ids,anchor+shift]);
+ assert.deepEqual(Array.from({length:n},(_,i)=>m.r32(ids+i*4)),expected.map(i=>i+shift));
+ assert.equal(m.r32(ids+36),0xfeedface);
+}
+console.log('3 × 3 targeting: center, edges and corners on both mirrored sides PASS.');
 // Dead cells are skipped; no target may escape the 9-entry caller allocation.
 m.w8(rules+2,2);m.w8(rules+3,1);m.w32(actor(10)+0x40,1);m.w32(ids+36,0xfeedface);assert.equal(call('lc_attack_target_list',[source,ids,13]),8);assert.equal(m.r32(ids+36),0xfeedface);
 for(const [effect,flag,event] of [[3,2,0x23],[4,4,0x25],[8,8,0x1a],[10,16,0x27],[5,0,0x29],[6,0,0x2a]]){
@@ -131,6 +138,7 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
   m.w8(rules+21,136);visualEvents.length=0;
   assert.equal(call(generic.lc_attack_generic,[source,ids]),1,`generic effect ${effect}`);
   assert.deepEqual(visualEvents,[{slot:136,sources:[4],targets:[9,17]}],'generic visual handoff');
+  assert(events.some(x=>x.event===11&&x.nameToken===159),'new spell carries its own battle-name token');
   for(const i of [9,17]){
     const expectedHp=effect===1?40:effect===2?160:effect===16?0:100;
     assert.equal(m.r16(actor(i)+0x20),expectedHp,`generic effect ${effect}, target ${i}`);
@@ -140,6 +148,36 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
   assert.equal(m.r32(source+0x6c),1);assert.equal(m.r32(scratch),0);
 }
 console.log('Full generic executor: 11 main effects × 2 targets PASS (controlled score and event services).');
+
+// The authored undead-slaying option enters the retail lethal-result marker
+// path. Run the real undead predicate and status applier, including dead targets.
+m.traps.delete(0x801c8d24);
+let slayingCases=0;
+for(const element of [0,2,5])for(const undead of [false,true])for(const hp of [50,100])for(const hit of [false,true])for(const chance of [0,100]) {
+ m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',hit?100:0));sample=0;part=0;
+ m.w32(source+0x40,0x100);m.w16(source+0x20,100);m.w32(source+0x7c,159);m.w8(source+0x78,3);m.w32(source+0x6c,0);m.w32(source+0x94,0);
+ for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,hp);m.w32(actor(i)+0x4c,undead?45:2);m.w32(actor(i)+0x94,0);}
+ for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
+ m.w8(records+159*16+4,3);m.w8(records+159*16+5,element);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
+ m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,7);m.w8(rules+9,2);m.w8(rules+10,chance);m.w8(rules+11,0);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;
+ call(generic.lc_attack_generic,[source,ids]);
+ const markers=events.filter(e=>e.event===0x1f&&e.extra===7);
+ assert.equal(markers.length,undead&&hp===50&&hit&&chance===100?2:0,`slaying ${element}/${undead}/${hp}/${hit}/${chance}`);
+ slayingCases++;
+}
+m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));m.w8(rules+8,0);m.trap(0x801c8d24,c=>c.set('v0',0));
+console.log(`Undead slaying: ${slayingCases} full spell executions × 2 targets, Physical/Flame/Virtue, living/undead, nonlethal/lethal, misses and chance PASS.`);
+// Adding slaying must not replace a native drain descriptor (D6=11).
+m.traps.delete(0x801c8d24);m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',60));
+m.w16(source+0x20,100);m.w32(source+0x40,0x100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);
+for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,50);m.w32(actor(i)+0x4c,45);}
+m.w8(records+159*16+10,11);m.w8(records+159*16+11,2);m.w8(records+159*16+12,1);
+m.w8(rules+8,7);m.w8(rules+11,255);events.length=0;
+call(generic.lc_attack_generic,[source,ids]);
+assert.equal(events.filter(x=>x.event===0x1f&&x.extra===7).length,2);
+assert.equal(m.r16(source+0x20),160,'native drain retained alongside undead slaying');
+m.w8(rules+8,0);m.w8(rules+11,0);m.w8(records+159*16+10,255);m.trap(0x801c8d24,c=>c.set('v0',0));
+console.log('Undead slaying and existing native drain coexist PASS.');
 
 // Preserve the actual melee executor and physical HP sink while adding targets.
 // Artwork timing and already-tested numeric kernels are fixed here.
@@ -169,6 +207,16 @@ for(const route of ['melee','ranged','alternate'])for(const effect of [1,2,10])f
   assert.equal(m.r32(source+0x6c),1,'one action count for the whole custom pattern');
 }
 console.log('Original melee/ranged/alternate executors + physical HP sink: IDs159/254, damage/healing/status × 2 targets PASS; one attack count.');
+m.traps.delete(0x801c8d24);
+for(const route of ['melee','ranged','alternate'])for(const undead of [false,true])for(const hp of [50,100])for(const chance of [0,100]) {
+ m.w32(source+0x40,0x100);m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w8(records+159*16+7,1);m.w8(rules+8,7);m.w8(rules+9,2);m.w8(rules+10,chance);
+ for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,hp);m.w32(actor(i)+0x4c,undead?45:2);m.w32(actor(i)+0x94,0);}
+ events.length=0;call(e['lc_attack_'+route],[source,ids]);
+ assert.equal(events.filter(x=>x.event===0x31).length,undead&&hp===50&&chance===100?2:0,`${route} native removal events`);
+}
+m.w8(rules+8,0);m.trap(0x801c8d24,c=>c.set('v0',0));
+console.log('Physical slaying: 24 melee/ranged/alternate executions produce native permanent-removal events only on eligible killing blows PASS.');
 m.w32(source+0x7c,159);m.w16(source+0x20,100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
 m.w8(records+159*16+7,2);m.w8(rules+11,1);m.w8(rules+12,1);m.w16(rules+14,100);
 for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,490);m.w32(actor(i)+0x94,0);}
@@ -252,6 +300,22 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
  assert.equal(m.r32(scratch),0);assert.equal(m.r16(global+0x1c4+0x20),0,'temporary actor cleared');
 }
 console.log('Full Pedra executor: 11 effects and custom targets PASS; temporary actor cleared, no persistent-attacker drain.');
+// Combined and Pedra must not leak an old secondary marker when the authored
+// chance is zero, the hit misses, or the victim survives / is not undead.
+m.traps.delete(0x801c8d24);
+for(const family of ['combined','pedra'])for(const undead of [false,true])for(const hp of [50,100])for(const hit of [false,true])for(const chance of [0,100]) {
+ const action=family==='combined'?110:159,rule=settings+action*32;
+ for(const caster of [source,caster2]){m.w32(caster+0x40,0x100);m.w16(caster+0x20,200);m.w32(caster+0x6c,0);m.w32(caster+0x70,2);m.w32(caster+0x94,0);}
+ for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,hp);m.w32(actor(i)+0x4c,undead?45:2);m.w32(actor(i)+0x94,0);}
+ m.w8(records+action*16+7,1);m.w8(records+action*16+9,1);
+ m.w8(records+action*16+10,8);m.w8(records+action*16+11,7);m.w8(records+action*16+13,6);
+ m.w8(rule+8,7);m.w8(rule+9,2);m.w8(rule+10,chance);m.w8(rule+11,0);
+ m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;sample=0;part=0;
+ m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',hit?100:0));
+ call(family==='combined'?combined.lc_attack_combined:pedra.lc_attack_pedra,[family==='combined'?input:pedraInput,ids]);
+ assert.equal(events.filter(x=>x.event===0x1f&&x.extra===7).length,undead&&hp===50&&hit&&chance===100?2:0,`${family} slaying ${undead}/${hp}/${hit}/${chance}`);
+}
+console.log('Combined/Pedra slaying: 64 executions × 2 targets, native-marker overrides, nonlethal/lethal, living/undead, misses and explicit chance PASS.');
 console.log('Assigned visual events: generic, melee/ranged/alternate, combined and Pedra select independent slots and retain target IDs PASS.');
 
 if(process.env.LORDLY_ATTACK_PATTERN_AUDIT){

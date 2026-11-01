@@ -18,6 +18,8 @@ s32 func_0020D434(s32);
 s32 func_00233F94(void *);
 s32 func_00237750(void *, void *, s32, s32, s32);
 int lc_behavior(int);
+int lc_attack_template_choice(int,int);
+int lc_attack_resolved_kind(int);
 void lc_attack_select(void *record)
 {
     u8 selected_code;
@@ -55,40 +57,45 @@ void lc_attack_select(void *record)
     if ((u32) (lc_behavior(initial_code) - 0x31) < 2U) {
         *(s8 *)((u8 *)record + 0x78) = 3;
         other_record = func_0020C478(func_00233F94(record));
-        selected_code = 0x39;
+        selected_code = lc_attack_template_choice(initial_code,0x39);
         if (other_record != 0) {
-            *(s32 *)((u8 *)record + 0x7C) = 0x39;
+            *(s32 *)((u8 *)record + 0x7C) = lc_attack_template_choice(initial_code,0x39);
+            *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(*(s32 *)((u8 *)record + 0x7C));
             score_39 = func_00237750(record, other_record, 0, 0, 2);
-            *(s32 *)((u8 *)record + 0x7C) = 0x41;
+            *(s32 *)((u8 *)record + 0x7C) = lc_attack_template_choice(initial_code,0x41);
+            *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(*(s32 *)((u8 *)record + 0x7C));
             score_41 = func_00237750(record, other_record, 0, 0, 2);
-            *(s32 *)((u8 *)record + 0x7C) = 0x49;
+            *(s32 *)((u8 *)record + 0x7C) = lc_attack_template_choice(initial_code,0x49);
+            *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(*(s32 *)((u8 *)record + 0x7C));
             score_49 = func_00237750(record, other_record, 0, 0, 2);
-            *(s32 *)((u8 *)record + 0x7C) = 0x51;
+            *(s32 *)((u8 *)record + 0x7C) = lc_attack_template_choice(initial_code,0x51);
+            *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(*(s32 *)((u8 *)record + 0x7C));
             score_51 = func_00237750(record, other_record, 0, 0, 2);
-            *(s32 *)((u8 *)record + 0x7C) = 0x5D;
+            *(s32 *)((u8 *)record + 0x7C) = lc_attack_template_choice(initial_code,0x5D);
+            *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(*(s32 *)((u8 *)record + 0x7C));
             score_5d = func_00237750(record, other_record, 0, 0, 2);
             if ((score_39 >= score_41) & (score_39 >= score_49)) {
                 if ((score_39 >= score_51) & (score_39 >= score_5d)) {
-                    selected_code = 0x39;
+                    selected_code = lc_attack_template_choice(initial_code,0x39);
                     goto selected;
                 }
             }
             if ((score_41 >= score_49) & (score_41 >= score_51)) {
                 if (score_41 >= score_5d) {
-                    chosen_code = 0x41;
+                    chosen_code = lc_attack_template_choice(initial_code,0x41);
                     goto chosen;
                 }
             }
             if ((score_49 >= score_51) & (score_49 >= score_5d)) {
-                chosen_code = 0x49;
+                chosen_code = lc_attack_template_choice(initial_code,0x49);
             } else if (score_51 >= score_5d) {
                 /* Publishing directly in these final two arms preserves the
                  * retail branch. Joining them through chosen_code lets the
                  * pinned compiler replace it with arithmetic selection. */
-                selected_code = 0x51;
+                selected_code = lc_attack_template_choice(initial_code,0x51);
                 goto selected;
             } else {
-                selected_code = 0x5D;
+                selected_code = lc_attack_template_choice(initial_code,0x5D);
                 goto selected;
             }
 chosen:
@@ -122,7 +129,7 @@ chosen:
                 table_code = 0x92;
                 break;
             }
-            selected_code = table_code;
+            selected_code = lc_attack_template_choice(initial_code,table_code);
             selected_kind = 4;
         } else {
             selected_kind = func_0004440c(
@@ -137,6 +144,7 @@ chosen:
         *(s8 *)((u8 *)record + 0x78) = selected_kind;
     }
 selected:
+    *(s8 *)((u8 *)record + 0x78) = lc_attack_resolved_kind(selected_code);
     *(s32 *)((u8 *)record + 0x7C) = (s32) selected_code;
     /* Retail reloads this byte at the common publication tail. The local
      * volatile read preserves that observed load instead of reusing its value. */

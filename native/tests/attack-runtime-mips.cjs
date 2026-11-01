@@ -28,6 +28,8 @@ const m=machine(built), retail=machine(original);
 function call(c,pc,args){args.slice(0,4).forEach((v,i)=>c.set(['a0','a1','a2','a3'][i],v));args.slice(4).forEach((v,i)=>c.w32(stack+16+4*i,v));c.call(pc);assert.equal(c.get('sp'),stack);return c.get('v0');}
 for(let id=1;id<159;++id)assert.equal(call(m,0x801bdfbc,[id]),call(retail,0x801bdfbc,[id]),`retail spell index ${id}`);
 for(let donor=1;donor<159;++donor){m.w8(settings+159*32+1,donor);assert.equal(call(m,0x801bdfbc,[159]),call(retail,0x801bdfbc,[donor]),`copied spell index ${donor}`);}
+for(let token=0;token<159;token++)assert.equal(call(m,0x801be034,[token]),call(retail,0x801be034,[token]),`retail inverse spell index ${token}`);
+for(let id=159;id<255;id++)assert.equal(call(m,0x801be034,[id]),id,`independent battle name token ${id}`);
 // The native element and name getters must reach the relocated new record.
 assert.equal(call(m,0x8016e470,[159,0,0,0,0]),2);
 const pointer=call(m,0x8016e440,[159]);

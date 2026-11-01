@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+## Attack arrays and battle names (November 1)
+
+`LCATDATA` v4 adds optional `LCATMAP1` maps at settings-row offset28. Each map
+stores original resolved attack IDs and their replacements. Native selectors
+still own element/equipment selection; strongest-spell selectors remap before
+scoring. Links cannot select another array. Older v2/v3 allocations remain
+readable, and the new inverse-spell hook is appended to preserve the existing
+hook-directory prefix. Maps coexist with independently edited visual resources.
+
+New action IDs159–254 double as name tokens only in event11. The generic C
+producer passes that token to the name consumer; event22 retains the actual
+visual index. The inverse-spell wrapper preserves native indices below159 and
+resolves the new tokens to their action IDs. This keeps independent names
+without altering the shared animation program or high-attack event machinery.
+
+Authored undead slaying adds the native result marker7 only on a successful
+lethal damage event for an eligible undead target, with a separate percentage
+roll. Physical hits use native death flag0x10. It does not replace the secondary
+descriptor, so native drain survives; no new status bit or recovery timer is
+introduced. Instruction tests cover these producers/consumers with controlled
+timing, score and rendering services, not full-console gameplay.
+
 ## Qualified C adapters (November 1)
 
 `Compiler::compileQualifiedOwner` compiles a complete authenticated C producer

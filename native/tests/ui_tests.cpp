@@ -724,6 +724,58 @@ class UiTests : public QObject {
         restored.applyManifest(Project::readProject(folder.filePath("project.json")));
         QCOMPARE(restored.attacks()->entry(55), applied);
     }
+    void attackMissingOptionsEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadAttacks();
+        auto data=*project.attacks();const int id=data.duplicate(55,"New magic"),array=data.duplicate(45,"Own array");
+        project.setAttacks(data.json());QUndoStack undo;AttackEditor editor(&project,&undo,[]{});
+        auto select=[&](const char *name,int value) {
+            auto box=editor.findChild<QComboBox *>(name);QVERIFY(box);QVERIFY(box->findData(value)>=0);
+            box->setCurrentIndex(box->findData(value));emit box->activated(box->currentIndex());QCoreApplication::processEvents();
+        };
+        editor.selectAttack(id);select("attackPattern",10);select("attackStatus",7);
+        QCOMPARE(project.attacks()->entry(id).targetPattern,10);QCOMPARE(project.attacks()->entry(id).status,7);
+        QCOMPARE(project.attacks()->entry(id).condition,2);
+        QVERIFY(!editor.findChild<QComboBox *>("attackCondition")->isEnabled());
+        undo.undo();QCoreApplication::processEvents();QVERIFY(project.attacks()->entry(id).status!=7);
+        undo.redo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(id).status,7);
+        select("attackStatus",10);QCOMPARE(project.attacks()->entry(id).condition,1);
+        QVERIFY(editor.findChild<QComboBox *>("attackCondition")->isEnabled());
+        undo.undo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(id).condition,2);
+        undo.redo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(id).condition,1);
+        QVERIFY(editor.findChild<QLabel *>("attackPlayback")->text().contains("one sequence"));
+        editor.selectAttack(4);select("attackPattern",6);
+        QVERIFY(editor.findChild<QLabel *>("attackPlayback")->text().contains("three strikes"));
+        editor.selectAttack(array);select("attackSpellLink1",id);
+        QCOMPARE(project.attacks()->resolvedTargets(array).value(1),id);
+        QCOMPARE(project.attacks()->resolvedTargets(45).value(1),55);
+        const auto after=project.manifest();
+        undo.undo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->resolvedTargets(array).value(1),55);
+        undo.redo();QCoreApplication::processEvents();QCOMPARE(project.manifest(),after);
+        auto restored=Project::fromRom(Rom::open(path));restored.applyManifest(after);QCOMPARE(restored.attacks()->json(),project.attacks()->json());
+        auto knight=project.record(Table::Classes,5).bytes;put8(knight,55,array);
+        project.replaceBytes(Table::Classes,5,knight);editor.selectAttack(id);
+        auto users=editor.findChild<QTableWidget *>("attackUsers");bool found=false;
+        for(int row=0;row<users->rowCount();row++)
+            found|=users->item(row,0)->data(Qt::UserRole).toInt()==5 && users->item(row,0)->text().contains("via spell array");
+        QVERIFY(found);
+        QTimer::singleShot(0,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            auto kind=dialog->findChild<QComboBox *>("attackNewKind");QVERIFY(kind);
+            kind->setCurrentIndex(kind->findData(1));
+            auto starter=dialog->findChild<QComboBox *>("attackStartingPoint");
+            starter->setCurrentIndex(starter->findData(array));
+            dialog->findChild<QLineEdit *>("attackNewName")->setText("Independent spell array");dialog->accept();
+        });
+        editor.findChild<QPushButton *>("createAttack")->click();QCoreApplication::processEvents();
+        const int created=project.attacks()->entries().size()-1;
+        QCOMPARE(created,161);QCOMPARE(project.attacks()->entry(created).behavior,45);
+        QCOMPARE(project.attacks()->resolvedTargets(created).value(1),id);
+        select("attackSpellLink1",63);
+        QCOMPARE(project.attacks()->resolvedTargets(created).value(1),63);
+        QCOMPARE(project.attacks()->resolvedTargets(array).value(1),id);
+    }
     void attackPatternSwitching() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

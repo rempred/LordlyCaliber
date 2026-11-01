@@ -278,6 +278,18 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     shared_ = text({}, right);
     relationship_ = text({}, right);
     relationship_->setTextFormat(Qt::RichText);
+    spellPanel_ = new QGroupBox("Spell array");
+    auto spellLayout = new QVBoxLayout(spellPanel_);
+    text("Choose the attack this command uses for each element or spellbook. "
+         "Changes affect every class using this command. Duplicate the command for an independent array.", spellLayout);
+    spellLinks_ = new QTableWidget(0, 2);
+    spellLinks_->setObjectName("attackSpellLinks");
+    spellLinks_->setHorizontalHeaderLabels({"When", "Use attack"});
+    spellLinks_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    spellLinks_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    spellLinks_->verticalHeader()->hide();
+    spellLayout->addWidget(spellLinks_);
+    right->addWidget(spellPanel_);
     auto behavior = new QGroupBox("What this attack does");
     effectPanel_ = behavior;
     auto behaviorLayout = new QVBoxLayout(behavior);
@@ -324,6 +336,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
                         {7, "Target's row"},
                         {8, "Cross through target"},
                         {9, "User only"},
+                        {10, "3 × 3 area around target"},
                         {12, "Custom positions…"}},
                        "attackPattern");
     targetForm->addRow("Target side", side_);
@@ -360,6 +373,8 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     targetingRow->addSpacing(16);
     targetingRow->addLayout(grid);
     targetHelp_ = text({}, targetLayout);
+    playback_ = text({}, targetLayout);
+    playback_->setObjectName("attackPlayback");
     right->addWidget(targeting);
     auto secondary = new QGroupBox("Additional status effect");
     auto secondaryLayout = new QVBoxLayout(secondary);
@@ -372,7 +387,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     conditionPanel_ = new QWidget;
     auto conditionLayout = new QFormLayout(conditionPanel_);
     conditionLayout->setContentsMargins(0, 0, 0, 0);
-    condition_ = choices({{0, "After each target attempt"}, {1, "After a successful hit"}},
+    condition_ = choices({{0, "After each target attempt"}, {1, "After a successful hit"}, {2, "On a successful killing blow"}},
                          "attackCondition");
     chance_ = number("attackChance", 0, 100, 100);
     chance_->setSuffix(" %");
@@ -543,7 +558,14 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
             edit(title, [=](Attack &a) { a.*member = n; });
         });
     };
-    choice(status_, &Attack::status, "Change additional effect");
+    connect(status_, &QComboBox::activated, this, [this] {
+        const int value = status_->currentData().toInt();
+        edit("Change additional effect", [=](Attack &a) {
+            if (a.status == 7 && value != 7) a.condition = 1;
+            a.status = value;
+            if (value == 7) a.condition = 2;
+        });
+    });
     choice(condition_, &Attack::condition, "Change effect condition");
     choice(after_, &Attack::afterEffect, "Change drain / recoil");
     choice(basis_, &Attack::afterBasis, "Change after-effect basis");
@@ -639,10 +661,33 @@ void AttackEditor::showAttack() {
                   ". Rename can change the shared name or give this attack an independent name."
             : "Independent name. Behavior edits affect every class using this attack.");
     const bool templ = AttackData::isTemplate(a.behavior);
+    spellPanel_->setVisible(templ);
+    spellLinks_->setRowCount(0);
     QStringList links;
     if (templ) {
-        const auto targets = AttackData::templateTargets(a.behavior);
-        for (auto it = targets.begin(); it != targets.end(); ++it)
+        const auto targets = attacks.resolvedTargets(id);
+        const auto originals = AttackData::templateTargets(a.behavior);
+        for (auto it = targets.begin(); it != targets.end(); ++it) {
+            const QString label = it.key() <= -249 ? project_->record(Table::Items, -it.key()).name + " equipped"
+                                : it.key() < 0 ? "Default spell" : AttackData::elements().value(it.key());
+            const int row = spellLinks_->rowCount(), original = originals.value(it.key());
+            spellLinks_->insertRow(row);
+            auto cell = new QTableWidgetItem(label);cell->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            spellLinks_->setItem(row, 0, cell);
+            auto box = new QComboBox;box->setObjectName(QString("attackSpellLink%1").arg(it.key()));
+            box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            for (int target = 1; target < attacks.entries().size(); ++target)
+                if (!AttackData::isTemplate(attacks.entry(target).behavior) && u8(attacks.entry(target).data, 0) <= 5)
+                    box->addItem(QString("%1 · %2").arg(target).arg(attackName(attacks, target)), target);
+            box->setCurrentIndex(box->findData(it.value()));
+            spellLinks_->setCellWidget(row, 1, box);
+            connect(box, &QComboBox::activated, this, [this, box, original] {
+                const int target = box->currentData().toInt();
+                edit("Change spell array", [=](Attack &edited) {
+                    if (target == original) edited.spellLinks.remove(original);
+                    else edited.spellLinks[original] = target;
+                });
+            });
             links << QString("%1 → <a href=\"%2\">%3</a>")
                          .arg(it.key() <= -249
                                   ? project_->record(Table::Items, -it.key()).name.toHtmlEscaped() +
@@ -651,17 +696,19 @@ void AttackEditor::showAttack() {
                                              : AttackData::elements().value(it.key()))
                          .arg(it.value())
                          .arg(attackName(attacks, it.value()).toHtmlEscaped());
+        }
+        spellLinks_->resizeRowsToContents();
+        spellLinks_->setMinimumHeight(qMin(390, 34 + targets.size() * 36));
         relationship_->setText(
-            "<b>Elemental spell template.</b> This chooses an actual spell from equipment / "
-            "element; edit that spell below to change its effect. Duplicating this template keeps "
-            "these shared spell links; duplicate a resolved spell for independent effects. " +
+            "<b>Spell array.</b> This command chooses an attack from its element / equipment. "
+            "Edit the links below, or open a linked attack to change its effect. " +
             (a.behavior == 49 || a.behavior == 50
                  ? QString("Uses the strongest estimated result among these spells. ")
                  : QString()) +
             links.join(" · "));
     } else {
         for (int n = 1; n < attacks.entries().size(); ++n)
-            if (AttackData::templateTargets(attacks.entry(n).behavior).values().contains(id))
+            if (attacks.resolvedTargets(n).values().contains(id))
                 links << QString("<a href=\"%1\">%2</a>")
                              .arg(n)
                              .arg(attackName(attacks, n).toHtmlEscaped());
@@ -714,7 +761,7 @@ void AttackEditor::showAttack() {
     side_->setEnabled(!templ && a.targetPattern != 9);
     pattern_->setEnabled(!templ);
     int mask = a.targetPattern == 12                          ? a.targetMask
-               : a.targetPattern == 2                         ? 511
+               : a.targetPattern == 2 || a.targetPattern == 10 ? 511
                : a.targetPattern >= 3 && a.targetPattern <= 5 ? 7 << ((a.targetPattern - 3) * 3)
                : a.targetPattern == 6                         ? 146
                : a.targetPattern == 7                         ? 56
@@ -740,24 +787,33 @@ void AttackEditor::showAttack() {
         : a.targetPattern == 0 && !a.targetSide
             ? nativePatternDetail(originalPattern) +
                   " The diagram assumes a center target. Selecting another pattern replaces this game rule."
+        : a.targetPattern == 10 ? "Affects the target and adjacent positions, including diagonals. "
+                                  "The area stops at the formation's edge. Each target uses the selected calculation."
         : a.targetPattern == 12 ? "Checked positions are fixed in the chosen side's formation. "
                                   "Empty cells are skipped. Front is nearest the opposing squad."
                                 : "Diagram uses a center target. Row, column and cross patterns "
                                   "follow the selected target. Empty positions are skipped.");
-    if (u8(a.data, 0) < 2)
-        targetHelp_->setText(targetHelp_->text() +
-                             " Physical attacks strike each selected target in turn, spending one "
-                             "attack count for the whole pattern.");
+    playback_->setText(templ ? "<b>Animation playback:</b> Uses the resolved spell's animation and targeting."
+        : u8(a.data, 0) < 2
+            ? "<b>Animation playback: one strike per target.</b> The class attack animation repeats for each "
+              "selected unit. A column of three occupied positions means three strikes, using one attack count. "
+              "An added visual effect plays afterward over the target selection."
+            : "<b>Animation playback: one sequence for the target selection.</b> The class animation is "
+              "shared across the targets. The visual effect controls whether its artwork repeats over each "
+              "unit or covers the squad; changing the target pattern does not duplicate the class animation.");
     const auto originalStatus = nativeStatusRule(a);
     status_->setItemText(status_->findData(-1), templ ? "From resolved spell"
                                                      : originalStatus.first + " (game rule)");
     choose(status_, a.status);
     choose(condition_, a.condition);
+    condition_->setEnabled(a.status != 7);
     chance_->setValue(a.chance);
     conditionPanel_->setVisible(a.status > 0);
     status_->setEnabled(!templ);
     nativeStatus_->setText(
         templ ? "The resolved spell supplies its additional effect and activation rule."
+        : a.status == 7 ? "Permanently removes an eligible Zombie, Skeleton or Ghost after a successful killing blow. "
+                         "Works with any element. Chance is rolled for each killing blow; the game's scripted-death and training rules remain."
         : a.status < 0
             ? originalStatus.second
             : "Weapon on-hit effects remain separate. Chance is rolled separately for each "
@@ -887,19 +943,34 @@ void AttackEditor::create(bool copy) {
         auto source = new QComboBox;
         source->setObjectName("attackStartingPoint");
         const auto &attacks = *project_->attacks();
+        auto kind = choices({{0, "Attack"}, {1, "Spell array"}}, "attackNewKind");
+        auto populate = [source, &attacks](bool array) {
+        source->clear();
         for (int id = 1; id < attacks.entries().size(); ++id)
-            if (!AttackData::isTemplate(attacks.entry(id).behavior))
+            if (AttackData::isTemplate(attacks.entry(id).behavior) == array)
                 source->addItem(QString("%1 · %2 — %3")
                                     .arg(id)
                                     .arg(attackName(attacks, id),
-                                         AttackData::effects().value(u8(attacks.entry(id).data, 3),
-                                                                     "Existing effect")),
+                                         array ? [&] {
+                                             QStringList examples;
+                                             for (const int spell : attacks.resolvedTargets(id)) {
+                                                 const auto label = attackName(attacks, spell);
+                                                 if (!examples.contains(label)) examples << label;
+                                                 if (examples.size() == 3) break;
+                                             }
+                                             return examples.join(", ");
+                                         }() : AttackData::effects().value(u8(attacks.entry(id).data, 3), "Existing effect")),
                                 id);
-        source->setCurrentIndex(source->findData(5));
+        source->setCurrentIndex(source->findData(array ? 45 : 5));
+        };
+        populate(false);
+        connect(kind, &QComboBox::currentIndexChanged, &dialog, [=] { populate(kind->currentData().toInt() == 1); });
         layout->addRow("Name", enteredName);
+        layout->addRow("Create", kind);
         layout->addRow("Start from", source);
-        layout->addRow(text("Copies the chosen attack's settings into a new ID. Its name and "
-                            "effects are independent; no classes are assigned automatically."));
+        layout->addRow(text("Creates a new ID with independent settings and name. A spell array gets its "
+                            "own links, but the attacks it selects remain shared. Duplicate a linked attack "
+                            "too if it needs independent edits. No classes are assigned automatically."));
         auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         layout->addRow(buttons);
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -925,8 +996,11 @@ void AttackEditor::showUsers() {
     for (const auto &record : project_->records(Table::Classes))
         signature +=
             record.name.toUtf8() + '\0' + record.bytes.mid(55, 6) + record.bytes.mid(69, 1);
-    for (const auto &attack : attacks.entries())
+    for (const auto &attack : attacks.entries()) {
         signature += attack.name + '\0' + char(attack.behavior);
+        for (auto it = attack.spellLinks.cbegin(); it != attack.spellLinks.cend(); ++it)
+            signature += QByteArray::number(it.key()) + ':' + QByteArray::number(it.value()) + ';';
+    }
     if (users_->property("assignmentSignature").toByteArray() == signature)
         return;
     users_->setProperty("assignmentSignature", signature);
@@ -940,7 +1014,7 @@ void AttackEditor::showUsers() {
             if (a == selected())
                 used = true;
             else if (a > 0 && a < attacks.entries().size() &&
-                     AttackData::templateTargets(attacks.entry(a).behavior)
+                     attacks.resolvedTargets(a)
                          .values()
                          .contains(selected())) {
                 used = true;
@@ -951,7 +1025,7 @@ void AttackEditor::showUsers() {
             continue;
         const int row = users_->rowCount();
         users_->insertRow(row);
-        auto item = new QTableWidgetItem(record.name + (indirect ? " (via template)" : ""));
+        auto item = new QTableWidgetItem(record.name + (indirect ? " (via spell array)" : ""));
         item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
         item->setData(Qt::UserRole, record.id);
         users_->setItem(row, 0, item);

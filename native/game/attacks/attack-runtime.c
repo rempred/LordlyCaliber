@@ -56,6 +56,8 @@ int lc_attack_visual_program(int action,int original){
 typedef struct {
     void *source;
     s32 action, forced, total, last, initialHP, initialMaxHP, hit, time, synthetic;
+    void *target;
+    s32 targetHP;
 } AttackContext;
 #define CTX ((AttackContext *)lc_attack_scratch)
 void *func_0020C478(u32);
@@ -83,6 +85,7 @@ void lc_original_hit(void *,int,int,int,int,u8,int,int);
 void lc_original_targets(void *,u8,void *);
 int lc_original_animation(int,int,int,int);
 u8 lc_original_resolve(u8 *,int,int,int,u8,u16,u16,u16,u16);
+u8 lc_original_spell_action(u8);
 
 int lc_effective_action(void *source) { return CTX->source==source?CTX->action:(W(source,0x7c)&255); }
 int lc_amount_override(void *source,int action) {
@@ -96,7 +99,28 @@ int lc_amount_override(void *source,int action) {
 u8 *lc_rules(void *source) { return lc_attack_settings + lc_effective_action(source)*32; }
 int lc_behavior(int id) { return lc_attack_settings[(id&255)*32]; }
 int lc_animation_id(int id) { return lc_attack_settings[(id&255)*32+1]; }
+/* Event 11 uses its spell byte only for the displayed action name. Retail
+ * visual indices end below 159; new actions use their own ID as a name token.
+ * Event 22 still receives the actual visual index, independently of the name. */
+int lc_attack_name_token(void *source,int visual) {
+    int action=lc_effective_action(source);
+    return action>=159 && action<=254?action:visual;
+}
+u8 lc_attack_spell_action(u8 token) {
+    return token>=159 && token<=254?token:lc_original_spell_action(token);
+}
 int lc_template(int id) { return (id>=45 && id<=54) || id==145; }
+int lc_attack_template_choice(int action,int resolved) {
+    u8 *map;
+    int i,count;
+    if(action<1 || action>254) return resolved;
+    map=*(u8 **)(lc_attack_settings+action*32+28);
+    if(!map) return resolved;
+    count=H(map,8);
+    for(i=0;i<count;i++) if(H(map,16+i*4)==resolved) return H(map,18+i*4);
+    return resolved;
+}
+int lc_attack_resolved_kind(int action) { return lc_attack_records[(action&255)*16+4]; }
 
 /* An explicit class/action selector wins. New actions otherwise inherit the
  * donor's class-specific route, including its alternate raw mode. */
@@ -110,13 +134,15 @@ int lc_attack_animation(int source,int owner,int action,int mode) {
 u8 lc_attack_resolve(u8 *out,int source,int owner,int action,u8 element,
                      u16 a,u16 b,u16 c,u16 d) {
     u8 resolved, result;
-    int donor;
+    int donor,mapped;
     donor=lc_behavior(action);
-    if (action<159 || !lc_template(donor))
+    if ((action<159 || !lc_template(donor)) && !W(lc_attack_settings+action*32,28))
         return lc_original_resolve(out,source,owner,action,element,a,b,c,d);
-    resolved=donor;
-    result=lc_original_resolve(&resolved,source,owner,donor,element,a,b,c,d);
-    if (out) *out=resolved==donor ? action : resolved;
+    resolved=action>=159?donor:action;
+    result=lc_original_resolve(&resolved,source,owner,resolved,element,a,b,c,d);
+    mapped=lc_attack_template_choice(action,resolved);
+    if(mapped!=resolved) result=lc_attack_resolved_kind(mapped);
+    if (out) *out=resolved==donor && mapped==resolved ? action : mapped;
     return result;
 }
 
@@ -124,7 +150,7 @@ void lc_attack_begin(void *source) {
     CTX->source=source; CTX->action=W(source,0x7c)&255; CTX->forced=-1;
     CTX->total=0; CTX->last=0; CTX->initialHP=H(source,0x20);
     CTX->initialMaxHP=H(source,0x22); CTX->hit=0; CTX->time=W(source,0x94);
-    CTX->synthetic=0;
+    CTX->synthetic=0; CTX->target=0; CTX->targetHP=0;
 }
 void lc_attack_group_begin(void *source,int action) { lc_attack_begin(source); CTX->action=action&255; }
 void lc_attack_pedra_begin(void *source) { lc_attack_begin(source); CTX->synthetic=1; }
@@ -180,6 +206,8 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
         if (pattern==6 && cell%3!=anchorCell%3) continue;
         if (pattern==7 && cell/3!=anchorCell/3) continue;
         if (pattern==8 && cell/3!=anchorCell/3 && cell%3!=anchorCell%3) continue;
+        if (pattern==10 && (cell/3<anchorCell/3-1 || cell/3>anchorCell/3+1 ||
+                           cell%3<anchorCell%3-1 || cell%3>anchorCell%3+1)) continue;
         if (pattern==12 && !(mask & (1<<cell))) continue;
         ids[n++]=i;
     }
@@ -222,6 +250,20 @@ int lc_roll(int chance) {
     if(chance>=100) return 1;
     a=rand(); b=rand(); c=rand();
     return ((((a<<18)&0x0c000000)|(b<<15)|c)%100)<(u32)chance;
+}
+/* Undead slaying uses the native lethal-result marker, rather than a new
+ * ailment or instant death. Playback retains scripted/training safeguards. */
+void lc_attack_target_begin(void *target) {
+    CTX->target=target; CTX->targetHP=H(target,0x20);
+}
+void lc_attack_result_event(int event,int time,void *target,int kind,
+                            int high,int low,int parameter,int group,int extra) {
+    if(event==0x1f && kind==0 && CTX->source && lc_rules(CTX->source)[8]==7) {
+        extra=0;
+        if(CTX->target==target && CTX->targetHP>0 && H(target,0x20)==0 &&
+           func_0020C1B4(target) && lc_roll(lc_rules(CTX->source)[10])) extra=7;
+    }
+    func_0021D334(event,time,target,kind,high,low,parameter,group,extra);
 }
 /* Replay the same ailment events used by the native secondary-effect path.
  * No recovery timer is introduced; game status rules still own recovery. */
@@ -268,7 +310,7 @@ void lc_attack_record(void *source,void *target,int amount,int before,int hit,in
     CTX->last=amount; CTX->hit=1;
     if(CTX->time<time) CTX->time=time;
     effect=rules[8];
-    if(effect==255 || !effect || (rules[9]==1 && !hit) ||
+    if(effect==255 || !effect || effect==7 || (rules[9]==1 && !hit) ||
        (rules[9]==2 && (!hit || H(target,0x20)!=0))) return;
     if(lc_roll(rules[10])) lc_attack_status(target,effect,time);
 }
@@ -298,7 +340,11 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
     source=CTX->source;
     if(!source) { lc_original_hit(target,offset,time,amount,parameter,flags,mode,adjust); return; }
     before=H(target,0x20); calculated=amount; effect=lc_attack_records[CTX->action*16+7];
-    if(effect==1) lc_original_hit(target,offset,time,amount,parameter,flags,mode,adjust);
+    if(effect==1) {
+        if(lc_rules(source)[8]==7 && before>0 && amount>=before && func_0020C1B4(target) &&
+           lc_roll(lc_rules(source)[10])) flags|=0x10;
+        lc_original_hit(target,offset,time,amount,parameter,flags,mode,adjust);
+    }
     else if(effect==2) {
         amount=func_0020D4C8(target,amount); H(target,0x20)+=amount;
         func_0021D334(0x1f,time,target,2,amount>>8,amount&255,parameter,B(*(void **)0x801ce8c0,0x823),0);

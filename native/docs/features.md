@@ -28,6 +28,16 @@ make it independent; choose a starting attack for Create or duplicate the select
 There are 254 usable attack IDs, including the 158 retail entries (96 additions).
 ID0 is the empty entry and ID255 remains the class-inheritance sentinel.
 
+Spell arrays have editable element, fixed-spell and spellbook links. Create can
+copy an array into an independent command; its linked attacks remain shared
+until duplicated separately. Class usage includes these indirect assignments.
+Custom targeting includes a clipped 3×3 area around the selected unit. Targeting
+also explains repeated physical strikes versus a shared class animation.
+Undead slaying is an additional effect with an explicit killing-blow chance,
+independent of element, retaining native death handling and drain/recoil.
+Copied magic attacks carry their own names into battle labels and action logs,
+independently of the retail animation used.
+
 Named controls cover elements, main effects, the recovered amount rules, incoming
 power percentage, target side and formation patterns. A nine-position diagram
 edits custom masks. Original targeting, additional effects and drain/recoil show

@@ -548,6 +548,90 @@ class AttackDataTests : public QObject {
         project.setAnimationOverrides(overrides.json());
         QCOMPARE(project.bodyAnimationData()->selector(2, 2, ordinary, 0, 0), 41);
     }
+    void spellArraysAndMissingOptions() {
+        try {
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (tools.isEmpty()) QSKIP("Private compiler required");
+            auto project = Project::fromRom(source());project.loadAttacks();
+            auto data = *project.attacks();
+            const auto retail = data.json();
+            const int spell = data.duplicate(55, "New flame");
+            const int array = data.duplicate(45, "Independent magic");
+            QCOMPARE(spell, 159);QCOMPARE(array, 160);
+            auto a = data.entry(spell);put8(a.data, 1, 2);
+            a.targetPattern = 10;a.targetSide = 1;a.status = 7;a.condition = 2;a.chance = 75;
+            a.visual.nativeEffect = 8;a.visual.hue = 60;
+            data.set(spell, a);
+            for (const auto pair : {qMakePair(45,55),qMakePair(45,99),qMakePair(array,63),qMakePair(49,57),qMakePair(51,55),qMakePair(145,147)}) {
+                auto command = data.entry(pair.first);command.spellLinks[pair.second] = spell;
+                data.set(pair.first, command);
+            }
+            QCOMPARE(data.resolvedTargets(45).value(1),spell);
+            QCOMPARE(data.resolvedTargets(array).value(1),55);
+            QCOMPARE(data.resolvedTargets(array).value(2),spell);
+            QCOMPARE(data.resolvedTargets(46),AttackData::templateTargets(46));
+            const auto before = data.json();
+            auto invalid = data.entry(45);invalid.spellLinks[55] = array;
+            QVERIFY_THROWS_EXCEPTION(Error,data.set(45,invalid));QCOMPARE(data.json(),before);
+            invalid.spellLinks[55] = 254;
+            QVERIFY_THROWS_EXCEPTION(Error,data.set(45,invalid));QCOMPARE(data.json(),before);
+            invalid = data.entry(spell);invalid.condition = 1;
+            QVERIFY_THROWS_EXCEPTION(Error,data.set(spell,invalid));QCOMPARE(data.json(),before);
+            project.setAttacks(data.json());
+            auto knight = project.record(Table::Classes,5).bytes;put8(knight,55,array);put8(knight,56,2);
+            project.replaceBytes(Table::Classes,5,knight);
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).absoluteDir().filePath("Test ROMs/native-attack-options-XXXXXX"));
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto folder = output.filePath("project"), archive = output.filePath("options.lcproj");
+            project.saveFolder(folder);project.saveArchive(archive);
+            for (const auto &path : {folder,archive}) {
+                auto restored = Project::fromRom(source());restored.applyManifest(Project::readProject(path));
+                QCOMPARE(restored.attacks()->json(),data.json());
+                QCOMPARE(u8(restored.record(Table::Classes,5).bytes,55),quint8(array));
+            }
+            const auto built = rebuild(project,tools,output.path());
+            const auto candidate = output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(project,built,candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));reopened.loadAttacks();
+            QCOMPARE(reopened.attacks()->json(),data.json());
+            QCOMPARE(rebuild(reopened,tools,output.path()).image,built.image);
+            auto checksum = built.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,built.image);
+            QProcess runtime;runtime.start("node",{QFINDTESTDATA("attack-options-mips.cjs"),candidate});
+            QVERIFY(runtime.waitForFinished(60000));QVERIFY2(runtime.exitCode()==0,runtime.readAllStandardError().constData());
+            qInfo().noquote()<<runtime.readAllStandardOutput();
+            data.apply(retail);QCOMPARE(data.entries().size(),159);QVERIFY(data.entry(45).spellLinks.isEmpty());
+            qInfo().noquote()<<"Attack options candidate:"<<output.path();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
+    void battleNamesExportAndReopen() {
+        try {
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(tools.isEmpty())QSKIP("Private compiler required");
+            auto project=Project::fromRom(source());project.loadAttacks();
+            auto data=*project.attacks();
+            const auto report=qEnvironmentVariable("LORDLY_ATTACK_PROJECT");
+            if(!report.isEmpty()) {
+                // The report can use another base ROM. Exercise only its exact
+                // attack definitions on the known test ROM; never rewrite it.
+                QFile file(report);QVERIFY(file.open(QIODevice::ReadOnly));
+                data.apply(QJsonDocument::fromJson(file.readAll()).object()["attacks"].toObject());
+            } else {
+                for(int donor : {87,88,89,90}) data.duplicate(donor,donor<89?"Exorcism":"Mass Exorcism");
+            }
+            project.setAttacks(data.json());
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).absoluteDir().filePath("Test ROMs/native-attack-names-XXXXXX"));
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto built=rebuild(project,tools,output.path());
+            const auto candidate=output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(project,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadAttacks();
+            QCOMPARE(reopened.attacks()->json(),data.json());
+            QProcess runtime;runtime.start("node",{QFINDTESTDATA("attack-names-mips.cjs"),candidate});
+            QVERIFY(runtime.waitForFinished(60000));QVERIFY2(runtime.exitCode()==0,runtime.readAllStandardError().constData());
+            qInfo().noquote()<<runtime.readAllStandardOutput();
+            qInfo().noquote()<<"Battle name candidate:"<<output.path();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void targetingExportAndReopen() {
         try {
             const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

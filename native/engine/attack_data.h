@@ -28,6 +28,7 @@ struct Attack {
     // -1 retains the retail secondary-effect rules. Chance is an explicit percentage.
     int status = -1, condition = 1, chance = 100;
     int afterEffect = -1, afterBasis = 0, afterPercent = 100;
+    QMap<int, int> spellLinks; // Original resolved spell ID -> independent replacement.
     AttackVisual visual;
     bool operator==(const Attack &) const = default;
 };
@@ -57,6 +58,7 @@ class AttackData {
     void apply(const QJsonObject &);
     static bool isTemplate(int id);
     static QMap<int, int> templateTargets(int id);
+    QMap<int, int> resolvedTargets(int id) const;
     static QString displayName(const Attack &);
     static QMap<int, QString> elements();
     static QMap<int, QString> effects();

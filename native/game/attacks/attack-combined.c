@@ -137,7 +137,7 @@ extern int func_001F197C(ResolutionObject *, void *, int *);
 extern void func_0021D200(int, int, ResolutionObject *);
 extern void func_0021D230(int, int, ResolutionObject *, int);
 extern void func_0021D2C0(int, int, ResolutionObject *, int, u32, u32, u32);
-extern void func_0021D334(int, int, ResolutionObject *, int, int, int, int, int, int);
+extern void lc_attack_result_event(int, int, ResolutionObject *, int, int, int, int, int, int);
 extern void func_0022A7B8(ResolutionObject *, int, int, int, int, int);
 extern void func_0022B06C(ResolutionObject *, u8 *);
 extern void func_0022EF50(ResolutionObject *);
@@ -166,6 +166,7 @@ void lc_attack_record(void *,void *,int,int,int,int);
 void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
 int lc_attack_visual_program(int,int);
+void lc_attack_target_begin(void *);
 int lc_attack_combined(ResolutionObject **input, int *outTime)
 {
     ResolutionScratch local;
@@ -491,6 +492,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
             continue;
         }
         lc_before=object->field20;
+        lc_attack_target_begin(object);
         initialThreshold = func_002363FC(object);
         /* The real halfword address stays live through the three random calls. */
         halfAddress = i * 2;
@@ -583,7 +585,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                         special = func_00237AF8(object, mode);
                 }
                 if (special != 0 && func_0020C2C0(object) == 0 && func_0020C32C(object) == 0) {
-                    func_0021D334(0x1F, time + local.tail.words[0], object, 13,
+                    lc_attack_result_event(0x1F, time + local.tail.words[0], object, 13,
                         value >> 8, value & 0xFF, narrowed, D_801CE8C0->field823, (u8)special);
                     func_0023422C(object, special);
                 } else {
@@ -591,7 +593,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                         func_0022B06C(object, &local.tail.fields.modifier);
                     else
                         local.tail.fields.modifier = 0;
-                    func_0021D334(0x1F, time + local.tail.words[0], object, 0,
+                    lc_attack_result_event(0x1F, time + local.tail.words[0], object, 0,
                         value >> 8, value & 0xFF, narrowed, D_801CE8C0->field823,
                         local.tail.fields.modifier);
                     object->field94 = time + local.tail.words[0];
@@ -602,7 +604,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                     value = 1;
                 if (value >= 10000)
                     value = 9999;
-                func_0021D334(0x1F, time + local.tail.words[0], object, 1,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 1,
                     value >> 8, value & 0xFF, narrowed, D_801CE8C0->field823, 0);
                 func_0022A7B8(object, 0, time + local.tail.words[0], value, narrowed, 0);
                 object->field94 = time + local.tail.words[0];
@@ -623,7 +625,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                 func_0022B06C(object, &local.tail.fields.modifier);
             else
                 local.tail.fields.modifier = 0;
-            func_0021D334(0x1F, time + local.tail.words[0], object, 2,
+            lc_attack_result_event(0x1F, time + local.tail.words[0], object, 2,
                 value >> 8, value & 0xFF, narrowed, D_801CE8C0->field823, local.tail.fields.modifier);
             object->field94 = time + local.tail.words[0];
         } else if (local.descriptor.header[1] == 8) {
@@ -633,10 +635,10 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                     func_0022B06C(object, &local.tail.fields.modifier);
                 else
                     local.tail.fields.modifier = 0;
-                func_0021D334(0x1F, time + local.tail.words[0], object, 3,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 3,
                     0, 0, narrowed, D_801CE8C0->field823, local.tail.fields.modifier);
             } else {
-                func_0021D334(0x1F, time + local.tail.words[0], object, 6,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 6,
                     0, 0, narrowed, D_801CE8C0->field823, 0);
             }
             object->field94 = time + local.tail.words[0];
@@ -647,10 +649,10 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                     func_0022B06C(object, &local.tail.fields.modifier);
                 else
                     local.tail.fields.modifier = 0;
-                func_0021D334(0x1F, time + local.tail.words[0], object, 7,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 7,
                     0, 0, narrowed, D_801CE8C0->field823, local.tail.fields.modifier);
             } else {
-                func_0021D334(0x1F, time + local.tail.words[0], object, 6,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 6,
                     0, 0, narrowed, D_801CE8C0->field823, 0);
             }
             object->field94 = time + local.tail.words[0];
@@ -661,10 +663,10 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
                     func_0022B06C(object, &local.tail.fields.modifier);
                 else
                     local.tail.fields.modifier = 0;
-                func_0021D334(0x1F, time + local.tail.words[0], object, 4,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 4,
                     0, 0, narrowed, D_801CE8C0->field823, local.tail.fields.modifier);
             } else {
-                func_0021D334(0x1F, time + local.tail.words[0], object, 6,
+                lc_attack_result_event(0x1F, time + local.tail.words[0], object, 6,
                     0, 0, narrowed, D_801CE8C0->field823, local.tail.fields.modifier);
             }
             object->field94 = time + local.tail.words[0];

@@ -80,7 +80,7 @@ extern int func_002365BC(DispatchObject *, DispatchObject *, int, int);
 extern int func_002379AC(int, DispatchObject *);
 extern void func_0022A7B8(DispatchObject *, int, int, int, int, int);
 extern int func_00237AF8(DispatchObject *, int);
-extern void func_0021D334(int, int, DispatchObject *, int, int, int, int, int, int);
+extern void lc_attack_result_event(int, int, DispatchObject *, int, int, int, int, int, int);
 extern void func_0023422C(DispatchObject *, int);
 extern void func_0022B06C(DispatchObject *, u8 *);
 extern int func_0020D72C(DispatchObject *);
@@ -95,6 +95,7 @@ void lc_attack_record(void *,void *,int,int,int,int);
 void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
 int lc_attack_visual_program(int,int);
+void lc_attack_target_begin(void *);
 int func_0020D4C8(DispatchObject *,int);
 int lc_attack_pedra(u8 *input, int *outTime)
 {
@@ -204,6 +205,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
             continue;
         }
         lc_before=object->field20;
+        lc_attack_target_begin(object);
         threshold = func_002363FC(object);
         valueAddress = (u8 *)(i * 2 + (int)&descriptor);
         threshold = func_002365BC(temporary, object, ((u16 *)valueAddress)[28], threshold);
@@ -270,7 +272,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
             if(descriptor.header[1]==2) {
                 if(descriptor.header[3]==9 && func_0020C1B4(object)) value=0;
                 value=func_0020D4C8(object,value); object->field20+=value;
-                func_0021D334(0x1f,time,object,2,value>>8,value&255,narrowed,D_801CE8C0->field823,0);
+                lc_attack_result_event(0x1f,time,object,2,value>>8,value&255,narrowed,D_801CE8C0->field823,0);
             } else if(primary) lc_attack_status(object,descriptor.header[1],time);
         } else if (primary != 0) {
             func_0022A7B8(object, 0, time, value, narrowed, 0);
@@ -296,13 +298,13 @@ int lc_attack_pedra(u8 *input, int *outTime)
                     special = func_00237AF8(object, mode);
             }
             if (special != 0 && func_0020C2C0(object) == 0 && func_0020C32C(object) == 0) {
-                func_0021D334(0x1F, time, object, 13, value >> 8, value & 0xFF,
+                lc_attack_result_event(0x1F, time, object, 13, value >> 8, value & 0xFF,
                              narrowed, D_801CE8C0->field823, (u8)special);
                 func_0023422C(object, special);
             } else {
                 if (secondary != 0)
                     func_0022B06C(object, &lists.modifier);
-                func_0021D334(0x1F, time, object, 0, value >> 8, value & 0xFF,
+                lc_attack_result_event(0x1F, time, object, 0, value >> 8, value & 0xFF,
                              narrowed, D_801CE8C0->field823, lists.modifier);
                 object->field94 = time;
             }
@@ -312,7 +314,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
                 value = 1;
             if (value >= 10000)
                 value = 9999;
-            func_0021D334(0x1F, time, object, 1, value >> 8, value & 0xFF,
+            lc_attack_result_event(0x1F, time, object, 1, value >> 8, value & 0xFF,
                          narrowed, D_801CE8C0->field823, 0);
             func_0022A7B8(object, 0, time, value, narrowed, 0);
             object->field94 = time;

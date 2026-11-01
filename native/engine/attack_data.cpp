@@ -27,6 +27,13 @@ int integer(const QJsonObject &o, const char *key, int fallback) {
         throw Error(QString("Invalid attack setting: %1").arg(key));
     return v.toInt();
 }
+void validateSpellLinks(const QVector<Attack> &entries) {
+    for (const auto &a : entries)
+        for (auto it = a.spellLinks.cbegin(); it != a.spellLinks.cend(); ++it)
+            if (it.value() < 1 || it.value() >= entries.size() ||
+                AttackData::isTemplate(entries[it.value()].behavior) || u8(entries[it.value()].data, 0) > 5)
+                throw Error("A spell array must select an existing attack, not another spell array");
+}
 } // namespace
 std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
     const auto h = rom.bytes().mid(descriptorOffset, descriptorSize);
@@ -97,7 +104,7 @@ AttackData AttackData::load(const Rom &rom) {
         return result;
     const auto bytes = rom.bytes().mid(p->romOffset, p->size);
     if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 ||
-        (u32(bytes, 8) != 2 && u32(bytes, 8) != 3) || u32(bytes, 12) != quint32(p->count))
+        (u32(bytes, 8) < 2 || u32(bytes, 8) > 4) || u32(bytes, 12) != quint32(p->count))
         throw Error("Unrecognized attack data");
     const auto size = u32(bytes, 16);
     if (size < namesOffset || size > quint32(bytes.size()))
@@ -123,6 +130,21 @@ AttackData AttackData::load(const Rom &rom) {
         if (u8(bytes, at + 20) > 1)
             throw Error("Invalid dynamic attack-name flag");
         a.dynamicName = u8(bytes, at + 20) != 0;
+        if (u32(bytes, 8) >= 4 && u32(bytes, at + 28)) {
+            const auto pointer = u32(bytes, at + 28);
+            if (pointer < p->address + namesOffset || quint64(pointer - p->address) + 16 > size)
+                throw Error("Spell array lies outside its allocation");
+            const auto offset = pointer - p->address;
+            const int count = u16(bytes, offset + 8);
+            if (bytes.mid(offset, 8) != "LCATMAP1" || count < 1 || count > 10 ||
+                quint64(offset) + 16 + count * 4 > size)
+                throw Error("Invalid spell array metadata");
+            for (int n = 0; n < count; ++n) {
+                const int from = u16(bytes, offset + 16 + n * 4), to = u16(bytes, offset + 18 + n * 4);
+                if (a.spellLinks.contains(from)) throw Error("Duplicate spell array entry");
+                a.spellLinks[from] = to;
+            }
+        }
         if (u32(bytes, 8) >= 3 && u8(bytes, at + 21)) {
             const auto pointer = u32(bytes, at + 24);
             if (pointer < p->address + namesOffset || quint64(pointer - p->address) + 32 > size)
@@ -159,6 +181,7 @@ AttackData AttackData::load(const Rom &rom) {
     return result;
 }
 QByteArray AttackData::build(quint32 address) const {
+    validateSpellLinks(entries_);
     QByteArray bytes(namesOffset, 0);
     bytes.replace(0, 8, "LCATDATA");
     put32(bytes, 8, 2);
@@ -199,6 +222,19 @@ QByteArray AttackData::build(quint32 address) const {
     }
     for (int id = int(entries_.size()); id < 256; ++id)
         put32(bytes, recordOffset + id * 16, u32(bytes, recordOffset));
+    for (int id = 1; id < entries_.size(); ++id) {
+        const auto &links = entries_[id].spellLinks;
+        if (links.isEmpty()) continue;
+        bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
+        put32(bytes, settingsOffset + id * 32 + 28, address + quint32(bytes.size()));
+        QByteArray map(16 + links.size() * 4, 0);
+        map.replace(0, 8, "LCATMAP1");put16(map, 8, links.size());
+        int n = 16;
+        for (auto it = links.cbegin(); it != links.cend(); ++it, n += 4) {
+            put16(map, n, it.key());put16(map, n + 2, it.value());
+        }
+        bytes += map;put32(bytes, 8, 4);
+    }
     int visualSlot = 136;
     for (int id = 1; id < entries_.size(); ++id) {
         const auto &a = entries_[id];
@@ -211,7 +247,7 @@ QByteArray AttackData::build(quint32 address) const {
         put8(bytes, at + 21, quint8(visualSlot++));
         put32(bytes, at + 24, address + quint32(bytes.size()));
         bytes += a.visual.build(EffectPlayer::retailEffect(a.animation));
-        put32(bytes, 8, 3);
+        put32(bytes, 8, qMax(3u, u32(bytes, 8)));
     }
     bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
     put32(bytes, 16, quint32(bytes.size()));
@@ -264,7 +300,7 @@ void AttackData::validate(const Attack &a) {
         a.name.contains(char(0)) || a.nameGroup < 1 || a.nameGroup > 65535 || a.behavior < 1 ||
         a.behavior >= retailCount || a.animation < 1 || a.animation >= retailCount)
         throw Error("Invalid attack record or source behavior");
-    if (a.targetPattern < 0 || a.targetPattern > 12 || a.targetPattern == 10 ||
+    if (a.targetPattern < 0 || a.targetPattern > 12 ||
         a.targetPattern == 11 || a.targetSide < 0 || a.targetSide > 3 || a.targetMask < 0 ||
         a.targetMask > 511 || (a.targetPattern == 12 && !a.targetMask))
         throw Error("Choose a valid target pattern with at least one position");
@@ -273,6 +309,12 @@ void AttackData::validate(const Attack &a) {
         a.chance < 0 || a.chance > 100 || a.afterEffect < -1 || a.afterEffect > 2 ||
         a.afterBasis < 0 || a.afterBasis > 3 || a.afterPercent < 0 || a.afterPercent > 1000)
         throw Error("Attack effect setting is outside its supported range");
+    if (a.status == 7 && a.condition != 2)
+        throw Error("Undead slaying requires a successful killing blow");
+    const auto nativeSpells = templateTargets(a.behavior).values();
+    for (auto it = a.spellLinks.cbegin(); it != a.spellLinks.cend(); ++it)
+        if (!nativeSpells.contains(it.key()) || it.value() < 1 || it.value() >= maximumCount)
+            throw Error("Invalid spell array entry");
 }
 void AttackData::set(int id, const Attack &a) {
     entry(id);
@@ -287,7 +329,9 @@ void AttackData::set(int id, const Attack &a) {
         if (i != id && entries_[i].nameGroup == a.nameGroup &&
             (entries_[i].name != a.name || entries_[i].dynamicName != a.dynamicName))
             throw Error("Shared attack names must be changed together or made independent");
-    entries_[id] = a;
+    auto next = entries_;next[id] = a;
+    validateSpellLinks(next);
+    entries_ = std::move(next);
 }
 int AttackData::nextNameGroup() const {
     int next = 1;
@@ -345,6 +389,9 @@ QJsonObject AttackData::json() const {
     QJsonArray rows;
     for (int i = 1; i < entries_.size(); ++i) {
         const auto &a = entries_[i];
+        QJsonObject links;
+        for (auto it = a.spellLinks.cbegin(); it != a.spellLinks.cend(); ++it)
+            links[QString::number(it.key())] = it.value();
         rows << QJsonObject{{"data", QString::fromLatin1(a.data.toHex())},
                             {"name", QString::fromLatin1(a.name.toHex())},
                             {"nameGroup", a.nameGroup},
@@ -361,7 +408,7 @@ QJsonObject AttackData::json() const {
                             {"afterEffect", a.afterEffect},
                             {"afterBasis", a.afterBasis},
                             {"afterPercent", a.afterPercent},
-                            {"visual", a.visual.json()}};
+                            {"visual", a.visual.json()}, {"spellLinks", links}};
     }
     return {{"version", 1}, {"entries", rows}};
 }
@@ -403,6 +450,15 @@ void AttackData::apply(const QJsonObject &object) {
         a.afterEffect = integer(row, "afterEffect", -1);
         a.afterBasis = integer(row, "afterBasis", 0);
         a.afterPercent = integer(row, "afterPercent", 100);
+        if (row.contains("spellLinks")) {
+            if (!row["spellLinks"].isObject()) throw Error("Invalid spell array");
+            const auto links = row["spellLinks"].toObject();
+            for (auto it = links.begin(); it != links.end(); ++it) {
+                bool ok = false;const int from = it.key().toInt(&ok);
+                if (!ok || QString::number(from) != it.key()) throw Error("Invalid spell array slot");
+                a.spellLinks[from] = integer(links, it.key().toLatin1().constData(), 0);
+            }
+        }
         if (row.contains("visual")) {
             if (!row["visual"].isObject())
                 throw Error("Invalid attack visual settings");
@@ -420,7 +476,15 @@ void AttackData::apply(const QJsonObject &object) {
         edited += a.visual.modified();
     if (edited > 119)
         throw Error("The battle event format supports 119 independently edited attack effects");
+    validateSpellLinks(next);
     entries_ = std::move(next);
+}
+QMap<int, int> AttackData::resolvedTargets(int id) const {
+    const auto &a = entry(id);
+    auto result = templateTargets(a.behavior);
+    for (auto it = result.begin(); it != result.end(); ++it)
+        it.value() = a.spellLinks.value(it.value(), it.value());
+    return result;
 }
 bool AttackData::isTemplate(int id) {
     return (id >= 45 && id <= 54) || id == 145;
@@ -501,7 +565,7 @@ QMap<int, QString> AttackData::calculations() {
 }
 QMap<int, QString> AttackData::statuses() {
     return {{0, "None"},     {3, "Petrification"},    {4, "Sleep"},
-            {5, "Power Up"}, {6, "Power Down"},       {8, "Paralysis"},
+            {5, "Power Up"}, {6, "Power Down"},       {7, "Undead slaying (killing blow)"}, {8, "Paralysis"},
             {10, "Poison"},  {11, "Remove ailments"}, {16, "Death (HP to zero)"}};
 }
 } // namespace lordly

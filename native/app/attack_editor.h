@@ -41,13 +41,14 @@ class AttackEditor : public QWidget {
     QListWidget *list_;
     QLineEdit *search_;
     QLabel *capacity_, *name_, *shared_, *relationship_, *elementHelp_, *targetHelp_,
-        *nativeStatus_, *nativeAfter_, *advanced_, *comparison_, *notice_;
+        *nativeStatus_, *nativeAfter_, *advanced_, *comparison_, *notice_, *playback_;
     QWidget *details_, *effectPanel_, *amountPanel_, *conditionPanel_, *afterPanel_;
     QComboBox *element_, *effect_, *calculation_, *side_, *pattern_, *status_, *condition_, *after_,
         *basis_, *previewClass_;
     QSpinBox *power_, *chance_, *afterPercent_;
     QVector<QCheckBox *> cells_;
-    QTableWidget *users_;
+    QTableWidget *users_, *spellLinks_;
+    QWidget *spellPanel_;
     QVector<QSpinBox *> example_;
 };
 } // namespace lordly
