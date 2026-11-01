@@ -2,7 +2,8 @@ param(
     [string]$ToolsRoot = "$env:USERPROFILE\.codex\lordly-native-toolchain",
     [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
     [switch]$Test,
-    [string]$RomPath = ''
+    [string]$RomPath = '',
+    [string]$CompilerLauncher = ''
 )
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
@@ -19,18 +20,31 @@ $qtRoot = Join-Path $ToolsRoot 'Qt\6.12.0\msvc2022_64'
 $cmake = Join-Path $ToolsRoot 'cmake-4.4.4-windows-x86_64\bin\cmake.exe'
 $ninja = Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
 $buildRoot = Join-Path $sourceRoot "build\$Configuration"
-& $cmake -S $sourceRoot -B $buildRoot -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_PREFIX_PATH=$qtRoot" "-DCMAKE_BUILD_TYPE=$Configuration"
+if ($CompilerLauncher) {
+    $CompilerLauncher = (Get-Command $CompilerLauncher -CommandType Application -ErrorAction Stop).Source
+}
+$timings = [ordered]@{ configuration = $Configuration; compilerLauncher = $CompilerLauncher }
+$timer = [Diagnostics.Stopwatch]::StartNew()
+# Passing an empty launcher also clears a previous cached configuration.
+& $cmake -S $sourceRoot -B $buildRoot -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_PREFIX_PATH=$qtRoot" "-DCMAKE_BUILD_TYPE=$Configuration" "-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher" "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher"
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+$timings.configureSeconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
+$timer.Restart()
 & $cmake --build $buildRoot --parallel 4
 if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
+$timings.compileSeconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
 if ($Test) {
     $env:PATH = "$qtRoot\bin;$env:PATH"
     $env:LORDLY_TEST_ROM = $RomPath
     $env:LORDLY_N64_TOOLCHAIN = Join-Path $sourceRoot '.local\n64-toolchain'
     $env:LORDLY_TEST_SCREENSHOT = Join-Path $buildRoot 'workspace.png'
+    $timer.Restart()
     & (Join-Path (Split-Path $cmake) 'ctest.exe') --test-dir $buildRoot --output-on-failure
     $testExit = $LASTEXITCODE
+    $timings.testSeconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
     Get-Content -LiteralPath (Join-Path $buildRoot 'engine-test-report.txt')
     Get-Content -LiteralPath (Join-Path $buildRoot 'ui-test-report.txt') -ErrorAction SilentlyContinue
     if ($testExit -ne 0) { throw 'Native tests failed.' }
 }
+$timings | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $buildRoot 'build-timings.json') -Encoding utf8
+Write-Host ($timings | ConvertTo-Json)

@@ -43,6 +43,31 @@ There are no private runner dependencies, ROM uploads or required repository
 secrets. GitHub supplies short-lived tokens for attestations and optional release
 publishing. Standard public-repository GitHub-hosted runners are used.
 
+## Compilation reuse and timings
+
+The desktop application and UI tests link the same `lordly_ui` static library.
+UI source files and their Qt meta-object code compile once per build; the
+library is included in the executables and adds no deployment DLL.
+
+CI uses pinned sccache with GitHub's cache backend for C/C++ compilation. It
+reuses matching compiler results across fresh runners. Changed source, headers,
+compiler or compilation options produce new results. The historical N64
+generators, linking, tests, packaging and release verification still run.
+Cache misses compile normally. Bump `SCCACHE_GHA_VERSION` in the workflow to
+start a fresh cache namespace when investigating a cache issue.
+
+Each successful build records configure, compile and test seconds in
+`native/build/Release/build-timings.json`, plus compiler hits/misses in
+`compiler-cache.txt`. Both appear in the run summary and test-report artifact.
+Compare a first build with a repeat on the same commit to measure cold versus
+warm cache performance; overall job duration also includes package verification
+and attestations.
+
+Local caching is optional: install sccache, then pass
+`-CompilerLauncher sccache` (or its absolute executable path) to `build.ps1`.
+Omitting the argument disables the launcher, including in an existing build
+directory. Ordinary local incremental builds continue to work without sccache.
+
 ## Local checks
 
 Install the prerequisites in the [Windows build instructions](../../README.md#build-from-source-windows-x64),
