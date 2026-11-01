@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
+#include "app/scenario_squad_panel.h"
 #include "app/text_workspace.h"
 #include "app/dialogue_inspector.h"
 #include "app/army_editor.h"
@@ -15,7 +16,9 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTableWidget>
 #include <QTreeWidget>
+#include <QPushButton>
 
 namespace lordly {
 namespace {
@@ -225,9 +228,24 @@ void MainWindow::navigateTo(const EditLocation &location) {
             }
         }
         if (!destination) throw Error("This change has no editable record in the current workspace.");
+        const auto equipment = location.key.split(':');
+        if (equipment.size() == 3 && equipment[0] == "equipment" && (kind == "training" || kind == "customEncounter")) {
+            const auto prefix = kind == "training" ? QString("training") : QString("custom");
+            const int member = equipment[1].toInt(), slot = equipment[2].toInt();
+            auto box = findChild<QComboBox *>(prefix+QString("Equipment_%1_%2").arg(member).arg(slot));
+            if (box) {
+                if (auto table = findChild<QTableWidget *>(prefix+"Members")) table->setCurrentCell(member, slot+2);
+                destination = box;
+            }
+        }
         reveal(destination);
         for (auto parent=destination->parentWidget();parent;parent=parent->parentWidget())
             if (auto scroll=qobject_cast<QScrollArea *>(parent)) scroll->ensureWidgetVisible(destination);
+        if (kind == "scenarios" && equipment.size() == 3 && equipment[0] == "equipment") {
+            if (auto button = findChild<QPushButton *>("scenarioEditMembers"))
+                if (auto panel = dynamic_cast<ScenarioSquadPanel *>(button->parentWidget()))
+                    panel->editMembers(equipment[1].toInt(), equipment[2].toInt());
+        }
         if (location.key == "description")
             editDescription(this, project_.get(), undo_, kind,
                             kind == "classes" ? project_->classDescriptionIndex(id) : id,

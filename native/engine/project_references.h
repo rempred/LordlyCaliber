@@ -17,4 +17,7 @@ QVector<ProjectReference> projectReferences(Project snapshot);
 QVector<ProjectChange> findProjectUses(Project snapshot, const QString &kind, int id,
                                      const QString &key = {});
 QVector<ExportIssue> exportIssues(Project snapshot);
+// Stored squad overrides that the game's equipment initializer ignores.
+// These are advisory and include unchanged source assignments.
+QVector<ProjectChange> equipmentWarnings(Project snapshot);
 } // namespace lordly

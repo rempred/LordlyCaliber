@@ -1,6 +1,7 @@
 #include "engine/project.h"
 #include "engine/project_references.h"
 #include "engine/actor_art.h"
+#include "engine/squad_members.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -23,6 +24,52 @@ class ChangeReportTests : public QObject {
         throw Error("Missing test field");
     }
   private slots:
+    void incompatibleSquadEquipment() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto p=Project::fromRom(Rom::open(path));p.loadScenarios();
+        int goblin=-1,saturos=-1;
+        for(const auto &cls:p.records(Table::Classes)) {
+            if(goblin<0 && cls.name.simplified()=="Goblin")goblin=cls.id;
+            if(saturos<0 && cls.name.simplified()=="Saturos")saturos=cls.id;
+        }
+        QVERIFY(goblin>0);QVERIFY(saturos>0);
+        const auto goblinTypes=squadEquipmentTypes(p,goblin),saturosTypes=squadEquipmentTypes(p,saturos);
+        int item=-1;
+        for(const auto &row:p.records(Table::Items))
+            if(row.id && row.id!=u16(p.record(Table::Classes,goblin).bytes,46) &&
+               goblinTypes.contains(u8(row.bytes,4)) && !saturosTypes.contains(u8(row.bytes,4))) {item=row.id;break;}
+        QVERIFY(item>0);
+        auto data=*p.scenarios();auto record=data.scenario(1).squads[0];
+        put8(record,0,goblin);put16(record,2,item);put16(record,4,0);
+        data.setSquad(1,0,record,p.classData());p.setScenarios(data.json());
+        const auto find=[&](const Project &project) {
+            QVector<ProjectChange> found;
+            for(const auto &warning:equipmentWarnings(project))
+                if(warning.location.editor=="scenarios"&&warning.location.id==1&&warning.location.child==0&&warning.location.key=="equipment:0:0")found<<warning;
+            return found;
+        };
+        QVERIFY(find(p).isEmpty());
+        put8(record,0,saturos);data.setSquad(1,0,record,p.classData());p.setScenarios(data.json());
+        const auto saved=p.manifest();const auto warnings=find(p);QCOMPARE(warnings.size(),1);
+        QVERIFY(warnings[0].subject.contains("Saturos"));
+        QVERIFY(warnings[0].details.join(' ').contains(p.record(Table::Items,item).name.simplified()));
+        QVERIFY(warnings[0].details.join(' ').contains(QString("item ID %1").arg(item)));
+        QCOMPARE(p.manifest(),saved);
+        for(const auto &issue:exportIssues(p))QVERIFY2(!issue.blocking,qPrintable(issue.message));
+        auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(saved);
+        QCOMPARE(find(reopened).size(),1);
+        put16(record,2,0);data.setSquad(1,0,record,p.classData());p.setScenarios(data.json());QVERIFY(find(p).isEmpty());
+        p.applyManifest(saved);
+        // A named custom equipment type is matched by the same current data.
+        const int type=p.createWeaponType("Audit weapon type");
+        auto itemBytes=p.record(Table::Items,item).bytes;put8(itemBytes,4,type);p.replaceBytes(Table::Items,item,itemBytes);
+        QCOMPARE(find(p).size(),1);
+        auto classBytes=p.record(Table::Classes,saturos).bytes;put16(classBytes,46,item);p.replaceBytes(Table::Classes,saturos,classBytes);
+        QVERIFY(find(p).isEmpty());
+        // Identity classes follow their linked current class at initialization.
+        auto identity=p.record(Table::Classes,goblin).bytes;put8(identity,69,saturos);p.replaceBytes(Table::Classes,goblin,identity);
+        QVERIFY(squadEquipmentTypes(p,goblin).contains(type));
+    }
     void referenceRomComparison() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         try {

@@ -6,6 +6,46 @@
 #include <functional>
 
 namespace lordly {
+QVector<ProjectChange> equipmentWarnings(Project p) {
+    QVector<ProjectChange> warnings;
+    if (p.rom().revision() != 0) return warnings;
+    p.loadScenarios(); p.loadTraining(); p.loadEncounters();
+    QMap<int, QSet<int>> compatible;
+    const auto inspect = [&](const QVector<CustomMember> &members, const QString &label, EditLocation location) {
+        for (int member = 0; member < members.size(); ++member) {
+            const auto &value = members[member];
+            if (value.classId < 1 || value.classId >= p.records(Table::Classes).size()) continue;
+            if (!compatible.contains(value.classId)) compatible[value.classId] = squadEquipmentTypes(p, value.classId);
+            for (int slot = 0; slot < 2; ++slot) {
+                const int id = value.equipment[slot];
+                // Missing references already have their own export validation.
+                if (id <= 0 || id >= p.records(Table::Items).size()) continue;
+                const auto &item = p.record(Table::Items, id);
+                if (compatible[value.classId].contains(u8(item.bytes, 4))) continue;
+                const auto cls = p.record(Table::Classes, value.classId).name.simplified();
+                const auto subject = label + QString(" · %1 · %2 · equipment %3")
+                    .arg(member ? QString("member %1").arg(member + 1) : "leader", cls).arg(slot + 1);
+                location.key = QString("equipment:%1:%2").arg(member).arg(slot);
+                warnings << ProjectChange{"Equipment warning", subject,
+                    {QString("Incompatible assignment: equipment choice %1 stores %2 (item ID %3).").arg(slot + 1).arg(item.name.simplified()).arg(id),
+                     QString("%1 (class ID %2) cannot use this equipment type. The game ignores this override.").arg(cls).arg(value.classId),
+                     "Choose a compatible item, or None — keep class default. This warning does not prevent export."}, location};
+            }
+        }
+    };
+    for (const auto &scenario : p.scenarios()->entries())
+        for (int squad = 0; squad < scenario.squads.size(); ++squad)
+            inspect(squadMembers(scenario.squads[squad]),
+                QString("%1 · %2 · squad %3").arg(scenario.key).arg(scenario.name)
+                    .arg(u8(scenario.layout.deployments[squad], 0) & 127), {"scenarios", scenario.key, squad});
+    for (const auto &row : p.training()->entries())
+        inspect(squadMembers(row.squad), QString("%1 · training opponent %2").arg(row.name).arg(row.slot + 1),
+                {"training", row.node, row.slot});
+    for (const auto &squad : p.encounters()->customSquads().profiles())
+        inspect(squad.members, QString("Scenario %1 · custom encounter %2").arg(squad.scenarioKey).arg(squad.terrainSlot + 1),
+                {"customEncounter", squad.scenarioKey, squad.terrainSlot});
+    return warnings;
+}
 QVector<ProjectReference> projectReferences(Project p) {
     QVector<ProjectReference> uses;
     if (p.rom().revision() == 0) {

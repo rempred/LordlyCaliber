@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 namespace lordly {
@@ -25,7 +26,7 @@ ScenarioSquadPanel::ScenarioSquadPanel(Project *project,
     summary_ = new QLabel; summary_->setWordWrap(true); layout->addWidget(summary_);
     edit_ = new QPushButton("Edit members and equipment…"); edit_->setObjectName(prefix+"EditMembers");
     layout->addWidget(edit_);
-    connect(edit_, &QPushButton::clicked, this, &ScenarioSquadPanel::editMembers);
+    connect(edit_, &QPushButton::clicked, this, [this] { editMembers(); });
     connect(board_, &FormationBoard::cellMoved, this, &ScenarioSquadPanel::moveMember);
     auto form = new QFormLayout; form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     auto choice = [&](const QString &name, const QString &label, const QStringList &values) {
@@ -138,7 +139,7 @@ void ScenarioSquadPanel::moveMember(int from,int to) {
         commit_(next,"Move scenario squad member");
     } catch(const Error &e) {notice_->setText(QString::fromUtf8(e.what()));board_->update();}
 }
-void ScenarioSquadPanel::editMembers() {
+void ScenarioSquadPanel::editMembers(int member, int equipment) {
     if(key_<0 || row_<0)return;
     const int key=key_,row=row_;const auto &s=project_->scenarios()->scenario(key);
     QDialog dialog(this);dialog.setObjectName(prefix_+"MemberDialog");dialog.setWindowTitle(QString("Squad %1 — members and equipment").arg(u8(s.layout.deployments[row],0)&127));dialog.resize(850,650);
@@ -155,6 +156,11 @@ void ScenarioSquadPanel::editMembers() {
             commit_(next,"Edit scenario squad members");dialog.accept();
         } catch(const Error &e){error->setText(QString::fromUtf8(e.what()));}
     });
+    if (member >= 0 && member < squadMembers(s.squads[row]).size() && equipment >= 0 && equipment < 2) {
+        members->findChild<QTableWidget *>(prefix_+"Members")->setCurrentCell(member, equipment+2);
+        auto box = members->findChild<QComboBox *>(prefix_+QString("Equipment_%1_%2").arg(member).arg(equipment));
+        if (box) { box->setFocus(); scroll->ensureWidgetVisible(box); }
+    }
     dialog.exec();
 }
 }

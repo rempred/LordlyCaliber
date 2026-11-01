@@ -3540,6 +3540,51 @@ class UiTests : public QObject {
             QVERIFY(editor.grab().save("native-background-selection.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
+    void equipmentWarningReview() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();
+        const auto before=project.manifest();
+        const auto warnings=equipmentWarnings(project);QVERIFY(!warnings.isEmpty());
+        ProjectChange warning;bool found=false;
+        for(const auto &entry:warnings)
+            if(entry.location.editor=="scenarios" && squadMembers(project.scenarios()->scenario(entry.location.id).squads[entry.location.child]).size()<=5) {
+                warning=entry;found=true;break;
+            }
+        QVERIFY(found);
+        const auto parts=warning.location.key.split(':');const int member=parts[1].toInt(),slot=parts[2].toInt();
+        const int item=squadMembers(project.scenarios()->scenario(warning.location.id).squads[warning.location.child])[member].equipment[slot];
+        const auto itemName=project.record(Table::Items,item).name.simplified();
+        ChangeReportDialog dialog(project);dialog.show();
+        QTRY_VERIFY_WITH_TIMEOUT(dialog.findChild<QPushButton *>("copyChangeReport")->isEnabled(),30000);
+        dialog.findChild<QCheckBox *>("equipmentWarningsOnly")->setChecked(true);
+        dialog.findChild<QLineEdit *>("changeReportSearch")->setText(itemName);
+        auto rows=dialog.findChild<QTreeWidget *>("changeReportEntries");QTreeWidgetItem *target=nullptr;
+        for(int i=0;i<rows->topLevelItemCount();i++) {
+            auto row=rows->topLevelItem(i);if(row->isHidden())continue;
+            QCOMPARE(row->text(0),QString("Equipment warning"));
+            if(row->text(1)==warning.subject)target=row;
+        }
+        QVERIFY(target);rows->setCurrentItem(target);
+        QVERIFY(dialog.findChild<QPlainTextEdit *>("changeReportText")->toPlainText().contains(itemName));
+        QVERIFY(dialog.grab().save("native/build/equipment-warning-review.png"));
+        QSignalSpy jump(&dialog,&ChangeReportDialog::editRequested);dialog.findChild<QPushButton *>("openChangeEdit")->click();
+        QCOMPARE(jump.count(),1);QCOMPARE(jump[0][0].value<EditLocation>().key,warning.location.key);
+        QCOMPARE(project.manifest(),before);
+        ProjectReviewDialog exportReview(project);exportReview.show();
+        QTRY_VERIFY_WITH_TIMEOUT(exportReview.property("reviewReady").toBool(),30000);
+        QVERIFY(exportReview.findChild<QPushButton *>("confirmRomExport")->isEnabled());exportReview.reject();
+        MainWindow window;window.loadRom(path);window.show();bool opened=false;
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QAction *>("reviewProjectChanges")->isEnabled(),10000);
+        QTimer::singleShot(0,&window,[&]{
+            auto members=window.findChild<QDialog *>("scenarioMemberDialog");QVERIFY(members);
+            auto cleanup=qScopeGuard([&]{members->reject();});
+            auto box=members->findChild<QComboBox *>(QString("scenarioEquipment_%1_%2").arg(member).arg(slot));
+            QVERIFY(box);QCOMPARE(box->currentData().toInt(),item);QVERIFY(box->currentText().contains(itemName));
+            QVERIFY(box->currentText().contains("incompatible assignment"));
+            QCOMPARE(members->findChild<QTableWidget *>("scenarioMembers")->currentRow(),member);opened=true;
+        });
+        window.navigateTo(warning.location);QVERIFY(opened);
+    }
     void exportReferenceReview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -3588,13 +3633,14 @@ class UiTests : public QObject {
             auto project = Project::fromRom(Rom::open(source));
             project.setClassNameBytes(2, encodeClassName("Review Fighter"));
             const auto before = project.manifest();
-            const auto expected = project.changeReport().text();
+            const auto changes = project.changeReport().text();
             ChangeReportDialog dialog(project);
             dialog.show();
             auto copy = dialog.findChild<QPushButton *>("copyChangeReport");
             QTRY_VERIFY_WITH_TIMEOUT(copy->isEnabled(), 30000);
             auto text = dialog.findChild<QPlainTextEdit *>("changeReportText");
-            QCOMPARE(text->toPlainText(), expected);
+            const auto expected = text->toPlainText();
+            QVERIFY(expected.startsWith(changes));
             copy->click();
             QCOMPARE(QApplication::clipboard()->text(), expected);
             auto search = dialog.findChild<QLineEdit *>("changeReportSearch");

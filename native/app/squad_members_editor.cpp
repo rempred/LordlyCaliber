@@ -142,18 +142,7 @@ void SquadMembersEditor::setMembers(const QVector<CustomMember> &values) {
 void SquadMembersEditor::setLevelEditable(int member, bool enabled) { levels_.at(member)->setEnabled(enabled); }
 void SquadMembersEditor::equipmentChoices(int member, const std::array<int,2> &values) {
     const int cls = classes_[member]->currentData().toInt();
-    QSet<int> types;
-    if (cls >= 0 && cls < project_->records(Table::Classes).size()) {
-        const int copy = u8(project_->record(Table::Classes,cls).bytes,69);
-        const int effective = copy ? copy : cls;
-        if (effective < project_->records(Table::Classes).size()) {
-            const auto row = project_->record(Table::Classes,effective).bytes;
-            for (int slot = 0; slot < 4; ++slot) {
-                const int id = u16(row,46+slot*2);
-                if (id > 0 && id < project_->records(Table::Items).size()) types.insert(u8(project_->record(Table::Items,id).bytes,4));
-            }
-        }
-    }
+    const auto types = squadEquipmentTypes(*project_, cls);
     for (int e = 0; e < 2; ++e) {
         auto box = equipment_[member*2+e];
         QSignalBlocker block(box);
@@ -161,7 +150,9 @@ void SquadMembersEditor::equipmentChoices(int member, const std::array<int,2> &v
         for (const auto &item : project_->records(Table::Items))
             if (item.id && types.contains(u8(item.bytes,4))) box->addItem(QString("%1 · %2").arg(item.id).arg(item.name.simplified()),item.id);
         if (box->findData(values[e]) < 0) {
-            box->addItem(QString("%1 · existing incompatible choice").arg(values[e]),values[e]);
+            const auto label = values[e] > 0 && values[e] < project_->records(Table::Items).size()
+                ? project_->record(Table::Items, values[e]).name.simplified() : QString("Unknown item");
+            box->addItem(QString("%1 · %2 — incompatible assignment").arg(values[e]).arg(label),values[e]);
             qobject_cast<QStandardItemModel *>(box->model())->item(box->count()-1)->setEnabled(false);
         }
         box->setCurrentIndex(box->findData(values[e]));

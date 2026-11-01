@@ -71,7 +71,7 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
         }
         if (rows->currentItem() && rows->currentItem()->isHidden()) rows->setCurrentItem(nullptr);
     });
-    struct Result { QVector<ProjectChange> changes; QVector<ExportIssue> issues; QString source, error; };
+    struct Result { QVector<ProjectChange> changes; QVector<ExportIssue> issues; QString source, error; QVector<ProjectChange> warnings; };
     auto watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this, [=] {
         const auto result = watcher->result(); watcher->deleteLater();
@@ -91,9 +91,13 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
         }
         for (const auto &change : result.changes)
             add(change.area, change.subject, change.subject + "\n\n" + change.details.join("\n"), change.location);
+        for (const auto &warning : result.warnings) {
+            auto row = add(warning.area, warning.subject, warning.subject + "\n\n" + warning.details.join("\n"), warning.location);
+            row->setForeground(0, QColor("#86611e"));
+        }
         if (exporting) {
-            status->setText(QString("Changed entries: %1 · Problems preventing export: %2 · Compared with %3")
-                .arg(result.changes.size()).arg(errors).arg(result.source));
+            status->setText(QString("Changed entries: %1 · Problems preventing export: %2 · Equipment warnings: %3 · Compared with %4")
+                .arg(result.changes.size()).arg(errors).arg(result.warnings.size()).arg(result.source));
             proceed->setEnabled(errors == 0);
         } else status->setText(QString("%1 known uses found.").arg(result.changes.size()));
         if (rows->topLevelItemCount()) rows->setCurrentItem(rows->topLevelItem(0));
@@ -105,7 +109,8 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
         try {
             if (!exporting) return Result{findProjectUses(std::move(snapshot), query.editor, query.id, query.key), {}, {}, {}};
             const auto report = snapshot.changeReport();
-            return Result{report.entries, exportIssues(std::move(snapshot)), report.source, {}};
+            const auto warnings = equipmentWarnings(snapshot);
+            return Result{report.entries, exportIssues(std::move(snapshot)), report.source, {}, warnings};
         } catch (const std::exception &e) { return Result{{}, {}, {}, QString::fromUtf8(e.what())}; }
     }));
 }

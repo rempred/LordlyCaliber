@@ -12,7 +12,7 @@ class ScenarioSquadPanel : public QWidget {
     ScenarioSquadPanel(Project *, std::function<void(const Scenarios &, const QString &)>,
                        const QString &prefix, QWidget *parent = nullptr);
     void refresh(int key, int row);
-    void editMembers();
+    void editMembers(int member = -1, int equipment = -1);
   private:
     void changeDeployment();
     void moveMember(int from, int to);

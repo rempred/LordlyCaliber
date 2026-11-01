@@ -1,8 +1,24 @@
 #include "engine/squad_members.h"
+#include "engine/project.h"
 #include <QSet>
 #include <algorithm>
 
 namespace lordly {
+QSet<int> squadEquipmentTypes(const Project &project, int classId) {
+    QSet<int> types;
+    const auto &classes = project.records(Table::Classes);
+    const auto &items = project.records(Table::Items);
+    if (classId < 1 || classId >= classes.size()) return types;
+    // Accepted func_00195410: a linked identity uses its initial current
+    // class's defaults; candidates match the type of any nonzero default.
+    const int link = u8(classes[classId].bytes, 69), effective = link ? link : classId;
+    if (effective >= classes.size()) return types;
+    for (int slot = 0; slot < 4; ++slot) {
+        const int item = u16(classes[effective].bytes, 46 + slot * 2);
+        if (item > 0 && item < items.size()) types.insert(u8(items[item].bytes, 4));
+    }
+    return types;
+}
 bool independentSquad(const QByteArray &record) {
     return record.size() >= 35 && record.mid(25, 2) == QByteArray("LS", 2);
 }

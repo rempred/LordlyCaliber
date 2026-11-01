@@ -1219,6 +1219,14 @@ ROM. Named rule, scenario time/reward, training opponent, dialogue and art entri
 open their editing controls. Find uses also lists consumers of shared army-board
 sprites; an independent class copy stops appearing as a user of the old sprite.
 
+Project review also lists incompatible stored equipment choices across scenario
+squads, training opponents and custom encounters, including unchanged source
+assignments. **Equipment warnings only** filters the list; searches include the
+item name/ID, class and location. Opening a warning selects that member's equipment
+field. Export review shows the same advisory warnings without blocking export.
+Compatibility follows the current class defaults and linked current class, using
+the same check as the squad editor. Reviewing does not change equipment assignments.
+
 Tools groups controls into Battle and squads, Training, Mission rewards, and Display
 and options. Training formations are checked again when a class size changes, even
 if the opponent record itself is untouched.

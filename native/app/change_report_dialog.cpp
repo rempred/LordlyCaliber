@@ -1,4 +1,6 @@
 #include "app/change_report_dialog.h"
+#include "engine/project_references.h"
+#include <QCheckBox>
 #include <QApplication>
 #include <QClipboard>
 #include <QDialogButtonBox>
@@ -31,6 +33,9 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
     search->setObjectName("changeReportSearch");
     search->setPlaceholderText("Find in report… (Enter for next match)");
     layout->addWidget(search);
+    auto equipmentOnly = new QCheckBox("Equipment warnings only");
+    equipmentOnly->setObjectName("equipmentWarningsOnly");
+    layout->addWidget(equipmentOnly);
     auto split = new QSplitter;
     entries_ = new QTreeWidget;
     entries_->setObjectName("changeReportEntries");
@@ -96,12 +101,17 @@ ChangeReportDialog::ChangeReportDialog(Project snapshot, QWidget *parent) : QDia
         }
     };
     connect(search, &QLineEdit::returnPressed, this, find);
-    connect(search, &QLineEdit::textChanged, this, [this, find, search] {
+    const auto filter = [this, search, equipmentOnly] {
         for (int i = 0; i < entries_->topLevelItemCount(); ++i) {
             const auto row = entries_->topLevelItem(i);
-            row->setHidden(!row->data(0, Qt::UserRole + 1).toString().contains(search->text(), Qt::CaseInsensitive));
+            row->setHidden((equipmentOnly->isChecked() && !row->data(0, Qt::UserRole + 2).toBool()) ||
+                !row->data(0, Qt::UserRole + 1).toString().contains(search->text(), Qt::CaseInsensitive));
         }
         if (entries_->currentItem() && entries_->currentItem()->isHidden()) entries_->setCurrentItem(nullptr);
+    };
+    connect(equipmentOnly, &QCheckBox::toggled, this, [filter] { filter(); });
+    connect(search, &QLineEdit::textChanged, this, [this, find, filter] {
+        filter();
         text_->moveCursor(QTextCursor::Start);
         find();
     });
@@ -127,6 +137,7 @@ void ChangeReportDialog::compareWithRom(const QString &path) {
     status_->setText(path.isEmpty() ? "Collecting project changes…" : "Comparing editable data and artwork with the reference ROM…");
     struct Result {
         ChangeReport report;
+        QVector<ProjectChange> warnings;
         QString error;
     };
     auto watcher = new QFutureWatcher<Result>(this);
@@ -139,27 +150,42 @@ void ChangeReportDialog::compareWithRom(const QString &path) {
             text_->setPlainText(result.error);
             return;
         }
-        text_->setPlainText(result.report.text());
+        auto reportText = result.report.text();
+        if (!result.warnings.isEmpty()) {
+            reportText += "\n\nEquipment warnings (do not prevent export)\n";
+            for (const auto &warning : result.warnings)
+                reportText += "\n" + warning.subject + "\n" + warning.details.join("\n") + "\n";
+        }
+        text_->setPlainText(reportText);
         report_ = result.report;
-        for (const auto &entry : report_.entries) {
+        const auto add = [this](const ProjectChange &entry, bool warning) {
             auto row = new QTreeWidgetItem(entries_, {entry.area, entry.subject});
             row->setData(0, Qt::UserRole, QVariant::fromValue(entry.location));
             row->setData(0, Qt::UserRole + 1, entry.area + " " + entry.subject + " " + entry.details.join(" "));
+            row->setData(0, Qt::UserRole + 2, warning);
+            if (warning) row->setForeground(0, QColor("#86611e"));
             row->setToolTip(1, entry.details.join('\n'));
-        }
+        };
+        for (const auto &entry : result.warnings) add(entry, true);
+        for (const auto &entry : report_.entries) add(entry, false);
+        auto equipmentOnly = findChild<QCheckBox *>("equipmentWarningsOnly");
+        equipmentOnly->setText(QString("Equipment warnings only (%1)").arg(result.warnings.size()));
+        for (int i = 0; i < entries_->topLevelItemCount(); ++i)
+            entries_->topLevelItem(i)->setHidden(equipmentOnly->isChecked() &&
+                !entries_->topLevelItem(i)->data(0, Qt::UserRole + 2).toBool());
         text_->moveCursor(QTextCursor::Start);
         status_->setText(
-            QString("%1 changed entries · compared with %2. Select an entry to review or open it.")
-                .arg(result.report.entries.size()).arg(result.report.source));
+            QString("%1 changed entries · %2 equipment warnings · compared with %3. Select an entry to review or open it.")
+                .arg(result.report.entries.size()).arg(result.warnings.size()).arg(result.report.source));
         ready_ = true;
         copy_->setEnabled(true);
         save_->setEnabled(true);
     });
     watcher->setFuture(QtConcurrent::run([snapshot = snapshot_, path] {
         try {
-            return Result{path.isEmpty() ? snapshot.changeReport() : snapshot.compareWithRom(Rom::open(path)), {}};
+            return Result{path.isEmpty() ? snapshot.changeReport() : snapshot.compareWithRom(Rom::open(path)), equipmentWarnings(snapshot), {}};
         } catch (const std::exception &e) {
-            return Result{{}, QString::fromUtf8(e.what())};
+            return Result{{}, {}, QString::fromUtf8(e.what())};
         }
     }));
 }
