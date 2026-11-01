@@ -44,7 +44,7 @@ class AttackEditor : public QWidget {
         *nativeStatus_, *nativeAfter_, *advanced_, *comparison_, *notice_, *playback_;
     QWidget *details_, *effectPanel_, *amountPanel_, *conditionPanel_, *afterPanel_;
     QComboBox *element_, *effect_, *calculation_, *side_, *pattern_, *status_, *condition_, *after_,
-        *basis_, *previewClass_;
+        *basis_, *previewClass_, *playbackMode_;
     QSpinBox *power_, *chance_, *afterPercent_;
     QVector<QCheckBox *> cells_;
     QTableWidget *users_, *spellLinks_;

@@ -1,4 +1,5 @@
 #include "rebuild/attack_runtime.h"
+#include "engine/art_resource_links.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -113,6 +114,9 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     symbols["lc_attack_scratch"] = p.address + AttackData::scratchOffset;
     symbols["lc_effect_state"] = p.address + quint32(bytes.size());
     bytes += QByteArray(8208, 0);
+    const auto groupEntriesOffset = bytes.size();
+    symbols["lc_attack_group_functions"] = p.address + quint32(groupEntriesOffset);
+    bytes += QByteArray(16, 0);
     for (const auto &value : sites) {
         const auto site = value.toObject();
         const auto words = site["words"].toArray();
@@ -132,7 +136,8 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     QMap<QString, quint32> entries;
     for (const auto &name :
          {QString("attack-runtime"), QString("effect-edits"), QString("attack-visual"), QString("attack-generic"),
-          QString("attack-select"), QString("attack-combined"), QString("attack-pedra")}) {
+          QString("attack-select"), QString("attack-combined"), QString("attack-pedra"),
+          QString("attack-group-melee"), QString("attack-group-ranged"), QString("attack-group-alternate")}) {
         auto unit = name;
         unit.replace('-', '_');
         const auto module = compiler.compileModule(
@@ -146,6 +151,12 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
             entries[it.key()] = it.value();
             symbols[it.key()] = it.value();
         }
+    }
+    int groupIndex = 0;
+    for (const auto &entry : {"lc_group_melee", "lc_group_ranged", "lc_group_alternate"}) {
+        const auto address = entries.value(entry);
+        if (!address) throw Error("Missing grouped physical attack entry");
+        put32(bytes, groupEntriesOffset + groupIndex++ * 4, address);
     }
     for (int i = 0; i < sites.size(); ++i) {
         const auto site = sites[i].toObject();
@@ -186,8 +197,22 @@ QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placem
     // Original-byte wrappers retain the original implementation after their entry.
     const auto catalog =
         QJsonDocument::fromJson(resource("hooks.json")).object()["hooks"].toArray();
+    bool sharedPhysical = false;
+    for (int id = 1; id < placement.count; ++id) {
+        const auto row = placement.romOffset + AttackData::settingsOffset + id * 32;
+        if (u8(rom.bytes(), row + 13) == 1 &&
+            u8(rom.bytes(), placement.romOffset + AttackData::recordOffset + id * 16 + 4) < 2)
+            sharedPhysical = true;
+    }
     for (const auto &value : catalog) {
         const auto site = value.toObject();
+        if (sharedPhysical && site.contains("sharedOwnerSha256")) {
+            const int at = site["rom"].toInt(), size = site["sharedOwnerSize"].toInt();
+            validateArtOwnerLinks(rom, at, size);
+            if (size < 8 || sha256(canonicalArtOwner(rom.bytes().mid(at, size), at)) != site["sharedOwnerSha256"].toString().toLatin1())
+                throw Error(QString("Shared attack playback cannot replace unrecognized physical attack code at ROM %1")
+                                .arg(at, 0, 16));
+        }
         if (!site["original"].toString().isEmpty())
             continue;
         const int at = site["rom"].toInt(), size = site["size"].toInt();

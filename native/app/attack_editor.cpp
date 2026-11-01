@@ -373,6 +373,11 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     targetingRow->addSpacing(16);
     targetingRow->addLayout(grid);
     targetHelp_ = text({}, targetLayout);
+    playbackMode_ = choices({{0, "Strike each target separately"},
+                             {1, "One strike — hit all targets together"}}, "attackPlaybackMode");
+    auto playbackForm = new QFormLayout;
+    playbackForm->addRow("Attack playback", playbackMode_);
+    targetLayout->addLayout(playbackForm);
     playback_ = text({}, targetLayout);
     playback_->setObjectName("attackPlayback");
     right->addWidget(targeting);
@@ -532,6 +537,10 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     field(element_, 1, "Change attack element");
     field(effect_, 3, "Change attack effect");
     field(calculation_, 4, "Change attack calculation");
+    connect(playbackMode_, &QComboBox::activated, this, [this] {
+        const int mode = playbackMode_->currentData().toInt();
+        edit("Change attack playback", [mode](Attack &a) { a.playback = mode; });
+    });
     connect(side_, &QComboBox::activated, this, [this] {
         const int n = side_->currentData().toInt();
         edit("Change target side", [=](Attack &a) {
@@ -793,7 +802,15 @@ void AttackEditor::showAttack() {
                                   "Empty cells are skipped. Front is nearest the opposing squad."
                                 : "Diagram uses a center target. Row, column and cross patterns "
                                   "follow the selected target. Empty positions are skipped.");
+    const bool physical = !templ && u8(a.data, 0) < 2;
+    playbackMode_->setEnabled(physical);
+    playbackMode_->setItemText(0, physical ? "Strike each target separately" : "Shared spell sequence (game rule)");
+    choose(playbackMode_, physical ? a.playback : 0);
     playback_->setText(templ ? "<b>Animation playback:</b> Uses the resolved spell's animation and targeting."
+        : physical && a.playback == 1
+            ? "<b>One strike, simultaneous targets.</b> The attacker performs one sequence against the first "
+              "selected target. All selected units receive their own hit or miss reaction at the shared impact. "
+              "Accuracy, damage and additional effects are calculated separately for each unit, using one attack count."
         : u8(a.data, 0) < 2
             ? "<b>Animation playback: one strike per target.</b> The class attack animation repeats for each "
               "selected unit. A column of three occupied positions means three strikes, using one attack count. "

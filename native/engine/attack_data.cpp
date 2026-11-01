@@ -104,7 +104,7 @@ AttackData AttackData::load(const Rom &rom) {
         return result;
     const auto bytes = rom.bytes().mid(p->romOffset, p->size);
     if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 ||
-        (u32(bytes, 8) < 2 || u32(bytes, 8) > 4) || u32(bytes, 12) != quint32(p->count))
+        (u32(bytes, 8) < 2 || u32(bytes, 8) > 5) || u32(bytes, 12) != quint32(p->count))
         throw Error("Unrecognized attack data");
     const auto size = u32(bytes, 16);
     if (size < namesOffset || size > quint32(bytes.size()))
@@ -125,6 +125,7 @@ AttackData AttackData::load(const Rom &rom) {
         a.chance = u8(bytes, at + 10);
         a.afterEffect = u8(bytes, at + 11) == 255 ? -1 : u8(bytes, at + 11);
         a.afterBasis = u8(bytes, at + 12);
+        a.playback = u32(bytes, 8) >= 5 ? u8(bytes, at + 13) : 0;
         a.afterPercent = u16(bytes, at + 14);
         a.nameGroup = int(u32(bytes, at + 16));
         if (u8(bytes, at + 20) > 1)
@@ -216,6 +217,7 @@ QByteArray AttackData::build(quint32 address) const {
         put8(bytes, at + 10, a.chance);
         put8(bytes, at + 11, quint8(a.afterEffect));
         put8(bytes, at + 12, a.afterBasis);
+        put8(bytes, at + 13, a.playback);
         put16(bytes, at + 14, a.afterPercent);
         put32(bytes, at + 16, a.nameGroup);
         put8(bytes, at + 20, a.dynamicName ? 1 : 0);
@@ -233,7 +235,7 @@ QByteArray AttackData::build(quint32 address) const {
         for (auto it = links.cbegin(); it != links.cend(); ++it, n += 4) {
             put16(map, n, it.key());put16(map, n + 2, it.value());
         }
-        bytes += map;put32(bytes, 8, 4);
+        bytes += map;put32(bytes, 8, qMax(4u, u32(bytes, 8)));
     }
     int visualSlot = 136;
     for (int id = 1; id < entries_.size(); ++id) {
@@ -249,6 +251,8 @@ QByteArray AttackData::build(quint32 address) const {
         bytes += a.visual.build(EffectPlayer::retailEffect(a.animation));
         put32(bytes, 8, qMax(3u, u32(bytes, 8)));
     }
+    for (const auto &attack : entries_)
+        if (attack.playback) put32(bytes, 8, 5);
     bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
     put32(bytes, 16, quint32(bytes.size()));
     if (address % 16 || address < 0x80243db0 || quint64(address) + bytes.size() > 0x80400000)
@@ -311,6 +315,8 @@ void AttackData::validate(const Attack &a) {
         throw Error("Attack effect setting is outside its supported range");
     if (a.status == 7 && a.condition != 2)
         throw Error("Undead slaying requires a successful killing blow");
+    if (a.playback < 0 || a.playback > 1)
+        throw Error("Choose a supported attack playback mode");
     const auto nativeSpells = templateTargets(a.behavior).values();
     for (auto it = a.spellLinks.cbegin(); it != a.spellLinks.cend(); ++it)
         if (!nativeSpells.contains(it.key()) || it.value() < 1 || it.value() >= maximumCount)
@@ -401,6 +407,7 @@ QJsonObject AttackData::json() const {
                             {"targetPattern", a.targetPattern},
                             {"targetSide", a.targetSide},
                             {"targetMask", a.targetMask},
+                            {"playback", a.playback},
                             {"powerPercent", a.powerPercent},
                             {"status", a.status},
                             {"condition", a.condition},
@@ -443,6 +450,7 @@ void AttackData::apply(const QJsonObject &object) {
         a.targetPattern = integer(row, "targetPattern", 0);
         a.targetSide = integer(row, "targetSide", 0);
         a.targetMask = integer(row, "targetMask", 0);
+        a.playback = integer(row, "playback", 0);
         a.powerPercent = integer(row, "powerPercent", 100);
         a.status = integer(row, "status", -1);
         a.condition = integer(row, "condition", 1);

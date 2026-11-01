@@ -20,7 +20,7 @@ m.load(0x801cf2c0,rom.subarray(0x212590,0x23a900));
 const cp=rom.subarray(0x5dc80,0x5dd00),base=cp.readUInt32BE(24),at=cp.readUInt32BE(12),end=cp.readUInt32BE(48);m.load(base,rom.subarray(at,at+end-base));
 const stack=0x803ff000,actors=0x803c0000,global=0x803e0000,ids=global+0x1000,packet=global+0x1100;
 m.set('sp',stack);m.w32(0x801ce8c0,global);m.w32(0x801ce8bc,global);
-function call(name,args){args.slice(0,4).forEach((v,i)=>m.set(['a0','a1','a2','a3'][i],v));args.slice(4).forEach((v,i)=>m.w32(stack+16+i*4,v));m.call(typeof name==='number'?name:e[name]);assert.equal(m.get('sp'),stack);return m.get('v0')|0;}
+function call(name,args,limit=200000){args.slice(0,4).forEach((v,i)=>m.set(['a0','a1','a2','a3'][i],v));args.slice(4).forEach((v,i)=>m.w32(stack+16+i*4,v));m.call(typeof name==='number'?name:e[name],0x80000100,limit);assert.equal(m.get('sp'),stack);return m.get('v0')|0;}
 const actor=i=>actors+i*0x100;
 const services={lookup:0x801c8fe8,dead:0x801c8e30,immune:0x801f46dc,up:0x801da4b4,down:0x801da4d8,rebuild:0x801da4fc};
 // Addresses follow accepted calls, including the nonuniform overlay placement.
@@ -29,10 +29,11 @@ m.trap(services.lookup,c=>c.set('v0',c.get('a0')<18?actor(c.get('a0')):0));
 m.trap(services.dead,c=>c.set('v0',!c.get('a0')||!!(c.r32(c.get('a0')+0x40)&1)));
 let immunity=true;m.trap(services.immune,c=>c.set('v0',immunity?1:0));
 m.trap(0x801c8d24,c=>c.set('v0',0)); // Undead predicate.
-const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),extra:c.r32(c.get('sp')+32)}));
+const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),pose:c.r32(c.get('sp')+16),extra:c.r32(c.get('sp')+32)}));
 const visualEvents=[];
 function captureVisual(c){
- events.push({event:c.get('a0'),pose:c.r32(c.get('sp')+24),nameToken:c.r32(c.get('sp')+20)});
+ events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),
+  pose:c.r32(c.get('sp')+24),nameToken:c.r32(c.get('sp')+20)});
  if(c.get('a0')!==0x16)return;
  const list=at=>{const result=[];for(let i=0;i<10;i++){const id=c.r32(at+i*4)|0;if(id===-1)return result;result.push(id);}throw Error('Unterminated visual actor list');};
  visualEvents.push({slot:c.get('a3'),sources:list(c.r32(c.get('sp')+16)),targets:list(c.r32(c.get('sp')+20))});
@@ -233,6 +234,104 @@ for(const route of ['melee','ranged','alternate'])for(const condition of [0,1]){
 }
 m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));m.w8(rules+8,0);
 console.log('Physical misses: successful-hit condition skips status; after-attempt condition applies it PASS.');
+
+// Execute the exported shared-strike adapters, not a host reimplementation.
+// Deliberately vary readiness, travel, damage and hit/miss outcomes by target.
+const column=[10,13,16];let groupHits=[true,true,true];
+m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',groupHits[column.indexOf((c.get('a1')-actors)/0x100)]?100:0));
+m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',20+10*column.indexOf((c.get('a1')-actors)/0x100)));
+m.trap(0x22222c+0x7ffbcd30,c=>c.set('v0',15+7*column.indexOf((c.get('a1')-actors)/0x100)));
+m.trap(0x20bfe4+0x7ffbcb70,c=>c.set('v0',1));
+let sharedCases=0,maxSharedSteps=0;const originalPoses=new Map();
+for(const route of ['melee','ranged','alternate'])for(const side of [0,1])for(const action of [159,254])
+for(const mode of [0,1])for(const hitMask of [7,5,6,0])for(const mainEffect of [1,2,10])for(const condition of [0,1]) {
+ groupHits=column.map((_,i)=>!!(hitMask&(1<<i)));
+ for(let i=0;i<18;i++) {
+  const own=(i<9)!==!!side,cell=i%9;
+  m.w32(actor(i)+0x40,own?0x100:0);m.w32(actor(i)+0x54,own?cell%3:2-cell%3);
+  m.w32(actor(i)+0x58,own?2-Math.floor(cell/3):6+Math.floor(cell/3));
+  m.w16(actor(i)+0x20,100);m.w16(actor(i)+0x22,500);m.w32(actor(i)+0x94,0);
+  m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
+ }
+ m.w32(source,global+0x2000);m.w32(source+4,global+0x2100);m.w32(source+0x7c,action);
+ m.w32(source+0x6c,2);m.w32(source+0x94,7);m.w32(ids,3);m.w32(global+0x828,0);
+ for(let i=0;i<column.length;i++)m.w32(actor(column[i])+0x94,30+i*31);
+ m.w8(records+159*16+4,0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,mainEffect);
+ m.w8(rules+2,6);m.w8(rules+3,1);m.w8(rules+8,mainEffect===1?10:0);m.w8(rules+9,condition);m.w8(rules+10,100);
+ m.w8(rules+11,1);m.w8(rules+12,0);m.w8(rules+13,mode);m.w16(rules+14,50);
+ if(action!==159) {
+  for(let i=0;i<16;i++)m.w8(records+action*16+i,m.r8(records+159*16+i));
+  for(let i=0;i<32;i++)m.w8(settings+action*32+i,m.r8(rules+i));
+ }
+ events.length=0;visualEvents.length=0;
+ let groupedResult;
+ try { groupedResult=call(e['lc_attack_'+route],[source,ids],1000000); }
+ catch(error) {error.message+=` (${route}/${side}/${action}/${mode}/${hitMask})`;throw error;}
+ assert.equal(groupedResult,1);
+ maxSharedSteps=Math.max(maxSharedSteps,m.steps);
+ const strikes=events.filter(x=>x.actor===source&&(x.event===6||x.event===7));
+ assert.equal(strikes.length,mode?1:3,`${route}, side ${side}, mode ${mode}: caster sequence count`);
+ const poseKey=[route,side,action,hitMask,mainEffect,condition].join('/');
+ if(!mode) originalPoses.set(poseKey,strikes[0].pose);
+ else assert.equal(strikes[0].pose,originalPoses.get(poseKey),'retain packed primary pose/mode for animation overrides');
+ const resultCodes=mainEffect===1?[0x0c,0x10,0x32]:mainEffect===2?[0x1f]:[0x27];
+ const impacts=events.filter(x=>resultCodes.includes(x.event)&&column.some(i=>actor(i)===x.actor));
+ assert.equal(impacts.length,groupHits.filter(Boolean).length,
+  `one damage display per successful target: ${route}/${side}/${mode}/${hitMask}; ${JSON.stringify(events)}`);
+ if(mode&&impacts.length) assert.equal(new Set(impacts.map(x=>x.time)).size,1,'shared damage timestamp');
+ if(!mode&&impacts.length>1) assert(new Set(impacts.map(x=>x.time)).size>1,'default remains sequential');
+ let loss=0;
+ for(let i=0;i<column.length;i++) {
+  const amount=groupHits[i]?20+10*i:0;if(mainEffect===1)loss+=amount;
+  assert.equal(m.r16(actor(column[i])+0x20),100+(mainEffect===1?-amount:mainEffect===2?amount:0),'target-specific HP result preserved');
+  const statusExpected=mainEffect===1?(groupHits[i]||condition===0):mainEffect===10&&groupHits[i];
+  assert.equal(m.r32(actor(column[i])+0x40)&16,statusExpected?16:0,'status activation condition per target');
+ }
+ assert.equal(m.r16(source+0x20),100+Math.floor(loss/2),'one drain from total actual HP loss');
+ assert.equal(m.r32(source+0x6c),3,'one attack count');
+ assert.equal(visualEvents.length,1,'one authored effect submission');
+ assert.deepEqual(visualEvents[0].targets,column,'all targets retained in effect handoff');
+ assert(m.r32(ids)>=Math.max(...impacts.map(x=>x.time),0),'completion follows impacts');
+ if(mode) assert.equal(m.r32(source+0x68),column[0],'attacker stays anchored to primary target');
+ if(mode) assert(m.r32(ids)>=Math.max(...column.map(i=>m.r32(actor(i)+0x94))),'completion includes target reactions');
+ if(mode&&mainEffect===1&&condition===0) {
+  const statuses=events.filter(x=>x.event===0x27&&column.some(i=>actor(i)===x.actor));
+  assert.equal(statuses.length,3);assert.equal(new Set(statuses.map(x=>x.time)).size,1,'after-attempt status shares impact even on misses');
+ }
+ sharedCases++;
+}
+// Maximum pattern, and dead slots whose stale timing must not hold the attack.
+m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));
+m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',10+3*((c.get('a1')-actor(9))/0x100)));
+for(const route of ['melee','ranged','alternate'])for(const deadSlots of [[],[10,14]]) {
+ for(let i=0;i<18;i++) {
+  const own=i<9,cell=i%9;
+  m.w32(actor(i)+0x40,(own?0x100:0)|(deadSlots.includes(i)?1:0));
+  m.w32(actor(i)+0x54,own?cell%3:2-cell%3);m.w32(actor(i)+0x58,own?2-Math.floor(cell/3):6+Math.floor(cell/3));
+  m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,deadSlots.includes(i)?9999:300+cell*31);
+ }
+ m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w8(records+159*16+7,1);m.w8(rules+2,2);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,1);
+ events.length=0;visualEvents.length=0;call(e['lc_attack_'+route],[source,ids],1000000);
+ const live=Array.from({length:9},(_,i)=>i+9).filter(i=>!deadSlots.includes(i));
+ const impacts=events.filter(x=>[0x0c,0x10,0x32].includes(x.event)&&live.some(i=>actor(i)===x.actor));
+ assert.equal(impacts.length,live.length);assert.equal(new Set(impacts.map(x=>x.time)).size,1);
+ assert(impacts[0].time>=548&&impacts[0].time<9999,'wait for occupied live targets only');
+ assert.equal(events.filter(x=>x.actor===source&&(x.event===6||x.event===7)).length,1);
+ assert.deepEqual(visualEvents[0].targets,live);assert.equal(m.r32(source+0x6c),1);
+ for(const i of live)assert.equal(m.r16(actor(i)+0x20),90-3*(i-9));
+ for(const i of deadSlots)assert.equal(m.r16(actor(i)+0x20),100);
+}
+console.log('Shared full squads: all nine targets, dead-slot exclusion, bounded actor lists and readiness PASS.');
+m.w8(rules+13,0);m.w8(rules+8,0);m.w8(rules+11,0);
+for(let i=0;i<18;i++) {
+ const own=i<9,cell=i%9;m.w32(actor(i)+0x40,own?0x100:0);
+ m.w32(actor(i)+0x54,own?cell%3:2-cell%3);m.w32(actor(i)+0x58,own?2-Math.floor(cell/3):6+Math.floor(cell/3));
+}
+m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));
+m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',60));m.trap(0x22222c+0x7ffbcd30,c=>c.set('v0',0));
+m.trap(0x20bfe4+0x7ffbcb70,c=>c.set('v0',0));
+console.log(`Shared physical playback: ${sharedCases} route/side/mode/hit/effect cases; one caster sequence, simultaneous target events, independent damage/healing/status and total-loss drain PASS (maximum ${maxSharedSteps} instructions).`);
 
 // The actual generic executor selects a copied special action's donor pose.
 // Execute its native direction helper with a same-column opposing target;

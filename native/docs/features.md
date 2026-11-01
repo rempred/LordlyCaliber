@@ -33,6 +33,12 @@ copy an array into an independent command; its linked attacks remain shared
 until duplicated separately. Class usage includes these indirect assignments.
 Custom targeting includes a clipped 3×3 area around the selected unit. Targeting
 also explains repeated physical strikes versus a shared class animation.
+Physical attacks offer **One strike — hit all targets together**: one attacker
+sequence against the first selected target, with simultaneous per-target hit,
+miss, damage/healing and status results. Accuracy and amounts remain independent;
+the action consumes one attack count and applies its total-loss drain/recoil once.
+The default **Strike each target separately** retains the existing behavior.
+The setting supports undo/redo, project saving, duplication and ROM export/reopen.
 Undead slaying is an additional effect with an explicit killing-blow chance,
 independent of element, retaining native death handling and drain/recoil.
 Copied magic attacks carry their own names into battle labels and action logs,

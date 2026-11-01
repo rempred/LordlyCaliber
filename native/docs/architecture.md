@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+## Shared physical attack playback (November 1)
+
+LCATDATA v5 uses settings byte13 for optional shared physical playback. Version2–4
+allocations and older project entries retain mode0. The wrapper uses generated
+adaptations of accepted `0022B1F4`, `0022BFF8` and `0022C78C` for mode1 with multiple
+targets. These keep native per-target calculations and victim events, reuse the
+primary source animation selection, suppress repeated attacker/projectile
+events, and translate each local impact clock to the first target's impact.
+All selected actors are ready before the shared sequence starts. Attacker target
+identity is restored to the first target and completion includes every target.
+Explicit after-effects use the aggregate HP result once, as for ordinary attacks.
+
+A three-entry function table binds the full C adaptations without adding global
+event-emitter hooks. A synchronous stack context uses the spare scratch pointer
+at offset48, below the visual handoff fields at64. Opting in requires recognized
+physical owner bytes; separate playback still preserves unrelated body patches.
+Generated owners come from `tools/generate-attack-adapters.py` in the parent repo.
+Instruction checks cover exported code and native victim-event production with
+controlled scores, animation-duration services and event sinks; they do not
+establish full-console rendered playback.
+
 ## Attack arrays and battle names (November 1)
 
 `LCATDATA` v4 adds optional `LCATMAP1` maps at settings-row offset28. Each map

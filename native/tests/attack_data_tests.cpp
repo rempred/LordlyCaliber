@@ -699,6 +699,7 @@ class AttackDataTests : public QObject {
             a.targetPattern = 12;
             a.targetSide = 2;
             a.targetMask = 0x155;
+            a.playback = 1;
             a.powerPercent = 175;
             a.status = 10;
             a.condition = 0;
@@ -767,6 +768,14 @@ class AttackDataTests : public QObject {
                     unfamiliar[0x22d16c] = char(quint8(unfamiliar[0x22d16c]) ^ 1);
                     QVERIFY_THROWS_EXCEPTION(
                         Error, installAttackReferences(Rom::fromBytes(unfamiliar), *placed));
+                    unfamiliar = removeAttackReferences(Rom::fromBytes(built.image));
+                    unfamiliar[0x22b214] = char(quint8(unfamiliar[0x22b214]) ^ 1);
+                    QVERIFY_THROWS_EXCEPTION(
+                        Error, installAttackReferences(Rom::fromBytes(unfamiliar), *placed));
+                    // Separate-strike mode still preserves an existing physical-body patch.
+                    put8(unfamiliar, placed->romOffset + AttackData::settingsOffset + 254 * 32 + 13, 0);
+                    const auto retained = installAttackReferences(Rom::fromBytes(unfamiliar), *placed);
+                    QCOMPARE(retained[0x22b214], unfamiliar[0x22b214]);
                 }
                 const auto namePointer =
                     u32(built.image, placed->romOffset + AttackData::recordOffset + copy * 16);

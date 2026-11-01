@@ -54,10 +54,14 @@ int lc_attack_visual_program(int action,int original){
     return value?value:original;
 }
 typedef struct {
+    int pass, impact, poseCount, poseAt, poses[2];
+} PhysicalGroup;
+typedef struct {
     void *source;
     s32 action, forced, total, last, initialHP, initialMaxHP, hit, time, synthetic;
     void *target;
     s32 targetHP;
+    PhysicalGroup *group;
 } AttackContext;
 #define CTX ((AttackContext *)lc_attack_scratch)
 void *func_0020C478(u32);
@@ -86,6 +90,29 @@ void lc_original_targets(void *,u8,void *);
 int lc_original_animation(int,int,int,int);
 u8 lc_original_resolve(u8 *,int,int,int,u8,u16,u16,u16,u16);
 u8 lc_original_spell_action(u8);
+extern int (*lc_attack_group_functions[])(void *,int *);
+int lc_attack_animation(int,int,int,int);
+
+/* The accepted physical executors keep their own per-target calculations.
+ * Grouped adaptations suppress only repeated attacker/projectile events and
+ * translate their local clocks to the first target's impact. */
+int lc_group_primary(void) { return !CTX->group || CTX->group->pass==0; }
+int lc_group_impact(int time) {
+    PhysicalGroup *g=CTX->group;
+    if(!g) return 0;
+    if(!g->pass) { g->impact=time; return 0; }
+    return g->impact-time;
+}
+int lc_group_animation(int source,int owner,int action,int mode) {
+    PhysicalGroup *g=CTX->group;
+    int n,value;
+    if(!g) return lc_attack_animation(source,owner,action,mode);
+    n=g->poseAt++;
+    if(g->pass && n<g->poseCount) return g->poses[n];
+    value=lc_attack_animation(source,owner,action,mode);
+    if(!g->pass && n<2) {g->poses[n]=value;g->poseCount=n+1;}
+    return value;
+}
 
 int lc_effective_action(void *source) { return CTX->source==source?CTX->action:(W(source,0x7c)&255); }
 int lc_amount_override(void *source,int action) {
@@ -150,7 +177,7 @@ void lc_attack_begin(void *source) {
     CTX->source=source; CTX->action=W(source,0x7c)&255; CTX->forced=-1;
     CTX->total=0; CTX->last=0; CTX->initialHP=H(source,0x20);
     CTX->initialMaxHP=H(source,0x22); CTX->hit=0; CTX->time=W(source,0x94);
-    CTX->synthetic=0; CTX->target=0; CTX->targetHP=0;
+    CTX->synthetic=0; CTX->target=0; CTX->targetHP=0; CTX->group=0;
 }
 void lc_attack_group_begin(void *source,int action) { lc_attack_begin(source); CTX->action=action&255; }
 void lc_attack_pedra_begin(void *source) { lc_attack_begin(source); CTX->synthetic=1; }
@@ -353,6 +380,8 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
 }
 int lc_attack_physical(void *source,int *time,int route) {
     int ids[9],n,i,result,count,anchor,hit;
+    int shared,start,latest,ready,primaryTarget,primaryTiming[3],j;
+    PhysicalGroup group;
     int visualIds[10],visualFlags[10],visualSource[2],visualCount,visualSlot;
     void *target;
     u8 *rules;
@@ -363,22 +392,49 @@ int lc_attack_physical(void *source,int *time,int route) {
         anchor=route==1?lc_original_ranged_anchor(source):lc_original_anchor(source);
         n=lc_attack_target_list(source,ids,anchor);
     } else { ids[0]=-1; n=1; }
+    shared=rules[13]==1 && n>1;
+    start=*time;latest=*time;ready=W(source,0x94);primaryTarget=W(source,0x68);
+    if(shared) {
+        if(start<ready) start=ready;
+        for(i=0;i<n;i++) {
+            target=func_0020C478(ids[i]);
+            if(target && start<W(target,0x94)) start=W(target,0x94);
+        }
+        group.pass=0;group.impact=start;group.poseCount=0;group.poseAt=0;
+        CTX->group=&group;
+    }
     for(i=0;i<n;i++) {
         CTX->forced=ids[i]; CTX->hit=0;
         W(source,0x6c)=count;
-        if(route==0) result|=lc_original_melee(source,time);
+        if(shared) {
+            group.pass=i;group.poseAt=0;W(source,0x94)=start;*time=start;
+            result|=lc_attack_group_functions[route](source,time);
+            if(!i) {
+                primaryTarget=W(source,0x68);
+                for(j=0;j<3;j++) primaryTiming[j]=W(source,0x84+j*4);
+            }
+            if(ready<W(source,0x94)) ready=W(source,0x94);
+            if(latest<*time) latest=*time;
+        }
+        else if(route==0) result|=lc_original_melee(source,time);
         else if(route==1) result|=lc_original_ranged(source,time);
         else result|=lc_original_alternate(source,time);
         hit=CTX->hit;
         target=func_0020C478(W(source,0x68));
         if(target&&visualSlot&&visualCount<9){visualIds[visualCount]=func_0020D72C(target);visualFlags[visualCount++]=0;}
-        if(!hit && target) lc_attack_record(source,target,0,H(target,0x20),0,W(target,0x94));
+        if(!hit && target) lc_attack_record(source,target,0,H(target,0x20),0,shared?group.impact:W(target,0x94));
+        if(shared && target && latest<W(target,0x94)) latest=W(target,0x94);
+    }
+    if(shared) {
+        W(source,0x68)=primaryTarget;
+        for(j=0;j<3;j++) W(source,0x84+j*4)=primaryTiming[j];
+        W(source,0x94)=ready>latest?ready:latest;*time=latest;CTX->group=0;
     }
     W(source,0x6c)=count+1;
     if(visualSlot&&visualCount){
         visualSource[0]=func_0020D72C(source);visualSource[1]=-1;
         visualIds[visualCount]=-1;visualFlags[visualCount]=-1;
-        func_0021D2C0(0x16,*time>0?*time-1:0,0,visualSlot,visualSource,visualIds,visualFlags);
+        func_0021D2C0(0x16,shared?group.impact:(*time>0?*time-1:0),0,visualSlot,visualSource,visualIds,visualFlags);
     }
     lc_attack_finish(source,*time);
     return result;

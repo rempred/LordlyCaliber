@@ -938,6 +938,29 @@ class UiTests : public QObject {
         auto preview=editor.findChild<QDialog *>();QVERIFY(preview);QVERIFY(preview->isVisible());QVERIFY(preview->grab().save("native/build/attack-preview.png"));preview->close();QCOMPARE(project.manifest(),beforePreview);
         const auto json=project.manifest();auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(json);QCOMPARE(reopened.attacks()->json(),project.attacks()->json());
     }
+    void sharedAttackPlayback() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        AttackEditor editor(&project,&undo,[]{});editor.selectAttack(4);
+        auto box=editor.findChild<QComboBox *>("attackPlaybackMode");QVERIFY(box);QVERIFY(box->isEnabled());
+        QCOMPARE(box->currentData().toInt(),0);
+        box->setCurrentIndex(box->findData(1));emit box->activated(box->currentIndex());
+        QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(4).playback,1);
+        QVERIFY(project.changeReport().text().contains("One strike"));
+        undo.undo();QCoreApplication::processEvents();QCOMPARE(project.attacks()->entry(4).playback,0);
+        QCOMPARE(box->currentData().toInt(),0);
+        undo.redo();QCoreApplication::processEvents();QCOMPARE(box->currentData().toInt(),1);
+        auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(project.manifest());
+        QCOMPARE(reopened.attacks()->entry(4).playback,1);
+        auto data=*reopened.attacks();const auto copy=data.duplicate(4,"Shared strike copy");
+        QCOMPARE(data.entry(copy).playback,1);auto attack=data.entry(copy);attack.playback=0;data.set(copy,attack);
+        QCOMPARE(data.entry(4).playback,1);attack.playback=2;QVERIFY_THROWS_EXCEPTION(Error,data.set(copy,attack));
+        auto legacy=data.json();auto rows=legacy["entries"].toArray();auto row=rows[3].toObject();
+        row.remove("playback");rows[3]=row;legacy["entries"]=rows;
+        auto loaded=AttackData::loadRetail(Rom::open(path));loaded.apply(legacy);QCOMPARE(loaded.entry(4).playback,0);
+        editor.selectAttack(55);QVERIFY(!box->isEnabled());
+        editor.selectAttack(4);QCOMPARE(box->currentData().toInt(),1);
+    }
     void attackAnimationNavigation() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         MainWindow window;window.resize(1400,940);window.show();window.loadRom(path);

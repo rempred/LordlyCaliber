@@ -24,6 +24,7 @@ struct Attack {
     bool dynamicName = false;
     // Zero retains the retail targeting; custom masks address nine formation cells.
     int targetPattern = 0, targetSide = 0, targetMask = 0;
+    int playback = 0; // 0: native sequence per target; 1: shared physical strike/impact.
     int powerPercent = 100;
     // -1 retains the retail secondary-effect rules. Chance is an explicit percentage.
     int status = -1, condition = 1, chance = 100;
