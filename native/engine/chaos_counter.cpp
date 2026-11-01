@@ -10,9 +10,16 @@ QByteArray canonical(const QJsonObject &site, QByteArray bytes) {
     return bytes;
 }
 bool matches(const QByteArray &bytes, const QJsonObject &site, const char *hash) {
+    if (site["name"] == "native-hook" && QString::fromLatin1(hash) == "normalizedSha256" &&
+        sha256(bytes) == ChaosCounter::callOwner()["hookSha256"].toString().toLatin1()) return true;
     return sha256(bytes) == site[hash].toString().toLatin1();
 }
 } // namespace
+QJsonObject ChaosCounter::callOwner() {
+    QFile file(":/game/tools/chaos-call.json");
+    if (!file.open(QIODevice::ReadOnly)) throw Error("Missing C task-call catalog");
+    return QJsonDocument::fromJson(file.readAll()).object();
+}
 QJsonArray ChaosCounter::sites() {
     QFile file(":/game/tools/chaos.json");
     if (!file.open(QIODevice::ReadOnly))

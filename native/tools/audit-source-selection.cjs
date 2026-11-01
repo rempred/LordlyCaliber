@@ -79,11 +79,17 @@ function main(args) {
   check('consumable effects', Number(effectsOffset[1]), Number(effectsSize[1]), 'assembly-owner',
     'rebuild/compiler.cpp', 'game/consumables/effects.s');
   const dataRules = new Set(['tactics', 'elements', 'weapons', 'soldierPopulation']);
-  const partialRules = new Set(['deployment', 'deploymentMenu', 'deploymentMessage', 'trainingXp', 'resistance', 'goth']);
-  for (const [name, owner] of Object.entries(game('tools/game-rules.json')))
+  const partialRules = new Set(['deployment', 'deploymentMenu', 'deploymentMessage', 'trainingXp', 'resistance']);
+  for (const [name, owner] of Object.entries(game('tools/game-rules.json'))) {
+    if (name === 'goth') {
+      const c = game('tools/goth-owner.json').plain;
+      check(name, c.start, c.size + 16, 'adapted-c', 'rebuild/goth_runtime.cpp', 'game/' + c.source);
+      continue;
+    }
     check(name, owner.offset, owner.size, dataRules.has(name) ? 'data' : partialRules.has(name) ? 'instruction-patch' :
       name === 'reserve' ? 'new-editor-module' : 'assembly-owner', 'engine/game_rules.cpp; rebuild/compiler.cpp',
       'game/tools/game-rules.json');
+  }
   for (const [name, owner] of Object.entries(game('tools/status-effects.json')))
     check(name, owner.offset, owner.size, name === 'statusPoison' ? 'data' :
       ['statusSleep', 'statusParalysis', 'statusWake'].includes(name) ? 'compiled-c-with-bounded-hooks' :
@@ -92,8 +98,9 @@ function main(args) {
       ['statusSleep', 'statusParalysis', 'statusWake'].includes(name) ? compiledSource(owner.offset) : 'game/tools/status-effects.json');
   for (const owner of game('shops/owners.json').owners)
     check('shop ' + hex(owner.start), owner.start, owner.size,
-      owner.start === 0x19be40 ? 'adapted-c' : 'instruction-patch', 'rebuild/shop_runtime.cpp',
-      owner.start === 0x19be40 ? 'game/shops/stock.c' : 'game/shops/consumers.s');
+      'adapted-c', 'rebuild/shop_runtime.cpp',
+      owner.start === 0x19be40 ? 'game/shops/stock.c' :
+        'game/' + game('shops/consumers.json').owners.find(c => c.start === owner.start).source);
 
   // A complete-owner check alone misses assembly edits inside accepted C.
   // Read the actual native block definitions so added artwork adapters enter
@@ -125,9 +132,15 @@ function main(args) {
     ['tools/chaos.json', 'rebuild/chaos_counter.cpp', 'extension-hook'],
     ['tools/high-attack.json', 'rebuild/high_attack.cpp', 'extension-hook'],
     ['art/animation-overrides.json', 'rebuild/animation_overrides.cpp', 'extension-hook']
-  ]) for (const site of game(file).sites)
+  ]) for (const site of game(file).sites) {
+    if (file === 'tools/chaos.json' && (site.rom ?? site.offset) === 0x23f7c) {
+      const c = game('tools/chaos-call.json').active;
+      check('Chaos counter task submission', c.start, c.size, 'adapted-c', consumer, 'game/' + c.source);
+      continue;
+    }
     check(file + ': ' + (site.name || site.label), site.rom ?? site.offset, site.size,
       selection, consumer, 'game/' + file);
+  }
   for (const feature of game('tools/displays.json').features)
     for (const site of feature.sites)
       check(feature.name + ': ' + site.name, site.rom, site.size, 'extension-hook',
@@ -160,12 +173,14 @@ tools/high-attack-hooks.s tools/high-attack-module.s tools/luck-bootstrap.s tool
 tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/));
   const whole = new Set(checks.map(row => row.source).filter(value => value.endsWith('.s')).map(value => value.slice(5)));
   for (const name of ['tools/clock.s', 'tools/clock-retail.s']) whole.add(name);
-  const unused = new Set(['promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s']);
+  const unused = new Set(['promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s',
+    'shops/consumers.s', 'shops/selection-guard.s', 'tools/goth-retail.s', 'tools/goth-reward.s',
+    'tools/reserve-bootstrap.s', 'tools/chaos-hook.s']);
   const assembly = files(path.join(native, 'game')).filter(file => file.endsWith('.s')).map(file => {
     const relative = path.relative(path.join(native, 'game'), file).replaceAll('\\', '/');
     return {file: 'game/' + relative, sha256: digest(fs.readFileSync(file)),
-      classification: whole.has(relative) ? 'owner-checked-above' : fragments.has(relative) ? 'patch-adapter-or-new-module' :
-        unused.has(relative) ? 'not-selected-by-native-export' : 'unclassified'};
+      classification: unused.has(relative) ? 'not-selected-by-native-export' : whole.has(relative) ? 'owner-checked-above' :
+        fragments.has(relative) ? 'patch-adapter-or-new-module' : 'unclassified'};
   });
   const callSites = files(path.join(native, 'rebuild')).filter(file => file.endsWith('.cpp')).flatMap(file =>
     fs.readFileSync(file, 'utf8').split('\n').flatMap((text, i) => text.includes('assembleOwner(') && !text.includes('Compiler::assembleOwner(') ?
@@ -175,13 +190,23 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
   const partialWithC = checks.filter(row => row.selection === 'instruction-patch' && row.alternatives.length);
   const hooksWithC = checks.filter(row => row.selection === 'extension-hook' && row.alternatives.length);
   const unknown = assembly.filter(row => row.classification === 'unclassified');
+  const highAttackText = fs.readFileSync(path.join(native, 'game/tools/high-attack-module.s'), 'utf8');
+  const highAttackReferences = [...highAttackText.slice(highAttackText.indexOf('.org 0x940')).matchAll(/\.word (0x[0-9a-f]+),(0x[0-9a-f]+)/gi)]
+    .map(m => ({address: Number(m[1]), expected: Number(m[2])}));
+  if (highAttackReferences.length !== 546) throw Error('High Attack runtime reference census needs review');
+  const deferredGroups = [
+    {name: 'Body/equipment visuals and wide markers', reason: 'The adapter includes three fragments without complete accepted C; markers share its constructor.'},
+    {name: 'Expanded capacity', reason: 'Only 17 of 102 entry/return hooks have accepted C. Compiler-derived settlement data relocations are preserved separately.'},
+    {name: 'High Attack and animation overrides', reason: 'High Attack also changes 546 runtime references in mixed C/assembly owners. Animation overrides share constructor 0021CBC4 and its fixed register/continuation contract.'},
+    {name: 'Custom encounters', reason: 'Materialization, persuasion, retreat, recruit and result consumers still include unrecovered full functions.'}
+  ];
   const result = {generator: 'native/tools/audit-source-selection.cjs',
     status: gaps.length || unknown.length ? 'gaps-found' : partialWithC.length || hooksWithC.length ? 'partial-c-migrations-remain' : 'no-catalogued-gaps',
     fingerprint: state.fingerprint, verifiedAt: state.verifiedAt,
     evidence: {pureOwners: accepted.filter(t => t.sourceClass === 'PURE_C').length,
       hybridOwners: accepted.filter(t => t.sourceClass === 'HYBRID_C').length, authenticatedFiles: authenticated.size},
     scope: 'Native export owner catalogs, game/status-rule instruction emitters, artwork adapters, affinity/persuasion lookups, tool/animation/capacity/Pak extension hooks, bundled assembly census and rebuild assembleOwner call sites. Excludes Editor-Old. Whole-owner gaps, partial C-covered adapters and extension hooks are reported separately; --require-clean includes all three, while --require-whole-owners retains the narrower historical gate. Static selection audit, not a ROM execution test or a semantic replacement proof.',
-    gaps, partialWithC, hooksWithC, checks, assembly, callSites, unclassifiedAssembly: unknown};
+    gaps, partialWithC, hooksWithC, checks, assembly, callSites, deferredGroups, highAttackReferences, unclassifiedAssembly: unknown};
   if (json) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(`Accepted evidence: ${state.fingerprint.slice(0, 8)}; ${result.evidence.pureOwners} PURE_C / ${result.evidence.hybridOwners} HYBRID_C owners.`);

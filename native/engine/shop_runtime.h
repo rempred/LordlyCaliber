@@ -19,6 +19,7 @@ struct ShopPlacement {
     QByteArray canonicalReferences(const QByteArray &owner, qsizetype start) const;
 };
 QJsonObject shopRuntimeCatalog();
+QJsonArray shopConsumerOwners();
 quint32 rebuiltShopInstruction(const QJsonObject &patch);
 void verifyShopRuntime(const Rom &rom, int version);
 } // namespace lordly

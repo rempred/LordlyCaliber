@@ -79,6 +79,7 @@ target_sources(lordly_engine PRIVATE engine/icon_artwork.cpp engine/category_ico
 target_sources(lordly_engine PRIVATE engine/avatar_library.cpp engine/avatar_artwork.cpp engine/avatar_image.cpp engine/army_artwork.cpp engine/army_artwork_export.cpp)
 target_sources(lordly_engine PRIVATE engine/art_resource_links.cpp)
 target_sources(lordly_engine PRIVATE engine/tool_settings.cpp engine/training.cpp engine/game_rules.cpp engine/tool_artwork.cpp engine/chaos_counter.cpp rebuild/chaos_counter.cpp)
+target_sources(lordly_engine PRIVATE engine/goth_runtime.cpp rebuild/goth_runtime.cpp)
 target_sources(lordly_engine PRIVATE engine/display_tool.cpp rebuild/display_tools.cpp)
 target_sources(lordly_engine PRIVATE engine/high_attack.cpp rebuild/high_attack.cpp)
 target_sources(lordly_engine PRIVATE engine/save_document.cpp game/army/soldier_reserve.c game/army/leader.c game/army/character.c)
@@ -93,8 +94,8 @@ if(WIN32)
 endif()
 qt_add_resources(lordly_engine high_attack_sources PREFIX "/" BASE . FILES game/tools/high-attack.json game/tools/high-attack-hooks.s game/tools/high-attack-bootstrap.s game/tools/high-attack-continuation.s game/tools/high-attack-module.s)
 qt_add_resources(lordly_engine display_sources PREFIX "/" BASE . FILES game/tools/displays.json game/tools/display-hook.s game/tools/luck-bootstrap.s game/tools/luck-module.s game/tools/luck-templates.s game/tools/alignment-bootstrap.s game/tools/alignment-module.s game/tools/alignment-templates.s)
-qt_add_resources(lordly_engine tools_sources PREFIX "/" BASE . FILES game/tools/experience.json game/tools/experience.s game/tools/game-rules.json game/tools/clock.s game/tools/clock-retail.s game/tools/goth-reward.s game/tools/goth-retail.s game/tools/training-constructor.c game/tools/reserve-xp.s game/tools/reserve-bootstrap.s)
-qt_add_resources(lordly_engine chaos_sources PREFIX "/" BASE . FILES game/tools/chaos.json game/tools/chaos-hook.s game/tools/chaos-bootstrap.s game/tools/chaos-continuation.s game/tools/chaos-module.s game/tools/chaos-title-list.s)
+qt_add_resources(lordly_engine tools_sources PREFIX "/" BASE . FILES game/tools/experience.json game/tools/experience.s game/tools/game-rules.json game/tools/clock.s game/tools/clock-retail.s game/tools/goth-settlement.c game/tools/goth-owner.json game/tools/training-constructor.c game/tools/reserve-xp.s game/accepted/library/src/lib/func_001390f0.c)
+qt_add_resources(lordly_engine chaos_sources PREFIX "/" BASE . FILES game/tools/chaos.json game/tools/chaos-bootstrap.s game/tools/chaos-continuation.s game/tools/chaos-module.s game/tools/chaos-title-list.s)
 target_sources(lordly_engine PRIVATE engine/background_image.cpp engine/huff_image.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_images.cpp engine/raw_image.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_background_edit.cpp)
@@ -224,7 +225,7 @@ qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
 qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/encounters/dispatcher-hook-0.s game/encounters/dispatcher-hook-1.s game/encounters/dispatcher-hook-2.s game/encounters/dispatcher.json)
 qt_add_resources(lordly_engine encounter_labels PREFIX "/" BASE . FILES game/encounters/labels.json)
 qt_add_resources(lordly_engine consumable_sources PREFIX "/" BASE . FILES game/consumables/effects.json game/consumables/effects.s)
-qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/stock.c game/shops/selection-guard.s game/shops/consumers.s)
+qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/stock.c game/shops/selection-guard.c game/shops/consumers.json game/shops/func_001977E0.c game/shops/func_001989C4.c game/shops/func_001994B4.c game/shops/func_0019A294.c)
 target_link_libraries(lordly_engine PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Qml)
 target_sources(lordly_engine PRIVATE engine/project64_session.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_document_compiler.cpp engine/scene_import.cpp)
@@ -543,6 +544,10 @@ endforeach()
 qt_add_resources(lordly_engine accepted_owner_sources PREFIX "/" BASE . FILES
   game/accepted/hybrid/func_000c37ec.c
   game/accepted/library/include/common/types.h
+  game/accepted/library/include/game/scenario_source_record.h
+  game/accepted/library/include/game/shop_price_interface.h
+  game/accepted/library/src/lib/sptask.c
+  game/tools/chaos-call.json game/tools/chaos-task.c
   game/accepted/library/src/battle/func_002159D0.c
   game/accepted/library/src/battle/func_00215CF0.c
   game/accepted/library/src/battle/func_0021EBBC.c

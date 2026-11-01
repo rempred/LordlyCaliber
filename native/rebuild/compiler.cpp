@@ -1,6 +1,7 @@
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/goth_runtime.h"
 #include "rebuild/accepted_rom.h"
 #include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
@@ -194,8 +195,10 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
         directory);
     if (!fixedLayout.isEmpty()) {
         const auto linked = readFile(elf);
-        const auto code = elfSectionBytes(linked, ".text");
+        auto code = elfSectionBytes(linked, ".text");
         const int size = fixedLayout["size"].toInt();
+        if (fixedLayout["padToOwner"].toBool() && code.size() < size)
+            code.append(QByteArray(size - code.size(), 0));
         if (u32(linked, elfSectionHeader(linked, ".text") + 12) != address ||
             size <= 0 || code.size() < size || code.sliced(size) != QByteArray(code.size() - size, 0) ||
             sha256(code.first(size)) != fixedLayout["sha256"].toString().toLatin1())
@@ -213,7 +216,12 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
                     throw Error("Compiled C switch table differs from its qualified original");
                 extent += length;
             }
-            if (extent != data.size()) throw Error("Unexpected compiled C table extent");
+            // The assembler rounds read-only sections to 16 bytes. Qualified
+            // adaptations may own only the original table, never its neighbours.
+            if (extent != data.size() &&
+                (!fixedLayout["padToOwner"].toBool() || data.size() - extent >= 16 ||
+                 data.sliced(extent) != QByteArray(data.size() - extent, 0)))
+                throw Error("Unexpected compiled C table extent");
         }
         return code.first(size);
     }
@@ -253,6 +261,38 @@ QByteArray Compiler::compileAcceptedOwner(quint32 romStart, const QString &direc
                                headers, symbols, false, owner);
     }
     throw Error("Missing accepted C owner: " + QString::number(romStart, 16));
+}
+CompiledOwner Compiler::compileQualifiedOwner(const QJsonObject &owner, const QString &directory,
+                                               const QString &name) const {
+    auto authenticated = [](const QJsonObject &row) {
+        const auto data = readFile(":/game/" + row["source"].toString());
+        if (sha256(data) != row["sha256"].toString().toLatin1())
+            throw Error("Qualified C input changed: " + row["source"].toString());
+        return data;
+    };
+    QMap<QString, QByteArray> headers;
+    for (const auto &v : owner["headers"].toArray()) {
+        const auto h = v.toObject();
+        headers[h["name"].toString()] = authenticated(h);
+    }
+    QMap<QString, quint32> symbols;
+    const auto bindings = owner["symbols"].toObject();
+    for (auto it = bindings.begin(); it != bindings.end(); ++it)
+        symbols[it.key()] = quint32(it->toInteger());
+    auto input = owner;
+    input["sha256"] = owner["sourceSha256"];
+    CompiledOwner result;
+    result.code = compileAtLayout(authenticated(input), directory, name,
+        quint32(owner["address"].toInteger()), ".text", headers, symbols, false, owner);
+    if (!owner["tables"].toArray().isEmpty()) {
+        const auto data = elfSectionBytes(readFile(QDir(directory).filePath(name + ".elf")), ".rodata");
+        for (const auto &v : owner["tables"].toArray()) {
+            const auto table = v.toObject();
+            result.tables[quint32(table["start"].toInteger())] =
+                data.mid(table["offset"].toInt(), table["size"].toInt());
+        }
+    }
+    return result;
 }
 CompiledModule Compiler::compileModule(const QByteArray &source, const QString &directory,
                                        const QString &name, quint32 address,
@@ -622,6 +662,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
     const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
+    if (!p.tools() && p.rom().revision() == 0 &&
+        (!deploymentRules.builds().isEmpty() || ChaosCounter::load(p.rom()).enabled()))
+        p.loadTools(); // Upgrade recognized C-backed adapters even if Tools was never opened.
     if(deploymentRules.value("deploymentLimit")>20)
         throw Error("At most 20 player squads may be deployed. Set Maximum deployed squads to 20 or less in Tools before exporting; all 30 organized squads remain saved.");
     if(p.rom().revision()==0)p.loadAnimationOverrides();
@@ -1248,8 +1291,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = rebuildPersuasion(Rom::fromBytes(result.image), p.encounters()->persuasion(), compiler, directory);
         result.report << "Compiled the persuasion starting-score table and preserved health, temperament and custom squad overrides";
     }
-    if (p.tools() && p.tools()->gameRules().modified()) {
-        for (const auto &owner : p.tools()->gameRules().builds()) {
+    const auto ruleBuilds = p.tools() ? p.tools()->gameRules().builds() : QVector<RuleBuild>{};
+    if (!ruleBuilds.isEmpty()) {
+        for (const auto &owner : ruleBuilds) {
+            if (owner.name == "goth") {
+                rebuildGothRuntime(p, compiler, directory, result);
+                continue;
+            }
             if (result.image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
                 throw Error("Another rebuild owner overlaps the " + owner.name + " rule");
             const auto bytes = owner.compiledRecovery ? compileStatusRecovery(owner, compiler, directory) : owner.data

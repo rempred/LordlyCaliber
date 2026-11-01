@@ -67,6 +67,7 @@ for(const id of [...Array(shopCount).keys(),...([shopCount,255,0xffffffff].filte
   assert.equal(m.r8(temp-1),0xa6);assert.equal(m.r8(temp+512),0xa6);
   assert(m.ram.slice(m.phys(temp+combined.length*2),m.phys(temp+512)).every(x=>x===0));
   producers++;
+  if(process.argv.includes('--producer-only'))continue;
   m.trap(0x80093380,c=>{
     const address=c.get('a0'),size=c.get('a1');
     assert([[equipment,200],[consumables,60],[0x8021a114,6]].some(x=>x[0]===address&&x[1]===size));

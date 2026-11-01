@@ -389,6 +389,7 @@ class EngineTests : public QObject {
             const auto full=scenarios.json();QVERIFY_THROWS_EXCEPTION(Error,scenarios.addSquad(1,0,classes));
             QCOMPARE(scenarios.json(),full);project.setScenarios(full);
             auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();rules["deploymentLimit"]=20;
+            rules["gothLowDivisor"]=10;rules["gothHighDivisor"]=100;rules["reserveXp"]=25;
             settings["gameRules"]=rules;project.setTools(settings);
             auto root=QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir();QVERIFY(root.cd("../../.."));
             const auto output=root.filePath("Test ROMs/"+capacityTestRun()+"/public");QVERIFY(QDir().mkpath(output));
@@ -399,6 +400,8 @@ class EngineTests : public QObject {
             QVERIFY(reopened.expandedArmies());reopened.loadScenarios();reopened.loadTools();
             QCOMPARE(reopened.scenarios()->json(),full);
             QCOMPARE(reopened.tools()->gameRules().value("deploymentLimit"),20);
+            QCOMPARE(reopened.tools()->gameRules().value("gothLowDivisor"),10);
+            QCOMPARE(reopened.tools()->gameRules().value("reserveXp"),25);
             QCOMPARE(reopened.classData().entries().size(),165);
             const auto again=rebuild(reopened,tools,work+"-again");
             const auto againFolder=output+"-again";QVERIFY(QDir().mkpath(againFolder));
@@ -3540,7 +3543,7 @@ class EngineTests : public QObject {
                 const auto result = rebuild(project, tools, build.path());
                 const auto placed = ShopPlacement::read(Rom::fromBytes(result.image));
                 QVERIFY(placed);
-                QCOMPARE(placed->version, 4);
+                QCOMPARE(placed->version, 5);
                 QCOMPARE(placed->count, stage ? 37 : 36);
                 QCOMPARE(placed->offset % 16, 0U);
                 auto checksum = result.image;
@@ -3588,6 +3591,49 @@ class EngineTests : public QObject {
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }
+    }
+    void shopPriorRuntimeCompatibility() {
+        const auto fixtures = qEnvironmentVariable("LORDLY_TEST_LEGACY_SHOPS").split(';', Qt::SkipEmptyParts);
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        const auto master = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (fixtures.isEmpty() || tools.isEmpty() || master.isEmpty())
+            QSKIP("Prior editor shop exports, private ROM and compiler are required");
+        try {
+            for (const auto &fixture : fixtures) {
+                const auto source = Rom::open(fixture);
+                const auto old = ShopPlacement::read(source);
+                QVERIFY(old && old->version == 4);
+                auto project = Project::fromRom(source);
+                project.loadShops();
+                const auto stock = project.shops()->json();
+                const auto classes = project.classData().entries();
+                QTemporaryDir work;
+                const auto migrated = rebuild(project, tools, work.path());
+                QCOMPARE(ShopPlacement::read(Rom::fromBytes(migrated.image))->version, 5);
+                QTemporaryDir output(QFileInfo(master).absolutePath() + "/Test ROMs/native-shop-upgrade-XXXXXX");
+                QVERIFY(output.isValid());
+                output.setAutoRemove(false);
+                const auto target = output.filePath(QFileInfo(master).fileName());
+                exportRom(project, migrated, target);
+                auto reopened = Project::fromRom(Rom::open(target));
+                reopened.loadShops();
+                QCOMPARE(reopened.shops()->json(), stock);
+                const auto restoredClasses = reopened.classData().entries();
+                QCOMPARE(restoredClasses.size(), classes.size());
+                for (int i = 0; i < classes.size(); ++i) {
+                    QCOMPARE(restoredClasses[i].record, classes[i].record);
+                    QCOMPARE(restoredClasses[i].appearance, classes[i].appearance);
+                    QCOMPARE(restoredClasses[i].name, classes[i].name);
+                    QCOMPARE(restoredClasses[i].namedAlias, classes[i].namedAlias);
+                }
+                QTemporaryDir again;
+                QCOMPARE(rebuild(reopened, tools, again.path()).image, migrated.image);
+                atomicWrite(output.filePath("shops.json"),
+                    QJsonDocument(QJsonObject{{"rom", target}, {"shops", stock}}).toJson());
+                qInfo().noquote() << "Upgraded shop export:" << output.filePath("shops.json");
+                QCOMPARE(Rom::open(fixture).bytes(), source.bytes());
+            }
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void shopMembershipProjects() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

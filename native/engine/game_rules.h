@@ -34,5 +34,6 @@ class GameRules {
     QMap<QString, int> values_, originals_;
     QMap<QString, QString> unavailable_;
     QMap<QString, QByteArray> owners_;
+    bool gothConfigured_ = false;
 };
 }

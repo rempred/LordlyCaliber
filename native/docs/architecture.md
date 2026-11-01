@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+## Qualified C adapters (November 1)
+
+`Compiler::compileQualifiedOwner` compiles a complete authenticated C producer
+and its original-address switch tables. Manifests pin source/header identities,
+symbol bindings, allocation limits and output hashes; only zero alignment
+padding is excluded from installed tables. Generators derive relocation sites
+from ELF HI/LO pairs instead of assuming original instruction offsets.
+
+Shop descriptor v5 selects four complete C consumers and a C purchase guard.
+Readers retain v1–v4 compatibility. `LCGOTH01` in the settlement owner's final
+16 bytes records two divisors and reserve-loader selection; complete qualified
+code and table hashes protect everything else. Expanded-army installation uses
+the generated six settlement data-reference pairs. Chaos task submission uses
+a normal C call to its existing extension, recognizing both old/new call forms.
+Unedited retail code continues through the exact accepted baseline.
+
 ## Editor consumer audit (November 1)
 
 The [current source audit](source-selection-audit.md) extends the earlier

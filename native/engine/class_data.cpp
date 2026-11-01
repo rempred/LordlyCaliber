@@ -4,6 +4,7 @@
 #include "engine/class_text.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/promotion.h"
+#include "engine/shop_runtime.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -209,6 +210,7 @@ QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &byte
                                 const QJsonObject &originalBases) {
     auto variants = promotionOwners()["owners"].toArray();
     variants.append(scenarioMemberOwner());
+    for (const auto &variant : shopConsumerOwners()) variants.append(variant);
     for (const auto &value : variants) {
         const auto source = value.toObject();
         if (source["start"] != owner["start"] || source["size"] != owner["size"] ||

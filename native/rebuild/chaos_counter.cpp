@@ -27,6 +27,24 @@ void rebuildChaosCounter(const Project &project, const Compiler &compiler, const
         const int at = site["rom"].toInt(), size = site["size"].toInt();
         const auto name = site["name"].toString();
         const bool module = name == "source-module";
+        if (name == "native-hook") {
+            const auto call = ChaosCounter::callOwner();
+            const auto retail = call["retail"].toObject();
+            const auto owner = call[setting.enabled() ? "active" : "retail"].toObject();
+            const int begin = owner["start"].toInt(), length = owner["size"].toInt();
+            auto canonical = image.mid(begin, length);
+            if (canonical != project.rom().bytes().mid(begin, length))
+                throw Error("Another rebuild owner overlaps the task-submission function");
+            // Older exports used J; the C call uses JAL. Both return through
+            // the unchanged loader/module continuation and the caller's frame.
+            put32(canonical, at - begin, 0x0c000000U | ((0x80090140U >> 2) & 0x3ffffffU));
+            if (sha256(canonical) != retail["sha256"].toString().toLatin1())
+                throw Error("Task-submission code changed outside the counter hook");
+            const auto built = compiler.compileQualifiedOwner(owner, directory, "chaos_task").code;
+            ChaosCounter::validateCompiled(site, built.mid(at - begin, size), setting.enabled());
+            image.replace(begin, length, built);
+            continue;
+        }
         if (module && legacy && !setting.enabled())
             continue;
         if (image.mid(at, size) != project.rom().bytes().mid(at, size))
@@ -35,10 +53,7 @@ void rebuildChaosCounter(const Project &project, const Compiler &compiler, const
             sha256(image.mid(at, size)) != site["retailSha256"].toString().toLatin1())
             throw Error("Chaos Frame source-module allocation is occupied");
         QByteArray assembly;
-        if (name == "native-hook")
-            assembly = QByteArray(".set CF_RETAIL,") + (setting.enabled() ? "0\n" : "1\n") +
-                       source(site["source"].toString());
-        else if (!setting.enabled())
+        if (!setting.enabled())
             assembly = QString(".space %1,%2\n").arg(size).arg(module ? 255 : 0).toLatin1();
         else {
             assembly = source(site["source"].toString());

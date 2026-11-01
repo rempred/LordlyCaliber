@@ -1,6 +1,46 @@
 # Native export source audit
 
-## Current audit — 2026-11-01
+## Adapter migration — 2026-11-01
+
+The follow-up migration replaces six previously reported C-covered sites with
+complete maintained C adaptations:
+
+- All four shop consumers, their switch table and the empty-selection guard.
+  Halfword consumable IDs, equipment categories and Cancel behavior remain.
+  Version 5 exports recognize older versions 1–4 and regenerate class/item
+  references from compiler relocations.
+- The entire settlement function `001390F0`, including configurable Goth and
+  the reserve-XP loader. Original wallet limits, mission exclusions and item/
+  Soldier awards remain. The loader uses the game's synchronous DMA service;
+  the separate editor-authored reserve-XP module remains unchanged.
+- The full task-submission C producer containing the Chaos-counter call.
+  Its ordinary C call replaces the prior jump adapter, while preserving the
+  counter's separate loader, module and return contract.
+
+The audit now reports **7 larger C-covered instruction adapters and 33 extension
+hooks**, zero whole-owner gaps and zero unclassified assembly files. This is
+intentionally not an entirely C-only exporter. Joe requested that mixed groups
+wait until complete C is available. Body/equipment visuals include three
+unrecovered fragments; wide markers share that constructor. Expanded capacity
+has 17 C-covered sites among 102 hooks. High Attack has 546 additional runtime
+reference patches, including unrecovered functions. Animation overrides share
+its `0021CBC4` constructor and fixed register/continuation contract, so they stay
+with that group. Custom encounters likewise retain mixed recovered/unrecovered
+consumers. The audit lists these deferrals rather than hiding their assembly.
+
+Qualified adaptations authenticate source/header identities, compiled code and
+switch tables. No compiled instruction rewriting implements the migrated shop
+or settlement behavior. Relocating declared data pointers remains necessary for
+expanded classes, items and armies. Original `.s` fragments remain historical
+compatibility fixtures, excluded from the active native resource selection.
+
+Validation includes complete exported shop, settlement and task-submission
+functions in the instruction interpreter; older-export upgrades; custom weapon
+categories; expanded armies; export/reopen; unchanged second exports; and exact
+untouched-ROM identity. Cache, DMA, drawing and OS services are trapped in these
+tests; this does not claim a new full-emulator playthrough.
+
+## Pre-migration audit — 2026-11-01
 
 This updates the historical October 15 record below and the
 [October 16 migration](source-selection-migration.md). It covers the native

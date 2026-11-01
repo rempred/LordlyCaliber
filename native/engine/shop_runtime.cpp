@@ -7,6 +7,11 @@
 #include <QJsonDocument>
 
 namespace lordly {
+QJsonArray shopConsumerOwners() {
+    QFile file(":/game/shops/consumers.json");
+    if (!file.open(QIODevice::ReadOnly)) throw Error("Missing C shop consumer catalog");
+    return QJsonDocument::fromJson(file.readAll()).object()["owners"].toArray();
+}
 QJsonObject shopRuntimeCatalog() {
     QFile file(":/game/shops/owners.json");
     if (!file.open(QIODevice::ReadOnly))
@@ -36,6 +41,7 @@ quint32 rebuiltShopInstruction(const QJsonObject &patch) {
     throw Error("Unrecognized shop instruction transformation");
 }
 QByteArray ShopPlacement::canonicalReferences(const QByteArray &owner, qsizetype start) const {
+    if (version >= 5) return owner; // Complete C variant; no instruction-patch normalization.
     auto result = owner;
     for (const auto &value : shopRuntimeCatalog()["patches"].toArray()) {
         const auto patch = value.toObject();
@@ -71,6 +77,21 @@ void verifyShopRuntime(const Rom &rom, int version) {
         }
         if (classes)
             bytes = classes->canonicalReferences(bytes, start);
+        if (version >= 5) {
+            bool recognized = false;
+            for (const auto &v : shopConsumerOwners()) {
+                const auto variant = v.toObject();
+                if (variant["start"].toInt() != start) continue;
+                recognized = sha256(bytes) == variant["sha256"].toString().toLatin1();
+                for (const auto &t : variant["tables"].toArray()) {
+                    const auto table = t.toObject();
+                    recognized &= sha256(rom.bytes().mid(table["start"].toInt(), table["size"].toInt())) ==
+                        table["sha256"].toString().toLatin1();
+                }
+            }
+            if (!recognized) throw Error("C shop consumer or switch table differs from its rebuild");
+            continue;
+        }
         if (version) {
             bytes = ShopPlacement{0, version}.canonicalReferences(bytes, start);
             if (start == 0x19be40)
@@ -82,12 +103,20 @@ void verifyShopRuntime(const Rom &rom, int version) {
             throw Error("Unrecognized shop runtime at z64 " + QString::number(start, 16) +
                         "; this ROM's shop patch requires import support");
     }
+    if (version < 5)
+        for (const auto &v : shopConsumerOwners())
+            for (const auto &t : v.toObject()["tables"].toArray()) {
+                const auto table = t.toObject();
+                if (sha256(rom.bytes().mid(table["start"].toInt(), table["size"].toInt())) !=
+                    table["retailSha256"].toString().toLatin1())
+                    throw Error("Shop switch table changed outside its rebuild");
+            }
 }
 std::optional<ShopPlacement> ShopPlacement::read(const Rom &rom) {
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (!header.startsWith("LC05SHOP"))
         return std::nullopt;
-    if (header.size() != descriptorSize || (u32(header, 8) < 1 || u32(header, 8) > 4) ||
+    if (header.size() != descriptorSize || (u32(header, 8) < 1 || u32(header, 8) > 5) ||
         u32(header, 20) < rowCount || u32(header, 20) > 256 ||
         (u32(header, 8) < 3 && u32(header, 20) != rowCount) ||
         u32(header, 16) != rowSize * u32(header, 20) || u32(header, 24) != rowSize ||

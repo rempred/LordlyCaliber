@@ -1,0 +1,44 @@
+{
+  "generator": "native/tools/generate-chaos-call.cjs",
+  "retail": {
+    "start": 146944,
+    "size": 576,
+    "address": 2148088320,
+    "source": "accepted/library/src/lib/sptask.c",
+    "sourceSha256": "e5c8b54848a29ee3643280eee1d6c2657b3308ab398fc81f4c8787ec4200f038",
+    "sha256": "25ff8e09e74edf19ad5e5c01d4bf7509fcf10bb8e246ead454e3cd31867749e9",
+    "headers": [],
+    "symbols": {
+      "D_800C3560": 2148283744,
+      "bcopy": 2148085856,
+      "osVirtualToPhysical": 2148075392,
+      "osWritebackDCache": 2148073792,
+      "__osSpSetStatus": 2148116320,
+      "__osSpSetPc": 2148116336,
+      "__osSpRawStartDma": 2148116384,
+      "__osSpDeviceBusy": 2148116288
+    },
+    "tables": []
+  },
+  "active": {
+    "start": 146944,
+    "size": 576,
+    "address": 2148088320,
+    "source": "tools/chaos-task.c",
+    "sourceSha256": "a56164be4d6f4de3fc946357bb5eb63eff8568cf65a76074a502493caa4c0537",
+    "sha256": "a7197263a0de1d08f9252ad716286772b121a24c1d81107be26a1792acf7b386",
+    "headers": [],
+    "symbols": {
+      "D_800C3560": 2148283744,
+      "bcopy": 2148085856,
+      "osVirtualToPhysical": 2148075392,
+      "__osSpSetStatus": 2148116320,
+      "__osSpSetPc": 2148116336,
+      "__osSpRawStartDma": 2148116384,
+      "__osSpDeviceBusy": 2148116288,
+      "lc_chaos_submit": 2148158072
+    },
+    "tables": []
+  },
+  "hookSha256": "4f9d7092a78c1e027972a33629c5b5977afb75a79c5187d3e54961bc39a4c132"
+}

@@ -6,6 +6,7 @@
 #include "engine/art_resource_links.h"
 #include "engine/promotion.h"
 #include "engine/shop_runtime.h"
+#include "engine/weapon_types.h"
 #include "rebuild/promotion_runtime.h"
 #include <QFile>
 #include <QJsonArray>
@@ -268,11 +269,17 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             patch(start + at, (word & 0xffff0000U) | next);
         }
         canonical = ClassTextPlacement::canonicalAll(rom, canonical, start);
+        canonical = canonicalWeaponTypeText(rom, canonical, start);
         if (shopPlacement)
             canonical = shopPlacement->canonicalReferences(canonical, start);
         validateArtOwnerLinks(rom,start,size);
         const auto hash = QString::fromLatin1(sha256(canonicalArtOwner(canonical,start)));
         bool recognized = hash == owner["retailSha256"].toString();
+        for (const auto &v : shopConsumerOwners()) {
+            const auto variant = v.toObject();
+            if (variant["start"].toInt() == start && variant["size"].toInt() == size)
+                recognized |= hash == variant["cSourceSha256"].toString();
+        }
         for (const auto item : promotion) {
             const auto compatible = item.toObject();
             if (compatible["start"].toInt() == start && compatible["size"].toInt() == size)

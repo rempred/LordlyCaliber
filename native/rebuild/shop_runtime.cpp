@@ -1,5 +1,7 @@
 #include "rebuild/shop_runtime.h"
 #include "engine/shop_runtime.h"
+#include "engine/class_data.h"
+#include "engine/weapon_types.h"
 #include <QFile>
 #include <QJsonArray>
 
@@ -50,8 +52,8 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
     if (stock.entries.value("func_0019BE40") != stock.address)
         throw Error("Compiled shop entry moved from its original address");
     auto producer = stock.fitOwner(ShopPlacement::guardOffset - ShopPlacement::stockOffset);
-    auto guard = compiler.assembleOwner(source("selection-guard.s"), directory, "shop_guard",
-                                         ShopPlacement::guardOffset + ShopPlacement::slabDelta);
+    auto guard = compiler.compileModule(source("selection-guard.c"), directory, "shop_guard",
+        ShopPlacement::guardOffset + ShopPlacement::slabDelta, {}, {{"D_80219F40", 0x80219f40}}).bytes;
     const auto guardSpace = ShopPlacement::stockOffset + ShopPlacement::stockSize - ShopPlacement::guardOffset;
     if (guard.size() > guardSpace)
         throw Error("Shop selection guard exceeds its owner");
@@ -63,32 +65,36 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
             rowReferences << reference;
     if (rowReferences.size() != 1 || rowReferences[0].addend)
         throw Error("Compiled shop inventory reference is ambiguous");
-    const auto consumers =
-        compiler.assembleOwner(source("consumers.s"), directory, "shop_consumers", 0x80000000,
-                               {{"lc_shop_selection_guard",
-                                 ShopPlacement::producerOffset + ShopPlacement::slabDelta + 72}});
-    const auto patches = shopRuntimeCatalog()["patches"].toArray();
-    auto fit = [](QByteArray bytes, qsizetype length) {
-        if (bytes.size() < length || bytes.mid(length) != QByteArray(bytes.size() - length, 0))
-            throw Error("Assembled shop code exceeds its owner");
-        return bytes.first(length);
-    };
-    fit(consumers, patches.size() * 4);
     auto image = rom.bytes();
     if (quint64(image.size()) < quint64(offset) + data.size())
         image.append(QByteArray(offset + data.size() - image.size(), char(-1)));
     image.replace(offset, data.size(), data);
     image.replace(ShopPlacement::stockOffset, producer.size(), producer);
-    for (int i = 0; i < patches.size(); ++i) {
-        const auto patch = patches[i].toObject();
-        const auto word = u32(consumers, i * 4);
-        if (word != rebuiltShopInstruction(patch))
-            throw Error("Assembled shop reader disagrees with its operand contract");
-        put32(image, patch["site"].toInt(), word);
+    const auto classes = ClassPlacement::read(rom);
+    const auto categoryText = weaponTypeTextWords(rom);
+    for (const auto &v : shopConsumerOwners()) {
+        const auto owner = v.toObject();
+        const auto start = quint32(owner["start"].toInteger());
+        auto built = compiler.compileQualifiedOwner(owner, directory, "shop_" + QString::number(start, 16));
+        if (classes) built.code = classes->placedReferences(built.code, start);
+        for (const auto &word : categoryText)
+            if (word.offset >= start && word.offset + 4 <= start + built.code.size()) {
+                if (u32(built.code, word.offset - start) != word.original)
+                    throw Error("C shop category-text instruction moved outside its qualified layout");
+                const auto priorWord = u32(rom.bytes(), word.offset);
+                if (priorWord != word.original && priorWord != word.installed)
+                    throw Error("Shop category-text reference changed outside its rebuild");
+                // The enclosing export temporarily removes weapon-type references
+                // before relocating item data. Preserve that intermediate state.
+                put32(built.code, word.offset - start, priorWord);
+            }
+        image.replace(start, built.code.size(), built.code);
+        for (auto table = built.tables.cbegin(); table != built.tables.cend(); ++table)
+            image.replace(table.key(), table.value().size(), table.value());
     }
     QByteArray descriptor(ShopPlacement::descriptorSize, 0);
     descriptor.replace(0, 8, "LC05SHOP");
-    put32(descriptor, 8, 4);
+    put32(descriptor, 8, 5);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, (ShopPlacement::rowSize * shops.size()));
     put32(descriptor, 20, shops.size());

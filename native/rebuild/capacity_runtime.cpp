@@ -1,6 +1,7 @@
 #include "rebuild/capacity_runtime.h"
 #include "engine/capacity_placement.h"
 #include "engine/scenario_member_runtime.h"
+#include "engine/goth_runtime.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -264,6 +265,22 @@ void applyCapacityRuntime(QByteArray &rom,const CapacityRuntimeBuild &b) {
     // helper earlier in this same export. Both whole owners are authenticated;
     // capacity replaces its entry with the same helper linked to the new pools.
     const auto input=Rom::fromBytes(rom);
+    auto selected = b;
+    if (const auto goth = GothRuntime::read(input)) {
+        // Only reference locations changed in the complete C settlement owner.
+        // Keep every mixed C/assembly capacity behavior unchanged.
+        for (auto at = GothRuntime::offset; at < GothRuntime::offset + GothRuntime::size; at += 4) {
+            selected.expected.remove(at);
+            selected.words.remove(at);
+        }
+        const auto owner = GothRuntime::definition()[goth->reserve ? "reserve" : "plain"].toObject();
+        for (const auto &v : owner["capacityReferences"].toArray()) {
+            const auto ref = v.toObject();
+            pair(selected, GothRuntime::offset + number(ref["high"]), GothRuntime::offset + number(ref["low"]),
+                 number(ref["highWord"]), number(ref["lowWord"]),
+                 groupBase(b, ref["group"].toString()) + number(ref["addend"]));
+        }
+    }
     const auto classes=ClassPlacement::read(input);
     bool memberVariant=false,trainingVariant=false;
     for(auto it=b.ownerGuards.cbegin();it!=b.ownerGuards.cend();++it) {
@@ -276,11 +293,11 @@ void applyCapacityRuntime(QByteArray &rom,const CapacityRuntimeBuild &b) {
     }
     if(u32(rom,0x19554c)!=b.entryGuards.value(0x19554c) || u32(rom,0x195550)!=b.entryGuards.value(0x195550))
         memberVariant=scenarioMemberRuntimeInstalled(Rom::fromBytes(rom));
-    for(auto it=b.expected.cbegin();it!=b.expected.cend();++it)
+    for(auto it=selected.expected.cbegin();it!=selected.expected.cend();++it)
         if(u32(rom,it.key())!=it.value() && !(memberVariant && (it.key()==0x19554c || it.key()==0x195550)) &&
            !(trainingVariant && (it.key()==0x23a5ec || it.key()==0x23a5f0)))
             throw Error("Unrecognized capacity operand at z64 "+QString::number(it.key(),16));
-    for(auto it=b.words.cbegin();it!=b.words.cend();++it)put32(rom,it.key(),it.value());
+    for(auto it=selected.words.cbegin();it!=selected.words.cend();++it)put32(rom,it.key(),it.value());
 }
 QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &b) {
     auto classes=ClassPlacement::read(rom);

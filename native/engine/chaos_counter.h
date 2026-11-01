@@ -7,6 +7,7 @@ class ChaosCounter {
     enum class Installation { Retail, Legacy, Native, Unknown };
     static ChaosCounter load(const Rom &);
     static QJsonArray sites();
+    static QJsonObject callOwner();
     static void validateCompiled(const QJsonObject &, const QByteArray &, bool enabled);
     bool available() const {
         return installation_ != Installation::Unknown;

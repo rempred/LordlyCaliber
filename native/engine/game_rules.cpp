@@ -1,4 +1,5 @@
 #include "engine/game_rules.h"
+#include "engine/goth_runtime.h"
 #include "engine/status_rules.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -104,6 +105,7 @@ QVector<GameRule> GameRules::definitions() {
 }
 GameRules GameRules::load(const Rom &rom) {
     GameRules result;
+    bool knownGothC = false, gothCallsReserve = false;
     for (const auto &rule : definitions()) result.values_[rule.key] = rule.retail;
     const auto sites = catalog();
     for (auto it=sites.begin();it!=sites.end();++it) {
@@ -133,16 +135,18 @@ GameRules GameRules::load(const Rom &rom) {
                     throw Error("Deployment limit checks disagree; their existing values will be preserved.");
                 result.values_["deploymentLimit"]=value;
             } else if(name=="reserve") {
+                const auto modern = GothRuntime::read(rom);
                 const auto hook=rom.bytes().mid(0x139afc,4);
                 int amount=0;
                 if(bytes!=QByteArray(4096,char(-1))) {
                     amount=int(u32(bytes,8));put32(canonical,8,0);
                     if(bytes.first(8)!="LCRESXP1" || amount<1 || amount>100 ||
                        sha256(canonical)!=site["authoredSha256"].toString().toLatin1() ||
-                       hook!=QByteArray::fromHex("0c0794b4") ||
-                       sha256(rom.bytes().mid(0x139a10,164))!=site["bootstrapSha256"].toString().toLatin1())
+                       (modern ? !modern->reserve :
+                        hook!=QByteArray::fromHex("0c0794b4") ||
+                        sha256(rom.bytes().mid(0x139a10,164))!=site["bootstrapSha256"].toString().toLatin1()))
                         throw Error("Reserve XP installation is unrecognized; its bytes will be preserved.");
-                } else if(hook!=QByteArray::fromHex("0c0771c8")) throw Error("Mission reward call has an unknown modification.");
+                } else if(modern ? modern->reserve : hook!=QByteArray::fromHex("0c0771c8")) throw Error("Mission reward call has an unknown modification.");
                 result.values_["reserveXp"]=amount;result.owners_["reserveHook"]=hook;
             } else if(name=="trainingXp") {
                 const quint32 word=u32(bytes,0);
@@ -151,7 +155,14 @@ GameRules GameRules::load(const Rom &rom) {
                     throw Error("Training XP rule is unrecognized; its existing code will be preserved.");
                 result.values_["trainingBonus"]=value;
             } else if (name=="goth") {
-                if(sha256(bytes)!=site["sha256"].toString().toLatin1()) {
+                const auto modern = GothRuntime::read(rom);
+                if (modern) {
+                    knownGothC = true;
+                    gothCallsReserve = modern->reserve;
+                    result.values_["gothLowDivisor"] = modern->low;
+                    result.values_["gothHighDivisor"] = modern->high;
+                    result.gothConfigured_ = true;
+                } else if(sha256(bytes)!=site["sha256"].toString().toLatin1()) {
                     const int low=u16(bytes,26),high=u16(bytes,50);
                     put16(canonical,26,25);put16(canonical,50,50);
                     if(rom.bytes().mid(0x27c6000,8)=="LCRESXP1" &&
@@ -160,6 +171,7 @@ GameRules GameRules::load(const Rom &rom) {
                     if(sha256(canonical)!=site["authoredSha256"].toString().toLatin1() || low<1 || low>1000 || high<1 || high>1000)
                         throw Error("Goth formula is unrecognized; its existing code will be preserved.");
                     result.values_["gothLowDivisor"]=low;result.values_["gothHighDivisor"]=high;
+                    result.gothConfigured_ = true;
                 }
             } else if(name=="soldierPopulation") {
                 bool found=false;
@@ -221,7 +233,8 @@ GameRules GameRules::load(const Rom &rom) {
         if(!result.unavailable(name).isEmpty()) result.unavailable_["deployment"]=result.unavailable(name);
     // A recognized loader may still point to an unrecognized module. Do not
     // remove that loader while editing an otherwise recognized Goth formula.
-    if(!result.unavailable("reserve").isEmpty() && rom.bytes().mid(0x139afc,4)!=QByteArray::fromHex("0c0771c8"))
+    if(!result.unavailable("reserve").isEmpty() &&
+       (knownGothC ? gothCallsReserve : rom.bytes().mid(0x139afc,4)!=QByteArray::fromHex("0c0771c8")))
         result.unavailable_["goth"]=result.unavailable("reserve");
     loadStatusRules(rom,result.values_,result.unavailable_,result.owners_);
     result.originals_=result.values_;
@@ -256,7 +269,7 @@ QVector<RuleBuild> GameRules::builds() const {
         const auto name=it.key(); bool changed=false;
         for(const auto &rule:definitions()) if(rule.group==name) changed|=value(rule.key)!=loaded(rule.key);
         if(name.startsWith("deployment")) changed|=value("deploymentLimit")!=loaded("deploymentLimit");
-        if(name=="goth") changed|=value("reserveXp")!=loaded("reserveXp");
+        if(name=="goth") changed|=(gothConfigured_ && unavailable(name).isEmpty()) || value("reserveXp")!=loaded("reserveXp");
         if(!changed) continue;
         if(!unavailable(name).isEmpty()) throw Error(unavailable(name));
         const auto site=it->toObject();
@@ -276,11 +289,9 @@ QVector<RuleBuild> GameRules::builds() const {
             put32(build.expected,0,bonus?0x24100000u|quint32(bonus):0x00008021u);
             build.source=words(build.expected);
         } else if(name=="goth") {
-            const int low=value("gothLowDivisor"),high=value("gothHighDivisor");
-            auto goth=resource("goth-reward.s");
-            if(value("reserveXp")) goth.replace(".org 0xf4",resource("reserve-bootstrap.s")+"\n.org 0xf4");
-            build.source=low==25 && high==50 && !value("reserveXp") ? resource("goth-retail.s") :
-                QString(".set LOW_DIVISOR,%1\n.set HIGH_DIVISOR,%2\n").arg(low).arg(high).toLatin1()+goth;
+            // The exporter compiles the complete qualified C owner and table.
+            build.offset = GothRuntime::offset;
+            build.size = GothRuntime::size;
             build.expected.clear();
         } else if(name=="soldierPopulation") {
             build.expected=soldierScale(value("soldierPopulationScale"));
@@ -307,11 +318,6 @@ QVector<RuleBuild> GameRules::builds() const {
             {"RESERVE_INVALIDATE_D",0x80090010},{"RESERVE_ENTRY",0x804c0010},
             {"RESERVE_ITEM",0x801dc720},{"RESERVE_GROW",0x8016eba4}};
         result<<build;
-    }
-    if(value("reserveXp")!=loaded("reserveXp")) {
-        if(!unavailable("reserve").isEmpty())throw Error(unavailable("reserve"));
-        const auto expected=QByteArray::fromHex(value("reserveXp")?"0c0794b4":"0c0771c8");
-        result<<RuleBuild{"reserveHook",0x139afc,4,0x801e53bc,words(expected),expected,{},false};
     }
     result += buildStatusRules(*this,owners_);
     return result;

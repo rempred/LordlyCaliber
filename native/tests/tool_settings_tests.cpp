@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/project.h"
+#include "engine/goth_runtime.h"
 #include "engine/squad_members.h"
 #include <QJsonArray>
 #include "engine/resource.h"
@@ -12,9 +13,63 @@
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
+static void restoreRuleTables(QByteArray &image, const Rom &original, const GameRules &rules) {
+    for (const auto &owner : rules.builds())
+        if (owner.name == "goth")
+            for (const auto &v : GothRuntime::definition()["retail"].toObject()["tables"].toArray()) {
+                const auto table = v.toObject();
+                image.replace(table["start"].toInt(), table["size"].toInt(),
+                    original.bytes().mid(table["start"].toInt(), table["size"].toInt()));
+            }
+}
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void settlementLegacyCompatibility() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom=Rom::open(path);Compiler compiler(tools);compiler.authenticate();QTemporaryDir work;
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/settlement-upgrade-XXXXXX");
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            auto read=[](const QString &file){QFile input(file);if(!input.open(QIODevice::ReadOnly))throw Error("Missing legacy fixture source");return input.readAll();};
+            const auto formula=read(QFINDTESTDATA("../game/tools/goth-reward.s"));
+            const auto bootstrap=read(QFINDTESTDATA("../game/tools/reserve-bootstrap.s"));
+            const auto module=read(QFINDTESTDATA("../game/tools/reserve-xp.s"));
+            const QMap<QString,quint32> symbols{{"RESERVE_INVALIDATE_I",0x800900c0},{"RESERVE_INVALIDATE_D",0x80090010},
+                {"RESERVE_ENTRY",0x804c0010},{"RESERVE_ITEM",0x801dc720},{"RESERVE_GROW",0x8016eba4}};
+            for(int reserve:{0,25}) {
+                auto old=rom.bytes();auto source=QByteArray(".set LOW_DIVISOR,10\n.set HIGH_DIVISOR,100\n")+formula;
+                // The prior format placed its bootstrap in the formula's spare space.
+                if(reserve) { source.replace(source.indexOf(".org"),source.size()-source.indexOf(".org"),QByteArray(".org 80\n")+bootstrap+"\n.org 244\n.Lend:\n"); }
+                auto code=compiler.assembleOwner(source,work.path(),"legacy_goth",0x801e5280,symbols,true);
+                QCOMPARE(code.size(),244);old.replace(0x1399c0,244,code);
+                if(reserve) {
+                    auto body=compiler.assembleOwner(".set RESERVE_XP,25\n"+module,work.path(),"legacy_reserve",0x804c0000,symbols,true);
+                    QCOMPARE(body.size(),4096);old.replace(0x27c6000,4096,body);put32(old,0x139afc,0x0c0794b4);
+                }
+                Rom::updateChecksum(old);auto project=Project::fromRom(Rom::fromBytes(old));project.loadTools();
+                QVERIFY2(project.tools()->gameRules().unavailable("goth").isEmpty(),qPrintable(project.tools()->gameRules().unavailable("goth")));
+                QCOMPARE(project.tools()->gameRules().value("gothLowDivisor"),10);
+                QCOMPARE(project.tools()->gameRules().value("reserveXp"),reserve);
+                auto unopened=Project::fromRom(Rom::fromBytes(old));QVERIFY(!unopened.tools());
+                const auto built=rebuild(unopened,tools,work.path());QVERIFY(GothRuntime::read(Rom::fromBytes(built.image)));
+                const auto folder=output.filePath(QString::number(reserve));QVERIFY(QDir().mkpath(folder));
+                const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
+                auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),project.tools()->json());
+                QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+                auto defaults=Project::fromRom(rom);defaults.loadTools();reopened.setTools(defaults.tools()->json());
+                QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
+            }
+            // Unused unknown module bytes must not prevent an independent Goth edit.
+            auto foreign=rom.bytes();foreign[0x27c6000]=0;auto project=Project::fromRom(Rom::fromBytes(foreign));project.loadTools();
+            auto settings=project.tools()->json(),rules=settings["gameRules"].toObject();rules["gothLowDivisor"]=10;settings["gameRules"]=rules;project.setTools(settings);
+            const auto built=rebuild(project,tools,work.path());QCOMPARE(built.image.mid(0x27c6000,4096),foreign.mid(0x27c6000,4096));
+            auto reopened=Project::fromRom(Rom::fromBytes(built.image));reopened.loadTools();QCOMPARE(reopened.tools()->gameRules().value("gothLowDivisor"),10);
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            qInfo().noquote()<<"Legacy settlement upgrade candidates:"<<output.path();
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void statusRecoveryCompatibility() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
@@ -155,7 +210,7 @@ class ToolSettingsTests : public QObject {
                 const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
                 auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
                 auto preserved=built.image;for(const auto &owner:project.tools()->gameRules().builds())preserved.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
-                Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
+                restoreRuleTables(preserved,rom,project.tools()->gameRules());Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
                 QProcess execution;execution.start("node",{QFINDTESTDATA("deployment-mips.cjs"),candidate,QString::number(limit)});
                 QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
                 reopened.setTools(baseline);QCOMPARE(rebuild(reopened,tools,work.path()).image,rom.bytes());
@@ -191,7 +246,7 @@ class ToolSettingsTests : public QObject {
                 const auto candidate=QDir(folder).filePath(QFileInfo(path).fileName());exportRom(project,built,candidate);
                 auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadTools();QCOMPARE(reopened.tools()->json(),settings);
                 auto preserved=built.image;for(const auto &owner:project.tools()->gameRules().builds())preserved.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
-                Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
+                restoreRuleTables(preserved,rom,project.tools()->gameRules());Rom::updateChecksum(preserved);QCOMPARE(preserved,rom.bytes());
                 QProcess execution;execution.start("node",{QFINDTESTDATA("reserve-xp-mips.cjs"),candidate,QString::number(amount)});
                 QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());qInfo().noquote()<<execution.readAllStandardOutput();
                 auto damaged=built.image;damaged[0x27c6060]=char(u8(damaged,0x27c6060)^1);
@@ -265,7 +320,7 @@ class ToolSettingsTests : public QObject {
                 auto untouched=built.image;
                 for(const auto &owner:project.tools()->gameRules().builds())
                     untouched.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
-                Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
+                restoreRuleTables(untouched,rom,project.tools()->gameRules());Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
                 QProcess execution;execution.start("node",{QFINDTESTDATA("completion-rules-mips.cjs"),candidate,path,QString::number(populationScale)});
                 QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
                 qInfo().noquote()<<execution.readAllStandardOutput();
@@ -293,7 +348,7 @@ class ToolSettingsTests : public QObject {
                 auto untouched=built.image;
                 for(const auto &owner:project.tools()->gameRules().builds())
                     untouched.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
-                Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
+                restoreRuleTables(untouched,rom,project.tools()->gameRules());Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
                 QProcess execution;execution.start("node",{QFINDTESTDATA("element-rules-mips.cjs"),candidate,QString::number(strength)});
                 QVERIFY(execution.waitForFinished(60000));QVERIFY2(execution.exitCode()==0,execution.readAllStandardError().constData());
                 qInfo().noquote()<<execution.readAllStandardOutput();
@@ -336,7 +391,7 @@ class ToolSettingsTests : public QObject {
             auto untouched=built.image;
             for(const auto &owner:project.tools()->gameRules().builds())
                 untouched.replace(owner.offset,owner.size,rom.bytes().mid(owner.offset,owner.size));
-            Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
+            restoreRuleTables(untouched,rom,project.tools()->gameRules());Rom::updateChecksum(untouched);QCOMPARE(untouched,rom.bytes());
             QProcess execute;
             execute.start("node",{QFINDTESTDATA("game-rules-mips.cjs"),candidate,path});
             QVERIFY(execute.waitForFinished(60000));
@@ -840,6 +895,9 @@ class ToolSettingsTests : public QObject {
                 const auto bytes = QByteArray::fromHex(row["dataHex"].toString().toLatin1());
                 expected.replace(row["romStart"].toInt(), bytes.size(), bytes);
             }
+            // The complete C producer now emits a normal JAL at the same
+            // writeback call. All loader/module and surrounding bytes stay exact.
+            put32(expected, 0x23f7c, 0x0c000000U | ((0x800a4a78U >> 2) & 0x3ffffffU));
             Rom::updateChecksum(expected);
             auto project = Project::fromRom(rom);
             project.loadTools();
@@ -859,6 +917,12 @@ class ToolSettingsTests : public QObject {
                 return Rom::open(candidate);
             };
             auto enabled = save(built, "enabled");
+            QProcess callCheck;
+            callCheck.start("node", {QFINDTESTDATA("chaos-call-mips.cjs"),
+                QDir(output.filePath("enabled")).filePath(QFileInfo(path).fileName())});
+            QVERIFY(callCheck.waitForFinished(60000));
+            QVERIFY2(callCheck.exitCode() == 0, callCheck.readAllStandardError().constData());
+            qInfo().noquote() << callCheck.readAllStandardOutput();
             project = Project::fromRom(enabled);
             project.loadTools();
             QVERIFY(project.tools()->chaosCounter().enabled());

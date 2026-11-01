@@ -16,6 +16,12 @@ two-register return contract. The broader [source audit](source-selection-audit.
 also identifies remaining assembly patches and hooks; compiling the accepted
 baseline does not mean every editor extension is implemented in C.
 
+Shop consumers, configurable Goth settlement/reserve-XP loading and the
+Chaos-counter call now compile complete C adaptations. Older exports remain
+readable and upgrade on export; expanded classes/items/armies and custom weapon
+categories retain their behavior. Mixed C/assembly feature groups remain
+deferred as recorded in the source audit.
+
 The **Attacks** workspace edits US Rev0 physical attacks, spells, healing and
 status abilities. Search by name, effect, element or ID; rename a shared name or
 make it independent; choose a starting attack for Create or duplicate the selected entry.

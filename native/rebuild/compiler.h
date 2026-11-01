@@ -16,6 +16,10 @@ struct CompiledModule {
     QVector<CompiledAddressReference> addressReferences;
     QByteArray fitOwner(qsizetype size) const;
 };
+struct CompiledOwner {
+    QByteArray code;
+    QMap<quint32, QByteArray> tables;
+};
 class Compiler {
   public:
     explicit Compiler(QString toolsRoot);
@@ -36,6 +40,9 @@ class Compiler {
     // Small, separately bounded mod hooks may then be applied by the caller.
     QByteArray compileAcceptedOwner(quint32 romStart, const QString &directory,
                                     const QString &name) const;
+    // Maintained C adaptation with qualified original allocation and table layout.
+    CompiledOwner compileQualifiedOwner(const QJsonObject &owner, const QString &directory,
+                                        const QString &name) const;
     QByteArray assembleOwner(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address,
                              const QMap<QString, quint32> &symbols = {},
