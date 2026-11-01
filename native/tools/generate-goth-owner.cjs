@@ -38,6 +38,7 @@ void lc_reserve_loader(unsigned short item, int arg)
     lc_reserve_entry(item, arg);
 }
 `;
+s=s.replace(/\r\n/g,'\n').replace(/[ \t]+$/gm,'').trimEnd()+'\n';
 fs.writeFileSync(path.join(native,'game/tools/goth-settlement.c'),s);
 const work=path.join(native,'build/goth-owner');
 const targets=require('../game/scenarios/capacity-references.json').owners.find(o=>o.start===part.start).references.flatMap(r=>r.uses);

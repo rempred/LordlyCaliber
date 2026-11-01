@@ -472,4 +472,3 @@ void func_001994B4(u8 *window, u32 slot_word)
         }
     }
 }
-

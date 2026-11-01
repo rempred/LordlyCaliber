@@ -151,7 +151,7 @@ s32 func_001390F0(void) {
         goto block_64;
     }
 block_2:
-    
+
     if (*(u8 *)0x801F365D & 2) {
         goto block_64;
     }
@@ -213,7 +213,7 @@ block_18:
     var_f4_140 *= 217.0f;
     denominator = 256.0f;
     var_f4_140 /= denominator;
-    
+
     y_base = *(f32 *)0x801F0D9C;
     var_f0_149 = (*(f32 *)0x801F0DA4 - y_base) * 153.0f / denominator;
     x_base += var_f4_140;
@@ -241,7 +241,7 @@ block_23:
     var_f4_140 *= 145.0f;
     denominator = 256.0f;
     var_f4_140 /= denominator;
-    
+
     y_base = *(f32 *)0x801F0D9C;
     var_f0_149 = (*(f32 *)0x801F0DA4 - y_base) * 32.0f / denominator;
     x_base += var_f4_140;
@@ -308,7 +308,7 @@ block_42:
     event_owner = *(void **)0x801AB850;
     (*(u32 *)((s8 *)s0_value + (-0x23E))) = var_s1_236;
     (*(s8 *)((s8 *)event_owner + 4)) = 0;
-    
+
     temp_v0_302 = *(u8 *)0x8018F481;
     event_dispatch_index = temp_v0_302 - 0x27;
     switch (event_dispatch_index) {
@@ -323,7 +323,7 @@ dispatch_event_27:
 dispatch_event_group:
     {
     s32 dispatch_word;
-    
+
     switch (var_s1_236) {
     case 0: goto dispatch_index_0;
     case 1: goto dispatch_index_1;

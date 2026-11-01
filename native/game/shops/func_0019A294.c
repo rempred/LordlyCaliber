@@ -213,8 +213,3 @@ void func_0019A294(u8 *window, u32 slot_word)
         func_801818A0(x + offset - 11, y + 8);
     }
 }
-
-
-
-
-
