@@ -515,9 +515,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     if (patch.size() != 4) throw Error("Family comparison exceeds one instruction");
                     built.replace(it.key() - start, 4, patch);
                 }
-            } else if (start == 0xbbd50)
-                source = readFile(":/game/promotion/family-lookup.s");
-            else
+            } else
                 for (int offset = 0; offset < size; offset += 4) {
                     auto site = start + offset;
                     if (replacements.contains(site))

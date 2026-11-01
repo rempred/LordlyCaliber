@@ -89,7 +89,10 @@
       "start": 769360,
       "size": 48,
       "retailSha256": "0e5d40e094a3b906486091986af2b2549ba585a742eea7ca44414c3999c61a46",
-      "familySha256": "096332a632aa8a8c86616894feac4fdba1be5f6703222759de28e675c24a0b2e"
+      "familySha256": "096332a632aa8a8c86616894feac4fdba1be5f6703222759de28e675c24a0b2e",
+      "cSource": "family-lookup.c",
+      "cSourceSha256": "5c85d7a56086b19d324785c3a387595589aaafb7c2e3612ce6acac68e4d258b5",
+      "cSourceClass": "HYBRID_C"
     },
     {
       "name": "func_000bf248",

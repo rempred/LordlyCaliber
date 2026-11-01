@@ -124,9 +124,9 @@
       "id": "town-takeover-chaos-frame", "priority": 2,
       "behavior": "Town takeover alignment and Chaos Frame calculation",
       "symbols": ["func_0012FBB8"],
-      "editorFiles": ["game/accepted/library/src/lib/func_0012fbb8.c", "engine/chaos_counter.cpp"],
-      "editorUse": "imported",
-      "benefit": "Confirms the documented average-alignment versus town-morale formula, random 0-7 term, stored 40-point penalty and Chaos Frame clamp. It provides a reference for a future town-outcome preview; the existing counter only displays Chaos Frame.",
+      "editorFiles": ["game/accepted/library/src/lib/func_0012fbb8.c", "engine/scenario_world.cpp", "app/scenario_world_editor.cpp", "engine/chaos_counter.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Town editing now separates the low-seven-bit morale from the 40-point takeover penalty, preserves both through objective toggles and permits valid retail penalty encodings. The runtime calculation uses the compiled accepted baseline. This is not a town-outcome simulation; the existing counter only displays Chaos Frame.",
       "preserve": "Retain member eligibility, integer averaging, no-member fallback, site skip conditions, random draw order, score bands and separate return value."
     },
     {
@@ -393,10 +393,10 @@
       "id": "class-family-lookup", "priority": 2,
       "behavior": "Retail class-family lookup during ROM export",
       "symbols": ["func_000BBD50"],
-      "editorFiles": ["game/accepted/func_000bbd50.c", "rebuild/compiler.cpp"],
-      "editorUse": "original",
-      "benefit": "Track updates to an unchanged accepted source already compiled during applicable user exports.",
-      "preserve": "This original function has a retail bound; expanded-family exports use the maintained extension path."
+      "editorFiles": ["game/accepted/func_000bbd50.c", "game/promotion/family-lookup.c", "rebuild/compiler.cpp", "rebuild/promotion_runtime.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Retail uses the exact accepted baseline. Edited and expanded family lookups compile the C adaptation, including the packed family/behavior return and separate behavior register. An empty register constraint retains the custom ABI; this adaptation is not claimed as upstream accepted pure C.",
+      "preserve": "Byte-sized class IDs, configurable roster bound and family table, both return registers, original allocation, and recognition of older assembly-built exports."
     },
     {
       "id": "class-compatibility", "priority": 2,

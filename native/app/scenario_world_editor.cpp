@@ -72,8 +72,15 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     form->addRow("Site name", name_);
     population_ = spin("worldPopulation", 65535);
     form->addRow("Population", population_);
-    morale_ = spin("worldMorale", 255);
+    morale_ = spin("worldMorale", 127);
     form->addRow("Morale (0–127)", morale_);
+    morale_->setToolTip("Compared with the capturing squad's average Alignment to determine the Chaos Frame change.");
+    takeoverPenalty_ = new QCheckBox("Takeover penalty");
+    takeoverPenalty_->setObjectName("worldTakeoverPenalty");
+    takeoverPenalty_->setToolTip("Adds 40 to the takeover score, making capture lower Chaos Frame. "
+                                "This is independent of the site's starting allegiance. "
+                                "Penalized sites support morale 0–126; 127 is reserved for mission objectives.");
+    form->addRow(takeoverPenalty_);
     objective_ = new QCheckBox("Mission objective");
     objective_->setObjectName("worldObjective");
     objective_->setToolTip("Store the special objective-site value instead of morale. This marks "
@@ -191,10 +198,18 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     });
     connect(morale_, &QSpinBox::valueChanged, this, [this](int n) {
         if (!objective_->isChecked())
-            editSite("Change site morale", [n](QByteArray &r) { put8(r, 24, quint8(n)); });
+            editSite("Change site morale", [n](QByteArray &r) { put8(r, 24, quint8((u8(r, 24) & 0x80) | n)); });
+    });
+    connect(takeoverPenalty_, &QCheckBox::toggled, this, [this](bool on) {
+        if (!objective_->isChecked())
+            editSite("Change site takeover penalty", [on](QByteArray &r) {
+                const int morale = u8(r, 24) & 127;
+                if (on && morale == 127) throw Error("A penalized site can use morale 0–126.");
+                put8(r, 24, quint8(morale | (on ? 0x80 : 0)));
+            });
     });
     connect(objective_, &QCheckBox::toggled, this, [this](bool on) {
-        const int n = on ? 255 : std::clamp(morale_->value(), 0, 127);
+        const int n = on ? 255 : rememberedMorale_.value(siteId(), 50);
         editSite("Change site objective", [n](QByteArray &r) { put8(r, 24, quint8(n)); });
     });
     connect(type_, &QComboBox::currentIndexChanged, this, [this] {
@@ -284,8 +299,14 @@ void ScenarioWorldEditor::showSite() {
     const auto name = project_->world()->townName(id);
     if (name_->text() != name) name_->setText(name);
     population_->setValue(u16(record, 22));
-    morale_->setValue(u8(record, 24) == 255 ? 50 : u8(record, 24));
-    objective_->setChecked(u8(record, 24) == 255);
+    const bool objective = u8(record, 24) == 255;
+    if (!objective) rememberedMorale_[id] = u8(record, 24);
+    const int morale = rememberedMorale_.value(id, 50);
+    morale_->setMaximum(morale & 0x80 ? 126 : 127);
+    morale_->setValue(morale & 127);
+    objective_->setChecked(objective);
+    takeoverPenalty_->setChecked(morale & 0x80);
+    takeoverPenalty_->setEnabled(!objective && (morale & 127) != 127);
     morale_->setEnabled(!objective_->isChecked());
     select(type_, u8(record, 26));
     shop_->setMaximum(std::max(project_->shops()->size() - 1, int(u8(record, 27))));

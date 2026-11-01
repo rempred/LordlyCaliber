@@ -181,8 +181,6 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
                 if (patch.size() != 4) throw Error("Family comparison exceeds one instruction");
                 built.replace(it.key() - start, 4, patch);
             }
-        } else if (start == 0xbbd50) {
-            built = assemble(read(":/game/promotion/family-lookup.s"), "_expanded", start);
         } else {
             QMap<quint32, QByteArray> changes;
             for (const auto &v : owner["expandedInstructions"].toArray()) {

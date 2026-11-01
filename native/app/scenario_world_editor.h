@@ -36,9 +36,10 @@ class ScenarioWorldEditor : public QWidget {
     QLineEdit *name_;
     QSpinBox *population_, *morale_, *shop_, *x_, *z_;
     QComboBox *type_, *allegiance_, *table_, *item_;
-    QCheckBox *objective_;
+    QCheckBox *objective_, *takeoverPenalty_;
     QVector<QCheckBox *> facilities_;
     QMap<int, int> rememberedShops_;
+    QMap<int, int> rememberedMorale_;
     QLabel *notice_, *siteHelp_, *flag_;
 };
 } // namespace lordly

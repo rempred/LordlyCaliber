@@ -193,7 +193,9 @@ for(const initialRows of [166,167,168]) {
 console.log(JSON.stringify({renderComparisons,renderExpandedCases,styleCases,renderBytes:renderCode.length,renderExpandedBytes:renderExpanded.length,renderOwnerHash}));
 const previous = assembly('previous', 'family-menu.s', menuAddress);
 assert.equal(hash(previous), 'dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298');
-const lookup = assembly('lookup', 'family-lookup.s', lookupAddress);
+const legacyLookup = assembly('lookup_legacy', 'family-lookup.s', lookupAddress);
+const lookupSource = fs.readFileSync(path.join(native,'game/promotion/family-lookup.c'),'utf8');
+const lookup = compile('lookup', config, lookupSource, lookupAddress);
 const compiled = compile('menu', config);
 assert(compiled.length <= 528, `C menu exceeds the existing function extent (${compiled.length})`);
 const padded = Buffer.alloc(528); compiled.copy(padded);
@@ -222,11 +224,10 @@ if(process.env.LORDLY_TEST_ROM) {
   assert.deepEqual(firstClassRetail,rom.subarray(0xCD638,0xCD640));
 }
 console.log(JSON.stringify({firstClassCases}));
-const lookupSource=fs.readFileSync(path.join(native,'game/promotion/family-lookup.s'),'utf8');
 const lookupCode=lookup;
-fs.writeFileSync(path.join(work,'family_lookup_wide.s'),'.set noat\n.set noreorder\n.section .owner,"ax"\nCLASS_COUNT = 256\nFAMILY_OFFSET = 2048\n'+lookupSource);
-const lookupWide=extract('family_lookup_wide',lookupAddress,'.owner');
-assert.equal(lookupCode.length,48);assert.equal(lookupWide.length,48);
+const lookupWide=compile('family_lookup_wide',config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256')
+  .replace('LC_FAMILY_OFFSET 648','LC_FAMILY_OFFSET 2048'),lookupSource,lookupAddress);
+assert.equal(lookupCode.length,48);assert(lookupWide.length<=48);
 const lookupPadded=Buffer.alloc(48);lookupCode.copy(lookupPadded);
 function familyLookup(code,id,wide) {
   const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('a0',id);cpu.set('sp',0x80060000);
@@ -236,10 +237,12 @@ function familyLookup(code,id,wide) {
   return [cpu.get('v0'),cpu.get('v1')];
 }
 const lookupManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBBD50);
-assert.equal(hash(lookupCode),lookupManifest.familySha256,'default lookup remains byte-identical');
+assert.equal(hash(legacyLookup),lookupManifest.familySha256,'legacy export remains recognized');
+assert.equal(hash(lookupCode),lookupManifest.cSourceSha256,'compiled lookup owner identity');
 let lookupCases=0;
 for(let id=0;id<256;id++)for(const high of [0,256,0xFFFF0000]) {
   assert.deepEqual(familyLookup(lookupCode,(id+high)>>>0,false),id<81?[(((id%11)<<16)|((id*97)%65535))>>>0,id%11]:[0,0]);
+  assert.deepEqual(familyLookup(lookupCode,(id+high)>>>0,false),familyLookup(legacyLookup,(id+high)>>>0,false));
   assert.deepEqual(familyLookup(lookupWide,(id+high)>>>0,true),[(((id%11)<<16)|((id*97)%65535))>>>0,id%11]);lookupCases+=2;
 }
 console.log(JSON.stringify({lookupCases,lookupBytes:lookupCode.length,lookupWideBytes:lookupWide.length,lookupHash:hash(lookupPadded)}));

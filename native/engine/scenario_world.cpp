@@ -108,8 +108,9 @@ void ScenarioWorld::validateTown(int id, const QByteArray &record) const {
                     "Site names use at most 20 printable ASCII characters and zero padding");
         }
     }
-    if (record[24] != base[24] && u8(record, 24) > 127 && u8(record, 24) != 255)
-        throw Error("Site morale is 0..127, or the exact 255 objective marker");
+    // Accepted func_0012FBB8: low seven bits are morale; bit seven adds 40
+    // to the takeover score. Exact 0xFF is the separate objective sentinel.
+    // Every byte encoding is valid; do not reject retail penalty towns.
     if ((u8(record, 25) & 0xf0) != (u8(base, 25) & 0xf0))
         throw Error("Preserve the unclassified site capability bits");
     const int type = u8(record, 26);

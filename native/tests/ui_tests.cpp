@@ -10698,7 +10698,10 @@ class UiTests : public QObject {
         QCOMPARE(u8(project.world()->town(id), 24), 62);
         const auto valid = project.world()->town(id);
         const int edits = undo.index();
-        morale->setValue(200);
+        QCOMPARE(morale->maximum(), 127);
+        morale->setValue(127);
+        QCOMPARE(u8(project.world()->town(id), 24), 127);
+        undo.undo();
         QCOMPARE(project.world()->town(id), valid);
         QCOMPARE(undo.index(), edits);
         QCOMPARE(morale->value(), 62);
@@ -12038,6 +12041,7 @@ class UiTests : public QObject {
         auto objects = editor.findChild<QListWidget *>("mapObjects");
         auto treasureCount = [&] { return ScenarioWorld::treasureCount(project.world()->scenario(52).treasures); };
         const auto base = project.world()->json();
+        int penaltyKey = -1, penaltyRow = -1;
         for (int i = 0; i < missions->count(); ++i) {
             if (!(missions->item(i)->flags() & Qt::ItemIsEnabled)) continue;
             missions->setCurrentRow(i);
@@ -12045,6 +12049,13 @@ class UiTests : public QObject {
             for (int row = 0; row < project.world()->siteCount(key); ++row) {
                 QVERIFY(selectMapObject(editor, MapObject::Site, row));
                 QCOMPARE(project.world()->json(), base);
+                const int id = u16(project.world()->scenario(key).sites, 1 + row * 4);
+                const int packed = u8(project.world()->town(id), 24);
+                if (packed != 255) {
+                    QCOMPARE(spin("worldMorale")->value(), packed & 127);
+                    QCOMPARE(editor.findChild<QCheckBox *>("worldTakeoverPenalty")->isChecked(), bool(packed & 128));
+                    if (packed & 128) { penaltyKey = key; penaltyRow = row; }
+                }
             }
             for (int row = 0; row < ScenarioWorld::treasureCount(project.world()->scenario(key).treasures); ++row) {
                 QVERIFY(selectMapObject(editor, MapObject::Treasure, row));
@@ -12052,6 +12063,31 @@ class UiTests : public QObject {
             }
         }
         QCOMPARE(undo.count(), 0);
+        QVERIFY(penaltyKey > 0);
+        for (int i = 0; i < missions->count(); ++i)
+            if (missions->item(i)->data(Qt::UserRole).toInt() == penaltyKey) missions->setCurrentRow(i);
+        QVERIFY(selectMapObject(editor, MapObject::Site, penaltyRow));
+        const int penaltyId = u16(project.world()->scenario(penaltyKey).sites, 1 + penaltyRow * 4);
+        auto penalty = editor.findChild<QCheckBox *>("worldTakeoverPenalty");
+        auto objectiveFlag = editor.findChild<QCheckBox *>("worldObjective");
+        const auto originalPenaltyTown = project.world()->town(penaltyId);
+        const int changedMorale = (u8(originalPenaltyTown, 24) & 127) == 60 ? 61 : 60;
+        spin("worldMorale")->setValue(changedMorale);
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), changedMorale | 128);
+        penalty->setChecked(false);
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), changedMorale);
+        undo.undo();
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), changedMorale | 128);
+        undo.redo();
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), changedMorale);
+        penalty->setChecked(true);
+        objectiveFlag->setChecked(true);
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), 255);
+        QVERIFY(!penalty->isEnabled());
+        objectiveFlag->setChecked(false);
+        QCOMPARE(u8(project.world()->town(penaltyId), 24), changedMorale | 128);
+        while (undo.canUndo()) undo.undo();
+        QCOMPARE(project.world()->json(), base);
         for (int i = 0; i < missions->count(); ++i)
             if (missions->item(i)->data(Qt::UserRole).toInt() == 52)
                 missions->setCurrentRow(i);

@@ -15,12 +15,13 @@ function files(directory) {
     entry.isDirectory() ? files(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
 }
 function main(args) {
-  let decomp, json = false, requireClean = false;
+  let decomp, json = false, requireClean = false, requireWholeOwners = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--decomp' && args[i + 1]) decomp = path.resolve(args[++i]);
     else if (args[i] === '--json') json = true;
     else if (args[i] === '--require-clean') requireClean = true;
-    else throw Error('Use --decomp <checkout> [--json] [--require-clean]');
+    else if (args[i] === '--require-whole-owners') requireWholeOwners = true;
+    else throw Error('Use --decomp <checkout> [--json] [--require-clean | --require-whole-owners]');
   }
   if (!decomp) throw Error('--decomp is required; absence of evidence is not a clean audit');
   const evidence = readAcceptedEvidence(decomp), {state} = evidence;
@@ -55,7 +56,8 @@ function main(args) {
       gap: selection === 'assembly-owner' && alternatives.length > 0});
   }
   for (const owner of game('promotion/owners.json').owners) {
-    const selection = owner.acceptedC ? 'compiled-c-with-bounded-hooks' : owner.cSource ? 'adapted-c' : owner.cFragment ? 'c-fragment-with-retained-owner' :
+    const selection = owner.acceptedC ? 'compiled-c-with-bounded-hooks' : owner.cSource ?
+      owner.cSourceClass === 'HYBRID_C' ? 'adapted-hybrid-c' : 'adapted-c' : owner.cFragment ? 'c-fragment-with-retained-owner' :
       owner.start === 0xbbd50 ? 'custom-family-return-abi' : 'assembly-owner';
     check(owner.name, owner.start, owner.size, selection, 'rebuild/promotion_runtime.cpp; rebuild/compiler.cpp',
       owner.acceptedC ? compiledSource(owner.start) : owner.cSource ? 'game/promotion/' + owner.cSource : owner.start === 0xbbd50 ? 'game/promotion/family-lookup.s' :
@@ -93,6 +95,51 @@ function main(args) {
       owner.start === 0x19be40 ? 'adapted-c' : 'instruction-patch', 'rebuild/shop_runtime.cpp',
       owner.start === 0x19be40 ? 'game/shops/stock.c' : 'game/shops/consumers.s');
 
+  // A complete-owner check alone misses assembly edits inside accepted C.
+  // Read the actual native block definitions so added artwork adapters enter
+  // the review automatically instead of inheriting a whole-file exemption.
+  const visual = fs.readFileSync(path.join(native, 'engine/body_visual_policy.cpp'), 'utf8');
+  for (const match of visual.matchAll(/\{(0x[0-9a-f]+),\s*(\d+),\s*"([a-z-]+)"\}/gi))
+    check(match[3], Number(match[1]), Number(match[2]), 'instruction-patch',
+      'rebuild/body_visual_policy.cpp', 'game/art/' + match[3] + '.s');
+  const marker = fs.readFileSync(path.join(native, 'engine/body_markers.h'), 'utf8')
+    .match(/offset\s*=\s*(0x[0-9a-f]+),\s*size\s*=\s*(\d+)/i);
+  if (!marker) throw Error('Equipment marker allocation needs audit support');
+  check('wide-frame equipment markers', Number(marker[1]), Number(marker[2]), 'instruction-patch',
+    'rebuild/body_markers.cpp', 'game/art/body-markers.s');
+
+  for (const [header, name, startKey, sizeKey, consumer] of [
+    ['persuasion', 'persuasion table lookup', 'ownerOffset', 'ownerSize', 'rebuild/persuasion.cpp'],
+    ['leader_affinity', 'combat leader affinity lookup', 'offset', 'size', 'rebuild/compiler.cpp']
+  ]) {
+    const text = fs.readFileSync(path.join(native, 'engine', header + '.h'), 'utf8');
+    const start = text.match(new RegExp('\\b' + startKey + '\\s*=\\s*(0x[0-9a-f]+|[0-9]+)', 'i'));
+    const size = text.match(new RegExp('\\b' + sizeKey + '\\s*=\\s*(0x[0-9a-f]+|[0-9]+)', 'i'));
+    if (!start || !size) throw Error(name + ' allocation needs audit support');
+    check(name, Number(start[1]), Number(size[1]), 'assembly-owner', consumer, 'engine/' + header + '.cpp');
+  }
+  // Small extension entry/return hooks are not C-only either. Keep them
+  // separate from the larger behavior adapters, but join every site to C.
+  for (const [file, consumer, selection] of [
+    ['tools/experience.json', 'rebuild/compiler.cpp', 'instruction-patch'],
+    ['tools/chaos.json', 'rebuild/chaos_counter.cpp', 'extension-hook'],
+    ['tools/high-attack.json', 'rebuild/high_attack.cpp', 'extension-hook'],
+    ['art/animation-overrides.json', 'rebuild/animation_overrides.cpp', 'extension-hook']
+  ]) for (const site of game(file).sites)
+    check(file + ': ' + (site.name || site.label), site.rom ?? site.offset, site.size,
+      selection, consumer, 'game/' + file);
+  for (const feature of game('tools/displays.json').features)
+    for (const site of feature.sites)
+      check(feature.name + ': ' + site.name, site.rom, site.size, 'extension-hook',
+        'rebuild/display_tools.cpp', 'game/tools/' + site.source);
+  for (const owner of game('classes/save-owners.json').pakOwners)
+    check(owner.symbol, owner.fragment, owner.fragmentSize, 'extension-hook',
+      'rebuild/save_runtime.cpp', 'game/classes/' + owner.source);
+  for (const file of ['capacity-predicates.json', 'capacity-extra.json'])
+    for (const site of game('scenarios/' + file).patches)
+      check(site.name, site.hook ?? site.site, site.expected.length * 4, 'extension-hook',
+        'rebuild/capacity_runtime.cpp', 'game/scenarios/' + file);
+
   // Explicit census: new assembly files cannot silently inherit an exemption.
   // These are authored hooks/register adapters, display-list data or new editor
   // modules, rather than selectable copies of complete original functions.
@@ -113,7 +160,7 @@ tools/high-attack-hooks.s tools/high-attack-module.s tools/luck-bootstrap.s tool
 tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/));
   const whole = new Set(checks.map(row => row.source).filter(value => value.endsWith('.s')).map(value => value.slice(5)));
   for (const name of ['tools/clock.s', 'tools/clock-retail.s']) whole.add(name);
-  const unused = new Set(['promotion/family-menu.s', 'shops/producer.s']);
+  const unused = new Set(['promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s']);
   const assembly = files(path.join(native, 'game')).filter(file => file.endsWith('.s')).map(file => {
     const relative = path.relative(path.join(native, 'game'), file).replaceAll('\\', '/');
     return {file: 'game/' + relative, sha256: digest(fs.readFileSync(file)),
@@ -125,22 +172,28 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
       [{file: path.relative(native, file).replaceAll('\\', '/'), line: i + 1, text: text.trim()}] : []));
   evidence.assertStable();
   const gaps = checks.filter(row => row.gap);
+  const partialWithC = checks.filter(row => row.selection === 'instruction-patch' && row.alternatives.length);
+  const hooksWithC = checks.filter(row => row.selection === 'extension-hook' && row.alternatives.length);
   const unknown = assembly.filter(row => row.classification === 'unclassified');
   const result = {generator: 'native/tools/audit-source-selection.cjs',
-    status: gaps.length || unknown.length ? 'gaps-found' : 'no-catalogued-gaps',
+    status: gaps.length || unknown.length ? 'gaps-found' : partialWithC.length || hooksWithC.length ? 'partial-c-migrations-remain' : 'no-catalogued-gaps',
     fingerprint: state.fingerprint, verifiedAt: state.verifiedAt,
     evidence: {pureOwners: accepted.filter(t => t.sourceClass === 'PURE_C').length,
       hybridOwners: accepted.filter(t => t.sourceClass === 'HYBRID_C').length, authenticatedFiles: authenticated.size},
-    scope: 'Native export owner catalogs, game/status-rule instruction emitters, bundled assembly census and rebuild assembleOwner call sites. Excludes Editor-Old and unchanged source-ROM bytes. Static selection audit, not a ROM execution test or an automatic proof of semantic replacement.',
-    gaps, checks, assembly, callSites, unclassifiedAssembly: unknown};
+    scope: 'Native export owner catalogs, game/status-rule instruction emitters, artwork adapters, affinity/persuasion lookups, tool/animation/capacity/Pak extension hooks, bundled assembly census and rebuild assembleOwner call sites. Excludes Editor-Old. Whole-owner gaps, partial C-covered adapters and extension hooks are reported separately; --require-clean includes all three, while --require-whole-owners retains the narrower historical gate. Static selection audit, not a ROM execution test or a semantic replacement proof.',
+    gaps, partialWithC, hooksWithC, checks, assembly, callSites, unclassifiedAssembly: unknown};
   if (json) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(`Accepted evidence: ${state.fingerprint.slice(0, 8)}; ${result.evidence.pureOwners} PURE_C / ${result.evidence.hybridOwners} HYBRID_C owners.`);
     console.log(`Whole-owner assembly gaps: ${gaps.length}; assembly files: ${assembly.length}; unclassified: ${unknown.length}.`);
+    console.log(`Partial instruction adapters inside accepted C: ${partialWithC.length}. These are not reported as converted.`);
+    console.log(`Extension hook sites inside accepted C: ${hooksWithC.length}. These retain assembly ABI bridges.`);
     for (const row of gaps) console.log(`${hex(row.start)} ${row.name}: ${row.alternatives.map(t => t.sourceClass + ' ' + t.symbol).join(', ')} — ${row.consumer}`);
+    for (const row of partialWithC) console.log(`Partial ${hex(row.start)} ${row.name}: ${row.alternatives.map(t => t.symbol).join(', ')} — ${row.consumer}`);
     console.log(result.scope);
   }
-  if (requireClean && (gaps.length || unknown.length)) process.exitCode = 2;
+  if ((requireClean || requireWholeOwners) && (gaps.length || unknown.length) ||
+      requireClean && (partialWithC.length || hooksWithC.length)) process.exitCode = 2;
 }
 try { main(process.argv.slice(2)); }
 catch (error) { console.error(error.message); process.exitCode = 1; }

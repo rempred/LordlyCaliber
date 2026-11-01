@@ -1466,7 +1466,9 @@ class EngineTests : public QObject {
             const int townId = u16(model.scenario(key).sites, 1);
             auto town = model.town(townId);
             put16(town, 22, 4321);
-            put8(town, 24, 99);
+            // Morale and the separately recovered takeover penalty survive
+            // project persistence, ROM export and an unchanged second rebuild.
+            put8(town, 24, 99 | 0x80);
             put8(town, 27, 35);
             town.replace(1, 20, QByteArray("Native Test") + QByteArray(9, 0));
             model.setTown(townId, town);
@@ -1485,7 +1487,7 @@ class EngineTests : public QObject {
             invalid[0] ^= char(1);
             QVERIFY_THROWS_EXCEPTION(Error, rejected.setTreasure(key, added, invalid));
             invalid = treasure;
-            put16(invalid, 4, 278);
+            put16(invalid, 4, 511); // Expanded equipment supports IDs through 510.
             QVERIFY_THROWS_EXCEPTION(Error, rejected.setTreasure(key, added, invalid));
             auto badTown = town;
             badTown[21] ^= char(1);

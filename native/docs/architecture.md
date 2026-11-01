@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+## Editor consumer audit (November 1)
+
+The [current source audit](source-selection-audit.md) extends the earlier
+whole-function check to 206 ranges, including larger patches and extension
+hooks. No catalogued complete assembly owner has an available accepted C
+replacement, but 12 larger adapters and 34 extension hook sites still modify
+accepted C. `--require-clean` now reports those as remaining work; the old
+narrow check is explicitly named `--require-whole-owners`.
+
+The edited/expanded family lookup now selects `promotion/family-lookup.c` in
+both export paths. It returns the packed behavior/family word in v0 and behavior
+in v1 within the original 48-byte allocation. An empty register constraint keeps
+the extended ABI, so this is a maintained hybrid adaptation, not a new upstream
+accepted match. The old assembly hash remains recognized on ROM reopen.
+
+Town morale editing follows accepted `func_0012FBB8`: low seven bits are morale,
+bit7 adds40 to the takeover score, and exact255 bypasses the calculation. The UI
+separates the penalty, prevents the morale127-plus-penalty sentinel collision,
+and remembers the packed value across objective toggles. Unknown record bytes
+remain preserved. Instruction, UI, persistence and export checks are described
+in the audit.
+
 ## Complete accepted C baseline (November 1)
 
 This supersedes the October 30 intake counts below. Decomp CURRENT04E67D51 at

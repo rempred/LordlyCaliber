@@ -20,8 +20,10 @@ const catalog = {
     retailSha256: sha(owner.retailHex), familySha256: sha(owner.familyHex),
     // Padded complete owner from the pinned compiler. The MIPS comparison test
     // independently checks this hash against the maintained C and configuration.
-    cSource: owner.start === 0xbf248 ? 'family-menu.c' : undefined,
-    cSourceSha256: owner.start === 0xbf248 ? 'ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42' : undefined,
+    cSource: owner.start === 0xbf248 ? 'family-menu.c' : owner.start === 0xbbd50 ? 'family-lookup.c' : undefined,
+    cSourceSha256: owner.start === 0xbf248 ? 'ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42' :
+      owner.start === 0xbbd50 ? '5c85d7a56086b19d324785c3a387595589aaafb7c2e3612ce6acac68e4d258b5' : undefined,
+    cSourceClass: owner.start === 0xbbd50 ? 'HYBRID_C' : undefined,
     directGateSha256: data.promotion.loaders.find(loader => loader.start === owner.start)?.relocatedSha256.toLowerCase(),
     keySite: data.promotion.loaders.find(loader => loader.start === owner.start)?.keySite
   }))
