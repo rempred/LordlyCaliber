@@ -32,6 +32,8 @@ jobs:
         shell: pwsh
     env:
       QT_QPA_PLATFORM: offscreen
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: lordly-msvc-v1
     outputs:
       package-name: ${{ steps.names.outputs.package-name }}
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
@@ -57,8 +59,20 @@ jobs:
           ./native/tools/bootstrap.ps1 -ToolsRoot $env:TOOLS_ROOT
           ./native/tools/bootstrap-n64.ps1
 
+      - name: Set up the compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.19.0
+
       - name: Compile the editor and run public tests
-        run: ./native/tools/build.ps1 -ToolsRoot $env:TOOLS_ROOT -Test
+        run: ./native/tools/build.ps1 -ToolsRoot $env:TOOLS_ROOT -CompilerLauncher sccache -Test
+
+      - name: Report build timings and compiler cache statistics
+        run: |
+          Get-Content native/build/Release/build-timings.json >> $env:GITHUB_STEP_SUMMARY
+          sccache --show-stats | Tee-Object -FilePath native/build/Release/compiler-cache.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read compiler cache statistics.' }
+          Get-Content native/build/Release/compiler-cache.txt >> $env:GITHUB_STEP_SUMMARY
 
       - name: Package the complete portable application
         run: ./native/tools/package.ps1 -ToolsRoot $env:TOOLS_ROOT -Destination $env:PACKAGE_PATH
@@ -157,6 +171,8 @@ jobs:
           path: |
             native/build/Release/*report.txt
             native/build/Release/*tests.txt
+            native/build/Release/build-timings.json
+            native/build/Release/compiler-cache.txt
             native/build/Release/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 14
