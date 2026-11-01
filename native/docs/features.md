@@ -1,5 +1,11 @@
 # Feature inventory and completion tracking
 
+**Items → Rename item…** edits the name and its **Normal / Small** in-game font.
+Small uses the game's native font controls and supports up to two lines; Normal
+joins them into one. Existing formatting is retained on an unchanged save, and
+inline renames keep the current font. Font changes appear in project review and
+support undo/redo, project saving and ROM export/reopen.
+
 ROM exports now use a source-built baseline covering all 1,650 currently accepted
 C/hybrid-C functions. The application build checks each code/table region against
 its accepted bytes; exports preserve modified and unknown data. An untouched US

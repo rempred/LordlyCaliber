@@ -491,7 +491,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     grid->verticalHeader()->hide();
     auto model = new RecordModel(project_.get(), table, undo_, page);
     connect(model, &RecordModel::editRejected, this, &MainWindow::report);
-    if (table == Table::Classes)
+    if (table == Table::Classes || table == Table::Items)
         grid->setItemDelegateForColumn(1, new ClassNameDelegate(grid));
     auto proxy = new QSortFilterProxyModel(page);
     proxy->setSourceModel(model);
@@ -582,7 +582,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         }
         return id;
     };
-    QPushButton *addClass = nullptr, *newClass = nullptr, *renameClass = nullptr, *addItem = nullptr, *newItem = nullptr;
+    QPushButton *addClass = nullptr, *newClass = nullptr, *renameClass = nullptr,
+                *addItem = nullptr, *newItem = nullptr, *renameItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         addClass = new QPushButton("Copy class…");
         addClass->setObjectName("addClass");
@@ -702,6 +703,83 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                             "Set its equipment type and other fields after creation.");
         actions->addWidget(newItem);
         actions->addWidget(addItem);
+        renameItem = new QPushButton("Rename item…");
+        renameItem->setObjectName("renameItem");
+        renameItem->setToolTip("Change the selected item's in-game name and font.");
+        actions->addWidget(renameItem);
+        connect(renameItem, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
+            const int id = *selected;
+            if (id < 0 || id >= model->rowCount()) return;
+            const auto original = project_->itemNameBytes(id);
+            QDialog dialog(this);
+            dialog.setObjectName("renameItemDialog");
+            dialog.setWindowTitle("Rename item");
+            dialog.resize(460, 260);
+            auto body = new QVBoxLayout(&dialog);
+            auto title = new QLabel(QString("Item %1 · %2")
+                .arg(QString::number(id, 16).toUpper().rightJustified(2, '0'),
+                     decodeText(original).simplified()));
+            title->setTextFormat(Qt::PlainText);
+            title->setWordWrap(true);
+            body->addWidget(title);
+            auto form = new QFormLayout;
+            auto name = new QPlainTextEdit(decodeText(original));
+            name->setObjectName("renameItemName");
+            name->setTabChangesFocus(true);
+            name->setMaximumHeight(80);
+            form->addRow("In-game name", name);
+            auto font = new QComboBox;
+            font->setObjectName("renameItemFont");
+            font->addItem("Normal", int(ItemNameFont::Normal));
+            font->addItem("Small", int(ItemNameFont::Small));
+            font->setCurrentIndex(font->findData(int(itemNameFont(original))));
+            form->addRow("In-game font", font);
+            body->addLayout(form);
+            auto help = new QLabel("Small fits more text and supports two lines. "
+                                   "Normal uses one line. Up to 32 characters; space varies by game screen.");
+            help->setWordWrap(true);
+            body->addWidget(help);
+            auto error = new QLabel;
+            error->setObjectName("renameItemError");
+            error->setWordWrap(true);
+            body->addWidget(error);
+            auto buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+            body->addWidget(buttons);
+            auto validate = [=] {
+                try {
+                    if (name->toPlainText() != decodeText(original) ||
+                        font->currentData().toInt() != int(itemNameFont(original)))
+                        encodeItemName(name->toPlainText(), ItemNameFont(font->currentData().toInt()));
+                    error->clear();
+                    buttons->button(QDialogButtonBox::Save)->setEnabled(true);
+                } catch (const Error &e) {
+                    error->setText(QString::fromUtf8(e.what()));
+                    buttons->button(QDialogButtonBox::Save)->setEnabled(false);
+                }
+            };
+            connect(name, &QPlainTextEdit::textChanged, &dialog, validate);
+            connect(font, &QComboBox::currentIndexChanged, &dialog, [=] {
+                if (font->currentData().toInt() == int(ItemNameFont::Normal))
+                    name->setPlainText(name->toPlainText().replace('\n', ' '));
+                validate();
+            });
+            connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+            connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+                if (model->renameItem(id, name->toPlainText(), ItemNameFont(font->currentData().toInt())))
+                    dialog.accept();
+            });
+            validate();
+            name->selectAll();
+            name->setFocus();
+            if (dialog.exec() != QDialog::Accepted) return;
+            auto index = proxy->mapFromSource(model->index(id, 1));
+            if (!index.isValid()) {
+                search->clear();
+                index = proxy->mapFromSource(model->index(id, 1));
+            }
+            grid->setCurrentIndex(index);
+            grid->scrollTo(index);
+        });
         auto createType = new QPushButton("Create weapon type…");
         createType->setObjectName("createWeaponType");
         createType->setToolTip("Create a named weapon category. Classes can equip it when their default weapon uses this type.");
@@ -921,7 +999,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
-                    addItem, newItem, renameClass, description, actionDescriptions, actionId, setup,
+                    addItem, newItem, renameClass, renameItem, description, actionDescriptions, actionId, setup,
                     weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity] {
         if (newItem)
             newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
@@ -936,6 +1014,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         if (renameClass)
             renameClass->setEnabled(*selected >= 0 &&
                                    (model->flags(model->index(*selected, 1)) & Qt::ItemIsEditable));
+        if (renameItem)
+            renameItem->setEnabled(*selected >= 0 &&
+                                  (model->flags(model->index(*selected, 1)) & Qt::ItemIsEditable));
         if (newClass)
             newClass->setEnabled(model->rowCount() < 256);
         if (addClass)

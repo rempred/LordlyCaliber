@@ -18,6 +18,7 @@ class RecordModel : public QAbstractTableModel {
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
     void apply(int row, int field, int value);
     void applyName(int row, const QByteArray &value);
+    bool renameItem(int row, const QString &name, ItemNameFont font);
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
     int appendItem(int source, const QString &name);

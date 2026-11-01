@@ -13937,6 +13937,100 @@ class UiTests : public QObject {
         QCOMPARE(model.createClass(""), -1);
         QCOMPARE(project.manifest(), freshManifest);
     }
+    void itemNameFonts() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        const auto original = project.manifest();
+        const auto originalName = project.itemNameBytes(1);
+        QUndoStack undo;
+        RecordModel model(&project, Table::Items, &undo);
+        QVERIFY(model.renameItem(1, decodeText(originalName), ItemNameFont::Small));
+        QCOMPARE(undo.count(), 1);
+        QCOMPARE(project.itemNameBytes(1), QByteArray(1, 0x0e) + originalName + QByteArray(1, 0x0f));
+        QVERIFY(project.changeReport().text().contains("Name font"));
+        QVERIFY(project.compareWithRom(project.rom()).text().contains("Name font"));
+        undo.undo();
+        QCOMPARE(project.manifest(), original);
+        undo.redo();
+        QVERIFY(model.setData(model.index(1, 1), "Moth-eaten Clothing", Qt::EditRole));
+        QCOMPARE(itemNameFont(project.itemNameBytes(1)), ItemNameFont::Small);
+        // A no-op must retain a nondefault native second-line offset exactly.
+        const auto formatted = QByteArray::fromHex("0e") + "Sword of" + QByteArray::fromHex("1034") + "Firedrake" + QByteArray::fromHex("0f");
+        project.setItemNameBytes(8, formatted);
+        const int count = undo.count();
+        QVERIFY(model.renameItem(8, "Sword of\nFiredrake", ItemNameFont::Small));
+        QCOMPARE(project.itemNameBytes(8), formatted);
+        QCOMPARE(undo.count(), count);
+
+        MainWindow window;
+        window.show();
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QPushButton *>("renameItem"), 10000);
+        auto rename = window.findChild<QPushButton *>("renameItem");
+        auto stack = window.findChild<QUndoStack *>();
+        QVERIFY(rename && stack);
+        window.navigateTo({"items", 8});
+        auto runDialog = [&](const std::function<void(QDialog *)> &action) {
+            bool opened = false;
+            QTimer::singleShot(0, &window, [&] {
+                auto dialog = window.findChild<QDialog *>("renameItemDialog");
+                if (!dialog) return;
+                opened = true;
+                action(dialog);
+                if (dialog->isVisible()) dialog->reject();
+            });
+            rename->click();
+            QVERIFY(opened);
+        };
+        runDialog([&](QDialog *dialog) {
+            auto font = dialog->findChild<QComboBox *>("renameItemFont");
+            auto name = dialog->findChild<QPlainTextEdit *>("renameItemName");
+            QVERIFY(font && name);
+            QCOMPARE(font->currentText(), QString("Small"));
+            QCOMPARE(name->toPlainText(), QString("Sword of\nFiredrake"));
+            font->setCurrentIndex(0);
+            QCOMPARE(name->toPlainText(), QString("Sword of Firedrake"));
+            // Cancel both the font change and the automatic joining of lines.
+        });
+        QCOMPARE(stack->count(), 0);
+        runDialog([&](QDialog *dialog) {
+            QCOMPARE(dialog->findChild<QComboBox *>("renameItemFont")->currentText(), QString("Small"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+        });
+        QCOMPARE(stack->count(), 0);
+        runDialog([&](QDialog *dialog) {
+            dialog->findChild<QComboBox *>("renameItemFont")->setCurrentIndex(0);
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+        });
+        QCOMPARE(stack->count(), 1);
+        stack->undo();
+        runDialog([&](QDialog *dialog) {
+            QCOMPARE(dialog->findChild<QComboBox *>("renameItemFont")->currentText(), QString("Small"));
+            QCOMPARE(dialog->findChild<QPlainTextEdit *>("renameItemName")->toPlainText(), QString("Sword of\nFiredrake"));
+        });
+        stack->redo();
+        runDialog([&](QDialog *dialog) {
+            QCOMPARE(dialog->findChild<QComboBox *>("renameItemFont")->currentText(), QString("Normal"));
+            auto name = dialog->findChild<QPlainTextEdit *>("renameItemName");
+            name->setPlainText(QString(33, 'a'));
+            QVERIFY(!dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->isEnabled());
+            QVERIFY(!dialog->findChild<QLabel *>("renameItemError")->text().isEmpty());
+        });
+        window.navigateTo({"items", 1});
+        runDialog([&](QDialog *dialog) {
+            auto font = dialog->findChild<QComboBox *>("renameItemFont");
+            QCOMPARE(font->currentText(), QString("Normal"));
+            font->setCurrentIndex(1);
+            dialog->findChild<QPlainTextEdit *>("renameItemName")->setPlainText("Moth-eaten Clothing");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+        });
+        runDialog([&](QDialog *dialog) {
+            QCOMPARE(dialog->findChild<QComboBox *>("renameItemFont")->currentText(), QString("Small"));
+            QCOMPARE(dialog->findChild<QPlainTextEdit *>("renameItemName")->toPlainText(), QString("Moth-eaten Clothing"));
+        });
+        stack->setIndex(0);
+    }
     void loadDesktopWorkspace() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

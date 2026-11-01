@@ -150,14 +150,11 @@ bool RecordModel::setData(const QModelIndex &i, const QVariant &v, int role) {
     if (i.column() == 1) {
         if (v.toString() == data(i, Qt::EditRole).toString())
             return false;
+        if (table_ == Table::Items)
+            return renameItem(i.row(), v.toString(), itemNameFont(project_->itemNameBytes(i.row())));
         try {
-            const auto name = table_ == Table::Items ? encodeItemName(v.toString())
-                                                     : encodeClassName(v.toString());
-            undo_->push(new EditClassName(this, i.row(),
-                                          table_ == Table::Items
-                                              ? project_->itemNameBytes(i.row())
-                                              : project_->classNameBytes(i.row()),
-                                          name));
+            const auto name = encodeClassName(v.toString());
+            undo_->push(new EditClassName(this, i.row(), project_->classNameBytes(i.row()), name));
             return true;
         } catch (const Error &error) {
             emit editRejected(QString::fromUtf8(error.what()));
@@ -191,6 +188,21 @@ bool RecordModel::setData(const QModelIndex &i, const QVariant &v, int role) {
         return false;
     undo_->push(new EditField(this, i.row(), i.column() - 2, before, value, "Edit " + f.label));
     return true;
+}
+bool RecordModel::renameItem(int row, const QString &name, ItemNameFont font) {
+    if (table_ != Table::Items || row < 0 || row >= rowCount() || !project_->hasItemData())
+        return false;
+    try {
+        const auto before = project_->itemNameBytes(row);
+        // Retain original line offsets and any other native formatting on a no-op save.
+        if (name == decodeText(before) && font == itemNameFont(before)) return true;
+        const auto after = encodeItemName(name, font);
+        if (after != before) undo_->push(new EditClassName(this, row, before, after));
+        return true;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return false;
+    }
 }
 void RecordModel::apply(int row, int field, int value) {
     project_->setValue(table_, row, field, value);
@@ -305,7 +317,11 @@ QWidget *ClassNameDelegate::createEditor(QWidget *parent, const QStyleOptionView
                                          const QModelIndex &) const {
     auto editor = new QPlainTextEdit(parent);
     editor->setTabChangesFocus(true);
-    editor->setToolTip("One or two lines. Ctrl+Enter applies the name; Escape cancels.");
+    const auto grid = parent->parentWidget();
+    const bool item = grid && grid->objectName() == "itemsTable";
+    editor->setToolTip(item ? "Keeps the current font. Use Rename item… to change it. "
+                              "Ctrl+Enter applies the name; Escape cancels."
+                            : "One or two lines. Ctrl+Enter applies the name; Escape cancels.");
     return editor;
 }
 void ClassNameDelegate::setEditorData(QWidget *widget, const QModelIndex &index) const {

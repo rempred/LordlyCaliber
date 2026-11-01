@@ -455,13 +455,25 @@ void Project::validateItemReferences() const {
              ++it)
             check(it->equipmentArt, -1, "Class artwork");
 }
-QByteArray encodeItemName(const QString &name) {
-    if (name.trimmed().isEmpty() || name.contains('\n') || name.size() > 32)
-        throw Error("Enter an item name on one line, at most 32 characters");
-    for (auto c : name)
-        if (c.unicode() < 32 || c.unicode() > 126)
-            throw Error("Use printable game characters for item names");
-    return name.toLatin1();
+ItemNameFont itemNameFont(const QByteArray &name) {
+    return name.contains(char(0x0e)) ? ItemNameFont::Small : ItemNameFont::Normal;
+}
+QByteArray encodeItemName(const QString &name, ItemNameFont font) {
+    const auto lines = name.split('\n');
+    if (lines.size() > (font == ItemNameFont::Small ? 2 : 1))
+        throw Error("Normal font uses one line; Small supports up to two lines");
+    if (name.size() - (lines.size() - 1) > 32)
+        throw Error("Enter an item name of at most 32 characters");
+    for (const auto &line : lines) {
+        if (line.trimmed().isEmpty()) throw Error("Item name lines cannot be empty");
+        for (auto c : line)
+            if (c.unicode() < 32 || c.unicode() > 126)
+                throw Error("Use printable game characters for item names");
+    }
+    if (font == ItemNameFont::Normal) return name.toLatin1();
+    // Native small-font span. Retail two-line names indent the second line by 12 pixels.
+    return QByteArray(1, 0x0e) + lines.join(QString::fromLatin1("\x10" "c")).toLatin1() +
+           QByteArray(1, 0x0f);
 }
 QByteArray Project::itemNameBytes(int row) const {
     record(Table::Items, row);

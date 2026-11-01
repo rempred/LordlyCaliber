@@ -73,6 +73,21 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void itemNameEncoding() {
+        QCOMPARE(encodeItemName("Moth-eaten Clothing"), QByteArray("Moth-eaten Clothing"));
+        const auto small = encodeItemName("Moth-eaten Clothing", ItemNameFont::Small);
+        QCOMPARE(small, QByteArray::fromHex("0e") + "Moth-eaten Clothing" + QByteArray::fromHex("0f"));
+        QCOMPARE(itemNameFont(small), ItemNameFont::Small);
+        QCOMPARE(itemNameFont("Short Sword"), ItemNameFont::Normal);
+        QCOMPARE(encodeItemName("Sword of\nFiredrake", ItemNameFont::Small),
+                 QByteArray::fromHex("0e53776f7264206f661063466972656472616b650f"));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName("Sword of\nFiredrake"));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName("a\nb\nc", ItemNameFont::Small));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName("a\n", ItemNameFont::Small));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName(""));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName(QString(33, 'a'), ItemNameFont::Small));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeItemName(QString::fromLatin1("bad\x0e"), ItemNameFont::Small));
+    }
     void acceptedCBaselineAndUneditedExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -3403,9 +3418,13 @@ class EngineTests : public QObject {
             project.loadIconArtwork();
             project.loadAnimationRoutes();
             project.loadTexts();
+            const auto untouchedSmall = project.itemNameBytes(8);
+            QCOMPARE(untouchedSmall, QByteArray::fromHex("0e53776f7264206f661063466972656472616b650f"));
+            project.setItemNameBytes(1, encodeItemName("Moth-eaten Clothing", ItemNameFont::Small));
             const auto icon = project.iconArtwork()->words(1),
                        description = project.textBanks()["items"].entries[1].bytes;
             QCOMPARE(project.appendItem(1, "New blade"), 278);
+            project.setItemNameBytes(278, encodeItemName("New\nblade", ItemNameFont::Small));
             QCOMPARE(project.iconArtwork()->words(278), icon);
             QCOMPARE(project.textBanks()["items"].entries[278].bytes, description);
             project.setText("items", 278, "Forged for the new item test.");
@@ -3425,10 +3444,15 @@ class EngineTests : public QObject {
                 auto restored = Project::fromRom(source);
                 restored.applyManifest(Project::readProject(location));
                 QCOMPARE(restored.manifest(), project.manifest());
+                QCOMPARE(restored.itemNameBytes(1), project.itemNameBytes(1));
+                QCOMPARE(restored.itemNameBytes(278), project.itemNameBytes(278));
+                QCOMPARE(restored.itemNameBytes(8), untouchedSmall);
                 QCOMPARE(restored.iconArtwork()->words(278), icon);
             }
             for (int stage = 0; stage < 2; ++stage) {
                 if (stage) {
+                    // A reopened small-font name can return to Normal on the next export.
+                    project.setItemNameBytes(1, encodeItemName("Moth-eaten Clothing"));
                     QCOMPARE(project.appendItem(278, "Second blade"), 279);
                     QCOMPARE(project.createItem("Blank accessory"), 280);
                     QCOMPARE(project.appendClass(5, "Item wielder"), 165);
@@ -3444,6 +3468,12 @@ class EngineTests : public QObject {
                 }
                 const auto result = rebuild(project, tools, work.path());
                 auto reopened = Project::fromRom(Rom::fromBytes(result.image));
+                QCOMPARE(reopened.itemNameBytes(1), stage ? QByteArray("Moth-eaten Clothing")
+                    : QByteArray::fromHex("0e") + "Moth-eaten Clothing" + QByteArray::fromHex("0f"));
+                QCOMPARE(reopened.itemNameBytes(8), untouchedSmall);
+                auto checksum = result.image;
+                Rom::updateChecksum(checksum);
+                QCOMPARE(checksum, result.image);
                 reopened.loadTexts();
                 reopened.loadIconArtwork();
                 reopened.loadAnimationRoutes();

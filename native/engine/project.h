@@ -290,7 +290,9 @@ class Project {
     int appendClassAsset(const ClassAsset &asset, const QByteArray &description,
                          int promotionTemplate);
 };
-QByteArray encodeItemName(const QString &name);
+enum class ItemNameFont { Normal, Small };
+ItemNameFont itemNameFont(const QByteArray &name);
+QByteArray encodeItemName(const QString &name, ItemNameFont font = ItemNameFont::Normal);
 QByteArray encodeClassName(const QString &name);
 void atomicWrite(const QString &path, const QByteArray &data);
 QJsonObject decodeProject(QByteArray bytes);

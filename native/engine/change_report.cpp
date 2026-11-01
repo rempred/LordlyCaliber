@@ -173,10 +173,20 @@ ChangeReport Project::changeReport(const Project *reference) const {
             if (!reference && table == Table::Classes && classNames_.contains(row.id) && !added)
                 lines << transition("Name", quoted(decodeText(classAsset(row.id).name)),
                                     quoted(row.name));
-            if (!reference && table == Table::Items && itemNames_.contains(row.id) && !added)
-                lines << transition("Name",
-                                    quoted(decodeText(originalItems_->entries()[row.id].name)),
-                                    quoted(row.name));
+            if (table == Table::Items && originalItems_) {
+                const auto after = itemNameFont(itemNameBytes(row.id));
+                const auto label = [](ItemNameFont font) { return font == ItemNameFont::Small ? "Small" : "Normal"; };
+                if (added) {
+                    lines << QString("Name font: %1").arg(label(after));
+                } else {
+                    const auto before = reference ? reference->itemNameBytes(row.id)
+                                                  : originalItems_->entries()[row.id].name;
+                    if (!reference && decodeText(before) != row.name)
+                        lines << transition("Name", quoted(decodeText(before)), quoted(row.name));
+                    if (itemNameFont(before) != after)
+                        lines << transition("Name font", label(itemNameFont(before)), label(after));
+                }
+            }
             for (const auto &field : fields(table)) {
                 if (field.offset < 4) continue; // Relocated name pointers are not user edits.
                 const auto before = fieldValue(reference && !added ? reference->record(table,row.id).bytes : row.original, field),
