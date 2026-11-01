@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generator": "native/tools/pack-toolchain.ps1",
   "archive": "n64-toolchain-windows.zip",
-  "sha256": "75c3ce4984f78ef01873c38b7c06af34e3738be874a462d83ea13aa3cba50375",
+  "sha256": "a72a8c71bcc3e11dfa9143e89e468d8070ea2cecca59c335adf2f95caaf2d7d3",
   "toolchain": "ob64-kmc-2.7.2-gnu-2.6",
   "inputs": "native/rebuild/toolchain.json",
   "sourcesAndRecipes": "native/rebuild/toolchain-source/README.md"

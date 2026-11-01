@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -8,8 +9,8 @@ typedef struct P04RootState {
 } P04RootState;
 
 extern void func_00262B68(void);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0024E9BC(s32, u8, s32);
+
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern u8 D_80209BF2[];
@@ -36,7 +37,7 @@ s32 func_00254BD4(u16 message, P04RootState *state)
     case 0x1001:
         func_0024DA10(state->value_08, D_80209BF2);
         func_0024DA10(state->value_08, D_80209BF2 + 12);
-        func_0024DC20(state->value_08, D_80209BF2 + 6, 5);
+        func_0024DC20(state->value_08, (struct Dc20InputRecord *)(D_80209BF2 + 6), 5);
         func_0024E9BC(0, state->context[0], 0x7F);
         func_0025CAF0(state->value_08, 0x37, 5);
         func_0025CB60((u32)(state->pointer + 1), 0x41, 0);

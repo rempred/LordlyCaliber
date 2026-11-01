@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -14,7 +15,7 @@ typedef struct P04PresentationSpec {
 
 typedef struct P04PresentationObject P04PresentationObject;
 
-extern void func_0024BF04(u8, P04Vec3 *, u32);
+
 
 P04PresentationObject *func_0024DF7C(u8 index, P04PresentationSpec *spec, void *argument)
 {

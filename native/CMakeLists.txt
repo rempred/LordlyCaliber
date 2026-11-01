@@ -29,6 +29,18 @@ add_custom_command(OUTPUT "${accepted_effect_binary}"
 set_source_files_properties("${accepted_effect_binary}" PROPERTIES GENERATED TRUE)
 qt_add_resources(lordly_engine accepted_effects PREFIX "/generated"
   BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES "${accepted_effect_binary}")
+
+set(accepted_rom_binary "${CMAKE_CURRENT_BINARY_DIR}/accepted-rom.bin")
+add_custom_command(OUTPUT "${accepted_rom_binary}"
+  COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-accepted-rom.cjs"
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${LORDLY_N64_TOOLS}" "${accepted_rom_binary}"
+  DEPENDS ${accepted_effect_inputs} game/accepted/rom-owners.json
+    tools/build-accepted-rom.cjs tools/build-accepted-effects.cjs tools/decomp-evidence.cjs rebuild/toolchain.json
+  COMMENT "Compiling and authenticating the complete accepted C ROM baseline" VERBATIM)
+set_source_files_properties("${accepted_rom_binary}" PROPERTIES GENERATED TRUE)
+qt_add_resources(lordly_engine accepted_rom PREFIX "/generated"
+  BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES "${accepted_rom_binary}")
+target_sources(lordly_engine PRIVATE rebuild/accepted_rom.cpp)
 target_sources(lordly_engine PRIVATE rebuild/effect_preview_runtime.cpp)
 target_sources(lordly_engine PRIVATE engine/attack_visual.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_resources.cpp)

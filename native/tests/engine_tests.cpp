@@ -18,6 +18,7 @@
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
+#include "rebuild/accepted_rom.h"
 #include "rebuild/weapon_status.h"
 #include "engine/weapon_status.h"
 #include "rebuild/capacity_runtime.h"
@@ -72,6 +73,50 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void acceptedCBaselineAndUneditedExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private retail ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            QCOMPARE(sha256(rom.bytes()), QByteArray("571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a"));
+            auto image = rom.bytes();
+            const auto coverage = applyAcceptedRom(image);
+            QVERIFY(coverage.codeRegions >= 1604);
+            QVERIFY(coverage.dataRegions > 0);
+            QCOMPARE(coverage.retainedRegions, 0);
+            QVERIFY(image == rom.bytes());
+            // A private model helper, shared dispatch table and unrelated final
+            // ROM byte remain exactly as modified when retail C is applied.
+            image[0x267998] ^= 1;
+            image[0x275750] ^= 1;
+            image[image.size() - 1] ^= 1;
+            const auto modified = image;
+            QVERIFY(applyAcceptedRom(image).retainedRegions >= 2);
+            QVERIFY(image == modified);
+            auto project = Project::fromRom(rom);
+            project.loadAttacks(); project.loadScenarios(); project.loadTools();
+            QCOMPARE(project.changedRecords(), 0);
+            QTemporaryDir work;
+            const auto built = rebuild(project, tools, work.path());
+            QCOMPARE(sha256(built.image), sha256(rom.bytes()));
+            QVERIFY(built.image == rom.bytes());
+            QVERIFY(built.report.join('\n').contains("Applied the accepted C baseline"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/accepted-c-identity-XXXXXX");
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            QFile original(path), exported(candidate);
+            QVERIFY(original.open(QIODevice::ReadOnly)); QVERIFY(exported.open(QIODevice::ReadOnly));
+            const auto originalBytes = original.readAll(), exportedBytes = exported.readAll();
+            QCOMPARE(sha256(exportedBytes), sha256(originalBytes));
+            QVERIFY(exportedBytes == originalBytes);
+            QVERIFY(Rom::open(candidate).bytes() == rom.bytes());
+            const auto normalized = Rom::fromBytes(rom.bytes());
+            QVERIFY(normalized.serialize(built.image) == rom.bytes());
+            qInfo().noquote() << "No-edit C-backed export is byte-identical; candidate:" << candidate;
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void persuasionMatrixGroups() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         const auto rom=Rom::open(path); auto model=Persuasion::load(rom);

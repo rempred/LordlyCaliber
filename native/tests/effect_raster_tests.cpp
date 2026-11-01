@@ -70,31 +70,54 @@ class EffectRasterTests : public QObject {
             const auto code = input.readAll();
             QCOMPARE(code.first(8), QByteArray("LCCODE01"));
             const auto count = u32(code, 8);
-            QVERIFY(count >= 237);
+            QVERIFY(count >= 550);
             EffectMachine machine;
             int at = 44;
+            QList<QPair<quint32, quint32>> patchPoints;
+            bool coupledModel = false;
+            quint32 dispatchTableBytes = 0;
             for (quint32 i = 0; i < count; ++i) {
                 const auto start = u32(code, at), address = u32(code, at + 4), size = u32(code, at + 8);
                 at += 16;
                 // Independent retail ROM input, not another build of the C.
                 QCOMPARE(code.mid(at, size), rom.mid(start, size));
                 machine.mount(address, rom.mid(start, size), u32(code, at - 4) != 0);
+                if (i == 0) patchPoints.append({start, address});
+                // This complete producer contains a private curve evaluator
+                // beginning four bytes before the old 00267994 ASM marker.
+                if (start == 0x267928) {
+                    QCOMPARE(size, 0x470U);
+                    coupledModel = true;
+                    patchPoints.append({0x267990, address + 0x68});
+                }
+                // Eight separately compiled dispatch tables share this original
+                // 244-byte row; every byte must retain its retail placement.
+                if (u32(code, at - 4) == 0 && start >= 0x275750 && start < 0x275844) {
+                    QVERIFY(start + size <= 0x275844);
+                    dispatchTableBytes += size;
+                    if (start == 0x275750) patchPoints.append({start + 4, address + 4});
+                }
                 at += int(size);
             }
             QCOMPARE(at, code.size());
+            QVERIFY(coupledModel);
+            QCOMPARE(dispatchTableBytes, 244U);
+            QCOMPARE(patchPoints.size(), 3);
             const auto before = machine.memory;
             QCOMPARE(installAcceptedEffectCode(machine, rom), int(count));
             QCOMPARE(machine.memory, before); // Includes all retained tails and unrelated data.
-            const auto start = u32(code, 44), address = u32(code, 48);
-            auto patchedRom = rom;
-            patchedRom[start] ^= 1;
-            machine.byte(address, machine.byte(address) ^ 1);
-            const auto patchedMemory = machine.memory;
-            QCOMPARE(installAcceptedEffectCode(machine, patchedRom), int(count) - 1);
-            QCOMPARE(machine.memory, patchedMemory);
-            // A RAM-only installed hook also survives even with a retail input.
-            QCOMPARE(installAcceptedEffectCode(machine, rom), int(count) - 1);
-            QCOMPARE(machine.memory, patchedMemory);
+            for (const auto &[start, address] : patchPoints) {
+                machine.memory = before;
+                auto patchedRom = rom;
+                patchedRom[start] ^= 1;
+                machine.byte(address, machine.byte(address) ^ 1);
+                const auto patchedMemory = machine.memory;
+                QCOMPARE(installAcceptedEffectCode(machine, patchedRom), int(count) - 1);
+                QCOMPARE(machine.memory, patchedMemory);
+                // A RAM-only installed hook also survives with a retail input.
+                QCOMPARE(installAcceptedEffectCode(machine, rom), int(count) - 1);
+                QCOMPARE(machine.memory, patchedMemory);
+            }
             EffectMachine unloaded;
             QCOMPARE(installAcceptedEffectCode(unloaded, rom), 0);
         } catch (const std::exception &e) { QFAIL(e.what()); }

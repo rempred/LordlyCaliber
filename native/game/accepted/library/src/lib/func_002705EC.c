@@ -1,3 +1,6 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
+#include "game/effect_dispatch_e07.h"
 #include "game/effect_math_e04.h"
 #include "game/effect_callbacks_p02.h"
 
@@ -29,14 +32,14 @@ typedef struct P02State2705EC {
 
 extern void func_00262B68(void), func_00262830(s32);
 extern void func_00023780(void *, s32);
-extern P02Render2705EC *func_0026BF74(s32);
-extern s16 func_0024BCE8(u8);
-extern void func_0024E9BC(s32, u8, s32);
+
+
+
 extern void func_002623C4(P02Render2705EC *);
 extern void *func_0020C478(u32);
-extern P02Render2705EC *func_00269798(s32), *func_0026a45c(s32);
+
 extern void func_0020BDCC(s16, s32);
-extern s32 func_002700B0(u16, void *);
+
 extern u8 *p01_context_80220F68;
 extern u8 D_800EB290[], D_800EB240[];
 

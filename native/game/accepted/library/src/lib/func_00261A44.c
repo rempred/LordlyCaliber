@@ -1,3 +1,4 @@
+#include "game/effect_model_e06.h"
 #include "common/types.h"
 
 typedef struct ResourceSlot {
@@ -91,7 +92,7 @@ static inline void *load_resource_6(s32 key04)
 
 extern void *func_00261608(u16 code, s32 key04);
 
-s32 func_00261A44(ResourceBlock *block, u16 resourceCode, s32 offset)
+s32 func_00261A44(ResourceBlock *block, u16 resourceCode, s32 offset, u16 unused0C, s32 unused10)
 {
     s32 foundFlag = 0;
     ResourceRecord10 *record = block->records0C;

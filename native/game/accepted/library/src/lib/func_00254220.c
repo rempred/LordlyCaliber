@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "game/effect_math_e04.h"
 #include "common/types.h"
 
@@ -30,14 +31,14 @@ extern void func_00262830(s32);
 extern void func_00262C64(s16, s16);
 extern void func_002628E4(s32);
 extern void func_00262C80(void);
-extern void func_0024C204(u8 *, P01Vec3 *, s32);
-extern void func_0024BF04(u8, P01Vec3 *, s32);
+
+
 extern void func_0024C7A4(void *, void *, void *);
 extern P01PlacementObject *func_0024CFAC(void *, s32);
-extern P01PlacementObject *func_0024CDD8(void *);
-extern void func_0024C7D8(P01Vec3 *, P01PlacementObject *);
-extern void func_0024E9BC(s32, u8, s32);
-extern void *func_0024D180(P01Vec3 *, void *);
+
+
+
+
 
 static inline s32 p01_select_index(P01PlacementState *state, const s16 *cells)
 {

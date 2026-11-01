@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 
 typedef struct P03LoopState {
@@ -17,13 +19,13 @@ extern void func_00262B68(void);
 extern void func_00262830(s32);
 extern void func_002628E4(s32);
 extern void func_00262C64(s16, s16);
-extern u32 func_0024BCA0(u32);
-extern void func_0025C8A4(void *);
-extern void func_0025DAB0(u8, void *);
-extern void func_0024DA50(u8, void *);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0025CAF0(u8, s32, s32);
-extern void func_0024E898(u8, s32);
+
+
+
+
+
+
+
 
 s32 func_002530C4(u16 message, P03LoopState *state)
 {

@@ -15,7 +15,7 @@ typedef struct SubmissionRecord {
 } SubmissionRecord;
 
 void bzero(void *memory, s32 bytes);
-s32 func_00262910(s32 value, s32 argument);
+void *func_00262910(void *value, void *argument);
 extern u8 D_800E9C12;
 extern s32 D_80220DB0;
 extern u8 D_80220DB8[];
@@ -73,7 +73,7 @@ void func_00263400(s16 code, u8 *arg1, u8 *arg2, u8 *arg3)
     lookupCode = code;
     table = D_8021FCC0;
     entry = &table[lookupCode];
-    result = func_00262910(*entry, 0);
+    result = (s32)func_00262910((void *)*entry, 0);
     entryValue = *entry;
     record->value04 = result;
     record->value08 = entryValue;

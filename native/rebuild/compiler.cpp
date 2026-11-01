@@ -1,6 +1,7 @@
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/accepted_rom.h"
 #include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
 #include "rebuild/weapon_types.h"
@@ -1282,6 +1283,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = installAttackReferences(Rom::fromBytes(result.image), *placement);
         result.report << QString("Compiled %1 attack records and independent names into permanent storage")
                              .arg(p.attacks()->entries().size() - 1);
+    }
+    if (p.rom().revision() == 0) {
+        const auto coverage = applyAcceptedRom(result.image);
+        result.report << QString("Applied the accepted C baseline: %1 code regions and %2 read-only regions; retained %3 modified regions")
+                             .arg(coverage.codeRegions).arg(coverage.dataRegions).arg(coverage.retainedRegions);
     }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);

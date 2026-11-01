@@ -5,7 +5,8 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const {readAcceptedEvidence, digest} = require('./decomp-evidence.cjs');
 function generate(root, native) {
   const evidence = readAcceptedEvidence(root);
-  const inventory = JSON.parse(fs.readFileSync(path.join(root, 'docs/Plans/attack-effects-program-draft/inventory.json')));
+  const inventoryBytes = fs.readFileSync(path.join(root, 'docs/Plans/attack-effects-program-draft/inventory.json'));
+  const inventory = JSON.parse(inventoryBytes);
   const supplemental = ['000458f0', '00045934', '00045a50', '00050918', '000509f4',
     '00042dc4', '00042e64', '00042f68', '00043000', '0021D7F0', '0021DCA4', '0021E50C', '002213DC'];
   const selected = new Set([...inventory.targets.map(t => t.symbol.toLowerCase()),
@@ -19,12 +20,26 @@ function generate(root, native) {
     assert.equal(digest(bytes), descriptor.sha256);
     const proof = JSON.parse(bytes);
     assert.ok(['section-assigned', 'native-text-tail'].includes(proof.textContract.mode), t.symbol);
-    assert.equal(t.functions.length, 1, 'Complete multi-function producer needs separate qualification');
     const address = t.owners[0].vramStart, start = t.owners[0].romStart;
     let size = 0;
     for (const owner of t.owners) {
       assert.equal(owner.vramStart, address + size); assert.equal(owner.romStart, start + size);
       size += owner.bytes;
+    }
+    if (t.functions.length > 1) {
+      // A recovered local helper can cross an old assembly-owner boundary.
+      // Compile the complete producer once, keeping each physical part's hash.
+      // Never split a compiler function at the old continuation label.
+      let extent = 0;
+      for (const [index, f] of t.functions.entries()) {
+        assert.equal(f.offset, extent, 'Gap or overlap in complete producer: ' + t.symbol);
+        assert.ok(Number.isSafeInteger(f.bytes) && f.bytes > 0 && !(f.bytes & 3));
+        assert.equal(f.binding, index ? 0 : 1, 'Only the entry may be global: ' + t.symbol);
+        assert.equal(f.symbolType, 2); assert.equal(f.visibility, 0);
+        extent += f.bytes;
+      }
+      assert.equal(t.functions[0].symbol, t.symbol);
+      assert.equal(extent, size, 'Incomplete compiler coverage: ' + t.symbol);
     }
     const bindings = {}, pending = new Map();
     function bind(name, value) {
@@ -64,13 +79,40 @@ function generate(root, native) {
     const tables = proof.finalTarget.auxiliarySections || [];
     owners.push({symbol: t.symbol, source, sourceSha256: t.sourceSha256, address, start, size,
       parts: t.owners.map(o => ({offset: o.romStart - start, size: o.bytes, sha256: o.linkedSha256})),
+      ...(t.functions.length > 1 ? {functions: t.functions} : {}),
       bindings, headers, tables});
+  }
+  // The historical inventory includes original owner suffixes. Current accepted
+  // ownership defines the C extent; retain the suffix in the loaded ROM. A former
+  // entry that is now a continuation must be fully covered by its coupled producer.
+  owners.sort((a,b) => a.start - b.start);
+  for (let i = 1; i < owners.length; ++i)
+    assert.ok(owners[i-1].start + owners[i-1].size <= owners[i].start, 'Overlapping compiled owners');
+  let retainedSuffixBytes = 0;
+  for (const target of inventory.targets) {
+    const start = Number(target.romStart), end = Number(target.romEndExclusive), address = Number(target.ramStart);
+    assert.equal(end - start, target.bytes);
+    const named = owners.find(o => o.symbol.toLowerCase() === target.symbol.toLowerCase());
+    if (named) { assert.equal(named.start, start); assert.equal(named.address, address); }
+    const acceptedEnd = named ? Math.min(end, named.start + named.size) : end;
+    retainedSuffixBytes += end - acceptedEnd;
+    let cursor = start;
+    for (const owner of owners) {
+      if (owner.start > cursor || owner.start + owner.size <= cursor) continue;
+      assert.equal(owner.address + cursor - owner.start, address + cursor - start, target.symbol + ': RAM mapping');
+      cursor = Math.min(acceptedEnd, owner.start + owner.size);
+      if (cursor === acceptedEnd) break;
+    }
+    assert.equal(cursor, acceptedEnd, 'Missing accepted C coverage: ' + target.symbol);
   }
   evidence.assertStable();
   return {schemaVersion: 1, generator: 'native/tools/generate-effect-owners.cjs',
     fingerprint: evidence.state.fingerprint, revision: imports.revision,
+    scope: {inventorySha256: digest(inventoryBytes), targets: inventory.targets.length,
+      inventoryBytes: inventory.targets.reduce((sum, t) => sum + t.bytes, 0), retainedSuffixBytes,
+      programCallbacks: inventory.counts.programCallbacks, effectSlots: inventory.counts.attackEffectSlots},
     purpose: 'Compile accepted C for isolated previews; retain modified ROM owners and unconverted code.',
-    owners: owners.sort((a,b) => a.start - b.start)};
+    owners};
 }
 if (require.main === module) {
   const root = path.resolve(process.argv[2]), native = path.resolve(__dirname, '..');

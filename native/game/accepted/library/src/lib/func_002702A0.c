@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "game/effect_callbacks_p02.h"
 
 typedef struct P02State2702A0 {
@@ -10,8 +11,8 @@ typedef struct P02State2702A0 {
     u8 *value_74;
 } P02State2702A0;
 
-extern s16 func_0024BCE8(u8);
-extern s16 func_0024C3EC(u8);
+
+
 /* Neutral address views, without a claim of distinct objects or extents. */
 extern u8 p02_data_80220A10[], p02_data_80220A14[], p02_data_80220A16[];
 extern u8 p02_data_80220A1C[], p02_data_80220A22[], p02_data_80220A28[];

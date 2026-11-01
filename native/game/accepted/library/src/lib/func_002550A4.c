@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -16,10 +17,10 @@ typedef struct P04CounterState {
 } P04CounterState;
 
 extern void func_00262B68(void);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0024C57C(u8, P04Vec3 *, s32);
-extern s16 func_0024C2F8(P04Vec3 *);
+
+
+
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern u8 D_80209C68[];
@@ -55,7 +56,7 @@ s32 func_002550A4(u16 message, P04CounterState *state)
         break;
     case 0x1001:
         func_0024DA10(state->value_08, D_80209C68);
-        func_0024DC20(state->value_08, D_80209C68 + 12, 6);
+        func_0024DC20(state->value_08, (struct Dc20InputRecord *)(D_80209C68 + 12), 6);
         func_0024E9BC(0, state->context[0], 0x84);
         func_0025CAF0(state->value_08, 7, 0xA);
         if (state->pointer[1] == 0xFF) {

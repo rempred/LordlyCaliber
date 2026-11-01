@@ -1,5 +1,50 @@
 # Native Lordly Caliber
 
+## Complete accepted C baseline (November 1)
+
+This supersedes the October 30 intake counts below. Decomp CURRENT04E67D51 at
+8038c349 completes the attack-effects program. The library now includes all1569
+PURE_C and35 HYBRID_C targets:1650 compiler functions in1473 producer sources,
+with1513 source/header files. Imported bytes remain exact; older portable
+adaptations retain their intentional runtime extensions.
+
+`generate-accepted-owners.cjs` authenticates the named current proofs and emits
+`game/accepted/rom-owners.json`. `build-accepted-rom.cjs` compiles the entire
+library with the pinned toolchain. Complete grouped producers, implicit literal
+pools and split read-only tables retain their qualified placement. ELF metadata
+and relocation symbols may be projected; compiler instructions are never
+rewritten. Each output region must match its accepted hash before it enters the
+untracked `accepted-rom.bin` application resource. No upstream object or ROM is
+used by this build.
+
+Exports use this compiled baseline for unchanged regions and keep project or
+foreign-ROM modifications intact. Editable runtime sources still compile during
+export. Thus acceptance coverage does not require recompiling the whole game
+library every time a user changes a record, and does not overwrite mod hooks.
+Unknown data and retained original suffixes remain byte-for-byte intact.
+
+Effect previews separately compile541 complete producers into550 code/table
+blocks. These cover all529 historical program entries, including the coupled
+267928/267990 model producer whose latter function spans the historical267994
+continuation boundary. Current accepted extents leave276 original suffix bytes
+untouched. Eight newly qualified shared dispatch fragments total244 bytes.
+
+The accepted assembler host fix replaces an overlapping `bcopy` with `memmove`
+in hazard-NOP insertion. Its exact recipe and patch accompany the pinned binary.
+Compiler version, flags and VR4300 multiply-hazard handling remain unchanged.
+This fixes host-side corruption when compiling mixed single/double multiplies;
+it does not imply a defect in the previously exported game code.
+
+Validation: all1473 producers compile into1683 exact regions (1616 code,67 data).
+The private `acceptedCBaselineAndUneditedExport` test checks every region against
+the original US Rev0 ROM, preserves altered code/table bytes and exports a fully
+byte-identical v64 after opening Attacks, Scenarios and Tools. The selected engine
+checks pass, including existing accepted-owner compilation, checksum/reopening,
+class/menu, weapon-status and expanded-squad exports. All11 attack-data checks
+and13 effect-raster checks pass, including visible playback of all133 effects;
+the optional external drawing-capture comparison is skipped. These are source,
+ROM and instruction-level/preview checks, not an end-to-end console playthrough.
+
 ## Accepted effect C integration (October 30)
 
 The accepted library imports Decomp snapshot502EF944/76b2ce11:1264 PURE_C owners,

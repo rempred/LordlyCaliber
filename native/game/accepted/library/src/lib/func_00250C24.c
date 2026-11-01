@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -14,11 +15,11 @@ typedef struct P04RootState {
 } P04RootState;
 
 extern void func_00262B68(void);
-extern void func_0024DA50(u8, void *);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0024C57C(u8, P04Vec3 *, s32);
-extern void *func_0024D180(P04Vec3 *, void *);
-extern s16 func_0024C2F8(P04Vec3 *);
+
+
+
+
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern u8 D_802098E4[];

@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "game/effect_math_e04.h"
 #include "common/types.h"
 
@@ -39,13 +41,13 @@ extern void func_00262830(s32);
 extern void func_002628E4(s32);
 extern void func_00262C64(s16, s16);
 extern void func_00262C80(void);
-extern void func_0024C204(u8 *, P01Vec3 *, s32);
-extern void func_0024BF04(u8, P01Vec3 *, s32);
+
+
 extern void func_0024CBC8(void *, s16, float, s32);
-extern P01PositionObject *func_0024D180(P01Vec3 *, void *);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0025DB00(u8 *, void *);
-extern void func_0024CD40(P01TransformState *);
+
+
+
+
 
 s32 func_002522E0(u16 message, P01TransformState *state)
 {
@@ -65,7 +67,7 @@ s32 func_002522E0(u16 message, P01TransformState *state)
     case 0x1000:
         state->object_48 = func_0024D180(&state->value_08, p01_data_80209A50);
         func_0024E9BC(0, state->context[0], 0x5B);
-        func_0025DB00(state->context, p01_data_80209A7C);
+        func_0025DB00(state->context, (const struct Func0025DAB0Input *)(p01_data_80209A7C));
         func_00262C64(9, 0x1001);
         break;
     case 0x1001: {

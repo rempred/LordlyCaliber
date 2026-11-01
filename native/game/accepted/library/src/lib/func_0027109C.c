@@ -1,3 +1,5 @@
+#include "game/effect_adapters_e08.h"
+#include "game/effect_dispatch_e07.h"
 #include "game/effect_math_e04.h"
 #include "game/effect_callbacks_p02.h"
 
@@ -18,10 +20,10 @@ typedef struct P02State27109C {
 } P02State27109C;
 
 extern void *func_0020C478(u32);
-extern P02Render27109C *func_00269798(s32);
-extern P02Render27109C *func_0026abc8(s32);
+
+
 extern void func_0020BDCC(s16, s32);
-extern void func_0024E9BC(s32, u8, s32);
+
 extern float D_80220EE0[16];
 extern u8 D_800EB240[];
 

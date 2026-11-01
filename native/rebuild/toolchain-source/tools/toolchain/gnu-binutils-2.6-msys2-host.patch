@@ -142,3 +142,16 @@ index c4dd63c..e112757 100644
  
  #endif
  
+
+diff --git a/gas/input-file.c b/gas/input-file.c
+--- a/gas/input-file.c
++++ b/gas/input-file.c
+@@ -256,7 +256,7 @@
+                             {
+                                 prev_insn_was_float_mul = (cur_insn_mul[3] == '.') ? 1 : 0;
+                                 /* Shift the file forward by 5 characters */
+-                                bcopy(cur_insn, cur_insn + 5, cur_output_pos - cur_insn);
++                                memmove(cur_insn + 5, cur_insn, cur_output_pos - cur_insn);
+                                 /* Insert a nop, newline and tab into the gap created by the previous bcopy */
+                                 bcopy("nop\n\t", cur_insn, 5);
+                                 cur_output_pos = cur_output_pos + 5;

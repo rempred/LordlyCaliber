@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -10,7 +11,7 @@ typedef struct P04ListState {
 } P04ListState;
 
 extern void func_00262B68(void);
-extern void func_0024E9BC(s32, u8, s32);
+
 extern u8 *p01_context_80220F68;
 /* This access view retains the two observed shared-pointer loads. */
 extern u8 *volatile D_80220F6C;

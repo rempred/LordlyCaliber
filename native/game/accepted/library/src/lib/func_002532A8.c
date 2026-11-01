@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "game/effect_math_e04.h"
 #include "common/types.h"
 
@@ -43,17 +45,17 @@ extern void func_00262830(s32);
 extern void func_002628E4(s32);
 extern void func_00262C64(s16, s16);
 extern void func_00262C80(void);
-extern void func_0024C204(u8 *, P01Vec3 *, s32);
-extern void func_0024BF04(u8, P01Vec3 *, s32);
+
+
 extern void func_0024CBC8(void *, s16, float, s32);
-extern P01PositionObject *func_0024D180(P01Vec3 *, void *);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0025DB00(u8 *, void *);
-extern void func_0024CD40(P01TrailState *);
-extern void *func_0024DA10(u32, void *);
-extern void func_0025DAB0(u8, void *);
-extern void func_0024E490(u32, const u8 *, u32);
-extern void func_0025CAF0(u8, s32, s32);
+
+
+
+
+
+
+
+
 
 s32 func_002532A8(u16 message, P01TrailState *state)
 {

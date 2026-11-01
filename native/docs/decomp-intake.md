@@ -1,5 +1,24 @@
 # Using newly accepted Decomp C
 
+## November 1 complete matching library
+
+The current importer includes accepted `PURE_C` and `HYBRID_C`, preserving both
+source forms exactly. CURRENT04E67D51 supplies1604 accepted targets/1650 compiler
+functions in1473 producers. Schema7 proof authentication remains mandatory.
+After importing, regenerate both adoption manifests:
+
+```powershell
+node native/tools/generate-accepted-owners.cjs '../OB64 Decomp'
+node native/tools/generate-effect-owners.cjs '../OB64 Decomp'
+```
+
+The normal native build compiles all accepted producers for the ROM baseline and
+the selected effect producers for previews, verifying qualified code/data hashes.
+Read-only table projection preserves retained data gaps. Exports reuse the full
+C baseline without replacing modded regions; editable runtimes compile afresh.
+The library's README and `rom-owners.json` describe active ROM use; older interest
+entries marked merely imported describe historical portable-adaptation status.
+
 ## October 17 library intake
 
 The full seven-wave library batch from Decomp `17e07534` is imported: 212 new

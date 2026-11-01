@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_dispatch_e07.h"
 #include "game/effect_callbacks_p02.h"
 
 typedef struct P02RenderObject {
@@ -21,9 +23,9 @@ typedef struct P02StateF12C {
 } P02StateF12C;
 
 extern u8 *p01_context_80220F68;
-extern P02RenderObject *func_0026C010(s32);
+
 extern void func_00262830(s32);
-extern s32 func_002700B0(u16, void *);
+
 
 s32 func_0026F12C(u16 message, P02StateF12C *state)
 {

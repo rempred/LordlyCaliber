@@ -1,8 +1,8 @@
+#include "game/effect_geometry_e05.h"
 #include "game/effect_callbacks_p02.h"
 
 extern void *func_00261560(s32);
 extern void func_00260C24(void *);
-extern s32 func_00264b50(P02EntryF7F0 *);
 extern u8 p02_data_80220980[];
 
 void func_0026F7F0(u16 message, P02StateF7F0 *state)
@@ -15,7 +15,7 @@ void func_0026F7F0(u16 message, P02StateF7F0 *state)
         value = func_00261560(3);
         for (i = 0; i < state->value_50->value_04; ++i) {
             if (state->value_58[i]) {
-                state->value_58[i]->value_00 = func_00264b50;
+                state->value_58[i]->value_00 = (s32 (*)(P02EntryF7F0 *))func_00264b50;
                 object = state->value_58[i];
                 object->value_34 = value;
                 object->value_30 = p02_data_80220980;

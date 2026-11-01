@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "game/effect_math_e04.h"
 #include "common/types.h"
 
@@ -35,10 +36,10 @@ extern void func_00262830(s32);
 extern void func_002628E4(s32);
 extern void func_00262C64(s16, s16);
 extern void func_00262C80(void);
-extern void func_0024C204(u8 *, P01Vec3 *, s32);
-extern void func_0024BF04(u8, P01Vec3 *, s32);
+
+
 extern void func_0024C7A4(P01Vec3 *, P01Vec3 *, P01Vec3 *);
-extern P01Vec3 *func_0024CDD8(P01SixByteRecord *);
+
 extern float func_001FF7EC(s16, s16);
 extern u32 func_00022e60(void);
 

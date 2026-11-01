@@ -1,3 +1,5 @@
+#include "game/effect_geometry_e05.h"
+#include "game/effect_dispatch_e07.h"
 #include "game/effect_math_e04.h"
 #include "game/effect_callbacks_p02.h"
 
@@ -47,10 +49,8 @@ typedef struct P02StateD770 {
 } P02StateD770;
 
 extern void *func_00263120(void *, s32);
-extern void func_00266484(void), func_00266DB0(void), func_00267038(void);
-extern void func_00264fc0(void *, void *);
 extern void guTranslateF(void *, float, float, float);
-extern P02RenderD770 *func_00269A64(s32, s32, u32, s32, u32);
+
 extern void func_00023780(void *, s32);
 extern P02Vec3 p02_data_802206DC, p02_data_802206D0;
 extern u8 p02_data_802206A0[];
@@ -69,7 +69,7 @@ void  func_0026d770(void *stateView)
     state->value_14 = func_00263120((void *)func_00266484, 1);
     state->value_14->value_08 = 1000.0f;
     first = state->value_14;
-    func_00264fc0(state->value_40, &first->value_64);
+    func_00264fc0((struct E05Header *)(state->value_40), (struct E05Descriptor *)(&first->value_64));
     first->value_5A = 0x20;
     first->value_5C = 2;
     first->value_5E = first->value_68 >> 1;

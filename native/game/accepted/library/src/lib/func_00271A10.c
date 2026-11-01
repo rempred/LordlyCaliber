@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "game/effect_callbacks_p02.h"
 
 typedef struct P02RootState {
@@ -19,13 +21,13 @@ typedef struct P02StateFBF0 P02StateFBF0;
 typedef struct P02StateF578 P02StateF578;
 extern void func_00262B68(void);
 extern void func_00262830(s32);
-extern void func_0025C8A4(void *);
+
 extern void func_00262C64(s16, s16);
-extern s16 func_0024BCE8(u8);
+
 extern s32 func_0026285C(void *, u16);
 extern void *func_0020C478(u32);
 extern s32 func_0020C014(void *);
-extern void func_0024E9BC(s32, u8, s32);
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern void *p01_pointer_80220F70;

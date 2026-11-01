@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 
 typedef struct P01RepeatedRootState {
@@ -24,18 +26,18 @@ extern u8 p01_data_80209B50[];
 extern u8 p01_data_80209B94[];
 extern void func_00262B68(void);
 extern void func_00262830(s32);
-extern void func_0025C8A4(void *);
+
 extern void func_00262C64(s16, s16);
-extern void func_00262AB0(void *);
+extern void *func_00262AB0(void *);
 extern void func_002628E4(s32);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0025CAF0(u8, s32, s32);
-extern void func_0024E9BC(s32, u8, s32);
-extern void *func_0024DA10(u32, void *);
-extern void func_0025CB60(u8 *, u8, u8);
-extern void func_0025DAB0(u8, void *);
-extern void func_0024C57C(u8, P01Vec3 *, s32);
-extern s16 func_0024C2F8(P01Vec3 *);
+
+
+
+
+
+
+
+
 
 s32 func_00253D18(u16 message, P01RepeatedRootState *state)
 {
@@ -67,7 +69,7 @@ s32 func_00253D18(u16 message, P01RepeatedRootState *state)
     case 0x1002: {
         s16 count;
 
-        func_0024DC20(state->value_08, p01_data_80209B56, 2);
+        func_0024DC20(state->value_08, (struct Dc20InputRecord *)(p01_data_80209B56), 2);
         func_0025CAF0(state->value_08, 0xF, 5);
         for (count = 1; state->value_04[count] != 0xFF; count++) {
         }

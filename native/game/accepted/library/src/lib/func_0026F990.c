@@ -1,3 +1,5 @@
+#include "game/effect_geometry_e05.h"
+#include "game/effect_dispatch_e07.h"
 #include "game/effect_math_e04.h"
 #include "game/effect_callbacks_p02.h"
 
@@ -51,13 +53,10 @@ typedef struct P02StateF990 {
     void *value_50;
 } P02StateF990;
 
-extern P02RenderF990 *func_00269D7C(s32, s32, u32, s32, u32, void *);
-extern P02RenderF990 *func_00269B0C(s32, s32, u32, s32, u32, void *);
+
+
 extern void *func_00261DA8(void *);
 extern void *func_00263120(void *, s32);
-extern void func_00267018(void), func_00266484(void);
-extern void func_00266DB0(void), func_00267038(void);
-extern void func_00264fc0(void *, void *);
 extern P02VecF990 p02_data_802209C8;
 extern u8 p02_data_80220910[], p02_data_802209D4[];
 
@@ -107,7 +106,7 @@ void  func_0026F990(void *stateView)
         /* Taking this address before setup preserves the retail argument/load
          * order with the pinned compiler, without an extra saved register. */
         destination = first->value_14;
-        func_00264fc0(state->value_50, &first->value_64);
+        func_00264fc0((struct E05Header *)(state->value_50), (struct E05Descriptor *)(&first->value_64));
         first->value_5A = 0x20;
         first->value_5C = 2;
         first->value_56 = 0;

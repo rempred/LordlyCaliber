@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -9,8 +10,8 @@ typedef struct P04Value0CState {
 } P04Value0CState;
 
 extern void func_00262B68(void);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0024E9BC(s32, u8, s32);
+
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern u8 D_8020A100[];
@@ -33,7 +34,7 @@ s32 func_0025B0A4(u16 message, P04Value0CState *state)
         break;
     case 0x1000:
         func_0024DA10(state->value_0C, D_8020A100);
-        func_0024DC20(state->value_0C, D_8020A100 + 0x12, 0xC);
+        func_0024DC20(state->value_0C, (struct Dc20InputRecord *)(D_8020A100 + 0x12), 0xC);
         func_0024E9BC(0, state->context[0], 0xB3);
         func_00262C64(5, 0x1001);
         break;
@@ -46,7 +47,7 @@ s32 func_0025B0A4(u16 message, P04Value0CState *state)
         func_00262C64(4, 0x1003);
         break;
     case 0x1003:
-        func_0024DC20(state->value_0C, D_8020A10C, 0xD);
+        func_0024DC20(state->value_0C, (struct Dc20InputRecord *)(D_8020A10C), 0xD);
         func_0025CAF0(state->value_0C, 0xA, 0xA);
         func_0025CB60((u32)(state->pointer + 1), 0x28, 3);
         func_00262C64(0x41, 0x1004);

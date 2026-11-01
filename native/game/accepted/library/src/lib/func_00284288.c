@@ -21,7 +21,7 @@ void func_00048024();
 void func_00048294();
 void func_0004ecfc();
 void func_001F0E04(s32, s32);
-void func_0026285C(s32, u16);
+s32 func_0026285C(void *, u16);
 void func_0028308C(s32, s32, s32);
 void func_002831E0(s32, s32);
 void func_00283224(s32, s32, s32, s32);
@@ -1065,7 +1065,7 @@ s32 func_00284288(void) {
             code_choices[1] = 0x1005;
             value_aa = *(s32 *)((u8 *)D_8022A974 + 0);
             if (value_aa != 0) {
-                func_0026285C(value_aa, code_choices[*(s32 *)((s8 *)(command_address) + (4))]);
+                func_0026285C((void *)value_aa, code_choices[*(s32 *)((s8 *)(command_address) + (4))]);
             }
             cursor += 1;
             break;

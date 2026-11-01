@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 #include "game/effect_presentation_p04.h"
 
@@ -8,8 +9,8 @@ typedef struct P04ShortState {
 } P04ShortState;
 
 extern void func_00262B68(void);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0024E9BC(s32, u8, s32);
+
+
 extern u8 *p01_context_80220F68;
 extern u8 *p01_pointer_80220F6C;
 extern u8 D_800EB240[];
@@ -35,7 +36,7 @@ s32 func_00254F34(u16 message, P04ShortState *state)
         func_00262C64(-1, 0x1001);
         break;
     case 0x1001:
-        func_0024DC20(state->value_08, D_80209C62, 6);
+        func_0024DC20(state->value_08, (struct Dc20InputRecord *)(D_80209C62), 6);
         func_0024E9BC((s32)D_800EB240, state->context[0], 0x83);
         func_0025DAB0(state->value_08, (const struct Func0025DAB0Input *)D_80209CD4);
         func_00262C64(0x17, 0x1002);

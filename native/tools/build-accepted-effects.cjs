@@ -83,4 +83,4 @@ function build(native, tools, output) {
   console.log(`Compiled ${manifest.owners.length} accepted C owners / ${blocks.length} exact code and table blocks`);
 }
 if(require.main===module) build(path.resolve(process.argv[2]),path.resolve(process.argv[3]),path.resolve(process.argv[4]));
-module.exports={build};
+module.exports={build, sections};

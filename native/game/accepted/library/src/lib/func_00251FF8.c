@@ -1,3 +1,4 @@
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 
 extern u8 p01_byte_80220F68;
@@ -6,7 +7,7 @@ extern void func_00262B68(void);
 extern void func_00262830(s32);
 extern void func_002628E4(s32);
 extern void func_00262C64(s16, s16);
-extern void *func_0024DA10(u32, void *);
+
 
 s32 func_00251FF8(u16 message, u8 *state)
 {

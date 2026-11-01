@@ -39,8 +39,8 @@
   },
   "buildPatch": {
     "path": "tools/toolchain/gnu-binutils-2.6-msys2-host.patch",
-    "sha256": "A85BFAF00589DBFF883E3EC33FFBE51267AF7D125EABA109A9ECAB65AFC86D71",
-    "scope": "Build-host compatibility only: modern stdarg, Flex buffer API, and Cygwin sys_siglist declaration."
+    "sha256": "EA44CC33A07F16856E01C7F9E8EC7295F6CF048F1201007D9F0A8A835798DA33",
+    "scope": "Build-host compatibility (modern stdarg, Flex buffer API, Cygwin sys_siglist declaration) and overlap-safe KMC input-buffer shifting during hazard-NOP insertion."
   },
   "structuralLinkerPatch": {
     "path": "tools/toolchain/gnu-binutils-2.6-ob64-load-segments.patch",
@@ -74,7 +74,7 @@
     "objdump": "GNU objdump version 2.6"
   },
   "outputs": {
-    "bin/mips-kmc-elf-as.exe": { "bytes": 559236, "sha256": "0831D410AD140F2D2225382273219ACB418EF6EC1E986A3309F034D2A8350A5C" },
+    "bin/mips-kmc-elf-as.exe": { "bytes": 559236, "sha256": "0589F2ADEC34E8BD99F550AF91B1D8868B71904D0D0F8117CA247DF899B8C938" },
     "bin/mips-kmc-elf-ld.exe": { "bytes": 458490, "sha256": "48944635BC840256BC2FBA86D2701A4CA59B2424B924AC8B9F4853D4E1DA609F" },
     "bin/mips-kmc-elf-nm.exe": { "bytes": 322802, "sha256": "47BF09DC0E559C7D0D8B9E145977715D03FC06E8F3294D76AED3597CD5AF45CF" },
     "bin/mips-kmc-elf-objcopy.exe": { "bytes": 304282, "sha256": "9C3C821BE67C96AF204CC9B49FA1E285506E6E986B853AB898DFF48DC8B6F1AE" },

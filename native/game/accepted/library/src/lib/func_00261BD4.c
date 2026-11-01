@@ -1,3 +1,4 @@
+#include "game/effect_model_e06.h"
 #include "common/types.h"
 
 typedef struct ResourceRecord10 {
@@ -20,7 +21,7 @@ typedef struct ResourceBlock {
 
 extern void func_00260CE0(u16 code, s32 key04, s32 key08);
 
-void func_00261BD4(ResourceBlock *block, u16 resourceCode, s32 offset)
+void func_00261BD4(ResourceBlock *block, u16 resourceCode, s32 offset, u16 unused0C, s32 unused10)
 {
     ResourceRecord10 *record = block->records0C;
     s32 remaining = block->count04;

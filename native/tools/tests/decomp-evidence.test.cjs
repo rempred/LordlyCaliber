@@ -125,6 +125,21 @@ test('dry run does not create a destination', t => {
   const f = fixture(t); importAccepted(f.root, f.destination);
   assert.equal(fs.existsSync(f.destination), false);
 });
+test('accepted hybrid C imports intact and still rejects altered source bytes', t => {
+  const f = fixture(t, 7);
+  for (let i = 0; i < f.fresh.targets.length; ++i) {
+    f.fresh.targets[i].sourceClass = 'HYBRID_C';
+    f.verification.verification.targets[i].sourceObjectEvidence.sourceClass = 'HYBRID_C';
+    f.proofs[i].target.sourceClass = 'HYBRID_C';
+  }
+  f.publish();
+  const manifest = importAccepted(f.root, f.destination, true);
+  assert.equal(manifest.counts.owners, 2);
+  assert.equal(manifest.imports[0].sourceClass, 'HYBRID_C');
+  assert.deepEqual(fs.readFileSync(path.join(f.destination, 'game/accepted/library/src/lib/pair.c')), f.source);
+  f.write('src/lib/pair.c', Buffer.concat([f.source, Buffer.from('// changed\n')]));
+  assert.throws(() => importAccepted(f.root, f.destination, true), /source|hash|bytes/i);
+});
 const failures = [
   ['unsupported schema', f => { f.state.schemaVersion = 8; f.reports(); }, /unsupported/],
   ['changed report', f => f.write('build/current/verification.json', '{}'), /unsupported/],

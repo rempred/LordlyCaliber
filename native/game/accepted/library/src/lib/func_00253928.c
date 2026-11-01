@@ -1,3 +1,5 @@
+#include "game/effect_commands_e09.h"
+#include "game/effect_adapters_e08.h"
 #include "common/types.h"
 
 typedef struct P01BytePairState {
@@ -17,13 +19,13 @@ extern void func_00262830(s32);
 extern void func_00262C64(s16, s16);
 extern void func_002628E4(s32);
 extern void func_00262C80(void);
-extern u32 func_0024BCA0(u32);
-extern s16 func_0024C3EC(u8);
-extern void func_0024DC20(u8, void *, s32);
-extern void func_0024E9BC(s32, u8, s32);
-extern void func_0025DAB0(u8, void *);
-extern void *func_0024DA10(u32, void *);
-extern void func_0025CA7C(u8, void *);
+
+
+
+
+
+
+
 
 s32 func_00253928(u16 message, P01BytePairState *state)
 {
@@ -44,7 +46,7 @@ s32 func_00253928(u16 message, P01BytePairState *state)
         } else {
             value = state->value_01;
         }
-        func_0024DC20(value, p01_data_80209B38, 3);
+        func_0024DC20(value, (struct Dc20InputRecord *)(p01_data_80209B38), 3);
         func_0024E9BC(0, state->value_00, 0x73);
         func_0025DAB0(state->value_01, p01_data_80209B80);
         func_00262C64(0xE, 0x1001);

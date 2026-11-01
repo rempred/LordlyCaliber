@@ -1,5 +1,11 @@
 # Feature inventory and completion tracking
 
+ROM exports now use a source-built baseline covering all 1,650 currently accepted
+C/hybrid-C functions. The application build checks each code/table region against
+its accepted bytes; exports preserve modified and unknown data. An untouched US
+Rev0 ROM exports byte-for-byte identically, including its original byte order.
+Effect previews use the completed accepted attack-effects C batch.
+
 The **Attacks** workspace edits US Rev0 physical attacks, spells, healing and
 status abilities. Search by name, effect, element or ID; rename a shared name or
 make it independent; choose a starting attack for Create or duplicate the selected entry.

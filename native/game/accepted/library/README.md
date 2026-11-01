@@ -1,9 +1,9 @@
-# Accepted pure-C library
+# Accepted matching C library
 
-This directory retains the complete `PURE_C` source closure from Decomp's passing
+This directory retains the complete `PURE_C` and `HYBRID_C` source closure from Decomp's passing
 verification. [`../library-imports.json`](../library-imports.json) is authoritative
 for its current revision, verification time, counts and file membership. Exact
-hybrid C/assembly sources are outside this pure-C snapshot.
+hybrid C/assembly sources retain their accepted inline assembly unchanged.
 
 [`../library-imports.json`](../library-imports.json) records the upstream Git
 revision, verification identity, owner/function membership, source paths and
@@ -16,9 +16,13 @@ Refreshes remove unchanged previously listed files retired by a new producer.
 Unlisted historical/support files are preserved and are not additional current
 accepted functions.
 
-Importing source makes it available for future development. It does not compile
-every function into the editor or replace the functions in the user's ROM.
-Current consumers and intentional portable adaptations remain in
+`../rom-owners.json` qualifies every accepted producer for the source-built ROM
+baseline. The application build compiles these sources, checks every output
+region against its accepted hash and embeds the resulting untracked artifact.
+ROM exports reuse that C-built baseline wherever the original bytes are intact;
+modified code, data and unconverted gaps remain unchanged. The separate
+`../effect-owners.json` selects the C actively executed by effect previews.
+Intentional portable adaptations remain in
 [`../../decomp-interest.json`](../../decomp-interest.json),
 [`../animation-imports.json`](../animation-imports.json), and
 [`../gameplay-imports.json`](../gameplay-imports.json). Those adaptation baselines

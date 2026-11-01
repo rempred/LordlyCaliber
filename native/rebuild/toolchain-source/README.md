@@ -9,6 +9,15 @@ Windows/N64 linker fixes. To reproduce Binutils, use that script's `--help`
 instructions with a clean checkout at its pinned commit and the documented
 MSYS2 host. It does not require the game or a Decomp checkout.
 
+The November 1 assembler update carries Decomp's accepted overlap-safe buffer
+shift in `gas/input-file.c`: `memmove` replaces an overlapping `bcopy` while
+inserting the existing VR4300 multiply hazard NOP. The upstream source commit,
+compiler flags and other five shipped tools remain unchanged. This fixes a host
+parser failure on mixed single/double multiply sequences; it does not disable
+hazard handling or rewrite compiler instructions. The recipe, patch, executable
+pin and distribution ZIP are updated together. Every compiled effect owner is
+checked against accepted retail bytes, including existing consumers.
+
 GCC source commit: `43d1cdb67ed135879869b5266f01efaaada5e35a`.
 The accepted compiler was built as a Win32 console program with MSVC, with
 `CFLAGS=/nologo /Od /Brepro /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_WARNINGS /Di386 /DWIN32 /D_WIN32 /D_X86_=1 /DALMOST_STDC`

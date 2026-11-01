@@ -1,3 +1,4 @@
+#include "game/effect_dispatch_e07.h"
 #include "common/types.h"
 
 typedef struct P01Record {
@@ -15,7 +16,7 @@ typedef struct P01Node {
 
 struct P01PlacementObject;
 extern void *p01_table_8020A170[];
-extern P01Node *func_002698A0(u32, void *);
+
 
 struct P01PlacementObject *func_0024CFAC(void *argument, s32 index)
 {

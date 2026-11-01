@@ -12,19 +12,19 @@ function importAccepted(root, native, write = false) {
     }
     let owners = 0;
     for (const t of evidence.targets) {
-        if (t.sourceClass !== 'PURE_C') continue;
+        if (!['PURE_C', 'HYBRID_C'].includes(t.sourceClass)) continue;
         retain(t.source, t.sourceSha256);
         for (const d of t.dependencies) retain(d.path, d.sha256);
         const functions = t.functions.map(b => b.symbol);
         let entry = producers.get(t.source);
         const dependencies = t.dependencies.map(d => ({...d, file: 'game/accepted/library/' + d.path}));
         if (!entry) {
-            entry = {source: t.source, sourceSha256: t.sourceSha256,
+            entry = {source: t.source, sourceClass: t.sourceClass, sourceSha256: t.sourceSha256,
                 file: 'game/accepted/library/' + t.source, symbols: [], owners: [], dependencies,
                 ...(t.provenance ? {compiler: t.provenance.compiler,
                     ...(t.provenance.producer ? {producer: t.provenance.producer} : {})} : {})};
             producers.set(t.source, entry);
-        } else if (entry.sourceSha256 !== t.sourceSha256 || !same(entry.dependencies, dependencies) ||
+        } else if (entry.sourceClass !== t.sourceClass || entry.sourceSha256 !== t.sourceSha256 || !same(entry.dependencies, dependencies) ||
             !same(entry.compiler, t.provenance?.compiler) || !same(entry.producer, t.provenance?.producer)) {
             throw Error('Inconsistent producer identity: ' + t.source);
         }
@@ -38,9 +38,9 @@ function importAccepted(root, native, write = false) {
     for (const entry of producers.values()) entry.owners.sort((a, b) => a.symbol.localeCompare(b.symbol));
     const manifest = {schemaVersion: 1, upstream: 'OB64 Decomp', evidenceSchemaVersion: state.schemaVersion,
         revision: execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
-        verifiedAt: state.verifiedAt, sourceClass: 'PURE_C', fingerprint: state.fingerprint,
+        verifiedAt: state.verifiedAt, sourceClasses: ['PURE_C', 'HYBRID_C'], fingerprint: state.fingerprint,
         verificationSha256: state.verificationSha256, freshCompilationSha256: state.freshCompilationSha256,
-        purpose: 'Complete accepted pure-C source library. Source availability is separate from active editor adoption; existing adaptation manifests retain their own baselines.',
+        purpose: 'Complete accepted matching C and hybrid-C source library. ROM and preview manifests qualify active adoption; existing adaptations retain their own baselines.',
         counts: {owners, functions: new Set([...producers.values()].flatMap(t => t.symbols)).size,
             producerSources: producers.size, sourceAndHeaderFiles: files.size},
         imports: [...producers.values()].sort((a, b) => a.source.localeCompare(b.source))};
