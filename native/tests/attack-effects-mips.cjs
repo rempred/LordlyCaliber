@@ -29,7 +29,7 @@ m.trap(services.lookup,c=>c.set('v0',c.get('a0')<18?actor(c.get('a0')):0));
 m.trap(services.dead,c=>c.set('v0',!c.get('a0')||!!(c.r32(c.get('a0')+0x40)&1)));
 let immunity=true;m.trap(services.immune,c=>c.set('v0',immunity?1:0));
 m.trap(0x801c8d24,c=>c.set('v0',0)); // Undead predicate.
-const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),pose:c.r32(c.get('sp')+16),extra:c.r32(c.get('sp')+32)}));
+const events=[];for(const pc of [0x21d200,0x21d230,0x21d25c,0x21d28c,0x21d334])m.trap(pc+0x7ffbcd30,c=>events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),pose:c.r32(c.get('sp')+16),extra:c.r32(c.get('sp')+32),anchor:c.get('a2')===actors+4*0x100?c.r32(c.get('a2')+0x68):-1}));
 const visualEvents=[];
 function captureVisual(c){
  events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),
@@ -300,6 +300,40 @@ for(const mode of [0,1])for(const hitMask of [7,5,6,0])for(const mainEffect of [
  }
  sharedCases++;
 }
+// Roster IDs need not follow formation order: the first ID may occupy the rear.
+// Execute the actual exported executors and inspect the anchor when the strike is emitted.
+let nearestCases=0;
+m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));
+m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',30));
+for(const route of ['melee','alternate','ranged'])for(const side of [0,1])
+for(const cells of [[7,4,1],[4,7,1],[1,7,4]])for(const deadFront of [false,true])for(const mode of [0,1]) {
+ for(let i=0;i<18;i++) {
+  const own=(i<9)!==!!side,at=column.indexOf(i),cell=at<0?i%9:cells[at];
+  const dead=(i!==4&&at<0)||(deadFront&&at>=0&&cell===1);
+  m.w32(actor(i)+0x40,(own?0x100:0)|(dead?1:0));
+  m.w32(actor(i)+0x54,own?cell%3:2-cell%3);m.w32(actor(i)+0x58,own?2-Math.floor(cell/3):6+Math.floor(cell/3));
+  m.w16(actor(i)+0x20,100);m.w16(actor(i)+0x22,500);m.w32(actor(i)+0x94,0);
+  m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
+ }
+ m.w32(source,global+0x2000);m.w32(source+4,global+0x2100);m.w32(source+0x7c,159);
+ m.w32(source+0x6c,2);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w8(records+159*16+4,0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);
+ m.w8(rules+2,6);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,mode);
+ const live=column.filter((id,i)=>!deadFront||cells[i]!==1);
+ const nearest=column[cells.indexOf(deadFront?4:1)];
+ const primary=mode&&route!=='ranged'?nearest:live[0];
+ events.length=0;visualEvents.length=0;call(e['lc_attack_'+route],[source,ids],1000000);
+ const strikes=events.filter(x=>x.actor===source&&(x.event===6||x.event===7));
+ assert.equal(strikes.length,mode?1:live.length);
+ assert.equal(strikes[0].anchor,primary,`${route}/${side}/${cells}/${deadFront}/${mode}: strike the closest live affected unit`);
+ if(mode)assert.equal(m.r32(source+0x68),primary);
+ assert.deepEqual([...visualEvents[0].targets].sort((a,b)=>a-b),live,'all selected targets retained');
+ const impacts=events.filter(x=>[0x0c,0x10,0x32].includes(x.event)&&live.some(i=>actor(i)===x.actor));
+ assert.equal(impacts.length,live.length);if(mode)assert.equal(new Set(impacts.map(x=>x.time)).size,1);
+ for(const id of live)assert.equal(m.r16(actor(id)+0x20),70);
+ assert.equal(m.r32(source+0x6c),3);nearestCases++;
+}
+console.log(`Shared melee anchor: ${nearestCases} shuffled formation/side/dead-slot/playback cases PASS; ranged and separate-strike order preserved.`);
 // Maximum pattern, and dead slots whose stale timing must not hold the attack.
 m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',100));
 m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',10+3*((c.get('a1')-actor(9))/0x100)));
@@ -318,7 +352,8 @@ for(const route of ['melee','ranged','alternate'])for(const deadSlots of [[],[10
  assert.equal(impacts.length,live.length);assert.equal(new Set(impacts.map(x=>x.time)).size,1);
  assert(impacts[0].time>=548&&impacts[0].time<9999,'wait for occupied live targets only');
  assert.equal(events.filter(x=>x.actor===source&&(x.event===6||x.event===7)).length,1);
- assert.deepEqual(visualEvents[0].targets,live);assert.equal(m.r32(source+0x6c),1);
+ const primary=route!=='ranged'&&live.includes(10)?10:live[0];
+ assert.deepEqual(visualEvents[0].targets,[primary,...live.filter(i=>i!==primary)]);assert.equal(m.r32(source+0x6c),1);
  for(const i of live)assert.equal(m.r16(actor(i)+0x20),90-3*(i-9));
  for(const i of deadSlots)assert.equal(m.r16(actor(i)+0x20),100);
 }

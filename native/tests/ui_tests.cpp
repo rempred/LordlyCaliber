@@ -3579,23 +3579,56 @@ class UiTests : public QObject {
         const auto itemName=project.record(Table::Items,item).name.simplified();
         ChangeReportDialog dialog(project);dialog.show();
         QTRY_VERIFY_WITH_TIMEOUT(dialog.findChild<QPushButton *>("copyChangeReport")->isEnabled(),30000);
-        dialog.findChild<QCheckBox *>("equipmentWarningsOnly")->setChecked(true);
-        dialog.findChild<QLineEdit *>("changeReportSearch")->setText(itemName);
+        auto view=dialog.findChild<QComboBox *>("changeReportView"); QVERIFY(view);
+        QCOMPARE(view->currentIndex(),0);
         auto rows=dialog.findChild<QTreeWidget *>("changeReportEntries");QTreeWidgetItem *target=nullptr;
+        for(int i=0;i<rows->topLevelItemCount();i++) QVERIFY(rows->topLevelItem(i)->isHidden());
+        QVERIFY(!dialog.findChild<QPlainTextEdit *>("changeReportText")->toPlainText().contains("Incompatible assignment"));
+        view->setCurrentIndex(2);
+        dialog.findChild<QLineEdit *>("changeReportSearch")->setText(itemName);
         for(int i=0;i<rows->topLevelItemCount();i++) {
             auto row=rows->topLevelItem(i);if(row->isHidden())continue;
-            QCOMPARE(row->text(0),QString("Equipment warning"));
+            QCOMPARE(row->text(0),QString("Existing ROM warning"));
             if(row->text(1)==warning.subject)target=row;
         }
         QVERIFY(target);rows->setCurrentItem(target);
         QVERIFY(dialog.findChild<QPlainTextEdit *>("changeReportText")->toPlainText().contains(itemName));
+        dialog.findChild<QPushButton *>("copyChangeReport")->click();
+        QVERIFY(QApplication::clipboard()->text().contains("Existing ROM equipment warnings"));
         QVERIFY(dialog.grab().save("native/build/equipment-warning-review.png"));
         QSignalSpy jump(&dialog,&ChangeReportDialog::editRequested);dialog.findChild<QPushButton *>("openChangeEdit")->click();
         QCOMPARE(jump.count(),1);QCOMPARE(jump[0][0].value<EditLocation>().key,warning.location.key);
         QCOMPARE(project.manifest(),before);
         ProjectReviewDialog exportReview(project);exportReview.show();
         QTRY_VERIFY_WITH_TIMEOUT(exportReview.property("reviewReady").toBool(),30000);
+        auto exportRows=exportReview.findChild<QTreeWidget *>("projectReviewEntries");
+        for(int i=0;i<exportRows->topLevelItemCount();i++)
+            if(exportRows->topLevelItem(i)->text(0)=="Existing ROM warning") QVERIFY(exportRows->topLevelItem(i)->isHidden());
+        exportReview.findChild<QComboBox *>("projectReviewView")->setCurrentIndex(1);
+        int existingCount=0;
+        for(int i=0;i<exportRows->topLevelItemCount();i++) if(!exportRows->topLevelItem(i)->isHidden()) {
+            QCOMPARE(exportRows->topLevelItem(i)->text(0),QString("Existing ROM warning")); ++existingCount;
+        }
+        QCOMPARE(existingCount,warnings.size());
         QVERIFY(exportReview.findChild<QPushButton *>("confirmRomExport")->isEnabled());exportReview.reject();
+        // New assignments are visible by default without bringing retail warnings back.
+        auto edited=project; auto scenarios=*edited.scenarios(); auto record=scenarios.scenario(1).squads[0];
+        put8(record,0,21);put16(record,2,31);put16(record,4,0);
+        scenarios.setSquad(1,0,record,edited.classData());edited.setScenarios(scenarios.json());
+        const auto introduced=reviewEquipmentWarnings(edited).introduced;QVERIFY(!introduced.isEmpty());
+        ChangeReportDialog changed(edited);changed.show();
+        QTRY_VERIFY_WITH_TIMEOUT(changed.findChild<QPushButton *>("copyChangeReport")->isEnabled(),30000);
+        auto changedText=changed.findChild<QPlainTextEdit *>("changeReportText");
+        QVERIFY(changedText->toPlainText().contains(introduced.first().subject));
+        QVERIFY(!changedText->toPlainText().contains(warning.subject));
+        changed.findChild<QComboBox *>("changeReportView")->setCurrentIndex(1);
+        QVERIFY(changedText->toPlainText().contains("New equipment warnings"));
+        changed.findChild<QComboBox *>("changeReportView")->setCurrentIndex(2);
+        QVERIFY(!changedText->toPlainText().contains(introduced.first().subject));
+        QVERIFY(changedText->toPlainText().contains(warning.subject));
+        QTemporaryDir savedReports;changed.saveReport(savedReports.filePath("existing.txt"));
+        QFile savedReport(savedReports.filePath("existing.txt"));QVERIFY(savedReport.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(savedReport.readAll()),changedText->toPlainText());changed.reject();
         MainWindow window;window.loadRom(path);window.show();bool opened=false;
         QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QAction *>("reviewProjectChanges")->isEnabled(),10000);
         QTimer::singleShot(0,&window,[&]{

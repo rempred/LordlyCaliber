@@ -5,6 +5,7 @@ class QPlainTextEdit;
 class QTreeWidget;
 class QLabel;
 class QPushButton;
+class QComboBox;
 namespace lordly {
 class ChangeReportDialog : public QDialog {
     Q_OBJECT
@@ -23,6 +24,9 @@ class ChangeReportDialog : public QDialog {
     QPlainTextEdit *text_;
     QTreeWidget *entries_;
     ChangeReport report_;
+    QVector<ProjectChange> newWarnings_, existingWarnings_;
+    QComboBox *view_;
+    void refreshView();
     QString sourcePath_;
     bool ready_ = false;
 };

@@ -1,5 +1,11 @@
 # Feature inventory and completion tracking
 
+Project and export reviews show only newly introduced equipment incompatibilities
+by default. **Existing ROM warnings** has its own view. Changes to class equipment
+rules or item types are checked even when the squads themselves were not edited.
+The opened ROM is the baseline; choosing a comparison ROM updates the warning
+classification as well as the change report. Copy/Save report follows the selected view.
+
 **Items → Rename item…** edits the name and its **Normal / Small** in-game font.
 Small uses the game's native font controls and supports up to two lines; Normal
 joins them into one. Existing formatting is retained on an unchanged save, and
@@ -40,7 +46,8 @@ until duplicated separately. Class usage includes these indirect assignments.
 Custom targeting includes a clipped 3×3 area around the selected unit. Targeting
 also explains repeated physical strikes versus a shared class animation.
 Physical attacks offer **One strike — hit all targets together**: one attacker
-sequence against the first selected target, with simultaneous per-target hit,
+sequence against the closest affected unit for melee (first selected target for
+ranged attacks), with simultaneous per-target hit,
 miss, damage/healing and status results. Accuracy and amounts remain independent;
 the action consumes one attack count and applies its total-loss drain/recoil once.
 The default **Strike each target separately** retains the existing behavior.

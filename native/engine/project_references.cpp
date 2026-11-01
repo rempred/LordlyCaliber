@@ -6,12 +6,18 @@
 #include <functional>
 
 namespace lordly {
-QVector<ProjectChange> equipmentWarnings(Project p) {
-    QVector<ProjectChange> warnings;
+namespace {
+struct EquipmentFinding {
+    QString identity;
+    ProjectChange warning;
+};
+QVector<EquipmentFinding> equipmentFindings(Project p) {
+    QVector<EquipmentFinding> warnings;
     if (p.rom().revision() != 0) return warnings;
     p.loadScenarios(); p.loadTraining(); p.loadEncounters();
     QMap<int, QSet<int>> compatible;
-    const auto inspect = [&](const QVector<CustomMember> &members, const QString &label, EditLocation location) {
+    const auto inspect = [&](const QVector<CustomMember> &members, const QString &label,
+                             EditLocation location, int owner) {
         for (int member = 0; member < members.size(); ++member) {
             const auto &value = members[member];
             if (value.classId < 1 || value.classId >= p.records(Table::Classes).size()) continue;
@@ -26,10 +32,14 @@ QVector<ProjectChange> equipmentWarnings(Project p) {
                 const auto subject = label + QString(" · %1 · %2 · equipment %3")
                     .arg(member ? QString("member %1").arg(member + 1) : "leader", cls).arg(slot + 1);
                 location.key = QString("equipment:%1:%2").arg(member).arg(slot);
-                warnings << ProjectChange{"Equipment warning", subject,
+                // Match the actual incompatible assignment, not its label or formation position.
+                // The deployment ID remains stable when another squad row is removed/reordered.
+                const auto identity = QString("%1:%2:%3:%4:%5:%6")
+                    .arg(location.editor).arg(location.id).arg(owner).arg(value.classId).arg(slot).arg(id);
+                warnings << EquipmentFinding{identity, ProjectChange{"Equipment warning", subject,
                     {QString("Incompatible assignment: equipment choice %1 stores %2 (item ID %3).").arg(slot + 1).arg(item.name.simplified()).arg(id),
                      QString("%1 (class ID %2) cannot use this equipment type. The game ignores this override.").arg(cls).arg(value.classId),
-                     "Choose a compatible item, or None — keep class default. This warning does not prevent export."}, location};
+                     "Choose a compatible item, or None — keep class default. This warning does not prevent export."}, location}};
             }
         }
     };
@@ -37,14 +47,40 @@ QVector<ProjectChange> equipmentWarnings(Project p) {
         for (int squad = 0; squad < scenario.squads.size(); ++squad)
             inspect(squadMembers(scenario.squads[squad]),
                 QString("%1 · %2 · squad %3").arg(scenario.key).arg(scenario.name)
-                    .arg(u8(scenario.layout.deployments[squad], 0) & 127), {"scenarios", scenario.key, squad});
+                    .arg(u8(scenario.layout.deployments[squad], 0) & 127), {"scenarios", scenario.key, squad},
+                u8(scenario.layout.deployments[squad], 0) & 127);
     for (const auto &row : p.training()->entries())
         inspect(squadMembers(row.squad), QString("%1 · training opponent %2").arg(row.name).arg(row.slot + 1),
-                {"training", row.node, row.slot});
+                {"training", row.node, row.slot}, row.slot);
     for (const auto &squad : p.encounters()->customSquads().profiles())
         inspect(squad.members, QString("Scenario %1 · custom encounter %2").arg(squad.scenarioKey).arg(squad.terrainSlot + 1),
-                {"customEncounter", squad.scenarioKey, squad.terrainSlot});
+                {"customEncounter", squad.scenarioKey, squad.terrainSlot}, squad.terrainSlot);
     return warnings;
+}
+} // namespace
+QVector<ProjectChange> equipmentWarnings(Project p) {
+    QVector<ProjectChange> warnings;
+    for (const auto &finding : equipmentFindings(std::move(p))) warnings << finding.warning;
+    return warnings;
+}
+EquipmentWarningReview reviewEquipmentWarnings(Project p, const Rom *reference) {
+    EquipmentWarningReview result;
+    if (p.rom().revision() != 0) return result;
+    QMap<QString, int> original;
+    for (const auto &finding : equipmentFindings(Project::fromRom(reference ? *reference : p.rom())))
+        ++original[finding.identity];
+    for (auto finding : equipmentFindings(std::move(p))) {
+        if (original.value(finding.identity) > 0) {
+            // Counts keep an additional copy of an incompatible member visible as a new warning.
+            --original[finding.identity];
+            finding.warning.area = "Existing ROM warning";
+            finding.warning.details.prepend(reference
+                ? "Already present in the comparison ROM; this is not a newly introduced incompatibility."
+                : "Already present in the opened ROM; this is not a newly introduced incompatibility.");
+            result.existing << finding.warning;
+        } else result.introduced << finding.warning;
+    }
+    return result;
 }
 QVector<ProjectReference> projectReferences(Project p) {
     QVector<ProjectReference> uses;

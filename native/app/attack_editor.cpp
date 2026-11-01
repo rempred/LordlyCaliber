@@ -808,8 +808,8 @@ void AttackEditor::showAttack() {
     choose(playbackMode_, physical ? a.playback : 0);
     playback_->setText(templ ? "<b>Animation playback:</b> Uses the resolved spell's animation and targeting."
         : physical && a.playback == 1
-            ? "<b>One strike, simultaneous targets.</b> The attacker performs one sequence against the first "
-              "selected target. All selected units receive their own hit or miss reaction at the shared impact. "
+            ? "<b>One strike, simultaneous targets.</b> Melee attacks strike the closest affected unit; "
+              "ranged attacks use the first selected target. All selected units receive their own hit or miss reaction at the shared impact. "
               "Accuracy, damage and additional effects are calculated separately for each unit, using one attack count."
         : u8(a.data, 0) < 2
             ? "<b>Animation playback: one strike per target.</b> The class attack animation repeats for each "

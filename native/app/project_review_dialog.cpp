@@ -1,4 +1,5 @@
 #include "app/project_review_dialog.h"
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFutureWatcher>
 #include <QHeaderView>
@@ -26,6 +27,11 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
     search->setPlaceholderText("Filter results…"); search->setClearButtonEnabled(true);
     search->setObjectName("projectReviewSearch");
     layout->addWidget(search);
+    auto warningView = new QComboBox(this);
+    warningView->setObjectName("projectReviewView");
+    warningView->addItems({"Project changes and new warnings", "Existing ROM equipment warnings"});
+    warningView->setVisible(exporting);
+    if (exporting) layout->addWidget(warningView);
     auto split = new QSplitter;
     auto rows = new QTreeWidget;
     rows->setObjectName("projectReviewEntries"); rows->setRootIsDecorated(false);
@@ -64,14 +70,19 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
     };
     connect(open, &QPushButton::clicked, this, jump);
     connect(rows, &QTreeWidget::itemDoubleClicked, this, [jump] { jump(); });
-    connect(search, &QLineEdit::textChanged, this, [rows](const QString &text) {
+    const auto filter = [rows, search, warningView, exporting] {
+        const auto text = search->text();
         for (int i = 0; i < rows->topLevelItemCount(); ++i) {
             auto row = rows->topLevelItem(i);
-            row->setHidden(!(row->text(0) + row->text(1) + row->data(0, Qt::UserRole + 1).toString()).contains(text, Qt::CaseInsensitive));
+            const bool existing = row->data(0, Qt::UserRole + 2).toBool();
+            row->setHidden((exporting && existing != (warningView->currentIndex() == 1)) ||
+                !(row->text(0) + row->text(1) + row->data(0, Qt::UserRole + 1).toString()).contains(text, Qt::CaseInsensitive));
         }
         if (rows->currentItem() && rows->currentItem()->isHidden()) rows->setCurrentItem(nullptr);
-    });
-    struct Result { QVector<ProjectChange> changes; QVector<ExportIssue> issues; QString source, error; QVector<ProjectChange> warnings; };
+    };
+    connect(search, &QLineEdit::textChanged, this, [filter] { filter(); });
+    connect(warningView, &QComboBox::currentIndexChanged, this, [filter] { filter(); });
+    struct Result { QVector<ProjectChange> changes; QVector<ExportIssue> issues; QString source, error; EquipmentWarningReview warnings; };
     auto watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this, [=] {
         const auto result = watcher->result(); watcher->deleteLater();
@@ -91,17 +102,27 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
         }
         for (const auto &change : result.changes)
             add(change.area, change.subject, change.subject + "\n\n" + change.details.join("\n"), change.location);
-        for (const auto &warning : result.warnings) {
+        for (const auto &warning : result.warnings.introduced) {
             auto row = add(warning.area, warning.subject, warning.subject + "\n\n" + warning.details.join("\n"), warning.location);
             row->setForeground(0, QColor("#86611e"));
         }
+        for (const auto &warning : result.warnings.existing) {
+            auto row = add(warning.area, warning.subject, warning.subject + "\n\n" + warning.details.join("\n"), warning.location);
+            row->setData(0, Qt::UserRole + 2, true);
+            row->setForeground(0, QColor("#86611e"));
+        }
+        warningView->setItemText(1, QString("Existing ROM equipment warnings (%1)").arg(result.warnings.existing.size()));
+        filter();
         if (exporting) {
-            status->setText(QString("Changed entries: %1 · Problems preventing export: %2 · Equipment warnings: %3 · Compared with %4")
-                .arg(result.changes.size()).arg(errors).arg(result.warnings.size()).arg(result.source));
+            status->setText(QString("Changed entries: %1 · Problems preventing export: %2 · New equipment warnings: %3 · Existing ROM warnings: %4 · Compared with %5")
+                .arg(result.changes.size()).arg(errors).arg(result.warnings.introduced.size()).arg(result.warnings.existing.size()).arg(result.source));
             proceed->setEnabled(errors == 0);
         } else status->setText(QString("%1 known uses found.").arg(result.changes.size()));
-        if (rows->topLevelItemCount()) rows->setCurrentItem(rows->topLevelItem(0));
-        else details->setPlainText(exporting ? "No project changes or broken references found. Export still rebuilds supported game code from the bundled sources."
+        QTreeWidgetItem *first = nullptr;
+        for (int i = 0; i < rows->topLevelItemCount() && !first; ++i)
+            if (!rows->topLevelItem(i)->isHidden()) first = rows->topLevelItem(i);
+        if (first) rows->setCurrentItem(first);
+        else details->setPlainText(exporting ? "No project changes or new problems found. Existing ROM equipment warnings are available in the view selector above. Export still rebuilds supported game code from the bundled sources."
                                             : "No references found in the supported editable records. A copied library image has no live assignments.");
         setProperty("reviewReady", true);
     });
@@ -109,7 +130,7 @@ ProjectReviewDialog::ProjectReviewDialog(Project snapshot, const EditLocation &q
         try {
             if (!exporting) return Result{findProjectUses(std::move(snapshot), query.editor, query.id, query.key), {}, {}, {}};
             const auto report = snapshot.changeReport();
-            const auto warnings = equipmentWarnings(snapshot);
+            const auto warnings = reviewEquipmentWarnings(snapshot);
             return Result{report.entries, exportIssues(std::move(snapshot)), report.source, {}, warnings};
         } catch (const std::exception &e) { return Result{{}, {}, {}, QString::fromUtf8(e.what())}; }
     }));

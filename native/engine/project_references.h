@@ -20,4 +20,9 @@ QVector<ExportIssue> exportIssues(Project snapshot);
 // Stored squad overrides that the game's equipment initializer ignores.
 // These are advisory and include unchanged source assignments.
 QVector<ProjectChange> equipmentWarnings(Project snapshot);
+struct EquipmentWarningReview {
+    QVector<ProjectChange> introduced, existing;
+};
+// Compare against the opened ROM unless the review supplies another reference ROM.
+EquipmentWarningReview reviewEquipmentWarnings(Project snapshot, const Rom *reference = nullptr);
 } // namespace lordly

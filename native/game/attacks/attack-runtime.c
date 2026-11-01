@@ -381,6 +381,7 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
 int lc_attack_physical(void *source,int *time,int route) {
     int ids[9],n,i,result,count,anchor,hit;
     int shared,start,latest,ready,primaryTarget,primaryTiming[3],j;
+    int nearest,distance,bestDistance,dx,dy;
     PhysicalGroup group;
     int visualIds[10],visualFlags[10],visualSource[2],visualCount,visualSlot;
     void *target;
@@ -393,6 +394,25 @@ int lc_attack_physical(void *source,int *time,int route) {
         n=lc_attack_target_list(source,ids,anchor);
     } else { ids[0]=-1; n=1; }
     shared=rules[13]==1 && n>1;
+    if(shared && route!=1) {
+        /* Actor IDs are roster order, not formation order. The shared melee
+         * movement/strike must approach the closest affected actor. Use the
+         * common battle-grid coordinates (already mirrored for each side).
+         * Keep the native anchor on a distance tie and retain every victim. */
+        nearest=0;bestDistance=0x7fffffff;
+        for(i=0;i<n;i++) {
+            target=func_0020C478(ids[i]);
+            dx=W(target,0x54)-W(source,0x54);
+            dy=W(target,0x58)-W(source,0x58);
+            distance=dx*dx+dy*dy;
+            if(distance<bestDistance || (distance==bestDistance && ids[i]==anchor)) {
+                nearest=i;bestDistance=distance;
+            }
+        }
+        j=ids[nearest];
+        for(i=nearest;i>0;i--) ids[i]=ids[i-1];
+        ids[0]=j;
+    }
     start=*time;latest=*time;ready=W(source,0x94);primaryTarget=W(source,0x68);
     if(shared) {
         if(start<ready) start=ready;

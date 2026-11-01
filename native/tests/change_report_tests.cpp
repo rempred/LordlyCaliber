@@ -24,6 +24,83 @@ class ChangeReportTests : public QObject {
         throw Error("Missing test field");
     }
   private slots:
+    void equipmentWarningOrigins() {
+        try {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        auto clean=Project::fromRom(Rom::open(path)); clean.loadScenarios();
+        const auto before=clean.manifest();
+        const auto baseline=reviewEquipmentWarnings(clean);
+        QVERIFY(baseline.introduced.isEmpty());
+        QCOMPARE(baseline.existing.size(), equipmentWarnings(clean).size());
+        QVERIFY(!baseline.existing.isEmpty());
+        QCOMPARE(clean.manifest(),before);
+        // Regression for the supplied project: serialized but unchanged retail squads stay existing.
+        const auto projectPath=qEnvironmentVariable("LORDLY_TEST_PROJECT");
+        if(!projectPath.isEmpty()) {
+            auto supplied=Project::fromRom(clean.rom()); supplied.applyManifest(Project::readProject(projectPath));
+            const auto saved=supplied.manifest();
+            const auto result=reviewEquipmentWarnings(supplied);
+            QVERIFY(result.introduced.isEmpty()); QCOMPARE(result.existing.size(),baseline.existing.size());
+            QCOMPARE(supplied.manifest(),saved);
+        }
+        // Names and level changes do not create a new equipment incompatibility.
+        auto renamed=clean; renamed.setClassNameBytes(21,encodeClassName("Renamed knight"));
+        renamed.setItemNameBytes(31,encodeItemName("Renamed Gram"));
+        auto data=*renamed.scenarios(); auto squad=data.scenario(19).squads[3];
+        put8(squad,1,quint8(u8(squad,1)+1)); data.setSquad(19,3,squad,renamed.classData());
+        renamed.setScenarios(data.json());
+        QVERIFY(reviewEquipmentWarnings(renamed).introduced.isEmpty());
+
+        // Find a valid retail override that is not itself one of the class's default items.
+        int key=-1, row=-1, equipment=-1, effective=-1;
+        for(const auto &s:clean.scenarios()->entries()) {
+            for(int i=0;i<s.squads.size() && key<0;++i) {
+                const auto leader=squadMembers(s.squads[i]).first();
+                const int link=u8(clean.record(Table::Classes,leader.classId).bytes,69);
+                const int cls=link ? link : leader.classId;
+                const auto defaults=clean.record(Table::Classes,cls).bytes;
+                const int item=leader.equipment[0];
+                bool isDefault=false; for(int at:{46,48,50,52}) isDefault|=u16(defaults,at)==item;
+                if(item>0 && !isDefault && squadEquipmentTypes(clean,leader.classId).contains(u8(clean.record(Table::Items,item).bytes,4)))
+                    { key=s.key; row=i; equipment=item; effective=cls; }
+            }
+        }
+        QVERIFY(key>=0);
+        const auto contains=[&](const QVector<ProjectChange> &warnings) {
+            return std::any_of(warnings.begin(),warnings.end(),[&](const auto &w) {
+                return w.location.editor=="scenarios" && w.location.id==key && w.location.child==row && w.location.key=="equipment:0:0";
+            });
+        };
+        auto altered=clean; auto item=clean.record(Table::Items,equipment).bytes; put8(item,4,254);
+        altered.replaceBytes(Table::Items,equipment,item);
+        QVERIFY(contains(reviewEquipmentWarnings(altered).introduced));
+        auto reopened=Project::fromRom(clean.rom()); reopened.applyManifest(altered.manifest());
+        QVERIFY(contains(reviewEquipmentWarnings(reopened).introduced));
+        altered.replaceBytes(Table::Items,equipment,clean.record(Table::Items,equipment).bytes);
+        QVERIFY(reviewEquipmentWarnings(altered).introduced.isEmpty());
+        auto cls=clean.record(Table::Classes,effective).bytes;
+        for(int at:{46,48,50,52}) put16(cls,at,0);
+        altered.replaceBytes(Table::Classes,effective,cls);
+        QVERIFY(contains(reviewEquipmentWarnings(altered).introduced));
+        // An already-modified ROM is the default baseline, but an explicit retail comparison differs.
+        auto image=clean.rom().bytes();
+        image.replace(clean.record(Table::Items,equipment).romOffset,32,item); Rom::updateChecksum(image);
+        auto foreign=Project::fromRom(Rom::fromBytes(image));
+        QVERIFY(reviewEquipmentWarnings(foreign).introduced.isEmpty());
+        QVERIFY(contains(reviewEquipmentWarnings(foreign,&clean.rom()).introduced));
+        auto others=clean; others.loadEncounters(); others.loadTraining();
+        auto encounters=*others.encounters(); CustomSquad custom;
+        custom.members={{21,0,0,{31,0}},{5,0,2,{0,0}}}; // Retail Black Knight cannot use Gram.
+        encounters.setCustomSquad(custom,others.records(Table::Classes).size()); others.setEncounters(encounters.json());
+        auto training=others.training()->json(); auto opponents=training["opponents"].toArray();
+        auto opponent=opponents[0].toObject();
+        opponent["squad"]=QString::fromLatin1(editSquadMembers(QByteArray::fromHex(opponent["squad"].toString().toLatin1()),custom.members).toHex());
+        opponents[0]=opponent; training["opponents"]=opponents; others.setTraining(training);
+        const auto additional=reviewEquipmentWarnings(others);
+        QVERIFY(std::any_of(additional.introduced.begin(),additional.introduced.end(),[](const auto &w){return w.location.editor=="training";}));
+        QVERIFY(std::any_of(additional.introduced.begin(),additional.introduced.end(),[](const auto &w){return w.location.editor=="customEncounter";}));
+        } catch(const std::exception &e) { QFAIL(e.what()); }
+    }
     void incompatibleSquadEquipment() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto p=Project::fromRom(Rom::open(path));p.loadScenarios();
@@ -44,7 +121,7 @@ class ChangeReportTests : public QObject {
         data.setSquad(1,0,record,p.classData());p.setScenarios(data.json());
         const auto find=[&](const Project &project) {
             QVector<ProjectChange> found;
-            for(const auto &warning:equipmentWarnings(project))
+            for(const auto &warning:reviewEquipmentWarnings(project).introduced)
                 if(warning.location.editor=="scenarios"&&warning.location.id==1&&warning.location.child==0&&warning.location.key=="equipment:0:0")found<<warning;
             return found;
         };
