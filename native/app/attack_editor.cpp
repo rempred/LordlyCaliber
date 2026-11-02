@@ -345,7 +345,7 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     strikePanel_ = new QWidget;
     auto strikeForm = new QFormLayout(strikePanel_);
     strikeForm->setContentsMargins(0, 0, 0, 0);
-    strikeCount_ = number("attackStrikeCount", 1, 9, 6);
+    strikeCount_ = number("attackStrikeCount", 1, AttackData::maximumStrikes, 6);
     strikeForm->addRow("Number of strikes", strikeCount_);
     targetForm->addRow(strikePanel_);
     auto targetingRow = new QHBoxLayout;
@@ -822,7 +822,7 @@ void AttackEditor::showAttack() {
         : a.targetPattern == 11 ? QString("Selects %1 strikes from the target and adjacent positions, including diagonals. "
                                          "The primary target is favored; the same unit can be hit more than once. "
                                          "Empty positions are skipped. The diagram shows possible targets, not guaranteed hits. "
-                                         "Supports 1–9 strikes; retail uses 6.").arg(a.strikeCount)
+                                         "Supports 1–%2 strikes; retail uses 6.").arg(a.strikeCount).arg(AttackData::maximumStrikes)
         : a.targetPattern == 12 ? "Checked positions are fixed in the chosen side's formation. "
                                   "Empty cells are skipped. Front is nearest the opposing squad."
                                 : "Diagram uses a center target. Row, column and cross patterns "

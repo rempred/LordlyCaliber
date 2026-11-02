@@ -37,13 +37,13 @@ typedef struct DispatchDescriptor {
     u8 header[9];
     u8 unknown09[3];
     int count;
-    int ids[10];
-    u16 halfwords[10];
-    u8 primary[10];
-    u8 bytes[10];
-    s16 values[10];
-    u8 secondary[10];
-    u8 unknown7E[2];
+    int ids[20];
+    u16 halfwords[20];
+    u8 primary[20];
+    u8 bytes[20];
+    s16 values[20];
+    u8 secondary[20];
+    u8 padding[4];
 } DispatchDescriptor;
 
 /* Observed byte/list offsets: A8, B0, B8 and E8; gap bytes are unconsumed. */
@@ -51,8 +51,8 @@ typedef struct DispatchLists {
     u8 modifier;
     u8 unknown01[7];
     int single[2];
-    int ids[12];
-    int flags[12];
+    int ids[20];
+    int flags[20];
 } DispatchLists;
 
 extern u8 *D_801CE8BC;
@@ -66,7 +66,7 @@ extern int func_00233F94(DispatchObject *);
 extern int func_0020C014(DispatchObject *);
 extern int func_0023887C(int, int, int, int);
 extern void func_00237E2C(DispatchDescriptor *, int, int);
-extern void func_00239338(DispatchDescriptor *, DispatchObject *, DispatchObject *, DispatchObject *);
+extern void lc_attack_calculate(DispatchDescriptor *, DispatchObject *, DispatchObject *, DispatchObject *);
 extern int func_0025FD00(int);
 extern void func_0021D1CC(int, int);
 extern DispatchObject *func_0020C478(int);
@@ -97,6 +97,9 @@ int lc_attack_status(void *,int,int);
 int lc_attack_visual_program(int,int);
 void lc_attack_target_begin(void *);
 int func_0020D4C8(DispatchObject *,int);
+
+void lc_attack_expand_packet(void *);
+void lc_attack_visual_targets(int,int *,int *);
 int lc_attack_pedra(u8 *input, int *outTime)
 {
     DispatchDescriptor descriptor;
@@ -166,6 +169,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
     producer = func_0023887C(identifierOrNumerator, descriptor.header[8], side, producerInputOrRepeatLimit);
     /* Hard mode10 selects six producer iterations; later deletion only shrinks it. */
     func_00237E2C(&descriptor, descriptor.header[8], producer);
+    lc_attack_expand_packet(&descriptor);
     lc_attack_pedra_begin(temporary);
     lc_attack_retarget(&descriptor,input[2],temporary);
     if(lc_rules(temporary)[8]!=255 && descriptor.header[4]==8) descriptor.header[4]=0;
@@ -174,7 +178,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
         func_00023780(temporary, 0xF8);
         return 0;
     }
-    func_00239338(&descriptor, temporary, temporary, temporary);
+    lc_attack_calculate(&descriptor, temporary, temporary, temporary);
     narrowed = (s16)func_0025FD00(input[1]);
     time = 1;
     D_801CE8C0->field818++;
@@ -208,12 +212,12 @@ int lc_attack_pedra(u8 *input, int *outTime)
         lc_attack_target_begin(object);
         threshold = func_002363FC(object);
         valueAddress = (u8 *)(i * 2 + (int)&descriptor);
-        threshold = func_002365BC(temporary, object, ((u16 *)valueAddress)[28], threshold);
+        threshold = func_002365BC(temporary, object, ((u16 *)valueAddress)[48], threshold);
         mainFirst = rand();
         mainSecond = rand();
         third = rand();
         mainMix = ((mainFirst << 18) & 0x0C000000U) | (mainSecond << 15) | third;
-        value = ((s16 *)valueAddress)[48];
+        value = ((s16 *)valueAddress)[88];
         primary = (u32)threshold > mainMix % 100U;
         descriptor.primary[i] = primary;
         secondary = 0;
@@ -341,6 +345,7 @@ int lc_attack_pedra(u8 *input, int *outTime)
     }
     lists.flags[i] = -1;
     lists.ids[i] = -1;
+    lc_attack_visual_targets(input[2],lists.ids,lists.flags);
     func_0021D2C0(0x16, time, 0, lc_attack_visual_program(input[2],input[1]), lists.single, lists.ids, lists.flags);
     func_0021D230(0x3E, time, scanObject, 8);
     /* This final maximum update is otherwise dead. KMC late jump cleanup

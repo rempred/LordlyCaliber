@@ -24,7 +24,7 @@ struct Attack {
     bool dynamicName = false;
     // Zero retains the retail targeting; custom masks address nine formation cells.
     int targetPattern = 0, targetSide = 0, targetMask = 0;
-    int strikeCount = 6; // Repeated-strike pattern: 1–9 entries, with replacement.
+    int strikeCount = 6; // Repeated-strike pattern: 1–18 entries, with replacement.
     int playback = 0; // 0: native sequence per target; 1: shared physical strike/impact.
     int powerPercent = 100;
     // -1 retains the retail secondary-effect rules. Chance is an explicit percentage.
@@ -37,6 +37,7 @@ struct Attack {
 class AttackData {
   public:
     static constexpr int retailCount = 159, maximumCount = 255;
+    static constexpr int maximumStrikes = 18;
     static constexpr quint32 retailBase = 0x8018aa7c, retailOffset = 0x6097c;
     static AttackData loadRetail(const Rom &);
     static AttackData load(const Rom &);

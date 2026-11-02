@@ -2,12 +2,21 @@
 
 ## Configurable repeated strikes (November 1)
 
+The later capacity expansion supports18 strikes, separate from the nine unique
+formation actors. Owned generic/combined/Pedra consumers use a240-byte packet
+with20 storage slots. Native builders retain128-byte packets; a boundary copy
+expands their output. Calculation runs the original evaluator in batches of at
+most9 entries, copying every per-strike field to/from native offsets. The public
+native target-builder hook still honors its128-byte ABI. For authored counts
+above9, visual lists compact repeated actor IDs and retain the last nonzero
+secondary flag; they do not send18 entries to fixed-capacity effect consumers.
+The adapter generator owns all changed descriptor offsets and local arrays.
+
 Authored target pattern11 uses the retail pattern9/10 weighted draw from the
 3×3 neighborhood: native world-grid enumeration order, first eligible actor
 weight40, others15, with replacement and the existing RNG. The target-side
 anchor validation still applies. LCATDATA v6 stores strikeCount at settings
-byte22 (1–9); zero/older versions retain six. The nine-entry caller/packet
-capacity bounds the control. Unedited retail targeting remains native. The
+byte22; zero/older versions retain six. Unedited retail targeting remains native. The
 maintained C extension handles custom counts; no original instructions change.
 
 ## Shared physical attack playback (November 1)

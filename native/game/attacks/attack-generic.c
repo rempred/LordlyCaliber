@@ -16,7 +16,7 @@ typedef s8 M2C_UNK8;
 typedef s16 M2C_UNK16;
 typedef s32 M2C_UNK32;
 typedef s64 M2C_UNK64;
-typedef union { u8 bytes[128]; u16 halves[64]; s32 words[32]; } LocalPacket;
+typedef union { u8 bytes[240]; u16 halves[120]; s32 words[60]; } LocalPacket;
 u8 func_00043ad8(s32, s32);
 s32 func_00044130(s32, s32, s32);
 s32 func_0020144C(u8);
@@ -61,8 +61,8 @@ s32 func_00237750(void *, void *, M2C_UNK, u32, s32);
 s32 func_002379AC(u8, void *);
 s32 func_00237AF8(void *, s32);
 M2C_UNK func_00237D5C(s32, s32 *, s32 *);
-M2C_UNK func_00238D94(void *, u8, void *);
-M2C_UNK func_00239338(void *, void *, M2C_UNK, M2C_UNK);
+void lc_attack_expanded_targets(void *, u8, void *);
+void lc_attack_calculate(void *, void *, void *, void *);
 M2C_UNK memset_00023780(s32 *, M2C_UNK);
 u32 rand(void);
 
@@ -78,13 +78,16 @@ int lc_attack_visual_program(int,int);
 void lc_attack_target_begin(void *);
 int lc_attack_name_token(void *,int);
 
+
+void lc_attack_expand_packet(void *);
+void lc_attack_visual_targets(int,int *,int *);
 s32 lc_attack_generic(void *arg0, s32 *arg1) {
     s32 lc_before;
-    struct { LocalPacket packet; s32 buffer[6]; void *excluded[6]; } prefix;
+    struct { LocalPacket packet; s32 buffer[6]; void *excluded[20]; } prefix;
     struct { s32 x0, y0, x1, y1; u8 value; } coords;
     s32 pair[2];
-    s32 ids[12];
-    s32 effects[12];
+    s32 ids[20];
+    s32 effects[20];
     s32 emitCode;
     s32 emitExtra;
 
@@ -228,7 +231,7 @@ s32 lc_attack_generic(void *arg0, s32 *arg1) {
     sp164 = func_0020144C((*(u8 *)((s8 *)(arg0) + (0x7F)))) & 0xFF;
     sp1CC = 0;
     sp1D7 = 0;
-    func_00238D94(&prefix.packet, (*(u8 *)((s8 *)(arg0) + (0x7F))), arg0);
+    lc_attack_expanded_targets(&prefix.packet, (*(u8 *)((s8 *)(arg0) + (0x7F))), arg0);
     if (lc_rules(arg0)[8] != 255 && prefix.packet.bytes[4] == 8) prefix.packet.bytes[4] = 0;
     if (lc_rules(arg0)[11] != 255 && prefix.packet.bytes[4] == 11) prefix.packet.bytes[4] = 0;
     temp_v0_44 = lc_attack_records[(*(s32 *)((u8 *)arg0+0x7c))*16+5];
@@ -270,13 +273,13 @@ s32 lc_attack_generic(void *arg0, s32 *arg1) {
                     u8 *retainedHalf = (u8 *)prefix.packet.words + sp1DC * 2;
                     u8 *filterHalfSource = (u8 *)prefix.packet.words + var_s5_693 * 2;
                     *(s32 *)(retainedWord + 0x10) = *(s32 *)((u8 *)filterWordSource + 0x10);
-                    *(u16 *)(retainedHalf + 0x38) = *(u16 *)(filterHalfSource + 0x38);
-                    prefix.packet.bytes[sp1DC + 86] = prefix.packet.bytes[var_s5_693 + 86];
+                    *(u16 *)(retainedHalf + 0x60) = *(u16 *)(filterHalfSource + 0x60);
+                    prefix.packet.bytes[sp1DC + 156] = prefix.packet.bytes[var_s5_693 + 156];
                     sp1DC += 1;
                 } else {
                     {
                         u8 *excludedSlot = (u8 *)prefix.packet.words + sp1CC * 4;
-                        *(void **)(excludedSlot + 152) = temp_v0_104;
+                        *(void **)(excludedSlot + 264) = temp_v0_104;
                     }
                     sp1CC += 1;
                 }
@@ -309,7 +312,7 @@ s32 lc_attack_generic(void *arg0, s32 *arg1) {
         goto block_32;
     }
 block_32:
-    func_00239338(&prefix.packet, arg0, 0, 0);
+    lc_attack_calculate(&prefix.packet, arg0, 0, 0);
     if (func_0020BFE4() != 0) {
         if ((u32) ((*(u8 *)((s8 *)(arg0) + (0x78))) - 4) < 2U) {
             void *scanBase073C = *(void **)0x801D073C;
@@ -523,32 +526,32 @@ event_b_done:
                     var_t2_721 = var_s5_693;
                     if (var_s5_693 < (prefix.packet.words[3] - 1)) {
                         {
-                            u32 fieldBase = (u32)&prefix.packet.halves[49];
+                            u32 fieldBase = (u32)&prefix.packet.halves[89];
                             var_t1_724 = (u16 *)((u32)(var_s5_693 * 2) + fieldBase);
                         }
                         {
-                            u32 fieldBase = (u32)&prefix.packet.bytes[86];
+                            u32 fieldBase = (u32)&prefix.packet.bytes[156];
                             var_t0_726 = (u8 *)((u32)var_s5_693 + fieldBase);
                         }
                         {
-                            u32 fieldBase = (u32)&prefix.packet.bytes[87];
+                            u32 fieldBase = (u32)&prefix.packet.bytes[157];
                             var_a3_728 = (u8 *)((u32)var_s5_693 + fieldBase);
                         }
                         {
-                            u32 fieldBase = (u32)&prefix.packet.halves[29];
+                            u32 fieldBase = (u32)&prefix.packet.halves[49];
                             var_a2_730 = (u16 *)((u32)(var_s5_693 * 2) + fieldBase);
                         }
                         do {
                             s32 *compactionWordDestination = (s32 *)((u32)(var_t2_721 * 4) + (u32)sp1FC);
                             s32 *compactionWordSource = (s32 *)((u32)(var_t2_721 * 4) + (u32)sp1EC);
                             compactionWordDestination[4] = *compactionWordSource;
-                            (*(u16 *)((u8 *)sp1FC + var_t2_721 * 2 + 0x38)) = (u16) *var_a2_730;
+                            (*(u16 *)((u8 *)sp1FC + var_t2_721 * 2 + 0x60)) = (u16) *var_a2_730;
                             var_a2_730++;
                             *var_t0_726 = *var_a3_728;
                             temp_v0_747 = *var_t1_724;
                             var_a3_728 += 1;
                             var_t1_724++;
-                            (*(u16 *)((u8 *)sp1FC + var_t2_721 * 2 + 0x60)) = temp_v0_747;
+                            (*(u16 *)((u8 *)sp1FC + var_t2_721 * 2 + 0xB0)) = temp_v0_747;
                             var_t0_726 += 1;
                             var_t2_721 += 1;
                         } while (var_t2_721 < (prefix.packet.words[3] - 1));
@@ -561,11 +564,11 @@ event_b_done:
                     lc_before=*(u16 *)((u8 *)var_s3_51+0x20);
                     lc_attack_target_begin(var_s3_51);
                     temp_s2_769 = (void *)((u32)(var_s5_693 * 2) + (u32)sp1FC);
-                    temp_s8_775 = func_002365BC(arg0, var_s3_51, (*(u16 *)((s8 *)(temp_s2_769) + (0x38))), helperResult363);
+                    temp_s8_775 = func_002365BC(arg0, var_s3_51, (*(u16 *)((s8 *)(temp_s2_769) + (0x60))), helperResult363);
                     temp_s0_777 = rand();
                     temp_s1_779 = rand();
                     mixedRandomWord = ((temp_s0_777 << 0x12) & 0x0C000000) | (temp_s1_779 << 0xF) | rand();
-                    sp1BC = (u32) (*(s16 *)((s8 *)(temp_s2_769) + (0x60)));
+                    sp1BC = (u32) (*(s16 *)((s8 *)(temp_s2_769) + (0xB0)));
                     var_s2_802 = temp_s8_775 > (mixedRandomWord % 100U);
                     if (prefix.packet.bytes[2] == 4) {
                         temp_v0_804 = (u16) (*(u16 *)((s8 *)(var_s3_51) + (0x20))) >> 1;
@@ -628,7 +631,7 @@ event_b_done:
                         }
                     }
                     {
-                        u8 *publicationByte = &prefix.packet.bytes[116];
+                        u8 *publicationByte = &prefix.packet.bytes[216];
                         publicationByte += var_s5_693;
                         *publicationByte = var_s1_844;
                     }
@@ -864,13 +867,14 @@ mode_done:;
 output_copy:
     for (var_s5_693 = 0; var_s5_693 < prefix.packet.words[3]; var_s5_693++) {
         ids[var_a2_1641] = prefix.packet.words[4 + var_s5_693];
-        effects[var_a2_1641] = prefix.packet.bytes[116 + var_s5_693];
+        effects[var_a2_1641] = prefix.packet.bytes[216 + var_s5_693];
         var_a2_1641++;
     }
     effects[var_a2_1641] = -1;
     ids[var_a2_1641] = -1;
     pair[1] = -1;
     temp_s0_1700 = sp16C + sp184;
+    lc_attack_visual_targets(*(s32 *)((u8 *)arg0+0x7c),ids,effects);
     func_0021D2C0(0x16, temp_s0_1700 + prefix.buffer[0], 0, lc_attack_visual_program(*(s32 *)((u8 *)arg0+0x7c),sp164), (s32) &pair[0], (s32) &ids[0], (s32)&effects[0]);
     if ((func_0020BFE4() != 0) && ((*(u8 *)((s8 *)(arg0) + (0x78))) == 5) && (func_0020C24C(arg0) == 0)) {
         sp194 = func_00222344(arg0, sp19C, sp1A4, (*(s32 *)((s8 *)(arg0) + (0x5C))), (*(s32 *)((s8 *)(arg0) + (0x64))));

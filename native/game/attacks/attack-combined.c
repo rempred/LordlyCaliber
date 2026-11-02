@@ -51,13 +51,13 @@ typedef struct ResolutionDescriptor {
     u8 header[9];
     u8 unknown09[3];
     int count;
-    int ids[10];
-    u16 halfwords[10];
-    u8 primary[10];
-    u8 bytes[10];
-    s16 values[10];
-    u8 secondary[10];
-    u8 unknown7E[2];
+    int ids[20];
+    u16 halfwords[20];
+    u8 primary[20];
+    u8 bytes[20];
+    s16 values[20];
+    u8 secondary[20];
+    u8 padding[4];
 } ResolutionDescriptor;
 
 typedef struct ResolutionPointers { ResolutionObject *values[3]; } ResolutionPointers;
@@ -71,7 +71,7 @@ typedef struct InitialRecord { u8 bytes[25]; } InitialRecord;
    clears six words but its terminated output has no established universal bound.
    The word view preserves writes into subsequent observed work fields. */
 typedef union ResolutionTail {
-    int words[50];
+    int words[66];
     struct {
         int evaluator[6];
         int selectedTimes[3];
@@ -87,8 +87,8 @@ typedef union ResolutionTail {
         u8 modifier;
         u8 unknown51[7];
         int selectedIds[4];
-        int ids[12];
-        int flags[12];
+        int ids[20];
+        int flags[20];
     } fields;
 } ResolutionTail;
 
@@ -154,7 +154,7 @@ extern int func_00237AF8(ResolutionObject *, int);
 extern void func_00237D5C(int, int *, int *);
 extern void func_00237E2C(ResolutionDescriptor *, int, int);
 extern int func_0023887C(int, int, int, int);
-extern void func_00239338(ResolutionDescriptor *, ResolutionObject *, ResolutionObject *, ResolutionObject *);
+extern void lc_attack_calculate(ResolutionDescriptor *, ResolutionObject *, ResolutionObject *, ResolutionObject *);
 extern u8 func_002397D4(ResolutionRecord *, u32, u8 *);
 extern int func_0025FD00(int);
 
@@ -167,6 +167,9 @@ void lc_attack_finish(void *,int);
 int lc_attack_status(void *,int,int);
 int lc_attack_visual_program(int,int);
 void lc_attack_target_begin(void *);
+
+void lc_attack_expand_packet(void *);
+void lc_attack_visual_targets(int,int *,int *);
 int lc_attack_combined(ResolutionObject **input, int *outTime)
 {
     ResolutionScratch local;
@@ -359,6 +362,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
     }
     local.descriptor.header[8] = local.tail.fields.mode;
     func_00237E2C(&local.descriptor, local.tail.fields.mode, producer);
+    lc_attack_expand_packet(&local.descriptor);
     lc_attack_group_begin(local.selectedList.values[0],rawInput);
     lc_attack_retarget(&local.descriptor,rawInput,local.selectedList.values[0]);
     if(lc_rules(local.selectedList.values[0])[8]!=255 && local.descriptor.header[4]==8) local.descriptor.header[4]=0;
@@ -392,7 +396,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
         lc_attack_finish(local.selectedList.values[0],*outTime);
         return 0;
     }
-    func_00239338(&local.descriptor, local.selectedList.values[0], local.selectedList.values[1], local.selectedList.values[2]);
+    lc_attack_calculate(&local.descriptor, local.selectedList.values[0], local.selectedList.values[1], local.selectedList.values[2]);
     narrowed = func_0025FD00(rawResult);
     source = (StateBlock *)(local.selectedList.values[0]->nested + 0x44);
     destination = local.copiedState;
@@ -498,12 +502,12 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
         halfAddress = i * 2;
         halfAddress += (int)&local;
         threshold = func_002365BC(local.selectedList.values[0], object,
-                                  ((u16 *)halfAddress)[48], initialThreshold);
+                                  ((u16 *)halfAddress)[68], initialThreshold);
         mainFirst = rand();
         mainSecond = rand();
         third = rand();
         mainMix = ((mainFirst << 18) & 0x0C000000U) | (mainSecond << 15) | third;
-        value = ((s16 *)halfAddress)[68];
+        value = ((s16 *)halfAddress)[108];
         primary = (u32)threshold > (mainMix % 100U);
         if (local.descriptor.header[3] == 9) {
             if (func_0020C1B4(object) != 0) {
@@ -694,6 +698,7 @@ int lc_attack_combined(ResolutionObject **input, int *outTime)
     }
     local.tail.fields.flags[outputCount] = -1;
     local.tail.fields.ids[outputCount] = -1;
+    lc_attack_visual_targets(rawInput,local.tail.fields.ids,local.tail.fields.flags);
     func_0021D2C0(0x16, time + local.tail.words[0], 0, lc_attack_visual_program(rawInput,rawResult),
         (u32)local.tail.fields.selectedIds, (u32)local.tail.fields.ids, (u32)local.tail.fields.flags);
     if (maximum < time + local.tail.words[0])

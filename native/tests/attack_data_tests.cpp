@@ -641,11 +641,11 @@ class AttackDataTests : public QObject {
             const auto original = data.json();
             const int spell = data.duplicate(55, "Repeated spell");
             const int melee = data.duplicate(4, "Repeated melee");
-            for (const auto [id, count] : {qMakePair(spell,9),qMakePair(melee,1),qMakePair(76,3)}) {
+            for (const auto [id, count] : {qMakePair(spell,18),qMakePair(melee,10),qMakePair(76,3)}) {
                 auto attack = data.entry(id); attack.targetPattern = 11; attack.strikeCount = count;
                 attack.targetSide = 1; attack.playback = id == melee ? 1 : 0; data.set(id, attack);
             }
-            for (int count : {0,10}) {
+            for (int count : {0,19,256}) {
                 auto invalid = data.entry(spell); invalid.strikeCount = count;
                 QVERIFY_THROWS_EXCEPTION(Error, data.set(spell, invalid));
             }

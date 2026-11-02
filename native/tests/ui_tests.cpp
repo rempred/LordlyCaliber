@@ -785,7 +785,7 @@ class UiTests : public QObject {
         auto pattern = editor.findChild<QComboBox *>("attackPattern");
         auto count = editor.findChild<QSpinBox *>("attackStrikeCount");
         QVERIFY(pattern->findData(11) >= 0);
-        QCOMPARE(count->minimum(), 1); QCOMPARE(count->maximum(), 9);
+        QCOMPARE(count->minimum(), 1); QCOMPARE(count->maximum(), 18);
         editor.selectAttack(76); // Retail Gnome: opening the control changes nothing.
         const auto before = project.manifest();
         QVERIFY(!count->parentWidget()->isHidden()); QCOMPARE(count->value(), 6);
@@ -807,12 +807,12 @@ class UiTests : public QObject {
         pattern->setCurrentIndex(pattern->findData(11)); emit pattern->activated(pattern->currentIndex());
         QCoreApplication::processEvents(); QVERIFY(!count->parentWidget()->isHidden());
         QCOMPARE(count->value(), 6);
-        count->setValue(9); emit count->editingFinished(); QCoreApplication::processEvents();
-        QCOMPARE(project.attacks()->entry(4).strikeCount, 9);
+        count->setValue(18); emit count->editingFinished(); QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(4).strikeCount, 18);
         pattern->setCurrentIndex(pattern->findData(10)); emit pattern->activated(pattern->currentIndex());
         QCoreApplication::processEvents(); QVERIFY(count->parentWidget()->isHidden());
         pattern->setCurrentIndex(pattern->findData(11)); emit pattern->activated(pattern->currentIndex());
-        QCoreApplication::processEvents(); QCOMPARE(count->value(), 9);
+        QCoreApplication::processEvents(); QCOMPARE(count->value(), 18);
         const auto screenshot = qEnvironmentVariable("LORDLY_ATTACK_SCREENSHOT");
         if (!screenshot.isEmpty()) {
             editor.resize(1160, 850);editor.show();QTest::qWait(30);

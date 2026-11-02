@@ -133,10 +133,10 @@ for(const side of [1,2])for(let center=0;center<9;center++)for(const holes of [[
  }
 }
 for(let i=0;i<18;i++)m.w32(actor(i)+0x40,i<9?0x100:0);
-for(const side of [1,2,3])for(let count=1;count<=9;count++) {
+for(const side of [1,2,3])for(let count=1;count<=18;count++) {
  m.w8(rules+3,side);m.w8(rules+22,count);repeatSample=0;repeatCalls=0;
- m.w32(ids+36,0xfeedface);const n=call('lc_attack_target_list',[source,ids,13]);
- assert.equal(n,count);assert.equal(repeatCalls,count);assert.equal(m.r32(ids+36),0xfeedface);
+ m.w32(ids+72,0xfeedface);const n=call('lc_attack_target_list',[source,ids,13]);
+ assert.equal(n,count);assert.equal(repeatCalls,count);assert.equal(m.r32(ids+72),0xfeedface);
  assert.deepEqual(Array.from({length:n},(_,i)=>m.r32(ids+i*4)),Array(count).fill(side===1?13:side===2?0:4));
 }
 // Legacy/default count and absent-side behavior must remain bounded.
@@ -145,7 +145,7 @@ for(let i=9;i<18;i++)m.w32(actor(i)+0x40,1);
 repeatCalls=0;assert.equal(call('lc_attack_target_list',[source,ids,13]),0);assert.equal(repeatCalls,0);
 for(let i=9;i<18;i++)m.w32(actor(i)+0x40,0);
 m.traps.delete(repeatRng);m.traps.delete(coordinateLookup);m.traps.delete(actorId);m.w8(rules+22,0);
-console.log(`Repeated strikes: ${repeatedCases} original-MIPS comparisons, 1–9 counts, both sides/self, holes, empty side and bounds PASS.`);
+console.log(`Repeated strikes: ${repeatedCases} original-MIPS comparisons, 1–18 counts, both sides/self, holes, empty side and bounds PASS.`);
 // Dead cells are skipped; no target may escape the 9-entry caller allocation.
 m.w8(rules+2,2);m.w8(rules+3,1);m.w32(actor(10)+0x40,1);m.w32(ids+36,0xfeedface);assert.equal(call('lc_attack_target_list',[source,ids,13]),8);assert.equal(m.r32(ids+36),0xfeedface);
 for(const [effect,flag,event] of [[3,2,0x23],[4,4,0x25],[8,8,0x1a],[10,16,0x27],[5,0,0x29],[6,0,0x2a]]){
@@ -167,6 +167,86 @@ console.log(JSON.stringify({mirroredFormationCells:18,targetPatterns:23,statuses
 // after-effect adapter. Scores, native target choice and event queue are fixed.
 const generic=entries('attack_generic.elf');
 m.trap(e.lc_original_targets,c=>{const p=c.get('a0'),a=c.get('a1');for(let i=0;i<128;i++)c.w8(p+i,0);for(let i=0;i<8;i++)c.w8(p+i,c.r8(records+a*16+6+i));c.w8(p+8,10);c.w32(p+12,2);c.w32(p+16,9);c.w32(p+20,17);c.w32(c.get('a2')+0x68,9);});
+// Expanded packets must bridge to the unchanged native ABI without overlapping
+// adjacent arrays. Distinct field values expose offset/stride mistakes.
+for(const count of [1,6,9,10]) {
+ for(let i=0;i<244;i++)m.w8(packet+i,0);
+ m.w8(packet,3);m.w8(packet+8,9);m.w32(packet+12,count);
+ for(let i=0;i<count;i++) {
+  m.w32(packet+16+i*4,9+i%9);m.w16(packet+56+i*2,100+i);
+  m.w8(packet+76+i,20+i);m.w8(packet+86+i,30+i);
+  m.w16(packet+96+i*2,1000+i);m.w8(packet+116+i,50+i);
+ }
+ m.w32(packet+240,0xfeedface);call('lc_attack_expand_packet',[packet]);
+ assert.equal(m.r32(packet+240),0xfeedface);assert.equal(m.r32(packet+12),count);
+ for(let i=0;i<count;i++) {
+  assert.equal(m.r32(packet+16+i*4),9+i%9);assert.equal(m.r16(packet+96+i*2),100+i);
+  assert.equal(m.r8(packet+136+i),20+i);assert.equal(m.r8(packet+156+i),30+i);
+  assert.equal(m.r16(packet+176+i*2),1000+i);assert.equal(m.r8(packet+216+i),50+i);
+ }
+}
+let batchAt=0,batchSizes=[];
+m.trap(0x239338+0x7ffbcd30,c=>{
+ const p=c.get('a0'),count=c.r32(p+12);assert(count>0&&count<=9);batchSizes.push(count);
+ assert.equal(c.get('a1'),source);assert.equal(c.get('a2'),actor(5));assert.equal(c.get('a3'),actor(6));
+ for(let i=0;i<count;i++) {
+  const k=batchAt++;assert.equal(c.r32(p+16+i*4),9+k%9);assert.equal(c.r8(p+86+i),k%10);
+  c.w16(p+56+i*2,200+k);c.w8(p+76+i,60+k);c.w16(p+96+i*2,500+k);c.w8(p+116+i,80+k);
+ }
+});
+for(const count of [1,6,9,10,18]) {
+ for(let i=0;i<240;i++)m.w8(packet+i,0);
+ m.w32(packet+12,count);m.w32(packet+240,0xfeedface);batchAt=0;batchSizes=[];
+ for(let i=0;i<count;i++){m.w32(packet+16+i*4,9+i%9);m.w8(packet+156+i,i%10);}
+ call('lc_attack_calculate',[packet,source,actor(5),actor(6)]);
+ assert.deepEqual(batchSizes,count<=9?[count]:[9,count-9]);assert.equal(m.r32(packet+240),0xfeedface);
+ for(let i=0;i<count;i++) {
+  assert.equal(m.r32(packet+16+i*4),9+i%9);assert.equal(m.r16(packet+96+i*2),200+i);
+  assert.equal(m.r8(packet+136+i),60+i);assert.equal(m.r8(packet+156+i),i%10);
+  assert.equal(m.r16(packet+176+i*2),500+i);assert.equal(m.r8(packet+216+i),80+i);
+ }
+}
+m.w8(rules+2,11);m.w8(rules+3,1);m.w8(rules+22,18);m.trap(repeatRng,c=>c.set('v0',0));
+for(const [entry,size,expected] of [['lc_attack_targets',128,9],['lc_attack_expanded_targets',240,18]]) {
+ m.w32(packet+size,0xfeedface);call(entry,[packet,159,source]);
+ assert.equal(m.r32(packet+12),expected);assert.equal(m.r32(packet+size),0xfeedface);
+}
+const repeatFlags=packet+0x300;
+for(let i=0;i<18;i++){m.w32(ids+i*4,9+i%9);m.w32(repeatFlags+i*4,i<9?0:i-8);}
+m.w32(ids+72,-1);m.w32(repeatFlags+72,-1);m.w32(ids+80,0xfeedface);
+call('lc_attack_visual_targets',[159,ids,repeatFlags]);
+assert.deepEqual(Array.from({length:9},(_,i)=>m.r32(ids+i*4)),[9,10,11,12,13,14,15,16,17]);
+assert.deepEqual(Array.from({length:9},(_,i)=>m.r32(repeatFlags+i*4)),[1,2,3,4,5,6,7,8,9]);
+assert.equal(m.r32(ids+36)|0,-1);assert.equal(m.r32(ids+80),0xfeedface);
+m.traps.delete(repeatRng);m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+22,0);
+console.log('Expanded strike packets: native ABI, all field offsets, 9-entry calculation batches, 18-strike bounds and unique visual targets PASS.');
+// Run the original evaluator itself on each native row, then on expanded
+// batches. Only its score/amount services are fixed; selector arithmetic and
+// hit-chance routing remain original instructions.
+m.traps.delete(0x239338+0x7ffbcd30);
+const calculationServices=[0x801f2f1c,0x801f28e0,0x801f2af8,0x801f36ac];
+const calculationTraps=calculationServices.map(p=>m.traps.get(p));
+m.trap(calculationServices[0],c=>c.set('v0',90));
+for(const p of calculationServices.slice(1,3))m.trap(p,c=>c.set('v0',80+(c.get('a0')-actors)/0x100));
+m.trap(calculationServices[3],c=>{m.bits.setUint32(0,c.get('a2'));c.set('v0',Math.trunc(m.bits.getFloat32(0))+7);});
+const nativeRow=packet+0x400;
+m.w8(source+0x78,3);
+for(const count of [6,9,10,18])for(const casters of [1,2,3]) {
+ for(let i=0;i<240;i++)m.w8(packet+i,0);
+ m.w8(packet+1,1);m.w32(packet+12,count);const expected=[];
+ for(let i=0;i<count;i++) {
+  for(let k=0;k<128;k++)m.w8(nativeRow+k,0);
+  m.w8(nativeRow+1,1);m.w32(nativeRow+12,1);m.w32(nativeRow+16,9+i%9);
+  m.w16(nativeRow+56,i%3);m.w8(nativeRow+86,i%10);
+  call(0x239338+0x7ffbcd30,[nativeRow,source,casters>1?actor(5):0,casters>2?actor(6):0]);
+  expected.push([m.r16(nativeRow+56),m.r16(nativeRow+96)]);
+  m.w32(packet+16+i*4,9+i%9);m.w16(packet+96+i*2,i%3);m.w8(packet+156+i,i%10);
+ }
+ call('lc_attack_calculate',[packet,source,casters>1?actor(5):0,casters>2?actor(6):0]);
+ assert.deepEqual(Array.from({length:count},(_,i)=>[m.r16(packet+96+i*2),m.r16(packet+176+i*2)]),expected);
+}
+calculationServices.forEach((p,i)=>{if(calculationTraps[i])m.trap(p,calculationTraps[i]);else m.traps.delete(p);});
+console.log('Expanded calculation matches original evaluator: 6/9/10/18 rows, all ten selectors and 1/2/3 casters PASS.');
 m.trap(0x239338+0x7ffbcd30,c=>{const p=c.get('a0');for(let i=0;i<c.r32(p+12);i++){c.w16(p+0x38+i*2,100);c.w16(p+0x60+i*2,60);}});
 for(const pc of [0x20bfe4,0x20c104,0x20c3b4])m.trap(pc+0x7ffbcb70,c=>c.set('v0',0));
 for(const pc of [0x2363fc,0x237af8,0x233210])m.trap(pc+0x7ffbcd30,c=>c.set('v0',0));
@@ -260,11 +340,11 @@ m.trap(repeatRng,c=>c.set('v0',0));
 // Pose-route tables are battle-loaded state, outside this isolated HP test.
 const priorRepeatAnimation=m.traps.get(e.lc_original_animation);
 m.trap(e.lc_original_animation,c=>c.set('v0',0x28));
-for(const route of ['generic','melee','ranged','alternate'])for(const shared of (route==='generic'?[0]:[0,1]))for(const count of [1,6,9]) {
+for(const route of ['generic','melee','ranged','alternate'])for(const shared of (route==='generic'?[0]:[0,1]))for(const count of [1,6,9,10,18]) {
  m.w8(rules,route==='generic'?55:4);m.w8(rules+1,route==='generic'?55:4);
  for(let i=0;i<18;i++) {
   m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x40,i<9?0x100:0);
-  m.w16(actor(i)+0x20,1000);m.w16(actor(i)+0x22,2000);m.w32(actor(i)+0x94,0);
+  m.w16(actor(i)+0x20,2000);m.w16(actor(i)+0x22,4000);m.w32(actor(i)+0x94,0);
   m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
  }
  m.w32(source+0x7c,159);m.w8(source+0x78,route==='generic'?3:0);m.w32(source+0x6c,0);
@@ -273,18 +353,20 @@ for(const route of ['generic','melee','ranged','alternate'])for(const shared of 
  m.w8(records+159*16+4,route==='generic'?3:0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);
  m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
  m.w8(rules+2,11);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,shared);
- m.w8(rules+21,0);m.w8(rules+22,count);
- try { call(route==='generic'?generic.lc_attack_generic:e['lc_attack_'+route],[source,ids]); }
+ m.w8(rules+21,136);m.w8(rules+22,count);visualEvents.length=0;
+ try { call(route==='generic'?generic.lc_attack_generic:e['lc_attack_'+route],[source,ids],600000); }
  catch(error) {error.message+=` (repeated ${route}/${shared}/${count}; ra=${m.get('ra').toString(16)} a0=${m.get('a0').toString(16)} a1=${m.get('a1').toString(16)})`;throw error;}
  const victim=route==='generic'?9:13;
- assert.equal(m.r16(actor(victim)+0x20),1000-60*count,`${route}/${shared}/${count} repeated damage`);
+ assert.equal(m.r16(actor(victim)+0x20),2000-60*count,`${route}/${shared}/${count} repeated damage`);
  assert.equal(m.r32(source+0x6c),1,`${route}/${shared}/${count} action count`);
- for(let i=9;i<18;i++)if(i!==victim)assert.equal(m.r16(actor(i)+0x20),1000,'unselected victim unchanged');
+ for(let i=9;i<18;i++)if(i!==victim)assert.equal(m.r16(actor(i)+0x20),2000,'unselected victim unchanged');
+ assert.equal(visualEvents.length,1);
+ assert.deepEqual(visualEvents[0].targets,Array(count>9?1:count).fill(victim));
 }
 m.traps.delete(repeatRng);m.w8(rules+2,12);m.w16(rules+4,257);m.w8(rules+13,0);m.w8(rules+21,136);m.w8(rules+22,0);
 if(priorRepeatAnimation)m.trap(e.lc_original_animation,priorRepeatAnimation);else m.traps.delete(e.lc_original_animation);
 for(let i=0;i<18;i++)m.w16(actor(i)+0x22,500);
-console.log('Repeated-strike damage: 1/6/9 impacts in spell and all physical routes, separate/shared playback, one action count PASS.');
+console.log('Repeated-strike damage: 1/6/9/10/18 impacts in spell and all physical routes, separate/shared playback, one action count and bounded visual lists PASS.');
 m.traps.delete(0x801c8d24);
 for(const route of ['melee','ranged','alternate'])for(const undead of [false,true])for(const hp of [50,100])for(const chance of [0,100]) {
  m.w32(source+0x40,0x100);m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
@@ -511,6 +593,32 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
  assert.equal(m.r32(scratch),0);assert.equal(m.r16(global+0x1c4+0x20),0,'temporary actor cleared');
 }
 console.log('Full Pedra executor: 11 effects and custom targets PASS; temporary actor cleared, no persistent-attacker drain.');
+for(const family of ['combined','pedra'])for(const count of [10,18])for(const hp of [120,2000]) {
+ for(let i=0;i<18;i++) {
+  m.w32(actor(i)+0x40,i<9?0x100:0);m.w16(actor(i)+0x20,i<9?200:hp);
+  m.w16(actor(i)+0x22,4000);m.w32(actor(i)+0x94,0);
+ }
+ for(const caster of [source,caster2]) {
+  m.w32(caster,global+0x2000);m.w32(caster+0x6c,0);m.w32(caster+0x70,2);
+ }
+ const action=family==='combined'?110:159,rule=settings+action*32;
+ m.w8(records+action*16+7,1);m.w8(records+action*16+9,1);m.w8(records+action*16+10,255);
+ m.w8(rule+2,11);m.w8(rule+3,1);m.w8(rule+22,count);m.w8(rule+8,10);m.w8(rule+9,1);m.w8(rule+10,100);
+ m.w8(rule+11,1);m.w8(rule+12,0);m.w16(rule+14,50);m.w8(rule+21,138);
+ m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);visualEvents.length=0;
+ call(family==='combined'?combined.lc_attack_combined:pedra.lc_attack_pedra,[family==='combined'?input:pedraInput,ids]);
+ const loss=Array.from({length:9},(_,i)=>hp-m.r16(actor(9+i)+0x20)).reduce((a,b)=>a+b,0);
+ assert.equal(loss,Math.min(hp,60*count),`${family}/${count}/${hp} loss`);
+ assert.equal(visualEvents.length,1);assert.equal(visualEvents[0].targets.length,1);
+ const victim=visualEvents[0].targets[0];assert(m.r32(actor(victim)+0x40)&16,'additional Poison applied');
+ if(family==='combined') {
+  assert.equal(m.r16(source+0x20),200+Math.trunc(loss/2));assert.equal(m.r16(caster2+0x20),200);
+  assert.equal(m.r32(source+0x6c),1);assert.equal(m.r32(caster2+0x6c),1);
+ } else assert.equal(m.r16(global+0x1c4+0x20),0);
+}
+for(const action of [110,159]){const rule=settings+action*32;m.w8(rule+2,12);m.w16(rule+4,257);m.w8(rule+22,0);m.w8(rule+8,0);}
+for(let i=0;i<18;i++)m.w16(actor(i)+0x22,500);
+console.log('Combined/Pedra 10/18 strikes: full HP loss, death/compaction, Poison, aggregate drain, one action and one bounded visual sequence PASS.');
 // Combined and Pedra must not leak an old secondary marker when the authored
 // chance is zero, the hit misses, or the victim survives / is not undead.
 m.traps.delete(0x801c8d24);

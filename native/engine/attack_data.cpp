@@ -313,8 +313,8 @@ void AttackData::validate(const Attack &a) {
         a.targetSide < 0 || a.targetSide > 3 || a.targetMask < 0 ||
         a.targetMask > 511 || (a.targetPattern == 12 && !a.targetMask))
         throw Error("Choose a valid target pattern with at least one position");
-    if (a.strikeCount < 1 || a.strikeCount > 9)
-        throw Error("Choose between 1 and 9 strikes");
+    if (a.strikeCount < 1 || a.strikeCount > maximumStrikes)
+        throw Error(QString("Choose between 1 and %1 strikes").arg(maximumStrikes));
     if (a.powerPercent < 0 || a.powerPercent > 1000 ||
         (a.status != -1 && !statuses().contains(a.status)) || a.condition < 0 || a.condition > 2 ||
         a.chance < 0 || a.chance > 100 || a.afterEffect < -1 || a.afterEffect > 2 ||

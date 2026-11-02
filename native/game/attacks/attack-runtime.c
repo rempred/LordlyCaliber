@@ -81,6 +81,7 @@ void func_0021D334(int,int,void *,int,int,int,int,int,int);
 int func_0022257C(void *,int,int *);
 u32 rand(void);
 int func_00022e60(void);
+void func_00239338(void *,void *,void *,void *);
 int lc_original_melee(void *,int *);
 int lc_original_ranged(void *,int *);
 int lc_original_alternate(void *,int *);
@@ -265,7 +266,7 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
         /* Retail patterns 9/10 (00237E2C) enumerate these world-grid offsets,
          * then draw with replacement: first eligible actor weight 40, others
          * weight 15. Preserve that order and RNG, including mirrored sides.
-         * Both physical and spell consumers have room for nine strike entries. */
+         * The adapted executors separate up to 18 strikes from nine actors. */
         count=0;
         for(i=0;i<9;i++) for(j=0;j<n;j++) {
             actor=func_0020C478(ids[j]);
@@ -275,7 +276,7 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
         }
         if(!count) return 0;
         strikes=rules[22]?rules[22]:6;
-        if(strikes>9) strikes=9;
+        if(strikes>18) strikes=18;
         for(i=0;i<strikes;i++) {
             pick=func_00022e60()%(40+(count-1)*15);
             ids[i]=candidates[pick<40?0:1+(pick-40)/15];
@@ -284,24 +285,87 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
     }
     return n;
 }
-void lc_attack_retarget(void *packet,int action,void *source) {
+/* Owned spell executors use a 240-byte packet with 20 storage slots. Native
+ * services retain their original 128-byte/10-slot ABI; bridge at each call.
+ * Offsets: IDs16, hit chances96, primary136, selectors156, amounts176,
+ * secondary216. The editable strike limit is18, leaving terminator headroom. */
+void lc_attack_expand_packet(void *packet) {
+    u32 saved[32];
+    int i,n;
+    for(i=0;i<128;i++) B(saved,i)=B(packet,i);
+    for(i=0;i<240;i++) B(packet,i)=0;
+    for(i=0;i<16;i++) B(packet,i)=B(saved,i);
+    n=W(saved,12);if(n<0)n=0;if(n>10)n=10;W(packet,12)=n;
+    for(i=0;i<n;i++) {
+        W(packet,16+i*4)=W(saved,16+i*4);
+        H(packet,96+i*2)=H(saved,56+i*2);
+        B(packet,136+i)=B(saved,76+i);B(packet,156+i)=B(saved,86+i);
+        H(packet,176+i*2)=H(saved,96+i*2);B(packet,216+i)=B(saved,116+i);
+    }
+}
+void lc_attack_calculate(void *packet,void *source,void *second,void *third) {
+    u32 native[32];
+    int start,i,j,n,count;
+    count=W(packet,12);
+    for(start=0;start<count;start+=9) {
+        for(i=0;i<128;i++) B(native,i)=0;
+        for(i=0;i<16;i++) B(native,i)=B(packet,i);
+        n=count-start;if(n>9)n=9;W(native,12)=n;
+        for(i=0;i<n;i++) {
+            j=start+i;W(native,16+i*4)=W(packet,16+j*4);
+            H(native,56+i*2)=H(packet,96+j*2);
+            B(native,76+i)=B(packet,136+j);B(native,86+i)=B(packet,156+j);
+            H(native,96+i*2)=H(packet,176+j*2);B(native,116+i)=B(packet,216+j);
+        }
+        func_00239338(native,source,second,third);
+        for(i=0;i<n;i++) {
+            j=start+i;H(packet,96+j*2)=H(native,56+i*2);
+            B(packet,136+j)=B(native,76+i);B(packet,156+j)=B(native,86+i);
+            H(packet,176+j*2)=H(native,96+i*2);B(packet,216+j)=B(native,116+i);
+        }
+    }
+}
+void lc_attack_retarget_packet(void *packet,int action,void *source,int expanded) {
     u8 *rules,*data;
-    int i,n,ids[9],anchor;
+    int i,n,ids[18],anchor;
     rules=lc_attack_settings+action*32;
     if (!rules[2] && !rules[3]) return;
     /* Native anchor preference is retained when it is on the chosen side. */
     anchor=W(source,0x68);
     n=lc_attack_target_list(source,ids,anchor);
-    for(i=0;i<128;i++) B(packet,i)=0;
+    if(!expanded && n>9)n=9;
+    for(i=0;i<(expanded?240:128);i++) B(packet,i)=0;
     data=lc_attack_records+action*16+6;
     for(i=0;i<8;i++) B(packet,i)=data[i];
     B(packet,8)=10; W(packet,12)=n;
     for(i=0;i<n;i++) W(packet,16+i*4)=ids[i];
     W(source,0x68)=n?ids[0]:-1;
 }
+void lc_attack_retarget(void *packet,int action,void *source) {
+    lc_attack_retarget_packet(packet,action,source,1);
+}
 void lc_attack_targets(void *packet,u8 action,void *source) {
     lc_original_targets(packet,action,source);
+    /* Preserve the public native-packet ABI for any unadapted caller. */
+    lc_attack_retarget_packet(packet,action,source,0);
+}
+void lc_attack_expanded_targets(void *packet,u8 action,void *source) {
+    lc_original_targets(packet,action,source);
+    lc_attack_expand_packet(packet);
     lc_attack_retarget(packet,action,source);
+}
+void lc_attack_visual_targets(int action,int *ids,int *flags) {
+    int i,j,n;
+    /* Effects still receive actors, not an oversized repeated-hit list. Keep
+     * the retail <=9 path unchanged, and retain each actor's last nonzero flag. */
+    if(lc_attack_settings[action*32+2]!=11 || lc_attack_settings[action*32+22]<=9)return;
+    n=0;
+    for(i=0;i<19 && ids[i]>=0;i++) {
+        for(j=0;j<n;j++)if(ids[j]==ids[i])break;
+        if(j==n) {ids[n]=ids[i];flags[n++]=flags[i];}
+        else if(flags[i]) flags[j]=flags[i];
+    }
+    ids[n]=-1;flags[n]=-1;
 }
 int lc_attack_anchor(void *source) {
     if(CTX->source==source && CTX->forced>=0) return CTX->forced;
@@ -419,11 +483,11 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
     lc_attack_record(source,target,calculated,before,1,time);
 }
 int lc_attack_physical(void *source,int *time,int route) {
-    int ids[9],n,i,result,count,anchor,hit;
+    int ids[18],n,i,result,count,anchor,hit;
     int shared,start,latest,ready,primaryTarget,primaryTiming[3],j;
     int nearest,distance,bestDistance,dx,dy;
     PhysicalGroup group;
-    int visualIds[10],visualFlags[10],visualSource[2],visualCount,visualSlot;
+    int visualIds[20],visualFlags[20],visualSource[2],visualCount,visualSlot;
     void *target;
     u8 *rules;
     rules=lc_rules(source);
@@ -481,7 +545,7 @@ int lc_attack_physical(void *source,int *time,int route) {
         else result|=lc_original_alternate(source,time);
         hit=CTX->hit;
         target=func_0020C478(W(source,0x68));
-        if(target&&visualSlot&&visualCount<9){visualIds[visualCount]=func_0020D72C(target);visualFlags[visualCount++]=0;}
+        if(target&&visualSlot&&visualCount<18){visualIds[visualCount]=func_0020D72C(target);visualFlags[visualCount++]=0;}
         if(!hit && target) lc_attack_record(source,target,0,H(target,0x20),0,shared?group.impact:W(target,0x94));
         if(shared && target && latest<W(target,0x94)) latest=W(target,0x94);
     }
@@ -494,6 +558,7 @@ int lc_attack_physical(void *source,int *time,int route) {
     if(visualSlot&&visualCount){
         visualSource[0]=func_0020D72C(source);visualSource[1]=-1;
         visualIds[visualCount]=-1;visualFlags[visualCount]=-1;
+        lc_attack_visual_targets(CTX->action,visualIds,visualFlags);
         func_0021D2C0(0x16,shared?group.impact:(*time>0?*time-1:0),0,visualSlot,visualSource,visualIds,visualFlags);
     }
     lc_attack_finish(source,*time);

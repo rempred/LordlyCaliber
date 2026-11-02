@@ -47,7 +47,7 @@ Custom targeting includes a clipped 3×3 area around the selected unit. Targetin
 also explains repeated physical strikes versus a shared class animation.
 **Repeated strikes near target (Pedra)** selects from the surrounding 3×3 area,
 favoring the primary target and allowing repeated hits on the same unit. Its
-**Number of strikes** control supports 1–9, defaulting to the retail six.
+**Number of strikes** control supports 1–18, defaulting to the retail six.
 The count can also be edited directly on retail attacks using this pattern.
 Undo, project files, ROM export and reopening retain the count.
 Physical attacks offer **One strike — hit all targets together**: one attacker
