@@ -337,10 +337,17 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
                         {8, "Cross through target"},
                         {9, "User only"},
                         {10, "3 × 3 area around target"},
+                        {11, "Repeated strikes near target (Pedra)"},
                         {12, "Custom positions…"}},
                        "attackPattern");
     targetForm->addRow("Target side", side_);
     targetForm->addRow("Pattern", pattern_);
+    strikePanel_ = new QWidget;
+    auto strikeForm = new QFormLayout(strikePanel_);
+    strikeForm->setContentsMargins(0, 0, 0, 0);
+    strikeCount_ = number("attackStrikeCount", 1, 9, 6);
+    strikeForm->addRow("Number of strikes", strikeCount_);
+    targetForm->addRow(strikePanel_);
     auto targetingRow = new QHBoxLayout;
     targetingRow->addLayout(targetForm, 1);
     targetLayout->addLayout(targetingRow);
@@ -561,6 +568,16 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
                 a.targetMask = 16;
         });
     });
+    connect(strikeCount_, &QSpinBox::editingFinished, this, [this] {
+        if (refreshing_ || selected() < 1) return;
+        const int count = strikeCount_->value();
+        const auto &attack = project_->attacks()->entry(selected());
+        if (count == (attack.targetPattern == 0 ? 6 : attack.strikeCount)) return;
+        edit("Change number of strikes", [count](Attack &a) {
+            a.targetPattern = 11;
+            a.strikeCount = count;
+        });
+    });
     const auto choice = [this](QComboBox *box, int Attack::*member, const QString &title) {
         connect(box, &QComboBox::activated, this, [this, box, member, title] {
             const int n = box->currentData().toInt();
@@ -769,8 +786,12 @@ void AttackEditor::showAttack() {
     choose(pattern_, a.targetPattern);
     side_->setEnabled(!templ && a.targetPattern != 9);
     pattern_->setEnabled(!templ);
+    const bool retailStrikes = !a.targetPattern && !a.targetSide &&
+                               (originalPattern == 9 || originalPattern == 10);
+    strikePanel_->setVisible(!templ && (retailStrikes || a.targetPattern == 11));
+    strikeCount_->setValue(retailStrikes ? 6 : a.strikeCount);
     int mask = a.targetPattern == 12                          ? a.targetMask
-               : a.targetPattern == 2 || a.targetPattern == 10 ? 511
+               : a.targetPattern == 2 || a.targetPattern == 10 || a.targetPattern == 11 ? 511
                : a.targetPattern >= 3 && a.targetPattern <= 5 ? 7 << ((a.targetPattern - 3) * 3)
                : a.targetPattern == 6                         ? 146
                : a.targetPattern == 7                         ? 56
@@ -798,6 +819,10 @@ void AttackEditor::showAttack() {
                   " The diagram assumes a center target. Selecting another pattern replaces this game rule."
         : a.targetPattern == 10 ? "Affects the target and adjacent positions, including diagonals. "
                                   "The area stops at the formation's edge. Each target uses the selected calculation."
+        : a.targetPattern == 11 ? QString("Selects %1 strikes from the target and adjacent positions, including diagonals. "
+                                         "The primary target is favored; the same unit can be hit more than once. "
+                                         "Empty positions are skipped. The diagram shows possible targets, not guaranteed hits. "
+                                         "Supports 1–9 strikes; retail uses 6.").arg(a.strikeCount)
         : a.targetPattern == 12 ? "Checked positions are fixed in the chosen side's formation. "
                                   "Empty cells are skipped. Front is nearest the opposing squad."
                                 : "Diagram uses a center target. Row, column and cross patterns "

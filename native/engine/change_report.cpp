@@ -235,6 +235,7 @@ ChangeReport Project::changeReport(const Project *reference) const {
             }
             const auto describe = [](const Attack &a) {
                 return QJsonObject{{"targetPattern",a.targetPattern},{"targetSide",a.targetSide},{"targetPositionsMask",a.targetMask},
+                    {"numberOfStrikes",a.strikeCount},
                     {"attackPlayback", a.playback ? "One strike — hit all targets together" : "Native playback"},
                     {"incomingPowerPercent",a.powerPercent},{"additionalStatusId",a.status},{"activationConditionId",a.condition},
                     {"chancePercent",a.chance},{"drainOrRecoilId",a.afterEffect},{"amountBasisId",a.afterBasis},

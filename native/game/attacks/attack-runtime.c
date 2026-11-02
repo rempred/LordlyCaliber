@@ -80,6 +80,7 @@ void func_0021D2C0(int,int,void *,int,void *,void *,void *);
 void func_0021D334(int,int,void *,int,int,int,int,int,int);
 int func_0022257C(void *,int,int *);
 u32 rand(void);
+int func_00022e60(void);
 int lc_original_melee(void *,int *);
 int lc_original_ranged(void *,int *);
 int lc_original_alternate(void *,int *);
@@ -191,13 +192,17 @@ int lc_attack_cell(void *actor) {
     return y*3+x;
 }
 int lc_attack_target_list(void *source,int *ids,int anchor) {
+    static const int aroundX[9]={0,1,-1,0,0,1,-1,-1,1};
+    static const int aroundY[9]={0,0,0,1,-1,1,1,-1,-1};
     u8 *rules;
     void *actor,*selected;
     int i,n,pattern,side,cell,anchorCell,mask,same,main;
+    int candidates[9],count,j,strikes,pick,originalAnchor,centerX,centerY,x,y;
     rules=lc_rules(source); pattern=rules[2]; side=rules[3];
     if(pattern==9) side=3;
     main=lc_attack_records[lc_effective_action(source)*16+7];
     if (!side) side=(main==2 || main==5 || main==6 || main==11)?2:1;
+    originalAnchor=anchor;
     selected=anchor>=0 && anchor<20?func_0020C478(anchor):0;
     /* Native damage targeting may have chosen an opponent even when the
      * authored rule targets allies or the user. Anchor on the requested side
@@ -219,6 +224,20 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
     }
     anchorCell=selected?lc_attack_cell(selected):4;
     if (anchorCell<0) anchorCell=4;
+    centerX=selected?W(selected,0x54):1;
+    centerY=selected?W(selected,0x58):1;
+    /* Native spells can anchor on a coordinate rather than an actor, including
+     * an empty center. Retain an in-formation coordinate on the requested side. */
+    if(pattern==11 && side!=3 && originalAnchor>=20 && originalAnchor<87) {
+        i=originalAnchor<47?originalAnchor-20:originalAnchor-47;
+        j=originalAnchor<47?3:4;x=i%j;y=i/j;
+        same=((W(source,0x40)&0x100)!=0)==(y<3);
+        if(x<3 && (y<3 || (y>=6 && y<9)) &&
+           ((side==1 && !same) || (side==2 && same))) {
+            centerX=x;centerY=y;
+            anchorCell=y<3?(2-y)*3+x:(y-6)*3+2-x;
+        }
+    }
     mask=H(rules,4); n=0;
     if (!pattern) pattern=1;
     for(i=0;i<20 && n<9;i++) {
@@ -233,7 +252,7 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
         if (pattern==6 && cell%3!=anchorCell%3) continue;
         if (pattern==7 && cell/3!=anchorCell/3) continue;
         if (pattern==8 && cell/3!=anchorCell/3 && cell%3!=anchorCell%3) continue;
-        if (pattern==10 && (cell/3<anchorCell/3-1 || cell/3>anchorCell/3+1 ||
+        if ((pattern==10 || pattern==11) && (cell/3<anchorCell/3-1 || cell/3>anchorCell/3+1 ||
                            cell%3<anchorCell%3-1 || cell%3>anchorCell%3+1)) continue;
         if (pattern==12 && !(mask & (1<<cell))) continue;
         ids[n++]=i;
@@ -241,6 +260,27 @@ int lc_attack_target_list(void *source,int *ids,int anchor) {
     if(pattern==1 && n) {
         for(i=0;i<n;i++) if(ids[i]==anchor) { ids[0]=anchor; break; }
         n=1;
+    }
+    if(pattern==11 && n) {
+        /* Retail patterns 9/10 (00237E2C) enumerate these world-grid offsets,
+         * then draw with replacement: first eligible actor weight 40, others
+         * weight 15. Preserve that order and RNG, including mirrored sides.
+         * Both physical and spell consumers have room for nine strike entries. */
+        count=0;
+        for(i=0;i<9;i++) for(j=0;j<n;j++) {
+            actor=func_0020C478(ids[j]);
+            if(W(actor,0x54)==centerX+aroundX[i] && W(actor,0x58)==centerY+aroundY[i]) {
+                candidates[count++]=ids[j];break;
+            }
+        }
+        if(!count) return 0;
+        strikes=rules[22]?rules[22]:6;
+        if(strikes>9) strikes=9;
+        for(i=0;i<strikes;i++) {
+            pick=func_00022e60()%(40+(count-1)*15);
+            ids[i]=candidates[pick<40?0:1+(pick-40)/15];
+        }
+        n=strikes;
     }
     return n;
 }

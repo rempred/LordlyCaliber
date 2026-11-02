@@ -776,6 +776,49 @@ class UiTests : public QObject {
         QCOMPARE(project.attacks()->resolvedTargets(created).value(1),63);
         QCOMPARE(project.attacks()->resolvedTargets(array).value(1),id);
     }
+    void attackRepeatedStrikes() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        AttackEditor editor(&project, &undo, [] {});
+        auto pattern = editor.findChild<QComboBox *>("attackPattern");
+        auto count = editor.findChild<QSpinBox *>("attackStrikeCount");
+        QVERIFY(pattern->findData(11) >= 0);
+        QCOMPARE(count->minimum(), 1); QCOMPARE(count->maximum(), 9);
+        editor.selectAttack(76); // Retail Gnome: opening the control changes nothing.
+        const auto before = project.manifest();
+        QVERIFY(!count->parentWidget()->isHidden()); QCOMPARE(count->value(), 6);
+        emit count->editingFinished(); QCOMPARE(project.manifest(), before);
+        count->setValue(3); emit count->editingFinished(); QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(76).targetPattern, 11);
+        QCOMPARE(project.attacks()->entry(76).strikeCount, 3);
+        undo.undo(); QCoreApplication::processEvents(); QCOMPARE(project.manifest(), before);
+        QCOMPARE(count->value(), 6);
+        undo.redo(); QCoreApplication::processEvents(); QCOMPARE(count->value(), 3);
+        auto restored = Project::fromRom(Rom::open(path)); restored.applyManifest(project.manifest());
+        QCOMPARE(restored.attacks()->entry(76), project.attacks()->entry(76));
+        pattern->setCurrentIndex(pattern->findData(0)); emit pattern->activated(pattern->currentIndex());
+        QCoreApplication::processEvents(); QCOMPARE(count->value(), 6);
+        const auto retailAgain = project.manifest();
+        emit count->editingFinished(); QCOMPARE(project.manifest(), retailAgain);
+        editor.selectAttack(4); // New option is available for ordinary physical attacks too.
+        QVERIFY(count->parentWidget()->isHidden());
+        pattern->setCurrentIndex(pattern->findData(11)); emit pattern->activated(pattern->currentIndex());
+        QCoreApplication::processEvents(); QVERIFY(!count->parentWidget()->isHidden());
+        QCOMPARE(count->value(), 6);
+        count->setValue(9); emit count->editingFinished(); QCoreApplication::processEvents();
+        QCOMPARE(project.attacks()->entry(4).strikeCount, 9);
+        pattern->setCurrentIndex(pattern->findData(10)); emit pattern->activated(pattern->currentIndex());
+        QCoreApplication::processEvents(); QVERIFY(count->parentWidget()->isHidden());
+        pattern->setCurrentIndex(pattern->findData(11)); emit pattern->activated(pattern->currentIndex());
+        QCoreApplication::processEvents(); QCOMPARE(count->value(), 9);
+        const auto screenshot = qEnvironmentVariable("LORDLY_ATTACK_SCREENSHOT");
+        if (!screenshot.isEmpty()) {
+            editor.resize(1160, 850);editor.show();QTest::qWait(30);
+            QVERIFY(editor.grab().save(screenshot));
+        }
+    }
     void attackPatternSwitching() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

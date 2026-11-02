@@ -632,6 +632,48 @@ class AttackDataTests : public QObject {
             qInfo().noquote()<<"Battle name candidate:"<<output.path();
         } catch(const std::exception &e) {QFAIL(e.what());}
     }
+    void repeatedStrikesExportAndReopen() {
+        try {
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (tools.isEmpty()) QSKIP("Private compiler required");
+            auto project = Project::fromRom(source()); project.loadAttacks();
+            auto data = *project.attacks();
+            const auto original = data.json();
+            const int spell = data.duplicate(55, "Repeated spell");
+            const int melee = data.duplicate(4, "Repeated melee");
+            for (const auto [id, count] : {qMakePair(spell,9),qMakePair(melee,1),qMakePair(76,3)}) {
+                auto attack = data.entry(id); attack.targetPattern = 11; attack.strikeCount = count;
+                attack.targetSide = 1; attack.playback = id == melee ? 1 : 0; data.set(id, attack);
+            }
+            for (int count : {0,10}) {
+                auto invalid = data.entry(spell); invalid.strikeCount = count;
+                QVERIFY_THROWS_EXCEPTION(Error, data.set(spell, invalid));
+            }
+            // Projects predating this field retain the native six-strike default.
+            auto legacy = original; auto rows = legacy["entries"].toArray();
+            for (int i=0;i<rows.size();++i) { auto row=rows[i].toObject();row.remove("strikeCount");rows[i]=row; }
+            legacy["entries"] = rows;
+            auto old = AttackData::loadRetail(source()); old.apply(legacy); QCOMPARE(old.json(), original);
+            project.setAttacks(data.json());
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).dir()
+                                     .filePath("Test ROMs/native-repeated-strikes-XXXXXX"));
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            const auto folder=output.filePath("project"), archive=output.filePath("strikes.lcproj");
+            project.saveFolder(folder); project.saveArchive(archive);
+            for (const auto &path : {folder,archive}) {
+                auto restored=Project::fromRom(source());restored.applyManifest(Project::readProject(path));
+                QCOMPARE(restored.attacks()->json(), data.json());
+            }
+            const auto built=rebuild(project,tools,output.path());
+            auto checksum=built.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,built.image);
+            const auto candidate=output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(project,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadAttacks();
+            QCOMPARE(reopened.attacks()->json(),data.json());
+            QCOMPARE(rebuild(reopened,tools,output.path()).image,built.image);
+            qInfo().noquote()<<"Repeated strikes candidate:"<<candidate;
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void targetingExportAndReopen() {
         try {
             const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

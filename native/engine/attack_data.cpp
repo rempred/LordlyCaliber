@@ -104,7 +104,7 @@ AttackData AttackData::load(const Rom &rom) {
         return result;
     const auto bytes = rom.bytes().mid(p->romOffset, p->size);
     if (!bytes.startsWith("LCATDATA") || bytes.size() < 64 ||
-        (u32(bytes, 8) < 2 || u32(bytes, 8) > 5) || u32(bytes, 12) != quint32(p->count))
+        (u32(bytes, 8) < 2 || u32(bytes, 8) > 6) || u32(bytes, 12) != quint32(p->count))
         throw Error("Unrecognized attack data");
     const auto size = u32(bytes, 16);
     if (size < namesOffset || size > quint32(bytes.size()))
@@ -119,6 +119,7 @@ AttackData AttackData::load(const Rom &rom) {
         a.targetPattern = u8(bytes, at + 2);
         a.targetSide = u8(bytes, at + 3);
         a.targetMask = u16(bytes, at + 4);
+        a.strikeCount = u32(bytes, 8) >= 6 && u8(bytes, at + 22) ? u8(bytes, at + 22) : 6;
         a.powerPercent = u16(bytes, at + 6);
         a.status = u8(bytes, at + 8) == 255 ? -1 : u8(bytes, at + 8);
         a.condition = u8(bytes, at + 9);
@@ -221,6 +222,10 @@ QByteArray AttackData::build(quint32 address) const {
         put16(bytes, at + 14, a.afterPercent);
         put32(bytes, at + 16, a.nameGroup);
         put8(bytes, at + 20, a.dynamicName ? 1 : 0);
+        if (a.targetPattern == 11 || a.strikeCount != 6) {
+            put8(bytes, at + 22, a.strikeCount);
+            put32(bytes, 8, 6);
+        }
     }
     for (int id = int(entries_.size()); id < 256; ++id)
         put32(bytes, recordOffset + id * 16, u32(bytes, recordOffset));
@@ -252,7 +257,7 @@ QByteArray AttackData::build(quint32 address) const {
         put32(bytes, 8, qMax(3u, u32(bytes, 8)));
     }
     for (const auto &attack : entries_)
-        if (attack.playback) put32(bytes, 8, 5);
+        if (attack.playback) put32(bytes, 8, qMax(5u, u32(bytes, 8)));
     bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
     put32(bytes, 16, quint32(bytes.size()));
     if (address % 16 || address < 0x80243db0 || quint64(address) + bytes.size() > 0x80400000)
@@ -305,9 +310,11 @@ void AttackData::validate(const Attack &a) {
         a.behavior >= retailCount || a.animation < 1 || a.animation >= retailCount)
         throw Error("Invalid attack record or source behavior");
     if (a.targetPattern < 0 || a.targetPattern > 12 ||
-        a.targetPattern == 11 || a.targetSide < 0 || a.targetSide > 3 || a.targetMask < 0 ||
+        a.targetSide < 0 || a.targetSide > 3 || a.targetMask < 0 ||
         a.targetMask > 511 || (a.targetPattern == 12 && !a.targetMask))
         throw Error("Choose a valid target pattern with at least one position");
+    if (a.strikeCount < 1 || a.strikeCount > 9)
+        throw Error("Choose between 1 and 9 strikes");
     if (a.powerPercent < 0 || a.powerPercent > 1000 ||
         (a.status != -1 && !statuses().contains(a.status)) || a.condition < 0 || a.condition > 2 ||
         a.chance < 0 || a.chance > 100 || a.afterEffect < -1 || a.afterEffect > 2 ||
@@ -407,6 +414,7 @@ QJsonObject AttackData::json() const {
                             {"targetPattern", a.targetPattern},
                             {"targetSide", a.targetSide},
                             {"targetMask", a.targetMask},
+                            {"strikeCount", a.strikeCount},
                             {"playback", a.playback},
                             {"powerPercent", a.powerPercent},
                             {"status", a.status},
@@ -450,6 +458,7 @@ void AttackData::apply(const QJsonObject &object) {
         a.targetPattern = integer(row, "targetPattern", 0);
         a.targetSide = integer(row, "targetSide", 0);
         a.targetMask = integer(row, "targetMask", 0);
+        a.strikeCount = integer(row, "strikeCount", 6);
         a.playback = integer(row, "playback", 0);
         a.powerPercent = integer(row, "powerPercent", 100);
         a.status = integer(row, "status", -1);

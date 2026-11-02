@@ -102,6 +102,50 @@ for(const side of [1,2])for(const [anchor,expected] of [[0,[0,1,3,4]],[1,[0,1,2,
  assert.equal(m.r32(ids+36),0xfeedface);
 }
 console.log('3 × 3 targeting: center, edges and corners on both mirrored sides PASS.');
+// Compare repeated selection to the original target builder, not a copy of
+// its algorithm. Actor lookup/RNG are controlled; native ordering/weights run.
+const repeatRng=0x80092a60, coordinateLookup=0x801ca2e0, actorId=0x801ca29c;
+let repeatSample=0,repeatCalls=0;
+m.trap(repeatRng,c=>{repeatCalls++;c.set('v0',repeatSample);});
+m.trap(coordinateLookup,c=>{
+ const x=c.get('a0')|0,y=c.get('a1')|0;
+ const i=Array.from({length:18},(_,i)=>i).find(i=>(c.r32(actor(i)+0x54)|0)===x&&(c.r32(actor(i)+0x58)|0)===y);
+ c.set('v0',i===undefined?0:actor(i));
+});
+m.trap(actorId,c=>c.set('v0',(c.get('a0')-actors)/0x100));
+let repeatedCases=0;
+for(const side of [1,2])for(let center=0;center<9;center++)for(const holes of [[],[0,2,6,8],[1,3,5,7]])for(const anchorKind of ['actor','coordinate3','coordinate4']) {
+ const shift=side===1?9:0,anchor=center+shift;
+ const x=m.r32(actor(anchor)+0x54),y=m.r32(actor(anchor)+0x58);
+ const anchorKey=anchorKind==='actor'?anchor:anchorKind==='coordinate3'?20+y*3+x:47+y*4+x;
+ for(let i=0;i<18;i++)m.w32(actor(i)+0x40,(i<9?0x100:0)|(holes.includes(i-shift)&&(i!==anchor||anchorKind!=='actor')?1:0));
+ m.w8(rules+2,11);m.w8(rules+3,side);m.w8(rules+22,6);
+ for(const sample of [0,39,40,54,55,159,160,12345])for(const nativePattern of [9,10]) {
+  repeatSample=sample;repeatCalls=0;for(let i=0;i<128;i++)m.w8(packet+i,0);
+  call(0x237e2c+0x7ffbcd30,[packet,nativePattern,anchorKey]);
+  assert.equal(m.r32(packet+12),6);assert.equal(repeatCalls,6);
+  const expected=Array.from({length:6},(_,i)=>m.r32(packet+16+i*4));
+  repeatCalls=0;m.w32(ids+36,0xfeedface);
+  const n=call('lc_attack_target_list',[source,ids,anchorKey]);
+  assert.equal(n,6);assert.equal(repeatCalls,6);assert.equal(m.r32(ids+36),0xfeedface);
+  assert.deepEqual(Array.from({length:n},(_,i)=>m.r32(ids+i*4)),expected,`retail repeat ${side}/${center}/${holes}/${sample}/${nativePattern}/${anchorKind}`);
+  repeatedCases++;
+ }
+}
+for(let i=0;i<18;i++)m.w32(actor(i)+0x40,i<9?0x100:0);
+for(const side of [1,2,3])for(let count=1;count<=9;count++) {
+ m.w8(rules+3,side);m.w8(rules+22,count);repeatSample=0;repeatCalls=0;
+ m.w32(ids+36,0xfeedface);const n=call('lc_attack_target_list',[source,ids,13]);
+ assert.equal(n,count);assert.equal(repeatCalls,count);assert.equal(m.r32(ids+36),0xfeedface);
+ assert.deepEqual(Array.from({length:n},(_,i)=>m.r32(ids+i*4)),Array(count).fill(side===1?13:side===2?0:4));
+}
+// Legacy/default count and absent-side behavior must remain bounded.
+m.w8(rules+3,1);m.w8(rules+22,0);assert.equal(call('lc_attack_target_list',[source,ids,13]),6);
+for(let i=9;i<18;i++)m.w32(actor(i)+0x40,1);
+repeatCalls=0;assert.equal(call('lc_attack_target_list',[source,ids,13]),0);assert.equal(repeatCalls,0);
+for(let i=9;i<18;i++)m.w32(actor(i)+0x40,0);
+m.traps.delete(repeatRng);m.traps.delete(coordinateLookup);m.traps.delete(actorId);m.w8(rules+22,0);
+console.log(`Repeated strikes: ${repeatedCases} original-MIPS comparisons, 1–9 counts, both sides/self, holes, empty side and bounds PASS.`);
 // Dead cells are skipped; no target may escape the 9-entry caller allocation.
 m.w8(rules+2,2);m.w8(rules+3,1);m.w32(actor(10)+0x40,1);m.w32(ids+36,0xfeedface);assert.equal(call('lc_attack_target_list',[source,ids,13]),8);assert.equal(m.r32(ids+36),0xfeedface);
 for(const [effect,flag,event] of [[3,2,0x23],[4,4,0x25],[8,8,0x1a],[10,16,0x27],[5,0,0x29],[6,0,0x2a]]){
@@ -182,6 +226,8 @@ console.log('Undead slaying and existing native drain coexist PASS.');
 
 // Preserve the actual melee executor and physical HP sink while adding targets.
 // Artwork timing and already-tested numeric kernels are fixed here.
+// This phase changes the fixture from a spell to Slash, including its donor.
+m.w8(rules,4);m.w8(rules+1,4);
 m.trap(e.lc_original_anchor,c=>c.set('v0',13));
 for(const pc of [0x22222c,0x2223e0,0x237810,0x237890,0x22a4e0])m.trap(pc+0x7ffbcd30,c=>c.set('v0',0));
 m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',60));
@@ -208,6 +254,37 @@ for(const route of ['melee','ranged','alternate'])for(const effect of [1,2,10])f
   assert.equal(m.r32(source+0x6c),1,'one action count for the whole custom pattern');
 }
 console.log('Original melee/ranged/alternate executors + physical HP sink: IDs159/254, damage/healing/status × 2 targets PASS; one attack count.');
+// Repeated IDs must reach the damage writer once per requested strike, even
+// when the animation is shared. Keep the victim alive to count every impact.
+m.trap(repeatRng,c=>c.set('v0',0));
+// Pose-route tables are battle-loaded state, outside this isolated HP test.
+const priorRepeatAnimation=m.traps.get(e.lc_original_animation);
+m.trap(e.lc_original_animation,c=>c.set('v0',0x28));
+for(const route of ['generic','melee','ranged','alternate'])for(const shared of (route==='generic'?[0]:[0,1]))for(const count of [1,6,9]) {
+ m.w8(rules,route==='generic'?55:4);m.w8(rules+1,route==='generic'?55:4);
+ for(let i=0;i<18;i++) {
+  m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x40,i<9?0x100:0);
+  m.w16(actor(i)+0x20,1000);m.w16(actor(i)+0x22,2000);m.w32(actor(i)+0x94,0);
+  m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
+ }
+ m.w32(source+0x7c,159);m.w8(source+0x78,route==='generic'?3:0);m.w32(source+0x6c,0);
+ m.w32(ids,0);m.w32(global+0x828,0);events.length=0;
+ for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
+ m.w8(records+159*16+4,route==='generic'?3:0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);
+ m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
+ m.w8(rules+2,11);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,shared);
+ m.w8(rules+21,0);m.w8(rules+22,count);
+ try { call(route==='generic'?generic.lc_attack_generic:e['lc_attack_'+route],[source,ids]); }
+ catch(error) {error.message+=` (repeated ${route}/${shared}/${count}; ra=${m.get('ra').toString(16)} a0=${m.get('a0').toString(16)} a1=${m.get('a1').toString(16)})`;throw error;}
+ const victim=route==='generic'?9:13;
+ assert.equal(m.r16(actor(victim)+0x20),1000-60*count,`${route}/${shared}/${count} repeated damage`);
+ assert.equal(m.r32(source+0x6c),1,`${route}/${shared}/${count} action count`);
+ for(let i=9;i<18;i++)if(i!==victim)assert.equal(m.r16(actor(i)+0x20),1000,'unselected victim unchanged');
+}
+m.traps.delete(repeatRng);m.w8(rules+2,12);m.w16(rules+4,257);m.w8(rules+13,0);m.w8(rules+21,136);m.w8(rules+22,0);
+if(priorRepeatAnimation)m.trap(e.lc_original_animation,priorRepeatAnimation);else m.traps.delete(e.lc_original_animation);
+for(let i=0;i<18;i++)m.w16(actor(i)+0x22,500);
+console.log('Repeated-strike damage: 1/6/9 impacts in spell and all physical routes, separate/shared playback, one action count PASS.');
 m.traps.delete(0x801c8d24);
 for(const route of ['melee','ranged','alternate'])for(const undead of [false,true])for(const hp of [50,100])for(const chance of [0,100]) {
  m.w32(source+0x40,0x100);m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);

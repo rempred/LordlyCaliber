@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+## Configurable repeated strikes (November 1)
+
+Authored target pattern11 uses the retail pattern9/10 weighted draw from the
+3×3 neighborhood: native world-grid enumeration order, first eligible actor
+weight40, others15, with replacement and the existing RNG. The target-side
+anchor validation still applies. LCATDATA v6 stores strikeCount at settings
+byte22 (1–9); zero/older versions retain six. The nine-entry caller/packet
+capacity bounds the control. Unedited retail targeting remains native. The
+maintained C extension handles custom counts; no original instructions change.
+
 ## Shared physical attack playback (November 1)
 
 LCATDATA v5 uses settings byte13 for optional shared physical playback. Version2–4
