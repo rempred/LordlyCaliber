@@ -18,6 +18,7 @@ class EventScript {
   public:
     static QVector<EventHandler> decode(const QByteArray &);
     static QMap<int, EventStep> flagSteps(const QByteArray &);
+    static QMap<int, EventStep> branchSteps(const QByteArray &);
     static QByteArray apply(const QByteArray &, const QJsonObject &edits);
     static QString flagName(int flag);
     static QString groupName(int group);

@@ -116,7 +116,7 @@ std::optional<Project> chooseCombatAnimationReplacement(Project base, CombatAnim
     classes.setObjectName("combatReplacementClass");
     variants.setObjectName("combatReplacementVariant");
     animations.setObjectName("combatReplacementAnimation");
-    for (const auto &row : base.records(Table::Classes))
+    for (const auto &row : base.records(Table::Classes)) if (!base.contentDeleted("classes",row.id))
         if (row.id)
             classes.addItem(row.name, row.id);
     classes.setEditable(true);
@@ -471,7 +471,7 @@ std::optional<Project> chooseCombatAnimationFrames(Project base, int classId, in
     classes.setObjectName("combatFrameClass");
     variants.setObjectName("combatFrameVariant");
     animations.setObjectName("combatFrameAnimation");
-    for (const auto &row : base.records(Table::Classes))
+    for (const auto &row : base.records(Table::Classes)) if (!base.contentDeleted("classes",row.id))
         if (row.id)
             classes.addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
     classes.setEditable(true);

@@ -47,6 +47,20 @@ class SceneImportTests : public QObject {
             QCOMPARE(scenes.authoredScenes()[id.authoredId].name, fixture["name"].toString());
             QCOMPARE(scenes.canonical(scenes.original().selectors()[319]), id);
             QCOMPARE(SceneEvents::load(rom).target("event-director:1:b0032"), 319);
+            // High Attack's free module slot is inside the old arena's reserved
+            // tail. Merely finding FF bytes must not invalidate that ownership.
+            auto highProject = Project::fromRom(rom); highProject.loadTools();
+            auto highSettings = highProject.tools()->json();
+            highSettings["highAttackStreamSplit"] = true; highProject.setTools(highSettings);
+            const auto highBuild = rebuild(highProject,tools,work.filePath("high-attack"));
+            const auto highRom = Rom::fromBytes(highBuild.image);
+            const auto highScenes = SceneProgramResources::placement(highRom);
+            QVERIFY(highScenes && highScenes->legacyArenaRetired);
+            QCOMPARE(ScenePrograms::load(highRom).program(id).source,scenes.program(id).source);
+            QCOMPARE(SceneEvents::load(highRom).target("event-director:1:b0032"),319);
+            const auto highTool = HighAttack::load(highRom);
+            QVERIFY(highTool.available() && highTool.enabled());
+            QCOMPARE(rebuild(Project::fromRom(highRom),tools,work.filePath("high-again")).image,highBuild.image);
             auto project = Project::fromRom(rom);
             project.importLegacy(fixture["project"].toObject());
             QCOMPARE(project.scenePrograms()->program(id).source, scenes.program(id).source);

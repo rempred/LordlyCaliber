@@ -43,7 +43,8 @@ std::optional<CapacityPlacement> CapacityPlacement::read(const Rom &rom) {
                 patch.before.toHex()!=row[1].toString().toLatin1() || patch.after.toHex()!=row[2].toString().toLatin1() ||
                 patch.before.size()!=patch.after.size() || quint64(patch.site)+patch.after.size()>0x2800000 ||
                 bytes.mid(patch.site,patch.after.size())!=patch.after)
-                throw Error("Expanded-army code differs from its recorded build");
+                throw Error(QString("Expanded-army code differs from its recorded build at ROM %1")
+                                .arg(patch.site, 0, 16));
             priorEnd=patch.site+quint32(patch.after.size());p.patches.append(patch);
         }
         found=p;
@@ -59,6 +60,7 @@ Rom CapacityPlacement::canonical(const Rom &rom) const {
     }
     if(quint64(offset)+size==quint64(bytes.size()))bytes.resize(originalSize);
     else bytes.replace(offset,size,QByteArray(size,char(-1)));
+    Rom::updateChecksum(bytes);
     return Rom::fromBytes(rom.serialize(bytes),rom.sourcePath());
 }
 QByteArray CapacityPlacement::record(const QByteArray &before,const QByteArray &after,quint32 base,quint32 codeAddress) {
@@ -66,9 +68,12 @@ QByteArray CapacityPlacement::record(const QByteArray &before,const QByteArray &
         throw Error("Capacity patch record must preserve all resource allocations");
     QJsonArray patches;
     for(quint32 at=0;at<0x2800000;) {
+        // Cartridge CRCs describe the complete export, not this feature's
+        // ownership. Later exporters legitimately change them again.
+        if(at==0x10){at=0x18;continue;}
         if(u32(before,at)==u32(after,at)){at+=4;continue;}
         const auto start=at;
-        do {at+=4;}while(at<0x2800000 && u32(before,at)!=u32(after,at));
+        do {at+=4;}while(at<0x2800000 && at!=0x10 && u32(before,at)!=u32(after,at));
         patches.append(QJsonArray{double(start),QString::fromLatin1(before.mid(start,at-start).toHex()),
             QString::fromLatin1(after.mid(start,at-start).toHex())});
     }

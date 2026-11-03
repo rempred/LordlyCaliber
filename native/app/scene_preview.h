@@ -22,6 +22,7 @@ class QGraphicsScene;
 class QGraphicsRectItem;
 class QComboBox;
 class QLineEdit;
+class QCheckBox;
 namespace lordly {
 class SaveDocument;
 // Interactive PC reference stage. Unknown game services stop the preview.
@@ -75,7 +76,7 @@ class ScenePreview : public QWidget {
         ScenePlayback playback;
         QImage frame;
         QString reason, backgroundName;
-        bool stopped = false;
+        bool stopped = false, finished = false;
         SceneSelection selection;
         std::optional<SceneBackgroundRenderer> backgrounds;
         QMap<quint32, SceneBackgroundChannel> backgroundResources;
@@ -105,6 +106,7 @@ class ScenePreview : public QWidget {
     void presentSelectedObject();
     void presentSelectionOutline();
     void stop();
+    void startPlayback();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &, int *value = nullptr);
     void retainBackgrounds(Snapshot &);
@@ -152,6 +154,7 @@ class ScenePreview : public QWidget {
     int selector_ = -1, mode_ = -1, tick_ = 0;
     QSpinBox *position_, *rate_;
     QPushButton *play_, *step_, *skip_;
+    QCheckBox *loop_;
     QLabel *status_, *context_;
     QComboBox *liveObjects_;
     QLabel *objectState_;
@@ -190,7 +193,7 @@ class ScenePreview : public QWidget {
     QVector<SceneLaunchPlan> launchPlans_;
     QWidget *launchContextUi_;
     QComboBox *launchContext_;
-    bool preparing_ = false;
+    bool preparing_ = false, resumeAfterPrepare_ = false;
     QString contextSummary_;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;

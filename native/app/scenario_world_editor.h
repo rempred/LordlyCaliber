@@ -15,6 +15,7 @@ class ScenarioWorldEditor : public QWidget {
                         QWidget *parent = nullptr);
     void refresh(int key);
     void selectObject(bool treasure, int row);
+    std::function<void(int, int)> editShop;
 
   private:
     void showSite();

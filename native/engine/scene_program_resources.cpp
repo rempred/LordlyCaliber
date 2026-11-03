@@ -42,7 +42,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
     if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
-        (u32(header, 8) < 1 || u32(header, 8) > 5) ||
+        (u32(header, 8) < 1 || u32(header, 8) > 6) ||
         header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
             QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
         u32(header, 92) != crc32(header.first(92)))
@@ -100,7 +100,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
         const auto tableBytes = u32(rom.bytes(), 0x1f3ca84);
         const auto manifest = document.object();
         if (u32(header, 8) >= 3 &&
-            (manifest.size() != (u32(header, 8) == 5 ? 4 : u32(header, 8) == 4 ? 3 : 2) || !manifest["authored"].isArray() ||
+            (manifest.size() != (u32(header, 8) >= 5 ? 4 : u32(header, 8) == 4 ? 3 : 2) || !manifest["authored"].isArray() ||
              !manifest["eventBindings"].isObject()))
             throw Error("Invalid scene allocation metadata");
         if (u32(header, 8) >= 4) {
@@ -450,7 +450,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     }
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, eventFlags.isEmpty() ? 4 : 5);
+    put32(header, 8, SceneEvents::hasCampaignEdits(eventFlags) ? 6 : eventFlags.isEmpty() ? 4 : 5);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));

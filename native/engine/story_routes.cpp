@@ -1,4 +1,5 @@
 #include "engine/story_routes.h"
+#include "engine/campaign_runtime.h"
 #include <algorithm>
 #include <array>
 namespace lordly {
@@ -33,14 +34,19 @@ StoryRoutes::StoryRoutes(const Rom &rom) {
     }
     if (!scripts.contains(0))
         throw Error("Missing world-entry script");
+    const auto campaign=CampaignPlacement::read(b);
     for (int node = 1; node < 54; ++node) {
         const int at = 0x864a0 + (node - 1) * 8;
+        if(campaign && campaign->locationNames.contains(node)) {
+            nodes[node]={campaign->locationNames[node],{qint16(u16(b,at)),qint16(u16(b,at+2))}};
+            continue;
+        }
         const qint64 text = qint64(u32(b, at + 4)) - 0x80121070LL;
         if (text < 0 || text >= b.size() || u8(b, text) != 14)
             continue;
         const auto end = b.indexOf(char(15), text);
         if (end < 0 || end - text > 256)
-            throw Error("Unterminated world-node name");
+            throw Error("Unterminated map location name");
         nodes[node] = {
             QString::fromLatin1(
                 b.mid(text + 1, end - text - 1).replace(QByteArray::fromHex("1034"), " ")),
@@ -111,8 +117,14 @@ QVector<StoryRoute> StoryRoutes::routes(int node, int chaos, QMap<int, int> flag
                 r[1] &= r[2];
             else if (op == 1)
                 jump = true;
+            else if (op == 2) {
+                s.pc += 2 + 2 * qint16((arg << 8) | (r[0] & 255));
+                continue;
+            }
             else if (op == 0xac)
                 jump = r[0] == 0;
+            else if (op == 0xbc)
+                jump = r[0] != 0;
             else if (op == 0xa1)
                 jump = r[0] == r[1];
             else if (op == 0xc1)

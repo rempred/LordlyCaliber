@@ -6,6 +6,7 @@ namespace lordly {
 class ClassData;
 class ItemData;
 class Project;
+class NameTables;
 enum class SaveTable { Characters, Equipment, Consumables, Game };
 struct SaveField {
     QString key, label;
@@ -66,6 +67,8 @@ class SaveDocument {
     SaveChange planJoinLegion(int index, int unit, const ClassData &) const;
     QVector<int> reserveMembers() const;
     int freeCharacterSlot() const;
+    QString randomCharacterName(const Rom &, const ClassData &, int classId, quint32 seed,
+                                 const QString &previous = {}, const NameTables *names = nullptr) const;
     SaveChange planCreateCharacter(int classId, const QString &name, const ClassData &,
                                    quint32 randomSeed, int level = 1, const ItemData *items = nullptr) const;
     SaveChange planRemoveCharacter(int id) const;

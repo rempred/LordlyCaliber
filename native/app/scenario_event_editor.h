@@ -14,6 +14,9 @@ class ScenarioEventEditor : public QWidget {
   public:
     ScenarioEventEditor(Project *, QUndoStack *, std::function<void()>, QWidget *parent = nullptr);
     void selectScenario(int key);
+    void showAllRows();
+    void selectEventRow(int row, int offset = -1);
+    std::function<void(int)> editCutscene;
   protected:
     void showEvent(QShowEvent *) override;
   private:
@@ -34,7 +37,11 @@ class ScenarioEventEditor : public QWidget {
     std::function<void()> changed_;
     int scenario_ = -1;
     bool loading_ = false;
+    bool allRows_ = false;
     QComboBox *rows_, *flags_, *action_;
+    QComboBox *branchTarget_;
+    QPushButton *applyBranch_;
+    QPushButton *openCutscene_;
     QTreeWidget *steps_;
     QCheckBox *all_;
     QLabel *notice_, *detail_;

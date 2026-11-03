@@ -1,5 +1,6 @@
 #include "app/shared_impact.h"
 #include "app/content_refresh.h"
+#include "app/custom_content.h"
 #include "app/view_position.h"
 #include "app/encounter_editor.h"
 #include "app/persuasion_editor.h"
@@ -55,6 +56,10 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     layout->addWidget(tabs);
     auto poolPage = new QWidget;
     auto poolLayout = new QVBoxLayout(poolPage);
+    viewScopeNotice_ = new QLabel;
+    viewScopeNotice_->setObjectName("encounterScopeNotice");
+    viewScopeNotice_->setWordWrap(true);
+    poolLayout->addWidget(viewScopeNotice_);
     search_ = new QLineEdit;
     search_->setObjectName("encounterSearch");
     search_->setPlaceholderText("Find a map by name, mission, runtime key, or creature…");
@@ -70,22 +75,27 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     pools_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     split->addWidget(pools_);
     auto details = new QWidget;
+    mapDetails_ = details;
     auto detail = new QVBoxLayout(details);
     heading_ = new QLabel;
     heading_->setWordWrap(true);
     detail->addWidget(heading_);
     auto explanation = new QLabel("Choose a map, select a terrain, then choose creatures or assign a squad. "
         "Encounter contents belong to the selected map; terrain chances and shared terrain groups are global.");
+    explanation->setObjectName("encounterMapHelp");
     explanation->setWordWrap(true);
     detail->addWidget(explanation);
     mapKey_ = new QComboBox;
     mapKey_->setObjectName("encounterMapKey");
     auto context = new QHBoxLayout;
-    context->addWidget(new QLabel("Map version"));
+    auto mapVersionLabel=new QLabel("Map version");mapVersionLabel->setObjectName("encounterMapVersionLabel");context->addWidget(mapVersionLabel);
     context->addWidget(mapKey_, 1);
     auto advanced = new QPushButton("Advanced terrain rules…");
     advanced->setObjectName("encounterAdvancedTerrain");
     context->addWidget(advanced);
+    auto overview=new QPushButton("All encounters…");overview->setObjectName("encounterOverview");
+    context->addWidget(overview);overview->hide();
+    connect(overview,&QPushButton::clicked,this,&EncounterEditor::showAllEncounters);
     detail->addLayout(context);
     auto showUnassigned = new QCheckBox("Show unassigned terrains");
     showUnassigned->setObjectName("encounterShowUnassigned");
@@ -203,15 +213,18 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     auto addPool = new QPushButton("Add pool");
     addPool->setObjectName("encounterAddPool");
     paletteLayout->addWidget(addPool);
+    auto deletePool=new QPushButton("Delete pool…");deletePool->setObjectName("deleteEncounterPool");paletteLayout->addWidget(deletePool);
+    connect(deletePool,&QPushButton::clicked,this,[this]{showCustomContent(this,project_,undo_,"pools");});
     auto clearPool = new QPushButton("Clear selected terrain assignment");
     clearPool->setObjectName("encounterClearPool");
     paletteLayout->addWidget(clearPool);
     connect(addPool, &QPushButton::clicked, this, [this] {
-        auto next = *project_->encounters();
-        const int slot = next.addPool();
+        auto nextProject=*project_;const int slot=nextProject.createEncounterPool();
+        auto next=*nextProject.encounters();
         const int row = terrainTable_->currentRow();
         if (row >= 0 && !next.lookup(row)) next.setTerrain(row, 0, slot + 1);
-        commit(next, "Add encounter pool");
+        nextProject.setEncounters(next.json());
+        pushContentProject(project_,undo_,std::move(nextProject),"Add encounter pool");
         poolTiles_->setCurrentRow(slot);
     });
     connect(clearPool, &QPushButton::clicked, this, [this] {
@@ -382,6 +395,44 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
 int EncounterEditor::selected() const {
     return pools_->currentItem() ? pools_->currentItem()->data(Qt::UserRole).toInt() : -1;
 }
+void EncounterEditor::setScenario(int key) {
+    scenario_ = key;
+    findChild<QPushButton *>("encounterOverview")->show();
+    findChild<QLabel *>("encounterMapHelp")->hide();
+    applyScope();
+}
+void EncounterEditor::showAllEncounters() {
+    QDialog dialog(this);dialog.setObjectName("allEncountersDialog");dialog.setWindowTitle("All neutral encounters");dialog.resize(1200,800);
+    auto layout=new QVBoxLayout(&dialog);layout->addWidget(new EncounterEditor(project_,undo_,changed_,&dialog));
+    dialog.exec();
+}
+void EncounterEditor::applyScope() {
+    const bool current = scenario_>=0;
+    pools_->setVisible(!current);
+    search_->setVisible(!current);
+    mapKey_->setVisible(!current);
+    findChild<QLabel *>("encounterMapVersionLabel")->setVisible(!current);
+    if(auto split=qobject_cast<QSplitter *>(pools_->parentWidget())) {
+        if(current)split->setSizes({0,1000});
+        else if(split->sizes().first()==0)split->setSizes({300,900});
+    }
+    bool found = false;
+    if (current) {
+        for (int row = 0; row < pools_->count(); ++row)
+            if (project_->encounters()->scenarioKeys(pools_->item(row)->data(Qt::UserRole).toInt()).contains(scenario_)) {
+                pools_->setCurrentRow(row);
+                mapKey_->setCurrentIndex(mapKey_->findData(scenario_));
+                found = true;
+                break;
+            }
+    }
+    mapDetails_->setEnabled(!current || found);
+    viewScopeNotice_->setVisible(current && !found);
+    viewScopeNotice_->setText(current && !found
+        ? "No neutral encounters are assigned to this scenario."
+        : current ? "Encounters for the selected scenario. Creature choices may be shared with other versions of this map; terrain rules affect all maps."
+                  : "All neutral encounters. Global rates, terrain rules, rewards and persuasion remain shared.");
+}
 void EncounterEditor::refresh() {
     const ViewPosition keepView(this);
     const auto &encounters = *project_->encounters();
@@ -393,7 +444,7 @@ void EncounterEditor::refresh() {
         if (pool >= 1)
             for (int key : encounters.scenarioKeys(pool))
                 mapKey_->addItem(QString("%1 · %2").arg(key).arg(encounters.scenarioLabel(key)), key);
-        mapKey_->setCurrentIndex(qMax(0, mapKey_->findData(previousKey)));
+        mapKey_->setCurrentIndex(qMax(0, mapKey_->findData(scenario_>=0 ? scenario_ : previousKey)));
         mapKey_->setEnabled(mapKey_->count() > 1);
     }
     heading_->setText(pool >= 1 ? encounters.label(pool) : "Choose a map");
@@ -466,13 +517,14 @@ void EncounterEditor::refreshPoolRows() {
     poolTiles_->clear();
     for (int slot = 0; slot < count; ++slot) {
         auto tile = new QListWidgetItem(QString("Pool %1\n%2").arg(slot + 1).arg(poolContents(slot)), poolTiles_);
+        tile->setHidden(project_->contentDeleted("pools",slot));
         tile->setData(Qt::UserRole, slot + 1); tile->setToolTip(encounters.poolSlotLabel(slot));
         tile->setToolTip(tile->text() + "\n" + encounters.poolSlotLabel(slot));
         tile->setSizeHint(QSize(260, fontMetrics().lineSpacing() * std::max(3, int(tile->text().count('\n')) + 2) + 14)); tile->setBackground(palette().brush(QPalette::Highlight));
         tile->setForeground(palette().brush(QPalette::HighlightedText));
     }
     poolTiles_->setCurrentRow(qBound(0, selected, count - 1));
-    findChild<QPushButton *>("encounterAddPool")->setEnabled(count < 32);
+    findChild<QPushButton *>("encounterAddPool")->setEnabled(project_->nextContentId("pools",count) < 32);
 }
 QString EncounterEditor::poolContents(int slot) const {
     if (selected() < 1) return "Select a map to preview creatures";
@@ -560,7 +612,7 @@ void EncounterEditor::chooseCreatures() {
         choice->completer()->setCompletionMode(QCompleter::PopupCompletion);
         choice->completer()->setFilterMode(Qt::MatchContains);
         choice->completer()->setCaseSensitivity(Qt::CaseInsensitive);
-        for (int id = 0; id < project_->records(Table::Classes).size(); ++id)
+        for (int id = 0; id < project_->records(Table::Classes).size(); ++id) if (!project_->contentDeleted("classes",id))
             choice->addItem(QString("%1 · %2").arg(id).arg(id ? project_->record(Table::Classes, id).name.simplified() : "None"), id);
         choice->setCurrentIndex(choice->findData(project_->encounters()->classAt(group, slot, side)));
         form->addRow(side ? "Second choice" : "First choice", choice);

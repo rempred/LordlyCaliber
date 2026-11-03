@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/deleted_content.h"
 #include "engine/effect_resources.h"
 #include "engine/capacity_placement.h"
 #include "engine/body_selection.h"
@@ -257,6 +258,7 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
                     if (end >= stringOffset && end < 0x665c4 + shift)
                         r.name = decodeText(p.rom_.bytes().mid(stringOffset, end - stringOffset));
                 }
+                names[QString::number(id)] = r.name;
             }
             records.push_back(std::move(r));
         }
@@ -264,8 +266,11 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             p.catalog_["CLASS_NAMES"] = names;
         if (table == Table::Items)
             p.catalog_["ITEM_NAMES"] = names;
+        if (table == Table::Consumables)
+            p.catalog_["CONSUMABLE_NAMES"] = names;
     }
     if (!p.rom_.revision() && AttackPlacement::read(p.rom_)) p.loadAttacks();
+    p.setDeletedContent(readDeletedContent(p.rom_));
     return p;
 }
 const Record &Project::record(Table t, int row) const {
@@ -288,6 +293,8 @@ void Project::setValue(Table t, int row, int column, int value) {
     if (column < 0 || column >= fields(t).size())
         throw Error("Field index outside table");
     const auto &f = fields(t)[column];
+    const auto kind=f.choices=="CLASS_NAMES"?QString("classes"):f.choices=="ITEM_NAMES"?QString("items"):f.choices=="ACTION_NAMES"?QString("attacks"):QString();
+    if(!kind.isEmpty() && contentDeleted(kind,value))throw Error("This entry was deleted; choose an existing entry");
     if (value < f.minimum() || value > f.maximum())
         throw Error("Field value outside its stored range");
     auto bytes = record(t, row).bytes;
@@ -313,7 +320,7 @@ void Project::setAttacks(const QJsonObject &value) {
     QJsonObject names;
     names["0"] = "None";
     for (int id = 1; id < next.entries().size(); ++id)
-        names[QString::number(id)] = AttackData::displayName(next.entry(id));
+        if (!contentDeleted("attacks",id)) names[QString::number(id)] = AttackData::displayName(next.entry(id));
     catalog_["ACTION_NAMES"] = names;
     attacks_ = std::move(next);
 }
@@ -331,9 +338,10 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
 }
 int Project::changedRecords() const {
     int count =
-        int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size());
+        int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size()) + int(personalNames_.has_value()) + int(replacedClassAssets_.size()) + (deletedContent_!=readDeletedContent(rom_));
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names()) ++count;
     if (attacks_ && attacks_->modified()) ++count;
+    if (nameTables_ && nameTables_->modified()) ++count;
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -368,6 +376,7 @@ int Project::changedRecords() const {
         count += scenarios_->changedScenarios();
     if (world_)
         count += world_->changedEntries();
+    if (campaignMap_) count += campaignMap_->changedNodes();
     if (mapEdits_) count += mapEdits_->changedMaps();
     if (dialogues_)
         count += dialogues_->changedEntries();
@@ -515,7 +524,8 @@ int Project::createWeaponType(const QString &name) {
         if (label.toString().compare(trimmed, Qt::CaseInsensitive) == 0)
             throw Error("An equipment type already uses this name");
     QSet<int> used;
-    for (const auto &record : records(Table::Items)) used.insert(u8(record.bytes, 4));
+    for (const auto &record : records(Table::Items))
+        if (!contentDeleted("items",record.id)) used.insert(u8(record.bytes, 4));
     auto next = weaponTypes_;
     const auto id = next.create(trimmed, used);
     setWeaponTypes(next.names());
@@ -540,9 +550,15 @@ void Project::setItemNameBytes(int row, const QByteArray &name) {
 }
 int Project::appendItemAsset(const ItemAsset &a, const QByteArray &description) {
     auto data = itemData();
-    const int id = data.append(1, a.name);
+    const int id = nextContentId("items",data.entries().size());
+    if (id==data.entries().size()) data.append(1,a.name);
     data.set(id, a);
     loadTexts();
+    if (id < records(Table::Items).size()) {
+        auto record=a.record;record.replace(0,4,this->record(Table::Items,id).original.first(4));
+        replaceBytes(Table::Items,id,record);setItemNameBytes(id,a.name);
+        texts_["items"].entries[id].bytes=description;markContentDeleted("items",id,false);return id;
+    }
     if (texts_["items"].entries.size() != id || description.contains("\r\n"))
         throw Error("Item descriptions disagree with the item table");
     addedItems_ << a;
@@ -559,11 +575,10 @@ int Project::appendItem(int source, const QString &name) {
     next.loadIconArtwork();
     next.loadAnimationRoutes();
     auto data = next.itemData();
-    const int id = data.append(source, encodeItemName(name));
-    next.appendItemAsset(data.entries()[id], next.texts_["items"].entries[source].bytes);
-    if (next.icons_->equipmentCount() + 1 != id)
-        throw Error("Item and icon counts disagree");
-    next.icons_->appendEquipment(source);
+    auto asset=data.entries()[source];asset.name=encodeItemName(name);
+    const int id=next.appendItemAsset(asset,next.texts_["items"].entries[source].bytes);
+    if (next.icons_->equipmentCount()+1==id) next.icons_->appendEquipment(source);
+    else next.icons_->setWords(quint16(id),next.icons_->words(quint16(source)));
     next.animationRoutes_->cloneEquipment(source, id);
     *this = std::move(next);
     return id;
@@ -578,9 +593,7 @@ int Project::createItem(const QString &name) {
     put8(asset.record, 4, 25);
     put8(asset.record, 6, 1); // Zero prevents selection in the game's Equip menu.
     const int id = next.appendItemAsset(asset, {});
-    if (next.icons_->equipmentCount() + 1 != id)
-        throw Error("Item and icon counts disagree");
-    next.icons_->appendEquipment(1);
+    if (next.icons_->equipmentCount()+1==id) next.icons_->appendEquipment(1);
     QImage blank(16, 16, QImage::Format_RGBA8888);
     blank.fill(Qt::transparent);
     next.icons_->setWords(quint16(id), next.icons_->mapImage(quint16(id), blank));
@@ -615,6 +628,7 @@ const ClassAsset &Project::classAsset(int row) const {
     record(Table::Classes, row);
     if (!originalClasses_)
         throw Error("This ROM's class names need a supported source layout before editing");
+    if (replacedClassAssets_.contains(row)) return replacedClassAssets_.constFind(row).value();
     const auto originalCount = originalClasses_->entries().size();
     return row < originalCount ? originalClasses_->entries()[row]
                                : addedClasses_[row - originalCount];
@@ -638,10 +652,28 @@ void Project::setClassNameBytes(int row, const QByteArray &name) {
     names[QString::number(row)] = tables_.at(Table::Classes)[row].name;
     catalog_["CLASS_NAMES"] = names;
 }
+PersonalNames Project::personalNames() const {
+    if (!originalClasses_) throw Error("Personal names require a supported class table");
+    return personalNames_.value_or(originalClasses_->personalNames());
+}
+void Project::loadNameTables() {if(!nameTables_)nameTables_.emplace(rom_);}
+void Project::setNameTables(const QJsonObject &object) {
+    loadNameTables();auto next=*nameTables_;next.apply(object);
+    for(int id=1;id<45;++id)tables_.at(Table::Consumables)[id].name=next.consumableName(id);
+    auto labels=catalog_["CONSUMABLE_NAMES"].toObject();
+    for(int id=1;id<45;++id)labels[QString::number(id)]=next.consumableName(id);
+    catalog_["CONSUMABLE_NAMES"]=labels;nameTables_=std::move(next);
+}
+void Project::setPersonalNames(const QJsonObject &value) {
+    auto next = personalNames(); next.apply(value);
+    if (next.json() == originalClasses_->personalNames().json()) personalNames_.reset();
+    else personalNames_ = std::move(next);
+}
 ClassData Project::classData() const {
     if (!originalClasses_)
         throw Error("Class data requires a supported source layout");
     auto result = *originalClasses_;
+    result.setPersonalNames(personalNames());
     for (const auto &asset : addedClasses_) {
         const auto id = result.append(0, asset.name);
         result.set(id, asset);
@@ -650,7 +682,7 @@ ClassData Project::classData() const {
     if (records.size() != result.entries().size())
         throw Error("Class record and asset counts disagree");
     for (int id = 0; id < records.size(); ++id) {
-        auto entry = result.entries()[id];
+        auto entry = classAsset(id);
         entry.record = records[id].bytes;
         entry.name = classNameBytes(id);
         result.set(id, entry);
@@ -667,7 +699,8 @@ int Project::classDescriptionIndex(int classId) {
 int Project::appendClassAsset(const ClassAsset &asset, const QByteArray &description,
                               int promotionTemplate) {
     auto classes = classData();
-    const auto id = classes.append(0, asset.name);
+    const auto id = nextContentId("classes",classes.entries().size());
+    if (id==classes.entries().size()) classes.append(0,asset.name);
     classes.set(id, asset);
     if (asset.namedAlias || description.contains("\r\n"))
         throw Error(
@@ -675,6 +708,21 @@ int Project::appendClassAsset(const ClassAsset &asset, const QByteArray &descrip
     loadTexts();
     loadPromotion();
     auto &bank = texts_["classes"];
+    if (id < records(Table::Classes).size()) {
+        auto replacement=asset;replacement.record.replace(0,4,record(Table::Classes,id).original.first(4));
+        replacedClassAssets_[id]=replacement;
+        replaceBytes(Table::Classes,id,replacement.record);setClassNameBytes(id,asset.name);
+        bank.entries[classDescriptionIndex(id)].bytes=description;
+        promotion_->growToClassCount(records(Table::Classes).size());
+        promotion_->gates.replace(id*8,8,promotion_->gates.mid(promotionTemplate*8,8));
+        promotion_->masks[id]=promotion_->masks[promotionTemplate];
+        promotion_->flags[id]=promotion_->flags[promotionTemplate];
+        auto assignments=promotion_->families["assignments"].toArray();assignments[id]=assignments[promotionTemplate];
+        promotion_->families["assignments"]=assignments;
+        auto names=personalNames();names.assign(id,-1);setPersonalNames(names.json());
+        markContentDeleted("classes",id,false);
+        return id;
+    }
     if (bank.entries.size() != classDescriptionIndex(id) ||
         (promotion_->classCount() != 81 && promotion_->classCount() != id))
         throw Error("Class, description and promotion counts disagree");
@@ -695,19 +743,21 @@ int Project::appendClass(int templateId, const QString &name) {
     auto candidate = *this;
     candidate.loadTexts();
     auto classes = candidate.classData();
-    const auto id = classes.append(templateId, encodeClassName(name));
+    const int id=candidate.nextContentId("classes",classes.entries().size());
+    auto asset=classes.entries()[templateId];asset.name=encodeClassName(name);asset.namedAlias=0;
+    if (!u8(asset.record,69) && (templateId==10 || templateId==25 || templateId==123)) put8(asset.record,69,quint8(templateId));
     const auto sourceText = classDescriptionIndex(templateId);
     const auto &bank = candidate.texts_["classes"];
     if (sourceText >= bank.entries.size())
         throw Error("The template class description is missing");
-    candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
+    candidate.appendClassAsset(asset, bank.entries[sourceText].bytes, templateId);
     candidate.copyClassVisuals(templateId, id);
     *this = std::move(candidate);
     return id;
 }
 int Project::createClass(const QString &name) {
     auto candidate = *this;
-    const int id = int(candidate.records(Table::Classes).size());
+    const int id = candidate.nextContentId("classes",candidate.records(Table::Classes).size());
     // The starter uses existing visuals, but no existing class's gameplay record.
     ClassAsset asset{QByteArray(72, 0), candidate.classData().entries()[5].appearance,
                      encodeClassName(name), 0};
@@ -739,7 +789,8 @@ void Project::copyClassVisuals(int sourceId, int targetId) {
     animationSequences_->cloneClass(sourceId, targetId);
     loadAnimationOverrides();
     if(animationOverrides_->available()) {
-        auto entries=animationOverrides_->entries();
+        QJsonArray entries;
+        for (const auto &v:animationOverrides_->entries()) if (v.toObject()["classId"].toInt()!=targetId) entries.append(v);
         for(const auto &value:animationOverrides_->entries()) {
             auto row=value.toObject();
             if(row["classId"].toInt()==sourceId){row["classId"]=targetId;entries<<row;}
@@ -748,6 +799,14 @@ void Project::copyClassVisuals(int sourceId, int targetId) {
     } else {
         for(const auto &row:animationOverrides_->image().rows())
             if(row[0]==sourceId)throw Error("This template has advanced animation overrides that cannot be copied to a new class; choose a template with an editable animation assignment");
+    }
+    if (replacedClassAssets_.contains(targetId)) {
+        loadArmyArtwork();loadAvatarArtwork();
+        if (army_->routes().contains(targetId)) {
+            auto data=classData();
+            const auto source=data.entries()[sourceId];
+            army_->setRoute(data,targetId,ArmyArtwork::classLane(source),ArmyArtwork::classModel(source));
+        }
     }
     if (army_ && army_->routes().contains(sourceId)) {
         const auto route = army_->routes()[sourceId];
@@ -864,6 +923,8 @@ void Project::loadWorld() {
     if (!world_)
         world_ = ScenarioWorld::load(rom_);
 }
+void Project::loadCampaignMap() { if (!campaignMap_) campaignMap_.emplace(rom_); }
+void Project::setCampaignMap(const QJsonObject &value) { loadCampaignMap(); campaignMap_->apply(value); }
 void Project::loadMapEdits() {if(!mapEdits_)mapEdits_=MapEdits::load(rom_);}
 void Project::setMapEdits(const QJsonObject &value){loadMapEdits();mapEdits_->apply(value);}
 void Project::applyMapDelta(const FieldEditDelta &delta, bool forward) {
@@ -1137,6 +1198,16 @@ QJsonObject Project::manifest() const {
         result.remove("addedClasses");
     else
         result["addedClasses"] = additions;
+    if (deletedContent_.isEmpty() && readDeletedContent(rom_).isEmpty()) result.remove("deletedContent");
+    else result["deletedContent"]=deletedContent_;
+    QJsonObject replaced;
+    for (auto it=replacedClassAssets_.begin();it!=replacedClassAssets_.end();++it)
+        replaced[QString::number(it.key())]=QJsonObject{{"name",QString::fromLatin1(it->name.toHex())},{"appearance",QString::fromLatin1(it->appearance.toHex())}};
+    if (replaced.isEmpty()) result.remove("replacedClassAssets");else result["replacedClassAssets"]=replaced;
+    if (personalNames_) result["personalNames"] = personalNames_->json();
+    else result.remove("personalNames");
+    if (nameTables_ && nameTables_->modified()) result["nameTables"]=nameTables_->json();
+    else result.remove("nameTables");
     QJsonObject names;
     for (auto it = classNames_.begin(); it != classNames_.end(); ++it)
         names[QString::number(it.key())] = QString::fromLatin1(it.value().toHex());
@@ -1214,6 +1285,8 @@ QJsonObject Project::manifest() const {
         result["world"] = world_->json();
     else
         result.remove("world");
+    if(campaignMap_ && campaignMap_->changedNodes()) result["campaignMap"]=campaignMap_->json();
+    else result.remove("campaignMap");
     if(mapEdits_ && mapEdits_->modified())result["mapEdits"]=mapEdits_->json();
     else result.remove("mapEdits");
     if (dialogues_ && (dialogues_->modified() || oldPatches["cutscenes"].isObject()))
@@ -1276,6 +1349,7 @@ void Project::applyManifest(const QJsonObject &object) {
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
     auto candidate = Project::fromRom(runtimeRom(), catalog_);
+    const auto inheritedDeleted=candidate.deletedContent_;candidate.deletedContent_={};
     if (attacks_) candidate.loadAttacks();
     if (object.contains("attacks")) {
         if (!object["attacks"].isObject()) throw Error("Attacks must be an object");
@@ -1377,6 +1451,16 @@ void Project::applyManifest(const QJsonObject &object) {
             candidate.replaceBytes(table, id, bytes);
         }
     }
+    const auto replacements=object["replacedClassAssets"].toObject();
+    for (auto it=replacements.begin();it!=replacements.end();++it) {
+        bool ok;const int id=it.key().toInt(&ok);const auto row=it.value().toObject();
+        if (!ok || id<165 || id>=candidate.records(Table::Classes).size()) throw Error("Invalid reused class ID");
+        auto asset=candidate.classAsset(id);
+        asset.name=QByteArray::fromHex(row["name"].toString().toLatin1());
+        asset.appearance=QByteArray::fromHex(row["appearance"].toString().toLatin1());asset.namedAlias=0;
+        auto data=candidate.classData();data.set(id,asset);
+        candidate.replacedClassAssets_[id]=asset;candidate.setClassNameBytes(id,asset.name);
+    }
     if (object.contains("classNames") && !object["classNames"].isObject())
         throw Error("Class names must be an object");
     const auto names = object["classNames"].toObject();
@@ -1389,6 +1473,9 @@ void Project::applyManifest(const QJsonObject &object) {
             throw Error("Invalid saved class name");
         candidate.setClassNameBytes(id, bytes);
     }
+    if (object.contains("personalNames")) candidate.setPersonalNames(object["personalNames"].toObject());
+    if (object.contains("nameTables")) candidate.setNameTables(object["nameTables"].toObject());
+    else if (nameTables_) candidate.loadNameTables();
     candidate.retained_ = object;
     for (auto &bank : candidate.texts_)
         for (auto &entry : bank.entries)
@@ -1534,6 +1621,10 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setWorld(object["world"].toObject());
     } else
         candidate.importLegacyWorld(candidate.legacy_);
+    if(object.contains("campaignMap")) {
+        if(!object["campaignMap"].isObject()) throw Error("Invalid saved campaign map");
+        candidate.setCampaignMap(object["campaignMap"].toObject());
+    }
     if(object.contains("mapEdits")){
         if(!object["mapEdits"].isObject())throw Error("Invalid saved map edits");
         candidate.setMapEdits(object["mapEdits"].toObject());
@@ -1578,6 +1669,7 @@ void Project::applyManifest(const QJsonObject &object) {
         throw Error("Added classes require matching promotion data");
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
+    candidate.setDeletedContent(object.contains("deletedContent")?object["deletedContent"].toObject():inheritedDeleted);
     *this = std::move(candidate);
 }
 void Project::importLegacyGlobalRate(const QJsonObject &object) {

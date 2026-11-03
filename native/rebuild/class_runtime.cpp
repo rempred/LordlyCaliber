@@ -35,7 +35,10 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         placed.records = placed.address + AttackData::recordOffset;
         placed.settings = placed.address + AttackData::settingsOffset;
         placed.count = int(attacks->entries().size());
-        const auto bytes = compileAttackRuntime(*attacks, placed, compiler, directory);
+        const auto bytes = compileAttackRuntime(*attacks, placed, compiler, directory,
+            [&](quint32 address) {
+                return capacity ? capacity->relocated(address, result.data.layout) : address;
+            });
         placed.size = quint32(bytes.size());
         result.data.bytes += bytes;
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
@@ -88,6 +91,19 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
     if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
         quint64(dataRomOffset) + result.data.bytes.size() > 0x4000000)
         throw Error("Class data needs an aligned allocation within the cartridge address range");
+    QFile namesSource(":/game/classes/personal-names.c");
+    if (!namesSource.open(QIODevice::ReadOnly)) throw Error("Missing personal-name C source");
+    const auto namesModule = compiler.compileModule(namesSource.readAll(), directory, "personal_names", 0x8016bd20,
+        {{"personal_names_config.h", QByteArray("#define LC_ENEMY_COUNT ") + (capacity ? "256\n#define LC_CAPACITY 1\n" : "100\n")}},
+        {{"g_func_0019554C_records_56", 0x80193bc0},
+         {"g_func_0019554C_records_52", capacity ? capacity->base : 0x80195560U},
+         {"lc_enemy_types", capacity ? capacity->symbols.value("lc_enemy_types") : 0},
+         {"D_8018EA00", result.data.layout.names + PersonalNames::pointerOffset}, {"D_8018FEAC", 0x8018feac},
+         {"func_0002E138", 0x8009dd38}, {"rand", 0x8009c7cc}, {"func_80093380", 0x80093380},
+         {"func_0002C950", 0x8009c550}, {"func_0002C9E0", 0x8009c5e0}, {"resource_free", 0x800712c4}});
+    result.personalNamesCode = namesModule.fitOwner(PersonalNames::ownerSize);
+    result.data.bytes.replace(result.data.layout.names - result.data.layout.indexBase + 32, 32,
+                              QByteArray::fromHex(sha256(result.personalNamesCode)));
     result.compiledData = compiler.compileData(result.data.bytes, directory, "class_data");
     QFile source(":/game/classes/class-runtime.c");
     if (!source.open(QIODevice::ReadOnly))
@@ -308,7 +324,14 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
           quint64(prior->dataRomOffset) + prior->layout.end - prior->layout.indexBase !=
               quint64(rom.bytes().size()))))
         throw Error("Expanded class allocation would overwrite unrelated ROM data");
+    QByteArray priorNames;
+    if (prior) {
+        const auto at = prior->dataRomOffset + prior->layout.names - prior->layout.indexBase;
+        if (rom.bytes().mid(at,8)=="LCNAMES1") priorNames=rom.bytes().mid(at,u32(rom.bytes(),at+8));
+    }
+    PersonalNames::verifyOwner(rom, priorNames);
     auto image = rom.bytes();
+    image.replace(PersonalNames::ownerOffset, PersonalNames::ownerSize, build.personalNamesCode);
     if (prior && prior->residentBytes)
         image.replace(prior->residentAddress - ClassPlacement::residentDelta, prior->residentBytes,
                       QByteArray(prior->residentBytes, 0));

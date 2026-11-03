@@ -6,6 +6,7 @@
 #include "engine/text.h"
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QFile>
 #include <QSet>
 #include <cmath>
 
@@ -73,6 +74,35 @@ std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
         if (p.codeSize && (entry < p.code || entry >= p.code + p.codeSize || entry % 4))
             throw Error("Attack entry lies outside its code allocation");
     return p;
+}
+QByteArray AttackPlacement::canonicalOwner(const Rom &rom, const QByteArray &owner, qsizetype start) const {
+    QFile file(":/game/attacks/hooks.json");
+    if (!file.open(QIODevice::ReadOnly)) throw Error("Missing attack hook catalog");
+    const auto catalog = QJsonDocument::fromJson(file.readAll()).object()["hooks"].toArray();
+    if (hookCount > quint32(catalog.size())) throw Error("Unknown attack hook directory");
+    auto result = owner;
+    const auto directory = romOffset + hooks - address;
+    for (quint32 i=0;i<hookCount;++i) {
+        const auto row = directory+i*24;
+        const auto spec = catalog[int(i)].toObject();
+        const auto at = quint32(spec["rom"].toInteger());
+        if (at < start || at+8 > start+owner.size()) continue;
+        const auto words = spec["words"].toArray();
+        const auto target = u32(rom.bytes(),row+12);
+        if (u32(rom.bytes(),row)!=at || target<code || target>=code+codeSize || (target&3) ||
+            u32(rom.bytes(),row+4)!=quint32(words[0].toInteger()) ||
+            u32(rom.bytes(),row+8)!=quint32(words[1].toInteger()))
+            throw Error("Invalid shared attack owner entry");
+        // Export removes hooks before rebuilding other owners; both the
+        // installed and already-restored forms must retain their exact words.
+        const auto first=u32(result,at-start), second=u32(result,at-start+4);
+        if (first==quint32(words[0].toInteger()) && second==quint32(words[1].toInteger())) continue;
+        if (first!=(0x08000000U|((target>>2)&0x3ffffff)) || second)
+            throw Error("Shared attack owner contains unrecognized code");
+        put32(result,at-start,quint32(words[0].toInteger()));
+        put32(result,at-start+4,quint32(words[1].toInteger()));
+    }
+    return result;
 }
 QByteArray AttackPlacement::descriptor(const QByteArray &data) const {
     if (data.size() != size)

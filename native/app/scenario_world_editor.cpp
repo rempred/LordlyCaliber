@@ -127,6 +127,12 @@ ScenarioWorldEditor::ScenarioWorldEditor(Project *project, QUndoStack *undo,
     shop_->setToolTip("Choose an existing inventory, or None to remove the shop. "
                       "Checking Shop creates an inventory when this site has none.");
     form->addRow("Shop ID", shop_);
+    auto editStock = new QPushButton("Edit shop inventory…");
+    editStock->setObjectName("worldEditShop");
+    form->addRow(editStock);
+    connect(editStock, &QPushButton::clicked, this, [this] {
+        if (siteId() >= 0 && shop_->value() > 0 && editShop) editShop(shop_->value(), siteId());
+    });
     allegiance_ = new QComboBox;
     allegiance_->setObjectName("worldAllegiance");
     allegiance_->addItem("Keep loaded value", -1);
@@ -311,6 +317,7 @@ void ScenarioWorldEditor::showSite() {
     select(type_, u8(record, 26));
     shop_->setMaximum(std::max(project_->shops()->size() - 1, int(u8(record, 27))));
     shop_->setValue(u8(record, 27));
+    findChild<QPushButton *>("worldEditShop")->setEnabled(!objective && (u8(record, 25) & 1) && u8(record, 27) > 0);
     if ((u8(record, 25) & 1) && u8(record, 27)) rememberedShops_[id] = u8(record, 27);
     for (int i = 0; i < 4; ++i)
         facilities_[i]->setChecked(u8(record, 25) & (1 << i));

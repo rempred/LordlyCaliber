@@ -270,6 +270,15 @@ int RecordModel::createItem(const QString &name) {
         return -1;
     }
 }
+void RecordModel::setPersonalName(int classId, int nameId, const QString &newName) {
+    try {
+        auto next = *project_; auto names = next.personalNames();
+        if (!newName.isNull()) nameId = names.create(newName);
+        names.assign(classId, nameId); next.setPersonalNames(names.json());
+        if (next.personalNames().json() != project_->personalNames().json())
+            undo_->push(new AddClass(this, *project_, std::move(next), "Set unique name"));
+    } catch (const Error &error) { emit editRejected(QString::fromUtf8(error.what())); }
+}
 void RecordModel::applyProject(const Project &project) {
     emit aboutToReplace();
     beginResetModel();

@@ -1,4 +1,5 @@
 #include "app/effect_library_editor.h"
+#include <QCheckBox>
 #include "app/content_refresh.h"
 #include "app/effect_composer.h"
 #include "app/sprite_library_command.h"
@@ -92,8 +93,9 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
     auto playback = new QHBoxLayout;
     scene->addLayout(playback);
     play_ = new QPushButton("Play");
-    auto restart = new QPushButton("Restart");
-    playback->addWidget(play_); playback->addWidget(restart); playback->addStretch();
+    play_->setObjectName("effectLibraryPlay");
+    loop_ = new QCheckBox("Loop");loop_->setObjectName("effectLibraryLoop");
+    playback->addWidget(play_); playback->addWidget(loop_); playback->addStretch();
     auto exportSequenceButton = new QPushButton("Export sequence…");
     exportSequenceButton->setObjectName("effectLibraryExportSequence");
     exportSequenceButton->setEnabled(false);
@@ -120,10 +122,14 @@ EffectLibraryEditor::EffectLibraryEditor(Project *project, QUndoStack *undo,
         });
     }
     connect(play_, &QPushButton::clicked, this, [this] {
-        if (playing_) pausedMs_ += clock_.elapsed(); else clock_.restart();
-        playing_ = !playing_; play_->setText(playing_ ? "Pause" : "Play");
+        if (playing_) pausedMs_ += clock_.elapsed();
+        else {
+            if (pausedMs_ * 30 / 1000 >= clip_.ticks - 1) pausedMs_ = 0;
+            clock_.restart();
+        }
+        playing_ = !playing_; play_->setText(playing_ ? "Pause" : "Play");showFrame();
     });
-    connect(restart, &QPushButton::clicked, this, [this] { pausedMs_ = 0; clock_.restart(); showFrame(); });
+
     auto piece = new QVBoxLayout;
     views->addLayout(piece, 1);
     piecePreview_ = new QLabel;
@@ -348,7 +354,12 @@ void EffectLibraryEditor::loadSelection() {
 }
 void EffectLibraryEditor::showFrame() {
     if (clip_.ticks <= 0 || clip_.images.isEmpty()) return;
-    int tick = int((pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000) % clip_.ticks, index = 0;
+    const auto elapsed = (pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000;
+    if (playing_ && !loop_->isChecked() && elapsed >= clip_.ticks) {
+        pausedMs_ = (qint64(clip_.ticks) * 1000 + 29) / 30;
+        playing_ = false;play_->setText("Play");
+    }
+    int tick = loop_->isChecked() ? int(elapsed % clip_.ticks) : int(qMin<qint64>(elapsed,clip_.ticks-1)), index = 0;
     while (index + 1 < clip_.holds.size() && tick >= clip_.holds[index]) tick -= clip_.holds[index++];
     preview_->setPixmap(QPixmap::fromImage(effectChecker(clip_.images[index])).scaled(
         preview_->size(), Qt::KeepAspectRatio, Qt::FastTransformation));

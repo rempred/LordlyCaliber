@@ -1,0 +1,3 @@
+# Game inputs are authenticated byte-for-byte before compilation. Windows
+# checkouts must preserve the committed bytes, including accepted C and headers.
+* -text

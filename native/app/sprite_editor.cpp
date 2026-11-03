@@ -409,6 +409,7 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
     work->addLayout(frameBar);
     play_ = button(frameBar, "Play", "spritePlay");
     play_->setCheckable(true);
+    loop_ = new QCheckBox("Loop");loop_->setObjectName("spriteLoop");frameBar->addWidget(loop_);
     connect(button(frameBar, "+ Frame", "spriteAddFrame"), &QPushButton::clicked, this, [this] {
         change("Add sprite frame", [&](SpriteAsset &a) {
             auto frame = newFrame(a.size);
@@ -491,8 +492,10 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
         refresh();
     });
     connect(frames_, &QListWidget::currentRowChanged, this, [this] {
-        if (!refreshing_)
+        if (!refreshing_) {
+            if (!timer_->isActive()) {playTicks_=0;playbackFinished_=false;}
             refreshFrame(true);
+        }
     });
     connect(layers_, &QListWidget::currentRowChanged, this, [this] {
         if (!refreshing_)
@@ -606,6 +609,9 @@ void SpriteEditor::refresh() {
     timer_->stop();
     canvas_->setEnabled(true);
     refreshing_ = true;
+    playbackFinished_ = false;
+    playTicks_ = 0;
+    playedTicks_ = 0;
     const int oldFrame = frames_->currentRow(), oldLayer = layers_->currentRow();
     assets_->clear();
     for (const auto &asset : project_->sprites().assets()) {
@@ -681,13 +687,12 @@ void SpriteEditor::play(bool enabled) {
     canvas_->cancelStroke();
     canvas_->setEnabled(!enabled);
     play_->setText(enabled ? "Pause" : "Play");
-    playTicks_ = 0;
-    playedTicks_ = 0;
-    playbackClock_.start();
-    if (enabled && current())
-        timer_->start();
-    else
-        timer_->stop();
+    if (enabled && playbackFinished_) {
+        playbackFinished_ = false;playTicks_=0;frames_->setCurrentRow(0);
+    }
+    if (enabled && current()) {
+        playedTicks_ = 0;playbackClock_.start();timer_->start();
+    } else timer_->stop();
 }
 void SpriteEditor::tick() {
     const auto asset = current();
@@ -699,11 +704,14 @@ void SpriteEditor::tick() {
     int total = 0;
     for (const auto &frame : asset->frames)
         total += std::max(1, frame.ticks);
-    playTicks_ += int((now - playedTicks_) % total);
+    playTicks_ += int(loop_->isChecked() ? (now - playedTicks_) % total : qMin<qint64>(now - playedTicks_,total));
     playedTicks_ = now;
     int row = frames_->currentRow();
     while (playTicks_ >= std::max(1, asset->frames[row].ticks)) {
         playTicks_ -= std::max(1, asset->frames[row].ticks);
+        if (row + 1 == asset->frames.size() && !loop_->isChecked()) {
+            play_->setChecked(false);frames_->setCurrentRow(row);playbackFinished_ = true;return;
+        }
         row = (row + 1) % int(asset->frames.size());
     }
     frames_->setCurrentRow(row);

@@ -6,6 +6,7 @@
 #include "app/attack_editor.h"
 #include "app/attack_effect_editor.h"
 #include "app/category_icon_editor.h"
+#include "app/campaign_editor.h"
 #include "app/change_report_dialog.h"
 #include "app/class_setup.h"
 #include "app/combat_editor.h"
@@ -19,6 +20,10 @@
 #include "app/formation_board.h"
 #include "app/leader_affinity_editor.h"
 #include "app/main_window.h"
+#include "app/rom_build_dialog.h"
+#include "app/custom_content.h"
+#include "app/personal_name_picker.h"
+#include "app/content_refresh.h"
 #include "app/pending_edits.h"
 #include "app/persuasion_editor.h"
 #include "app/portrait_editor.h"
@@ -29,6 +34,10 @@
 #include "app/rom_art_import.h"
 #include "app/save_army_drag.h"
 #include "app/save_editor.h"
+#include "app/save_unit_editor.h"
+#include "app/save_character_card.h"
+#include "app/names_text_editor.h"
+#include "app/item_picker.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_event_editor.h"
 #include "app/scenario_map_editor.h"
@@ -89,6 +98,7 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QScrollArea>
@@ -110,6 +120,7 @@
 #include <QUndoGroup>
 #include <QWheelEvent>
 #include <QtTest>
+#include <QtConcurrent>
 #include <bit>
 #include <cmath>
 using namespace lordly;
@@ -136,6 +147,317 @@ static void editScenarioMembers(QWidget &editor,const QString &prefix,const std:
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void romBuildProgress() {
+        RomBuildDialog dialog("C:/exports/Test ROM.v64");
+        dialog.show();
+        auto overall = dialog.findChild<QProgressBar *>("romBuildOverall");
+        auto current = dialog.findChild<QProgressBar *>("romBuildCurrent");
+        auto log = dialog.findChild<QPlainTextEdit *>("romBuildLog");
+        auto close = dialog.findChild<QPushButton *>("romBuildClose");
+        QVERIFY(overall && current && log && close);
+        QVERIFY(!close->isEnabled());
+        dialog.reject(); QVERIFY(dialog.isVisible());
+        dialog.close(); QVERIFY(dialog.isVisible());
+        auto callback = dialog.progressCallback();
+        auto worker = QtConcurrent::run([callback] {
+            callback({2, "Building scenarios and story", "Building squads", {"Squads compiled"}});
+            callback({6, "Verifying ROM", "Checking records", {"Reopened ROM"}, 12, 20});
+        });
+        worker.waitForFinished();
+        QTRY_VERIFY(log->toPlainText().contains("Reopened ROM"));
+        QCOMPARE(overall->value(), 6);
+        QCOMPARE(current->value(), 12); QCOMPARE(current->maximum(), 20);
+        dialog.finish("Example <compiler error>", false, true);
+        QVERIFY(close->isEnabled());
+        QVERIFY(overall->value() < overall->maximum());
+        QCOMPARE(current->value(), 0); QCOMPARE(current->maximum(), 1);
+        QVERIFY(log->toPlainText().contains("Example <compiler error>"));
+        dialog.findChild<QPushButton *>("romBuildCopy")->click();
+        QVERIFY(QApplication::clipboard()->text().contains("Squads compiled"));
+        QVERIFY(QApplication::clipboard()->text().contains("Example <compiler error>"));
+        // A late queued progress event must not overwrite a failure.
+        callback({8, "ROM exported", {}, {"late message"}, 1, 1});
+        QCoreApplication::processEvents();
+        QCOMPARE(overall->value(), 6);
+        QVERIFY(!log->toPlainText().contains("late message"));
+        QSignalSpy review(&dialog, &RomBuildDialog::reviewRequested);
+        dialog.findChild<QPushButton *>("romBuildReview")->click();
+        QCOMPARE(review.size(), 1); QVERIFY(!dialog.isVisible());
+        RomBuildDialog success("C:/exports/Test ROM.v64"); success.show();
+        success.finish({}, true);
+        QCOMPARE(success.findChild<QProgressBar *>("romBuildOverall")->value(), BuildProgress::stageCount);
+        QSignalSpy test(&success, &RomBuildDialog::testRequested);
+        success.findChild<QPushButton *>("romBuildTest")->click();
+        QCOMPARE(test.size(), 1); QVERIFY(!success.isVisible());
+        RomBuildDialog automatic("C:/exports/Test ROM.v64"); automatic.show();
+        automatic.finish(); automatic.accept(); QVERIFY(!automatic.isVisible());
+    }
+    void uniqueNameAndDeletionControls() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        MainWindow window;window.resize(1500,950);window.loadRom(path);window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("classesTable"),60000);
+        auto grid=window.findChild<QTableView *>("classesTable");QVERIFY(grid);
+        auto proxy=qobject_cast<QSortFilterProxyModel *>(grid->model());QVERIFY(proxy);
+        auto model=qobject_cast<RecordModel *>(proxy->sourceModel());QVERIFY(model);
+        auto select=[&](int id){grid->setCurrentIndex(proxy->mapFromSource(model->index(id,1)));QCoreApplication::processEvents();};
+        select(0x76);auto names=window.findChild<QLabel *>("classUniqueName");QVERIFY(names);
+        QCOMPARE(names->text(),"Asnabel");const auto className=model->index(0x76,1).data();
+        QTimer::singleShot(0,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            auto close=qScopeGuard([&]{if(dialog->isVisible())dialog->reject();});
+            auto list=dialog->findChild<QListWidget *>("personalNameList");QVERIFY(list);
+            const auto match=list->findItems("Magnus",Qt::MatchExactly);QVERIFY(!match.isEmpty());list->setCurrentItem(match.first());
+            dialog->findChild<QPushButton *>("usePersonalName")->click();
+        });
+        window.findChild<QPushButton *>("choosePersonalName")->click();
+        QCOMPARE(names->text(),"Magnus");QCOMPARE(model->index(0x76,1).data(),className);
+        auto undo=window.findChild<QUndoStack *>();QVERIFY(undo);undo->undo();QCOMPARE(names->text(),"Asnabel");undo->redo();QCOMPARE(names->text(),"Magnus");
+        const int removed=model->createClass("Delete me"),kept=model->createClass("Keep me");QCOMPARE(removed,165);QCOMPARE(kept,166);
+        select(removed);auto remove=window.findChild<QPushButton *>("deleteClass");QVERIFY(remove&&remove->isEnabled());remove->click();
+        QVERIFY(!proxy->mapFromSource(model->index(removed,1)).isValid());QVERIFY(proxy->mapFromSource(model->index(kept,1)).isValid());
+        undo->undo();QVERIFY(proxy->mapFromSource(model->index(removed,1)).isValid());undo->redo();QVERIFY(!proxy->mapFromSource(model->index(removed,1)).isValid());
+        QCOMPARE(model->createClass("Reused slot"),removed);select(removed);QCOMPARE(names->text(),"Random name");
+        QCOMPARE(model->index(kept,1).data().toString(),"Keep me");QCoreApplication::processEvents();QVERIFY(window.grab().save("unique-name-controls.png"));
+    }
+    void personalNameTablesPicker() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto p=Project::fromRom(Rom::open(path));p.loadNameTables();QUndoStack undo;RecordModel model(&p,Table::Classes,&undo);
+        const auto original=p.manifest();const auto names=p.personalNames();
+        auto choose=[&](const std::function<void(QDialog *)> &action){
+            QTimer::singleShot(0,[&]{auto d=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(d);auto close=qScopeGuard([&]{if(d->isVisible())d->reject();});action(d);});
+            const auto choice=pickPersonalName(nullptr,p,0x76);
+            if(choice)model.setPersonalName(0x76,choice->id,choice->newName);
+            return choice.has_value();
+        };
+        QVERIFY(!choose([&](QDialog *d){
+            auto tables=d->findChild<QComboBox *>("personalNameTable");QCOMPARE(tables->count(),4);
+            tables->setCurrentIndex(2);d->findChild<QLineEdit *>("newPersonalNameText")->setText("Unconfirmed");d->reject();
+        }));QCOMPARE(p.manifest(),original);
+        for(int pool=0;pool<3;++pool) {
+            const auto expected=p.nameTables()->randomName(pool,8);
+            QVERIFY(choose([&](QDialog *d){
+                d->findChild<QComboBox *>("personalNameTable")->setCurrentIndex(pool+1);
+                auto list=d->findChild<QListWidget *>("personalNameList");QCOMPARE(list->count(),256);
+                d->findChild<QLineEdit *>("personalNameSearch")->setText(expected);
+                list->setCurrentRow(8);QVERIFY(!list->item(8)->isHidden());d->findChild<QPushButton *>("usePersonalName")->click();
+            }));
+            QCOMPARE(p.personalNames().names()[p.personalNames().assignment(0x76)],expected.toLatin1());
+            QCOMPARE(p.personalNames().assignment(0x51),names.assignment(0x51));
+            undo.undo();QCOMPARE(p.manifest(),original);
+        }
+        QVERIFY(choose([&](QDialog *d){d->findChild<QLineEdit *>("newPersonalNameText")->setText("NewHero");d->findChild<QPushButton *>("createPersonalName")->click();}));
+        const auto created=p.personalNames().json();QCOMPARE(p.personalNames().names()[p.personalNames().assignment(0x76)],QByteArray("NewHero"));
+        undo.undo();QCOMPARE(p.manifest(),original);undo.redo();QCOMPARE(p.personalNames().json(),created);
+        QTemporaryDir folder;p.saveFolder(folder.path());auto restored=Project::fromRom(Rom::open(path));restored.applyManifest(Project::readProject(folder.path()));QCOMPARE(restored.personalNames().json(),created);
+        QVERIFY(choose([&](QDialog *d){d->findChild<QPushButton *>("useRandomName")->click();}));QCOMPARE(p.personalNames().assignment(0x76),-1);
+        undo.undo();QCOMPARE(p.personalNames().json(),created);
+    }
+    void campaignBranchOverview() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});editor.resize(1500,950);editor.show();
+        editor.selectNode(27);editor.findChild<QPushButton *>("campaignEditEntryRules")->click();QCoreApplication::processEvents();
+        auto rows=editor.findChild<QTableWidget *>("storylineRules");QVERIFY(rows);QVERIFY(rows->rowCount()>=5);
+        QSet<int> events;for(int row=0;row<rows->rowCount();++row){QCOMPARE(rows->item(row,2)->text(),QString("Game"));events.insert(rows->item(row,1)->data(Qt::UserRole).toInt());}
+        for(int event:{22,23,24,53,54})QVERIFY(events.contains(event));
+        QVERIFY(!editor.findChild<QPushButton *>("storylineEditBranch")->isEnabled());
+        QVERIFY(!editor.findChild<QPushButton *>("storylineRemoveBranch")->isEnabled());
+        QVERIFY(editor.findChild<QPushButton *>("storylineOpenEvent")->isEnabled());
+        auto badge=editor.findChild<QLabel *>("storylineWipBadge");QVERIFY(badge);QVERIFY(!editor.findChild<QLabel *>("cutsceneWipBadge"));
+        auto bar=editor.findChild<QTabWidget *>("campaignTabs")->tabBar();QVERIFY(bar);
+        const QRect badgeBounds(badge->mapTo(bar,QPoint()),badge->size());
+        QVERIFY(bar->tabRect(2).adjusted(0,0,-8,0).contains(badgeBounds));
+        QVERIFY(editor.grab().save("native/build/campaign-branches-updated.png"));
+        editor.findChild<QPushButton *>("storylineOpenEvent")->click();QCOMPARE(editor.findChild<QTabWidget *>("storylineTabs")->currentIndex(),2);
+    }
+    void suppliedProjectDeletion() {
+        const auto rom=qEnvironmentVariable("LORDLY_TEST_ROM"),file=qEnvironmentVariable("LORDLY_TEST_PROJECT");
+        if(rom.isEmpty()||file.isEmpty())QSKIP("Supplied audit project and private ROM required");
+        QFile input(file);QVERIFY(input.open(QIODevice::ReadOnly));const auto original=input.readAll();input.close();
+        QTemporaryDir copy;QVERIFY(copy.isValid());atomicWrite(copy.filePath("project.json"),original);
+        auto project=Project::fromRom(Rom::open(rom));project.applyManifest(Project::readProject(copy.filePath("project.json")));
+        QUndoStack undo;const auto before=project.manifest();
+        for(int id:{165,166,167}) {
+            QVERIFY(project.record(Table::Classes,id).name.contains("delete",Qt::CaseInsensitive));
+            QVERIFY(project.deletionUses("classes",id).isEmpty());
+        }
+        QTimer::singleShot(0,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if(!dialog){QFAIL("Missing delete dialog");return;}
+            auto close=qScopeGuard([&]{dialog->reject();});
+            auto rows=dialog->findChild<QListWidget *>("customContentList");
+            auto remove=dialog->findChild<QPushButton *>("deleteCustomContent");QVERIFY(rows&&remove);
+            for(int id:{165,166,167}) {
+                QListWidgetItem *chosen=nullptr;
+                for(int row=0;row<rows->count();++row)if(rows->item(row)->data(Qt::UserRole).toInt()==id)chosen=rows->item(row);
+                QVERIFY(chosen);rows->setCurrentItem(chosen);QVERIFY(remove->isEnabled());remove->click();
+                QVERIFY(project.contentDeleted("classes",id));
+            }
+        });
+        showCustomContent(nullptr,&project,&undo,"classes");QCOMPARE(undo.count(),3);
+        const auto after=project.manifest();
+        for(int n=0;n<3;++n)undo.undo();QCOMPARE(project.manifest(),before);
+        for(int n=0;n<3;++n)undo.redo();QCOMPARE(project.manifest(),after);
+        project.saveFolder(copy.filePath("deleted"));
+        auto reopened=Project::fromRom(Rom::open(rom));reopened.applyManifest(Project::readProject(copy.filePath("deleted")));
+        QCOMPARE(reopened.deletedContent(),project.deletedContent());
+        for(int id:{168,169,170})QCOMPARE(reopened.record(Table::Classes,id).bytes,project.record(Table::Classes,id).bytes);
+        QVERIFY(input.open(QIODevice::ReadOnly));QCOMPARE(input.readAll(),original);
+    }
+    void campaignRoadControls() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});editor.resize(1500,950);editor.show();editor.selectNode(6);QCoreApplication::processEvents();
+        QObject unrelatedEditor;int unrelatedRefreshes=0;
+        watchContentChanges(&undo,&unrelatedEditor,[&]{++unrelatedRefreshes;});
+        QVERIFY(!editor.findChild<QPushButton *>("campaignConnectNodes"));
+        auto roads=editor.findChild<QListWidget *>("campaignRoads");auto canvas=editor.findChild<QWidget *>("campaignMapCanvas");QVERIFY(roads&&canvas);
+        auto icon=editor.findChild<QComboBox *>("campaignLocationIcon");QVERIFY(icon);QCOMPARE(icon->currentData().toInt(),0);
+        const auto flagImage=canvas->grab().toImage();icon->setCurrentIndex(1);QMetaObject::invokeMethod(icon,"activated",Qt::DirectConnection,Q_ARG(int,1));
+        QCOMPARE(project.campaignMap()->icon(6),1);QVERIFY(canvas->grab().toImage()!=flagImage);QCOMPARE(project.campaignMap()->icon(7),1);
+        undo.undo();QCOMPARE(project.campaignMap()->icon(6),0);QCOMPARE(icon->currentData().toInt(),0);
+        undo.redo();QCOMPARE(project.campaignMap()->icon(6),1);undo.undo();
+        auto screen=[&](QPointF p){const double scale=qMin(canvas->width()/512.,canvas->height()/320.);return (QPointF((canvas->width()-512*scale)/2,(canvas->height()-320*scale)/2)+p*scale).toPoint();};
+        int road=0,dot=-1;
+        for(int id=1;id<=project.campaignMap()->totalRoads()&&!road;++id){const auto points=project.campaignMap()->roadDots(id);for(int n=0;n<points.size();++n){bool clear=true;for(int node=1;node<=40;++node)if(project.campaignMap()->position(node).x()&&QLineF(points[n]+QPoint(3,3),project.campaignMap()->position(node)).length()<15)clear=false;if(clear){road=id;dot=n;break;}}}
+        QVERIFY(road>0);const auto before=project.campaignMap()->roadDots(road);const auto end=screen(before[dot]+QPoint(9,7));
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,screen(before[dot]+QPoint(3,3)));
+        const auto image=canvas->grab().toImage();QTest::mouseMove(canvas,end,20);QCoreApplication::processEvents();
+        QCOMPARE(project.campaignMap()->roadDots(road),before);QVERIFY(canvas->grab().toImage()!=image);
+        QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,end);QVERIFY(project.campaignMap()->roadDots(road)!=before);
+        QCOMPARE(undo.count(),1);QCOMPARE(unrelatedRefreshes,0);QVERIFY(project.campaignMap()->roadWaypoints(road).size()>1);
+        const auto edited=project.campaignMap()->roadDots(road);undo.undo();QCOMPARE(project.campaignMap()->roadDots(road),before);undo.redo();QCOMPARE(project.campaignMap()->roadDots(road),edited);
+        const auto ends=project.campaignMap()->road(road);editor.selectNode(ends.first);QCoreApplication::processEvents();
+        int expected=0;for(int id=1;id<=project.campaignMap()->totalRoads();++id){auto e=project.campaignMap()->road(id);expected+=e.first==ends.first||e.second==ends.first;}QCOMPARE(roads->count(),expected);
+        for(int row=0;row<roads->count();++row)if(roads->item(row)->data(Qt::UserRole).toInt()==road)roads->setCurrentRow(row);
+        editor.findChild<QPushButton *>("campaignRemoveRoad")->click();QCOMPARE(project.campaignMap()->road(road),qMakePair(0,0));QCOMPARE(roads->count(),expected-1);undo.undo();QCOMPARE(project.campaignMap()->road(road),ends);
+        const auto pos=project.campaignMap()->position(ends.first);const auto priorDots=project.campaignMap()->roadDots(road);const auto priorImage=canvas->grab().toImage();
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,screen(pos));QTest::mouseMove(canvas,screen(pos+QPoint(5,3)),20);QCoreApplication::processEvents();
+        QCOMPARE(project.campaignMap()->position(ends.first),pos);QVERIFY(canvas->grab().toImage()!=priorImage);
+        QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,screen(pos+QPoint(5,3)));QVERIFY(project.campaignMap()->roadDots(road)!=priorDots);undo.undo();QCOMPARE(project.campaignMap()->roadDots(road),priorDots);
+        QCoreApplication::processEvents();QVERIFY(editor.grab().save("campaign-road-controls.png"));
+    }
+    void campaignNavigationAndEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QFile catalog(":/catalog.json");QVERIFY(catalog.open(QIODevice::ReadOnly));
+        auto project=Project::fromRom(Rom::open(path),QJsonDocument::fromJson(catalog.readAll()).object());project.loadShops();project.loadEncounters();project.loadScenarios();project.loadWorld();
+        QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});editor.resize(1500,950);editor.show();
+        auto tabs=editor.findChild<QTabWidget *>("campaignTabs");auto navigation=editor.findChild<QTabBar *>("scenarioNavigation");
+        QVERIFY(tabs&&navigation);QCOMPARE(tabs->tabText(0),"World Map");QCOMPARE(tabs->tabText(1),"Scenarios");QCOMPARE(tabs->tabText(2),"Storyline");
+        auto scenarioList=editor.findChild<QListWidget *>("scenarioList");
+        auto selectScenario=[&](int key){for(int i=0;i<scenarioList->count();++i)if(scenarioList->item(i)->data(Qt::UserRole).toInt()==key){scenarioList->setCurrentRow(i);return;}};
+        int shopKey=-1,shopId=-1,siteRow=-1;
+        for(const auto &s:project.scenarios()->entries()) {
+            for(int row=0;row<project.world()->siteCount(s.key);++row){const auto town=project.world()->town(u16(project.world()->scenario(s.key).sites,1+row*4));if((u8(town,25)&1)&&u8(town,27)>0&&u8(town,24)!=255){shopKey=s.key;shopId=u8(town,27);siteRow=row;break;}}
+            if(shopKey>=0)break;
+        }
+        QVERIFY(shopKey>=0);selectScenario(shopKey);navigation->setCurrentIndex(5);
+        auto scope=editor.findChild<QComboBox *>("shopScope");auto shops=editor.findChild<QListWidget *>("shopList");
+        QCOMPARE(scope->currentIndex(),0);QVERIFY(shops->isVisible());
+        bool found=false;for(int i=0;i<shops->count();++i)if(shops->item(i)->data(Qt::UserRole).toInt()==shopId){QVERIFY(!shops->item(i)->isHidden());shops->setCurrentRow(i);found=true;}
+        QVERIFY(found);scope->setCurrentIndex(1);for(int i=0;i<shops->count();++i)QVERIFY(!shops->item(i)->isHidden());
+        scope->setCurrentIndex(0);navigation->setCurrentIndex(0);
+        auto objects=editor.findChild<QListWidget *>("mapObjects");for(int i=0;i<objects->count();++i)if(objects->item(i)->data(Qt::UserRole).toInt()==int(MapObject::Site)&&objects->item(i)->data(Qt::UserRole+1).toInt()==siteRow)objects->setCurrentRow(i);
+        auto openShop=editor.findChild<QPushButton *>("worldEditShop");QVERIFY(openShop&&openShop->isEnabled());openShop->click();QCOMPARE(navigation->currentIndex(),5);QCOMPARE(shops->currentItem()->data(Qt::UserRole).toInt(),shopId);
+        auto stock=project.shops()->stock(shopId);auto inventory=editor.findChild<QListWidget *>("shopConsumablesList");
+        if(inventory->count()){inventory->setCurrentRow(0);editor.findChild<QPushButton *>("shopConsumablesRemove")->click();QCOMPARE(project.shops()->stock(shopId).consumables.size(),stock.consumables.size()-1);undo.undo();QCOMPARE(project.shops()->stock(shopId),stock);}
+        QCoreApplication::processEvents();QVERIFY(editor.grab().save("campaign-shops.png"));
+        navigation->setCurrentIndex(6);selectScenario(1);QCoreApplication::processEvents();
+        QVERIFY(!editor.findChild<QComboBox *>("encounterScope"));auto map=editor.findChild<QComboBox *>("encounterMapKey");
+        QCOMPARE(map->currentData().toInt(),1);QVERIFY(!editor.findChild<QListWidget *>("encounterPools")->isVisible());
+        QVERIFY(!editor.findChild<QLineEdit *>("encounterSearch")->isVisible());
+        QTimer::singleShot(0,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            auto close=qScopeGuard([&]{dialog->reject();});
+            QVERIFY(dialog->findChild<QListWidget *>("encounterPools")->isVisible());
+            QVERIFY(dialog->findChild<QLineEdit *>("encounterSearch")->isVisible());
+        });
+        editor.findChild<QPushButton *>("encounterOverview")->click();
+        selectScenario(2);QCOMPARE(map->currentData().toInt(),2);QCoreApplication::processEvents();QVERIFY(editor.grab().save("campaign-encounters.png"));
+        editor.selectNode(6);const auto point=project.campaignMap()->position(6);
+        editor.findChild<QSpinBox *>("campaignNodeX")->setValue(point.x()+3);editor.findChild<QPushButton *>("campaignApplyNode")->click();QCOMPARE(project.campaignMap()->position(6),point+QPoint(3,0));undo.undo();QCOMPARE(project.campaignMap()->position(6),point);
+        const int spare=project.campaignMap()->availableNodes().first();
+        const auto storyBefore=project.sceneEvents()->json();
+        auto createLocation=editor.findChild<QPushButton *>("campaignCreateNode");auto canvas=editor.findChild<QWidget *>("campaignMapCanvas");QVERIFY(createLocation&&canvas);
+        auto screen=[&](QPoint p){const double scale=qMin(canvas->width()/512.,canvas->height()/320.);return (QPointF((canvas->width()-512*scale)/2,(canvas->height()-320*scale)/2)+QPointF(p)*scale).toPoint();};
+        createLocation->click();QVERIFY(!QApplication::activeModalWidget());QCOMPARE(project.campaignMap()->position(spare),QPoint());
+        QTest::keyClick(canvas,Qt::Key_Escape);QCOMPARE(project.campaignMap()->position(spare),QPoint());
+        QPoint placement;
+        for(int y=20;y<300&&placement.isNull();y+=20)for(int x=20;x<500;++x){bool clear=true;for(int id=1;id<=40;++id)if(QLineF(QPoint(x,y),project.campaignMap()->position(id)).length()<20)clear=false;if(clear){placement={x,y};break;}}
+        QVERIFY(!placement.isNull());createLocation->click();QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,screen(placement));
+        QCOMPARE(project.campaignMap()->position(spare),placement);QCOMPARE(project.campaignMap()->name(spare),QString("New map location"));
+        QCOMPARE(project.campaignMap()->totalRoads(),40);QCOMPARE(project.sceneEvents()->json(),storyBefore);
+        undo.undo();QCOMPARE(project.campaignMap()->position(spare),QPoint());undo.redo();QCOMPARE(project.campaignMap()->position(spare),placement);
+        auto locationName=editor.findChild<QLineEdit *>("campaignNodeName");QVERIFY(locationName);locationName->setText("Test map location");editor.findChild<QPushButton *>("campaignApplyNode")->click();
+        QCOMPARE(project.campaignMap()->name(spare),QString("Test map location"));QCOMPARE(project.sceneEvents()->json(),storyBefore);
+        auto addRoad=editor.findChild<QPushButton *>("campaignAddRoad");QVERIFY(addRoad);
+        addRoad->click();QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,screen(project.campaignMap()->position(6)));
+        QCOMPARE(project.campaignMap()->totalRoads(),41);QCOMPARE(project.campaignMap()->road(41),qMakePair(spare,6));
+        editor.selectNode(spare);
+        const auto sourcePosition=project.campaignMap()->position(spare),targetPosition=project.campaignMap()->position(8);
+        addRoad->click();QVERIFY(!QApplication::activeModalWidget());QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,screen(sourcePosition));QCOMPARE(project.campaignMap()->totalRoads(),41);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,screen(project.campaignMap()->position(6)));QCOMPARE(project.campaignMap()->totalRoads(),41);
+        QTest::keyClick(canvas,Qt::Key_Escape);QVERIFY(canvas->cursor().shape()!=Qt::CrossCursor);
+        addRoad->click();QTest::mouseClick(canvas,Qt::RightButton);QVERIFY(canvas->cursor().shape()!=Qt::CrossCursor);QCOMPARE(project.campaignMap()->totalRoads(),41);
+        addRoad->click();addRoad->click();QVERIFY(canvas->cursor().shape()!=Qt::CrossCursor);
+        addRoad->click();QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,screen(targetPosition));
+        QVERIFY(canvas->cursor().shape()!=Qt::CrossCursor);QCOMPARE(project.campaignMap()->position(spare),sourcePosition);QCOMPARE(project.campaignMap()->position(8),targetPosition);
+        QCOMPARE(editor.findChild<QListWidget *>("campaignNodes")->currentItem()->data(Qt::UserRole).toInt(),spare);
+        QCOMPARE(project.campaignMap()->totalRoads(),42);QCOMPARE(project.campaignMap()->road(42),qMakePair(spare,8));undo.undo();QCOMPARE(project.campaignMap()->totalRoads(),41);undo.redo();QCOMPARE(project.campaignMap()->totalRoads(),42);
+        QCoreApplication::processEvents();
+QVERIFY(editor.grab().save("campaign-world-map.png"));
+        editor.selectNode(spare);editor.findChild<QPushButton *>("campaignEditEntryRules")->click();
+        bool unlockSaved=false;QTimer::singleShot(0,&editor,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog)return;
+            auto missions=dialog->findChild<QListWidget *>("mapLocationUnlockMissions");if(!missions){dialog->reject();return;}
+            for(int i=0;i<missions->count();++i)if(missions->item(i)->data(Qt::UserRole).toInt()==4)missions->item(i)->setCheckState(Qt::Checked);
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();unlockSaved=dialog->result()==QDialog::Accepted;
+        });
+        editor.findChild<QPushButton *>("storylineUnlockLocation")->click();QVERIFY(unlockSaved);
+        QVERIFY(project.sceneEvents()->flagEdits()["4"].toObject()["unlockNodes"].toObject()[QString::number(spare)].toBool());
+        undo.undo();QCOMPARE(project.sceneEvents()->json(),storyBefore);QCOMPARE(project.campaignMap()->name(spare),QString("Test map location"));
+        editor.selectNode(6);editor.findChild<QPushButton *>("campaignEditEntryRules")->click();
+        bool branchSaved=false;QTimer::singleShot(0,&editor,[&]{auto dlg=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dlg)return;dlg->findChild<QPushButton *>("storyBranchAddCondition")->click();auto conditions=dlg->findChild<QTableWidget *>("storyBranchConditions");qobject_cast<QComboBox *>(conditions->cellWidget(0,0))->setCurrentIndex(250);dlg->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();branchSaved=dlg->result()==QDialog::Accepted;if(!branchSaved)dlg->reject();});
+        editor.findChild<QPushButton *>("storylineAddBranch")->click();QVERIFY(branchSaved);QCOMPARE(project.sceneEvents()->flagEdits()["0"].toObject()["6"].toArray().size(),1);QVERIFY(editor.grab().save("campaign-storyline.png"));
+        undo.undo();QVERIFY(project.sceneEvents()->flagEdits()["0"].toObject()["6"].toArray().isEmpty());
+        QTemporaryDir work;project.saveFolder(work.filePath("campaign"));auto saved=Project::fromRom(project.rom());saved.applyManifest(Project::readProject(work.filePath("campaign")));saved.loadSceneEvents();QCOMPARE(saved.campaignMap()->position(spare),project.campaignMap()->position(spare));QCOMPARE(saved.sceneEvents()->json(),project.sceneEvents()->json());
+    }
+    void animationPlaybackTransport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        QImage image(4,4,QImage::Format_RGBA8888);image.fill(Qt::red);
+        auto asset=SpriteAsset::fromImage("Playback test",image);asset.frames[0].ticks=2;
+        auto second=asset.frames[0];second.id=SpriteLibrary::newId();second.layers[0].image.fill(Qt::green);asset.frames<<second;
+        SpriteEditor sprites(&project,&undo,[]{});sprites.addAsset(asset);sprites.show();
+        const auto saved=project.manifest();
+        auto play=sprites.findChild<QPushButton *>("spritePlay");auto loop=sprites.findChild<QCheckBox *>("spriteLoop");
+        auto frames=sprites.findChild<QListWidget *>("spriteFrames");QVERIFY(play&&loop&&frames);QVERIFY(!loop->isChecked());
+        play->click();QTRY_VERIFY_WITH_TIMEOUT(!play->isChecked(),2000);QCOMPARE(frames->currentRow(),1);
+        play->click();QCOMPARE(frames->currentRow(),0);play->click();QVERIFY(!play->isChecked());
+        const int paused=frames->currentRow();QTest::qWait(100);QCOMPARE(frames->currentRow(),paused);
+        loop->setChecked(true);play->click();QTest::qWait(300);QVERIFY(play->isChecked());
+        loop->setChecked(false);QTRY_VERIFY_WITH_TIMEOUT(!play->isChecked(),2000);
+        QCOMPARE(project.manifest(),saved);sprites.hide();
+
+        EffectComposer composer(&project,{});composer.addPiece(asset);
+        auto composition=composer.composition();composition.duration=4;composition.pieces[0].duration=4;composer.setComposition(composition);composer.show();
+        auto effectPlay=composer.findChild<QPushButton *>("compositionPlay");
+        auto effectLoop=composer.findChild<QCheckBox *>("compositionPlaybackLoop");auto time=composer.findChild<QSlider *>("compositionTime");
+        QVERIFY(effectPlay&&effectLoop&&time);QVERIFY(!effectLoop->isChecked());
+        effectPlay->click();QTRY_COMPARE_WITH_TIMEOUT(effectPlay->text(),QString("Play"),2000);QCOMPARE(time->value(),3);
+        effectPlay->click();QCOMPARE(time->value(),0);effectPlay->click();
+        effectLoop->setChecked(true);effectPlay->click();QTest::qWait(300);QCOMPARE(effectPlay->text(),QString("Pause"));
+        effectPlay->click();QCOMPARE(composer.composition(),composition);composer.hide();
+
+        project.loadAttacks();AttackEffectEditor effect(&project,63,2);AttackVisual visual;visual.frames=asset;
+        effect.setVisual(visual);effect.show();
+        auto clipPlay=effect.findChild<QPushButton *>("effectPlay");auto clipLoop=effect.findChild<QCheckBox *>("effectLoop");
+        QVERIFY(clipPlay&&clipLoop);QVERIFY(!clipLoop->isChecked());
+        QTRY_VERIFY_WITH_TIMEOUT(clipPlay->isEnabled(),20000);QTRY_COMPARE_WITH_TIMEOUT(clipPlay->text(),QString("Play"),3000);
+        clipPlay->click();QVERIFY(effect.findChild<QLabel *>("effectFramePosition")->text().startsWith("Frame 1 /"));clipPlay->click();
+        clipLoop->setChecked(true);clipPlay->click();QTest::qWait(300);QCOMPARE(clipPlay->text(),QString("Pause"));
+        clipLoop->setChecked(false);QTRY_COMPARE_WITH_TIMEOUT(clipPlay->text(),QString("Play"),2000);
+        QCOMPARE(effect.visual(),visual);
+    }
     void fullEffectSequenceExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -505,7 +827,11 @@ class UiTests : public QObject {
             QTRY_VERIFY_WITH_TIMEOUT(!preview->pixmap().isNull(), 20000);
             auto play = dialog.findChild<QPushButton *>("effectPlay");
             if (play->text() == "Pause") play->click();
-            dialog.findChild<QPushButton *>("effectRestart")->click();
+            auto previewLoop=dialog.findChild<QCheckBox *>("effectLoop");QVERIFY(previewLoop);
+            previewLoop->setChecked(false);
+            int duration=0;for(const auto &frame:dialog.renderedSequence().frames)duration+=frame.ticks;
+            for(int i=0;i<duration;++i)dialog.findChild<QPushButton *>("effectStep")->click();
+            play->click();play->click();
             auto framePosition = dialog.findChild<QLabel *>("effectFramePosition");
             QVERIFY(framePosition->text().startsWith("Frame 1 /"));
             auto step = dialog.findChild<QPushButton *>("effectStep");
@@ -2151,7 +2477,7 @@ class UiTests : public QObject {
             QVERIFY(save);
             QVERIFY(tabs);
             QCOMPARE(tabs->tabText(tabs->count() - 1), QString("Art Library"));
-            QVERIFY(window.findChild<QLabel *>("cutsceneWipBadge"));
+            QVERIFY(window.findChild<QLabel *>("storylineWipBadge"));
             tabs->setCurrentWidget(seeder);
             QTRY_VERIFY_WITH_TIMEOUT(seeder->ready(), 30000);
             QCOMPARE(seeder->findChild<QTreeWidget *>("seederMissions")->topLevelItemCount(), 58);
@@ -4922,99 +5248,139 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
-    void saveRosterControls() {
+    void saveArmyLiveWorkflow() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
             QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legion-export.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1200, 850);
-            editor.show();
-            editor.loadBytes(input);
-            const int added = project.appendClass(5, "New recruit class");
-            QCOMPARE(added, 165);
-            auto add = editor.findChild<QPushButton *>("saveAddCharacter");
-            auto remove = editor.findChild<QPushButton *>("saveRemoveCharacter");
-            auto grid = editor.findChild<QTableView *>("saveCharacters");
-            QVERIFY(add && remove && grid);
-            QVERIFY(add->isEnabled());
-            QVERIFY(!remove->isEnabled());
-            bool offered = false;
-            QTimer::singleShot(0, &editor, [&] {
-                auto dialog = editor.findChild<QDialog *>("saveNewCharacterDialog");
-                if (!dialog)
-                    return;
-                auto choices = dialog->findChild<QComboBox *>("saveNewCharacterClass");
-                auto name = dialog->findChild<QLineEdit *>("saveNewCharacterName");
-                auto level = dialog->findChild<QSpinBox *>("saveNewCharacterLevel");
-                offered = choices && name && level && choices->findData(added) >= 0;
-                if (!offered) {
-                    dialog->reject();
-                    return;
-                }
-                choices->setCurrentIndex(choices->findData(added));
-                name->setText("Recruit");
-                level->setValue(20);
-                dialog->accept();
+            for(const auto script:{"save-unit-mips.cjs","army-create-mips.cjs","army-legion-mips.cjs"}) {
+                QProcess generator;generator.start("node",{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath(script),work.path(),"generate"});
+                QVERIFY(generator.waitForFinished(30000));QVERIFY2(!generator.exitCode(),generator.readAllStandardError().constData());
+            }
+            auto fixture=[&](const QString &file) {
+                QFile payload(work.filePath(file));if(!payload.open(QIODevice::ReadOnly))throw Error("Missing save fixture");
+                QByteArray bytes(0x10000,0);bytes.replace(0x3a,6180,payload.readAll());
+                if(!lc_save_record_seal(reinterpret_cast<unsigned char *>(bytes.data()+0x10),0x1850,0,0))throw Error("Invalid save fixture");return bytes;
+            };
+            auto project=Project::fromRom(Rom::open(path));SaveEditor editor(&project);editor.resize(1850,1050);editor.show();
+            const auto input=fixture("unit-payload.bin");editor.loadBytes(input);
+            project.loadNameTables();const auto originalLists=*project.nameTables();auto renamedLists=originalLists;
+            for(int i=0;i<256;++i){renamedLists.setRandomName(0,i,"MaleName");renamedLists.setRandomName(1,i,"FemaleName");renamedLists.setRandomName(2,i,"BeastName");}
+            const auto classes=project.classData();
+            QCOMPARE(editor.document()->randomCharacterName(project.rom(),classes,5,42,{},&renamedLists),QString("MaleName"));
+            QCOMPARE(editor.document()->randomCharacterName(project.rom(),classes,4,42,{},&renamedLists),QString("FemaleName"));
+            QCOMPARE(editor.document()->randomCharacterName(project.rom(),classes,71,42,{},&renamedLists),QString("BeastName"));
+            for(int id=1;id<classes.entries().size();++id)QVERIFY(!editor.document()->randomCharacterName(project.rom(),classes,id,42,{},&originalLists).isEmpty());
+            auto panel=editor.findChild<SaveUnitEditor *>("saveSquads");QVERIFY(panel);
+            auto tabs=editor.findChild<QTabWidget *>();QCOMPARE(tabs->widget(0),panel);QCOMPARE(tabs->currentIndex(),0);
+            for(const auto *removed:{"saveUnitApply","saveUnitDiscard","saveSwapUnit","saveReserveMember","saveNewUnitLeader","saveNewUnitCell"})QVERIFY(!editor.findChild<QWidget *>(removed));
+            panel->selectUnit(0);panel->selectCharacter(2);
+            auto strength=editor.findChild<QSpinBox *>("saveCard_strength");QVERIFY(strength);
+            const int oldStrength=editor.document()->value(SaveTable::Characters,2,"strength").toInt();
+            strength->setValue(oldStrength+3);QCOMPARE(editor.document()->value(SaveTable::Characters,2,"strength").toInt(),oldStrength+3);
+            QVERIFY(!editor.hasPendingUnitEdits());QVERIFY(editor.findChild<QPushButton *>("exportSave")->isEnabled());
+            editor.undoStack()->undo();QCOMPARE(strength->value(),oldStrength);editor.undoStack()->redo();QCOMPARE(strength->value(),oldStrength+3);
+            editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),input);
+            auto unity=editor.findChild<QSpinBox *>("saveUnitUnity");unity->setValue(44);
+            QCOMPARE(editor.document()->units().first().unity,44);editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),input);
+            auto board=editor.findChild<FormationBoard *>("saveUnitCellBoard");QVERIFY(board);
+            editor.findChild<QTabWidget *>("saveArmyDetails")->setCurrentIndex(1);
+            QCoreApplication::processEvents();
+            // Grab near the head; moving the sprite base to tile 2 must place it
+            // there even though the pointer itself remains above that tile.
+            const QPoint from=board->cellCenter(4)-QPoint(0,35),delta=board->cellCenter(2)-board->cellCenter(4),to=from+delta;
+            QTest::mousePress(board,Qt::LeftButton,Qt::NoModifier,from);
+            QMouseEvent move(QEvent::MouseMove,to,board->mapToGlobal(to),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(board,&move);
+            QTest::mouseRelease(board,Qt::LeftButton,Qt::NoModifier,to);
+            auto actual=editor.document()->units().first();QCOMPARE(actual.cells[1],2);
+            editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),input);
+            auto reserves=editor.findChild<QListWidget *>("saveArmyReserve");QVERIFY(reserves);
+            auto drop=[&](QWidget *target,QPoint point,const QMimeData &mime) {
+                QDragEnterEvent enter(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(target,&enter);
+                QDropEvent event(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(target,&event);return event.isAccepted();
+            };
+            SaveArmyDrag member(panel,0,1,2),foreign(&editor,0,1,2),leader(panel,0,0,1);
+            QVERIFY(!drop(reserves->viewport(),{20,20},foreign));QVERIFY(!drop(reserves->viewport(),{20,20},leader));
+            QVERIFY(drop(reserves->viewport(),{20,20},member));QVERIFY(editor.document()->reserveMembers().contains(2));
+            SaveArmyDrag reserve(panel,-1,-1,2);QVERIFY(drop(board,board->cellCenter(4),reserve));
+            QCOMPARE(editor.document()->units().first().members[1],2);
+            editor.undoStack()->undo();editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),input);
+            // Army additions and squad assignment use the icon picker and share stock.
+            bool picked=false;
+            QTimer::singleShot(0,&editor,[&] {
+                auto dialog=editor.findChild<QDialog *>("shopItemPicker");if(!dialog)return;
+                auto list=dialog->findChild<QListWidget *>("shopItemChoices");
+                for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toInt()==24) {
+                    picked=!list->item(i)->icon().isNull();list->setCurrentRow(i);dialog->accept();return;
+                }dialog->reject();
             });
-            add->click();
-            QVERIFY(offered);
-            QCOMPARE(editor.undoStack()->count(), 1);
-            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "class").toInt(), added);
-            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "level").toInt(), 20);
-            QCOMPARE(editor.document()->value(SaveTable::Characters, 21, "name").toString(),
-                     QString("Recruit"));
-            QCOMPARE(grid->model()->index(grid->currentIndex().row(), 0).data().toInt(), 21);
-            QVERIFY(remove->isEnabled());
-            const auto created = editor.document()->serialize();
-            QVERIFY(editor.grab().save("save-roster-controls.png"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), created);
-            QVERIFY(!editor.removeCharacter(1));
-            QCOMPARE(editor.document()->serialize(), created);
-            auto tabs=editor.findChild<QTabWidget *>();
-            tabs->setCurrentWidget(editor.findChild<QWidget *>("saveSquads"));
-            editor.findChild<QSpinBox *>("saveUnitUnity")->setValue(99);
-            QVERIFY(editor.hasPendingUnitEdits());
-            QVERIFY(!editor.createCharacter(5, "Draft"));
-            QVERIFY(!editor.removeCharacter(21));
-            editor.findChild<QPushButton *>("saveUnitDiscard")->click();
-            tabs->setCurrentIndex(0);
-            for (int row = 0; row < grid->model()->rowCount(); ++row)
-                if (grid->model()->index(row, 0).data().toInt() == 21)
-                    grid->setCurrentIndex(grid->model()->index(row, 1));
-            remove->click();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), created);
-            const auto output = work.filePath("recruited.sra");
-            editor.exportFile(output);
-            QFile result(output);
-            QVERIFY(result.open(QIODevice::ReadOnly));
-            auto reopened = SaveDocument::open(rom, result.readAll(), 166);
-            QCOMPARE(reopened.serialize(), created);
-            QVERIFY(reopened.reserveMembers().contains(21));
-        } catch (const Error &e) {
-            QFAIL(e.what());
+            editor.findChild<QPushButton *>("saveAddConsumables")->click();QVERIFY(picked);
+            panel->selectUnit(0);auto supply=static_cast<SaveItemPicker *>(editor.findChild<QComboBox *>("saveUnitSupply1"));QVERIFY(supply->findData(24)>=0);
+            picked=false;QTimer::singleShot(0,&editor,[&] {
+                auto dialog=editor.findChild<QDialog *>("shopItemPicker");if(!dialog)return;
+                auto list=dialog->findChild<QListWidget *>("shopItemChoices");for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toInt()==24){list->setCurrentRow(i);picked=true;dialog->accept();return;}dialog->reject();
+            });supply->showPopup();QVERIFY(picked);QCOMPARE(editor.document()->units().first().supplies[1],24);
+            auto prepared=*editor.document();const auto refresh=prepared.planArmyRefresh(project);prepared.apply(refresh,true);
+            const auto dest=work.filePath("live-edits.sra");editor.exportFile(dest);QFile exported(dest);QVERIFY(exported.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(project.rom(),exported.readAll()).memory(),prepared.memory());
+            // New recruits start with a game name; reroll and manual text both work.
+            editor.loadBytes(input);const int newId=editor.document()->freeCharacterSlot();bool rolled=false;
+            QTimer::singleShot(0,&editor,[&] {
+                auto dialog=editor.findChild<QDialog *>("saveNewCharacterDialog");if(!dialog)return;
+                auto name=dialog->findChild<QLineEdit *>("saveNewCharacterName");const auto first=name->text();
+                dialog->findChild<QPushButton *>("saveNewCharacterReroll")->click();rolled=!first.isEmpty() && name->text()!=first;
+                name->setText("Rowan");dialog->accept();
+            });editor.findChild<QPushButton *>("saveArmyAddCharacter")->click();QVERIFY(rolled);
+            QCOMPARE(editor.document()->value(SaveTable::Characters,newId,"name").toString(),QString("Rowan"));editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),input);
+            // Form Squad highlights eligible reserves, then creates a real squad.
+            const auto createInput=fixture("create.bin");editor.loadBytes(createInput);
+            auto form=editor.findChild<QPushButton *>("saveCreateUnit");QVERIFY(form->isEnabled());form->click();
+            QListWidgetItem *candidate=nullptr;for(int row=0;row<reserves->count();++row)if(reserves->item(row)->data(Qt::UserRole).toInt()==10)candidate=reserves->item(row);
+            QVERIFY(candidate);QVERIFY(candidate->data(Qt::UserRole+10).toBool());
+            QMetaObject::invokeMethod(reserves,"itemClicked",Qt::DirectConnection,Q_ARG(QListWidgetItem *,candidate));
+            QCOMPARE(editor.document()->units().size(),6);QCOMPARE(editor.document()->units().last().members[0],10);QCOMPARE(editor.document()->units().last().cells[0],4);
+            editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),createInput);
+            // Legion rows move out of the independent grid; followers sit below.
+            const auto legionInput=fixture("legion-create-holes.bin");editor.loadBytes(legionInput);panel->selectUnit(15);
+            auto create=editor.findChild<QPushButton *>("saveCreateLegion");QVERIFY(create->isEnabled());create->click();
+            auto independent=editor.findChild<QListWidget *>("saveUnitList"),legions=editor.findChild<QListWidget *>("saveLegionList");
+            for(int i=0;i<independent->count();++i)QVERIFY(independent->item(i)->data(Qt::UserRole).toInt()!=15);
+            panel->selectUnit(16);auto target=editor.findChild<QComboBox *>("saveLegionTarget");target->setCurrentIndex(target->findData(1));
+            editor.findChild<QPushButton *>("saveJoinLegion")->click();
+            int command=-1,follower=-1;for(int row=0;row<legions->count();++row){const int id=legions->item(row)->data(Qt::UserRole).toInt();if(id==15)command=row;if(id==16)follower=row;}
+            QVERIFY(command>=0);QCOMPARE(follower,command+1);QCOMPARE(editor.document()->legions()[1].units,QVector<int>({15,16,255,255,255}));
+            panel->selectUnit(16);editor.findChild<QPushButton *>("saveDetachLegionUnit")->click();QVERIFY(editor.document()->legions()[1].units[1]==255);
+            editor.undoStack()->undo();panel->selectUnit(15);editor.findChild<QPushButton *>("saveDisbandLegion")->click();QCOMPARE(editor.document()->legions().size(),3);
+            editor.undoStack()->undo();panel->selectCharacter(16);QCoreApplication::processEvents();QVERIFY(editor.grab().save("native/build/save-army-live.png"));
+            while(editor.undoStack()->canUndo())editor.undoStack()->undo();QCOMPARE(editor.document()->serialize(),legionInput);
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void namesTextSynchronization() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;NamesTextEditor editor(&project,&undo,[]{});editor.show();
+        auto kind=editor.findChild<QComboBox *>("nameTableKind");auto text=editor.findChild<QLineEdit *>("nameTableText");
+        auto table=editor.findChild<QTableWidget *>("nameTable");auto rename=editor.findChild<QPushButton *>("nameTableRename");
+        auto select=[&](const QString &key,int id){kind->setCurrentIndex(kind->findData(key));for(int row=0;row<table->rowCount();++row)if(table->item(row,0)->text().toInt()==id)table->setCurrentCell(row,1);};
+        const auto original=project.classNameBytes(5);select("classes",5);text->setText("Vanguard");rename->click();QCOMPARE(decodeText(project.classNameBytes(5)),QString("Vanguard"));
+        RecordModel model(&project,Table::Classes,&undo);QCOMPARE(model.index(5,1).data(Qt::EditRole).toString(),QString("Vanguard"));
+        QVERIFY(model.setData(model.index(5,1),"Guardian",Qt::EditRole));QCOMPARE(text->text(),QString("Guardian"));undo.undo();undo.undo();QCOMPARE(project.classNameBytes(5),original);
+        select("random0",0);const auto old=text->text();text->setText("Rowan");rename->click();QCOMPARE(project.nameTables()->randomName(0,0),QString("Rowan"));undo.undo();QCOMPARE(text->text(),old);
+        const auto beforeNames=project.manifest();
+        auto add=editor.findChild<QPushButton *>("nameTableAdd");auto remove=editor.findChild<QPushButton *>("nameTableRemove");QVERIFY(add&&remove);
+        for(int pool=0;pool<3;++pool) {
+            select(QString("random%1").arg(pool),0);QVERIFY(add->isVisible());QVERIFY(!remove->isEnabled());
+            QTimer::singleShot(0,[&] {auto dialog=qobject_cast<QInputDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);dialog->setTextValue("NewName");dialog->accept();});
+            add->click();QCOMPARE(table->rowCount(),257);QCOMPARE(table->currentRow(),256);
+            QCOMPARE(project.nameTables()->randomName(pool,256),QString("NewName"));QVERIFY(remove->isEnabled());
+            text->setText("Renamed");rename->click();QCOMPARE(project.nameTables()->randomName(pool,256),QString("Renamed"));
+            remove->click();QCOMPARE(project.nameTables()->randomCount(pool),256);undo.undo();QCOMPARE(table->rowCount(),257);
+            undo.redo();QCOMPARE(project.nameTables()->randomCount(pool),256);
         }
+        QCOMPARE(project.manifest(),beforeNames);
+        select("consumables",1);text->setText("Leaf");rename->click();QCOMPARE(project.record(Table::Consumables,1).name,QString("Leaf"));undo.undo();
+        project.loadAttacks();select("attacks",4);text->setText("Blade hit");rename->click();QCOMPARE(AttackData::displayName(project.attacks()->entry(4)),QString("Blade hit"));undo.undo();
+        editor.resize(950,700);QCoreApplication::processEvents();QVERIFY(editor.grab().save("native/build/names-and-text.png"));
+        ToolsEditor tools(&project,&undo,[]{});auto pages=tools.findChild<QTabWidget *>("toolsPages");QVERIFY(pages);
+        QCOMPARE(pages->tabText(pages->count()-1),QString("Names and Text"));
     }
     void saveExportConsistency() {
         try {
@@ -5152,475 +5518,6 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
-    void saveLegionCreationControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legion-create-holes.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1200);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto create = editor.findChild<QPushButton *>("saveCreateLegion");
-            auto join = editor.findChild<QPushButton *>("saveJoinLegion");
-            auto target = editor.findChild<QComboBox *>("saveLegionTarget");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            auto label = editor.findChild<QLabel *>("saveUnitLegion");
-            QVERIFY(create && join && target && unity && label);
-            units->setCurrentRow(0);
-            QVERIFY(!create->isEnabled());
-            units->setCurrentRow(15);
-            QVERIFY(create->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!create->isEnabled());
-            QVERIFY(!editor.createLegion(15));
-            unity->setValue(23);
-            create->click();
-            QCOMPARE(editor.document()->legions().size(), 4);
-            QVERIFY(label->text().contains("Legion 2"));
-            QVERIFY(!create->isEnabled());
-            const auto created = editor.document()->serialize();
-            units->setCurrentRow(16);
-            QVERIFY(join->isEnabled());
-            QCOMPARE(target->currentData().toInt(), 1);
-            join->click();
-            QCOMPARE(editor.document()->legions()[1].units, QVector<int>({15, 16, 255, 255, 255}));
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-create-legion.png"));
-            const auto filename = work.filePath("created-legion.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), created);
-            units->setCurrentRow(15);
-            editor.findChild<QPushButton *>("saveDisbandLegion")->click();
-            QVERIFY(create->isEnabled());
-            create->click();
-            QCOMPARE(editor.document()->serialize(), created);
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!create->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveLegionSquadCoordination() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legion-coordinate-full.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1200);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto remove = editor.findChild<QPushButton *>("saveMoveToReserve");
-            auto detach = editor.findChild<QPushButton *>("saveDetachLegionUnit");
-            auto add = editor.findChild<QPushButton *>("saveAddSoldierGroup");
-            auto error = editor.findChild<QLabel *>("saveError");
-            auto cell = editor.findChild<QComboBox *>("saveReserveCell");
-            QVERIFY(units && members && remove && detach && add && error && cell);
-            units->setCurrentRow(0);
-            members->setCurrentRow(1);
-            QVERIFY(remove->isEnabled());
-            remove->click();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(error->text().contains("detach a follower"));
-            QCOMPARE(editor.undoStack()->count(), 0);
-            units->setCurrentRow(4);
-            detach->click();
-            units->setCurrentRow(0);
-            members->setCurrentRow(1);
-            remove->click();
-            QCOMPARE(editor.document()->legionCapacity(0), 4);
-            QCOMPARE(editor.document()->reserveSoldiers(), 10);
-            QCOMPARE(u8(editor.document()->memory(), 0x1969c1), quint8(7));
-            const auto removed = editor.document()->serialize();
-            cell->setCurrentIndex(cell->findData(0));
-            QVERIFY(add->isEnabled());
-            add->click();
-            QCOMPARE(editor.document()->legionCapacity(0), 5);
-            QCOMPARE(editor.document()->reserveSoldiers(), 7);
-            const auto created = editor.document()->serialize();
-            const auto filename = work.filePath("coordinated-legion.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), removed);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), created);
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveLegionJoinControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legion-join-1.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1200);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto label = editor.findChild<QLabel *>("saveUnitLegion");
-            auto target = editor.findChild<QComboBox *>("saveLegionTarget");
-            auto join = editor.findChild<QPushButton *>("saveJoinLegion");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && members && label && target && join && unity);
-            units->setCurrentRow(0);
-            QVERIFY(!join->isEnabled());
-            units->setCurrentRow(15);
-            QVERIFY(join->isEnabled());
-            QCOMPARE(target->count(), 1);
-            QVERIFY(target->currentText().contains("4/5"));
-            unity->setValue(22);
-            QVERIFY(!join->isEnabled());
-            QVERIFY(!editor.joinLegion(0, 15));
-            unity->setValue(23);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-join-legion.png"));
-            join->click();
-            QCOMPARE(units->count(), 17);
-            QCOMPARE(editor.document()->legions()[0].units, QVector<int>({0, 15, 2, 3, 4}));
-            QVERIFY(label->text().contains("5 squads"));
-            QVERIFY(!join->isEnabled());
-            const auto result = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(join->isEnabled());
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), result);
-            auto detach = editor.findChild<QPushButton *>("saveDetachLegionUnit");
-            QVERIFY(detach->isEnabled());
-            detach->click();
-            QCOMPARE(label->text(), QString("Independent squad"));
-            QVERIFY(join->isEnabled());
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), result);
-            const auto filename = work.filePath("join-legion.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            units->setCurrentRow(16);
-            QVERIFY(!join->isEnabled());
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!join->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveLegionFollowerControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legions.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1200);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto label = editor.findChild<QLabel *>("saveUnitLegion");
-            auto detach = editor.findChild<QPushButton *>("saveDetachLegionUnit");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && members && label && detach && unity);
-            units->setCurrentRow(0);
-            QVERIFY(!detach->isEnabled());
-            units->setCurrentRow(1);
-            QVERIFY(detach->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!detach->isEnabled());
-            QVERIFY(!editor.detachLegionUnit(0, 1));
-            unity->setValue(23);
-            detach->click();
-            QCOMPARE(units->count(), 17);
-            QCOMPARE(label->text(), QString("Independent squad"));
-            QVERIFY(!detach->isEnabled());
-            QCOMPARE(editor.document()->legions()[0].units, QVector<int>({0, 3, 2, 255, 4}));
-            const auto result = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(detach->isEnabled());
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), result);
-            editor.findChild<QPushButton *>("saveDisbandUnit")->click();
-            QCOMPARE(units->count(), 16);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), result);
-            const auto filename = work.filePath("detach-legion.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            units->setCurrentRow(3);
-            QVERIFY(label->text().contains("4 squads"));
-            QVERIFY(detach->isEnabled());
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-detach-legion.png"));
-            detach->click();
-            QCOMPARE(editor.document()->legions()[0].units, QVector<int>({0, 255, 2, 255, 4}));
-            QCOMPARE(label->text(), QString("Independent squad"));
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!detach->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveLegionDisbandControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-legion-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("legions.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1200);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto label = editor.findChild<QLabel *>("saveUnitLegion");
-            auto disband = editor.findChild<QPushButton *>("saveDisbandLegion");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && members && label && disband && unity);
-            units->setCurrentRow(0);
-            QVERIFY(label->text().contains("Legion 1"));
-            QVERIFY(disband->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!disband->isEnabled());
-            unity->setValue(23);
-            disband->click();
-            QCOMPARE(editor.document()->legions().size(), 2);
-            QCOMPARE(units->count(), 17);
-            QCOMPARE(label->text(), QString("Independent squad"));
-            QVERIFY(!disband->isEnabled());
-            const auto result = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(disband->isEnabled());
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), result);
-            members->setCurrentRow(1);
-            editor.findChild<QPushButton *>("saveChangeLeader")->click();
-            QCOMPARE(editor.document()->units()[0].members[0], 18);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), result);
-            const auto filename = work.filePath("disband-legion.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            units->setCurrentRow(6);
-            QVERIFY(label->text().contains("Legion 3"));
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-disband-legion.png"));
-            disband->click();
-            QCOMPARE(editor.document()->legions().size(), 1);
-            QCOMPARE(units->count(), 17);
-            QCOMPARE(label->text(), QString("Independent squad"));
-            editor.findChild<QPushButton *>("saveDisbandUnit")->click();
-            QCOMPARE(units->count(), 16);
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!disband->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveSquadDisbandControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-disband-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            auto inputFor = [&](const QString &name) {
-                QFile file(work.filePath(name));
-                if (!file.open(QIODevice::ReadOnly))
-                    throw Error("Missing disband fixture");
-                QByteArray out(0x10000, 0);
-                out.replace(0x3a, 6180, file.readAll());
-                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + 0x10),
-                                         0x1850, 0, 0))
-                    throw Error("Cannot seal disband fixture");
-                return out;
-            };
-            const auto input = inputFor("disband-multi.bin");
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1150);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto disband = editor.findChild<QPushButton *>("saveDisbandUnit");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && disband && unity);
-            units->setCurrentRow(1);
-            QVERIFY(disband->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!disband->isEnabled());
-            unity->setValue(23);
-            disband->click();
-            QCOMPARE(units->count(), 4);
-            QCOMPARE(editor.document()->reserveSoldiers(), 12);
-            QVERIFY(editor.document()->reserveMembers().contains(4));
-            const auto result = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), result);
-            const auto filename = work.filePath("disband.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-disband-squad.png"));
-            editor.loadBytes(inputFor("disband-last.bin"));
-            QCOMPARE(units->count(), 1);
-            disband->click();
-            QCOMPARE(units->count(), 0);
-            QVERIFY(!disband->isEnabled());
-            QVERIFY(editor.findChild<QPushButton *>("saveCreateUnit")->isEnabled());
-            editor.undoStack()->undo();
-            QCOMPARE(units->count(), 1);
-            editor.loadBytes(inputFor("disband-fixed.bin"));
-            units->setCurrentRow(1);
-            disband->click();
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("fixed"));
-            QCOMPARE(units->count(), 5);
-            editor.loadBytes(inputFor("disband-legion.bin"));
-            units->setCurrentRow(4);
-            disband->click();
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("legion"));
-            QCOMPARE(units->count(), 5);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!disband->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
     void saveSquadStockControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -5683,1133 +5580,6 @@ class UiTests : public QObject {
             editor.undoStack()->undo();
             editor.undoStack()->undo();
             QCOMPARE(editor.document()->serialize(), input);
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveSquadCreationControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-create-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            auto inputFor = [&](const QString &name) {
-                QFile file(work.filePath(name));
-                if (!file.open(QIODevice::ReadOnly))
-                    throw Error("Missing creation fixture");
-                QByteArray out(0x10000, 0);
-                out.replace(0x3a, 6180, file.readAll());
-                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + 0x10),
-                                         0x1850, 0, 0))
-                    throw Error("Cannot seal creation fixture");
-                return out;
-            };
-            const auto input = inputFor("create.bin");
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1150);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto recruit=editor.findChild<QPushButton *>("saveArmyRecruitSquad");
-            QVERIFY(recruit && recruit->isEnabled());
-            const int newCharacter=editor.document()->freeCharacterSlot();
-            bool sawRecruit=false;
-            QTimer::singleShot(0,&editor,[&] {
-                auto dialog=editor.findChild<QDialog *>("saveNewCharacterDialog");
-                if (!dialog) return;
-                auto choices=dialog->findChild<QComboBox *>("saveNewCharacterClass");
-                auto name=dialog->findChild<QLineEdit *>("saveNewCharacterName");
-                auto level=dialog->findChild<QSpinBox *>("saveNewCharacterLevel");
-                sawRecruit=choices && name && level && choices->findData(5)>=0;
-                if (!sawRecruit) {dialog->reject();return;}
-                choices->setCurrentIndex(choices->findData(5)); name->setText("New leader"); level->setValue(30);
-                dialog->accept();
-            });
-            recruit->click();
-            QVERIFY(sawRecruit);
-            QCOMPARE(editor.undoStack()->count(),1);
-            QCOMPARE(editor.document()->units().size(),6);
-            QCOMPARE(editor.document()->value(SaveTable::Characters,newCharacter,"name").toString(),QString("New leader"));
-            QCOMPARE(editor.document()->units().last().members[0],newCharacter);
-            QCOMPARE(editor.document()->value(SaveTable::Characters,newCharacter,"level").toInt(),30);
-            const auto recruited=editor.document()->serialize();
-            editor.undoStack()->undo(); QCOMPARE(editor.document()->serialize(),input);
-            editor.undoStack()->redo(); QCOMPARE(editor.document()->serialize(),recruited);
-            const auto recruitedFile=work.filePath("recruited-squad.SaveRAM");
-            editor.exportFile(recruitedFile);
-            QFile reopenedRecruit(recruitedFile); QVERIFY(reopenedRecruit.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom,reopenedRecruit.readAll()).memory(),editor.document()->memory());
-            editor.resize(1440,1000);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/save-army-management.png"));
-            editor.resize(1100,800);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/save-army-small.png"));
-            auto details=editor.findChild<QTabWidget *>("saveArmyDetails");
-            for (int page=1; page<details->count(); ++page) {
-                details->setCurrentIndex(page);
-                QCoreApplication::processEvents();
-                QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+QString("/save-army-detail-%1.png").arg(page)));
-            }
-            details->setCurrentIndex(0);
-            editor.loadBytes(input);
-            QVERIFY(!editor.recruitUnit(5,"Invalid",9));
-            QCOMPARE(editor.document()->serialize(),input); // No orphan recruit on invalid formation.
-            QCOMPARE(editor.undoStack()->count(),0);
-            auto leaders = editor.findChild<QComboBox *>("saveNewUnitLeader");
-            auto cells = editor.findChild<QComboBox *>("saveNewUnitCell");
-            auto create = editor.findChild<QPushButton *>("saveCreateUnit");
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(leaders && cells && create && units && unity);
-            leaders->setCurrentIndex(leaders->findData(10));
-            cells->setCurrentIndex(cells->findData(8));
-            QVERIFY(create->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!create->isEnabled());
-            unity->setValue(23);
-            QVERIFY(create->isEnabled());
-            create->click();
-            QCOMPARE(editor.document()->units().size(), 6);
-            QCOMPARE(units->currentItem()->data(Qt::UserRole).toInt(), 6);
-            QVERIFY(units->currentItem()->text().startsWith("Squad 2"));
-            QCOMPARE(unity->value(), 0);
-            QCOMPARE(leaders->findData(10), -1);
-            QCOMPARE(editor.document()->units().last().members[0], 10);
-            QCOMPARE(editor.document()->units().last().cells[0], 8);
-            const auto created = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(leaders->findData(10) >= 0);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), created);
-            const auto filename = work.filePath("created-squad.SaveRAM");
-            editor.exportFile(filename);
-            QFile file(filename);
-            QVERIFY(file.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
-            units->setCurrentRow(units->count() - 1);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-create-squad.png"));
-            editor.loadBytes(inputFor("create-empty.bin"));
-            QCOMPARE(units->count(), 0);
-            QVERIFY(create->isEnabled());
-            leaders->setCurrentIndex(leaders->findData(11));
-            cells->setCurrentIndex(4);
-            create->click();
-            QCOMPARE(units->count(), 1);
-            QCOMPARE(editor.document()->units()[0].members[0], 11);
-            QCOMPARE(editor.document()->units()[0].label, 1);
-            editor.loadBytes(inputFor("create-full.bin"));
-            QVERIFY(!create->isEnabled());
-            const auto full=editor.document()->serialize();
-            QVERIFY(!editor.recruitUnit(5,"No room",4));
-            QCOMPARE(editor.document()->serialize(),full);
-            editor.loadBytes(inputFor("create-order-conflict.bin"));
-            leaders->setCurrentIndex(leaders->findData(10));
-            create->click();
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("inconsistent"));
-            QCOMPARE(editor.document()->units().size(), 5);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!create->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveDirectExchangeControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-exchange-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("exchange.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1150);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto target = editor.findChild<QComboBox *>("saveSwapUnit");
-            auto member = editor.findChild<QComboBox *>("saveSwapMember");
-            auto apply = editor.findChild<QPushButton *>("saveSwapApply");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            auto leader = editor.findChild<QPushButton *>("saveChangeLeader");
-            QVERIFY(units && members && target && member && apply && unity && leader);
-            const auto before = editor.document()->memory();
-            units->setCurrentRow(1);
-            members->setCurrentRow(1);
-            QVERIFY(!leader->isEnabled());
-            target->setCurrentIndex(target->findData(3));
-            member->setCurrentIndex(member->findData(1));
-            QVERIFY(member->currentText().contains("Soldier group 120"));
-            QVERIFY(apply->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!apply->isEnabled());
-            unity->setValue(23);
-            QVERIFY(apply->isEnabled());
-            apply->click();
-            QCOMPARE(editor.document()->units()[1].members[1], 219);
-            QCOMPARE(editor.document()->units()[2].members[1], 100);
-            QCOMPARE(editor.document()->units()[1].unity, 23);
-            QCOMPARE(editor.document()->memory().mid(0x190f80, 364), before.mid(0x190f80, 364));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            members->setCurrentRow(1);
-            target->setCurrentIndex(target->findData(0));
-            member->setCurrentIndex(member->findData(-3));
-            QVERIFY(apply->isEnabled());
-            apply->click();
-            QCOMPARE(editor.document()->units()[1].members[1], 0);
-            QCOMPARE(editor.document()->units()[0].members[3], 100);
-            QCOMPARE(editor.document()->units()[0].cells[3], 2);
-            QCOMPARE(int(u8(editor.document()->memory(), 0x1971f0 + 2 * 25 + 24)), 2);
-            QCOMPARE(int(u8(editor.document()->memory(), 0x1971f0 + 24)), 7);
-            QCOMPARE(editor.document()->units()[0].unity, 23);
-            const auto moved = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), moved);
-            const auto filename = work.filePath("direct-exchange.SaveRAM");
-            editor.exportFile(filename);
-            QFile saved(filename);
-            QVERIFY(saved.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, saved.readAll()).memory(),
-                     editor.document()->memory());
-            units->setCurrentRow(0);
-            members->setCurrentRow(3);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-direct-exchange.png"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            units->setCurrentRow(0);
-            members->setCurrentRow(1);
-            target->setCurrentIndex(target->findData(2));
-            member->setCurrentIndex(member->findData(1));
-            apply->click();
-            QCOMPARE(editor.document()->units()[0].members[1], 100);
-            QCOMPARE(editor.document()->units()[1].members[1], 2);
-            QCOMPARE(editor.document()->memory().mid(0x190f80, 364), before.mid(0x190f80, 364));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!apply->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveLeaderControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("army-leader-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            auto batteryFor = [&](const QString &name) {
-                QFile file(work.filePath(name));
-                if (!file.open(QIODevice::ReadOnly))
-                    throw Error("Missing leader fixture");
-                QByteArray input(0x10000, 0);
-                input.replace(0x3a, 6180, file.readAll());
-                if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                         0x1850, 0, 0))
-                    throw Error("Cannot seal leader save");
-                return input;
-            };
-            const auto input = batteryFor("unit-payload.bin");
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1150);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto leader = editor.findChild<QPushButton *>("saveChangeLeader");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && members && leader && unity);
-            units->setCurrentRow(0);
-            QVERIFY(!leader->isEnabled());
-            members->setCurrentRow(2);
-            QVERIFY(leader->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!leader->isEnabled());
-            unity->setValue(23);
-            QVERIFY(leader->isEnabled());
-            leader->click();
-            QCOMPARE(editor.document()->units()[0].members, QVector<int>({3, 1, 2, 0, 0}));
-            QCOMPARE(editor.document()->units()[0].cells, QVector<int>({8, 0, 4, 0, 0}));
-            QCOMPARE(editor.document()->units()[0].unity, 23);
-            QVERIFY(units->item(0)->text().contains("Member3"));
-            QVERIFY(members->item(0)->text().contains("Leader"));
-            const auto changed = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), changed);
-            const auto filename = work.filePath("leader.SaveRAM");
-            editor.exportFile(filename);
-            QFile output(filename);
-            QVERIFY(output.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, output.readAll()).memory(),
-                     editor.document()->memory());
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-leader-change.png"));
-            units->setCurrentRow(1);
-            members->setCurrentRow(1);
-            QVERIFY(!leader->isEnabled());
-            editor.loadBytes(batteryFor("fixed-leader-81.bin"));
-            units->setCurrentRow(0);
-            members->setCurrentRow(1);
-            const auto fixed = editor.document()->serialize();
-            leader->click();
-            QCOMPARE(editor.document()->serialize(), fixed);
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("fixed squad leader"));
-            editor.loadBytes(batteryFor("commander-bad.bin"));
-            units->setCurrentRow(0);
-            members->setCurrentRow(1);
-            const auto legion = editor.document()->serialize();
-            leader->click();
-            QCOMPARE(editor.document()->serialize(), legion);
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("commands a legion"));
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!leader->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveSoldierReserveControls() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("soldier-reserve-mips.cjs"),
-                                     work.path(), "generate"});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
-            QFile payload(work.filePath("unit-payload.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 1150);
-            editor.show();
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>()->setCurrentWidget(
-                editor.findChild<QWidget *>("saveSquads"));
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto cells = editor.findChild<QComboBox *>("saveReserveCell");
-            auto create = editor.findChild<QPushButton *>("saveAddSoldierGroup");
-            auto disband = editor.findChild<QPushButton *>("saveMoveToReserve");
-            auto pool = editor.findChild<QLabel *>("saveSoldierPool");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            QVERIFY(units && members && cells && create && disband && pool && unity);
-            units->setCurrentRow(0);
-            QVERIFY(create->isEnabled());
-            QVERIFY(cells->isEnabled());
-            QVERIFY(pool->text().endsWith("9"));
-            cells->setCurrentIndex(cells->findData(1));
-            unity->setValue(22);
-            QVERIFY(!create->isEnabled());
-            unity->setValue(23);
-            QVERIFY(create->isEnabled());
-            create->click();
-            QCOMPARE(editor.document()->units()[0].members[3], 101);
-            QCOMPARE(editor.document()->reserveSoldiers(), 6);
-            QCOMPARE(editor.document()->units()[0].unity, 23);
-            QVERIFY(pool->text().endsWith("6"));
-            const auto created = editor.document()->serialize();
-            members->setCurrentRow(3);
-            QVERIFY(disband->isEnabled());
-            QVERIFY(disband->text().contains("Disband"));
-            QVERIFY(editor.findChild<QPushButton *>("saveSwapApply")->isEnabled());
-            disband->click();
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(pool->text().endsWith("9"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), created);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            units->setCurrentRow(1);
-            members->setCurrentRow(1);
-            QVERIFY(disband->toolTip().contains("Returns 1"));
-            disband->click();
-            QCOMPARE(editor.document()->reserveSoldiers(), 10);
-            QCOMPARE(editor.document()->units()[1].members[1], 0);
-            QCOMPARE(editor.document()->units()[1].unity, 23);
-            cells->setCurrentIndex(cells->findData(7));
-            create->click();
-            QCOMPARE(editor.document()->reserveSoldiers(), 7);
-            QCOMPARE(editor.document()->units()[1].members[1], 100);
-            QCOMPARE(u16(editor.document()->memory(), 0x190f84), quint16(300));
-            QCOMPARE(u8(editor.document()->memory(), 0x191074), quint8(0));
-            const auto result = editor.document()->memory();
-            const auto filename = work.filePath("soldier-reserve.SaveRAM");
-            editor.exportFile(filename);
-            QFile saved(filename);
-            QVERIFY(saved.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, saved.readAll()).memory(), result);
-            members->setCurrentRow(1);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-soldier-reserve.png"));
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.loadBytes(editor.document()->memory());
-            QVERIFY(!create->isEnabled());
-            QVERIFY(!disband->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveReserveDragging() {
-        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
-        QTemporaryDir work;
-        QProcess generator;
-        generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
-                                     .filePath("save-unit-mips.cjs"), work.path()});
-        QVERIFY(generator.waitForFinished(30000));
-        QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
-        auto fixture = [&](const QString &name) {
-            QFile payload(work.filePath(name));
-            if (!payload.open(QIODevice::ReadOnly)) return QByteArray{};
-            QByteArray bytes(0x10000, 0);
-            bytes.replace(0x3a, 6180, payload.readAll());
-            if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(bytes.data() + 0x10),
-                                     0x1850, 0, 0)) return QByteArray{};
-            return bytes;
-        };
-        const auto input = fixture("unit-payload.bin");
-        QVERIFY(!input.isEmpty());
-        auto project = Project::fromRom(Rom::open(path));
-        SaveEditor editor(&project);
-        editor.resize(1400, 1000);
-        editor.show();
-        editor.loadBytes(input);
-        auto panel = editor.findChild<QWidget *>("saveSquads");
-        editor.findChild<QTabWidget *>()->setCurrentWidget(panel);
-        auto reserves = editor.findChild<QListWidget *>("saveArmyReserve");
-        auto units = editor.findChild<QListWidget *>("saveUnitList");
-        auto board = editor.findChild<FormationBoard *>("saveUnitCellBoard");
-        QVERIFY(reserves && units && board);
-        QCoreApplication::processEvents();
-        auto drop = [&](QWidget *target, QPoint point, const QMimeData &mime,
-                        Qt::DropActions actions = Qt::MoveAction) {
-            QDragEnterEvent enter(QPointF(point), actions, &mime, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(target, &enter);
-            if (!enter.isAccepted()) return false;
-            QDragMoveEvent move(QPointF(point), actions, &mime, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(target, &move);
-            QDropEvent finish(point, actions, &mime, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(target, &finish);
-            return finish.isAccepted();
-        };
-        const QPoint reserveTarget = reserves->viewport()->rect().center();
-        QImage dragPreview;
-        auto startAndCancel = [&](QWidget *source, QPoint from, QPoint to, int unit, int id) {
-            bool started = false;
-            const auto previousDrags = panel->findChildren<QDrag *>();
-            QTimer::singleShot(0, &editor, [&] {
-                for (auto drag : panel->findChildren<QDrag *>()) {
-                    if (previousDrags.contains(drag)) continue;
-                    const auto data = dynamic_cast<const SaveArmyDrag *>(drag->mimeData());
-                    if (data && data->unit == unit && data->id == id && data->owner == panel) {
-                        started = true;
-                        dragPreview = drag->pixmap().toImage();
-                    }
-                }
-                QDrag::cancel();
-            });
-            QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, from);
-            QMouseEvent movement(QEvent::MouseMove, to, source->mapToGlobal(to),
-                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(source, &movement);
-            QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, to);
-            QCoreApplication::processEvents();
-            return started;
-        };
-        auto sourceCell = board->cell(4);
-        QVERIFY(startAndCancel(sourceCell, sourceCell->mapFrom(board, board->cellCenter(4)),
-                               sourceCell->mapFrom(board, QPoint(-20, 60)), 0, 2));
-        QVERIFY(!dragPreview.isNull());
-        QCOMPARE(dragPreview.pixelColor(0, 0).alpha(), 0);
-        QCOMPARE(dragPreview.pixelColor(dragPreview.width() - 1, dragPreview.height() - 1).alpha(), 0);
-        bool visibleSprite = false;
-        for (int y = 0; y < 64; ++y)
-            for (int x = 0; x < dragPreview.width(); ++x)
-                visibleSprite |= dragPreview.pixelColor(x, y).alpha() > 0;
-        QVERIFY(visibleSprite);
-        QVERIFY(dragPreview.save("native/build/save-unit-drag-preview.png"));
-        auto memberIcons = editor.findChild<QListWidget *>("saveUnitMembers");
-        const auto memberPoint = memberIcons->visualItemRect(memberIcons->item(1)).center();
-        QVERIFY(startAndCancel(memberIcons->viewport(), memberPoint, memberPoint + QPoint(25, 0), 0, 2));
-        QCOMPARE(editor.document()->serialize(), input); // Cancelled gestures do not change a save.
-        SaveArmyDrag member(panel, 0, 1, 2), leader(panel, 0, 0, 1);
-        SaveArmyDrag foreign(&editor, 0, 1, 2), stale(panel, 0, 1, 3);
-        QVERIFY(!drop(reserves->viewport(), reserveTarget, foreign));
-        QVERIFY(!drop(reserves->viewport(), reserveTarget, stale));
-        QVERIFY(!drop(reserves->viewport(), reserveTarget, leader));
-        QVERIFY(!drop(reserves->viewport(), reserveTarget, member, Qt::CopyAction));
-        QCOMPARE(editor.document()->serialize(), input);
-        QCOMPARE(editor.undoStack()->count(), 0);
-        auto expected = *editor.document();
-        expected.apply(expected.planToReserve(0, 1, project.classData()), true);
-        QVERIFY(drop(reserves->viewport(), reserveTarget, member));
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        QCOMPARE(editor.undoStack()->count(), 1);
-        QCOMPARE(reserves->count(), 1);
-        QCOMPARE(reserves->item(0)->data(Qt::UserRole).toInt(), 2);
-        editor.undoStack()->undo();
-        QCOMPARE(editor.document()->serialize(), input);
-        QCOMPARE(reserves->count(), 0);
-        editor.undoStack()->redo();
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        const auto reserved = editor.document()->serialize();
-        const auto reservePoint = reserves->visualItemRect(reserves->item(0)).center();
-        QVERIFY(startAndCancel(reserves->viewport(), reservePoint, reservePoint + QPoint(25, 0), -1, 2));
-        QCOMPARE(editor.document()->serialize(), reserved);
-        SaveArmyDrag reserve(panel, -1, -1, 2);
-        QVERIFY(!drop(board, board->cellCenter(0), reserve)); // Leader occupies this cell.
-        QCOMPARE(editor.document()->serialize(), reserved);
-        auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-        unity->setValue(unity->value() + 1);
-        QVERIFY(editor.hasPendingUnitEdits());
-        QVERIFY(!drop(board, board->cellCenter(4), reserve));
-        QCOMPARE(editor.document()->serialize(), reserved);
-        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
-        reserves->setCurrentRow(0);
-        QCOMPARE(editor.findChild<QTabWidget *>("saveArmyDetails")->currentIndex(), 0);
-        expected.apply(expected.planFromReserve(2, 0, 4, project.classData()), true);
-        QVERIFY(drop(board, board->cellCenter(4), reserve));
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        QCOMPARE(editor.undoStack()->count(), 2);
-        QCOMPARE(reserves->count(), 0);
-        editor.undoStack()->undo();
-        QCOMPARE(editor.document()->serialize(), reserved);
-        // The overview chooses the first cell accepted by the same save rules.
-        const auto destination = units->item(4);
-        units->scrollToItem(destination);
-        QCoreApplication::processEvents();
-        auto nameplate = [&](QListWidgetItem *item) {
-            const auto rect = units->visualItemRect(item);
-            return QPoint(rect.center().x(), rect.bottom() - 16);
-        };
-        QVERIFY(drop(units->viewport(), nameplate(destination), reserve));
-        bool found = false;
-        for (const auto &unit : editor.document()->units())
-            if (unit.index == 5) found = unit.members.contains(2);
-        QVERIFY(found);
-        const auto output = work.filePath("dragged.sra");
-        editor.exportFile(output);
-        QFile reopened(output);
-        QVERIFY(reopened.open(QIODevice::ReadOnly));
-        QCOMPARE(SaveDocument::open(project.rom(), reopened.readAll()).memory(),
-                 editor.document()->memory());
-        editor.undoStack()->undo();
-        QCOMPARE(editor.document()->serialize(), reserved);
-        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/save-reserve-drag.png"));
-        // A real full-squad fixture must refuse reserve drops without losing the member.
-        editor.loadBytes(fixture("unit-full-payload.bin"));
-        QVERIFY(editor.moveToReserve(2, 2)); // Member 10 becomes available; squad 5 stays full.
-        const auto full = editor.document()->serialize();
-        SaveArmyDrag extra(panel, -1, -1, 10);
-        const auto fullSquad = units->item(4);
-        units->scrollToItem(fullSquad);
-        QCoreApplication::processEvents();
-        QVERIFY(!drop(units->viewport(), nameplate(fullSquad), extra));
-        QCOMPARE(editor.document()->serialize(), full);
-        // Existing carrying limits also apply when dragging out of a squad.
-        editor.loadBytes(fixture("unit-capacity-payload.bin"));
-        const auto overloaded = editor.document()->serialize();
-        QVERIFY(!drop(reserves->viewport(), reserveTarget, member));
-        QCOMPARE(editor.document()->serialize(), overloaded);
-        // Overview gestures pick the actual member under the mouse, including sprites
-        // above the tile, and place or exchange them in the hovered destination cell.
-        auto overviewPoint = [&](int unit, int cell) {
-            for (int row = 0; row < units->count(); ++row) {
-                const auto item = units->item(row);
-                if (item->data(Qt::UserRole).toInt() != unit) continue;
-                units->scrollToItem(item);
-                QCoreApplication::processEvents();
-                const auto hits = item->data(ArmyOverviewHits).value<QImage>();
-                for (int y = 0; y < hits.height(); ++y)
-                    for (int x = 0; x < hits.width(); ++x)
-                        if (qAlpha(hits.pixel(x, y)) && qRed(hits.pixel(x, y)) == cell + 1)
-                            return units->visualItemRect(item).topLeft() + QPoint(6 + x, y);
-            }
-            return QPoint(-1, -1);
-        };
-        editor.loadBytes(input);
-        const auto overviewSource = overviewPoint(0, 4);
-        QVERIFY(overviewSource.x() >= 0);
-        QVERIFY(startAndCancel(units->viewport(), overviewSource, overviewSource + QPoint(25, 0), 0, 2));
-        QCOMPARE(editor.document()->serialize(), input);
-        expected = *editor.document();
-        expected.apply(expected.planUnitTransfer(0, 1, 5, 2, project.classData()), true);
-        QVERIFY(drop(units->viewport(), overviewPoint(5, 2), member));
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        QCOMPARE(editor.undoStack()->count(), 1);
-        editor.undoStack()->undo();
-        QCOMPARE(editor.document()->serialize(), input);
-        editor.undoStack()->redo();
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        editor.exportFile(work.filePath("overview-move.sra"));
-        QFile overviewSave(work.filePath("overview-move.sra"));
-        QVERIFY(overviewSave.open(QIODevice::ReadOnly));
-        QCOMPARE(SaveDocument::open(project.rom(), overviewSave.readAll()).memory(), expected.memory());
-        editor.undoStack()->undo();
-        expected = *editor.document();
-        expected.apply(expected.planUnitSwap(0, 1, 5, 1, project.classData()), true);
-        QVERIFY(drop(units->viewport(), overviewPoint(5, 4), member));
-        QCOMPARE(editor.document()->memory(), expected.memory());
-        QCOMPARE(editor.document()->units()[0].unity, 23);
-        QCOMPARE(editor.document()->units().last().unity, 23);
-        editor.undoStack()->undo();
-        QCOMPARE(editor.document()->serialize(), input);
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 0), member)); // Protected target leader.
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), leader));
-        QCOMPARE(editor.document()->serialize(), input);
-        unity->setValue(unity->value() + 1);
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member));
-        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
-        QCOMPARE(editor.document()->serialize(), input);
-        editor.loadBytes(fixture("unit-full-payload.bin"));
-        SaveArmyDrag tenth(panel, 2, 2, 10);
-        const auto fullBefore = editor.document()->serialize();
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 6), tenth));
-        QCOMPARE(editor.document()->serialize(), fullBefore);
-        editor.loadBytes(fixture("unit-capacity-payload.bin"));
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member));
-        QCOMPARE(editor.document()->serialize(), overloaded);
-        // A large member uses two places and needs its neighbouring cells clear.
-        const auto classData = project.classData();
-        int largeClass = -1;
-        for (int id = 1; id < classData.entries().size(); ++id)
-            if (classData.unitSize(id, id) == 2) { largeClass = id; break; }
-        QVERIFY(largeClass >= 0);
-        auto large = SaveDocument::open(project.rom(), input);
-        large.apply(large.planToReserve(0, 2, classData), true);
-        large.apply(large.planUnitEdit(0, {0, 8, 0, 0, 0}, 23, 2, classData), true);
-        large.apply(large.planEdit(SaveTable::Characters, 2, "class", largeClass), true);
-        large.apply(large.planEdit(SaveTable::Characters, 2, "secondaryClass", largeClass), true);
-        editor.loadBytes(large.serialize());
-        const auto largeBefore = editor.document()->serialize();
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 2), member)); // Adjacent to the middle cell.
-        QCOMPARE(editor.document()->serialize(), largeBefore);
-        large.apply(large.planFromReserve(3, 5, 2, classData), true);
-        editor.loadBytes(large.serialize());
-        const auto sixPlaces = editor.document()->serialize();
-        QVERIFY(!drop(units->viewport(), overviewPoint(5, 6), member)); // Four small + one large = six.
-        QCOMPARE(editor.document()->serialize(), sixPlaces);
-        editor.loadBytes(input);
-        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/save-overview-drag.png"));
-        // Double-click the member under the pointer, including a different squad,
-        // without changing the save or opening empty cells / Soldier records.
-        auto tabs = editor.findChild<QTabWidget *>();
-        auto doubleClick = [&](QPoint point) {
-            QTest::mouseClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-            QTest::mouseDClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-            QCoreApplication::processEvents();
-        };
-        for (const auto [unit, cell, id] : {std::tuple{0, 4, 2}, std::tuple{5, 8, 9}}) {
-            tabs->setCurrentWidget(panel);
-            const auto point = overviewPoint(unit, cell);
-            QTest::mouseClick(units->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-            bool opened = false;
-            QTimer::singleShot(0, &editor, [&] {
-                auto dialog = editor.findChild<QDialog *>("saveMemberDialog");
-                QVERIFY(dialog);
-                const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
-                opened = true;
-                QCOMPARE(tabs->currentWidget(), panel);
-                QCOMPARE(dialog->findChild<QLineEdit *>("saveMember_name")->text(),
-                         editor.document()->value(SaveTable::Characters, id, "name").toString());
-                dialog->findChild<QSpinBox *>("saveMember_strength")->setValue(123);
-                auto weapon = dialog->findChild<QComboBox *>("saveMember_weapon");
-                weapon->setCurrentIndex(weapon->findData(1));
-                dialog->findChild<QSpinBox *>("saveMember_hpMax")->setValue(200);
-                dialog->findChild<QSpinBox *>("saveMember_hpCur")->setValue(250);
-                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
-                QVERIFY(dialog->isVisible());
-                QVERIFY(!dialog->findChild<QLabel *>("saveMemberError")->text().isEmpty());
-                dialog->findChild<QSpinBox *>("saveMember_hpCur")->setValue(180);
-                QVERIFY(dialog->findChild<QLabel *>("saveMemberError")->text().isEmpty());
-                QCOMPARE(editor.document()->serialize(), input); // Draft has not touched the army.
-                QVERIFY(dialog->grab().save(QCoreApplication::applicationDirPath() + "/save-member-popup.png"));
-                dialog->findChild<QDialogButtonBox *>()->button(
-                    id == 2 ? QDialogButtonBox::Save : QDialogButtonBox::Cancel)->click();
-            });
-            QMouseEvent doubleEvent(QEvent::MouseButtonDblClick, QPointF(point),
-                                   QPointF(units->viewport()->mapToGlobal(point)),
-                                   Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(units->viewport(), &doubleEvent);
-            QCoreApplication::processEvents();
-            QVERIFY(opened);
-            QCOMPARE(tabs->currentWidget(), panel);
-            if (id == 2) {
-                expected = SaveDocument::open(project.rom(), input);
-                expected.apply(expected.planEdit(SaveTable::Characters, id, "hpMax", 200), true);
-                expected.apply(expected.planEdit(SaveTable::Characters, id, "hpCur", 180), true);
-                expected.apply(expected.planEdit(SaveTable::Characters, id, "strength", 123), true);
-                expected.apply(expected.planEdit(SaveTable::Characters, id, "weapon", 1), true);
-                QCOMPARE(editor.document()->memory(), expected.memory());
-                QCOMPARE(editor.undoStack()->count(), 1);
-                editor.undoStack()->undo();
-            }
-            QCOMPARE(editor.document()->serialize(), input);
-        }
-        tabs->setCurrentWidget(panel);
-        for (const auto [unit, cell] : {std::pair{0, 2}, std::pair{2, 7}, std::pair{4, 7}}) {
-            doubleClick(overviewPoint(unit, cell));
-            QCOMPARE(tabs->currentWidget(), panel);
-            QCOMPARE(editor.document()->serialize(), input);
-        }
-        doubleClick(nameplate(units->currentItem()));
-        QCOMPARE(tabs->currentWidget(), panel);
-        unity->setValue(unity->value() + 1);
-        doubleClick(overviewPoint(5, 8));
-        QCOMPARE(tabs->currentWidget(), panel);
-        QVERIFY(editor.hasPendingUnitEdits());
-        QCOMPARE(editor.document()->serialize(), input);
-        editor.findChild<QPushButton *>("saveUnitDiscard")->click();
-    }
-    void saveSquadEditing() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            const auto rom = Rom::open(path);
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("save-unit-mips.cjs"),
-                                     work.path()});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
-            QFile payload(work.filePath("unit-payload.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            QByteArray input(0x10000, 0);
-            input.replace(0x3a, 6180, payload.readAll());
-            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
-                                        0x1850, 0, 0));
-            auto project = Project::fromRom(rom);
-            SaveEditor editor(&project);
-            editor.resize(1250, 800);
-            editor.show();
-            editor.loadBytes(input);
-            auto panel = editor.findChild<QWidget *>("saveSquads");
-            editor.findChild<QTabWidget *>()->setCurrentWidget(panel);
-            auto units = editor.findChild<QListWidget *>("saveUnitList");
-            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
-            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
-            auto tactic = editor.findChild<QComboBox *>("saveUnitTactic");
-            auto apply = editor.findChild<QPushButton *>("saveUnitApply");
-            auto supply = editor.findChild<QComboBox *>("saveUnitSupply1");
-            auto supply0 = editor.findChild<QComboBox *>("saveUnitSupply0");
-            QVERIFY(supply && supply0);
-            QVERIFY(supply->findData(24) >= 0);
-            QCOMPARE(supply->findData(21), -1);
-            QCOMPARE(supply0->currentData().toInt(), 9);
-            QVERIFY(!supply0->currentText().contains('\n'));
-            QVERIFY(editor.findChild<QLabel *>("saveUnitCapacity")->text().contains("capacity 6"));
-            unity->setValue(24);
-            QVERIFY(
-                !supply->isEnabled()); // A pending formation draft cannot be silently discarded.
-            unity->setValue(23);
-            QVERIFY(supply->isEnabled());
-            const auto beforeSupplies = editor.document()->memory();
-            supply->setCurrentIndex(supply->findData(24));
-            QCOMPARE(editor.document()->units()[0].supplies[1], 24);
-            auto afterSupplies = beforeSupplies;
-            afterSupplies[0x1971f0 + 14] = 24;
-            QCOMPARE(editor.document()->memory(), afterSupplies);
-            QCOMPARE(editor.undoStack()->count(), 1);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            QCOMPARE(supply->currentData().toInt(), 0);
-            editor.undoStack()->redo();
-            QCOMPARE(supply->currentData().toInt(), 24);
-            const auto supplyOutput = work.filePath("squad-supplies.SaveRAM");
-            auto supplyMetadata = project.record(Table::Consumables, 24).bytes;
-            const auto originalSupplyMetadata = supplyMetadata;
-            supplyMetadata[5] = 1;
-            project.replaceBytes(Table::Consumables, 24, supplyMetadata);
-            panel->hide();
-            panel->show();
-            QVERIFY(supply->currentText().contains("Keep existing"));
-            QVERIFY_THROWS_EXCEPTION(Error, editor.exportFile(supplyOutput));
-            QVERIFY(!QFileInfo::exists(supplyOutput));
-            project.replaceBytes(Table::Consumables, 24, originalSupplyMetadata);
-            auto tooWide = project.record(Table::Consumables, 32).bytes;
-            tooWide[5] = 0;
-            project.replaceBytes(Table::Consumables, 32, tooWide);
-            panel->hide();
-            panel->show();
-            QCOMPARE(supply->findData(32), -1);
-            QVERIFY(supply->currentText().contains("Medal"));
-            editor.exportFile(supplyOutput);
-            QFile supplyFile(supplyOutput);
-            QVERIFY(supplyFile.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, supplyFile.readAll()).memory(), afterSupplies);
-            auto supplyScroll = editor.findChild<QScrollArea *>("saveUnitDetailScroll");
-            QVERIFY(supplyScroll);
-            editor.resize(1250, 1050);
-            editor.findChild<QTabWidget *>("saveArmyDetails")->setCurrentIndex(3);
-            supplyScroll->ensureWidgetVisible(editor.findChild<QComboBox *>("saveUnitSupply9"));
-            QCoreApplication::processEvents();
-            QVERIFY(supply->isVisible());
-            QVERIFY(editor.grab().save("save-squad-supplies.png"));
-            editor.loadBytes(input);
-            editor.findChild<QTabWidget *>("saveArmyDetails")->setCurrentIndex(0);
-            QCOMPARE(units->count(), 5);
-            QCOMPARE(members->item(0)->text(), QString("Member1 · Leader"));
-            QVERIFY(editor.findChild<QPushButton *>("saveUnitCell0")->text().contains("Member1"));
-            auto armyBoard = editor.findChild<FormationBoard *>("saveUnitCellBoard");
-            QVERIFY(armyBoard);
-            QVERIFY(armyBoard->cellCenter(6).y() > armyBoard->cellCenter(0).y()); // Saved front row nearest viewer.
-            auto dragSaveMember = [&](int from, int to) {
-                auto source = armyBoard->cell(from);
-                const auto start = source->mapFrom(armyBoard, armyBoard->cellCenter(from));
-                const auto end = source->mapFrom(armyBoard, armyBoard->cellCenter(to));
-                QTest::mousePress(source, Qt::LeftButton, Qt::NoModifier, start);
-                QMouseEvent movement(QEvent::MouseMove, end, source->mapToGlobal(end),
-                                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-                QApplication::sendEvent(source, &movement);
-                QTest::mouseRelease(source, Qt::LeftButton, Qt::NoModifier, end);
-            };
-            dragSaveMember(0, 4);
-            QVERIFY(armyBoard->cell(4)->text().contains("Member1"));
-            dragSaveMember(4, 0);
-            QVERIFY(armyBoard->cell(0)->text().contains("Member1"));
-            QCOMPARE(editor.document()->serialize(), input);
-            QVERIFY(armyBoard->grab().save(QCoreApplication::applicationDirPath()+"/army-board-save.png"));
-            members->setCurrentRow(0);
-            editor.findChild<QPushButton *>("saveUnitCell4")
-                ->click(); // Swap the leader and member2.
-            unity->setValue(99);
-            tactic->setCurrentIndex(tactic->findData(3));
-            QCOMPARE(editor.document()->serialize(), input);
-            QCOMPARE(editor.undoStack()->count(), 0);
-            apply->click();
-            QCOMPARE(editor.undoStack()->count(), 1);
-            QCOMPARE(editor.document()->units()[0].cells, QVector<int>({4, 0, 8, 0, 0}));
-            QCOMPARE(editor.document()->units()[0].unity, 99);
-            QCOMPARE(editor.document()->units()[0].tactic, 3);
-            const auto expected = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), input);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            QVERIFY(editor.grab().save("save-squads.png"));
-            const auto output = work.filePath("squads.SaveRAM");
-            editor.exportFile(output);
-            QFile saved(output);
-            QVERIFY(saved.open(QIODevice::ReadOnly));
-            const auto reopened = SaveDocument::open(rom, saved.readAll());
-            QCOMPARE(reopened.memory(), editor.document()->memory());
-            auto swap = editor.findChild<QPushButton *>("saveSwapApply");
-            QVERIFY(!swap->isEnabled()); // Leader stays in place.
-            members->setCurrentRow(1);
-            auto targetUnit = editor.findChild<QComboBox *>("saveSwapUnit");
-            auto targetMember = editor.findChild<QComboBox *>("saveSwapMember");
-            targetUnit->setCurrentIndex(targetUnit->findData(5));
-            targetMember->setCurrentIndex(targetMember->findData(1));
-            QVERIFY(swap->isEnabled());
-            unity->setValue(98);
-            QVERIFY(!swap->isEnabled()); // Do not discard a pending squad edit.
-            unity->setValue(99);
-            QVERIFY(swap->isEnabled());
-            swap->click();
-            QCOMPARE(editor.document()->units()[0].members[1], 8);
-            QCOMPARE(editor.document()->units().last().members[1], 2);
-            QCOMPARE(editor.document()->units()[0].unity, 99);
-            QCOMPARE(editor.document()->units().last().unity, 23);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            editor.undoStack()->redo();
-            const auto swappedOutput = work.filePath("swapped.SaveRAM");
-            editor.exportFile(swappedOutput);
-            QFile swappedFile(swappedOutput);
-            QVERIFY(swappedFile.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, swappedFile.readAll()).memory(),
-                     editor.document()->memory());
-            QVERIFY(editor.grab().save("save-member-swap.png"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            members->setCurrentRow(1);
-            targetUnit->setCurrentIndex(targetUnit->findData(5));
-            targetMember->setCurrentIndex(
-                targetMember->findData(-3)); // Empty cell2, shown as cell3.
-            QCOMPARE(swap->text(), QString("Move selected member"));
-            QVERIFY(swap->isEnabled());
-            unity->setValue(98);
-            QVERIFY(!swap->isEnabled());
-            unity->setValue(99);
-            QVERIFY(swap->isEnabled());
-            swap->click();
-            QCOMPARE(editor.document()->units()[0].members[1], 0);
-            QCOMPARE(editor.document()->units()[0].cells[1], 0);
-            QCOMPARE(editor.document()->units().last().members[3], 2);
-            QCOMPARE(editor.document()->units().last().cells[3], 2);
-            QCOMPARE(editor.document()->units()[0].unity, 99);
-            QCOMPARE(editor.document()->units().last().unity, 23);
-            const auto moved = editor.document()->serialize();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), moved);
-            const auto movedOutput = work.filePath("moved.SaveRAM");
-            editor.exportFile(movedOutput);
-            QFile movedFile(movedOutput);
-            QVERIFY(movedFile.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, movedFile.readAll()).memory(),
-                     editor.document()->memory());
-            units->setCurrentRow(4);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-member-transfer.png"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            auto toReserve = editor.findChild<QPushButton *>("saveMoveToReserve");
-            auto fromReserve = editor.findChild<QPushButton *>("saveAddFromReserve");
-            auto reserveMember = editor.findChild<QComboBox *>("saveReserveMember");
-            auto reserveCell = editor.findChild<QComboBox *>("saveReserveCell");
-            QVERIFY(toReserve && fromReserve && reserveMember && reserveCell);
-            units->setCurrentRow(0);
-            QVERIFY(!toReserve->isEnabled()); // Leaders cannot move to reserve.
-            members->setCurrentRow(1);
-            QVERIFY(toReserve->isEnabled());
-            unity->setValue(98);
-            QVERIFY(!toReserve->isEnabled());
-            unity->setValue(99);
-            toReserve->click();
-            QCOMPARE(editor.document()->reserveMembers(), QVector<int>{2});
-            QCOMPARE(editor.document()->units()[0].members[1], 0);
-            QCOMPARE(editor.document()->units()[0].unity, 0);
-            const auto reserved = editor.document()->serialize();
-            units->setCurrentRow(4);
-            QCOMPARE(reserveMember->currentData().toInt(), 2);
-            QVERIFY(reserveMember->currentText().contains("Member2"));
-            reserveCell->setCurrentIndex(reserveCell->findData(2));
-            QVERIFY(fromReserve->isEnabled());
-            unity->setValue(22);
-            QVERIFY(!fromReserve->isEnabled());
-            unity->setValue(23);
-            fromReserve->click();
-            auto reserveExpected = SaveDocument::open(rom, moved).memory();
-            reserveExpected[0x1971f0 + 12] = 0;
-            reserveExpected[0x1971f0 + 5 * 25 + 12] = 0;
-            QCOMPARE(editor.document()->memory(), reserveExpected);
-            const auto reserveMoved = editor.document()->serialize();
-            QVERIFY(editor.document()->reserveMembers().isEmpty());
-            QVERIFY(!fromReserve->isEnabled());
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), reserved);
-            QVERIFY(fromReserve->isEnabled());
-            editor.resize(1250, 1050);
-            QCoreApplication::processEvents();
-            QVERIFY(editor.grab().save("save-reserve-membership.png"));
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            editor.undoStack()->redo();
-            editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), reserveMoved);
-            const auto reserveOutput = work.filePath("reserve-transfer.SaveRAM");
-            editor.exportFile(reserveOutput);
-            QFile reserveFile(reserveOutput);
-            QVERIFY(reserveFile.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, reserveFile.readAll()).memory(),
-                     editor.document()->memory());
-            editor.undoStack()->undo();
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            units->setCurrentRow(1);
-            QCOMPARE(members->item(1)->text(), QString("Soldier group 1"));
-            members->setCurrentRow(1);
-            QVERIFY(toReserve->isEnabled());
-            editor.findChild<QPushButton *>("saveUnitCell8")->click();
-            apply->click();
-            QCOMPARE(editor.document()->units()[1].cells[1], 8);
-            editor.undoStack()->undo();
-            QCOMPARE(editor.document()->serialize(), expected);
-            units->setCurrentRow(3);
-            QCOMPARE(members->item(1)->text(), QString("Unknown member 220"));
-            members->setCurrentRow(1);
-            editor.findChild<QPushButton *>("saveUnitCell8")->click();
-            apply->click();
-            QVERIFY(editor.findChild<QLabel *>("saveError")->text().contains("unknown member"));
-            QCOMPARE(editor.document()->serialize(), expected);
-            QFile raw(work.filePath("unit-ram.bin"));
-            QVERIFY(raw.open(QIODevice::ReadOnly));
-            editor.loadBytes(raw.readAll());
-            QVERIFY(!apply->isEnabled());
-            QVERIFY(!toReserve->isEnabled());
-            QVERIFY(!fromReserve->isEnabled());
-            QVERIFY(!supply->isEnabled());
-            QVERIFY(!editor.findChild<QPushButton *>("saveUnitCell0")->isEnabled());
-        } catch (const Error &e) {
-            QFAIL(e.what());
-        }
-    }
-    void saveSquadDraftProtection() {
-        try {
-            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-            if (path.isEmpty())
-                QSKIP("Private ROM required");
-            QTemporaryDir work;
-            QProcess generator;
-            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
-                                         .absoluteDir()
-                                         .filePath("save-unit-mips.cjs"),
-                                     work.path()});
-            QVERIFY(generator.waitForFinished(30000));
-            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
-            QFile payload(work.filePath("unit-payload.bin"));
-            QVERIFY(payload.open(QIODevice::ReadOnly));
-            const auto packed = payload.readAll();
-            QByteArray input(0x10000, 0);
-            for (int slot : {0, 1}) {
-                const int at = int(lc_save_record_offset(slot, 0));
-                input.replace(at + 0x2a, 6180, packed);
-                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + at),
-                                            lc_save_record_size(slot, 0), slot, 0));
-            }
-            MainWindow window;
-            window.show();
-            window.loadRom(path);
-            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SaveEditor *>() != nullptr, 20000);
-            auto editor = window.findChild<SaveEditor *>();
-            editor->loadBytes(input);
-            auto workspace = window.findChild<QTabWidget *>();
-            workspace->setCurrentWidget(editor);
-            auto panel = editor->findChild<QWidget *>("saveSquads");
-            editor->findChild<QTabWidget *>()->setCurrentWidget(panel);
-            auto units = editor->findChild<QListWidget *>("saveUnitList");
-            auto members = editor->findChild<QListWidget *>("saveUnitMembers");
-            auto unity = editor->findChild<QSpinBox *>("saveUnitUnity");
-            auto apply = editor->findChild<QPushButton *>("saveUnitApply");
-            auto discard = editor->findChild<QPushButton *>("saveUnitDiscard");
-            auto undo = editor->findChild<QPushButton *>("saveUndo");
-            auto slotPicker = editor->findChild<QComboBox *>("saveSlot");
-            auto group = window.findChild<QUndoGroup *>();
-            QVERIFY(discard && undo && group);
-            QVERIFY(!editor->modified());
-            unity->setValue(99);
-            members->setCurrentRow(1);
-            editor->findChild<QPushButton *>("saveUnitCell5")->click();
-            QVERIFY(editor->hasPendingUnitEdits());
-            QVERIFY(editor->modified());
-            QVERIFY(window.isWindowModified());
-            QVERIFY(!units->isEnabled());
-            QVERIFY(!slotPicker->isEnabled());
-            QVERIFY(!undo->isEnabled());
-            QVERIFY(!editor->findChild<QPushButton *>("exportSave")->isEnabled());
-            QVERIFY(group->activeStack() == nullptr);
-            editor->selectCharacter(1);
-            QCOMPARE(editor->findChild<QTabWidget *>()->currentWidget(), panel);
-            QVERIFY(editor->hasPendingUnitEdits());
-            units->setCurrentRow(1);
-            QCOMPARE(units->currentRow(), 0);
-            QCOMPARE(unity->value(), 99);
-            slotPicker->setCurrentIndex(slotPicker->findData(1));
-            QCOMPARE(editor->document()->selectedSlot(), 0);
-            QCOMPARE(slotPicker->currentData().toInt(), 0);
-            QVERIFY(!editor->edit(SaveTable::Game, 0, "goth", 12345));
-            const auto output = work.filePath("draft.SaveRAM");
-            QVERIFY_THROWS_EXCEPTION(Error, editor->exportFile(output));
-            QVERIFY(!QFileInfo::exists(output));
-            group->undo();
-            QCOMPARE(editor->document()->serialize(), input);
-            workspace->setCurrentIndex(0);
-            QVERIFY(group->activeStack() != nullptr);
-            workspace->setCurrentWidget(editor);
-            QVERIFY(group->activeStack() == nullptr);
-            QCOMPARE(unity->value(), 99);
-            QVERIFY(editor->findChild<QLabel *>("saveUnitDraftNote")->isVisible());
-            QCoreApplication::processEvents();
-            QVERIFY(window.grab().save("save-squad-pending-draft.png"));
-            apply->click();
-            QVERIFY(!editor->hasPendingUnitEdits());
-            QVERIFY(!discard->isEnabled());
-            QCOMPARE(editor->document()->units()[0].unity, 99);
-            QCOMPARE(editor->document()->units()[0].cells[1], 5);
-            QCOMPARE(editor->undoStack()->count(), 1);
-            QCOMPARE(group->activeStack(), editor->undoStack());
-            group->undo();
-            QCOMPARE(editor->document()->serialize(), input);
-            QVERIFY(!editor->modified());
-            unity->setValue(98);
-            QVERIFY(!editor->findChild<QPushButton *>("saveRedo")->isEnabled());
-            group->redo();
-            QCOMPARE(editor->document()->serialize(), input);
-            discard->click();
-            QCOMPARE(unity->value(), 23);
-            QVERIFY(!editor->hasPendingUnitEdits());
-            QVERIFY(!editor->modified());
-            QVERIFY(!window.isWindowModified());
-            QVERIFY(editor->findChild<QPushButton *>("saveRedo")->isEnabled());
-            editor->exportFile(output);
-            QFile exported(output);
-            QVERIFY(exported.open(QIODevice::ReadOnly));
-            QCOMPARE(exported.readAll(), input);
-            units->setCurrentRow(3); // Existing unqualified member220 cannot be repositioned.
-            members->setCurrentRow(1);
-            editor->findChild<QPushButton *>("saveUnitCell8")->click();
-            apply->click();
-            QVERIFY(editor->hasPendingUnitEdits());
-            QVERIFY(discard->isEnabled());
-            QVERIFY(editor->findChild<QLabel *>("saveError")->text().contains("unknown member"));
-            QCOMPARE(editor->document()->serialize(), input);
-            units->setCurrentRow(0);
-            QCOMPARE(units->currentRow(), 3);
-            discard->click();
-            QVERIFY(!editor->hasPendingUnitEdits());
-            units->setCurrentRow(0);
-            QCOMPARE(units->currentRow(), 0);
         } catch (const Error &e) {
             QFAIL(e.what());
         }
@@ -7033,7 +5803,7 @@ class UiTests : public QObject {
         tick->setValue(3);
         QVERIFY(preview.renderedFrame().pixelColor(153, 120) != QColor(Qt::red));
         QCOMPARE(preview.renderedFrame().pixelColor(176, 120), QColor(Qt::red));
-        QVERIFY(!play->isEnabled());
+        QVERIFY(play->isEnabled());
         QVERIFY(status->text().contains("Sequence complete"));
         channel->setValue(1);
         QCOMPARE(std::bit_cast<float>(u32(preview.property("channelRecord").toByteArray(), 0x40)),
@@ -7044,12 +5814,16 @@ class UiTests : public QObject {
         play->click();
         QTRY_COMPARE_WITH_TIMEOUT(tick->value(), 3, 2000);
         QCOMPARE(play->text(), QString("Play"));
-        QVERIFY(!play->isEnabled());
+        QVERIFY(play->isEnabled());
+        auto loop=preview.findChild<QCheckBox *>("transformLoop");QVERIFY(loop);
+        play->click();QCOMPARE(tick->value(),0);
+        QTRY_COMPARE_WITH_TIMEOUT(play->text(),QString("Play"),2000);
+        loop->setChecked(true);play->click();QTest::qWait(250);QCOMPARE(play->text(),QString("Pause"));play->click();
         preview.selectSequence(0, 99, 3, SceneCamera(rom.bytes().mid(0x2866f0, 56), 1));
         QVERIFY(preview.renderedFrame().isNull());
         QVERIFY(!step->isEnabled());
         QVERIFY(status->text().contains("group"));
-        preview.findChild<QPushButton *>("transformRestart")->click();
+        preview.selectCommand(program, 1);
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
@@ -7081,7 +5855,7 @@ class UiTests : public QObject {
         QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));const auto skipped=preview.renderedFrame();QVERIFY(skipped!=before);
         position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
         position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
-        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(14);
+        preview.seekToUpdate(0);position->setValue(14);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
         preview.selectScene(scenes,id,0);position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
         skip->click();position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
@@ -7183,7 +5957,7 @@ class UiTests : public QObject {
         position->setValue(124);
         QTRY_COMPARE(preview.property("sceneTick").toInt(), 124);
         QCOMPARE(preview.renderedFrame(), later);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(), 35);
         QCOMPARE(preview.renderedFrame(), first);
@@ -7227,7 +6001,7 @@ class UiTests : public QObject {
         position->setValue(174);QTRY_COMPARE(preview.property("sceneTick").toInt(),174);
         QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QCOMPARE(preview.renderedFrame(),background);
         position->setValue(124);QTRY_COMPARE(preview.property("sceneTick").toInt(),124);QCOMPARE(preview.renderedFrame(),complete);
-        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
+        preview.seekToUpdate(0);position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
     }
     void storyOpeningDialogue() {
@@ -7318,6 +6092,10 @@ class UiTests : public QObject {
         QCOMPARE(scenes.json(), savedScenes);
         qInfo() << "Full story scene released at step" << end << "with" << audioCount
                 << "audio requests;" << frames.size() << "replay samples";
+        auto play=preview.findChild<QPushButton *>("scenePlay");
+        auto loop=preview.findChild<QCheckBox *>("sceneLoop");QVERIFY(play&&loop);QVERIFY(play->isEnabled());
+        play->click();QCOMPARE(preview.property("sceneTick").toInt(),0);QVERIFY(play->isChecked());play->click();
+        QVERIFY(!preview.property("sceneStopped").toBool());
     }
     void sceneDialogueReplay() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -7371,7 +6149,7 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), waiting);
         seek(125);
         QCOMPARE(preview.renderedFrame(), resumed);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         seek(125);
         QCOMPARE(preview.renderedFrame(), resumed);
         auto name = preview.findChild<QLineEdit *>("sceneDialogueName0");
@@ -7757,7 +6535,7 @@ class UiTests : public QObject {
             QCOMPARE(preview.renderedFrame(), accepted);
             seek(160);
             QCOMPARE(preview.renderedFrame(), before);
-            preview.findChild<QPushButton *>("sceneRestart")->click();
+            preview.seekToUpdate(0);
             seek(acceptedTick);
             QCOMPARE(preview.renderedFrame(), accepted);
             // A new input after rewinding replaces the recorded future.
@@ -7779,7 +6557,7 @@ class UiTests : public QObject {
                 preview.findChild<QPushButton *>("panelConfirm")->click();
                 seek(40);
                 QCOMPARE(preview.renderedFrame(), before);
-                preview.findChild<QPushButton *>("sceneRestart")->click();
+                preview.seekToUpdate(0);
                 seek(40);
                 QCOMPARE(preview.renderedFrame(), before);
             }
@@ -7846,7 +6624,7 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), middle);
         seek(151);
         QCOMPARE(preview.renderedFrame(), opening);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         seek(25);
         QCOMPARE(preview.renderedFrame(), closed);
     }
@@ -7903,7 +6681,7 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), halfway);
         seek(151);
         QCOMPARE(preview.renderedFrame(), before);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         seek(8);
         QCOMPARE(preview.renderedFrame(), closed);
     }
@@ -7958,7 +6736,7 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), hidden);
         seek(145);
         QCOMPARE(preview.renderedFrame(), visible);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         seek(4);
         QCOMPARE(preview.renderedFrame(), hidden);
     }
@@ -8019,7 +6797,7 @@ class UiTests : public QObject {
         seek(141);
         QCOMPARE(preview.renderedFrame(), high);
         preview.grab().save("title-reveal-preview.png");
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         seek(145);
         QCOMPARE(preview.renderedFrame(), released);
     }
@@ -8109,7 +6887,7 @@ class UiTests : public QObject {
         position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
         QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));
         position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),moved);
-        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
+        preview.seekToUpdate(0);position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),moved);
         position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
         QTest::mouseClick(preview.findChild<QPushButton *>("imagePanLeft"),Qt::LeftButton);
@@ -8153,7 +6931,7 @@ class UiTests : public QObject {
         position->setValue(1);QTRY_COMPARE(preview.property("sceneTick").toInt(),1);QCOMPARE(preview.renderedFrame(),first);
         preview.update();QCoreApplication::processEvents();QCOMPARE(preview.renderedFrame(),first);
         QVERIFY(preview.grab().save(QString("scene-image-presentation-%1.png").arg(transition)));
-        preview.findChild<QPushButton *>("sceneRestart")->click();preview.findChild<QPushButton *>("sceneStep")->click();QCOMPARE(preview.renderedFrame(),first);
+        preview.seekToUpdate(0);preview.findChild<QPushButton *>("sceneStep")->click();QCOMPARE(preview.renderedFrame(),first);
     }
     void scatteredPropsSeek_data() {
         QTest::addColumn<int>("environmentSelector");
@@ -8188,7 +6966,7 @@ class UiTests : public QObject {
         position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
         QCOMPARE(preview.renderedFrame(), first);
         preview.update(); QCoreApplication::processEvents(); QCOMPARE(preview.renderedFrame(), first);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         preview.findChild<QPushButton *>("sceneStep")->click(); QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save(QString("scattered-props-preview-%1.png").arg(environmentSelector)));
     }
@@ -9484,7 +8262,7 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(next->isEnabled());
         position->setValue(10000);
-        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.seekToUpdate(0);
         QCoreApplication::processEvents();
         QCOMPARE(preview.property("sceneTick").toInt(), 0);
         words[5] = 30000; // Reloaded project edits change the command's Actor X.
@@ -9661,11 +8439,11 @@ class UiTests : public QObject {
              poses = editor.findChild<QComboBox *>("actorPose");
         auto position = editor.findChild<QSpinBox *>("actorPosition"),
              variant = editor.findChild<QSpinBox *>("actorVariant");
-        auto next = editor.findChild<QPushButton *>("actorStep"),
-             reset = editor.findChild<QPushButton *>("actorRestart");
+        auto next = editor.findChild<QPushButton *>("actorStep");
+        auto loop = editor.findChild<QCheckBox *>("actorLoop");
         auto layers = editor.findChild<QListWidget *>("actorLayers");
         auto view = editor.findChild<QGraphicsView *>("actorCanvas");
-        QVERIFY(banks && poses && position && variant && next && reset && layers && view);
+        QVERIFY(banks && poses && position && variant && next && loop && layers && view);
         QCOMPARE(banks->count(), 68);
         banks->setCurrentIndex(banks->findData(30));
         poses->setCurrentIndex(poses->findData(12));
@@ -9680,7 +8458,7 @@ class UiTests : public QObject {
         }
         QVERIFY(layers->count() > 0);
         const auto finalFrame = editor.property("frameToken");
-        reset->click();
+        position->setValue(0);
         QCOMPARE(position->value(), 0);
         position->setValue(24);
         QCOMPARE(editor.property("frameToken"), finalFrame);
@@ -9722,6 +8500,14 @@ class UiTests : public QObject {
         QVERIFY(layers->count() > 0);
         QTest::qWait(25);
         QVERIFY(editor.grab().save("native-body-preview.png"));
+        auto play=editor.findChild<QPushButton *>("actorPlay");
+        auto timer=editor.findChild<QTimer *>("actorPlaybackTimer");QVERIFY(play&&timer);
+        position->setValue(0);loop->setChecked(false);play->click();
+        for(int tick=0;tick<2000 && play->isChecked();++tick)QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection);
+        QVERIFY(!play->isChecked());play->click();QCOMPARE(position->value(),0);play->click();
+        loop->setChecked(true);play->click();
+        for(int tick=0;tick<200;++tick)QMetaObject::invokeMethod(timer,"timeout",Qt::DirectConnection);
+        QVERIFY(play->isChecked());play->click();loop->setChecked(false);
         layers->setCurrentRow(0);
         banks->setCurrentIndex(banks->findData(0));
         QCOMPARE(layers->count(), 0);
@@ -10372,11 +9158,11 @@ class UiTests : public QObject {
         pages->setCurrentWidget(preview);
         auto step = preview->findChild<QPushButton *>("dialogueStep");
         auto play = preview->findChild<QPushButton *>("dialoguePlay");
-        auto restart = preview->findChild<QPushButton *>("dialogueRestart");
+        auto loop = preview->findChild<QCheckBox *>("dialogueLoop");
         auto resume = preview->findChild<QPushButton *>("dialogueResume");
         auto canvas = preview->findChild<QLabel *>("dialogueCanvas");
         auto status = preview->findChild<QLabel *>("dialoguePlaybackStatus");
-        QVERIFY(step && play && restart && resume && canvas && status);
+        QVERIFY(step && play && loop && resume && canvas && status);
         QVERIFY2(!status->text().contains("unavailable"), qPrintable(status->text()));
         QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(1));
         int updates = 0;
@@ -10395,9 +9181,8 @@ class UiTests : public QObject {
         }
         QVERIFY(updates < 100);
         QVERIFY(status->text().startsWith("Closed"));
-        restart->click();
-        QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(1));
         play->click();
+        QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(1));
         QTRY_VERIFY_WITH_TIMEOUT(preview->property("updateCount").toULongLong() > 1, 1000);
         play->click();
         QVERIFY(!play->isChecked());
@@ -11984,18 +10769,8 @@ class UiTests : public QObject {
             QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier,
                               pixel(originalBoundary.bottomRight()));
             QTest::qWait(20);
-            auto topBoundary = editor.findChild<QSpinBox *>("mapBoundaryTop");
-            QVERIFY(topBoundary && topBoundary->isVisible());
-            topBoundary->setValue(4);
-            QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
-            undo.undo();
-            QCOMPARE(project.mapEdits()->boundary(1), originalBoundary);
-            undo.redo();
-            QCOMPARE(project.mapEdits()->boundary(1).top(), 4.);
-            const auto numericBoundary = project.mapEdits()->boundary(1);
-            const auto beforeInvalidBoundary=project.mapEdits()->json();
-            topBoundary->setValue(int(numericBoundary.bottom()));QCOMPARE(project.mapEdits()->json(),beforeInvalidBoundary);
-            QCOMPARE(topBoundary->value(),4);QVERIFY(editor.findChild<QLabel *>("mapNotice")->text().contains("8 cells"));
+            QVERIFY(!editor.findChild<QSpinBox *>("mapBoundaryTop"));
+            const auto numericBoundary=originalBoundary;
             QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier,
                               pixel(numericBoundary.bottomRight()));
             QTest::mouseMove(canvas, pixel({248, 249}), 20);

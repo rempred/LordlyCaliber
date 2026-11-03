@@ -2,6 +2,7 @@
  * kernel retains defense, resistance, Luck, rounding, caps and event flags.
  * Spell-index ranges follow the byte-proven func_0020144C reader.
  */
+#include "battle-state.h"
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -46,6 +47,7 @@ int lc_attack_amount(void *source, void *target, float power,
 #define W(p,n) (*(s32 *)((u8 *)(p)+(n)))
 #define H(p,n) (*(u16 *)((u8 *)(p)+(n)))
 #define B(p,n) (*(u8 *)((u8 *)(p)+(n)))
+#define STATE_B(p,n) (*(u8 *)lc_battle_field((void *)(p),(n)))
 extern u8 lc_attack_records[], lc_attack_scratch[];
 int lc_attack_visual_program(int action,int original){
     int value;
@@ -62,6 +64,7 @@ typedef struct {
     void *target;
     s32 targetHP;
     PhysicalGroup *group;
+    int repeatVisual, resultStarted;
 } AttackContext;
 #define CTX ((AttackContext *)lc_attack_scratch)
 void *func_0020C478(u32);
@@ -180,9 +183,11 @@ void lc_attack_begin(void *source) {
     CTX->total=0; CTX->last=0; CTX->initialHP=H(source,0x20);
     CTX->initialMaxHP=H(source,0x22); CTX->hit=0; CTX->time=W(source,0x94);
     CTX->synthetic=0; CTX->target=0; CTX->targetHP=0; CTX->group=0;
+    CTX->repeatVisual=0; CTX->resultStarted=0;
 }
-void lc_attack_group_begin(void *source,int action) { lc_attack_begin(source); CTX->action=action&255; }
-void lc_attack_pedra_begin(void *source) { lc_attack_begin(source); CTX->synthetic=1; }
+void lc_attack_spell_begin(void *source) { lc_attack_begin(source); CTX->repeatVisual=1; }
+void lc_attack_group_begin(void *source,int action) { lc_attack_spell_begin(source); CTX->action=action&255; }
+void lc_attack_pedra_begin(void *source) { lc_attack_spell_begin(source); CTX->synthetic=1; }
 /* Return front/middle/rear-major cell in the target's own formation. */
 int lc_attack_cell(void *actor) {
     int x,y;
@@ -354,6 +359,12 @@ void lc_attack_expanded_targets(void *packet,u8 action,void *source) {
     lc_attack_expand_packet(packet);
     lc_attack_retarget(packet,action,source);
 }
+void lc_attack_spell_visual_targets(int action,int *ids,int *flags) {
+    /* Event22 is length-prefixed. Bit7 in its first secondary byte identifies
+     * an authored repeat list to the adapted playback consumer. It is stripped
+     * before a native effect sees the flags. Keep all repeated actors in order. */
+    if(lc_attack_settings[action*32+2]==11 && ids[0]>=0) flags[0]|=128;
+}
 void lc_attack_visual_targets(int action,int *ids,int *flags) {
     int i,j,n;
     /* Effects still receive actors, not an oversized repeated-hit list. Keep
@@ -386,6 +397,7 @@ int lc_roll(int chance) {
  * ailment or instant death. Playback retains scripted/training safeguards. */
 void lc_attack_target_begin(void *target) {
     CTX->target=target; CTX->targetHP=H(target,0x20);
+    CTX->resultStarted=0;
 }
 void lc_attack_result_event(int event,int time,void *target,int kind,
                             int high,int low,int parameter,int group,int extra) {
@@ -393,6 +405,11 @@ void lc_attack_result_event(int event,int time,void *target,int kind,
         extra=0;
         if(CTX->target==target && CTX->targetHP>0 && H(target,0x20)==0 &&
            func_0020C1B4(target) && lc_roll(lc_rules(CTX->source)[10])) extra=7;
+    }
+    if(event==0x1f && CTX->source && CTX->repeatVisual &&
+       lc_rules(CTX->source)[2]==11 && target==CTX->target) {
+        if(CTX->resultStarted)kind|=128;
+        CTX->resultStarted=1;
     }
     func_0021D334(event,time,target,kind,high,low,parameter,group,extra);
 }
@@ -405,7 +422,7 @@ int lc_attack_status(void *target,int effect,int time) {
     if(effect==16) {
         amount=H(target,0x20);
         func_0022A7B8(target,0,time,amount,0,0);
-        func_0021D334(0x1f,time,target,0,amount>>8,amount&255,0,B(*(void **)0x801ce8c0,0x823),0);
+        lc_attack_result_event(0x1f,time,target,0,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         return 1;
     }
     if(!func_002379AC(effect,target)) return 0;
@@ -457,10 +474,10 @@ void lc_attack_finish(void *source,int time) {
     if(amount>0 && !func_0020C2C0(source)) {
         if(kind==1) {
             amount=func_0020D4C8(source,amount); H(source,0x20)+=amount;
-            func_0021D334(0x1f,time,source,2,amount>>8,amount&255,0,B(*(void **)0x801ce8c0,0x823),0);
+            lc_attack_result_event(0x1f,time,source,2,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         } else {
             func_0022A7B8(source,0,time,amount,0,0);
-            func_0021D334(0x1f,time,source,0,amount>>8,amount&255,0,B(*(void **)0x801ce8c0,0x823),0);
+            lc_attack_result_event(0x1f,time,source,0,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         }
     }
     CTX->source=0;
@@ -478,7 +495,7 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
     }
     else if(effect==2) {
         amount=func_0020D4C8(target,amount); H(target,0x20)+=amount;
-        func_0021D334(0x1f,time,target,2,amount>>8,amount&255,parameter,B(*(void **)0x801ce8c0,0x823),0);
+        func_0021D334(0x1f,time,target,2,amount>>8,amount&255,parameter,STATE_B(*(void **)0x801ce8c0,0x823),0);
     } else if(effect) lc_attack_status(target,effect,time);
     lc_attack_record(source,target,calculated,before,1,time);
 }

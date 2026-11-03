@@ -28,9 +28,15 @@ Runtime buildRuntime() {
     QTemporaryDir output;
     if (!output.isValid()) throw Error("Cannot prepare the native effect preview");
     Runtime result;
-    QMap<QString, quint32> symbols{{"lc_attack_settings", 0x80400000},
-        {"lc_effect_state", 0x80402000}, {"lc_attack_scratch", 0x80404100}};
-    const auto hooks = QJsonDocument::fromJson(source("hooks.json")).object()["hooks"].toArray();
+    QMap<QString, quint32> symbols;
+    const auto metadata = QJsonDocument::fromJson(source("hooks.json")).object();
+    const auto native = metadata["symbols"].toObject();
+    for (auto i = native.begin(); i != native.end(); ++i) symbols[i.key()] = quint32(i->toInteger());
+    symbols["lc_attack_settings"] = 0x80400000;
+    symbols["lc_effect_state"] = 0x80402000;
+    symbols["lc_attack_scratch"] = 0x80404100;
+    symbols["lc_strike_state"] = 0x80425000;
+    const auto hooks = metadata["hooks"].toArray();
     for (const auto &value : hooks) {
         const auto h = value.toObject();
         const auto entry = h["entry"].toString();
@@ -41,15 +47,19 @@ Runtime buildRuntime() {
         put32(code, 0, quint32(words[0].toInteger()));
         put32(code, 4, quint32(words[1].toInteger()));
         put32(code, 8, 0x08000000 | ((address + 8) >> 2 & 0x3ffffff));
-        symbols[h["original"].toString()] = 0x80424000 + quint32(result.trampolines.size());
+        if (!h["original"].toString().isEmpty())
+            symbols[h["original"].toString()] = 0x80424000 + quint32(result.trampolines.size());
         result.trampolines += code;
     }
     quint32 address = 0x80405000;
-    for (const auto &name : {QString("effect-edits"), QString("attack-visual")}) {
+    for (const auto &name : {QString("attack-strikes"), QString("effect-edits"),
+                             QString("attack-visual"), QString("attack-strike-driver")}) {
         auto unit = name;
         unit.replace('-', '_');
-        auto module = compiler.compileModule(source(name == "effect-edits" ? "effect-colors.c" : "effect-image-draw.c") +
-            "\n" + source(name + ".c"), output.path(), unit, address, {}, symbols, true);
+        const auto prefix = name == "effect-edits" ? source("effect-colors.c") :
+                            name == "attack-visual" ? source("effect-image-draw.c") : QByteArray{};
+        auto module = compiler.compileModule(prefix + "\n" + source(name + ".c"), output.path(), unit,
+                                            address, {{"battle-state.h", source("battle-state.h")}}, symbols, true);
         for (auto i = module.entries.begin(); i != module.entries.end(); ++i) symbols[i.key()] = i.value();
         address += (quint32(module.bytes.size()) + 15) & ~15U;
         if (address > 0x80424000) throw Error("Effect preview code exceeds its allocation");
@@ -77,6 +87,7 @@ void installEffectPreviewRuntime(EffectMachine &machine, const AttackVisual &vis
     const auto config = visual.build(inherited);
     if (config.size() > 0xd0000) throw Error("Effect preview artwork exceeds its allocation");
     machine.mount(0x80400000, QByteArray(0x4200, 0));
+    machine.mount(0x80425000, QByteArray(4160, 0));
     machine.mount(0x80430000, config);
     machine.byte(0x80400000 + 55 * 32 + 21, 136);
     machine.word(0x80400000 + 55 * 32 + 24, 0x80430000);

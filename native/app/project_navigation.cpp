@@ -1,4 +1,6 @@
 #include "app/main_window.h"
+#include "app/campaign_editor.h"
+#include "app/scenario_editor.h"
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include "app/scenario_squad_panel.h"
@@ -102,12 +104,15 @@ void MainWindow::navigateTo(const EditLocation &location) {
         } else if (kind == "training") {
             combo("trainingLocation",id); destination=combo("trainingOpponent",location.child);
         } else if (kind == "shops") {
+            combo("shopScope", 1);
             clear("shopSearch"); destination = list("shopList", id);
         } else if (kind == "encounterMap") {
-            clear("encounterSearch"); reveal(list("encounterPools", id));
+            if(auto scenarios=dynamic_cast<ScenarioEditor *>(findChild<QWidget *>("scenarioEditor")))scenarios->selectScenario(location.child);
             destination = combo("encounterMapKey", location.child);
         } else if (kind == "encounters") {
-            clear("encounterSearch"); destination = list("encounterPools", id);
+            const auto keys=project_->encounters()->scenarioKeys(id);
+            if(!keys.isEmpty())if(auto scenarios=dynamic_cast<ScenarioEditor *>(findChild<QWidget *>("scenarioEditor")))scenarios->selectScenario(keys.first());
+            destination = findChild<QWidget *>("encounterEditor");
         } else if (kind == "encounterReward") {
             clear("rewardSearch"); destination = list("rewardClasses", id);
         } else if (kind == "customEncounter") {
@@ -156,6 +161,10 @@ void MainWindow::navigateTo(const EditLocation &location) {
                             steps->setCurrentItem(step); steps->scrollToItem(step);
                         }
                     }
+            } else {
+                for(auto widget:findChildren<QWidget *>())if(auto campaign=dynamic_cast<CampaignEditor *>(widget)) {
+                    reveal(campaign);campaign->selectEvent(id);destination=campaign;break;
+                }
             }
         } else if (kind == "scenarios" || kind == "scenarioSettings" || kind == "map" || kind == "town" || kind == "battlefield") {
             int siteRow = -1;
@@ -185,6 +194,14 @@ void MainWindow::navigateTo(const EditLocation &location) {
                     const bool treasure = location.key == "treasure" && item->data(Qt::UserRole).toInt() == int(MapObject::Treasure) && item->data(Qt::UserRole + 1).toInt() == location.child;
                     if (site || treasure) { objects->setCurrentRow(row); destination = objects; break; }
                 }
+        } else if (kind == "story-event") {
+            for(auto widget:findChildren<QWidget *>())if(auto campaign=dynamic_cast<CampaignEditor *>(widget)) {
+                reveal(campaign);campaign->selectEvent(id,location.child);destination=campaign;break;
+            }
+        } else if (kind == "campaignNode") {
+            for(auto widget:findChildren<QWidget *>())if(auto campaign=dynamic_cast<CampaignEditor *>(widget)) {
+                reveal(campaign);campaign->selectNode(id);destination=campaign;break;
+            }
         } else if (kind == "combatAnimation") {
             destination = combo("combatAnimationClass", id);
             if (location.child >= 0) {

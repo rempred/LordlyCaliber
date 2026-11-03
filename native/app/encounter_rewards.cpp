@@ -176,7 +176,7 @@ void EncounterEditor::refreshRewardClasses() {
             used.insert(member.classId);
     QVector<int> ordered;
     for (bool active : {true, false})
-        for (int id = 1; id < project_->records(Table::Classes).size(); ++id)
+        for (int id = 1; id < project_->records(Table::Classes).size(); ++id) if (!project_->contentDeleted("classes",id))
             if (used.contains(id) == active)
                 ordered << id;
     int selectedRow = 0;

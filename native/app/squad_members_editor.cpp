@@ -118,7 +118,7 @@ void SquadMembersEditor::setMembers(const QVector<CustomMember> &values) {
     count_->setValue(int(values.size()));
     shownCount_ = count_->value();
     QStringList labels;
-    for (int id = minimumClass_; id < project_->records(Table::Classes).size(); ++id)
+    for (int id = minimumClass_; id < project_->records(Table::Classes).size(); ++id) if (!project_->contentDeleted("classes",id))
         labels << QString("%1 · %2").arg(id).arg(QString(project_->record(Table::Classes,id).name).replace('\n',' '));
     for (int i = 0; i < 5; ++i) {
         const auto m = i < values.size() ? values[i] : CustomMember{5, 0, 8-i*2, {0, 0}};
@@ -147,7 +147,7 @@ void SquadMembersEditor::equipmentChoices(int member, const std::array<int,2> &v
         auto box = equipment_[member*2+e];
         QSignalBlocker block(box);
         box->clear(); box->addItem("None — keep class default",0);
-        for (const auto &item : project_->records(Table::Items))
+        for (const auto &item : project_->records(Table::Items)) if (!project_->contentDeleted("items",item.id))
             if (item.id && types.contains(u8(item.bytes,4))) box->addItem(QString("%1 · %2").arg(item.id).arg(item.name.simplified()),item.id);
         if (box->findData(values[e]) < 0) {
             const auto label = values[e] > 0 && values[e] < project_->records(Table::Items).size()

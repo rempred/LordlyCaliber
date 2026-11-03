@@ -1,5 +1,111 @@
 # Native Lordly Caliber
 
+## Cross-feature runtime ownership (November 2)
+
+`tools/runtime-ownership.cjs` checks catalogued code writes, whole-function
+replacement spans and relocation operands across feature boundaries. Exact
+reviewed intersections are recorded in `tools/runtime-sharing.json`, including
+the composition path and regression. New intersections or growth beyond those
+ranges fail the `runtime_ownership` CTest. It also compares fixed ROM descriptors,
+native extension modules and fixed extension-RAM module ranges. This is a static
+guard, not proof of dynamic buffer capacity or overlay lifetime compatibility.
+
+Expanded-army export had another shared-owner conflict: capacity relocates six
+words in native combined-spell/playback owners, while replacement attack C used
+retail squad/character symbols. Attack compilation now relocates those bindings
+through the same capacity allocator. Installation authenticates the capacity
+patch record and checks its before-image, retaining the installed operands.
+The expanded-army rows of `repeatedStrikesExportAndReopen` and
+`attack-capacity-mips.cjs` pass on fresh exports with and without High Attack,
+including custom encounter rounds, export/reopen, stable re-export and disabling
+High Attack again.
+
+An imported OBCS scene arena can reserve otherwise blank bytes inside High
+Attack's module slot. Export now migrates the scene identities/event bindings
+through the existing native allocator before installing High Attack, preserving
+old data and marking the old arena retired. The import roundtrip test covers
+enabling High Attack without first editing the scenes; the migration and stable
+re-export regression pass.
+
+Final export validation reloads Tools after every writer and compares recognized
+settings and availability, including untouched settings. Default values returned
+for unrecognized code no longer conceal a late overwrite. Unknown input code is
+still left outside editable models. Deliberate legacy-display removal retains its
+existing compatibility case.
+
+Capacity placement records exclude the cartridge checksum words at z64 ROM
+0x10..0x17: they describe the final image and can change after any exporter.
+Canonical reconstruction recalculates those derived words. All recorded code
+and descriptor edits remain authenticated against their exact installed bytes;
+older records containing the checksum words remain readable.
+
+## Personal names and removable custom content (November 2)
+
+The name picker groups existing PersonalNames and the three random NameTables.
+Browsing/cancelling makes no edit. Choosing a pool entry copies/deduplicates its
+text into PersonalNames in the same undo command as the identity assignment.
+
+Random-name source support now allows256–1024 entries per pool. Original256-name
+resources keep their byte format. Extended resources prefix their strings with
+`00 52 4e 31` and a big-endian u32 count; the adapted accepted naming owner reads
+that count before RNG selection, preserving the allocation pointer for freeing
+and the existing duplicate retries. Adding names triggers the class/naming-owner
+build; its original owner-size guard remains mandatory. `NameTables.extraRandom`
+stores the three extension arrays, leaving existing version1 edit IDs unchanged.
+Save Editor, Names and Text and the personal-name picker use `randomCount`.
+This extension is source-complete but pending the held build/runtime tests.
+
+Campaign descriptor v3 adds a five-byte location-icon bitset in the road data
+header's previously reserved bytes. Versions 1/2 retain the native ten-location
+castle list. A bounded C lookup replaces that membership loop in the authenticated
+relocated renderer; the original state palettes, flag animation and draw commands
+remain native. The complete renderer does not yet have accepted matching C.
+Branch overview evaluates the opened ROM's original world-entry script across
+Chaos Frame 0–100 and groups equivalent routes with their applicable ranges.
+
+`PersonalNames` models creation-time identity assignments independently of class
+labels. Relocated class data includes an `LCNAMES1` block: 256 name pointers,
+a bounded string library and the hash of its compiled naming owner. The complete
+accepted `func_00041c20` adaptation replaces the original 608-byte owner; expanded
+armies bind its enemy pool, bound and type tags through the same C compilation.
+
+Custom-content deletion retains stable table slots instead of shifting IDs.
+`LCDELETE` is a checked, editor-only ROM directory of hidden slots; create/copy
+reuses them. Weapon-type and family maps reclaim unused keys directly. Project
+snapshots provide undo/redo. Reference checks cover gameplay assignments before
+removal; native portrait selectors are a separate namespace from identity IDs.
+Reused class slots reset personal-name and visual assignments from the new source.
+
+World-map road edits retain their endpoint anchors and authored dot positions in
+project metadata. Endpoint movement adjusts the dot positions live; export emits
+native road dots and the existing C-backed route consumers. Removed roads keep
+their IDs with empty endpoints, and their availability check stays false even if
+an older saved road flag is set.
+
+## Repeated spell playback (source changes, November 1)
+
+Authored repeated spell/Pedra event22 lists retain up to18 strike entries.
+Bit7 in the first secondary byte marks the owned record; the visual submitter
+removes it before native callbacks run. Adapted accepted0021EBBC uses separate
+20-byte target/flag lists and per-actor result queues. The original002226D4
+consumer receives one pending result at each native contact. Additional results
+from the same hit share its impact and preserve the completion barrier.
+
+The six summon families use adapted accepted0026F578: one entrance/exit,
+serialized impact children and repeating native six-step choreography ordinals.
+Other spells play one single-target program per strike. Imported sequences
+contact on their first visible frame after delay. Preview uses the same visual
+controllers, records contact ticks and shares identical frame storage.
+Attack code capacity is96KiB, including a4160-byte playback-state allocation.
+Older descriptors retain their stored sizes and hook-directory prefix.
+
+The shared playback owner retains custom-encounter round handling through its
+authenticated original call site. Encounter verification canonicalizes known
+attack entry hooks; unknown edits still fail validation. Accepted originals
+remain unchanged. Export/reopen, instruction-level playback and repeated-effect render checks pass.
+Joe subsequently authorized installing these changes with the Campaign work; see
+the parent task note attack-strike-visual-sync-20261101.md.
+
 ## Configurable repeated strikes (November 1)
 
 The later capacity expansion supports18 strikes, separate from the nine unique
@@ -7,9 +113,10 @@ formation actors. Owned generic/combined/Pedra consumers use a240-byte packet
 with20 storage slots. Native builders retain128-byte packets; a boundary copy
 expands their output. Calculation runs the original evaluator in batches of at
 most9 entries, copying every per-strike field to/from native offsets. The public
-native target-builder hook still honors its128-byte ABI. For authored counts
-above9, visual lists compact repeated actor IDs and retain the last nonzero
-secondary flag; they do not send18 entries to fixed-capacity effect consumers.
+native target-builder hook still honors its128-byte ABI. The initial expansion
+compacted visual lists above9 entries; the spell/Pedra handoff is superseded by
+the repeated playback change above. Physical added-effect lists still compact
+duplicate actors above9, retaining the last nonzero secondary flag.
 The adapter generator owns all changed descriptor offsets and local arrays.
 
 Authored target pattern11 uses the retail pattern9/10 weighted draw from the
@@ -64,6 +171,11 @@ timing, score and rendering services, not full-console gameplay.
 
 ## Qualified C adapters (November 1)
 
+All `native/game` inputs retain their committed bytes (`* -text`) on Windows
+checkouts. `EngineTests::packagedQualifiedSources` authenticates embedded owner
+and header resources in public builds without a private ROM. This prevents CRLF
+conversion from producing an editor whose own C fails export authentication.
+
 `Compiler::compileQualifiedOwner` compiles a complete authenticated C producer
 and its original-address switch tables. Manifests pin source/header identities,
 symbol bindings, allocation limits and output hashes; only zero alignment
@@ -77,6 +189,16 @@ code and table hashes protect everything else. Expanded-army installation uses
 the generated six settlement data-reference pairs. Chaos task submission uses
 a normal C call to its existing extension, recognizing both old/new call forms.
 Unedited retail code continues through the exact accepted baseline.
+
+The repeated-strike playback owner composes High Attack v23: only recognized
+High Attack sites are normalized for the full-owner hash check, and the ROM
+retains those sites for readback/removal. Generated attack producers and playback
+use `attacks/battle-state.h` for trailer fields when the stream moves to
+RAM 0x80450000 (owner 0x8044A820). Packet addresses remain unshifted. Missing
+actor/child guards and the terminal phase handoff are carried into the C owner;
+normal layouts retain their original state addresses. Instruction tests exercise
+the actual transition and native impact consumer, with presentation services
+controlled separately; this is not a full-game High Attack qualification.
 
 ## Editor consumer audit (November 1)
 
@@ -7031,3 +7153,33 @@ gates are unchanged. This improves memory requirements; it does not prove crowde
 natural-game heap availability or guarantee that every possible logical record
 compresses into the 20,224-byte physical suspend region. An in-game failure message
 and natural crowded-mission suspend testing remain separate validation limits.
+
+## World-map drawing and name-table editing (November 2)
+
+CampaignMap now keeps native travel bends separate from visible road dots. Edited
+roads are spaced at about11px along the same polyline; unchanged roads retain
+retail coordinates. Dragging applies a smooth falloff with fixed node endpoints.
+Campaign descriptor version2 stores display offsets and points after the original
+waypoint allocation. The renderer submits those points; the native walker still
+uses its bounded seven-bend array. Version1 exports remain readable. This follow-up
+passes the Campaign export/reopen and native instruction checks; see the current task note.
+
+`NameTables` owns three compressed random-name resources addressed by resident
+z64 ROM table0x65DAC and the resident consumable strings referenced from0x645CC.
+It preserves unedited bytes, shared consumable pointers and font controls.
+Unexpanded random lists retain256 entries and their trailing bytes. Extended
+lists support up to1024 names per pool, with a version marker and count consumed
+by the maintained naming C. Larger compressed data relocates with an updated
+resource key and the64MiB ROM bound. Consumable edits
+stay inside their measured resident allocations. Both pass authored bytes through
+Compiler::compileData and verify readback during export. The manifest contains
+only the edits; existing name models retain ownership of all other categories.
+
+Save recruit naming runs accepted character initialization with the same seed as
+creation, selects the resulting body category's list, prefers names not already
+used in that save, and excludes the previous name on Reroll. Current NameTables
+edits are supplied directly. Existing characters are not rewritten by list edits.
+SaveCharacterCard and SaveUnitEditor use SaveEditor's existing validation and Undo
+commands immediately. There are no staged squad Apply/Discard controls. Shared
+FormationBoard drags retain the grab-to-feet offset; external save-member drag
+images place their hotspot at the base and use transparent OS drag cursors.

@@ -1,5 +1,8 @@
 #include "rebuild/attack_runtime.h"
 #include "engine/art_resource_links.h"
+#include "engine/custom_runtime.h"
+#include "engine/high_attack.h"
+#include "engine/capacity_placement.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -99,21 +102,26 @@ QByteArray references(const Rom &rom, quint32 before, quint32 after) {
 }
 } // namespace
 QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
-                                const Compiler &compiler, const QString &directory) {
+                                const Compiler &compiler, const QString &directory,
+                                const std::function<quint32(quint32)> &relocateNative) {
     auto bytes = attacks.build(p.address);
     p.code = p.address + quint32(bytes.size());
     const auto config = QJsonDocument::fromJson(resource("hooks.json")).object();
     const auto sites = config["hooks"].toArray();
     QMap<QString, quint32> symbols;
     const auto native = config["symbols"].toObject();
-    for (auto it = native.begin(); it != native.end(); ++it)
-        symbols[it.key()] = quint32(it->toInteger());
+    for (auto it = native.begin(); it != native.end(); ++it) {
+        const auto address = quint32(it->toInteger());
+        symbols[it.key()] = relocateNative ? relocateNative(address) : address;
+    }
     symbols["lc_attack_settings"] = p.settings;
     symbols["lc_attack_records"] = p.records;
     symbols["D_8018AA80"] = p.records + 4;
     symbols["lc_attack_scratch"] = p.address + AttackData::scratchOffset;
     symbols["lc_effect_state"] = p.address + quint32(bytes.size());
     bytes += QByteArray(8208, 0);
+    symbols["lc_strike_state"] = p.address + quint32(bytes.size());
+    bytes += QByteArray(4160, 0);
     const auto groupEntriesOffset = bytes.size();
     symbols["lc_attack_group_functions"] = p.address + quint32(groupEntriesOffset);
     bytes += QByteArray(16, 0);
@@ -135,7 +143,8 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     bytes += QByteArray((sites.size() * 24 + 15) & ~15, 0);
     QMap<QString, quint32> entries;
     for (const auto &name :
-         {QString("attack-runtime"), QString("effect-edits"), QString("attack-visual"), QString("attack-generic"),
+         {QString("attack-strikes"), QString("attack-runtime"), QString("effect-edits"), QString("attack-visual"),
+          QString("attack-strike-driver"), QString("attack-playback"), QString("attack-generic"),
           QString("attack-select"), QString("attack-combined"), QString("attack-pedra"),
           QString("attack-group-melee"), QString("attack-group-ranged"), QString("attack-group-alternate")}) {
         auto unit = name;
@@ -144,7 +153,8 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
             (name == "attack-visual" ? resource("effect-image-draw.c") + "\n" :
              name == "effect-edits" ? resource("effect-colors.c") + "\n" : QByteArray{}) +
                 resource(name + ".c"),
-            directory, unit, p.address + quint32(bytes.size()), {}, symbols, true);
+            directory, unit, p.address + quint32(bytes.size()),
+            {{"battle-state.h", resource("battle-state.h")}}, symbols, true);
         bytes += module.bytes;
         bytes += QByteArray((16 - bytes.size() % 16) % 16, 0);
         for (auto it = module.entries.begin(); it != module.entries.end(); ++it) {
@@ -197,6 +207,12 @@ QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placem
     // Original-byte wrappers retain the original implementation after their entry.
     const auto catalog =
         QJsonDocument::fromJson(resource("hooks.json")).object()["hooks"].toArray();
+    const auto custom = CustomPlacement::read(rom);
+    // Capacity relocates native operands inside the replaced functions too.
+    // Authenticate its exact patch record, then use its before-image only for
+    // owner verification. The installed code and relocated C bindings stay live.
+    const auto capacity = CapacityPlacement::read(rom);
+    const auto ownerRom = capacity ? capacity->canonical(rom) : rom;
     bool sharedPhysical = false;
     for (int id = 1; id < placement.count; ++id) {
         const auto row = placement.romOffset + AttackData::settingsOffset + id * 32;
@@ -208,15 +224,28 @@ QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placem
         const auto site = value.toObject();
         if (sharedPhysical && site.contains("sharedOwnerSha256")) {
             const int at = site["rom"].toInt(), size = site["sharedOwnerSize"].toInt();
-            validateArtOwnerLinks(rom, at, size);
-            if (size < 8 || sha256(canonicalArtOwner(rom.bytes().mid(at, size), at)) != site["sharedOwnerSha256"].toString().toLatin1())
+            validateArtOwnerLinks(ownerRom, at, size);
+            if (size < 8 || sha256(canonicalArtOwner(ownerRom.bytes().mid(at, size), at)) != site["sharedOwnerSha256"].toString().toLatin1())
                 throw Error(QString("Shared attack playback cannot replace unrecognized physical attack code at ROM %1")
                                 .arg(at, 0, 16));
         }
         if (!site["original"].toString().isEmpty())
             continue;
         const int at = site["rom"].toInt(), size = site["size"].toInt();
-        if (size < 8 || sha256(rom.bytes().mid(at, size)) != site["sha256"].toString().toLatin1())
+        for (const auto &partValue : site["ownerParts"].toArray()) {
+            const auto part = partValue.toObject();
+            if (sha256(ownerRom.bytes().mid(part["rom"].toInt(),part["size"].toInt())) !=
+                    part["sha256"].toString().toLatin1())
+                throw Error("Cannot replace modified attack playback tables; their data was preserved");
+        }
+        auto owner = ownerRom.bytes().mid(at,size);
+        if (at==0x21ebbc && custom) owner=custom->canonicalReferences(owner,at);
+        if (at==0x21ebbc) {
+            const auto highAttack = HighAttack::load(rom);
+            if (highAttack.available() && highAttack.enabled())
+                owner = HighAttack::canonicalReferences(owner, at);
+        }
+        if (size < 8 || sha256(owner) != site["sha256"].toString().toLatin1())
             throw Error(
                 QString("Cannot replace unrecognized attack code at ROM %1; its code was preserved")
                     .arg(at, 0, 16));

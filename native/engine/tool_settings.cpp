@@ -75,6 +75,36 @@ void ToolSettings::setExperiencePercent(int value) {
         throw Error("Experience scale must be between 0% and 300%");
     percent_ = value;
 }
+void ToolSettings::validateExport(const ToolSettings &actual) const {
+    auto require = [](bool valid, const QString &name) {
+        if (!valid) throw Error("Export changed or invalidated " + name + "; no ROM was saved");
+    };
+    if (available())
+        require(actual.available() && actual.percent_ == percent_, "experience settings");
+    auto toggle = [&](const auto &expected, const auto &found, const QString &name) {
+        if (expected.available())
+            require(found.available() && found.enabled() == expected.enabled(), name);
+    };
+    toggle(chaos_, actual.chaos_, "the Chaos Frame counter");
+    toggle(highAttack_, actual.highAttack_, "High Attack");
+    for (auto kind : {ToolLabel::Luck, ToolLabel::Alignment}) {
+        const auto &expected = displayTool(kind), &found = actual.displayTool(kind);
+        // Earlier display installers can leave an unused legacy module after
+        // disabling. Its supported removal has no active hook; keep that case.
+        if (expected.installation() == DisplayTool::Installation::Legacy &&
+            expected.modified() && !expected.enabled())
+            require(!found.enabled(), "the removed legacy display");
+        else
+            toggle(expected, found, kind == ToolLabel::Luck ? "the Luck display" : "the Alignment display");
+    }
+    for (const auto &rule : GameRules::definitions())
+        if (rules_.unavailable(rule.group).isEmpty())
+            require(actual.rules_.unavailable(rule.group).isEmpty() &&
+                    actual.rules_.value(rule.key) == rules_.value(rule.key), rule.label);
+    if (affinity_.unavailable().isEmpty())
+        require(actual.affinity_.unavailable().isEmpty() && actual.affinity_.json() == affinity_.json(),
+                "leader affinity");
+}
 void ToolSettings::apply(const QJsonObject &input) {
     auto object = input;
     const bool hasAffinity = object.contains("leaderAffinity");

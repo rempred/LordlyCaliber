@@ -246,10 +246,10 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         actorInspector->setArtwork(initialArtwork);
         auto signature = [project] {
             QJsonArray items;
-            for (const auto &record : project->records(Table::Items))
+            for (const auto &record : project->records(Table::Items)) if (!project->contentDeleted("items",record.id))
                 items << QJsonArray{record.name, QString::fromLatin1(record.bytes.toHex())};
             QJsonArray classes;
-            for (const auto &record : project->records(Table::Classes))
+            for (const auto &record : project->records(Table::Classes)) if (!project->contentDeleted("classes",record.id))
                 classes << QJsonArray{record.name,QString::fromLatin1(record.bytes.toHex())};
             return QJsonObject{
                 {"classes", classes},

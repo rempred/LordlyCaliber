@@ -1,6 +1,7 @@
 #include "engine/project.h"
 #include "engine/promotion.h"
 #include "engine/event_script.h"
+#include "engine/campaign_runtime.h"
 #include "rebuild/compiler.h"
 #include <QDir>
 #include <QFile>
@@ -13,6 +14,77 @@ using namespace lordly;
 class EventTests : public QObject {
     Q_OBJECT
   private slots:
+    void campaignMapBranchesAndExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and N64 tools required");
+        try {
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadCampaignMap();project.loadSceneEvents();
+            auto map=*project.campaignMap();QCOMPARE(map.rebuild(rom.bytes()),rom.bytes());
+            QTemporaryDir untouched;QCOMPARE(rebuild(project,tools,untouched.path()).image,rom.bytes());
+            const QSet<int> castles{7,11,17,18,20,22,27,31,36,39};
+            for(int node=1;node<=40;++node)QCOMPARE(map.icon(node),castles.contains(node)?1:0);
+            QVERIFY_THROWS_EXCEPTION(Error,map.setIcon(0,0));QVERIFY_THROWS_EXCEPTION(Error,map.setIcon(41,0));
+            QVERIFY_THROWS_EXCEPTION(Error,map.setIcon(1,2));
+            for(int node=1;node<=40;++node)map.setIcon(node,1);
+            auto invalid=map.json();invalid["icons"]=QJsonObject{{"6",2}};
+            const auto beforeInvalid=map.json();QVERIFY_THROWS_EXCEPTION(Error,map.apply(invalid));QCOMPARE(map.json(),beforeInvalid);
+            const auto spare=map.availableNodes();QVERIFY(!spare.isEmpty());const int id=spare.first();
+            QVERIFY(id<=40);QVERIFY(!map.availableNodes().contains(49));
+            const auto oldDots=map.roadDots(5);const auto bg=map.background();QCOMPARE(bg.width,512);QCOMPARE(bg.height,320);
+            map.setNode(6,{280,252},map.label(6));QVERIFY(map.roadDots(5)!=oldDots);
+            map.setNode(id,{230,250},4);map.setName(id,"New Reach");QCOMPARE(map.addRoad(6,id),41);map.addRoad(id,8);
+            QVERIFY_THROWS_EXCEPTION(Error,map.addRoad(id,6));
+            project.setCampaignMap(map.json());
+            QVERIFY(!project.campaignMap()->availableNodes().contains(id));
+            QCOMPARE(project.campaignMap()->position(id),QPoint(230,250));
+            auto events=*project.sceneEvents();
+            const QJsonObject rule{{"event",5},{"conditions",QJsonArray{}},{"clearFrom",200},{"clearTo",255}};
+            events.setWorldRules(id,QJsonArray{rule});events.unlockNodeAfter(4,id,true);
+            auto conditional=rule;conditional["conditions"]=QJsonArray{QJsonObject{{"flag",250},{"value",true}}};
+            events.setWorldRules(6,QJsonArray{conditional});
+            StoryRoutes original(rom),edited(rom);edited.scripts[0]=events.program(0);
+            for(int chaos:{0,25,50,75,100}) {
+                QCOMPARE(edited.routes(6,chaos,{{250,0}}),original.routes(6,chaos,{{250,0}}));
+                const auto matches=edited.routes(6,chaos,{{250,1}});QCOMPARE(matches.size(),1);QCOMPARE(matches.first().event,5);
+            }
+            edited.nodes[id]={"New location",{230,250}};QCOMPARE(edited.routes(id).first().event,5);
+            const auto before=SceneEvents::retailRow(rom,4),after=events.program(4);
+            QCOMPARE(after.first(10),before.first(10));QCOMPARE(after.mid(12,before.size()-12),before.mid(12));
+            bool unlock=false;for(const auto &handler:EventScript::decode(after))if(handler.group==5&&handler.entry>=before.size())unlock=true;QVERIFY(unlock);
+            const auto controls=EventScript::branchSteps(before);QVERIFY(!controls.isEmpty());
+            const auto branch=controls.first();events.editBranch(4,branch.offset,branch.offset+branch.length);
+            QCOMPARE(EventScript::branchSteps(events.program(4))[branch.offset].target,branch.offset+branch.length);
+            project.setSceneEvents(events.json());QVERIFY(project.changedRecords()>0);
+            QVERIFY(project.changeReport().text().contains("World Map"));QVERIFY(project.changeReport().text().contains("Storyline"));
+            QTemporaryDir work;project.saveFolder(work.filePath("campaign"));auto saved=Project::fromRom(rom);saved.applyManifest(Project::readProject(work.filePath("campaign")));
+            QCOMPARE(saved.campaignMap()->position(id),QPoint(230,250));QCOMPARE(saved.sceneEvents()->json(),events.json());
+            QCOMPARE(saved.campaignMap()->iconBytes(),QByteArray(5,char(255)));
+            const auto built=rebuild(saved,tools,work.path());auto crc=built.image;Rom::updateChecksum(crc);QCOMPARE(crc,built.image);
+            auto reopened=Project::fromRom(Rom::fromBytes(built.image));reopened.loadCampaignMap();reopened.loadSceneEvents();
+            QCOMPARE(reopened.campaignMap()->position(id),QPoint(230,250));QCOMPARE(reopened.campaignMap()->name(id),map.name(id));
+            QCOMPARE(reopened.campaignMap()->totalRoads(),42);QCOMPARE(reopened.campaignMap()->road(41),qMakePair(6,id));QCOMPARE(reopened.campaignMap()->dotBytes(),map.dotBytes());
+            QCOMPARE(reopened.campaignMap()->iconBytes(),map.iconBytes());
+            QCOMPARE(built.image.mid(0x81cf4,0x718),rom.bytes().mid(0x81cf4,0x718));
+            QCOMPARE(built.image.mid(0x871a8,10),rom.bytes().mid(0x871a8,10));
+            QCOMPARE(reopened.sceneEvents()->json(),events.json());QCOMPARE(SceneEvents::readRow(reopened.rom(),0),events.program(0));QCOMPARE(SceneEvents::readRow(reopened.rom(),4),events.program(4));
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            auto continued=reopened;auto continuedMap=*continued.campaignMap();continuedMap.setNode(id,{240,260},continuedMap.label(id));continuedMap.setRoad(42,id,3);continuedMap.setIcon(6,0);continued.setCampaignMap(continuedMap.json());
+            const auto rebuilt=rebuild(continued,tools,work.path());QCOMPARE(rebuilt.image.size(),built.image.size());
+            auto continuedRead=Project::fromRom(Rom::fromBytes(rebuilt.image));continuedRead.loadCampaignMap();QCOMPARE(continuedRead.campaignMap()->dotBytes(),continuedMap.dotBytes());QCOMPARE(continuedRead.campaignMap()->road(42),qMakePair(id,3));
+            QCOMPARE(continuedRead.campaignMap()->icon(6),0);QCOMPARE(continuedRead.campaignMap()->icon(7),1);
+            // Version 2 has the native membership loop and no icon bitmap.
+            auto old=built.image;const auto placement=*CampaignPlacement::read(old);
+            put32(old,placement.descriptor+8,2);
+            old.replace(placement.overlayOffset+0x81d98-CampaignPlacement::sourceStart,40,rom.bytes().mid(0x81d98,40));
+            old.replace(placement.overlayOffset+CampaignPlacement::codeAddress+8192+4-CampaignPlacement::ramStart,5,QByteArray(5,0));
+            old.replace(placement.descriptor+32,32,QByteArray::fromHex(sha256(old.mid(placement.overlayOffset,placement.overlaySize))));
+            auto legacy=Project::fromRom(Rom::fromBytes(old));legacy.loadCampaignMap();
+            for(int node=1;node<=40;++node)QCOMPARE(legacy.campaignMap()->icon(node),castles.contains(node)?1:0);
+
+            QDir parent(QFileInfo(path).absolutePath());QVERIFY(parent.mkpath("Test ROMs"));QTemporaryDir output(parent.filePath("Test ROMs/campaign-workspace-XXXXXX"));QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(saved,built,candidate);qInfo().noquote()<<"Campaign candidate:"<<candidate;
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
     void flagInstructionControls() {
         // Six handler groups share this small script. The check branches to the
         // second return. Its destination byte must never change during flag edits.

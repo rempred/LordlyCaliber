@@ -1,4 +1,5 @@
 #include "engine/scene_events.h"
+#include "engine/campaign_script.h"
 #include "engine/event_script.h"
 #include "engine/legacy_scene_arena.h"
 #include <QFile>
@@ -228,7 +229,11 @@ QSet<int> SceneEvents::flagRows(const QJsonObject &flags) {
     return rows;
 }
 QByteArray SceneEvents::flagRow(const QByteArray &retail, int row, const QJsonObject &flags) {
-    return EventScript::apply(retail, flags[QString::number(row)].toObject());
+    auto edits=flags[QString::number(row)].toObject();
+    if(row==0) return compileWorldEntries(retail,edits);
+    const auto unlocks=edits.take("unlockNodes");
+    if(!unlocks.isUndefined() && !unlocks.isObject())throw Error("Invalid world-node unlock data");
+    return appendWorldUnlocks(EventScript::apply(retail,edits),unlocks.toObject());
 }
 QByteArray SceneEvents::program(int row) const {
     return bindRow(flagRow(retailRow(rom_, row), row, flags_), row, bindings_);
@@ -250,9 +255,27 @@ void SceneEvents::editFlag(int row, int offset, int flag, bool value) {
     const auto controls = EventScript::flagSteps(retail);
     if (!controls.contains(offset)) throw Error("This event command is not an editable flag control");
     auto edits = flags_.value(QString::number(row)).toObject();
-    if (controls[offset].flag == flag && controls[offset].value == value) edits.remove(QString::number(offset));
-    else edits[QString::number(offset)] = QJsonObject{{"flag", flag}, {"value", value}};
-    EventScript::apply(retail, edits);
+    auto instruction = edits[QString::number(offset)].toObject();
+    if (controls[offset].flag == flag && controls[offset].value == value) {
+        instruction.remove("flag"); instruction.remove("value");
+    } else { instruction["flag"] = flag; instruction["value"] = value; }
+    if (instruction.isEmpty()) edits.remove(QString::number(offset));
+    else edits[QString::number(offset)] = instruction;
+    auto check=flags_;check[QString::number(row)]=edits;flagRow(retail,row,check);
+    if (edits.isEmpty()) flags_.remove(QString::number(row));
+    else flags_[QString::number(row)] = edits;
+}
+void SceneEvents::editBranch(int row, int offset, int target) {
+    const auto retail = retailRow(rom_, row);
+    const auto controls = EventScript::branchSteps(retail);
+    if (!controls.contains(offset)) throw Error("This instruction is not a branch");
+    auto edits = flags_[QString::number(row)].toObject();
+    auto instruction = edits[QString::number(offset)].toObject();
+    if (target == controls[offset].target) instruction.remove("target");
+    else instruction["target"] = target;
+    if (instruction.isEmpty()) edits.remove(QString::number(offset));
+    else edits[QString::number(offset)] = instruction;
+    auto check=flags_;check[QString::number(row)]=edits;flagRow(retail,row,check);
     if (edits.isEmpty()) flags_.remove(QString::number(row));
     else flags_[QString::number(row)] = edits;
 }
@@ -260,6 +283,20 @@ void SceneEvents::restoreFlags(int row) {
     const auto original = originalFlags_.value(QString::number(row));
     if (original.isUndefined()) flags_.remove(QString::number(row));
     else flags_[QString::number(row)] = original;
+}
+void SceneEvents::setWorldRules(int node, const QJsonArray &rules) {
+    auto entries=flags_["0"].toObject();
+    if(rules.isEmpty())entries.remove(QString::number(node));else entries[QString::number(node)]=rules;
+    compileWorldEntries(retailRow(rom_,0),entries);
+    if(entries.isEmpty())flags_.remove("0");else flags_["0"]=entries;
+}
+void SceneEvents::unlockNodeAfter(int row,int node,bool enabled) {
+    if(row<4 || row>=115)throw Error("Choose a mission event row for the unlock");
+    auto edits=flags_[QString::number(row)].toObject();auto unlocks=edits["unlockNodes"].toObject();
+    if(enabled)unlocks[QString::number(node)]=true;else unlocks.remove(QString::number(node));
+    if(unlocks.isEmpty())edits.remove("unlockNodes");else edits["unlockNodes"]=unlocks;
+    auto check=flags_;check[QString::number(row)]=edits;flagRow(retailRow(rom_,row),row,check);
+    if(edits.isEmpty())flags_.remove(QString::number(row));else flags_[QString::number(row)]=edits;
 }
 int SceneEvents::target(const QString &id) const {
     return bindings_.value(id, site(id).selector);
@@ -292,16 +329,25 @@ void SceneEvents::validate(const ScenePrograms &scenes) const {
                             .arg(it.value()));
     }
 }
+bool SceneEvents::hasCampaignEdits(const QJsonObject &flags) {
+    if(flags.contains("0"))return true;
+    for(auto row=flags.begin();row!=flags.end();++row) {
+        const auto edits=row.value().toObject();
+        if(edits.contains("unlockNodes"))return true;
+        for(auto it=edits.begin();it!=edits.end();++it)if(it.value().toObject().contains("target"))return true;
+    }
+    return false;
+}
 QJsonObject SceneEvents::json() const {
     QJsonObject bindings;
     for (auto it = bindings_.cbegin(); it != bindings_.cend(); ++it)
         bindings[it.key()] = it.value();
     if (flags_.isEmpty()) return {{"version", 1}, {"bindings", bindings}};
-    return {{"version", 2}, {"bindings", bindings}, {"flags", flags_}};
+    return {{"version", hasCampaignEdits(flags_) ? 3 : 2}, {"bindings", bindings}, {"flags", flags_}};
 }
 void SceneEvents::apply(const QJsonObject &value, const ScenePrograms &scenes) {
-    if ((value["version"] != 1 && value["version"] != 2) || !value["bindings"].isObject() ||
-        (value["version"] == 2 && !value["flags"].isObject()) ||
+    if ((value["version"] != 1 && value["version"] != 2 && value["version"] != 3) || !value["bindings"].isObject() ||
+        (value["version"].toInt() >= 2 && !value["flags"].isObject()) ||
         (value["version"] == 1 && value.contains("flags")))
         throw Error("Invalid saved event bindings");
     auto next = *this;

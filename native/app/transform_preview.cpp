@@ -1,4 +1,5 @@
 #include "app/transform_preview.h"
+#include <QCheckBox>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QHideEvent>
@@ -44,8 +45,7 @@ TransformPreview::TransformPreview(const Rom &rom, QWidget *parent)
     play_->setObjectName("transformPlay");
     step_ = new QPushButton("Step");
     step_->setObjectName("transformStep");
-    auto rewind = new QPushButton("Restart");
-    rewind->setObjectName("transformRestart");
+    loop_ = new QCheckBox("Loop");loop_->setObjectName("transformLoop");
     position_ = new QSpinBox;
     position_->setObjectName("transformPosition");
     position_->setPrefix("Tick ");
@@ -55,8 +55,9 @@ TransformPreview::TransformPreview(const Rom &rom, QWidget *parent)
     rate_->setRange(1, 120);
     rate_->setValue(30);
     rate_->setSuffix(" updates/s");
-    for (auto button : {play_, step_, rewind})
+    for (auto button : {play_, step_})
         transport->addWidget(button);
+    transport->addWidget(loop_);
     transport->addWidget(position_);
     transport->addWidget(rate_);
     transport->addStretch();
@@ -72,11 +73,18 @@ TransformPreview::TransformPreview(const Rom &rom, QWidget *parent)
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(status_);
     timer_ = new QTimer(this);
-    connect(timer_, &QTimer::timeout, this, [this] { seek(tick_ + 1); });
+    connect(timer_, &QTimer::timeout, this, [this] {
+        seek(tick_ + 1);
+        if (state_ && loop_->isChecked() && (state_->done() || tick_ >= position_->maximum()) && position_->maximum()>0) {
+            seek(0);timer_->start(qMax(1,1000/rate_->value()));play_->setText("Pause");
+        }
+    });
     connect(play_, &QPushButton::clicked, this, [this] {
         if (timer_->isActive())
             stop();
-        else if (state_ && !state_->done()) {
+        else if (state_) {
+            if (state_->done() || tick_ >= position_->maximum()) seek(0);
+            if (!state_ || state_->done() || position_->maximum()<=0) return;
             timer_->start(qMax(1, 1000 / rate_->value()));
             play_->setText("Pause");
         }
@@ -89,13 +97,7 @@ TransformPreview::TransformPreview(const Rom &rom, QWidget *parent)
         stop();
         seek(tick_ + 1);
     });
-    connect(rewind, &QPushButton::clicked, this, [this] {
-        stop();
-        if (state_)
-            seek(0);
-        else
-            reload(false);
-    });
+
     connect(position_, &QSpinBox::valueChanged, this, [this](int tick) {
         stop();
         seek(tick);
@@ -227,7 +229,7 @@ void TransformPreview::seek(int tick) {
         const bool canAdvance = !state_->done() && tick_ < position_->maximum();
         if (!canAdvance)
             stop();
-        play_->setEnabled(canAdvance);
+        play_->setEnabled(position_->maximum()>0);
         step_->setEnabled(canAdvance);
         draw();
     } catch (const std::exception &e) {

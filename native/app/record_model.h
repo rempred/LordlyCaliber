@@ -25,6 +25,7 @@ class RecordModel : public QAbstractTableModel {
     int createWeaponType(const QString &name, int item = -1);
     int createItem(const QString &name);
     void applyProject(const Project &project);
+    void setPersonalName(int classId, int nameId, const QString &newName = {});
   signals:
     void edited();
     void aboutToReplace();

@@ -2,6 +2,7 @@
 #include "app/tools_editor.h"
 #include "app/game_rules_editor.h"
 #include "app/training_editor.h"
+#include "app/names_text_editor.h"
 #include <QTabWidget>
 #include <QCheckBox>
 #include <QFormLayout>
@@ -134,6 +135,7 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     rewards->addWidget(new GameRulesEditor(project_,undo_,changed_,{"goth","soldierPopulation","soldierMinimum","reserve"}));
     rewards->addStretch();
     auto extras=page("Display and options");
+    pages->addTab(new NamesTextEditor(project_,undo_,changed_),"Names and Text");
     auto box = new QGroupBox("Battle experience");
     auto fields = new QVBoxLayout(box);
     auto description = new QLabel("Scale the size weight applied to every reward source. "

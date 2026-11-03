@@ -93,13 +93,13 @@ QVector<ProjectReference> projectReferences(Project p) {
         {"shops", p.shops() ? p.shops()->size() : 0}};
     auto add = [&](QString kind, int id, QString description, EditLocation location, bool changed) {
         if (id <= 0) return;
-        uses << ProjectReference{kind, id, description, location, id < counts.value(kind), changed};
+        uses << ProjectReference{kind, id, description, location, id < counts.value(kind) && !p.contentDeleted(kind,id), changed};
     };
     auto reward = [&](int value, const QString &label, EditLocation location, bool changed) {
         add(value & 0x8000 ? "items" : "consumables", value & 0x7fff, label, location, changed);
     };
     for (const auto &row : p.records(Table::Classes)) {
-        if (row.id == 0) continue; // The None placeholder contains sentinel values, not references.
+        if (row.id == 0 || p.contentDeleted("classes",row.id)) continue; // The None placeholder contains sentinel values, not references.
         for (const auto &field : fields(Table::Classes)) {
             if (field.choices != "ITEM_NAMES" && field.choices != "CLASS_NAMES") continue;
             const int value = field.width == 2 ? u16(row.bytes, field.offset) : u8(row.bytes, field.offset);
@@ -109,6 +109,7 @@ QVector<ProjectReference> projectReferences(Project p) {
         }
     }
     if (p.shops()) for (int shop = 1; shop < p.shops()->size(); ++shop) {
+        if(p.contentDeleted("shops",shop))continue;
         const auto &stock = p.shops()->stock(shop), &original = p.shops()->originalStock(shop);
         for (int item : stock.equipment)
             add("items", item, QString("Shop %1 / equipment stock").arg(shop), {"shops", shop}, !original.equipment.contains(item));
@@ -208,7 +209,7 @@ QVector<ProjectReference> projectReferences(Project p) {
     }
     if (p.animationRoutes()) for (const auto &cls : p.records(Table::Classes)) {
         const auto &routes = *p.animationRoutes();
-        if (cls.id >= routes.rowCount()) continue;
+        if (cls.id >= routes.rowCount() || p.contentDeleted("classes",cls.id)) continue;
         const int item = routes.entry(cls.id).equipmentArt;
         add("items", item, cls.name + " / fixed equipment artwork", {"animation", cls.id}, routes.edits().contains(cls.id));
     }

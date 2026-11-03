@@ -17,11 +17,17 @@ class ScenarioSquadPanel;
 class ScenarioRouteEditor;
 class ScenarioMapEditor;
 class ScenarioEventEditor;
+class ShopEditor;
+class EncounterEditor;
 class ScenarioEditor : public QWidget {
   public:
     ScenarioEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                    QWidget *parent = nullptr);
     std::function<void(int)> testScenario;
+    std::function<void(int)> scenarioChanged;
+    std::function<void(int)> openStoryline;
+    void selectScenario(int key);
+    int selectedScenario() const { return key(); }
 
   private:
     void refresh();
@@ -46,6 +52,8 @@ class ScenarioEditor : public QWidget {
     ScenarioRouteEditor *routes_ = nullptr;
     ScenarioMapEditor *map_ = nullptr;
     ScenarioEventEditor *events_ = nullptr;
+    ShopEditor *shops_ = nullptr;
+    EncounterEditor *encounters_ = nullptr;
     int editingKey_ = -1, editingRow_ = -1;
     bool loading_ = true;
 };

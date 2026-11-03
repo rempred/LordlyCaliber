@@ -7,6 +7,7 @@
 #include "engine/pose_preview.h"
 #include <functional>
 #include <QWidget>
+#include <QSet>
 #include <optional>
 #include <variant>
 class QCheckBox;
@@ -55,6 +56,7 @@ class ActorPoseEditor : public QWidget {
     std::optional<BodyAppearance> appearance() const;
     void stop();
     int advancePose();
+    QString playbackStepKey() const;
     bool suspendedPose() const;
     QString poseError() const;
     Rom rom_;
@@ -75,7 +77,9 @@ class ActorPoseEditor : public QWidget {
     std::array<std::array<double, 3>, 2> previewCameras_{{{0, 80, 300}, {65, 80, 300}}};
     std::optional<ActorArt> art_;
     std::optional<std::variant<ActorPosePlayer, SpritePosePlayer>> player_;
-    QCheckBox *sepia_;
+    QCheckBox *sepia_, *loop_;
+    QSet<QString> playbackSteps_;
+    bool playbackFinished_ = false;
     QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
     QComboBox *equipment_;
     QComboBox *positionLayer_;

@@ -1,4 +1,5 @@
 #include "app/content_refresh.h"
+#include "app/custom_content.h"
 #include "app/view_position.h"
 #include "app/shop_editor.h"
 #include "app/item_picker.h"
@@ -73,8 +74,8 @@ void setShop(Project &project, int townId, int shopId) {
 int addShop(Project *project, QUndoStack *undo, int townId) {
     auto next = *project;
     next.loadShops();
+    const int id=next.createShop();
     auto shops = *next.shops();
-    const int id = shops.addShop();
     if (townId > 0) {
         ShopStock stock;
         stock.consumables = {1, 2, 3, 4, 5, 6, 8};
@@ -102,6 +103,17 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     project_->loadScenarios();
     project_->loadIconArtwork();
     auto layout = new QVBoxLayout(this);
+    scope_ = new QComboBox;
+    scope_->setObjectName("shopScope");
+    scope_->addItems({"This scenario", "All shops"});
+    scope_->setItemData(0, 0); scope_->setItemData(1, 1);
+    scope_->setCurrentIndex(1);
+    layout->addWidget(scope_);
+    scopeNotice_ = new QLabel;
+    scopeNotice_->setObjectName("shopScopeNotice");
+    scopeNotice_->setWordWrap(true);
+    scopeNotice_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    layout->addWidget(scopeNotice_);
     search_ = new QLineEdit;
     search_->setPlaceholderText("Find a shop by town, item name, or shop number…");
     search_->setClearButtonEnabled(true);
@@ -109,10 +121,13 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     layout->addWidget(search_);
     auto add = new QPushButton("Add shop");
     add->setObjectName("shopAdd");
-    layout->addWidget(add, 0, Qt::AlignLeft);
+    auto shopActions=new QHBoxLayout;shopActions->addWidget(add);
+    auto remove=new QPushButton("Delete shop");remove->setObjectName("deleteShop");shopActions->addWidget(remove);shopActions->addStretch();layout->addLayout(shopActions);
+    connect(remove,&QPushButton::clicked,this,[this]{if(selected()>=36)deleteCustomEntry(this,project_,undo_,"shops",selected());});
     connect(add, &QPushButton::clicked, this, [this] {
         try {
             const int id = addShop(project_, undo_);
+            scope_->setCurrentIndex(1);
             search_->clear();
             shops_->setCurrentRow(id - 1);
         } catch (const Error &e) {
@@ -120,7 +135,7 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
         }
     });
     auto split = new QSplitter;
-    layout->addWidget(split);
+    layout->addWidget(split, 1);
     shops_ = new QListWidget;
     shops_->setObjectName("shopList");
     shops_->setMinimumWidth(220);
@@ -187,6 +202,7 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     split->setSizes({300, 950});
     connect(shops_, &QListWidget::currentRowChanged, this, [this] { refresh(); });
     connect(search_, &QLineEdit::textChanged, this, [this] { filter(); });
+    connect(scope_, &QComboBox::currentIndexChanged, this, [this] { refresh(); });
     connect(copy, &QPushButton::clicked, this, [this] {
         if (selected() > 0)
             edit("Copy shop stock", project_->shops()->stock(copyFrom_->currentData().toInt()));
@@ -245,10 +261,40 @@ int ShopEditor::selected() const {
 }
 void ShopEditor::filter() {
     const auto query = search_->text().trimmed();
+    QSet<int> assigned;
+    if (scenario_ >= 0) {
+        const auto &sites = project_->world()->scenario(scenario_).sites;
+        for (int i = 0; i < project_->world()->siteCount(scenario_); ++i) {
+            const auto town = project_->world()->town(u16(sites, 1 + i * 4));
+            if ((u8(town, 25) & 1) && u8(town, 24) != 255) assigned.insert(u8(town, 27));
+        }
+    }
+    int first = -1;
     for (int n = 0; n < shops_->count(); ++n) {
         auto row = shops_->item(n);
-        row->setHidden(
+        row->setHidden(project_->contentDeleted("shops",row->data(Qt::UserRole).toInt()) ||
+            (!scope_->currentIndex() && !assigned.contains(row->data(Qt::UserRole).toInt())) ||
             !row->data(Qt::UserRole + 1).toString().contains(query, Qt::CaseInsensitive));
+        if (!row->isHidden() && first < 0) first = n;
+    }
+    if (!shops_->currentItem() || shops_->currentItem()->isHidden()) shops_->setCurrentRow(first);
+    details_->setEnabled(selected() > 0);
+    scopeNotice_->setText(!scope_->currentIndex() && assigned.isEmpty()
+        ? "This scenario has no active shops. Select a town on its map to assign or create one, or open All shops."
+        : "Editing stock affects every town using this shop.");
+}
+void ShopEditor::setScenario(int key) {
+    if (scenario_ == key) return;
+    scenario_ = key;
+    refresh();
+}
+void ShopEditor::showAllShops() { scope_->setCurrentIndex(1); }
+void ShopEditor::selectShop(int id, int town) {
+    search_->clear();
+    if (id > 0 && id < project_->shops()->size()) {
+        shops_->setCurrentRow(id - 1);
+        if (shops_->currentItem()->isHidden()) showAllShops();
+        if (town >= 0) town_->setCurrentIndex(town_->findData(town));
     }
 }
 void ShopEditor::refresh() {
@@ -264,10 +310,10 @@ void ShopEditor::refresh() {
     }
     copyFrom_->clear();
     for (int id = 1; id < project_->shops()->size(); ++id)
-        copyFrom_->addItem(QString("Shop %1 — %2").arg(id).arg(locations(id).join(", ")), id);
+        if(!project_->contentDeleted("shops",id)) copyFrom_->addItem(QString("Shop %1 — %2").arg(id).arg(locations(id).join(", ")), id);
     shops_->setCurrentRow(qBound(0, keep - 1, shops_->count() - 1));
     copyFrom_->setCurrentIndex(qMax(0, copyFrom_->findData(copy)));
-    findChild<QPushButton *>("shopAdd")->setEnabled(project_->shops()->size() < 256);
+    findChild<QPushButton *>("shopAdd")->setEnabled(project_->nextContentId("shops",project_->shops()->size()) < 256);
     for (int n = 0; n < shops_->count(); ++n) {
         const auto id = n + 1;
         const auto &stock = project_->shops()->stock(id);
@@ -285,6 +331,7 @@ void ShopEditor::refresh() {
     }
     filter();
     const auto id = selected();
+    findChild<QPushButton *>("deleteShop")->setEnabled(id>=36 && !project_->contentDeleted("shops",id));
     details_->setEnabled(id > 0);
     if (id < 1)
         return;
@@ -295,6 +342,7 @@ void ShopEditor::refresh() {
     town_->addItem("Choose a stronghold…", -1);
     QSet<int> listed;
     for (const auto &scenario : project_->scenarios()->entries()) {
+        if (!scope_->currentIndex() && scenario.key != scenario_) continue;
         const auto &sites = project_->world()->scenario(scenario.key).sites;
         for (int row = 0; row < project_->world()->siteCount(scenario.key); ++row) {
             const int townId = u16(sites, 1 + row * 4);
@@ -307,7 +355,7 @@ void ShopEditor::refresh() {
         }
     }
     for (int townId = 1; townId <= ScenarioWorld::townCount; ++townId)
-        if (!listed.contains(townId))
+        if (scope_->currentIndex() && !listed.contains(townId))
             town_->addItem(QString("Other strongholds / %1 [%2]")
                                .arg(project_->world()->townName(townId))
                                .arg(townId),

@@ -7,6 +7,7 @@ class QPushButton;
 class QSpinBox;
 class QTimer;
 class QLineEdit;
+class QCheckBox;
 namespace lordly {
 class DialoguePreview : public QWidget {
     Q_OBJECT
@@ -32,6 +33,7 @@ class DialoguePreview : public QWidget {
     QLabel *canvas_, *status_;
     QPushButton *play_, *history_;
     QTimer *timer_;
+    QCheckBox *loop_;
     QSpinBox *rate_;
     std::array<QLineEdit *, 4> names_{};
     QLineEdit *suffix_;

@@ -59,10 +59,30 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     for (int flag = 0; flag < 256; ++flag) flags_->addItem(EventScript::flagName(flag), flag);
     action_ = new QComboBox; action_->setObjectName("scenarioEventAction");
     form->addRow("Flag", flags_); form->addRow("Action", action_); layout->addLayout(form);
+    auto branch = new QHBoxLayout;
+    branchTarget_ = new QComboBox; branchTarget_->setObjectName("scenarioEventBranchTarget");
+    branchTarget_->setMinimumContentsLength(35);
+    branchTarget_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    branch->addWidget(new QLabel("Branch destination")); branch->addWidget(branchTarget_,1);
+    applyBranch_ = new QPushButton("Change destination"); applyBranch_->setObjectName("scenarioEventApplyBranch");
+    branch->addWidget(applyBranch_);layout->addLayout(branch);
+    connect(applyBranch_, &QPushButton::clicked, this, [this] {
+        const auto item=steps_->currentItem();if(!item || !item->parent() || branchTarget_->currentIndex()<0)return;
+        try {
+            auto next=*project_->sceneEvents();
+            next.editBranch(rows_->currentData().toInt(),item->data(0,offsetRole).toInt(),branchTarget_->currentData().toInt());
+            commit(next,"Change story branch destination");
+        } catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+    });
     auto buttons = new QHBoxLayout;
     apply_ = new QPushButton("Apply step"); apply_->setObjectName("scenarioEventApply"); buttons->addWidget(apply_);
     discard_ = new QPushButton("Discard pending step"); discard_->setObjectName("scenarioEventDiscard"); buttons->addWidget(discard_);
     jump_ = new QPushButton("Go to branch destination"); jump_->setObjectName("scenarioEventJump"); buttons->addWidget(jump_);
+    openCutscene_=new QPushButton("Edit this cutscene…");openCutscene_->setObjectName("scenarioEventOpenCutscene");buttons->addWidget(openCutscene_);
+    connect(openCutscene_,&QPushButton::clicked,this,[this]{
+        const auto item=steps_->currentItem();if(!item||!item->parent()||!editCutscene)return;
+        for(const auto &site:SceneEvents::sites())if(site.row==rows_->currentData().toInt()&&site.offset==item->data(0,offsetRole).toInt()) {editCutscene(project_->sceneEvents()->target(site.id));return;}
+    });
     buttons->addStretch();
     restore_ = new QPushButton("Restore loaded flag instructions"); restore_->setObjectName("scenarioEventRestore"); buttons->addWidget(restore_);
     layout->addLayout(buttons);
@@ -72,7 +92,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
         QVector<PendingEdit> entries;
         for (auto it = drafts_.cbegin(); it != drafts_.cend(); ++it)
             entries.append({QString("Event row %1 · flag instruction %2").arg(it.key().first).arg(position(it.key().second)),
-                            {"scenario-event", it.key().first, it.key().second}});
+                            {allRows_ ? "story-event" : "scenario-event", it.key().first, it.key().second}});
         return entries;
     };
     pending_->apply = [this] { return applyDrafts(); };
@@ -113,13 +133,31 @@ void ScenarioEventEditor::selectScenario(int key) {
     if (changed) { QSignalBlocker block(rows_); rows_->clear(); }
     if (changed && isVisible()) refresh();
 }
+void ScenarioEventEditor::showAllRows() { allRows_=true;all_->setChecked(true);refresh(); }
+void ScenarioEventEditor::selectEventRow(int row, int offset) {
+    if(rows_->findData(row)<0)showAllRows();
+    rows_->setCurrentIndex(rows_->findData(row));
+    if(offset>=0)for(int i=0;i<steps_->topLevelItemCount();++i) {
+        auto handler=steps_->topLevelItem(i);
+        for(int j=0;j<handler->childCount();++j)if(handler->child(j)->data(0,offsetRole).toInt()==offset) {
+            steps_->setCurrentItem(handler->child(j));steps_->scrollToItem(handler->child(j));return;
+        }
+    }
+}
 void ScenarioEventEditor::showEvent(QShowEvent *event) { QWidget::showEvent(event); refresh(); }
 void ScenarioEventEditor::refresh() {
     loading_ = true;
     const int previous = rows_->currentIndex() >= 0 ? rows_->currentData().toInt() : -1;
     rows_->clear(); notice_->clear();
     try {
-        if (scenario_ >= 0) {
+        if(allRows_) {
+            project_->loadSceneEvents();
+            for(int row=4;row<115;++row) {
+                try { EventScript::decode(project_->sceneEvents()->program(row)); }
+                catch(const Error &) { continue; }
+                rows_->addItem(QString("Event row %1").arg(row),row);
+            }
+        } else if (scenario_ >= 0) {
             project_->loadSceneEvents();
             for (int row : project_->sceneEvents()->scenarioRows(scenario_))
                 rows_->addItem(QString("%1 · Event row %2").arg(row >= 71 && row <= 109 ? "Area investigation" : "Story mission").arg(row), row);
@@ -150,7 +188,7 @@ void ScenarioEventEditor::showRow() {
             auto parent = new QTreeWidgetItem(steps_, {QString::number(++handlerNumber), EventScript::groupName(handler.group) + " · " + position(handler.entry)});
             parent->setData(0, offsetRole, -1); parent->setExpanded(true);
             for (const auto &step : handler.steps) {
-                if (!all_->isChecked() && step.flag < 0 && !launches.contains(step.offset)) continue;
+                if (!all_->isChecked() && step.flag < 0 && step.target<0 && !launches.contains(step.offset)) continue;
                 QString text = step.text;
                 if (launches.contains(step.offset)) {
                     const auto &site = launches[step.offset];
@@ -166,13 +204,37 @@ void ScenarioEventEditor::showRow() {
             }
             if (!parent->childCount()) delete parent;
         }
-        notice_->setText("Flag edits keep branch destinations and all unrelated instructions intact. Other command types are read-only here.");
+        notice_->setText("Edit flags and branch destinations. Other instructions keep their original data. Branch destinations are limited to the game's jump range.");
     } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); restore_->setEnabled(false); }
     selectStep();
 }
 void ScenarioEventEditor::selectStep() {
     const QScopedValueRollback<bool> guard(loading_, true);
     auto item = steps_->currentItem();
+    bool launch=false;
+    if(item&&item->parent())for(const auto &site:SceneEvents::sites())launch|=site.row==rows_->currentData().toInt()&&site.offset==item->data(0,offsetRole).toInt();
+    openCutscene_->setEnabled(launch&&bool(editCutscene));
+    branchTarget_->clear();
+    const bool branch = item && item->parent() && item->data(0,targetRole).toInt()>=0;
+    if(branch) {
+        try {
+            const int row=rows_->currentData().toInt(),at=item->data(0,offsetRole).toInt();
+            const auto original=SceneEvents::retailRow(project_->rom(),row);
+            const auto controls=EventScript::branchSteps(original);
+            if(controls.contains(at)) {
+                const int end=at+controls[at].length;
+                QSet<int> listed;
+                for(const auto &handler:EventScript::decode(original))for(const auto &step:handler.steps) {
+                    const int distance=(step.offset-end)/2;
+                    if(distance < -128 || distance > 127 || listed.contains(step.offset))continue;
+                    listed.insert(step.offset);
+                    branchTarget_->addItem(position(step.offset)+" · "+step.text,step.offset);
+                }
+                branchTarget_->setCurrentIndex(branchTarget_->findData(item->data(0,targetRole)));
+            }
+        } catch(const Error &e){notice_->setText(QString::fromUtf8(e.what()));}
+    }
+    branchTarget_->setEnabled(branchTarget_->count()>0);applyBranch_->setEnabled(branchTarget_->count()>0);
     const bool editable = item && item->parent() && item->data(0, flagRole).toInt() >= 0;
     flags_->setEnabled(editable); action_->setEnabled(editable); apply_->setEnabled(editable);
     jump_->setEnabled(item && item->parent() && item->data(0, targetRole).toInt() >= 0);

@@ -17,6 +17,8 @@ class EncounterEditor : public QWidget {
   public:
     EncounterEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                     QWidget *parent = nullptr);
+    void setScenario(int key);
+    void showAllEncounters();
 
   private:
     void refresh();
@@ -56,6 +58,10 @@ class EncounterEditor : public QWidget {
     QLineEdit *search_;
     QLabel *heading_, *notice_, *terrainContext_;
     QComboBox *mapKey_;
+    QLabel *viewScopeNotice_;
+    QWidget *mapDetails_;
+    int scenario_ = -1;
+    void applyScope();
     QLabel *selection_, *scope_;
     QDialog *terrainDialog_;
     QTableWidget *pairTable_, *terrainTable_, *estimates_ = nullptr;

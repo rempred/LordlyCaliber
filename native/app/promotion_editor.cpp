@@ -1,5 +1,6 @@
 #include "app/content_refresh.h"
 #include "app/promotion_editor.h"
+#include "app/custom_content.h"
 #include <QDialog>
 #include <QDialogButtonBox>
 #include "app/view_position.h"
@@ -247,6 +248,8 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     auto createActions = new QHBoxLayout;
     createActions->addWidget(add);
     createActions->addWidget(createIcon);
+    auto deleteFamily=new QPushButton("Delete family…");deleteFamily->setObjectName("deleteFamily");createActions->addWidget(deleteFamily);
+    connect(deleteFamily,&QPushButton::clicked,this,[this]{showCustomContent(this,project_,undo_,"families");});
     layout->addLayout(createActions);
     connect(add, &QPushButton::clicked, this, [this] {
         edit("Create class family", [this](Promotion &p) {

@@ -109,7 +109,7 @@ ChangeReport Project::compareWithRom(Rom rom) const {
         p.loadScenePrograms(); p.loadSceneEvents(); p.loadDialogues(); p.loadCategoryIcons();
         p.loadIconArtwork(); p.loadAvatarArtwork(); p.loadArmyArtwork(); p.loadCombatArtwork();
         p.loadAnimationRoutes(); p.loadAnimationOverrides(); p.loadAnimationSequences();
-        if (!p.rom().revision()) p.loadAttacks();
+        if (!p.rom().revision()) {p.loadAttacks();p.loadCampaignMap();}
     };
     load(current); load(reference);
     return current.changeReport(&reference);
@@ -463,6 +463,28 @@ ChangeReport Project::changeReport(const Project *reference) const {
             add("Scenarios", QString("%1 (key %2)").arg(s.name).arg(s.key), lines, {"scenarios", s.key});
         }
     }
+    if (campaignMap_ && (reference || campaignMap_->changedNodes())) {
+        CampaignMap original(baseRom);
+        for(int id=1;id<=CampaignMap::nodeCount;++id) {
+            QStringList changes;
+            if(original.position(id)!=campaignMap_->position(id))changes<<QString("Position: %1, %2 → %3, %4").arg(original.position(id).x()).arg(original.position(id).y()).arg(campaignMap_->position(id).x()).arg(campaignMap_->position(id).y());
+            if(original.name(id)!=campaignMap_->name(id))changes<<transition("Location name",original.name(id),campaignMap_->name(id));
+            if(!changes.isEmpty())add("World Map",QString("Map location %1 · %2").arg(id).arg(campaignMap_->name(id)),changes,{"campaignNode",id});
+        }
+        for(int id=1;id<=campaignMap_->totalRoads();++id) {
+            const auto ends=campaignMap_->road(id);
+            if(id>original.totalRoads()) {
+                if(ends.first)add("World Map",QString("New connection %1").arg(id),
+                    {QString("%1 — %2").arg(campaignMap_->name(ends.first),campaignMap_->name(ends.second))},{"campaignNode",ends.first});
+                continue;
+            }
+            QStringList changes;
+            if(original.road(id)!=ends)changes<<(!ends.first?QString("Removed connection"):
+                QString("Endpoints: %1–%2 → %3–%4").arg(original.road(id).first).arg(original.road(id).second).arg(ends.first).arg(ends.second));
+            if(ends.first && original.roadWaypoints(id)!=campaignMap_->roadWaypoints(id))changes<<"Road shape changed";
+            if(!changes.isEmpty())add("World Map",QString("Road %1").arg(id),changes,{"campaignNode",ends.first});
+        }
+    }
     if (world_ && (reference || world_->modified())) {
         const auto original = ScenarioWorld::load(baseRom);
         for (int id = 1; id <= ScenarioWorld::townCount; ++id) {
@@ -563,20 +585,32 @@ ChangeReport Project::changeReport(const Project *reference) const {
         auto rows = SceneEvents::flagRows(sceneEvents_->flagEdits());
         rows.unite(SceneEvents::flagRows(original.flagEdits()));
         for (int row : rows) {
-            const auto controls = EventScript::flagSteps(SceneEvents::retailRow(baseRom, row));
             const auto before = original.flagEdits()[QString::number(row)].toObject();
             const auto after = sceneEvents_->flagEdits()[QString::number(row)].toObject();
+            if(row==0) {
+                auto nodes=before.keys();for(const auto &id:after.keys())if(!nodes.contains(id))nodes<<id;
+                for(const auto &id:nodes)if(before[id]!=after[id])add("Storyline",QString("Map location %1 entry rules").arg(id),{"Updated custom branches; unmatched conditions retain the original rules."},{"campaignNode",id.toInt()});
+                continue;
+            }
+            const auto retail=SceneEvents::retailRow(baseRom,row);
+            const auto controls=EventScript::flagSteps(retail),branches=EventScript::branchSteps(retail);
             auto offsets = before.keys();
             for (const auto &offset : after.keys()) if (!offsets.contains(offset)) offsets << offset;
             for (const auto &offset : offsets)
                 if (before[offset] != after[offset]) {
+                    if(offset=="unlockNodes") {add("Storyline",QString("Event row %1 · map location unlocks").arg(row),{"Updated map locations unlocked on mission completion."},{"scenario-event",row});continue;}
                     const auto step = controls.value(offset.toInt());
                     auto describe = [&](const QJsonObject &edits) {
                         const auto edit = edits[offset].toObject();
-                        const int flag = edit.isEmpty() ? step.flag : edit["flag"].toInt();
-                        const bool value = edit.isEmpty() ? step.value : edit["value"].toBool();
-                        return QString("%1 %2%3").arg(step.check ? "Check" : value ? "Set" : "Clear",
-                            EventScript::flagName(flag), step.check ? value ? " is ON" : " is OFF" : "");
+                        QString result;
+                        if(controls.contains(offset.toInt())) {
+                            const int flag = edit.contains("flag") ? edit["flag"].toInt() : step.flag;
+                            const bool value = edit.contains("value") ? edit["value"].toBool() : step.value;
+                            result=QString("%1 %2%3").arg(step.check ? "Check" : value ? "Set" : "Clear",
+                                EventScript::flagName(flag), step.check ? value ? " is ON" : " is OFF" : "");
+                        }
+                        if(branches.contains(offset.toInt()))result+=QString(" → @%1").arg(edit.contains("target")?edit["target"].toInt():branches[offset.toInt()].target,4,16,QChar('0'));
+                        return result;
                     };
                     add("Scenario events", QString("Event row %1 · instruction @%2").arg(row).arg(offset.toInt(), 4, 16, QChar('0')),
                         {describe(before) + " → " + describe(after)}, {"scenario-event", row, offset.toInt()});

@@ -15,6 +15,7 @@ void lc_effect_bind_current(void *);
 void lc_effect_start(void *);
 int lc_effect_push(void *);
 void lc_effect_pop(int);
+void lc_strike_visual_list(u8 *);
 #define W(p, n) (*(u32 *)((u8 *)(p) + (n)))
 #define H(p, n) (*(u16 *)((u8 *)(p) + (n)))
 #define F(p, n) (*(float *)((u8 *)(p) + (n)))
@@ -62,6 +63,8 @@ int lc_visual_origins(int, const u8 *, const u8 *, const float *, u32, u32, cons
 #define pending_source (*(u8 **)(lc_attack_scratch + 68))
 #define pending_targets (*(u8 **)(lc_attack_scratch + 72))
 #define pending_extra (*(u8 **)(lc_attack_scratch + 76))
+#define pending_repeat (*(u32 *)(lc_attack_scratch + 80))
+#define pending_donor (*(u32 *)(lc_attack_scratch + 84))
 static void visual_draw(void *node) {
     int words, i, count, used = 0, origins[40];
     float positions[60];
@@ -108,7 +111,7 @@ typedef struct {
     u8 *pixels;
     void *drawing;
     u32 *commands;
-    int frame, hold, delay;
+    int frame, hold, delay, strike;
 } VisualState;
 
 static int unpack(const u8 *in, int length, u8 *out, int size) {
@@ -207,6 +210,7 @@ static void visual_task(int state, void *data) {
         s->frame = 0;
         s->hold = 0;
         s->delay = H(s->config, 18);
+        s->strike = pending_repeat;
         lc_effect_bind_current(s->config);
         ((void (*)(int))0x8020dc80)(4096);
         return;
@@ -281,6 +285,10 @@ static void visual_task(int state, void *data) {
             finish(s);
             return;
         }
+        /* Imported sequences have no retail impact script. Their first visible
+         * frame is the impact, after the authored delay, once per strike. */
+        if (s->strike && s->targets[0] < 20)
+            ((void (*)(int,int))0x801c893c)(s->targets[0],10);
     } else if (!s->hold) {
         s->frame++;
         if (s->frame >= H(s->config, 28)) {
@@ -294,8 +302,67 @@ static void visual_task(int state, void *data) {
     }
     s->hold--;
 }
+/* Ordinary spell programs are authored for one simultaneous group. Serialize
+ * complete single-target programs instead of feeding them duplicate actor IDs.
+ * The six summon families already have a native per-impact driver. */
+typedef struct {
+    u8 *source, *targets, *extra, *config;
+    u8 target[2], flag[2];
+    u32 donor, ordinal, delay;
+    void *child;
+} RepeatVisual;
+static void repeat_visual(int state,void *data) {
+    RepeatVisual *s=(RepeatVisual *)data;
+    u8 *task=(u8 *)GLOBAL(0x80220fe8);
+    VisualCallback callback;
+    int owner;
+    if(state==256) {
+        s->source=pending_source; s->targets=pending_targets;
+        s->extra=pending_extra; s->config=pending_config;
+        s->donor=pending_donor; s->ordinal=0; s->child=0; s->delay=2;
+        ((void (*)(int))0x8020dc80)(4096);
+        return;
+    }
+    if(state==257) { ((void (*)(void))0x8020dfb8)(); return; }
+    if(state!=4096)return;
+    /* Battle result commands follow the visual command by one stream tick. */
+    if(s->delay) { --s->delay; return; }
+    if(s->child && W(s->child,4) && W(s->child,20)==(u32)task)return;
+    s->child=0;
+    if(s->ordinal>=18 || s->targets[s->ordinal]==255) {
+        ((void (*)(void))0x8020dfb8)(); return;
+    }
+    s->target[0]=s->targets[s->ordinal]; s->target[1]=255;
+    s->flag[0]=s->extra?s->extra[s->ordinal]:0; s->flag[1]=255;
+    ++s->ordinal;
+    GLOBAL(0x80220f68)=(u32)s->source;
+    GLOBAL(0x80220f6c)=(u32)s->target;
+    if(s->donor>=97 && s->donor<=132) {
+        GLOBAL(0x80220f70)=(u32)s->flag;
+        *(u16 *)0x80220f74=(u16)s->donor;
+    } else {
+        *(u16 *)0x80220f70=(u16)s->donor;
+        GLOBAL(0x8020a2d0)=s->donor;
+    }
+    callback=(VisualCallback)((u32 *)0x8021fcc0)[s->donor];
+    if(s->config) {
+        pending_config=s->config; pending_source=s->source;
+        pending_targets=s->target; pending_extra=s->flag;
+        pending_repeat=1;
+        callback=visual_task;
+    }
+    owner=lc_effect_push(s->config);
+    s->child=((void *(*)(VisualCallback,void *))0x8020dd60)(callback,task);
+    lc_effect_pop(owner);
+    pending_repeat=0;
+}
+static int native_strikes(int effect) {
+    return (effect>=5 && effect<=7) || (effect>=13 && effect<=15) ||
+           (effect>=21 && effect<=23) || (effect>=29 && effect<=31) ||
+           (effect>=36 && effect<=38) || (effect>=44 && effect<=46);
+}
 void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
-    int i, donor, ringIndex, owner;
+    int i, donor, ringIndex, owner, repeated;
     u8 *config = 0, *ring;
     u32 saved;
     u32 *table = (u32 *)0x8021fcc0;
@@ -305,6 +372,27 @@ void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
                 config = (u8 *)W(lc_attack_settings + i * 32, 24);
                 break;
             }
+    }
+    repeated=extra && targets[0]!=255 && (extra[0]&128);
+    if(repeated) {
+        extra[0]&=127;
+        lc_strike_visual_list(targets);
+        donor=config?H(config,14):effect;
+        if((config && H(config,12)) || !native_strikes(donor) || *(u8 *)0x800e9c12!=1) {
+            if(config && H(config,12))donor=135;
+            if(*(u8 *)0x800e9c12!=1)donor=135;
+            pending_config=config; pending_source=source;
+            pending_targets=targets; pending_extra=extra; pending_donor=donor;
+            ringIndex=GLOBAL(0x80220db0);
+            saved=table[donor]; table[donor]=(u32)repeat_visual;
+            owner=lc_effect_push(config);
+            lc_original_visual_submit(donor,source,targets,extra);
+            lc_effect_pop(owner);
+            table[donor]=saved;
+            ring=(u8 *)0x80220db8+ringIndex*20;
+            H(ring,2)|=1;
+            return;
+        }
     }
     if (!config || *(u8 *)0x800e9c12 != 1) {
         lc_original_visual_submit(config ? H(config, 14) : effect, source, targets, extra);

@@ -6,6 +6,8 @@
 #include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include "app/scenario_event_editor.h"
+#include "app/shop_editor.h"
+#include "app/encounter_editor.h"
 #include <QCheckBox>
 #include <QTimeEdit>
 #include <QGroupBox>
@@ -89,6 +91,8 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     auto browse = new QPushButton("Scenarios"); browse->setCheckable(true); browse->setChecked(true);
     browse->setObjectName("scenarioBrowse"); navigationRow->addWidget(browse); navigationRow->addWidget(navigation);
     auto title = new QLabel; title->setObjectName("scenarioCurrentTitle"); navigationRow->addWidget(title,1);
+    auto story=new QPushButton("Story connections…");story->setObjectName("scenarioStoryConnections");navigationRow->addWidget(story);
+    connect(story,&QPushButton::clicked,this,[this]{if(key()>=0&&openStoryline)openStoryline(key());});
     auto test = new QPushButton("Test this mission…"); test->setObjectName("scenarioTestMission");
     navigationRow->addWidget(test);
     connect(test, &QPushButton::clicked, this, [this] { if (key() >= 0 && testScenario) testScenario(key()); });
@@ -212,6 +216,19 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     addPage(settingsScroll, "Settings");
     events_ = new ScenarioEventEditor(project_, undo_, changed_);
     addPage(events_, "Events");
+    if (project_->shops()) {
+        shops_ = new ShopEditor(project_, undo_, changed_);
+        addPage(shops_, "Shops");
+        shops_->findChild<QComboBox *>("shopScope")->setCurrentIndex(0);
+        map_->editShop = [this, pages](int id, int town) {
+            shops_->selectShop(id, town);
+            pages->setCurrentWidget(shops_);
+        };
+    }
+    if (project_->encounters()) {
+        encounters_ = new EncounterEditor(project_, undo_, changed_);
+        addPage(encounters_, "Neutral encounters");
+    }
     connect(missionTime_, &QTimeEdit::timeChanged, this, [this](QTime time) {
         if (loading_ || key() < 0) return;
         change("Change mission starting time", [this, time](Scenarios &next) {
@@ -293,6 +310,14 @@ int ScenarioEditor::key() const {
     const auto item = scenarios_->currentItem();
     return item && (item->flags() & Qt::ItemIsEnabled) ? item->data(Qt::UserRole).toInt() : -1;
 }
+void ScenarioEditor::selectScenario(int key) {
+    search_->clear();
+    for (int row = 0; row < scenarios_->count(); ++row)
+        if (scenarios_->item(row)->data(Qt::UserRole).toInt() == key) {
+            scenarios_->setCurrentRow(row);
+            return;
+        }
+}
 void ScenarioEditor::refresh() {
     const ViewPosition keepView(this);
     loading_ = true;
@@ -363,6 +388,9 @@ void ScenarioEditor::showScenario() {
     if (loading_)
         return;
     const bool valid = key() >= 0;
+    if (shops_) shops_->setScenario(key());
+    if (encounters_) encounters_->setScenario(key());
+    if (scenarioChanged) scenarioChanged(key());
     details_->setEnabled(valid);
     if (!valid) {
         editingKey_ = -1;

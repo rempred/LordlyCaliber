@@ -113,18 +113,44 @@ QMap<int, EventStep> EventScript::flagSteps(const QByteArray &bytes) {
 QByteArray EventScript::apply(const QByteArray &bytes, const QJsonObject &edits) {
     if (edits.isEmpty()) return bytes;
     const auto controls = flagSteps(bytes);
+    const auto branches = branchSteps(bytes);
+    QSet<int> destinations;
+    for (const auto &handler : decode(bytes))
+        for (const auto &step : handler.steps) destinations.insert(step.offset);
     auto result = bytes;
     for (auto it = edits.begin(); it != edits.end(); ++it) {
         bool ok; const int at = it.key().toInt(&ok);
         const auto edit = it.value().toObject();
-        const int flag = edit["flag"].toInt(-1);
-        if (!ok || QString::number(at) != it.key() || !controls.contains(at) || !it.value().isObject() ||
-            edit.size() != 2 || flag < 0 || flag > 255 || edit["flag"].toDouble() != flag || !edit["value"].isBool())
-            throw Error("Invalid event flag edit");
-        put8(result, at + 1, quint8(flag));
-        if (controls[at].check) put8(result, at + 4, edit["value"].toBool() ? 0xbc : 0xac);
-        else put8(result, at + 3, edit["value"].toBool() ? 1 : 0);
+        if (!ok || QString::number(at) != it.key() || !it.value().isObject() || edit.isEmpty())
+            throw Error("Invalid event instruction edit");
+        for (const auto &field : edit.keys())
+            if (field != "flag" && field != "value" && field != "target") throw Error("Unknown event edit field");
+        if (edit.contains("flag") || edit.contains("value")) {
+            const int flag = edit["flag"].toInt(-1);
+            if (!controls.contains(at) || flag < 0 || flag > 255 ||
+                edit["flag"].toDouble() != flag || !edit["value"].isBool()) throw Error("Invalid event flag edit");
+            put8(result, at + 1, quint8(flag));
+            if (controls[at].check) put8(result, at + 4, edit["value"].toBool() ? 0xbc : 0xac);
+            else put8(result, at + 3, edit["value"].toBool() ? 1 : 0);
+        }
+        if (edit.contains("target")) {
+            const int target = edit["target"].toInt(-1);
+            if (!branches.contains(at) || !destinations.contains(target) || edit["target"].toDouble() != target)
+                throw Error("Choose a decoded instruction as the branch destination");
+            const int end = at + branches[at].length, distance = (target - end) / 2;
+            if (distance < -128 || distance > 127 || (target - end) % 2)
+                throw Error("This branch destination is beyond the game's relative jump range");
+            put8(result, end - 1, quint8(distance));
+        }
     }
+    decode(result);
+    return result;
+}
+QMap<int, EventStep> EventScript::branchSteps(const QByteArray &bytes) {
+    QMap<int, EventStep> result;
+    for (const auto &handler : decode(bytes))
+        for (const auto &step : handler.steps)
+            if (step.target >= 0) result[step.offset] = step;
     return result;
 }
 } // namespace lordly

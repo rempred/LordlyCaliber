@@ -289,9 +289,9 @@ int Promotion::createFamily(const QString &name, FamilyRules rules) {
         throw Error("Unknown class-change rules");
     auto candidate = families;
     auto list = candidate["families"].toArray();
-    int next = 16;
-    for (const auto &value : list)
-        next = std::max(next, value.toObject()["id"].toInt() + 1);
+    int next = 16;QSet<int> occupied;
+    for (const auto &value : list) occupied.insert(value.toObject()["id"].toInt());
+    while (occupied.contains(next)) ++next;
     list << QJsonObject{{"id", next}, {"name", name.trimmed()}, {"behavior", behavior}};
     candidate["families"] = list;
     families = validateFamilies(candidate);

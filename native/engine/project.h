@@ -19,12 +19,14 @@
 #include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/scenario_world.h"
+#include "engine/campaign_map.h"
 #include "engine/scenarios.h"
 #include "engine/scene_events.h"
 #include "engine/scene_programs.h"
 #include "engine/shops.h"
 #include "engine/sprite_library.h"
 #include "engine/text.h"
+#include "engine/name_tables.h"
 #include "engine/tool_settings.h"
 #include "engine/training.h"
 #include <QJsonObject>
@@ -75,6 +77,9 @@ class Project {
     void setAttacks(const QJsonObject &);
     void replaceBytes(Table table, int row, const QByteArray &bytes);
     int changedRecords() const;
+    void loadCampaignMap();
+    void setCampaignMap(const QJsonObject &);
+    const std::optional<CampaignMap> &campaignMap() const { return campaignMap_; }
     ChangeReport changeReport(const Project *reference = nullptr) const;
     ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
@@ -195,7 +200,7 @@ class Project {
         return originalClasses_.has_value();
     }
     bool classNamesModified() const {
-        return !classNames_.isEmpty() || !addedClasses_.isEmpty();
+        return !classNames_.isEmpty() || !addedClasses_.isEmpty() || !replacedClassAssets_.isEmpty();
     }
     bool classNameModified(int row) const {
         return classNames_.contains(row) ||
@@ -204,6 +209,12 @@ class Project {
     QByteArray classNameBytes(int row) const;
     void setClassNameBytes(int row, const QByteArray &name);
     ClassData classData() const;
+    PersonalNames personalNames() const;
+    void setPersonalNames(const QJsonObject &);
+    void loadNameTables();
+    const std::optional<NameTables> &nameTables() const {return nameTables_;}
+    void setNameTables(const QJsonObject &);
+    bool personalNamesModified() const { return personalNames_.has_value(); }
     int appendClass(int templateId, const QString &name);
     int createClass(const QString &name);
     int appendItem(int templateId, const QString &name);
@@ -227,6 +238,17 @@ class Project {
                (originalItems_ && row >= originalItems_->entries().size());
     }
     static int classDescriptionIndex(int classId);
+    bool contentDeleted(const QString &kind, int id) const;
+    const QJsonObject &deletedContent() const { return deletedContent_; }
+    void setDeletedContent(const QJsonObject &);
+    void markContentDeleted(const QString &, int id, bool deleted);
+    int nextContentId(const QString &, int count) const;
+    QMap<int, QString> customContent(const QString &);
+    QStringList deletionUses(const QString &, int id);
+    void deleteCustomContent(const QString &, int id);
+    int createAttack(const QString &name, int source = 5);
+    int createShop();
+    int createEncounterPool();
 
   private:
     void importLegacyShops(const QJsonObject &object);
@@ -272,6 +294,7 @@ class Project {
     std::optional<Scenarios> scenarios_;
     std::optional<Training> training_;
     std::optional<ScenarioWorld> world_;
+    std::optional<CampaignMap> campaignMap_;
     std::optional<MapEdits> mapEdits_;
     std::optional<Dialogues> dialogues_;
     std::optional<ScenePrograms> scenePrograms_;
@@ -282,8 +305,12 @@ class Project {
     QVector<ItemAsset> addedItems_;
     QMap<int, QByteArray> itemNames_;
     int appendItemAsset(const ItemAsset &, const QByteArray &description);
+    std::optional<PersonalNames> personalNames_;
+    std::optional<NameTables> nameTables_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
+    QMap<int, ClassAsset> replacedClassAssets_;
+    QJsonObject deletedContent_;
     QVector<ClassAsset> addedClasses_;
     const ClassAsset &classAsset(int row) const;
     void copyClassVisuals(int sourceId, int targetId);

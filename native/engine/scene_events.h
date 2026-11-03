@@ -33,10 +33,14 @@ class SceneEvents {
     QByteArray program(int row) const;
     QVector<int> scenarioRows(int key) const;
     void editFlag(int row, int offset, int flag, bool value);
+    void editBranch(int row, int offset, int target);
+    void setWorldRules(int node, const QJsonArray &rules);
+    void unlockNodeAfter(int row, int node, bool enabled);
     void restoreFlags(int row);
     const QJsonObject &flagEdits() const { return flags_; }
     static QByteArray flagRow(const QByteArray &, int row, const QJsonObject &);
     static QSet<int> flagRows(const QJsonObject &);
+    static bool hasCampaignEdits(const QJsonObject &);
     void validate(const ScenePrograms &) const;
     QJsonObject json() const;
     void apply(const QJsonObject &, const ScenePrograms &);

@@ -16,6 +16,9 @@ class ShopEditor : public QWidget {
   public:
     ShopEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                QWidget *parent = nullptr);
+    void setScenario(int key);
+    void selectShop(int id, int town = -1);
+    void showAllShops();
 
   private:
     struct Inventory {
@@ -40,6 +43,9 @@ class ShopEditor : public QWidget {
     QWidget *details_;
     QLabel *heading_, *notice_;
     QComboBox *copyFrom_, *town_;
+    QComboBox *scope_;
+    QLabel *scopeNotice_;
+    int scenario_ = -1;
     Inventory equipment_, consumables_;
 };
 } // namespace lordly

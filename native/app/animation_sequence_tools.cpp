@@ -78,16 +78,17 @@ void compareFrames(QWidget *parent, const SpriteAsset &left, const SpriteAsset &
     }
     auto controls = new QHBoxLayout; layout->addLayout(controls);
     QPushButton play("Play"); play.setObjectName("sequenceComparePlay"); play.setCheckable(true);
-    QPushButton reset("Restart"), fit("Fit both"), actual("Actual pixels");
+    QPushButton fit("Fit both"), actual("Actual pixels");
+    QCheckBox loop("Loop");loop.setObjectName("sequenceCompareLoop");
     QSlider tick(Qt::Horizontal); tick.setObjectName("sequenceCompareTick");
     tick.setRange(0, std::max(durations[0], durations[1]) - 1);
-    controls->addWidget(&play); controls->addWidget(&reset); controls->addWidget(&tick, 1);
+    controls->addWidget(&play); controls->addWidget(&loop); controls->addWidget(&tick, 1);
     controls->addWidget(&fit); controls->addWidget(&actual);
     QTimer timer;
     qint64 elapsed = 0;
     auto draw = [&] {
         for (int i = 0; i < 2; ++i) {
-            int remaining = int(elapsed % durations[i]), index = 0;
+            int remaining = int(std::min<qint64>(elapsed,durations[i]-1)), index = 0;
             while (index + 1 < assets[i].frames.size() && remaining >= assets[i].frames[index].ticks)
                 remaining -= assets[i].frames[index++].ticks;
             items[i]->setPixmap(QPixmap::fromImage(assets[i].composite(index)));
@@ -108,13 +109,18 @@ void compareFrames(QWidget *parent, const SpriteAsset &left, const SpriteAsset &
         for (auto view : views) { view->resetTransform(); view->centerOn(bounds.center()); }
     });
     QObject::connect(&tick, &QSlider::valueChanged, &dialog, [&](int value) { elapsed = value; draw(); });
-    QObject::connect(&reset, &QPushButton::clicked, &dialog, [&] { elapsed = 0; tick.setValue(0); draw(); });
+
     QObject::connect(&play, &QPushButton::toggled, &dialog, [&](bool on) {
+        if (on && elapsed >= tick.maximum()) {elapsed = 0;tick.setValue(0);draw();}
         play.setText(on ? "Pause" : "Play"); if (on) timer.start(16); else timer.stop();
     });
     QObject::connect(&timer, &QTimer::timeout, &dialog, [&] {
         elapsed += 2;
-        const QSignalBlocker blocker(&tick); tick.setValue(int(elapsed % (tick.maximum() + 1))); draw();
+        if (elapsed > tick.maximum()) {
+            if (loop.isChecked()) elapsed %= tick.maximum() + 1;
+            else { elapsed = tick.maximum();play.setChecked(false); }
+        }
+        const QSignalBlocker blocker(&tick); tick.setValue(int(elapsed)); draw();
     });
     QDialogButtonBox close(QDialogButtonBox::Close); layout->addWidget(&close);
     QObject::connect(&close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -165,7 +171,7 @@ void AnimationSequenceEditor::chooseSource(bool compare, int destinationRecord, 
     auto choices = new QHBoxLayout; layout->addLayout(choices);
     QComboBox classes, routes, poses;
     classes.setObjectName("sequenceSourceClass"); routes.setObjectName("sequenceSourceRoute"); poses.setObjectName("sequenceSourcePose");
-    for (const auto &row : project_->records(Table::Classes)) if (row.id > 0)
+    for (const auto &row : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",row.id)) if (row.id > 0)
         classes.addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
     classes.setCurrentIndex(classes.findData(selectedClass()));
     routes.addItems({"Player · Base", "Enemy · Base", "Player · Alternate", "Enemy · Alternate"});

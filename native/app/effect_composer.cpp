@@ -320,10 +320,11 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     play_ = new QPushButton("Play");
     play_->setObjectName("compositionPlay");
     auto step = new QPushButton("Step");
-    auto restart = new QPushButton("Restart");
+    playbackLoop_ = new QCheckBox("Loop");
+    playbackLoop_->setObjectName("compositionPlaybackLoop");
     playback->addWidget(play_);
     playback->addWidget(step);
-    playback->addWidget(restart);
+    playback->addWidget(playbackLoop_);
     timeLabel_ = new QLabel;
     playback->addWidget(timeLabel_, 1);
     time_ = new QSlider(Qt::Horizontal);
@@ -339,6 +340,9 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
         updatePreview();
     });
     connect(play_, &QPushButton::clicked, this, [this] {
+        if (!playing_ && time_->value() >= model_.duration - 1) {
+            const QSignalBlocker block(time_);time_->setValue(0);updatePreview();
+        }
         playing_ = !playing_;
         play_->setText(playing_ ? "Pause" : "Play");
         playFrom_ = time_->value();
@@ -347,20 +351,18 @@ EffectComposer::EffectComposer(Project *project, EffectComposition model, QWidge
     connect(step, &QPushButton::clicked, this, [this] {
         playing_ = false;
         play_->setText("Play");
-        time_->setValue((time_->value() + 1) % model_.duration);
+        time_->setValue(playbackLoop_->isChecked() ? (time_->value() + 1) % model_.duration : qMin(time_->value() + 1,model_.duration - 1));
     });
-    connect(restart, &QPushButton::clicked, this, [this] {
-        QSignalBlocker blocker(time_);
-        time_->setValue(0);
-        playFrom_ = 0;
-        clock_.restart();
-        updatePreview();
-    });
+
     auto timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, [this] {
         if (playing_) {
             QSignalBlocker blocker(time_);
-            time_->setValue((playFrom_ + int(clock_.elapsed() * 30 / 1000)) % model_.duration);
+            const auto tick = playFrom_ + clock_.elapsed() * 30 / 1000;
+            time_->setValue(playbackLoop_->isChecked() ? int(tick % model_.duration) : int(qMin<qint64>(tick,model_.duration - 1)));
+            if (!playbackLoop_->isChecked() && tick >= model_.duration) {
+                playing_ = false;play_->setText("Play");
+            }
             updatePreview();
         }
     });

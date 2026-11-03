@@ -1,0 +1,40 @@
+{
+  "generator": "parent campaign research, native US Rev0 code bounds",
+  "owners": [
+    {
+      "start": 333036,
+      "end": 333232,
+      "sha256": "EC6D889AC486ECB4926B9D7DD1EF75930303A16828C3EF4E93447CE67427854F"
+    },
+    {
+      "start": 513104,
+      "end": 514100,
+      "sha256": "2AA4EA1D94CADCA352A7D3464ECB4929697160F3178E9D7A99DAABED01AAC444"
+    },
+    {
+      "start": 514400,
+      "end": 514452,
+      "sha256": "AF4C5C3B266602D9E780653D820FC1549B6E3FFC40BDAB2056810E71461AF57E"
+    },
+    {
+      "start": 515080,
+      "end": 515232,
+      "sha256": "89FAFF8B37861C27894E3A36A5E507E5E0FD1FA65D3E5BA9BF9124DD8D104190"
+    },
+    {
+      "start": 504368,
+      "end": 504772,
+      "sha256": "56FFA553DD395DFF2CAB5FEF849C0506BF92DEA26D70BB7AF094603D7A17F78B"
+    },
+    {
+      "start": 533516,
+      "end": 534108,
+      "sha256": "4C10F7303C53F1D9E0325053196BF0258B072CCF04A639118D6F9C7F7149F9FD"
+    },
+    {
+      "start": 531700,
+      "end": 533516,
+      "sha256": "27AE1CCC16CFDBF1A680C59AC02A5EE1BA1EA771A7261725C95C0D66D9D90BC4"
+    }
+  ]
+}

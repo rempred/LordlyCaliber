@@ -2,6 +2,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/attack_effect_editor.h"
 #include "app/content_refresh.h"
+#include "app/custom_content.h"
 #include "engine/combat_animation_edit.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -240,7 +241,6 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     : QWidget(parent), project_(p), undo_(undo), changed_(std::move(changed)) {
     setObjectName("attackEditor");
     project_->loadAttacks();
-    opened_ = *project_->attacks();
     auto layout = new QVBoxLayout(this);
     auto split = new QSplitter;
     layout->addWidget(split);
@@ -261,6 +261,8 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     copy->setObjectName("duplicateAttack");
     actions->addWidget(add);
     actions->addWidget(copy);
+    auto remove=new QPushButton("Delete");remove->setObjectName("deleteAttack");actions->addWidget(remove);
+    connect(remove,&QPushButton::clicked,this,[this]{if(selected()>=159)deleteCustomEntry(this,project_,undo_,"attacks",selected());});
     leftLayout->addLayout(actions);
     capacity_ = text({}, leftLayout);
     split->addWidget(left);
@@ -479,29 +481,6 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     animationLayout->addWidget(effectButton);
     connect(effectButton, &QPushButton::clicked, this, &AttackEditor::editEffect);
     right->addWidget(animation);
-    auto example = new QGroupBox("Before / after example");
-    auto exampleLayout = new QVBoxLayout(example);
-    auto exampleGrid = new QGridLayout;
-    const QStringList exampleLabels{"Incoming power", "Defense",     "Luck difference",
-                                    "Resistance (%)", "Attacker HP", "Target HP",
-                                    "Target max HP"};
-    const int defaults[] = {100, 40, 0, 0, 300, 200, 400};
-    for (int i = 0; i < 7; ++i) {
-        auto input = number(qPrintable(QString("attackExample%1").arg(i)), i == 2 ? -999 : 0,
-                            i == 3 ? 100 : 9999, defaults[i]);
-        example_ << input;
-        exampleGrid->addWidget(new QLabel(exampleLabels[i]), i / 2, (i % 2) * 2);
-        exampleGrid->addWidget(input, i / 2, (i % 2) * 2 + 1);
-        connect(input, &QSpinBox::valueChanged, this, [this] { comparison(); });
-    }
-    exampleLayout->addLayout(exampleGrid);
-    comparison_ = text({}, exampleLayout);
-    text("Successful, noncritical main effect at neutral random variation. Power and defense are "
-         "already calculated battle scores. The resistance input is for the selected element. "
-         "Formation bonuses, immunity, global event rules and additional effects are outside this "
-         "example.",
-         exampleLayout);
-    right->addWidget(example);
     auto advancedToggle = new QCheckBox("Advanced: preserved field IDs");
     right->addWidget(advancedToggle);
     advanced_ = text({}, right);
@@ -640,6 +619,7 @@ void AttackEditor::refresh() {
     const auto &attacks = *project_->attacks();
     list_->clear();
     for (int i = 1; i < attacks.entries().size(); ++i) {
+        if(project_->contentDeleted("attacks",i))continue;
         const auto &a = attacks.entry(i);
         auto item =
             new QListWidgetItem(QString("%1 · %2%3")
@@ -652,22 +632,25 @@ void AttackEditor::refresh() {
                                             AttackData::effects().value(u8(a.data, 3)) + " " +
                                             AttackData::elements().value(u8(a.data, 1)));
     }
-    list_->setCurrentRow(std::min(id, int(attacks.entries().size()) - 1) - 1);
+    for(int row=0;row<list_->count();++row)if(list_->item(row)->data(Qt::UserRole).toInt()==id)list_->setCurrentRow(row);
+    if(!list_->currentItem()&&list_->count())list_->setCurrentRow(0);
+    findChild<QPushButton *>("deleteAttack")->setEnabled(selected()>=159);
     filter();
     capacity_->setText(QString("%1 / 254 attack IDs used · %2 available")
-                           .arg(attacks.entries().size() - 1)
-                           .arg(255 - attacks.entries().size()));
-    findChild<QPushButton *>("createAttack")->setEnabled(attacks.entries().size() < 255);
-    findChild<QPushButton *>("duplicateAttack")->setEnabled(attacks.entries().size() < 255);
+                           .arg(list_->count())
+                           .arg(254 - list_->count()));
+    findChild<QPushButton *>("createAttack")->setEnabled(project_->nextContentId("attacks",attacks.entries().size()) < 255);
+    findChild<QPushButton *>("duplicateAttack")->setEnabled(project_->nextContentId("attacks",attacks.entries().size()) < 255);
     const int preview = previewClass_->currentData().toInt();
     previewClass_->clear();
-    for (const auto &row : project_->records(Table::Classes))
+    for (const auto &row : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",row.id))
         if (row.id)
             previewClass_->addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
     previewClass_->setCurrentIndex(std::max(0, previewClass_->findData(preview)));
     showAttack();
 }
 void AttackEditor::showAttack() {
+    findChild<QPushButton *>("deleteAttack")->setEnabled(selected()>=159);
     const int id = selected();
     if (id < 1)
         return;
@@ -822,6 +805,7 @@ void AttackEditor::showAttack() {
         : a.targetPattern == 11 ? QString("Selects %1 strikes from the target and adjacent positions, including diagonals. "
                                          "The primary target is favored; the same unit can be hit more than once. "
                                          "Empty positions are skipped. The diagram shows possible targets, not guaranteed hits. "
+                                         "Spell and Pedra effects show each strike and apply its result at impact. "
                                          "Supports 1–%2 strikes; retail uses 6.").arg(a.strikeCount).arg(AttackData::maximumStrikes)
         : a.targetPattern == 12 ? "Checked positions are fixed in the chosen side's formation. "
                                   "Empty cells are skipped. Front is nearest the opposing squad."
@@ -829,7 +813,8 @@ void AttackEditor::showAttack() {
                                   "follow the selected target. Empty positions are skipped.");
     const bool physical = !templ && u8(a.data, 0) < 2;
     playbackMode_->setEnabled(physical);
-    playbackMode_->setItemText(0, physical ? "Strike each target separately" : "Shared spell sequence (game rule)");
+    playbackMode_->setItemText(0, physical ? "Strike each target separately" :
+        a.targetPattern == 11 ? "One effect impact per strike" : "Shared spell sequence (game rule)");
     choose(playbackMode_, physical ? a.playback : 0);
     playback_->setText(templ ? "<b>Animation playback:</b> Uses the resolved spell's animation and targeting."
         : physical && a.playback == 1
@@ -840,6 +825,10 @@ void AttackEditor::showAttack() {
             ? "<b>Animation playback: one strike per target.</b> The class attack animation repeats for each "
               "selected unit. A column of three occupied positions means three strikes, using one attack count. "
               "An added visual effect plays afterward over the target selection."
+        : a.targetPattern == 11
+            ? "<b>Animation playback: one effect impact per strike.</b> Summons enter once, deliver the strikes, "
+              "then leave. Other spell effects play once per strike. Each hit or miss resolves at its impact; "
+              "this still uses one class attack count. Hits aimed at a unit already defeated by this attack are skipped."
             : "<b>Animation playback: one sequence for the target selection.</b> The class animation is "
               "shared across the targets. The visual effect controls whether its artwork repeats over each "
               "unit or covers the squad; changing the target pattern does not duplicate the class animation.");
@@ -897,7 +886,6 @@ void AttackEditor::showAttack() {
                            .arg(a.animation)
                            .arg(QString::fromLatin1(a.data.toHex(' '))));
     showUsers();
-    comparison();
     notice_->clear();
 }
 void AttackEditor::publish(const AttackData &next, const QString &title) {
@@ -1023,9 +1011,8 @@ void AttackEditor::create(bool copy) {
         starting = source->currentData().toInt();
     }
     try {
-        auto next = *project_->attacks();
-        const int id = next.duplicate(starting, name);
-        publish(next, copy ? "Duplicate attack" : "Create attack");
+        auto next=*project_;const int id=next.createAttack(name,starting);
+        pushContentProject(project_,undo_,std::move(next),copy?"Duplicate attack":"Create attack");
         refresh();
         selectAttack(id);
     } catch (const std::exception &e) {
@@ -1035,7 +1022,7 @@ void AttackEditor::create(bool copy) {
 void AttackEditor::showUsers() {
     const auto &attacks = *project_->attacks();
     QByteArray signature = QByteArray::number(selected()) + '\0';
-    for (const auto &record : project_->records(Table::Classes))
+    for (const auto &record : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",record.id))
         signature +=
             record.name.toUtf8() + '\0' + record.bytes.mid(55, 6) + record.bytes.mid(69, 1);
     for (const auto &attack : attacks.entries()) {
@@ -1047,7 +1034,7 @@ void AttackEditor::showUsers() {
         return;
     users_->setProperty("assignmentSignature", signature);
     users_->setRowCount(0);
-    for (const auto &record : project_->records(Table::Classes)) {
+    for (const auto &record : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",record.id)) {
         if (!record.id)
             continue;
         bool used = false, indirect = false;
@@ -1110,7 +1097,7 @@ void AttackEditor::assignClass() {
     dialog.setWindowTitle("Assign attack to a class");
     auto layout = new QFormLayout(&dialog);
     auto classes = new QComboBox;
-    for (const auto &c : project_->records(Table::Classes))
+    for (const auto &c : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",c.id))
         if (c.id)
             classes->addItem(QString("%1 · %2").arg(c.id).arg(c.name), c.id);
     auto row = choices({{0, "Front"}, {1, "Middle"}, {2, "Rear"}}, "attackAssignRow");
@@ -1157,51 +1144,5 @@ void AttackEditor::preview() {
         notice_->setText(e.what());
     }
 }
-void AttackEditor::comparison() {
-    if (selected() < 1 || example_.size() != 7)
-        return;
-    const auto &a = project_->attacks()->entry(selected());
-    if (AttackData::isTemplate(a.behavior) || !(u8(a.data, 3) == 1 || u8(a.data, 3) == 2)) {
-        comparison_->setText(
-            "No HP comparison for this effect. Select a damage or healing attack.");
-        return;
-    }
-    const auto base = selected() < opened_.entries().size() ? opened_.entry(selected())
-                                                            : opened_.entry(a.behavior);
-    const auto estimate = [this](const Attack &a) {
-        if (u8(a.data, 3) != 1 && u8(a.data, 3) != 2)
-            return 0;
-        float power = float(example_[0]->value()) * a.powerPercent / 100.f;
-        const int rule = u8(a.data, 4);
-        if (rule == 7 || rule == 8)
-            power = float(double(power) * (rule == 7 ? 1.5 : 1.6));
-        const int resistance = u8(a.data, 3) == 2 ? 0 : example_[3]->value();
-        float amount = ((power - float(example_[1]->value())) + float(example_[2]->value())) *
-                       float(100 - resistance) / 100.f;
-        int n = int(amount);
-        if (rule == 2)
-            n /= 2;
-        else if (rule == 3)
-            n = example_[4]->value() / 20;
-        else if (rule == 4)
-            n = example_[5]->value() / 2;
-        else if (rule == 5)
-            n = int(power / 6.f);
-        else if (rule == 9)
-            n = example_[4]->value() / 2;
-        else if (rule == 10)
-            n = int(double(n) * 0.8);
-        n = std::clamp(n, 1, 9999);
-        return u8(a.data, 3) == 2
-                   ? std::min(n, std::max(0, example_[6]->value() - example_[5]->value()))
-                   : std::min(n, example_[5]->value());
-    };
-    comparison_->setText(
-        QString("<b>%1: %2 HP %3 → Current: %4 HP %5</b>")
-            .arg(selected() < opened_.entries().size() ? "Opened ROM" : "Starting attack")
-            .arg(estimate(base))
-            .arg(u8(base.data, 3) == 2 ? "restored" : "lost")
-            .arg(estimate(a))
-            .arg(u8(a.data, 3) == 2 ? "restored" : "lost"));
-}
+
 } // namespace lordly

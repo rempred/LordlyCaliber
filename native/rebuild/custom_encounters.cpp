@@ -4,6 +4,7 @@
 #include "engine/class_data.h"
 #include "engine/creature_rewards.h"
 #include "engine/scenario_rates.h"
+#include "engine/high_attack.h"
 #include <QFile>
 #include <QJsonArray>
 namespace lordly {
@@ -138,7 +139,7 @@ QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const 
             throw Error("Custom caller source exceeds its original function");
         if (classes)
             code = classes->placedReferences(code, at);
-        image.replace(at, size, retainArtReferences(rom, code, at));
+        image.replace(at, size, retainArtReferences(rom, HighAttack::retainReferences(rom,code,at), at));
     }
     auto compile = [&](const QString &name, const QByteArray &definitions, int offset, int size) {
         const auto code = compileEncounterOwner(compiler, name, definitions, directory,

@@ -2,6 +2,7 @@
 #include "engine/capacity_placement.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
+#include "engine/resource.h"
 #include "game/army/leader.h"
 #include "game/army/character.h"
 #include "game/army/soldier_reserve.h"
@@ -1125,6 +1126,36 @@ int SaveDocument::freeCharacterSlot() const {
         if (!u8(ram_, roster + id * stride + 17) && !assigned.contains(id))
             return id;
     return -1;
+}
+QString SaveDocument::randomCharacterName(const Rom &rom, const ClassData &classes, int classId,
+                                           quint32 seed, const QString &previous, const NameTables *source) const {
+    if (classId<1 || classId>=classes.entries().size()) throw Error("Choose an available class");
+    QByteArray table,record(56,0);
+    for(const auto &entry:classes.entries())table+=entry.record;
+    put8(record,17,classId);
+    const int link=u8(classes.entries()[classId].record,69);
+    put8(record,18,link?link:classId);
+    const auto random=[](void *context)->uint32_t {
+        auto &state=*static_cast<quint32 *>(context);state=state*1664525U+1013904223U;return state>>1;
+    };
+    if(!lordly_character_initialize(reinterpret_cast<uint8_t *>(record.data()),1,
+        reinterpret_cast<const uint8_t *>(table.constData()),classes.entries().size(),nullptr,0,random,&seed))
+        throw Error("The class cannot initialize a character");
+    const int pool=u8(record,20);
+    if(pool>2)throw Error("This class has no supported random-name list");
+    // Accepted 00041c20 selects one of these three resources with character +14.
+    const auto lists=source?*source:NameTables(rom);
+    QStringList names,unused;
+    QSet<QString> used;
+    for(int id:rows(SaveTable::Characters))used.insert(value(SaveTable::Characters,id,"name").toString());
+    for(int i=0;i<lists.randomCount(pool);++i) {
+        const auto name=lists.randomName(pool,i);
+        if(name==previous)continue;
+        names<<name;if(!used.contains(name))unused<<name;
+    }
+    const auto &choices=unused.isEmpty()?names:unused;
+    if(choices.isEmpty())throw Error("The name list has no alternative name");
+    return choices[random(&seed)%choices.size()];
 }
 SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
                                              const ClassData &classes, quint32 seed, int level,

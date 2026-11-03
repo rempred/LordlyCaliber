@@ -77,4 +77,33 @@ void HighAttack::validateCompiled(const QJsonObject &site, const QByteArray &byt
         throw Error("Compiled High Attack owner differs from maintained source: " +
                     site["name"].toString());
 }
+QByteArray HighAttack::canonicalReferences(QByteArray owner, quint32 romOffset) {
+    // Used for authentication only. Retain the actual hooks in the ROM so
+    // High Attack remains recognizable and can still be disabled on reopening.
+    for (const auto &value : definition()["sites"].toArray()) {
+        const auto site = value.toObject();
+        const auto at = quint32(site["rom"].toInteger());
+        const int size = site["size"].toInt();
+        if (at < romOffset || quint64(at) + size > quint64(romOffset) + owner.size()) continue;
+        const auto retail = QByteArray::fromHex(site["retailBytes"].toString().toLatin1());
+        validateCompiled(site, retail, false);
+        const auto bytes = owner.mid(at-romOffset, size);
+        if (bytes != retail) validateCompiled(site, bytes, true);
+        owner.replace(at-romOffset, size, retail);
+    }
+    return owner;
+}
+QByteArray HighAttack::retainReferences(const Rom &rom, QByteArray owner, quint32 romOffset) {
+    const auto setting=load(rom);
+    if (!setting.available() || !setting.enabled()) return owner;
+    for (const auto &value : definition()["sites"].toArray()) {
+        const auto site=value.toObject();const auto at=quint32(site["rom"].toInteger());
+        const int size=site["size"].toInt();
+        if(at<romOffset || quint64(at)+size>quint64(romOffset)+owner.size())continue;
+        validateCompiled(site,owner.mid(at-romOffset,size),false);
+        const auto installed=rom.bytes().mid(at,size);validateCompiled(site,installed,true);
+        owner.replace(at-romOffset,size,installed);
+    }
+    return owner;
+}
 } // namespace lordly

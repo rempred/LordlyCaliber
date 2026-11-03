@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/personal_names.h"
 #include "engine/save_runtime.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -74,6 +75,8 @@ class ClassData {
     const QByteArray &prefix() const {
         return prefix_;
     }
+    const PersonalNames &personalNames() const { return personalNames_; }
+    void setPersonalNames(const PersonalNames &names) { personalNames_ = names; }
     int append(int templateId, const QByteArray &encodedName);
     void set(int id, const ClassAsset &asset);
     // Menu class for a newly created character using this class's default.
@@ -88,6 +91,7 @@ class ClassData {
 
   private:
     static void validate(const ClassAsset &asset);
+    PersonalNames personalNames_;
     QByteArray prefix_;
     QVector<ClassAsset> entries_;
 };

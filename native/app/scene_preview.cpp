@@ -1,4 +1,5 @@
 #include "app/scene_preview.h"
+#include <QCheckBox>
 #include "engine/class_data.h"
 #include "engine/save_document.h"
 #include "engine/scene_images.h"
@@ -236,8 +237,8 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     play_->setObjectName("scenePlay");
     step_ = new QPushButton("Step");
     step_->setObjectName("sceneStep");
-    auto reset = new QPushButton("Restart"), fit = new QPushButton("Fit");
-    reset->setObjectName("sceneRestart");
+    auto fit = new QPushButton("Fit");
+    loop_ = new QCheckBox("Loop");loop_->setObjectName("sceneLoop");
     position_ = new QSpinBox;
     position_->setObjectName("scenePosition");
     position_->setRange(0, 30000);
@@ -252,7 +253,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     skip_->setObjectName("sceneSkip");
     controls->addWidget(skip_);
     connect(skip_, &QPushButton::clicked, this, &ScenePreview::skipScene);
-    controls->addWidget(reset);
+    controls->addWidget(loop_);
     controls->addWidget(new QLabel("Step"));
     controls->addWidget(position_);
     controls->addWidget(rate_);
@@ -324,24 +325,19 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     connect(seekTimer_, &QTimer::timeout, this, &ScenePreview::continueSeek);
     timer_ = new QTimer(this);
     timer_->setTimerType(Qt::PreciseTimer);
-    connect(timer_, &QTimer::timeout, this, &ScenePreview::step);
+    connect(timer_, &QTimer::timeout, this, [this] {
+        step();
+        if (current_ && current_->finished && loop_->isChecked() && !preparing_) startPlayback();
+    });
     connect(play_, &QPushButton::toggled, this, [this](bool checked) {
-        if (preparing_ && checked) {
-            seekTimer_->start();
-            play_->setText("Pause setup");
-            return;
-        }
-        if (checked && current_ && !current_->stopped) {
-            timer_->start(qMax(1, qRound(1000. / rate_->value())));
-            play_->setText("Pause");
-        } else
-            stop();
+        if (checked) startPlayback();
+        else stop();
     });
     connect(step_, &QPushButton::clicked, this, [this] {
         stop();
         step();
     });
-    connect(reset, &QPushButton::clicked, this, &ScenePreview::restart);
+
     auto actors = new QHBoxLayout;
     actors->addWidget(new QLabel("Live object"));
     liveObjects_ = new QComboBox;
@@ -402,7 +398,17 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
             [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
     present();
 }
+void ScenePreview::startPlayback() {
+    if (!preparing_ && current_ && (current_->stopped || tick_ >= 30000)) restart();
+    if (preparing_) {
+        resumeAfterPrepare_=true;seekTimer_->start();play_->setText("Pause setup");return;
+    }
+    if (!current_ || current_->stopped) {stop();return;}
+    const QSignalBlocker block(play_);play_->setChecked(true);play_->setText("Pause");
+    timer_->start(qMax(1,qRound(1000. / rate_->value())));
+}
 void ScenePreview::stop() {
+    resumeAfterPrepare_=false;
     seekTimer_->stop();
     seekTarget_ = -1;
     commandSeekWord_ = -1;
@@ -1547,6 +1553,7 @@ void ScenePreview::step() {
         }
         render(next, complete);
         next.stopped = result != ScenePlayback::Advanced;
+        next.finished = result == ScenePlayback::Released;
         next.reason = result == ScenePlayback::Released && next.playback.reason().isEmpty()
                           ? "Scene released." : next.playback.reason();
         current_ = std::move(next);
@@ -1555,6 +1562,7 @@ void ScenePreview::step() {
         if (inputs && inputs->updateLimit() >= 0 &&
             tick_ >= inputs->updateLimit() && !current_->stopped) {
             current_->stopped = true;
+            current_->finished = true;
             current_->reason = QString("Playback input completed its declared %1 updates.").arg(inputs->updateLimit());
         }
         if (tick_ % 120 == 0)
@@ -1630,6 +1638,7 @@ void ScenePreview::continueSeek() {
             const int pendingTick = deferredSeekTick_;
             deferredSeekTick_ = -1;
             preparing_ = false;
+            const bool resume=resumeAfterPrepare_;
             stop();
             tick_ = 0;
             inputHistory_.clear();
@@ -1638,6 +1647,7 @@ void ScenePreview::continueSeek() {
             checkpoints_.insert(0, *current_);
             if (pendingCommand >= 0) { seekToCommand(pendingCommand); return; }
             if (pendingTick >= 0) { seekToUpdate(pendingTick); return; }
+            if (resume) startPlayback();
         } else if (current_->stopped || tick_ >= 30000) {
             preparing_ = false;
             current_->stopped = true;
@@ -1836,16 +1846,17 @@ void ScenePreview::present() {
     reportExit();
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
-    play_->setEnabled(current_ && !current_->stopped && tick_ < 30000);
-    step_->setEnabled(play_->isEnabled() && !preparing_);
+    const bool canAdvance=current_ && !current_->stopped && tick_ < 30000;
+    play_->setEnabled(current_.has_value());
+    step_->setEnabled(canAdvance && !preparing_);
     position_->setEnabled(!preparing_);
     skip_->setVisible(current_ && current_->playback.skipArmed());
-    skip_->setEnabled(play_->isEnabled());
+    skip_->setEnabled(canAdvance);
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
-    imageControlsUi_->setEnabled(play_->isEnabled());
+    imageControlsUi_->setEnabled(canAdvance);
     panelControlsUi_->setVisible(current_ &&
                                  (!current_->playback.panels().empty() || hasDialogue() || scriptInputControls_));
-    panelControlsUi_->setEnabled(play_->isEnabled());
+    panelControlsUi_->setEnabled(canAdvance);
     canvas_->clear();
     selectionOutline_ = nullptr;
     canvas_->setSceneRect(0, 0, 320, 240);

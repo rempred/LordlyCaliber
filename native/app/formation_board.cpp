@@ -206,7 +206,7 @@ void FormationBoard::paintEvent(QPaintEvent *) {
     p.setOpacity(1);
     if (dragging_ && pressed_ >= 0 && !sprites_[pressed_].isNull()) {
         const auto size = sprites_[pressed_].size() * zoom_;
-        p.drawImage(QRectF(pointerPosition_ - QPoint(size.width()/2,size.height()/2), size),
+        p.drawImage(QRectF(pointerPosition_ + dragBaseOffset_ - QPoint(size.width()/2,size.height()), size),
                     sprites_[pressed_]);
     }
     p.setPen(palette().color(QPalette::Text));
@@ -215,7 +215,7 @@ void FormationBoard::paintEvent(QPaintEvent *) {
                    playerFormation_ ? "Front · player squad (cells 7–9)" : "Front · enemy squad (cells 7–9)");
 }
 void FormationBoard::cancelDrag() {
-    pressed_ = target_ = -1; dragging_ = false; update();
+    pressed_ = target_ = -1; dragging_ = false; unsetCursor(); update();
 }
 bool FormationBoard::pointerEvent(QEvent *event, QWidget *source) {
     if (event->type() != QEvent::MouseButtonPress && event->type() != QEvent::MouseMove &&
@@ -227,17 +227,19 @@ bool FormationBoard::pointerEvent(QEvent *event, QWidget *source) {
         if (cell < 0) cell = cellAt(point);
         if (cell < 0 || !cells_[cell]->isEnabled()) return true;
         pressed_ = cell; pressPosition_ = point; pointerPosition_ = point;
+        dragBaseOffset_=foot(cell).toPoint()-point;
         cells_[cell]->setFocus(Qt::MouseFocusReason);
         emit cellPressed(cell);
         update();
         return true;
     }
     if (event->type() == QEvent::MouseMove) {
-        target_ = cellAt(point);
+        target_ = cellAt(pressed_>=0 ? point+dragBaseOffset_ : point);
         if (pressed_ >= 0 && (mouse->buttons() & Qt::LeftButton)) {
             if (!dragging_ && occupied_[pressed_] &&
                 (point-pressPosition_).manhattanLength() >= QApplication::startDragDistance()) {
                 dragging_ = true;
+                setCursor(Qt::BlankCursor);
                 emit cellDragStarted(pressed_);
             }
             pointerPosition_ = point;
@@ -251,7 +253,7 @@ bool FormationBoard::pointerEvent(QEvent *event, QWidget *source) {
         update(); return true;
     }
     if (event->type() == QEvent::MouseButtonRelease && mouse->button() == Qt::LeftButton) {
-        const int from = pressed_, to = cellAt(point);
+        const int from = pressed_, to = cellAt(point+dragBaseOffset_);
         const bool dragged = dragging_;
         cancelDrag();
         if (from >= 0 && dragged && to >= 0 && cells_[to]->isEnabled()) emit cellMoved(from,to);

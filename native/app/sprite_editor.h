@@ -113,14 +113,14 @@ class SpriteEditor : public QWidget {
     QListWidget *assets_, *frames_, *layers_;
     QLineEdit *search_, *name_, *frameName_, *layerName_;
     QSpinBox *ticks_, *anchorX_, *anchorY_, *layerX_, *layerY_;
-    QCheckBox *visible_;
+    QCheckBox *visible_, *loop_;
     QLabel *notice_, *info_, *cursor_;
     QPushButton *colorButton_, *play_;
     SpriteCanvas *canvas_;
     QWidget *editing_;
     QTimer *timer_;
     QColor color_ = Qt::black;
-    bool refreshing_ = false;
+    bool refreshing_ = false, playbackFinished_ = false;
     int playTicks_ = 0;
     QElapsedTimer playbackClock_;
     qint64 playedTicks_ = 0;

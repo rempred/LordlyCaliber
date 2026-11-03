@@ -170,6 +170,8 @@ void compileCapacityRuntime(CapacityRuntimeBuild &b, quint32 codeAddress,
         throw Error("Expanded armies cannot replace an unrecognized training constructor");
     module("training","#define LC_ENEMY_CAPACITY 1\n"+source("tools/training-constructor.c"),training);
     b.rewrittenOwners[0x23a5ec]=0xa5c;
+    // The class runtime compiles the complete naming owner with these pools and tags.
+    b.rewrittenOwners[PersonalNames::ownerOffset]=PersonalNames::ownerSize;
     // Relocate existing instructions before building thunks, so any displaced
     // load in a thunk retains its final class/item/capacity address operand.
     for(const auto v:catalog("capacity-references")["owners"].toArray()) {
@@ -224,7 +226,10 @@ void compileCapacityRuntime(CapacityRuntimeBuild &b, quint32 codeAddress,
             row["name"].toString()+(provisional?"_size":""),address,symbols);
     };
     for(const auto v:thunks) {
-        const auto row=v.toObject();const auto address=b.codeAddress+quint32(b.code.size());
+        const auto row=v.toObject();
+        const auto site=number(row.contains("hook")?row["hook"]:row["site"]);
+        if (site>=PersonalNames::ownerOffset && site<PersonalNames::ownerOffset+PersonalNames::ownerSize) continue;
+        const auto address=b.codeAddress+quint32(b.code.size());
         const auto bytes=linkThunk(row,address,true);
         b.entries[row["name"].toString()]=address;pending.append({row,address,bytes});append(bytes);
     }

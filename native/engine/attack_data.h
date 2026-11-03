@@ -9,7 +9,7 @@
 namespace lordly {
 struct AttackPlacement {
     static constexpr quint32 descriptorOffset = 0x27c5300, descriptorSize = 96;
-    static constexpr quint32 codeCapacity = 0x10000;
+    static constexpr quint32 codeCapacity = 0x18000;
     quint32 romOffset = 0, address = 0, size = 0;
     quint32 records = 0, settings = 0, code = 0, codeSize = 0;
     quint32 spellIndexEntry = 0, amountEntry = 0, amountOriginal = 0;
@@ -17,6 +17,8 @@ struct AttackPlacement {
     int count = 0;
     static std::optional<AttackPlacement> read(const Rom &);
     QByteArray descriptor(const QByteArray &) const;
+    // Restore authenticated entry words when another feature checks a shared owner.
+    QByteArray canonicalOwner(const Rom &, const QByteArray &, qsizetype start) const;
 };
 struct Attack {
     QByteArray data, name; // Twelve D bytes, and encoded game text without its terminator.

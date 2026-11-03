@@ -12,6 +12,7 @@ class QPushButton;
 class QTimer;
 class QComboBox;
 class QFormLayout;
+class QCheckBox;
 namespace lordly {
 class AttackEffectEditor : public QDialog {
     Q_OBJECT
@@ -75,6 +76,7 @@ class AttackEffectEditor : public QDialog {
     QListWidget *artworkList_;
     QMap<quint32, EffectArtwork> sourceArtwork_;
     QTimer *timer_;
+    QCheckBox *loop_;
     QElapsedTimer clock_;
     QVector<QImage> clip_;
     QVector<int> holds_;

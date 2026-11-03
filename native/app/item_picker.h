@@ -10,15 +10,32 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <functional>
 namespace lordly {
+struct ItemPickerOptions {
+    QString title;
+    QString emptyLabel;
+    std::function<bool(int)> allowed;
+};
 inline QVector<quint16> chooseRomItems(Project *project, QWidget *parent, bool equipment,
                                       const QVector<quint16> &existing, int remaining,
-                                      bool reward = false) {
+                                      bool reward = false, const ItemPickerOptions &options = {}) {
+    project->loadIconArtwork();
     QDialog dialog(parent);
     dialog.setObjectName("shopItemPicker");
     dialog.setWindowTitle(reward ? "Choose reward" : equipment ? "Add equipment to shop" : "Add consumables to shop");
+    if (!options.title.isEmpty()) dialog.setWindowTitle(options.title);
     dialog.resize(780, 720);
     auto layout = new QVBoxLayout(&dialog);
+    bool emptySelected = false;
+    if (!options.emptyLabel.isEmpty()) {
+        auto empty = new QPushButton(options.emptyLabel);
+        empty->setObjectName("itemPickerEmpty");
+        layout->addWidget(empty);
+        QObject::connect(empty, &QPushButton::clicked, &dialog, [&] {
+            emptySelected = true; dialog.accept();
+        });
+    }
     int switchKind = -1;
     if (reward) {
         auto kinds = new QHBoxLayout;
@@ -41,7 +58,7 @@ inline QVector<quint16> chooseRomItems(Project *project, QWidget *parent, bool e
     const auto records = project->records(equipment ? Table::Items : Table::Consumables);
     QMap<int, int> representatives;
     for (const auto &record : records)
-        if (record.id &&
+        if (record.id && !(equipment && project->contentDeleted("items",record.id)) &&
             !representatives.contains(equipment ? u8(record.bytes, 4) : u16(record.bytes, 4)))
             representatives[equipment ? u8(record.bytes, 4) : u16(record.bytes, 4)] = record.id;
     const auto names = project->catalog()["EQUIP_TYPES"].toObject();
@@ -74,7 +91,9 @@ inline QVector<quint16> chooseRomItems(Project *project, QWidget *parent, bool e
     list->setSelectionMode(remaining == 1 ? QAbstractItemView::SingleSelection : QAbstractItemView::ExtendedSelection);
     layout->addWidget(list, 1);
     for (const auto &record : project->records(equipment ? Table::Items : Table::Consumables)) {
-        if (!record.id || existing.contains(record.id))
+        if (!record.id || existing.contains(record.id) ||
+            (options.allowed && !options.allowed(record.id)) ||
+            (equipment && project->contentDeleted("items",record.id)))
             continue;
         auto row = new QListWidgetItem(
             QString("%1 · %2").arg(record.id).arg(record.name), list);
@@ -90,7 +109,7 @@ inline QVector<quint16> chooseRomItems(Project *project, QWidget *parent, bool e
     help->setWordWrap(true);
     layout->addWidget(help);
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    buttons->button(QDialogButtonBox::Ok)->setText(reward ? "Choose selected" : "Add selected");
+    buttons->button(QDialogButtonBox::Ok)->setText(reward || !options.title.isEmpty() ? "Choose selected" : "Add selected");
     buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
     layout->addWidget(buttons);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -115,12 +134,29 @@ inline QVector<quint16> chooseRomItems(Project *project, QWidget *parent, bool e
     if (dialog.exec() == QDialog::Accepted)
         for (auto row : list->selectedItems())
             result << quint16(row->data(Qt::UserRole).toInt());
+    if (emptySelected) return {0};
     if (switchKind == 2) return {0};
     if (switchKind >= 0) return chooseRomItems(project, parent, switchKind == 0, {}, 1, true);
     if (reward && equipment)
         for (auto &id : result) id |= 0x8000;
     return result;
 }
+// Keeps ordinary combo-box display/selection semantics, but choosing an item
+// opens the same searchable, icon-based picker as Shops.
+class SaveItemPicker final : public QComboBox {
+  public:
+    SaveItemPicker(Project *project, bool equipment, const QString &title)
+        : project_(project), equipment_(equipment), title_(title) {}
+    void showPopup() override {
+        const auto chosen = chooseRomItems(project_, this, equipment_, {}, 1, false,
+            {title_, itemText(findData(0)), [this](int id) { return findData(id) >= 0; }});
+        if (!chosen.isEmpty()) setCurrentIndex(findData(chosen.first()));
+    }
+  private:
+    Project *project_;
+    bool equipment_;
+    QString title_;
+};
 class RewardItemPicker : public QComboBox {
   public:
     explicit RewardItemPicker(Project *project) : project_(project) { setEditable(false); }

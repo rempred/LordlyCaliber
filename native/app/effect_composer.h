@@ -61,7 +61,7 @@ class EffectComposer : public QDialog {
     QSpinBox *fromScale_, *toScale_, *fromAngle_, *toAngle_, *fromOpacity_, *toOpacity_;
     QSpinBox *speed_;
     QComboBox *easing_, *placement_;
-    QCheckBox *loop_;
+    QCheckBox *loop_, *playbackLoop_;
     QWidget *pieceControls_;
     QPushButton *play_, *undo_, *redo_;
     QSlider *time_;

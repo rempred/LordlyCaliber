@@ -450,7 +450,7 @@ void ArmyEditor::refresh() {
     {
         QSignalBlocker blocker(routeClass_);
         routeClass_->clear();
-        for (const auto &row : project_->records(Table::Classes))
+        for (const auto &row : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",row.id))
             routeClass_->addItem(QString("%1 · %2").arg(row.id).arg(row.name.simplified()), row.id);
         routeClass_->setCurrentIndex(std::max(0, routeClass_->findData(selectedClass)));
     }

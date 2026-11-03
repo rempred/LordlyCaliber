@@ -172,7 +172,7 @@ class EffectRasterTests : public QObject {
                 player.start(8, scene);
                 const int sourceId = side ? 0 : 9, targetId = side ? 9 : 0;
                 QCOMPARE(u8(player.memory(), 0x720000), quint8(sourceId));
-                QCOMPARE(u8(player.memory(), 0x72000c), quint8(targetId));
+                QCOMPARE(u8(player.memory(), 0x720014), quint8(targetId));
                 const auto sourceActor = 0x740000 + 0x1c4 + sourceId * 0xf8;
                 const auto targetActor = 0x740000 + 0x1c4 + targetId * 0xf8;
                 QCOMPARE(u32(player.memory(), sourceActor + 0x40) & 0x100, side ? 0x100U : 0U);
@@ -233,6 +233,47 @@ class EffectRasterTests : public QObject {
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
+    }
+    void repeatedStrikePlayback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private US Rev0 ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            // Every summon controller family, an ordinary projectile and a
+            // healing spell. One live target makes lost/merged hits observable.
+            for (int effect : {5, 13, 21, 29, 36, 44, 0, 32})
+                for (int count : {1, 6, 18}) {
+                    EffectPlayer::Scene scene;
+                    scene.targetCount = 1; scene.strikeCount = count;
+                    scene.enemyCaster = count != 18;
+                    scene.allies = effect == 32;
+                    AttackVisual visual; visual.nativeEffect = effect;
+                    EffectPlayer player(rom);
+                    player.startVisual(visual, effect, scene);
+                    while (player.advance()) player.draw({160,120}, .375);
+                    QCOMPARE(player.impacts().size(), count);
+                    const int expectedTarget = scene.allies ? (scene.enemyCaster ? 0 : 9)
+                                                            : (scene.enemyCaster ? 9 : 0);
+                    int previous = -1;
+                    for (const auto &impact : player.impacts()) {
+                        QCOMPARE(impact.target, expectedTarget);
+                        QVERIFY(impact.tick > previous);
+                        previous = impact.tick;
+                    }
+                }
+            // Imported sequences have their impact on the first visible frame,
+            // after the delay; one frame sequence is shown for every strike.
+            QImage image(8,8,QImage::Format_RGBA8888); image.fill(Qt::red);
+            AttackVisual imported; imported.frames = SpriteAsset::fromImage("Hit", image);
+            imported.frames->frames[0].ticks = 4; imported.delay = 3;
+            EffectPlayer::Scene scene; scene.targetCount = 1; scene.strikeCount = 18;
+            EffectPlayer player(rom); player.startVisual(imported,0,scene);
+            while (player.advance()) player.draw({160,120}, .375);
+            QCOMPARE(player.impacts().size(), 18);
+            QVERIFY(player.impacts().first().tick >= 3);
+            for (int i=1;i<player.impacts().size();i++)
+                QVERIFY(player.impacts()[i].tick-player.impacts()[i-1].tick >= 7);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void retailPlayback() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

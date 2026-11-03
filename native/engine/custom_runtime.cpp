@@ -1,9 +1,11 @@
 #include "engine/art_resource_links.h"
+#include "engine/attack_data.h"
 #include "engine/custom_runtime.h"
 #include "engine/class_data.h"
 #include "engine/creature_rewards.h"
 #include "engine/encounter_rate.h"
 #include "engine/promotion.h"
+#include "engine/high_attack.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -164,6 +166,8 @@ QByteArray CustomPlacement::canonicalReferences(const QByteArray &owner, qsizety
 }
 void verifyCustomCallers(const Rom &rom, const std::optional<CustomPlacement> &placement) {
     const auto classes = ClassPlacement::read(rom);
+    const auto attacks = AttackPlacement::read(rom);
+    const auto highAttack = HighAttack::load(rom);
     const auto catalog = customCallerCatalog();
     for (const auto &v : catalog["dependencies"].toArray()) {
         const auto d = v.toObject();
@@ -175,10 +179,13 @@ void verifyCustomCallers(const Rom &rom, const std::optional<CustomPlacement> &p
         const auto owner = v.toObject();
         const auto at = owner["start"].toInt(), size = owner["size"].toInt();
         auto code = rom.bytes().mid(at, size);
+        if (attacks) code = attacks->canonicalOwner(rom,code,at);
         if (classes)
             code = classes->canonicalReferences(code, at);
         if (placement)
             code = placement->canonicalReferences(code, at);
+        if (highAttack.available() && highAttack.enabled())
+            code = HighAttack::canonicalReferences(code, at);
         validateArtOwnerLinks(rom, at, size);
         if (code.size() != size || sha256(canonicalArtOwner(code, at)) != owner["retailSha256"].toString().toLatin1())
             throw Error("Unrecognized custom encounter caller at z64 " + QString::number(at, 16));

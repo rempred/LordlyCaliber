@@ -19,7 +19,21 @@ m.load(0x801bdfa0,rom.subarray(0x201430,0x212590));
 m.load(0x801cf2c0,rom.subarray(0x212590,0x23a900));
 const cp=rom.subarray(0x5dc80,0x5dd00),base=cp.readUInt32BE(24),at=cp.readUInt32BE(12),end=cp.readUInt32BE(48);m.load(base,rom.subarray(at,at+end-base));
 const stack=0x803ff000,actors=0x803c0000,global=0x803e0000,ids=global+0x1000,packet=global+0x1100;
-m.set('sp',stack);m.w32(0x801ce8c0,global);m.w32(0x801ce8bc,global);
+const shiftedState=process.argv.includes('--shifted-state'),stream=shiftedState?0x80450000:global,tail=stream-(shiftedState?0x7000:0);
+m.set('sp',stack);m.w32(0x801ce8c0,stream);m.w32(0x801ce8bc,global);
+if(shiftedState){
+ // Controlled relocated state for the producer tests; the real transition is
+ // independently executed by attack-high-buffer-mips.cjs.
+ const module=rom.subarray(0x27a0000,0x27a0000+6736);assert.equal(module.readUInt32BE(4),23);
+ for(let offset=0x810;offset<0x910;offset++)m.w8(stream+offset,0xa5);
+ for(let i=0;i<module.readUInt32BE(0x10);i++){
+  const pc=module.readUInt32BE(0x940+i*8),word=module.readUInt32BE(0x944+i*8);
+  // Only stream-relative native readers are needed here. Owner/actor state
+  // remains at the ordinary controlled address used by this test harness.
+  if((word&65535)>=0x810&&(word&65535)<0x910&&m.r32(pc)===word)
+   m.w32(pc,(word&0xffff0000)|(((word&65535)-0x7000)&65535));
+ }
+}
 function call(name,args,limit=200000){args.slice(0,4).forEach((v,i)=>m.set(['a0','a1','a2','a3'][i],v));args.slice(4).forEach((v,i)=>m.w32(stack+16+i*4,v));m.call(typeof name==='number'?name:e[name],0x80000100,limit);assert.equal(m.get('sp'),stack);return m.get('v0')|0;}
 const actor=i=>actors+i*0x100;
 const services={lookup:0x801c8fe8,dead:0x801c8e30,immune:0x801f46dc,up:0x801da4b4,down:0x801da4d8,rebuild:0x801da4fc};
@@ -35,7 +49,7 @@ function captureVisual(c){
  events.push({event:c.get('a0'),time:c.get('a1'),actor:c.get('a2'),kind:c.get('a3'),
   pose:c.r32(c.get('sp')+24),nameToken:c.r32(c.get('sp')+20)});
  if(c.get('a0')!==0x16)return;
- const list=at=>{const result=[];for(let i=0;i<10;i++){const id=c.r32(at+i*4)|0;if(id===-1)return result;result.push(id);}throw Error('Unterminated visual actor list');};
+ const list=at=>{const result=[];for(let i=0;i<20;i++){const id=c.r32(at+i*4)|0;if(id===-1)return result;result.push(id);}throw Error('Unterminated visual actor list');};
  visualEvents.push({slot:c.get('a3'),sources:list(c.r32(c.get('sp')+16)),targets:list(c.r32(c.get('sp')+20))});
 }
 m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
@@ -259,7 +273,7 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
   for(const i of [9,17]){m.w32(actor(i)+0x40,effect===11?4:0);m.w16(actor(i)+0x20,100);m.w16(actor(i)+0x22,500);m.w32(actor(i)+0x94,0);}
   for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
   m.w8(records+159*16+4,3);m.w8(records+159*16+6,1);m.w8(records+159*16+7,effect);m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
-  m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,0);m.w8(rules+11,0);m.w16(rules+6,100);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;
+  m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,0);m.w8(rules+11,0);m.w16(rules+6,100);m.w32(tail+0x828,0);m.w32(ids,0);events.length=0;
   m.w8(rules+21,136);visualEvents.length=0;
   assert.equal(call(generic.lc_attack_generic,[source,ids]),1,`generic effect ${effect}`);
   assert.deepEqual(visualEvents,[{slot:136,sources:[4],targets:[9,17]}],'generic visual handoff');
@@ -284,7 +298,7 @@ for(const element of [0,2,5])for(const undead of [false,true])for(const hp of [5
  for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,hp);m.w32(actor(i)+0x4c,undead?45:2);m.w32(actor(i)+0x94,0);}
  for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
  m.w8(records+159*16+4,3);m.w8(records+159*16+5,element);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
- m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,7);m.w8(rules+9,2);m.w8(rules+10,chance);m.w8(rules+11,0);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;
+ m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+8,7);m.w8(rules+9,2);m.w8(rules+10,chance);m.w8(rules+11,0);m.w32(tail+0x828,0);m.w32(ids,0);events.length=0;
  call(generic.lc_attack_generic,[source,ids]);
  const markers=events.filter(e=>e.event===0x1f&&e.extra===7);
  assert.equal(markers.length,undead&&hp===50&&hit&&chance===100?2:0,`slaying ${element}/${undead}/${hp}/${hit}/${chance}`);
@@ -322,7 +336,7 @@ m.trap(0x21d2c0+0x7ffbcd30,captureVisual);
 // Animation duration / impact marker services used by ranged and alternate bodies.
 m.trap(0x22257c+0x7ffbcd30,c=>{if(c.get('a2')){c.w32(c.get('a2'),10);c.w32(c.get('a2')+4,-1);}c.set('v0',20);});
 for(const route of ['melee','ranged','alternate'])for(const effect of [1,2,10])for(const action of [159,254]){
-  m.w32(source+0x40,0x100);m.w16(source+0x20,100);m.w32(source+0x7c,action);m.w8(source+0x78,0);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(global+0x828,0);m.w32(ids,0);
+  m.w32(source+0x40,0x100);m.w16(source+0x20,100);m.w32(source+0x7c,action);m.w8(source+0x78,0);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(tail+0x828,0);m.w32(ids,0);
   m.w8(records+159*16+4,0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,effect);
   m.w8(rules+2,12);m.w8(rules+3,1);m.w16(rules+4,257);m.w8(rules+8,0);m.w8(rules+11,0);
   if(action!==159){for(let i=0;i<16;i++)m.w8(records+action*16+i,m.r8(records+159*16+i));for(let i=0;i<32;i++)m.w8(settings+action*32+i,m.r8(rules+i));}
@@ -348,7 +362,7 @@ for(const route of ['generic','melee','ranged','alternate'])for(const shared of 
   m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
  }
  m.w32(source+0x7c,159);m.w8(source+0x78,route==='generic'?3:0);m.w32(source+0x6c,0);
- m.w32(ids,0);m.w32(global+0x828,0);events.length=0;
+ m.w32(ids,0);m.w32(tail+0x828,0);events.length=0;
  for(let i=0;i<12;i++)m.w8(records+159*16+4+i,0);
  m.w8(records+159*16+4,route==='generic'?3:0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);
  m.w8(records+159*16+9,1);m.w8(records+159*16+10,255);
@@ -361,7 +375,7 @@ for(const route of ['generic','melee','ranged','alternate'])for(const shared of 
  assert.equal(m.r32(source+0x6c),1,`${route}/${shared}/${count} action count`);
  for(let i=9;i<18;i++)if(i!==victim)assert.equal(m.r16(actor(i)+0x20),2000,'unselected victim unchanged');
  assert.equal(visualEvents.length,1);
- assert.deepEqual(visualEvents[0].targets,Array(count>9?1:count).fill(victim));
+ assert.deepEqual(visualEvents[0].targets,Array(route!=='generic' && count>9?1:count).fill(victim));
 }
 m.traps.delete(repeatRng);m.w8(rules+2,12);m.w16(rules+4,257);m.w8(rules+13,0);m.w8(rules+21,136);m.w8(rules+22,0);
 if(priorRepeatAnimation)m.trap(e.lc_original_animation,priorRepeatAnimation);else m.traps.delete(e.lc_original_animation);
@@ -369,7 +383,7 @@ for(let i=0;i<18;i++)m.w16(actor(i)+0x22,500);
 console.log('Repeated-strike damage: 1/6/9/10/18 impacts in spell and all physical routes, separate/shared playback, one action count and bounded visual lists PASS.');
 m.traps.delete(0x801c8d24);
 for(const route of ['melee','ranged','alternate'])for(const undead of [false,true])for(const hp of [50,100])for(const chance of [0,100]) {
- m.w32(source+0x40,0x100);m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w32(source+0x40,0x100);m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(tail+0x828,0);
  m.w8(records+159*16+7,1);m.w8(rules+8,7);m.w8(rules+9,2);m.w8(rules+10,chance);
  for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,hp);m.w32(actor(i)+0x4c,undead?45:2);m.w32(actor(i)+0x94,0);}
  events.length=0;call(e['lc_attack_'+route],[source,ids]);
@@ -377,7 +391,7 @@ for(const route of ['melee','ranged','alternate'])for(const undead of [false,tru
 }
 m.w8(rules+8,0);m.trap(0x801c8d24,c=>c.set('v0',0));
 console.log('Physical slaying: 24 melee/ranged/alternate executions produce native permanent-removal events only on eligible killing blows PASS.');
-m.w32(source+0x7c,159);m.w16(source+0x20,100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+m.w32(source+0x7c,159);m.w16(source+0x20,100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(tail+0x828,0);
 m.w8(records+159*16+7,2);m.w8(rules+11,1);m.w8(rules+12,1);m.w16(rules+14,100);
 for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,490);m.w32(actor(i)+0x94,0);}
 call(e.lc_attack_melee,[source,ids]);assert.equal(m.r16(source+0x20),160,'last calculated healing amount is 60, despite only 10 missing HP');
@@ -385,7 +399,7 @@ for(const i of [9,17])assert.equal(m.r16(actor(i)+0x20),500);
 m.w8(rules+11,0);
 m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',0));
 for(const route of ['melee','ranged','alternate'])for(const condition of [0,1]){
- m.w32(source+0x7c,159);m.w32(source+0x40,0x100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w32(source+0x7c,159);m.w32(source+0x40,0x100);m.w32(source+0x6c,0);m.w32(source+0x94,0);m.w32(ids,0);m.w32(tail+0x828,0);
  m.w8(records+159*16+7,1);m.w8(rules+8,10);m.w8(rules+9,condition);m.w8(rules+10,100);
  for(const i of [9,17]){m.w32(actor(i)+0x40,0);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
  call(e['lc_attack_'+route],[source,ids]);
@@ -413,7 +427,7 @@ for(const mode of [0,1])for(const hitMask of [7,5,6,0])for(const mainEffect of [
   m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
  }
  m.w32(source,global+0x2000);m.w32(source+4,global+0x2100);m.w32(source+0x7c,action);
- m.w32(source+0x6c,2);m.w32(source+0x94,7);m.w32(ids,3);m.w32(global+0x828,0);
+ m.w32(source+0x6c,2);m.w32(source+0x94,7);m.w32(ids,3);m.w32(tail+0x828,0);
  for(let i=0;i<column.length;i++)m.w32(actor(column[i])+0x94,30+i*31);
  m.w8(records+159*16+4,0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,mainEffect);
  m.w8(rules+2,6);m.w8(rules+3,1);m.w8(rules+8,mainEffect===1?10:0);m.w8(rules+9,condition);m.w8(rules+10,100);
@@ -475,7 +489,7 @@ for(const cells of [[7,4,1],[4,7,1],[1,7,4]])for(const deadFront of [false,true]
   m.w32(actor(i),global+0x2200);m.w32(actor(i)+0x48,2);m.w32(actor(i)+0x4c,2);
  }
  m.w32(source,global+0x2000);m.w32(source+4,global+0x2100);m.w32(source+0x7c,159);
- m.w32(source+0x6c,2);m.w32(source+0x94,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w32(source+0x6c,2);m.w32(source+0x94,0);m.w32(ids,0);m.w32(tail+0x828,0);
  m.w8(records+159*16+4,0);m.w8(records+159*16+6,1);m.w8(records+159*16+7,1);
  m.w8(rules+2,6);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,mode);
  const live=column.filter((id,i)=>!deadFront||cells[i]!==1);
@@ -503,7 +517,7 @@ for(const route of ['melee','ranged','alternate'])for(const deadSlots of [[],[10
   m.w32(actor(i)+0x54,own?cell%3:2-cell%3);m.w32(actor(i)+0x58,own?2-Math.floor(cell/3):6+Math.floor(cell/3));
   m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,deadSlots.includes(i)?9999:300+cell*31);
  }
- m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(ids,0);m.w32(global+0x828,0);
+ m.w32(source+0x7c,159);m.w32(source+0x6c,0);m.w32(ids,0);m.w32(tail+0x828,0);
  m.w8(records+159*16+7,1);m.w8(rules+2,2);m.w8(rules+3,1);m.w8(rules+8,0);m.w8(rules+11,0);m.w8(rules+13,1);
  events.length=0;visualEvents.length=0;call(e['lc_attack_'+route],[source,ids],1000000);
  const live=Array.from({length:9},(_,i)=>i+9).filter(i=>!deadSlots.includes(i));
@@ -540,7 +554,7 @@ for(const [donor,owner,poseFlags,side,expected] of [[17,22,42,0,42],[32,57,170,0
  m.w8(rules,donor);m.w8(rules+1,donor);m.w8(rules+2,0);m.w8(rules+3,0);m.w8(rules+11,0);
  m.w8(records+159*16+4,4);m.w8(records+159*16+7,1);m.w32(source+0x80,97);
  for(const i of [9,17]){m.w32(actor(i)+0x40,side?0:0x100);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
- m.w32(global+0x828,0);m.w32(ids,0);events.length=0;
+ m.w32(tail+0x828,0);m.w32(ids,0);events.length=0;
  assert.equal(call(generic.lc_attack_generic,[source,ids]),1);
  assert(events.some(x=>x.event===11 && x.pose===expected),`copied special ${donor}, side ${side}, expected pose ${expected}`);
 }
@@ -565,7 +579,7 @@ for(const effect of [0,1,2,3,4,5,6,8,10,11,16]){
  for(const caster of [source,caster2]){m.w32(caster,global+0x2000);m.w32(caster+0x40,0x100);m.w16(caster+0x20,200);m.w16(caster+0x22,500);m.w32(caster+0x6c,0);m.w32(caster+0x70,2);m.w32(caster+0x94,0);}
  for(const i of [9,17]){m.w32(actor(i)+0x40,effect===11?4:0);m.w16(actor(i)+0x20,100);m.w32(actor(i)+0x94,0);}
  const rule=settings+110*32;m.w8(rule+2,12);m.w8(rule+3,1);m.w16(rule+4,257);m.w8(rule+8,0);m.w8(rule+11,1);m.w8(rule+12,0);m.w16(rule+14,50);
- m.w8(records+110*16+7,effect);m.w8(records+110*16+9,1);m.w8(records+110*16+10,255);m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);
+ m.w8(records+110*16+7,effect);m.w8(records+110*16+9,1);m.w8(records+110*16+10,255);m.w32(stream,0);m.w32(tail+0x828,0);m.w32(ids,0);
  m.w8(rule+21,137);visualEvents.length=0;
  assert.equal(call(combined.lc_attack_combined,[input,ids]),1,`combined effect ${effect}`);
  assert.deepEqual(visualEvents,[{slot:137,sources:[4,5],targets:[9,17]}],'combined visual handoff');
@@ -605,11 +619,11 @@ for(const family of ['combined','pedra'])for(const count of [10,18])for(const hp
  m.w8(records+action*16+7,1);m.w8(records+action*16+9,1);m.w8(records+action*16+10,255);
  m.w8(rule+2,11);m.w8(rule+3,1);m.w8(rule+22,count);m.w8(rule+8,10);m.w8(rule+9,1);m.w8(rule+10,100);
  m.w8(rule+11,1);m.w8(rule+12,0);m.w16(rule+14,50);m.w8(rule+21,138);
- m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);visualEvents.length=0;
+ m.w32(stream,0);m.w32(tail+0x828,0);m.w32(ids,0);visualEvents.length=0;
  call(family==='combined'?combined.lc_attack_combined:pedra.lc_attack_pedra,[family==='combined'?input:pedraInput,ids]);
  const loss=Array.from({length:9},(_,i)=>hp-m.r16(actor(9+i)+0x20)).reduce((a,b)=>a+b,0);
  assert.equal(loss,Math.min(hp,60*count),`${family}/${count}/${hp} loss`);
- assert.equal(visualEvents.length,1);assert.equal(visualEvents[0].targets.length,1);
+ assert.equal(visualEvents.length,1);assert.equal(visualEvents[0].targets.length,Math.min(count,Math.ceil(hp/60)));
  const victim=visualEvents[0].targets[0];assert(m.r32(actor(victim)+0x40)&16,'additional Poison applied');
  if(family==='combined') {
   assert.equal(m.r16(source+0x20),200+Math.trunc(loss/2));assert.equal(m.r16(caster2+0x20),200);
@@ -629,13 +643,17 @@ for(const family of ['combined','pedra'])for(const undead of [false,true])for(co
  m.w8(records+action*16+7,1);m.w8(records+action*16+9,1);
  m.w8(records+action*16+10,8);m.w8(records+action*16+11,7);m.w8(records+action*16+13,6);
  m.w8(rule+8,7);m.w8(rule+9,2);m.w8(rule+10,chance);m.w8(rule+11,0);
- m.w32(global,0);m.w32(global+0x828,0);m.w32(ids,0);events.length=0;sample=0;part=0;
+ m.w32(stream,0);m.w32(tail+0x828,0);m.w32(ids,0);events.length=0;sample=0;part=0;
  m.trap(0x2365bc+0x7ffbcd30,c=>c.set('v0',hit?100:0));
  call(family==='combined'?combined.lc_attack_combined:pedra.lc_attack_pedra,[family==='combined'?input:pedraInput,ids]);
  assert.equal(events.filter(x=>x.event===0x1f&&x.extra===7).length,undead&&hp===50&&hit&&chance===100?2:0,`${family} slaying ${undead}/${hp}/${hit}/${chance}`);
 }
 console.log('Combined/Pedra slaying: 64 executions × 2 targets, native-marker overrides, nonlethal/lethal, living/undead, misses and explicit chance PASS.');
 console.log('Assigned visual events: generic, melee/ranged/alternate, combined and Pedra select independent slots and retain target IDs PASS.');
+if(shiftedState){
+ for(let offset=0x810;offset<0x910;offset++)assert.equal(m.r8(stream+offset),0xa5,'producer must not overwrite expanded packet bytes');
+ console.log('All producers used the relocated state trailer and preserved the expanded packet range PASS.');
+}
 
 if(process.env.LORDLY_ATTACK_PATTERN_AUDIT){
  m.trap(0x20d770+0x7ffbcb70,c=>{let found=0;for(let i=0;i<18;i++)if(c.r32(actor(i)+0x54)===c.get('a0')&&c.r32(actor(i)+0x58)===c.get('a1'))found=actor(i);c.set('v0',found);});

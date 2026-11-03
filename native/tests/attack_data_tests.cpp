@@ -1,4 +1,8 @@
 #include "engine/attack_data.h"
+#include "engine/custom_runtime.h"
+#include "engine/capacity_placement.h"
+#include "engine/squad_members.h"
+#include "engine/encounters.h"
 #include "engine/effect_player.h"
 #include "engine/effect_composition.h"
 #include "engine/image.h"
@@ -347,7 +351,7 @@ class AttackDataTests : public QObject {
                                         memory.mid(0x740000 + 0x1c4 + targetBase * 0xf8, 0xf8));
                                     put32(memory, actor + 0x5c, 15);
                                     put32(memory, actor + 0x64, 22);
-                                    put8(memory, 0x72000c, 18);
+                                    put8(memory, 0x720014, 18);
                                 }
                             int ticks = 0;
                             while (actual.advance()) {
@@ -632,11 +636,33 @@ class AttackDataTests : public QObject {
             qInfo().noquote()<<"Battle name candidate:"<<output.path();
         } catch(const std::exception &e) {QFAIL(e.what());}
     }
+    void repeatedStrikesExportAndReopen_data() {
+        QTest::addColumn<bool>("highAttack");
+        QTest::addColumn<bool>("expandedArmy");
+        QTest::newRow("ordinary-buffer") << false << false;
+        QTest::newRow("high-attack-buffer") << true << false;
+        QTest::newRow("expanded-army") << false << true;
+        QTest::newRow("expanded-army-high-attack") << true << true;
+    }
     void repeatedStrikesExportAndReopen() {
+        QFETCH(bool,highAttack);
+        QFETCH(bool,expandedArmy);
         try {
             const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
             if (tools.isEmpty()) QSKIP("Private compiler required");
             auto project = Project::fromRom(source()); project.loadAttacks();
+            project.loadTools();auto settings=project.tools()->json();
+            settings["highAttackStreamSplit"]=highAttack;project.setTools(settings);
+            if (expandedArmy) {
+                project.loadScenarios(); auto scenarios = *project.scenarios();
+                const auto classes = project.classData();
+                QVector<CustomMember> members;
+                for (int cell=0;cell<5;++cell) members.append({5,0,8-cell,{0,0}});
+                for (int row=0;row<scenarios.scenario(1).squads.size();++row)
+                    scenarios.setSquad(1,row,editSquadMembers(scenarios.scenario(1).squads[row],members),classes);
+                while (scenarios.scenario(1).squads.size()<30) scenarios.addSquad(1,0,classes);
+                project.setScenarios(scenarios.json()); QVERIFY(project.expandedArmies());
+            }
             auto data = *project.attacks();
             const auto original = data.json();
             const int spell = data.duplicate(55, "Repeated spell");
@@ -657,6 +683,11 @@ class AttackDataTests : public QObject {
             project.setAttacks(data.json());
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).dir()
                                      .filePath("Test ROMs/native-repeated-strikes-XXXXXX"));
+            // The battle playback owner is also used by custom encounter rounds.
+            project.loadEncounters();
+            auto encounters = *project.encounters();
+            encounters.setCustomSquad(CustomSquad{},project.records(Table::Classes).size());
+            project.setEncounters(encounters.json());
             QVERIFY(output.isValid()); output.setAutoRemove(false);
             const auto folder=output.filePath("project"), archive=output.filePath("strikes.lcproj");
             project.saveFolder(folder); project.saveArchive(archive);
@@ -670,7 +701,46 @@ class AttackDataTests : public QObject {
             exportRom(project,built,candidate);
             auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadAttacks();
             QCOMPARE(reopened.attacks()->json(),data.json());
+            QCOMPARE(reopened.expandedArmies(),expandedArmy);
+            reopened.loadTools();QVERIFY(reopened.tools()->highAttack().available());
+            QCOMPARE(reopened.tools()->highAttack().enabled(),highAttack);
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->customSquads().json(),encounters.customSquads().json());
+            verifyCustomCallers(reopened.rom(),CustomPlacement::read(reopened.rom()));
             QCOMPARE(rebuild(reopened,tools,output.path()).image,built.image);
+            QProcess runner;
+            runner.start("node",{QFINDTESTDATA("attack-strike-playback-mips.cjs"),candidate});
+            QVERIFY(runner.waitForFinished(60000));
+            QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+            qInfo().noquote()<<runner.readAllStandardOutput();
+            if (expandedArmy) {
+                runner.start("node",{QFINDTESTDATA("attack-capacity-mips.cjs"),candidate});
+                QVERIFY(runner.waitForFinished(60000));
+                QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+                qInfo().noquote()<<runner.readAllStandardOutput();
+                const auto capacity = CapacityPlacement::read(Rom::open(candidate)); QVERIFY(capacity);
+                auto foreign = removeAttackReferences(Rom::open(candidate));
+                // A damaged recorded capacity word must never be normalized away.
+                foreign[0x22f624] ^= 1;
+                const auto placement = AttackPlacement::read(reopened.rom()); QVERIFY(placement);
+                QVERIFY_THROWS_EXCEPTION(Error,installAttackReferences(Rom::fromBytes(foreign),*placement));
+            }
+            if(highAttack) {
+                runner.start("node",{QFINDTESTDATA("attack-high-buffer-mips.cjs"),candidate});
+                QVERIFY(runner.waitForFinished(60000));
+                QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+                qInfo().noquote()<<runner.readAllStandardOutput();
+                const auto placement=AttackPlacement::read(reopened.rom());QVERIFY(placement);
+                auto foreign=removeAttackReferences(reopened.rom());
+                foreign[0x21ec4c]^=1;
+                QVERIFY_THROWS_EXCEPTION(Error,installAttackReferences(Rom::fromBytes(foreign),*placement));
+                foreign=removeAttackReferences(reopened.rom());foreign[0x21ed00]^=1;
+                QVERIFY_THROWS_EXCEPTION(Error,installAttackReferences(Rom::fromBytes(foreign),*placement));
+                settings["highAttackStreamSplit"]=false;reopened.setTools(settings);
+                auto disabled=Project::fromRom(Rom::fromBytes(rebuild(reopened,tools,output.path()).image));
+                disabled.loadTools();QVERIFY(disabled.tools()->highAttack().available());
+                QVERIFY(!disabled.tools()->highAttack().enabled());
+            }
             qInfo().noquote()<<"Repeated strikes candidate:"<<candidate;
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }

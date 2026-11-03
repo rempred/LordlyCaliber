@@ -11,15 +11,21 @@ class GameRuleUndoCommand : public QUndoCommand {
   public:
     using QUndoCommand::QUndoCommand;
 };
+// World-map geometry does not invalidate the class, sprite or scenario editors.
+class WorldMapUndoCommand : public QUndoCommand {
+  public:
+    using QUndoCommand::QUndoCommand;
+};
 
 inline void watchContentChanges(QUndoStack *undo, QObject *receiver,
-                                std::function<void()> refresh) {
+                                std::function<void()> refresh, bool includeWorldMap = false) {
     QObject::connect(undo, &QUndoStack::indexChanged, receiver,
-        [undo, refresh=std::move(refresh), previous=undo->index()](int index) mutable {
+        [undo, refresh=std::move(refresh), includeWorldMap, previous=undo->index()](int index) mutable {
             bool rulesOnly=index!=previous;
             for(int i=std::min(previous,index);rulesOnly && i<std::max(previous,index);++i)
                 rulesOnly=i<undo->count() &&
-                    dynamic_cast<const GameRuleUndoCommand *>(undo->command(i));
+                    (dynamic_cast<const GameRuleUndoCommand *>(undo->command(i)) ||
+                     (!includeWorldMap && dynamic_cast<const WorldMapUndoCommand *>(undo->command(i))));
             previous=index;
             if(!rulesOnly)refresh();
         });

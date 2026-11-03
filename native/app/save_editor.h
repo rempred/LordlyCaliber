@@ -35,12 +35,13 @@ class SaveEditor : public QWidget {
     }
     void setUnitDraftPending(bool);
     bool edit(SaveTable, int row, const QString &key, const QVariant &);
+    bool addInventoryItems(SaveTable, const QVector<quint16> &ids);
     bool editUnitSupplies(int index, const QVector<int> &);
     bool editUnit(int index, const QVector<int> &cells, int unity, int tactic);
     bool changeUnitLeader(int index, int member);
     bool createUnit(int leader, int cell);
-    bool createCharacter(int classId, const QString &name, int level = 1);
-    bool recruitUnit(int classId, const QString &name, int cell, int level = 1);
+    bool createCharacter(int classId, const QString &name, int level = 1, std::optional<quint32> seed = {});
+    bool recruitUnit(int classId, const QString &name, int cell, int level = 1, std::optional<quint32> seed = {});
     int promptAddCharacter(bool formSquad = false);
     void selectCharacter(int id);
     void editCharacter(int id);

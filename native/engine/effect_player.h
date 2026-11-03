@@ -14,9 +14,10 @@ class EffectPlayer {
         quint32 address = 0;
         QSize size;
     };
+    struct Impact { int tick, target, kind; };
     struct Scene {
         int sourceClass = 2, targetClass = 2, sourceHeight = 38, targetHeight = 38, attack = 55,
-            targetCount = 5;
+            targetCount = 5, strikeCount = 0; // 0 preserves native group playback.
         bool allies = false;
         bool enemyCaster = true; // Native actor slots 0–8 have opponent flag 0x100.
     };
@@ -37,6 +38,7 @@ class EffectPlayer {
     }
     static int retailEffect(int attack);
     const QVector<Resource> &resources() const { return resources_; }
+    const QVector<Impact> &impacts() const { return impacts_; }
 
   private:
     QByteArray rom_;
@@ -51,6 +53,7 @@ class EffectPlayer {
     int originCount_ = 0;
     QMap<quint32, quint32> allocations_;
     QVector<Resource> resources_;
+    QVector<Impact> impacts_;
     void loadFrame();
 };
 } // namespace lordly

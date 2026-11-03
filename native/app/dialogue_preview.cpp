@@ -1,4 +1,5 @@
 #include "app/dialogue_preview.h"
+#include <QCheckBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QImage>
@@ -34,7 +35,7 @@ DialoguePreview::DialoguePreview(const Rom &rom, QWidget *parent) : QWidget(pare
         connect(control, &QPushButton::clicked, this, action);
     };
     button("Step", "dialogueStep", controls, [this] { advance(); });
-    button("Restart", "dialogueRestart", controls, [this] { restart(); });
+    loop_=new QCheckBox("Loop");loop_->setObjectName("dialogueLoop");controls->addWidget(loop_);
     rate_ = new QSpinBox;
     rate_->setRange(1, 120);
     rate_->setValue(30);
@@ -97,6 +98,11 @@ DialoguePreview::DialoguePreview(const Rom &rom, QWidget *parent) : QWidget(pare
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, [this] { advance(); });
     connect(play_, &QPushButton::toggled, this, [this](bool playing) {
+        if (playing && session_ && !session_->activeWindows()) {
+            restart();
+            const QSignalBlocker block(play_);play_->setChecked(session_ && session_->activeWindows());
+            playing=play_->isChecked();
+        }
         play_->setText(playing ? "Pause" : "Play");
         if (playing && session_)
             timer_->start(std::max(1, 1000 / rate_->value()));
@@ -187,8 +193,9 @@ void DialoguePreview::advance(quint16 pressed, quint16 repeat) {
         session_->advance({512, pressed, repeat, quint16(history_->isChecked() ? 16 : 0)});
         refresh();
         if (!session_->activeWindows()) {
-            timer_->stop();
-            play_->setChecked(false);
+            const bool repeatPlayback=timer_->isActive() && loop_->isChecked();
+            timer_->stop();play_->setChecked(false);
+            if (repeatPlayback) {restart();if(session_ && session_->activeWindows())play_->setChecked(true);}
         }
     } catch (const std::exception &error) {
         fail(error);

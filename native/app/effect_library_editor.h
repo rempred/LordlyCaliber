@@ -8,6 +8,7 @@ class QLineEdit;
 class QLabel;
 class QPushButton;
 class QUndoStack;
+class QCheckBox;
 namespace lordly {
 class EffectLibraryEditor : public QWidget {
     Q_OBJECT
@@ -47,6 +48,7 @@ class EffectLibraryEditor : public QWidget {
     int requested_ = -1, generation_ = 0;
     bool playing_ = false;
     qint64 pausedMs_ = 0;
+    QCheckBox *loop_;
     QElapsedTimer clock_;
     AttackVisual visual_;
     EffectClip clip_;

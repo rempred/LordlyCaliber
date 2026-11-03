@@ -56,6 +56,9 @@ class ToolSettings {
     void apply(const QJsonObject &);
     QByteArray assemblyDefinitions(int part) const;
     void validateCompiled(int part, const QByteArray &) const;
+    // Run after every exporter, including late hooks. A previously recognized
+    // setting becoming unreadable is a failure, even if it defaults to the same value.
+    void validateExport(const ToolSettings &actual) const;
 
   private:
     int percent_ = 100, original_ = 100;

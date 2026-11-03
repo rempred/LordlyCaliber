@@ -1,6 +1,7 @@
 #include "app/view_position.h"
 #include "app/save_editor.h"
 #include "app/save_unit_editor.h"
+#include "app/item_picker.h"
 #include <QAbstractTableModel>
 #include <QComboBox>
 #include <QDialog>
@@ -312,12 +313,27 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
             });
             update();
         }
+        if (table == SaveTable::Equipment || table == SaveTable::Consumables) {
+            auto add = new QPushButton(table == SaveTable::Equipment ? "Add equipment…" : "Add items…");
+            add->setObjectName(table == SaveTable::Equipment ? "saveAddEquipment" : "saveAddConsumables");
+            inner->addWidget(add,0,Qt::AlignLeft);
+            const auto update = [this,add] {add->setEnabled(document_.has_value());};
+            connect(this,&SaveEditor::refreshed,this,update); update();
+            connect(add,&QPushButton::clicked,this,[this,table] {
+                if (!document_) return;
+                const bool equipment=table==SaveTable::Equipment;
+                const auto selected=chooseRomItems(project_,this,equipment,{},40,false,
+                    {equipment ? "Add equipment to army" : "Add items to army",{},
+                     [equipment](int id){return id<=(equipment ? 510 : 44);}});
+                if (!selected.isEmpty()) addInventoryItems(table,selected);
+            });
+        }
         connect(search, &QLineEdit::textChanged, filter,
                 &QSortFilterProxyModel::setFilterFixedString);
         tables_->addTab(page, title);
     }
     auto army = new SaveUnitEditor(this);
-    tables_->addTab(army, "Army Management");
+    tables_->insertTab(0, army, "Army Management");
     tables_->setCurrentWidget(army);
     auto note = new QLabel(
         "Save files have their own undo history and are exported separately from ROM projects. "
@@ -466,6 +482,43 @@ bool SaveEditor::edit(SaveTable table, int row, const QString &key, const QVaria
         return false;
     }
 }
+bool SaveEditor::addInventoryItems(SaveTable table, const QVector<quint16> &ids) {
+    if (!document_ || !allowImmediateEdit() ||
+        (table!=SaveTable::Equipment && table!=SaveTable::Consumables)) return false;
+    try {
+        auto draft=*document_;
+        QVector<SaveChange> changes;
+        const auto countKey=table==SaveTable::Equipment ? "owned" : "count";
+        for (int id:ids) {
+            if (id<=0 || id>=project_->records(table==SaveTable::Equipment ? Table::Items : Table::Consumables).size() ||
+                (table==SaveTable::Equipment && project_->contentDeleted("items",id)))
+                throw Error("Choose an available item");
+            int row=-1,empty=-1;
+            for (int candidate:draft.rows(table)) {
+                const int stored=draft.value(table,candidate,"id").toInt();
+                if (stored==id) {row=candidate;break;}
+                if (!stored && empty<0) empty=candidate;
+            }
+            auto set=[&](const QString &key,const QVariant &value) {
+                auto change=draft.planEdit(table,row,key,value);
+                if (!change.spans.isEmpty()) {draft.apply(change,true);changes.append(std::move(change));}
+            };
+            if (row<0) {
+                row=empty;
+                if (row<0) throw Error("The army inventory is full");
+                set("id",id);
+            }
+            set(countKey,draft.value(table,row,countKey).toInt()+1);
+        }
+        draft.serialize(); // Validate all selected items before publishing any of them.
+        if (!changes.isEmpty()) {
+            undo_->beginMacro("Add items to army");
+            for (auto &change:changes) undo_->push(new SaveCommand(this,std::move(change),"inventory"));
+            undo_->endMacro();
+        }
+        error_->clear(); return true;
+    } catch (const Error &e) {error_->setText(QString::fromUtf8(e.what()));return false;}
+}
 void SaveEditor::apply(const SaveChange &change, bool forward) {
     document_->apply(change, forward);
 }
@@ -567,12 +620,12 @@ bool SaveEditor::disbandUnit(int index) {
         return false;
     }
 }
-bool SaveEditor::createCharacter(int classId, const QString &name, int level) {
+bool SaveEditor::createCharacter(int classId, const QString &name, int level, std::optional<quint32> seed) {
     if (!document_ || !allowImmediateEdit()) return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
         const auto items = project_->itemData();
-        auto change=document_->planCreateCharacter(classId,name,project_->classData(),QRandomGenerator::global()->generate(), level, &items);
+        auto change=document_->planCreateCharacter(classId,name,project_->classData(),seed.value_or(QRandomGenerator::global()->generate()), level, &items);
         undo_->push(new SaveCommand(this, std::move(change), "create reserve character"));
         error_->clear();
         return true;
@@ -593,19 +646,36 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
         ? "Recruit a leader and form a new squad in one Undo step. Stats follow the game's initialization and level growth."
         : "Recruit a reserve character using the game's starting stats and level growth, including the current project's class and default equipment bonuses.");
     note->setWordWrap(true); layout->addWidget(note);
-    auto name = new QLineEdit("Recruit");
+    auto name = new QLineEdit;
     name->setObjectName("saveNewCharacterName"); name->setMaxLength(12);
-    layout->addWidget(new QLabel("Name")); layout->addWidget(name);
+    layout->addWidget(new QLabel("Name"));
+    auto nameRow=new QHBoxLayout; nameRow->addWidget(name,1);
+    auto reroll=new QPushButton("Reroll");reroll->setObjectName("saveNewCharacterReroll");nameRow->addWidget(reroll);layout->addLayout(nameRow);
+    quint32 creationSeed=0;
+    bool customName=false;
+    connect(name,&QLineEdit::textEdited,&dialog,[&]{customName=true;});
     auto choices = new QComboBox;
     choices->setObjectName("saveNewCharacterClass");
     const auto classes = project_->classData();
-    for (const auto &record : project_->records(Table::Classes)) {
+    for (const auto &record : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",record.id)) {
         if (!record.id) continue;
         const int secondary = u8(classes.entries()[record.id].record, 69);
         if (formSquad && !classes.commandType(record.id, secondary ? secondary : record.id)) continue;
         choices->addItem(QString("%1 · %2").arg(record.id).arg(record.name.simplified()), record.id);
     }
     choices->setCurrentIndex(std::max(0, choices->findData(5)));
+    const auto roll=[&] {
+        if(choices->currentIndex()<0)return;
+        try {
+            creationSeed=QRandomGenerator::global()->generate();
+            project_->loadNameTables();
+            name->setText(document_->randomCharacterName(project_->rom(),classes,choices->currentData().toInt(),creationSeed,name->text(),&*project_->nameTables()));
+            customName=false;
+        } catch(const Error &e) {note->setText(QString::fromUtf8(e.what()));}
+    };
+    connect(reroll,&QPushButton::clicked,&dialog,roll);
+    connect(choices,&QComboBox::activated,&dialog,[&]{if(!customName)roll();});
+    roll();
     layout->addWidget(new QLabel(formSquad ? "Leader class" : "Class")); layout->addWidget(choices);
     auto level = new QSpinBox;
     level->setObjectName("saveNewCharacterLevel");
@@ -626,143 +696,23 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     if (dialog.exec() != QDialog::Accepted) return -1;
-    const bool created = formSquad ? recruitUnit(choices->currentData().toInt(), name->text(), cell->currentData().toInt(), level->value())
-                                   : createCharacter(choices->currentData().toInt(), name->text(), level->value());
+    const bool created = formSquad ? recruitUnit(choices->currentData().toInt(), name->text(), cell->currentData().toInt(), level->value(),creationSeed)
+                                   : createCharacter(choices->currentData().toInt(), name->text(), level->value(),creationSeed);
     return created ? id : -1;
 }
 void SaveEditor::selectCharacter(int id) {
     if (!document_ || !allowImmediateEdit()) return;
-    auto grid = findChild<QTableView *>("saveCharacters");
-    findChild<QLineEdit *>("saveCharactersSearch")->clear();
-    tables_->setCurrentIndex(0);
-    for (int row=0; row<grid->model()->rowCount(); ++row)
-        if (grid->model()->index(row,0).data().toInt()==id) {
-            const auto index=grid->model()->index(row,1);
-            grid->setCurrentIndex(index); grid->scrollTo(index,QAbstractItemView::PositionAtCenter);
-            break;
-        }
+    auto army=findChild<SaveUnitEditor *>("saveSquads");
+    if (army) {tables_->setCurrentWidget(army);army->selectCharacter(id);}
 }
-void SaveEditor::editCharacter(int id) {
-    if (!document_ || !allowImmediateEdit() || id < 1 || id >= 100 ||
-        !document_->rows(SaveTable::Characters).contains(id))
-        return;
-    QDialog dialog(this);
-    dialog.setObjectName("saveMemberDialog");
-    dialog.setWindowTitle("Edit member — " + document_->value(SaveTable::Characters, id, "name").toString());
-    dialog.resize(760, 650);
-    auto layout = new QVBoxLayout(&dialog);
-    auto area = new QScrollArea;
-    area->setWidgetResizable(true);
-    auto body = new QWidget;
-    auto columns = new QHBoxLayout(body);
-    auto stats = new QGroupBox("Character and stats");
-    auto equipment = new QGroupBox("Equipment");
-    auto statForm = new QFormLayout(stats);
-    auto gearForm = new QFormLayout(equipment);
-    columns->addWidget(stats, 1);
-    columns->addWidget(equipment, 1);
-    columns->setAlignment(equipment, Qt::AlignTop);
-    SaveModel model(this, SaveTable::Characters);
-    QMap<QString, QWidget *> inputs;
-    for (const auto &field : document_->fields(SaveTable::Characters)) {
-        const auto value = document_->value(SaveTable::Characters, id, field.key);
-        if (field.key == "class" || field.key == "secondaryClass") {
-            const int classId = value.toInt();
-            statForm->addRow(field.label, new QLabel(classId < project_->records(Table::Classes).size()
-                ? QString(project_->record(Table::Classes, classId).name).replace('\n', ' ')
-                : QString::number(classId)));
-            continue;
-        }
-        QWidget *input;
-        const auto choices = model.choices(field);
-        if (!choices.isEmpty()) {
-            auto box = new QComboBox;
-            box->setMinimumContentsLength(16);
-            box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-            for (int i = int(field.minimum); i < choices.size(); ++i)
-                box->addItem(choices[i].toString().replace('\n', ' '), i);
-            if (box->findData(value) < 0)
-                box->addItem(QString("Keep existing (%1)").arg(value.toInt()), value);
-            box->setCurrentIndex(box->findData(value));
-            input = box;
-        } else if (field.key == "name") {
-            auto text = new QLineEdit(value.toString());
-            text->setMaxLength(std::max(field.bytes - 1, int(value.toString().size())));
-            input = text;
-        } else {
-            auto number = new QSpinBox;
-            number->setRange(std::min(int(field.minimum), value.toInt()),
-                             std::max(int(field.maximum), value.toInt()));
-            number->setValue(value.toInt());
-            input = number;
-        }
-        input->setObjectName("saveMember_" + field.key);
-        inputs[field.key] = input;
-        const bool gear = field.key == "weapon" || field.key == "body" ||
-                          field.key == "offhand" || field.key == "head";
-        (gear ? gearForm : statForm)->addRow(field.label, input);
-    }
-    area->setWidget(body);
-    layout->addWidget(area, 1);
-    auto error = new QLabel;
-    error->setObjectName("saveMemberError");
-    error->setWordWrap(true);
-    layout->addWidget(error);
-    for (auto input : inputs) {
-        if (auto box = qobject_cast<QComboBox *>(input))
-            connect(box, &QComboBox::currentIndexChanged, error, &QLabel::clear);
-        else if (auto text = qobject_cast<QLineEdit *>(input))
-            connect(text, &QLineEdit::textChanged, error, &QLabel::clear);
-        else
-            connect(qobject_cast<QSpinBox *>(input), &QSpinBox::valueChanged, error, &QLabel::clear);
-    }
-    auto buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
-        try {
-            auto draft = *document_;
-            QVector<SaveChange> changes;
-            auto setField = [&](const QString &key, const QVariant &value) {
-                auto change = draft.planEdit(SaveTable::Characters, id, key, value);
-                if (!change.spans.isEmpty()) {
-                    draft.apply(change, true);
-                    changes.append(std::move(change));
-                }
-            };
-            // Raise the maximum before current HP; when lowering it, lower current HP first.
-            const int maximumHp = qobject_cast<QSpinBox *>(inputs["hpMax"])->value();
-            if (maximumHp > draft.value(SaveTable::Characters, id, "hpMax").toInt())
-                setField("hpMax", maximumHp);
-            for (auto it = inputs.cbegin(); it != inputs.cend(); ++it) {
-                QVariant value;
-                if (auto box = qobject_cast<QComboBox *>(it.value())) value = box->currentData();
-                else if (auto text = qobject_cast<QLineEdit *>(it.value())) value = text->text();
-                else value = qobject_cast<QSpinBox *>(it.value())->value();
-                setField(it.key(), value);
-            }
-            // Validate the complete draft before publishing any of its fields.
-            draft.serialize();
-            if (!changes.isEmpty()) {
-                undo_->beginMacro("Edit member stats and equipment");
-                for (auto &change : changes)
-                    undo_->push(new SaveCommand(this, std::move(change), "member field"));
-                undo_->endMacro();
-            }
-            dialog.accept();
-        } catch (const Error &e) {
-            error->setText(QString::fromUtf8(e.what()));
-        }
-    });
-    dialog.exec();
-}
-bool SaveEditor::recruitUnit(int classId, const QString &name, int cell, int level) {
+void SaveEditor::editCharacter(int id) { selectCharacter(id); }
+bool SaveEditor::recruitUnit(int classId, const QString &name, int cell, int level, std::optional<quint32> seed) {
     if (!document_ || !allowImmediateEdit()) return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
         const auto items = project_->itemData();
         auto change = document_->planRecruitUnit(classId, name, cell, project_->classData(),
-                                                  QRandomGenerator::global()->generate(), level, &items);
+                                                  seed.value_or(QRandomGenerator::global()->generate()), level, &items);
         undo_->push(new SaveCommand(this, std::move(change), "recruit leader and form squad"));
         error_->clear();
         return true;

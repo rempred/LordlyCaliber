@@ -1,4 +1,5 @@
 #include "app/attack_effect_editor.h"
+#include <QCheckBox>
 #include "app/effect_artwork.h"
 #include "app/effect_composer.h"
 #include "app/recovery_draft.h"
@@ -125,14 +126,14 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     scene->addLayout(playback);
     play_ = new QPushButton("Play");
     play_->setObjectName("effectPlay");
-    auto restart = new QPushButton("Restart");
-    restart->setObjectName("effectRestart");
+    loop_ = new QCheckBox("Loop");
+    loop_->setObjectName("effectLoop");
     step_ = new QPushButton("Step frame");
     step_->setObjectName("effectStep");
     step_->setToolTip("Pause and advance one game tick (1/30 second).");
     playback->addWidget(play_);
     playback->addWidget(step_);
-    playback->addWidget(restart);
+    playback->addWidget(loop_);
     playback->addStretch();
     playback->addWidget(new QLabel("View"));
     auto sides = new QButtonGroup(this);
@@ -152,19 +153,18 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     connect(play_, &QPushButton::clicked, this, [this] {
         if (playing_)
             pausedMs_ += clock_.elapsed();
-        else
+        else {
+            if (pausedMs_ * 30 / 1000 >= clipTicks_ - 1) pausedMs_ = 0;
             clock_.restart();
+        }
         playing_ = !playing_;
         play_->setText(playing_ ? "Pause" : "Play");
-    });
-    connect(restart, &QPushButton::clicked, this, [this] {
-        pausedMs_ = 0;
-        clock_.restart();
         showFrame();
     });
+
     connect(step_, &QPushButton::clicked, this, [this] {
         if (clipTicks_ <= 0) return;
-        const int next = (currentTick() + 1) % clipTicks_;
+        const int next = loop_->isChecked() ? (currentTick() + 1) % clipTicks_ : qMin(currentTick() + 1, clipTicks_ - 1);
         pausedMs_ = (qint64(next) * 1000 + 29) / 30;
         playing_ = false;
         play_->setText("Play");
@@ -599,6 +599,7 @@ void AttackEffectEditor::render() {
     const auto attack = project_->attacks()->entry(attack_);
     const bool allies = effectTargetsAllies(attack);
     const int targetCount = attack.targetPattern == 9 || attack.targetSide == 3 || attack.targetPattern == 1 ? 1 : 5;
+    const int strikes = attack.targetPattern == 11 ? attack.strikeCount : 0;
     connect(watcher, &QFutureWatcher<EffectClip>::finished, this, [this, watcher, generation] {
         const auto result = watcher->result();
         watcher->deleteLater();
@@ -622,17 +623,20 @@ void AttackEffectEditor::render() {
         showFrame();
     });
     watcher->setFuture(
-        QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview, allies, targetCount] {
+        QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes] {
             EffectPlayer::Scene scene;
             scene.sourceClass = classId;
             scene.enemyCaster = enemyPreview;
             scene.allies = allies;
             scene.targetCount = targetCount;
+            scene.strikeCount = strikes;
             return renderEffectClip(rom, visual, inherited, scene, cancel);
         }));
 }
 int AttackEffectEditor::currentTick() const {
-    return clipTicks_ <= 0 ? 0 : int((pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000) % clipTicks_;
+    if (clipTicks_ <= 0) return 0;
+    const auto tick = (pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000;
+    return loop_->isChecked() ? int(tick % clipTicks_) : int(qMin<qint64>(tick, clipTicks_ - 1));
 }
 SpriteAsset AttackEffectEditor::renderedSequence() const {
     return effectSequence(clip_, holds_, "Rendered attack effect");
@@ -652,6 +656,11 @@ QImage AttackEffectEditor::renderedFrame() const {
     return clip_[index];
 }
 void AttackEffectEditor::showFrame() {
+    if (playing_ && !loop_->isChecked() && clipTicks_ > 0 &&
+        (pausedMs_ + clock_.elapsed()) * 30 / 1000 >= clipTicks_) {
+        pausedMs_ = (qint64(clipTicks_) * 1000 + 29) / 30;
+        playing_ = false; play_->setText("Play");
+    }
     const auto image = renderedFrame();
     if (image.isNull()) return;
     framePosition_->setText(QString("Frame %1 / %2 · 30 fps").arg(currentTick() + 1).arg(clipTicks_));

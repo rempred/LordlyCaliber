@@ -56,6 +56,7 @@ class FormationBoard final : public QWidget {
     std::array<QString, 9> hints_{};
     int pressed_ = -1, target_ = -1;
     QPoint pressPosition_, pointerPosition_;
+    QPoint dragBaseOffset_;
     bool dragging_ = false;
     bool externalDragEnabled_ = false;
     bool overview_ = false;

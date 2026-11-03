@@ -9,6 +9,8 @@ class HighAttack {
     static QJsonObject definition();
     static QByteArray assembly(const QJsonObject &site, bool enabled);
     static void validateCompiled(const QJsonObject &site, const QByteArray &, bool enabled);
+    static QByteArray canonicalReferences(QByteArray owner, quint32 romOffset);
+    static QByteArray retainReferences(const Rom &, QByteArray owner, quint32 romOffset);
     bool available() const {
         return installation_ != Installation::Unknown;
     }

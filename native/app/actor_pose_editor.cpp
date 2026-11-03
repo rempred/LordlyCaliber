@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include <type_traits>
 #include "engine/sprite_sources.h"
 #include "engine/actor_materials.h"
 #include "engine/class_data.h"
@@ -295,10 +296,10 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     play_ = new QPushButton("Play");
     play_->setObjectName("actorPlay");
     play_->setCheckable(true);
-    auto next = new QPushButton("Step"), reset = new QPushButton("Restart"),
-         fit = new QPushButton("Fit"), actual = new QPushButton("Actual pixels");
+    auto next = new QPushButton("Step"), fit = new QPushButton("Fit"), actual = new QPushButton("Actual pixels");
+    loop_ = new QCheckBox("Loop");loop_->setObjectName("actorLoop");
     next->setObjectName("actorStep");
-    reset->setObjectName("actorRestart");
+
     position_ = new QSpinBox;
     position_->setObjectName("actorPosition");
     position_->setRange(0, 10000);
@@ -308,7 +309,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     speed_->setSuffix(" steps/s");
     controls->addWidget(play_);
     controls->addWidget(next);
-    controls->addWidget(reset);
+    controls->addWidget(loop_);
     auto stepLabel = new QLabel("Step");
     controls->addWidget(stepLabel);
     controls->addWidget(position_);
@@ -491,12 +492,12 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     status_->setObjectName("actorStatus");
     status_->setWordWrap(true);
     layout->addWidget(status_);
-    timer_ = new QTimer(this);
+    timer_ = new QTimer(this);timer_->setObjectName("actorPlaybackTimer");
     timer_->setTimerType(Qt::PreciseTimer);
     connect(timer_, &QTimer::timeout, this, &ActorPoseEditor::step);
     connect(play_, &QPushButton::toggled, this, [this](bool playing) {
         if (playing && player_) {
-            if (frameEditing_ && selectedFrame_) {
+            if ((frameEditing_ && selectedFrame_) || playbackFinished_ || suspendedPose() || step_ >= position_->maximum()) {
                 restart();
                 const QSignalBlocker block(play_);
                 play_->setChecked(true);
@@ -516,7 +517,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
         stop();
         step();
     });
-    connect(reset, &QPushButton::clicked, this, &ActorPoseEditor::restart);
+
     connect(position_, &QSpinBox::valueChanged, this, &ActorPoseEditor::seek);
     connect(banks_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
     connect(kinds_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadSources);
@@ -728,6 +729,7 @@ void ActorPoseEditor::loadBank() {
 }
 void ActorPoseEditor::restart() {
     stop();
+    playbackFinished_ = false;playbackSteps_.clear();
     selectedFrame_.reset();
     if (!art_ || poses_->currentIndex() < 0)
         return;
@@ -762,6 +764,7 @@ void ActorPoseEditor::restart() {
     draw();
     if (initialResult != LORDLY_POSE_OK)
         status_->setText(poseError());
+    if (player_) playbackSteps_.insert(playbackStepKey());
 }
 void ActorPoseEditor::seek(int target) {
     stop();
@@ -791,12 +794,26 @@ void ActorPoseEditor::step() {
         stop();
         return;
     }
+    const bool playing=timer_->isActive();
+    const auto previous=player_;
     if (advancePose() != LORDLY_POSE_OK) {
         stop();
         draw();
         status_->setText(poseError());
         return;
     }
+    const auto key=playbackStepKey();
+    const bool ended=std::visit([](const auto &runtime){return runtime.result()==0;},*player_);
+    const bool repeated=playbackSteps_.contains(key);
+    if (playing && (ended || repeated)) {
+        if (!loop_->isChecked()) {
+            if (repeated && !ended) player_=previous;
+            playbackFinished_=true;stop();draw();return;
+        }
+        restart();play_->setChecked(true);return;
+    }
+    playbackSteps_.insert(key);
+    if (ended) playbackFinished_=true;
     ++step_;
     {
         QSignalBlocker block(position_);
@@ -1148,6 +1165,15 @@ void ActorPoseEditor::drawProjected() {
                          .arg(pose.position.y)
                          .arg(pose.position.z)
                          .arg(projected.size()));
+}
+QString ActorPoseEditor::playbackStepKey() const {
+    return std::visit([](const auto &runtime) {
+        const auto &pose=[&]() -> const auto & {
+            if constexpr (std::is_same_v<std::decay_t<decltype(runtime)>,ActorPosePlayer>) return runtime.actor();
+            else return runtime.sprite();
+        }();
+        return QString("%1/%2/%3/%4").arg(pose.state).arg(pose.cursor).arg(pose.delay).arg(pose.frame);
+    },*player_);
 }
 int ActorPoseEditor::advancePose() {
     return std::visit([](auto &runtime) { return runtime.advance(); }, *player_);

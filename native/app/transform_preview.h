@@ -10,6 +10,7 @@ class QSpinBox;
 class QTimer;
 class QGraphicsView;
 class QGraphicsScene;
+class QCheckBox;
 namespace lordly {
 // Isolated transform/resource inspection. Does not execute the other scene actions.
 class TransformPreview : public QWidget {
@@ -44,6 +45,7 @@ class TransformPreview : public QWidget {
     QSpinBox *resource_, *group_, *duration_, *channel_, *position_, *rate_;
     QPushButton *play_, *step_;
     QTimer *timer_;
+    QCheckBox *loop_;
     QLabel *status_, *context_;
     QGraphicsScene *canvas_;
     QGraphicsView *view_;

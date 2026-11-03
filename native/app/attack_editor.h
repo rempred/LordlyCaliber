@@ -31,17 +31,15 @@ class AttackEditor : public QWidget {
     void assignClass();
     void preview();
     void editEffect();
-    void comparison();
     int selected() const;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
-    AttackData opened_;
     bool refreshing_ = false;
     QListWidget *list_;
     QLineEdit *search_;
     QLabel *capacity_, *name_, *shared_, *relationship_, *elementHelp_, *targetHelp_,
-        *nativeStatus_, *nativeAfter_, *advanced_, *comparison_, *notice_, *playback_;
+        *nativeStatus_, *nativeAfter_, *advanced_, *notice_, *playback_;
     QWidget *details_, *effectPanel_, *amountPanel_, *conditionPanel_, *afterPanel_, *strikePanel_;
     QComboBox *element_, *effect_, *calculation_, *side_, *pattern_, *status_, *condition_, *after_,
         *basis_, *previewClass_, *playbackMode_;
@@ -49,6 +47,5 @@ class AttackEditor : public QWidget {
     QVector<QCheckBox *> cells_;
     QTableWidget *users_, *spellLinks_;
     QWidget *spellPanel_;
-    QVector<QSpinBox *> example_;
 };
 } // namespace lordly

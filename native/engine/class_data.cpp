@@ -375,6 +375,7 @@ ClassData ClassData::loadRetail(const Rom &rom) {
     ClassData result;
     // Some readers form an index base 72 bytes before class zero. These bytes
     // belong to preceding native data, not an extra class. Retain them exactly.
+    result.personalNames_ = PersonalNames::retail(rom);
     result.prefix_ = rom.bytes().mid(0x5dacc, recordSize);
     if (result.prefix_.size() != recordSize)
         throw Error("Truncated class table prefix");
@@ -405,6 +406,14 @@ ClassData ClassData::load(const Rom &rom) {
     const auto bytes = rom.bytes().mid(placement->dataRomOffset, l.end - l.indexBase);
     ClassData result;
     result.prefix_ = bytes.first(72);
+    const auto namesOffset = l.names - l.indexBase;
+    if (bytes.mid(namesOffset, 8) == "LCNAMES1") {
+        const auto size = u32(bytes, namesOffset + 8);
+        if (size > l.discovery - l.names) throw Error("Personal names exceed class storage");
+        const auto metadata = bytes.mid(namesOffset, size);
+        result.personalNames_ = PersonalNames::read(metadata, l.names);
+        PersonalNames::verifyOwner(rom, metadata);
+    } else result.personalNames_ = PersonalNames::retail(rom);
     for (int id = 0; id < l.count; ++id) {
         ClassAsset entry;
         entry.record = bytes.mid(l.records - l.indexBase + id * 72, 72);
@@ -470,6 +479,8 @@ ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
     layout.appearances = allocate(entries_.size() * appearanceSize, 16);
     layout.aliases = allocate(entries_.size(), 16);
     layout.names = allocate(0, 16);
+    const auto personal = personalNames_.build(layout.names);
+    allocate(personal.size(), 16);
     QMap<QByteArray, quint32> pointers;
     QVector<quint32> namePointers;
     for (const auto &entry : entries_) {
@@ -485,6 +496,7 @@ ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
     layout.end = allocate(0, 16);
     result.bytes = QByteArray(layout.end - ramBase, char(0));
     result.bytes.replace(0, prefix_.size(), prefix_);
+    result.bytes.replace(layout.names - ramBase, personal.size(), personal);
     for (int id = 0; id < entries_.size(); ++id) {
         const auto &entry = entries_[id];
         auto record = entry.record;

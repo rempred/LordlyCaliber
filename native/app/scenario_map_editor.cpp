@@ -767,22 +767,6 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     boundaryToggle->setToolTip("In Select / move, drag the gold corner handles to resize the game border.");
     boundaryToggle->setChecked(true);
     toolbar->addWidget(boundaryToggle);
-    boundaryTools_ = new QWidget;
-    auto boundaryLayout = new QHBoxLayout(boundaryTools_);
-    boundaryLayout->setContentsMargins(0, 0, 0, 0);
-    const QStringList edgeNames{"Left", "Top", "Right", "Bottom"};
-    for (int i = 0; i < 4; ++i) {
-        boundaryLayout->addWidget(new QLabel(edgeNames[i]));
-        auto box = new QSpinBox;
-        box->setRange(1, 254);box->setKeyboardTracking(false);
-        box->setObjectName("mapBoundary" + edgeNames[i]);
-        boundaryFields_[i] = box;
-        boundaryLayout->addWidget(box);
-    }
-
-    boundaryLayout->addStretch();
-    layout->addWidget(boundaryTools_);
-    boundaryTools_->hide();
     mapScope_ = new QLabel;
     mapScope_->setObjectName("mapEditScope");
     mapScope_->setWordWrap(true);
@@ -1046,6 +1030,7 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     fields->addWidget(fields_);
     // The shared object list owns selection; site/treasure forms need no second picker.
     world_ = new ScenarioWorldEditor(project_, undo_, [] {});
+    world_->editShop = [this](int shop, int town) { if (editShop) editShop(shop, town); };
     fields->addWidget(world_);
     world_->hide();
     referenceName_ = new QLabel;
@@ -1066,17 +1051,10 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     layout->addWidget(notice_);
     canvas_->resizedBoundary = [this](QRectF b) {
         changeBoundary(b);
-        boundaryTools_->show();
     };
-    for(auto box:boundaryFields_)connect(box, &QSpinBox::valueChanged, this, [this] {
-        if(loading_)return;
-        changeBoundary(QRectF(QPointF(boundaryFields_[0]->value(), boundaryFields_[1]->value()),
-                              QPointF(boundaryFields_[2]->value(), boundaryFields_[3]->value())));
-    });
     connect(boundaryToggle, &QCheckBox::toggled, this, [this](bool value) {
         canvas_->cancelDrag();
         canvas_->showBoundary = value;
-        if (!value) boundaryTools_->hide();
         canvas_->update();
     });
     canvas_->painted = [this](const QVector<QPointF> &stroke) { paint(stroke); };
@@ -1283,7 +1261,6 @@ void ScenarioMapEditor::updateTool() {
     const int terrain = paintType_->currentData().toInt();
     canvas_->straightBrush = mode == 1 && (terrain == 2 || terrain == 10);
     canvas_->editBoundary = mode == 0 && key_ > 0 && key_ != 39;
-    if (mode) boundaryTools_->hide();
     if (mode == 5) updateCityTool();
     else canvas_->cityFootprint.clear();
     canvas_->setCursor(mode ? Qt::CrossCursor : Qt::ArrowCursor);
@@ -1292,7 +1269,6 @@ void ScenarioMapEditor::updateTool() {
 void ScenarioMapEditor::refresh(int key) {
     if (key_ != key || key < 1) {
         canvas_->cancelPlacement();
-        boundaryTools_->hide();
     }
     addSquad_->setEnabled(false);
     orders_->cancelPick();
@@ -1336,7 +1312,6 @@ void ScenarioMapEditor::refresh(int key) {
     canvas_->terrainBounds = {};
     canvas_->boundary = {};
     canvas_->editBoundary = false;
-    boundaryTools_->setEnabled(false);
     terrain_->setEnabled(false);
     paintTools_->setEnabled(false);
     referenceName_->clear();
@@ -1393,15 +1368,6 @@ void ScenarioMapEditor::refresh(int key) {
             editable = true;
             canvas_->boundary = project_->mapEdits()->boundary(key);
             canvas_->editBoundary = activeTool() == 0 && key != 39;
-            boundaryTools_->setEnabled(key != 39);
-            boundaryTools_->setToolTip(key == 39
-                                           ? "Fort Romulus uses a separate scripted boundary; "
-                                             "resizing is not supported yet."
-                                           : "Drag the boundary corners, or enter its edges here.");
-            const auto edge = canvas_->boundary;
-            const double values[] = {edge.left(), edge.top(), edge.right(), edge.bottom()};
-            for (int i = 0; i < 4; ++i)
-                boundaryFields_[i]->setValue(int(values[i]));
             QStringList keys;
             for (int k : project_->mapEdits()->sharedScenarios(key))
                 keys << (project_->scenarios()->entries().contains(k)?project_->scenarios()->scenario(k).name:QString("Scenario %1").arg(k));

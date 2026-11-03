@@ -732,7 +732,7 @@ void AnimationSequenceEditor::refresh() {
                   pose = preferredPose_,
                   row = pendingRecord_ >= 0 ? pendingRecord_ : records_->currentRow();
         classes_->clear();
-        for (const auto &value : project_->records(Table::Classes))
+        for (const auto &value : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",value.id))
             if (value.id > 0)
                 classes_->addItem(QString("%1 · %2").arg(value.id).arg(value.name), value.id);
         classes_->setCurrentIndex(std::max(0, classes_->findData(selected)));

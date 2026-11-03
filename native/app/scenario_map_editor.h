@@ -30,6 +30,7 @@ class ScenarioMapEditor : public QWidget {
     void refresh(int key);
     void selectSquad(int row);
     std::function<void(int)> squadSelected;
+    std::function<void(int, int)> editShop;
 
   private:
     void hideEvent(QHideEvent *event) override;
@@ -62,8 +63,7 @@ class ScenarioMapEditor : public QWidget {
     QSpinBox *x_, *z_;
     QPushButton *fields_;
     QCheckBox *terrain_;
-    QWidget *paintTools_, *boundaryTools_;
-    std::array<QSpinBox *, 4> boundaryFields_;
+    QWidget *paintTools_;
     void changeBoundary(QRectF);
     QComboBox *tool_, *terrainAction_, *sceneryAction_, *paintType_;
     int activeTool() const;

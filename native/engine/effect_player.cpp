@@ -32,7 +32,7 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     if (scene.sourceClass < 0 || scene.sourceClass > 255 || scene.targetClass < 0 ||
         scene.targetClass > 255 || scene.sourceHeight < 1 || scene.sourceHeight > 1024 ||
         scene.targetHeight < 1 || scene.targetHeight > 1024 || scene.targetCount < 1 ||
-        scene.targetCount > 5)
+        scene.targetCount > 5 || scene.strikeCount < 0 || scene.strikeCount > AttackData::maximumStrikes)
         throw Error("Invalid effect preview actors");
     scene_ = scene;
     tick_ = 0;
@@ -44,6 +44,13 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     resources_.clear();
     machine_ = std::make_unique<EffectMachine>();
     auto &m = *machine_;
+    impacts_.clear();
+    // The preview has no battle result consumer. Observe the native contact
+    // notification, preserving the script's target and exact playback tick.
+    m.service(0x801c893c, [this] {
+        impacts_.append({tick_, int(machine_->registers[4]), int(machine_->registers[5])});
+        machine_->registers[2] = 0;
+    });
     auto load = [&](quint32 ram, quint32 begin, quint32 end, bool code = true) {
         if (end < begin || end > quint32(rom_.size()))
             throw Error("Effect source range is outside the ROM");
@@ -177,17 +184,19 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         }
     });
     constexpr quint32 inputs = 0x80720000, battle = 0x80740000;
-    for (int i = 0; i < 36; ++i)
+    for (int i = 0; i < 60; ++i)
         m.byte(inputs + i, 255);
     const int sourceBase = scene.enemyCaster ? 0 : 9;
     const int targetBase = scene.allies ? sourceBase : 9 - sourceBase;
     m.byte(inputs, quint8(sourceBase));
     // Area effects use neighbouring actors for their visual choreography.
     // This neutral full formation never changes the attack's damage targets.
-    for (int i = 0; i < scene.targetCount; ++i) {
-        m.byte(inputs + 12 + i, quint8(targetBase + i));
-        m.byte(inputs + 24 + i, quint8(targetBase + i));
+    const int targets = scene.strikeCount ? scene.strikeCount : scene.targetCount;
+    for (int i = 0; i < targets; ++i) {
+        m.byte(inputs + 20 + i, quint8(targetBase + i % scene.targetCount));
+        m.byte(inputs + 40 + i, scene.strikeCount ? 0 : quint8(targetBase + i));
     }
+    if (scene.strikeCount) m.byte(inputs + 40, 128);
     m.word(0x801ce8bc, battle);
     m.word(0x801ce8c0, battle + 0x57e0);
     m.word(0x801d0810, battle + 0x7000);
@@ -252,20 +261,20 @@ void EffectPlayer::append(int effect) {
     }
     m.registers[4] = quint32(effect);
     m.registers[5] = 0x80720000;
-    m.registers[6] = 0x8072000c;
-    m.registers[7] = 0x80720018;
+    m.registers[6] = 0x80720014;
+    m.registers[7] = 0x80720028;
     m.call(0x8020e850);
 }
 void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const Scene &scene) {
     visual.validate();
     validateEffectArtwork(Rom::fromBytes(rom_), visual);
-    if (visual.nativeEdited()) {
+    if (visual.nativeEdited() || scene.strikeCount) {
         start(-1, scene);
         installEffectPreviewRuntime(*machine_, visual, inherited);
         machine_->registers[4] = 136;
         machine_->registers[5] = 0x80720000;
-        machine_->registers[6] = 0x8072000c;
-        machine_->registers[7] = 0x80720018;
+        machine_->registers[6] = 0x80720014;
+        machine_->registers[7] = 0x80720028;
         machine_->call(0x8020e850);
         return;
     }
@@ -314,7 +323,7 @@ bool EffectPlayer::running() const {
 bool EffectPlayer::advance() {
     if (!running())
         return false;
-    if (tick_ >= 1200)
+    if (tick_ >= 1200 * std::max(1, scene_.strikeCount))
         throw Error("Effect playback exceeds its preview duration");
     auto &m = *machine_;
     if (delay_ > 0) {
@@ -344,7 +353,7 @@ bool EffectPlayer::advance() {
         const unsigned char caster = m.byte(0x80720000);
         unsigned int occupied = 0, opponents = 0;
         for (int i = 0; i < 20; ++i) {
-            targets[i] = m.byte(0x8072000c + i);
+            targets[i] = m.byte(0x80720014 + i);
             if (visual_.framePlacement()) {
                 const auto actor = 0x80740000 + 0x1c4 + i * 0xf8;
                 if (!m.word(actor + 0x48))

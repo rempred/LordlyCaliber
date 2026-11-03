@@ -32,6 +32,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QElapsedTimer>
+#include <QLineF>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QUuid>
@@ -73,6 +74,244 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void finalToolValidation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto expected = ToolSettings::load(rom);
+        expected.validateExport(ToolSettings::load(rom));
+        // Simulate a later exporter overwriting a previously validated owner.
+        // Several readers return retail defaults on unknown code: equality of
+        // setting values alone must not turn that damage into a passing check.
+        for (const auto offset : {0x21928c, 0x21ec4c, 0x23f7c, 0x8f9ec,
+                                   0x15b72c, 0x21d784, 0x2347b8}) {
+            auto broken = rom.bytes(); broken[offset] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, expected.validateExport(ToolSettings::load(Rom::fromBytes(broken))));
+        }
+        auto different = expected; different.setExperiencePercent(150);
+        QVERIFY_THROWS_EXCEPTION(Error, different.validateExport(expected));
+        // Unknown input code remains untouched/inspectable, rather than being
+        // retroactively forbidden just because a different setting was edited.
+        auto unknown = rom.bytes(); unknown[0x21ec4c] ^= 1;
+        const auto foreign = ToolSettings::load(Rom::fromBytes(unknown));
+        foreign.validateExport(foreign);
+    }
+    void packagedQualifiedSources() {
+        // Check the embedded bytes used by the actual compiler. This runs in
+        // public Windows builds without a private ROM or N64 compiler.
+        int owners=0, headers=0;
+        std::function<void(const QJsonValue &)> inspect = [&](const QJsonValue &value) {
+            if (value.isArray()) { for (const auto &v : value.toArray()) inspect(v); return; }
+            if (!value.isObject()) return;
+            const auto row=value.toObject();
+            if (row.contains("sourceSha256") && row.contains("source")) {
+                QFile source(":/game/"+row["source"].toString());
+                QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.fileName()));
+                QCOMPARE(sha256(source.readAll()),row["sourceSha256"].toString().toLatin1().toLower());
+                ++owners;
+                for (const auto &v : row["headers"].toArray()) {
+                    const auto h=v.toObject();QFile header(":/game/"+h["source"].toString());
+                    QVERIFY2(header.open(QIODevice::ReadOnly),qPrintable(header.fileName()));
+                    QCOMPARE(sha256(header.readAll()),h["sha256"].toString().toLatin1().toLower());
+                    ++headers;
+                }
+            }
+            for (auto it=row.begin();it!=row.end();++it) inspect(it.value());
+        };
+        for (const auto *name : {"accepted/owners.json",
+                                "shops/consumers.json", "tools/goth-owner.json", "tools/chaos-call.json"}) {
+            QFile file(QString(":/game/")+name);QVERIFY2(file.open(QIODevice::ReadOnly),qPrintable(file.fileName()));
+            QJsonParseError error;const auto doc=QJsonDocument::fromJson(file.readAll(),&error);
+            QCOMPARE(error.error,QJsonParseError::NoError);inspect(doc.object());
+        }
+        QVERIFY(owners>=19);QVERIFY(headers>0);
+        qInfo()<<owners<<"authenticated C sources and"<<headers<<"headers checked";
+    }
+    void nameTablesExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));p.loadNameTables();auto names=*p.nameTables();
+            QCOMPARE(names.rebuild(p.rom().bytes(),[](const auto &bytes,const auto &){return bytes;}),p.rom().bytes());
+            const auto oldNames=names;quint32 state=94721;
+            for(int pool=0;pool<3;++pool)for(int id=0;id<256;++id) {
+                QString name;for(int n=0;n<12;++n){state=state*1664525U+1013904223U;name+=QChar('A'+((state>>16)%26));}
+                names.setRandomName(pool,id,name);
+            }
+            for(int pool=0;pool<3;++pool) {
+                const int count=pool==2?NameTables::randomCapacity:257+pool;
+                for(int id=256;id<count;++id)QCOMPARE(names.addRandomName(pool,QString("Extra%1_%2").arg(pool).arg(id)),id);
+                QCOMPARE(names.randomCount(pool),count);
+            }
+            QVERIFY(names.expandedRandom());
+            QVERIFY_THROWS_EXCEPTION(Error,names.addRandomName(2,"Overflow"));
+            QVERIFY_THROWS_EXCEPTION(Error,names.removeRandomName(0,255));
+            auto invalid=names.json();invalid["extraRandom"]=QJsonArray{QJsonArray{"Only one table"}};
+            const auto beforeInvalid=names.json();QVERIFY_THROWS_EXCEPTION(Error,names.apply(invalid));QCOMPARE(names.json(),beforeInvalid);
+            const int capacity=names.consumableCapacity(1);names.setConsumableName(1,"Leaf");
+            QVERIFY_THROWS_EXCEPTION(Error,names.setRandomName(0,0,QString(13,'X')));
+            QVERIFY_THROWS_EXCEPTION(Error,names.setConsumableName(1,QString(capacity+1,'X')));
+            p.setNameTables(names.json());QCOMPARE(p.record(Table::Consumables,1).name,QString("Leaf"));
+            QTemporaryDir folder;p.saveFolder(folder.path());auto loaded=Project::fromRom(Rom::open(path));
+            loaded.applyManifest(Project::readProject(folder.path()));loaded.loadNameTables();QCOMPARE(loaded.nameTables()->json(),names.json());
+            QTemporaryDir build;const auto result=rebuild(loaded,tools,build.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/name-tables-XXXXXX");output.setAutoRemove(false);QVERIFY(output.isValid());
+            const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(loaded,result,dest);qInfo().noquote()<<"Name-table candidate:"<<dest;
+            auto reopened=Project::fromRom(Rom::open(dest));reopened.loadNameTables();
+            for(int pool=0;pool<3;++pool) {
+                QVERIFY(u32(result.image,0x65dac+pool*4)!=u32(p.rom().bytes(),0x65dac+pool*4));
+                QCOMPARE(reopened.nameTables()->randomCount(pool),names.randomCount(pool));
+                for(int id=0;id<names.randomCount(pool);++id)QCOMPARE(reopened.nameTables()->randomName(pool,id),names.randomName(pool,id));
+            }
+            QCOMPARE(reopened.nameTables()->consumableName(1),QString("Leaf"));
+            QCOMPARE(reopened.nameTables()->consumableCapacity(1),capacity);
+            const auto shared=names.sharingConsumableName(1);
+            for(int id=1;id<45;++id)if(!shared.contains(id))QCOMPARE(reopened.nameTables()->consumableName(id),oldNames.consumableName(id));
+            QCOMPARE(result.image.mid(0x645cc,45*12),p.rom().bytes().mid(0x645cc,45*12));
+            QCOMPARE(result.image.mid(0x665c4,64),p.rom().bytes().mid(0x665c4,64));
+            QCOMPARE(rebuild(reopened,tools,build.path()).image,result.image);
+            auto crc=result.image;Rom::updateChecksum(crc);QCOMPARE(crc,result.image);
+            auto reduced=*reopened.nameTables();reduced.removeRandomName(0,256);QCOMPARE(reduced.randomCount(0),256);
+            const auto reducedImage=reduced.rebuild(result.image,[](const auto &bytes,const auto &){return bytes;});
+            NameTables reducedRead(Rom::fromBytes(reducedImage));QCOMPARE(reducedRead.randomCount(0),256);
+            QCOMPARE(reducedRead.randomCount(1),258);QCOMPARE(reducedRead.randomCount(2),1024);
+            for(int id=0;id<256;++id)QCOMPARE(reducedRead.randomName(0,id),names.randomName(0,id));
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void campaignRoadDotsAndRemoval() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();auto map=*p.campaignMap();
+            const int road=2;const auto ends=map.road(road);const auto originalDots=map.roadWaypoints(road);
+            QVERIFY(!originalDots.isEmpty());auto dots=originalDots;dots[0]+=QPoint(3,5);map.setRoadDots(road,dots);
+            QCOMPARE(map.roadWaypoints(road),dots);const auto beforeMove=map.position(ends.first);
+            map.setNode(ends.first,beforeMove+QPoint(4,0),map.label(ends.first));QVERIFY(map.roadDots(road)!=dots);
+            map.removeRoad(1);QVERIFY(map.roadDots(1).isEmpty());
+            map.setNode(ends.first,{40,160},map.label(ends.first));map.setNode(ends.second,{470,160},map.label(ends.second));
+            QVector<QPoint> straight;
+            for(int n=1;n<=7;++n)straight<<QPoint(40+qRound(430.0*n/8),160);
+            map.setRoadDots(road,straight);const auto spaced=map.roadDots(road);QVERIFY(spaced.size()>7);
+            const auto pull=map.pulledRoad(road,spaced.size()/2,{0,80});
+            int most=0,least=80;for(const auto &point:pull){most=qMax(most,point.y()-160);least=qMin(least,point.y()-160);}
+            QCOMPARE(most,80);QVERIFY(least<most);QVERIFY(least>0);
+            QCOMPARE(map.position(ends.first),QPoint(40,160));QCOMPARE(map.position(ends.second),QPoint(470,160));
+            map.setRoadDots(road,pull);const auto longer=map.roadDots(road);QVERIFY(longer.size()>spaced.size());
+            const auto otherName=map.name(ends.second);map.setName(ends.first,"Independent coast");QCOMPARE(map.name(ends.second),otherName);
+            for(int n=1;n<longer.size();++n){const auto gap=QLineF(longer[n-1],longer[n]).length();QVERIFY(gap>=8 && gap<=13);}
+            p.setCampaignMap(map.json());QTemporaryDir folder;p.saveFolder(folder.path());
+            auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));loaded.loadCampaignMap();
+            QCOMPARE(loaded.campaignMap()->dotBytes(),map.dotBytes());QCOMPARE(loaded.campaignMap()->roadBytes(),map.roadBytes());
+            QCOMPARE(loaded.campaignMap()->roadDots(road),longer);
+            QTemporaryDir build;const auto result=rebuild(loaded,tools,build.path());
+            const auto candidates=QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");QTemporaryDir output(candidates+"/road-dots-XXXXXX");output.setAutoRemove(false);QVERIFY(output.isValid());
+            const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(loaded,result,dest);qInfo().noquote()<<"Road-dot candidate:"<<dest;
+            auto reopened=Project::fromRom(Rom::open(dest));reopened.loadCampaignMap();
+            QCOMPARE(reopened.campaignMap()->dotBytes(),map.dotBytes());QCOMPARE(reopened.campaignMap()->roadBytes(),map.roadBytes());
+            for(int id=1;id<=map.totalRoads();++id)QCOMPARE(reopened.campaignMap()->roadDots(id),map.roadDots(id));
+            QCOMPARE(reopened.campaignMap()->name(ends.first),QString("Independent coast"));
+            for(int id=1;id<=40;++id)if(id!=ends.first)QCOMPARE(u32(result.image,0x864a0+(id-1)*8+4),u32(p.rom().bytes(),0x864a0+(id-1)*8+4));
+            QCOMPARE(rebuild(reopened,tools,build.path()).image,result.image);
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void customContentLifecycle() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));
+            const auto retailClass=p.record(Table::Classes,5).bytes, retailItem=p.record(Table::Items,1).bytes;
+            QCOMPARE(p.createClass("Discard class"),165);QCOMPARE(p.createClass("Keep class"),166);
+            const auto keepClass=p.record(Table::Classes,166).bytes;
+            QVERIFY2(p.deletionUses("classes",165).isEmpty(),qPrintable(p.deletionUses("classes",165).join("; ")));p.deleteCustomContent("classes",165);
+            QCOMPARE(p.record(Table::Classes,166).bytes,keepClass);QVERIFY(p.contentDeleted("classes",165));
+            QCOMPARE(p.createItem("Discard item"),278);QCOMPARE(p.createItem("Keep item"),279);
+            auto cls=p.record(Table::Classes,166).bytes;put16(cls,46,278);p.replaceBytes(Table::Classes,166,cls);
+            QVERIFY(!p.deletionUses("items",278).isEmpty());QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("items",278));
+            put16(cls,46,0);p.replaceBytes(Table::Classes,166,cls);p.deleteCustomContent("items",278);
+            QCOMPARE(p.createAttack("Discard attack"),159);QCOMPARE(p.createAttack("Keep attack"),160);
+            put8(cls,55,159);p.replaceBytes(Table::Classes,166,cls);QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("attacks",159));
+            put8(cls,55,0);p.replaceBytes(Table::Classes,166,cls);p.deleteCustomContent("attacks",159);
+            const int weapon=p.createWeaponType("Discard type");auto item=p.record(Table::Items,279).bytes;
+            put8(item,4,weapon);p.replaceBytes(Table::Items,279,item);QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("weaponTypes",weapon));
+            put8(item,4,25);p.replaceBytes(Table::Items,279,item);p.deleteCustomContent("weaponTypes",weapon);
+            p.loadPromotion();auto promotion=*p.promotion();const int family=promotion.createFamily("Discard family");promotion.assign(166,family);p.setPromotion(promotion.json());
+            QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("families",family));promotion.assign(166,0);p.setPromotion(promotion.json());p.deleteCustomContent("families",family);
+            QCOMPARE(p.createShop(),36);QCOMPARE(p.createShop(),37);p.loadWorld();auto world=*p.world();
+            int town=1;while(u8(world.town(town),24)==255)++town;auto record=world.town(town);const auto originalTown=record;
+            put8(record,25,(u8(record,25)&~2)|1);put8(record,27,36);world.setTown(town,record);p.setWorld(world.json());
+            QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("shops",36));world.setTown(town,originalTown);p.setWorld(world.json());p.deleteCustomContent("shops",36);
+            QCOMPARE(p.createEncounterPool(),10);QCOMPARE(p.createEncounterPool(),11);auto encounters=*p.encounters();
+            encounters.setTerrain(0,10,11);p.setEncounters(encounters.json());QVERIFY_THROWS_EXCEPTION(Error,p.deleteCustomContent("pools",10));
+            encounters.setTerrain(0,0,0);p.setEncounters(encounters.json());p.deleteCustomContent("pools",10);
+            QTemporaryDir folder; p.saveFolder(folder.path());auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.manifest(),p.manifest());
+            QTemporaryDir build;auto result=rebuild(loaded,tools,build.path());
+            const auto candidates=QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");QTemporaryDir output(candidates+"/custom-deletion-XXXXXX");output.setAutoRemove(false);QVERIFY(output.isValid());
+            const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(loaded,result,dest);qInfo().noquote()<<"Deletion candidate:"<<dest;
+            auto reopened=Project::fromRom(Rom::open(dest));QCOMPARE(reopened.deletedContent(),p.deletedContent());
+            QVERIFY(!reopened.catalog()["CLASS_NAMES"].toObject().contains("165"));QVERIFY(!reopened.catalog()["ITEM_NAMES"].toObject().contains("278"));
+            QVERIFY(!reopened.catalog()["ACTION_NAMES"].toObject().contains("159"));
+            QCOMPARE(reopened.createClass("Reused class"),165);QCOMPARE(reopened.createItem("Reused item"),278);
+            QCOMPARE(reopened.createAttack("Reused attack"),159);QCOMPARE(reopened.createShop(),36);QCOMPARE(reopened.createEncounterPool(),10);
+            QCOMPARE(reopened.records(Table::Classes).size(),167);QCOMPARE(reopened.records(Table::Items).size(),280);
+            QCOMPARE(reopened.classNameBytes(166),QByteArray("Keep class"));QCOMPARE(reopened.itemNameBytes(279),QByteArray("Keep item"));
+            QVERIFY(reopened.deletedContent().isEmpty());
+            QTemporaryDir saved;reopened.saveFolder(saved.path());auto continued=Project::fromRom(Rom::open(dest));continued.applyManifest(Project::readProject(saved.path()));
+            const auto actualManifest=continued.manifest(),expectedManifest=reopened.manifest();
+            for(const auto &key:expectedManifest.keys())QVERIFY2(actualManifest[key]==expectedManifest[key],qPrintable("Restored field differs: "+key));
+            QCOMPARE(actualManifest.keys(),expectedManifest.keys());
+            qInfo()<<"Reused slots restored from project; starting second export";
+            const auto second=rebuild(continued,tools,build.path());auto final=Project::fromRom(Rom::fromBytes(second.image));
+            qInfo()<<"Reused slots exported and reopened";
+            QVERIFY(final.deletedContent().isEmpty());QCOMPARE(final.classNameBytes(165),QByteArray("Reused class"));QCOMPARE(final.itemNameBytes(278),QByteArray("Reused item"));
+            QCOMPARE(final.record(Table::Classes,5).bytes.mid(4),retailClass.mid(4));QCOMPARE(final.record(Table::Items,1).bytes.mid(4),retailItem.mid(4));
+            // A deletion with no gameplay-byte changes still needs its ROM directory.
+            final.deleteCustomContent("classes",165);
+            qInfo()<<"Starting deletion-only export";
+            const auto deletedOnly=rebuild(final,tools,build.path());auto deletedAgain=Project::fromRom(Rom::fromBytes(deletedOnly.image));
+            QVERIFY(deletedAgain.contentDeleted("classes",165));
+            qInfo()<<"Deletion-only export reopened";
+            QCOMPARE(deletedAgain.classData().entries().size(),final.classData().entries().size());
+            QCOMPARE(deletedAgain.createWeaponType("Reused type"),weapon);
+            deletedAgain.loadPromotion();auto families=*deletedAgain.promotion();QCOMPARE(families.createFamily("Reused family"),family);
+
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void personalNamesExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));
+            const auto original=p.personalNames(); auto names=original;
+            QCOMPARE(names.assignment(5),-1);
+            QCOMPARE(names.assignment(0x51),names.assignment(0x52));
+            QCOMPARE(names.names()[names.assignment(0x76)],QByteArray("Asnabel"));
+            const auto display=p.classNameBytes(0x76);
+            const int created=names.create("Rowan"); names.assign(0x51,created);
+            names.assign(0x76,-1); names.assign(0x75,names.assignment(0x5b));
+            QCOMPARE(names.assignment(0x52),original.assignment(0x52));
+            QCOMPARE(names.names(),original.names()+QVector<QByteArray>{"Rowan"});
+            QVERIFY_THROWS_EXCEPTION(Error,names.create(QString(17,'X')));
+            const int custom=p.createClass("Name test"); QCOMPARE(custom,165);
+            names.assign(custom,created);p.setPersonalNames(names.json());
+            QCOMPARE(p.classNameBytes(0x76),display);
+            QTemporaryDir folder; p.saveFolder(folder.path());
+            auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.personalNames().json(),names.json());
+            QTemporaryDir build;
+            auto result=rebuild(loaded,tools,build.path());
+            const auto candidates=QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir output(candidates+"/personal-names-XXXXXX"); output.setAutoRemove(false);
+            QVERIFY(output.isValid());const auto dest=output.filePath(QFileInfo(path).fileName());
+            exportRom(loaded,result,dest);qInfo().noquote()<<"Personal-name candidate:"<<dest;
+            auto reopened=Project::fromRom(Rom::open(dest));
+            QCOMPARE(reopened.personalNames().json(),names.json());
+            QCOMPARE(reopened.classNameBytes(0x76),display);
+            const auto repeated=rebuild(reopened,tools,build.path());
+            QCOMPARE(repeated.image,result.image);
+            auto check=result.image;Rom::updateChecksum(check);QCOMPARE(check,result.image);
+        } catch(const std::exception &e) { QFAIL(e.what()); }
+    }
     void itemNameEncoding() {
         QCOMPARE(encodeItemName("Moth-eaten Clothing"), QByteArray("Moth-eaten Clothing"));
         const auto small = encodeItemName("Moth-eaten Clothing", ItemNameFont::Small);
@@ -113,14 +352,37 @@ class EngineTests : public QObject {
             project.loadAttacks(); project.loadScenarios(); project.loadTools();
             QCOMPARE(project.changedRecords(), 0);
             QTemporaryDir work;
-            const auto built = rebuild(project, tools, work.path());
+            QVector<BuildProgress> progress;
+            const auto notify = [&](const BuildProgress &event) { progress.append(event); };
+            const auto built = rebuild(project, tools, work.path(), notify);
+            QVERIFY(!progress.isEmpty());
+            QCOMPARE(progress.first().stage, 0);
+            QCOMPARE(progress.last().stage, 6);
+            QStringList liveReport;
+            int previousStage = 0;
+            for (const auto &event : progress) {
+                QVERIFY(event.stage >= previousStage && event.stage < BuildProgress::stageCount);
+                previousStage = event.stage;
+                liveReport << event.messages;
+            }
+            for (const auto &line : built.report) QVERIFY(liveReport.contains(line));
             QCOMPARE(sha256(built.image), sha256(rom.bytes()));
             QVERIFY(built.image == rom.bytes());
             QVERIFY(built.report.join('\n').contains("Applied the accepted C baseline"));
             QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/accepted-c-identity-XXXXXX");
             QVERIFY(output.isValid()); output.setAutoRemove(false);
             const auto candidate = output.filePath(QFileInfo(path).fileName());
-            exportRom(project, built, candidate);
+            // Neither source protection nor an unwritable destination may report success.
+            progress.clear();
+            QVERIFY_THROWS_EXCEPTION(Error, exportRom(project, built, path, notify));
+            QVERIFY(!progress.isEmpty()); QCOMPARE(progress.last().stage, 7);
+            progress.clear();
+            QVERIFY_THROWS_EXCEPTION(Error, exportRom(project, built, output.path(), notify));
+            QVERIFY(!progress.isEmpty()); QCOMPARE(progress.last().stage, 7);
+            progress.clear();
+            exportRom(project, built, candidate, notify);
+            QCOMPARE(progress.first().stage, 7);
+            QCOMPARE(progress.last().stage, BuildProgress::stageCount);
             QFile original(path), exported(candidate);
             QVERIFY(original.open(QIODevice::ReadOnly)); QVERIFY(exported.open(QIODevice::ReadOnly));
             const auto originalBytes = original.readAll(), exportedBytes = exported.readAll();
@@ -4188,6 +4450,9 @@ class EngineTests : public QObject {
     void expandableClassData() {
         auto bytes = syntheticRom();
         bytes.replace(0x65dbc, 7, QByteArray("Knight\0", 7));
+        bytes.replace(0x647f0, 5, QByteArray("Hero\0", 5));
+        for (int id = 81; id < 165; ++id)
+            if (id < 114 || id > 116) put32(bytes, 0x64900 + id * 4, 0x8018e8f0);
         for (int i = 0; i < 72; ++i)
             bytes[0x5dacc + i] = char(i ^ 0xa6);
         for (int id = 0; id < 165; ++id) {
@@ -4206,8 +4471,15 @@ class EngineTests : public QObject {
         QCOMPARE(retail.layout.appearances, quint32(0x80246c60));
         QCOMPARE(retail.layout.aliases, quint32(0x80247040));
         QCOMPARE(retail.layout.names, quint32(0x802470f0));
-        QCOMPARE(retail.layout.discovery, quint32(0x80247100));
-        QCOMPARE(retail.layout.end, quint32(0x80247120));
+        // The shared Hero string and 256 personal-name assignments occupy
+        // 0x450 bytes before the independent class-label strings.
+        QCOMPARE(retail.layout.discovery, quint32(0x80247550));
+        QCOMPARE(retail.layout.end, quint32(0x80247570));
+        const auto names = PersonalNames::read(
+            retail.bytes.mid(retail.layout.names-retail.layout.indexBase,0x450),retail.layout.names);
+        QCOMPARE(names.names(), QVector<QByteArray>{"Hero"});
+        QCOMPARE(names.assignment(81), 0);
+        QCOMPARE(names.assignment(114), -1);
         QCOMPARE(classes.append(90, "Sentinel"), 165);
         QCOMPARE(classes.entries()[165].namedAlias, quint8(0));
         QCOMPARE(classes.entries()[90].namedAlias, quint8(24));

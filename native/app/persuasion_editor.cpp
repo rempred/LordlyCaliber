@@ -176,6 +176,7 @@ void PersuasionEditor::showSelection() {
     QVector<int> targets, fallback;
     const auto explicitLeaders = affinity.leaders();
     for (int id = 1; id < project_->records(Table::Classes).size() && id <= 255; ++id) {
+        if(project_->contentDeleted("classes",id))continue;
         if (affinity.groupFor(id) == target) targets << id;
         if (!explicitLeaders.contains(id)) fallback << id;
     }
@@ -211,6 +212,7 @@ void PersuasionEditor::editGroup(bool leader, bool create) {
     auto search = new QLineEdit; search->setPlaceholderText("Find classes by name or hex ID..."); layout->addWidget(search);
     auto list = new QListWidget; list->setObjectName("persuasionGroupMembers"); layout->addWidget(list, 1);
     for (int id = 1; id < project_->records(Table::Classes).size() && id <= 255; ++id) {
+        if(project_->contentDeleted("classes",id))continue;
         auto item = new QListWidgetItem(className(project_, id) + QString(" [%1]").arg(id, 2, 16, QChar('0')), list);
         item->setData(Qt::UserRole, id); item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(!create && groups[selected].members.contains(id) ? Qt::Checked : Qt::Unchecked);

@@ -119,7 +119,7 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
     equipmentArt_->setObjectName("animationEquipmentArt");
     searchable(equipmentArt_);
     equipmentArt_->addItem("Use equipped item", -1);
-    for (const auto &record : project_->records(Table::Items))
+    for (const auto &record : project_->records(Table::Items)) if (!project_->contentDeleted("items",record.id))
         equipmentArt_->addItem(QString("%1 · %2").arg(record.id).arg(record.name.simplified()), record.id);
     bodyForm->addRow("Equipment artwork", equipmentArt_);
     equipmentChildren_ = new QCheckBox("Use equipment variants for item-colored layers");
@@ -348,7 +348,7 @@ void AnimationEditor::refresh() {
     QScopedValueRollback<bool> guard(refreshing_, true);
     equipmentArt_->clear();
     equipmentArt_->addItem("Use equipped item", -1);
-    for (const auto &r : project_->records(Table::Items))
+    for (const auto &r : project_->records(Table::Items)) if (!project_->contentDeleted("items",r.id))
         equipmentArt_->addItem(QString("%1 · %2").arg(r.id).arg(r.name.simplified()), r.id);
     const auto source = sources_->currentData().toInt();
     classes_->clear();

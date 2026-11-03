@@ -301,7 +301,7 @@ void CustomSquadEditor::refresh() {
         box->clear();
         if (bonusClasses_.contains(box))
             box->addItem("None", 0);
-        for (int id = 2; id < project_->records(Table::Classes).size(); ++id)
+        for (int id = 2; id < project_->records(Table::Classes).size(); ++id) if (!project_->contentDeleted("classes",id))
             box->addItem(QString("%1 · %2").arg(id).arg(
                              QString(project_->record(Table::Classes, id).name).replace('\n', ' ')),
                          id);

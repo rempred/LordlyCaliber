@@ -1,10 +1,13 @@
 #include "app/main_window.h"
+#include "app/rom_build_dialog.h"
 #include "app/table_transfer.h"
 #include "engine/weapon_status.h"
 #include <QSignalBlocker>
 #include "app/pending_edits.h"
 #include "app/class_setup.h"
 #include "app/content_refresh.h"
+#include "app/custom_content.h"
+#include "app/personal_name_picker.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/animation_sequence_editor.h"
@@ -17,6 +20,7 @@
 #include "app/attack_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
+#include "app/campaign_editor.h"
 #include "app/encounter_editor.h"
 #include "app/leader_affinity_editor.h"
 #include "app/portrait_editor.h"
@@ -202,6 +206,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto redoAction = undoGroup_->createRedoAction(this, "&Redo");
     redoAction->setShortcut(QKeySequence::Redo);
     edit->addAction(redoAction);
+    edit->addAction("Delete custom content…",this,[this]{if(project_)showCustomContent(this,project_.get(),undo_);});
     auto toolbar = new QToolBar("Project", menuBar());
     toolbar->setObjectName("projectActions");
     toolbar->setMovable(false);
@@ -337,30 +342,9 @@ void MainWindow::installProject(Project project) {
     }
     addRecordWorkspace(Table::Items, "Items");
     addRecordWorkspace(Table::Consumables, "Consumables");
-    if (project_->shops())
-        workspaces_->addTab(new ShopEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                            "Shops");
-    if (project_->encounters())
-        workspaces_->addTab(new EncounterEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                            "Encounters");
-    if (project_->scenarios())
-        workspaces_->addTab(new ScenarioEditor(project_.get(), undo_, [this] { updateStatus(); }),
-                            "Scenarios");
-    if (project_->rom().revision() == 0) {
-        const int tab =
-            workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
-                                                   [this] { updateStatus(); }),
-                                "Cutscenes");
-        auto badge = new QLabel("W.I.P");
-        badge->setObjectName("cutsceneWipBadge");
-        badge->setStyleSheet("QLabel { background: transparent; color: #ff9990; border: none; "
-                             "padding: 0 12px 0 0; font-size: 9pt; font-weight: bold; }");
-        badge->ensurePolished();
-        badge->adjustSize();
-        badge->setAttribute(Qt::WA_TransparentForMouseEvents);
-        workspaces_->tabBar()->setTabButton(tab, QTabBar::RightSide, badge);
-        workspaces_->setTabToolTip(tab, "Cutscenes — work in progress");
-    }
+    if (project_->rom().revision() == 0)
+        workspaces_->addTab(new CampaignEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                            "Campaign");
     if (project_->rom().revision() == 0) {
         auto artwork = new QTabWidget;
         artwork->setObjectName("artWorkspace");
@@ -493,7 +477,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     connect(model, &RecordModel::editRejected, this, &MainWindow::report);
     if (table == Table::Classes || table == Table::Items)
         grid->setItemDelegateForColumn(1, new ClassNameDelegate(grid));
-    auto proxy = new QSortFilterProxyModel(page);
+    class ActiveRecords final : public QSortFilterProxyModel {
+    public: Project *project;Table table;
+        ActiveRecords(Project *p,Table t,QObject *parent):QSortFilterProxyModel(parent),project(p),table(t){}
+        bool filterAcceptsRow(int row,const QModelIndex &parent)const override {
+            return !project->contentDeleted(tableKey(table),row) && QSortFilterProxyModel::filterAcceptsRow(row,parent);
+        }
+    };
+    auto proxy = new ActiveRecords(project_.get(),table,page);
     proxy->setSourceModel(model);
     proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
     proxy->setFilterKeyColumn(-1);
@@ -582,6 +573,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         }
         return id;
     };
+    QPushButton *deleteRecord = nullptr;
     QPushButton *addClass = nullptr, *newClass = nullptr, *renameClass = nullptr,
                 *addItem = nullptr, *newItem = nullptr, *renameItem = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
@@ -596,6 +588,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         renameClass->setObjectName("renameClass");
         renameClass->setToolTip("Change the selected class's in-game name.");
         actions->addWidget(renameClass);
+        deleteRecord=new QPushButton("Delete class");deleteRecord->setObjectName("deleteClass");actions->addWidget(deleteRecord);
+        connect(deleteRecord,&QPushButton::clicked,page,[=,this]{if(*selected>=165)deleteCustomEntry(this,project_.get(),undo_,"classes",*selected);});
         actions->addStretch();
         layout->insertLayout(1, actions);
         connect(renameClass, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
@@ -707,6 +701,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         renameItem->setObjectName("renameItem");
         renameItem->setToolTip("Change the selected item's in-game name and font.");
         actions->addWidget(renameItem);
+        deleteRecord=new QPushButton("Delete item");deleteRecord->setObjectName("deleteItem");actions->addWidget(deleteRecord);
+        connect(deleteRecord,&QPushButton::clicked,page,[=,this]{if(*selected>=278)deleteCustomEntry(this,project_.get(),undo_,"items",*selected);});
         connect(renameItem, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
             const int id = *selected;
             if (id < 0 || id >= model->rowCount()) return;
@@ -784,6 +780,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         createType->setObjectName("createWeaponType");
         createType->setToolTip("Create a named weapon category. Classes can equip it when their default weapon uses this type.");
         actions->addWidget(createType);
+        auto deleteType=new QPushButton("Delete weapon type…");deleteType->setObjectName("deleteWeaponType");actions->addWidget(deleteType);
+        connect(deleteType,&QPushButton::clicked,page,[this]{showCustomContent(this,project_.get(),undo_,"weaponTypes");});
         connect(createType, &QPushButton::clicked, page, [this, model, selected, grid, proxy] {
             const int item = *selected;
             bool accepted = false;
@@ -958,6 +956,23 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         leaderAffinity = new LeaderAffinityEditor(project_.get(), undo_, [this] { updateStatus(); });
         groups["Combat"]->addRow(leaderAffinity);
     }
+    QLabel *uniqueName = nullptr;
+    QPushButton *choosePersonalName = nullptr;
+    if (table == Table::Classes && project_->hasClassData()) {
+        uniqueName = new QLabel; uniqueName->setObjectName("classUniqueName");
+        auto row = new QWidget; auto line = new QHBoxLayout(row); line->setContentsMargins(0,0,0,0);
+        line->addWidget(uniqueName, 1);
+        choosePersonalName = new QPushButton("Choose…"); choosePersonalName->setObjectName("choosePersonalName");
+        line->addWidget(choosePersonalName);
+        groups["Identity"]->insertRow(0,"Unique Name",row);
+        auto help = new QLabel("Sets the personal name given to newly created characters using this identity class.");
+        help->setWordWrap(true); groups["Identity"]->insertRow(1,help);
+        connect(choosePersonalName, &QPushButton::clicked, page, [=, this] {
+            if (*selected < 0) return;
+            if (const auto choice=pickPersonalName(page,*project_,*selected))
+                model->setPersonalName(*selected,choice->id,choice->newName);
+        });
+    }
     PromotionEditor *promotion = nullptr;
     ConsumableEditor *effects = nullptr;
     if (table == Table::Consumables) {
@@ -1000,17 +1015,24 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
                     addItem, newItem, renameClass, renameItem, description, actionDescriptions, actionId, setup,
-                    weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity] {
+                    weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity, uniqueName, choosePersonalName, deleteRecord] {
+        if (deleteRecord) deleteRecord->setEnabled(*selected >= (table==Table::Classes?165:278) && !project_->contentDeleted(tableKey(table),*selected));
         if (newItem)
-            newItem->setEnabled(model->rowCount() < ItemData::maximumCount);
+            newItem->setEnabled(project_->nextContentId("items",model->rowCount()) < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
+        if (uniqueName) {
+            const auto names=project_->personalNames();
+            const int id=*selected>=0?names.assignment(*selected):-1;
+            uniqueName->setText(*selected<0?QString():id<0?"Random name":decodeText(names.names()[id]));
+            choosePersonalName->setEnabled(*selected>=0);
+        }
         if (setup) setup->selectClass(*selected);
         if (leaderAffinity) leaderAffinity->selectClass(*selected);
         description->selectDescription(tableKey(table), *selected < 0 ? -1 :
             table == Table::Classes ? Project::classDescriptionIndex(*selected) : *selected);
         if (addItem)
-            addItem->setEnabled(*selected >= 1 && model->rowCount() < ItemData::maximumCount);
+            addItem->setEnabled(*selected >= 1 && project_->nextContentId("items",model->rowCount()) < ItemData::maximumCount);
         if (renameClass)
             renameClass->setEnabled(*selected >= 0 &&
                                    (model->flags(model->index(*selected, 1)) & Qt::ItemIsEditable));
@@ -1018,9 +1040,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             renameItem->setEnabled(*selected >= 0 &&
                                   (model->flags(model->index(*selected, 1)) & Qt::ItemIsEditable));
         if (newClass)
-            newClass->setEnabled(model->rowCount() < 256);
+            newClass->setEnabled(project_->nextContentId("classes",model->rowCount()) < 256);
         if (addClass)
-            addClass->setEnabled(*selected >= 1 && model->rowCount() < 256);
+            addClass->setEnabled(*selected >= 1 && project_->nextContentId("classes",model->rowCount()) < 256);
         if (promotion)
             promotion->selectClass(*selected);
         if (effects)
@@ -1099,7 +1121,8 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         refresh();
         updateStatus();
     });
-    watchContentChanges(undo_,page,[model,refresh] {
+    watchContentChanges(undo_,page,[model,proxy,refresh] {
+        proxy->invalidate();
         emit model->dataChanged(model->index(0,0),model->index(model->rowCount()-1,model->columnCount()-1));
         refresh();
     });
@@ -1268,57 +1291,58 @@ void MainWindow::compileRom(const QString &path, int testChoice) {
     loading_ = true;
     workspaces_->setEnabled(false);
     statusBar()->showMessage("Compiling and validating the ROM…");
+    auto progress = new RomBuildDialog(path, this);
+    progress->setAttribute(Qt::WA_DeleteOnClose);
+    connect(progress, &RomBuildDialog::reviewRequested, this, [this] {
+        ProjectReviewDialog review(*project_, {}, this);
+        connect(&review, &ProjectReviewDialog::editRequested, this, &MainWindow::navigateTo);
+        review.exec();
+    });
+    connect(progress, &RomBuildDialog::testRequested, this, [this] {
+        if (auto testing = workspaces_->findChild<TestingEditor *>()) {
+            testing->findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
+            workspaces_->setCurrentWidget(testing);
+        }
+    });
+    progress->show();
+    const auto notify = progress->progressCallback();
     struct Result {
         QString error;
-        QStringList report;
         QByteArray digest;
         bool brokenReferences = false;
     };
     auto watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this,
-            [this, watcher, path, revision = projectRevision_, testChoice, testingBuild] {
+            [this, watcher, progress, path, revision = projectRevision_, testChoice, testingBuild] {
                 const auto result = watcher->result();
                 watcher->deleteLater();
                 loading_ = false;
                 workspaces_->setEnabled(true);
                 auto testing = workspaces_->findChild<TestingEditor *>();
                 if (!result.error.isEmpty()) {
+                    qWarning().noquote() << result.error;
+                    progress->finish(result.error, false, result.brokenReferences);
+                    statusBar()->showMessage("ROM build failed");
                     if (testingBuild && testing) {
                         testing->buildFailed(
                             "Build failed; no save was assigned and Project64 was not launched. " +
                             result.error);
                         statusBar()->showMessage("Test build failed");
-                        if (result.brokenReferences) {
-                            ProjectReviewDialog review(*project_, {}, this);
-                            connect(&review, &ProjectReviewDialog::editRequested, this,
-                                    &MainWindow::navigateTo);
-                            review.exec(); // Fix links are available; retry is always an explicit
-                                           // user action.
-                        }
-                    } else
-                        report(result.error);
+                    }
                 } else if (testingBuild && testing) {
+                    progress->finish();
+                    progress->accept(); // Continue Test mission without another confirmation.
                     testing->useTestBuild(path, revision, result.digest, testChoice);
                     statusBar()->showMessage("Test ROM built. Assigning the selected save…");
                 } else {
                     if (testing)
                         testing->useExport(path, revision, result.digest);
-                    QMessageBox message(QMessageBox::Information, "ROM exported",
-                                        path + "\n\n" + result.report.join('\n'), QMessageBox::Ok,
-                                        this);
-                    auto test = testing
-                                    ? message.addButton("Test this ROM", QMessageBox::ActionRole)
-                                    : nullptr;
-                    message.exec();
-                    if (test && message.clickedButton() == test) {
-                        testing->findChild<QComboBox *>("testingSourceMode")->setCurrentIndex(1);
-                        workspaces_->setCurrentWidget(testing);
-                    }
+                    progress->finish({}, testing != nullptr);
                     statusBar()->showMessage("ROM exported successfully", 5000);
                 }
             });
     watcher->setFuture(
-        QtConcurrent::run([project = *project_, path, tools, testingBuild, lock = testBuildLock_] {
+        QtConcurrent::run([project = *project_, path, tools, testingBuild, notify, lock = testBuildLock_] {
             try {
                 if (testingBuild) {
                     QStringList errors;
@@ -1326,15 +1350,16 @@ void MainWindow::compileRom(const QString &path, int testChoice) {
                         if (issue.blocking)
                             errors << issue.message;
                     if (!errors.isEmpty())
-                        return Result{errors.join('\n'), {}, {}, true};
+                        return Result{errors.join('\n'), {}, true};
                 }
                 QTemporaryDir work(QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
                                    "/lordly-build-XXXXXX");
                 if (!work.isValid())
                     throw Error("Cannot create build workspace");
-                const auto result = rebuild(project, tools, work.path());
-                exportRom(project, result, path);
-                return Result{{}, result.report, sha256(result.image)};
+                const auto result = rebuild(project, tools, work.path(), notify);
+                const auto digest = sha256(result.image);
+                exportRom(project, result, path, notify);
+                return Result{{}, digest};
             } catch (const std::exception &e) {
                 return Result{QString::fromUtf8(e.what()), {}};
             }

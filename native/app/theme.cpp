@@ -92,20 +92,21 @@ QLabel#terrainMapContext {
     border: 1px solid #a07b2a; border-left: 4px solid #982018;
     padding: 10px 14px;
 }
-/* Gold section tabs sit below the dark workspace row. */
+/* Shared tab shape and states at every navigation level. */
 QTabWidget::pane { border: 1px solid #b69a64; background: #ecdcb8; }
 QTabBar { background: #dcc286; font-weight: 600; }
 QTabBar::tab {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ecd8a8, stop:1 #dcc286);
-    color: #55391a;
-    border: none; border-right: 1px solid #b69a64;
-    border-top: 1px solid #f9eac7; border-bottom: 3px solid #b69a64;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f0d58e, stop:1 #d6af55);
+    color: #3b260f;
+    border: 1px solid #94703b; border-bottom: 3px solid #684b28;
+    border-top-left-radius: 5px; border-top-right-radius: 5px;
+    margin: 4px 3px 0px 0px;
     padding: 8px 13px;
 }
-QTabBar::tab:hover { background: #f3cc78; color: #70221c; }
+QTabBar::tab:hover { background: #f3cc78; color: #70221c; border-color: #d0a85c; }
 QTabBar::tab:selected {
-    background: #5a3a1c; color: #fff1cb;
-    border-top-color: #e0b35a; border-bottom-color: #982018;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #982f25, stop:1 #70221c);
+    color: #fff1cb; border-color: #f3cc78; border-bottom-color: #f3cc78;
 }
 QTabBar::tab:disabled { color: #806c50; }
 QTabBar#workspaceNavigation {
@@ -114,20 +115,8 @@ QTabBar#workspaceNavigation {
     font-size: 10pt; font-weight: bold;
 }
 QTabBar#workspaceNavigation::tab {
-    background: #50371e; color: #f2dfb5;
-    border: 1px solid #94703b; border-bottom: 3px solid #684b28;
-    border-top-left-radius: 5px; border-top-right-radius: 5px;
-    margin: 4px 3px 0px 0px;
     padding: 9px 12px;
 }
-QTabBar#workspaceNavigation::tab:hover {
-    background: #694a27; color: #fff1cb; border-color: #d0a85c;
-}
-QTabBar#workspaceNavigation::tab:selected {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #982f25, stop:1 #70221c);
-    color: #fff1cb; border-color: #f3cc78; border-bottom-color: #f3cc78;
-}
-QTabBar#workspaceNavigation::tab:disabled { color: #b09a70; }
 QPushButton, QToolButton {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fbf2dc, stop:1 #e4cfa1);
     color: #2a1a08; border: 1px solid #a58a54; border-radius: 4px;
@@ -206,6 +195,17 @@ QProgressBar {
     background: #fbf2dc; color: #2a1a08; text-align: center;
 }
 QProgressBar::chunk { background: #c8a566; }
+QDialog#romBuildDialog QLabel#romBuildHeading {
+    background: #852c24; color: #fff1cb;
+    border: 1px solid #d3ad57; border-radius: 5px;
+    padding: 12px; font-family: "Georgia"; font-size: 19px; font-weight: bold;
+}
+QDialog#romBuildDialog QLabel#romBuildStage { font-weight: bold; }
+QDialog#romBuildDialog QProgressBar { border-radius: 6px; }
+QDialog#romBuildDialog QProgressBar::chunk {
+    border-radius: 4px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #852c24, stop:1 #d3ad57);
+}
 )QSS"));
 }
 }

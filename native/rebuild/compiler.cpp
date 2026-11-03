@@ -1,6 +1,8 @@
+#include "rebuild/campaign.h"
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "engine/deleted_content.h"
 #include "rebuild/goth_runtime.h"
 #include "rebuild/accepted_rom.h"
 #include "rebuild/persuasion.h"
@@ -15,6 +17,7 @@
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
+#include "engine/legacy_scene_arena.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/capacity_runtime.h"
@@ -50,7 +53,8 @@ static QByteArray readFile(const QString &path) {
         throw Error("Incomplete file read: " + path);
     return result;
 }
-Compiler::Compiler(QString toolsRoot) : root_(QDir(std::move(toolsRoot)).absolutePath()) {}
+Compiler::Compiler(QString toolsRoot, std::function<void(const QString &, int, int)> activity)
+    : root_(QDir(std::move(toolsRoot)).absolutePath()), activity_(std::move(activity)) {}
 void Compiler::authenticate() const {
     auto pins = QJsonDocument::fromJson(readFile(":/rebuild/toolchain.json"))
                     .object()
@@ -125,6 +129,10 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
                                      const QMap<QString, QByteArray> &headers,
                                      const QMap<QString, quint32> &symbols,
                                      bool inlineReadOnlyData, const QJsonObject &fixedLayout) const {
+    const auto step = [&](int completed) {
+        if (activity_) activity_("Compiling " + name, completed, fixedLayout.isEmpty() ? 5 : 4);
+    };
+    step(0);
     if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(name).hasMatch())
         throw Error("Invalid source unit name");
     if (section != ".text" && section != ".data")
@@ -159,14 +167,17 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
         {"-P", "-undef", "-nostdinc", "-D__mips=3", "-D__mips__", "-D_MIPSEB", "-D__MIPSEB__",
          "-I-", "-I", includes.absolutePath(), input, preprocessed},
         directory);
+    step(1);
     QStringList flags = {
         "-quiet",     "-O2", "-meb",     "-mips3",        "-mgp32",       "-mfp32",
         "-G",         "0",   "-fno-PIC", "-mno-abicalls", "-fno-builtin", "-funsigned-char",
         preprocessed, "-o",  assembly};
     run("cc1.exe", flags, directory);
+    step(2);
     run("mips-kmc-elf-as.exe",
         {"-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly},
         directory);
+    step(3);
     if (!fixedLayout.isEmpty()) {
         auto bytes = readFile(object);
         // The compiler emits 16-byte object alignment; original functions may
@@ -223,8 +234,10 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
                  data.sliced(extent) != QByteArray(data.size() - extent, 0)))
                 throw Error("Unexpected compiled C table extent");
         }
+        step(4);
         return code.first(size);
     }
+    step(4);
     QStringList extract = {"-O", "binary"};
     // GNU 2.6 predates --only-section. Remove its known ancillary sections,
     // then verify the complete extracted owner against the expected result.
@@ -234,6 +247,7 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
             extract << "--remove-section=" + QString::fromLatin1(other);
     extract << elf << binary;
     run("mips-kmc-elf-objcopy.exe", extract, directory);
+    step(5);
     return readFile(binary);
 }
 QByteArray Compiler::compileAcceptedOwner(quint32 romStart, const QString &directory,
@@ -409,6 +423,7 @@ QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &dire
                                    const QString &name, quint32 address,
                                    const QMap<QString, quint32> &symbols,
                                    bool preserveInstructionPositions) const {
+    if (activity_) activity_("Building " + name, 0, 0);
     QDir dir(directory);
     if (!dir.mkpath("."))
         throw Error("Cannot create assembly build directory");
@@ -648,12 +663,56 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         }
     }
 }
-BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory) {
+namespace {
+class BuildReporter {
+  public:
+    BuildReporter(const BuildProgressCallback &callback, const QStringList &report)
+        : callback_(callback), report_(report) {}
+    void stage(int index, const QString &title) {
+        activity({}); // Deliver the previous stage's remaining report first.
+        state_ = {index, title, {}, {}};
+        send({title});
+    }
+    void activity(const QString &text, int completed = 0, int total = 0) {
+        QStringList messages;
+        while (reported_ < report_.size()) messages << report_[reported_++];
+        if (!text.isEmpty()) {
+            if (state_.activity != text || (total > 0 && completed == 0)) messages << text;
+            state_.activity = text;
+            state_.completed = completed;
+            state_.total = total;
+        }
+        if (!messages.isEmpty() || !text.isEmpty()) send(messages);
+    }
+    void verified() {
+        activity({});
+        state_.activity = "ROM checks passed";
+        state_.completed = state_.total = 1;
+        send({state_.activity});
+    }
+  private:
+    void send(const QStringList &messages) {
+        if (!callback_) return;
+        state_.messages = messages;
+        callback_(state_);
+    }
+    const BuildProgressCallback &callback_;
+    const QStringList &report_;
+    qsizetype reported_ = 0;
+    BuildProgress state_;
+};
+}
+BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory,
+                    const BuildProgressCallback &progress) {
+    BuildResult result{input.rom().bytes(), {}};
+    BuildReporter reporter(progress, result.report);
+    reporter.stage(0, "Preparing project");
     auto p = input;
     p.validateItemReferences();
-    Compiler compiler(toolsRoot);
+    Compiler compiler(toolsRoot, [&](const QString &text, int completed, int total) {
+        reporter.activity(text, completed, total);
+    });
     compiler.authenticate();
-    BuildResult result{p.rom().bytes(), {}};
     result.image = removeWeaponTypes(p.rom(), compiler, directory);
     const auto priorAttacks = AttackPlacement::read(p.rom());
     if (priorAttacks) p.loadAttacks();
@@ -665,6 +724,19 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (!p.tools() && p.rom().revision() == 0 &&
         (!deploymentRules.builds().isEmpty() || ChaosCounter::load(p.rom()).enabled()))
         p.loadTools(); // Upgrade recognized C-backed adapters even if Tools was never opened.
+    bool migrateSceneArena = false;
+    if (p.tools() && p.tools()->highAttack().enabled() &&
+        p.rom().bytes().mid(LegacySceneArena::descriptor,4) == "OBCS") {
+        const auto scenes = SceneProgramResources::placement(p.rom());
+        if (!scenes || !scenes->legacyArenaRetired) {
+            // FF bytes can still belong to a reserved imported scene arena.
+            // Migrate its scene identities/events before High Attack occupies
+            // the free module slot; do not discard the old allocation's data.
+            LegacySceneArena::read(p.rom());
+            p.loadScenePrograms(); p.loadSceneEvents();
+            migrateSceneArena = true;
+        }
+    }
     if(deploymentRules.value("deploymentLimit")>20)
         throw Error("At most 20 player squads may be deployed. Set Maximum deployed squads to 20 or less in Tools before exporting; all 30 organized squads remain saved.");
     if(p.rom().revision()==0)p.loadAnimationOverrides();
@@ -757,12 +829,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                         "matching counts");
     }
     const bool relocateClasses = relocateItems || priorClassPlacement.has_value() ||
-                                 p.classNamesModified() || expandedClasses || customSquads ||
+                                 p.classNamesModified() || p.personalNamesModified() ||
+                                 (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
+    reporter.stage(1, "Building classes, items and encounters");
     for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
         if ((table == Table::Classes && relocateClasses) ||
             (table == Table::Items && relocateItems))
@@ -1047,6 +1121,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Compiled accepted class-family C at Army RAM 0x801CF2F0; verified its "
                          "complete 48-byte owner";
     }
+    reporter.stage(2, "Building scenarios and story");
     if ((p.scenarios() && p.scenarios()->modified()) || (p.training() && p.training()->modified())) {
         p.loadScenarios();
         auto plan = p.scenarios()->plan(p.classData());
@@ -1123,7 +1198,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=p.mapEdits()->rebuild(Rom::fromBytes(result.image));
         result.report << QString("Rebuilt %1 shared battlefield maps: geometry, terrain grids and site placements").arg(p.mapEdits()->changedMaps());
     }
-    if ((p.scenePrograms() && p.scenePrograms()->modified()) ||
+    if (migrateSceneArena || (p.scenePrograms() && p.scenePrograms()->modified()) ||
         (p.sceneEvents() && p.sceneEvents()->modified())) {
         p.scenePrograms()->validateReferences(Rom::fromBytes(result.image),
                                               p.dialogues() ? &*p.dialogues() : nullptr);
@@ -1142,6 +1217,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 compiler.compileData(it.value(), directory, QString("event_%1").arg(it.key()));
         result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored,
                                                       &eventPlan);
+        if (migrateSceneArena)
+            result.report << "Migrated imported scene ownership before installing High Attack; retained scene programs and event bindings";
         result.report
             << QString("Compiled and rebuilt %1 event script rows").arg(eventPlan.rows.size());
         result.report
@@ -1158,6 +1235,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             << QString("Compiled and rebuilt %1 dialogue archives through original resource links")
                    .arg(plan.size());
     }
+    reporter.stage(3, "Building artwork and animations");
     if (p.categoryIcons() && (p.categoryIcons()->modified() || familyTabs)) {
         auto pack = p.categoryIcons()->decodedPack(p.promotion() ? &*p.promotion() : nullptr);
         pack = compiler.compileData(pack, directory, "class_category_icons");
@@ -1262,6 +1340,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = p.combatArtwork()->rebuild(Rom::fromBytes(result.image), resources);
         result.report << QString("Compiled %1 combat artwork resources and preserved descriptor-local sharing").arg(resources.size());
     }
+    reporter.stage(4, "Building attacks and game rules");
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);
@@ -1330,14 +1409,58 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << QString("Compiled %1 attack records and independent names into permanent storage")
                              .arg(p.attacks()->entries().size() - 1);
     }
+    reporter.stage(5, "Finishing world map and game code");
+    if(p.nameTables() && p.nameTables()->modified()) {
+        reporter.activity("Building name tables");
+        result.image=p.nameTables()->rebuild(result.image,[&](const QByteArray &bytes,const QString &name) {
+            return compiler.compileData(bytes,directory,name);
+        });
+        result.report << "Compiled random-name lists and consumable names";
+    }
     if (p.rom().revision() == 0) {
         const auto coverage = applyAcceptedRom(result.image);
         result.report << QString("Applied the accepted C baseline: %1 code regions and %2 read-only regions; retained %3 modified regions")
                              .arg(coverage.codeRegions).arg(coverage.dataRegions).arg(coverage.retainedRegions);
     }
-    if (result.image != p.rom().bytes())
-        Rom::updateChecksum(result.image);
+    if (p.campaignMap()) {
+        result.image = p.campaignMap()->rebuild(result.image);
+        result.image = rebuildCampaignRuntime(p,result.image,compiler,directory);
+    }
+    if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
+        result.image=writeDeletedContent(result.image,p.deletedContent());
+    reporter.stage(6, "Verifying ROM");
+    reporter.activity("Updating checksum and reopening the rebuilt ROM");
+    Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (!p.rom().revision()) {
+        // Recheck even tools the user never opened: another feature must not
+        // silently disable an existing setting or damage an original owner.
+        const auto intended = p.tools() ? *p.tools() : ToolSettings::load(p.rom());
+        reopened.loadTools();
+        intended.validateExport(*reopened.tools());
+    }
+    if(p.nameTables()) {
+        reopened.loadNameTables();
+        for(int pool=0;pool<3;++pool) {
+            if(reopened.nameTables()->randomCount(pool)!=p.nameTables()->randomCount(pool))throw Error("Exported random-name count differs from the project");
+            for(int id=0;id<p.nameTables()->randomCount(pool);++id)
+                if(reopened.nameTables()->randomName(pool,id)!=p.nameTables()->randomName(pool,id))throw Error("Exported random name differs from the project");
+        }
+        for(int id=1;id<45;++id)
+            if(reopened.record(Table::Consumables,id).name!=p.record(Table::Consumables,id).name)throw Error("Exported consumable name differs from the project");
+    }
+    if (reopened.deletedContent()!=p.deletedContent())
+        throw Error("Exported deleted entries differ from the project");
+    if (p.campaignMap()) {
+        reopened.loadCampaignMap();
+        for(int id=1;id<=CampaignMap::nodeCount;++id)
+            if(reopened.campaignMap()->position(id)!=p.campaignMap()->position(id) ||
+               reopened.campaignMap()->name(id)!=p.campaignMap()->name(id)) throw Error("Exported world-map node differs from the project");
+        for(int id=1;id<=p.campaignMap()->totalRoads();++id)
+            if(reopened.campaignMap()->road(id)!=p.campaignMap()->road(id) ||
+               reopened.campaignMap()->roadDots(id)!=p.campaignMap()->roadDots(id))
+                throw Error("Exported world-map road differs from the project");
+    }
     if (relocateAttacks && (!reopened.attacks() || reopened.attacks()->json() != p.attacks()->json()))
         throw Error("Exported attacks differ from the project");
     if (reopened.weaponTypes().names() != p.weaponTypes().names())
@@ -1389,6 +1512,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                             : reopened.itemNameBytes(row) != p.itemNameBytes(row)))
                     : reopened.record(table, row).bytes != p.record(table, row).bytes)
                 throw Error("Export reopen differs from the project");
+    if (relocateClasses && reopened.personalNames().json() != p.personalNames().json())
+        throw Error("Reopened personal-name assignments differ from the project");
     if (avatarEdits) {
         const auto actual = AvatarLibrary::load(reopened.rom());
         const auto actualClasses = reopened.classData(), intended = p.classData();
@@ -1411,14 +1536,20 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     result.report << "Reopened every class, equipment and consumable record; CIC-6102 checksum "
                      "updated when required";
+    reporter.verified();
     return result;
 }
-void exportRom(const Project &p, const BuildResult &result, const QString &path) {
+void exportRom(const Project &p, const BuildResult &result, const QString &path,
+               const BuildProgressCallback &progress) {
+    if (progress) progress({7, "Saving ROM", "Writing " + QFileInfo(path).fileName(),
+                            {"Saving " + path}});
     auto source = QFileInfo(p.rom().sourcePath()).canonicalFilePath();
     auto output = QFileInfo(path).canonicalFilePath();
     if (!source.isEmpty() && (output == source || QFileInfo(path).absoluteFilePath().compare(
                                                       source, Qt::CaseInsensitive) == 0))
         throw Error("Choose an output path different from the source ROM");
     atomicWrite(path, p.rom().serialize(result.image));
+    if (progress) progress({BuildProgress::stageCount, "ROM exported", "Saved " + path,
+                            {"ROM saved successfully"}, 1, 1});
 }
 } // namespace lordly

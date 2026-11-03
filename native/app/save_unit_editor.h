@@ -12,9 +12,13 @@ namespace lordly {
 class FormationBoard;
 class SaveEditor;
 class SaveArmyDrag;
+class SaveCharacterCard;
 class SaveUnitEditor final : public QWidget {
+    Q_OBJECT
   public:
     explicit SaveUnitEditor(SaveEditor *editor);
+    void selectUnit(int index);
+    void selectCharacter(int id);
 
   protected:
     void showEvent(QShowEvent *) override;
@@ -24,8 +28,10 @@ class SaveUnitEditor final : public QWidget {
     void refresh();
     void showUnit();
     void drawFormation();
-    void refreshSwapTargets();
-    void refreshCreation(bool pending);
+    void refreshControls();
+    void refreshCreation();
+    void commitFormation();
+    void moveCell(int from, int to);
     QString memberName(int id) const;
     QImage memberSprite(int id) const;
     void selectLeader(int id);
@@ -33,28 +39,24 @@ class SaveUnitEditor final : public QWidget {
     bool dropMember(const SaveArmyDrag *, QObject *target, QPoint position, bool apply);
     FormationBoard *board_;
     SaveEditor *editor_;
-    QListWidget *units_, *members_, *reserves_;
+    QListWidget *units_, *legions_, *members_, *reserves_;
+    SaveCharacterCard *card_;
+    bool formingSquad_ = false;
     QTabWidget *detailTabs_;
     QLabel *armyCounts_, *funds_, *creationNote_;
     QPushButton *addCharacter_, *recruitSquad_;
     QVector<QPushButton *> grid_;
     QSpinBox *unity_;
-    QComboBox *tactic_, *newLeader_, *newCell_;
+    QComboBox *tactic_;
     QPushButton *create_, *disband_, *disbandLegion_, *detachLegion_, *joinLegion_, *createLegion_;
     QComboBox *legionTarget_;
     QLabel *legion_;
     int shownLegion_ = -1;
-    QComboBox *targetUnit_, *targetMember_;
-    QComboBox *reserveMember_, *reserveCell_;
-    QPushButton *toReserve_, *fromReserve_, *addSoldier_;
-    QLabel *soldierPool_;
-    QPushButton *swap_, *leader_;
-    QPushButton *apply_, *discard_;
-    QLabel *draftNote_;
+    QPushButton *leader_;
     int shownUnit_ = -1;
     QLabel *note_, *capacity_;
     QVector<QComboBox *> supplies_;
-    void refreshSupplies(bool pending);
+    void refreshSupplies();
     QVector<int> cells_, ids_;
     bool loading_ = false;
 };

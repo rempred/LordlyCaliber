@@ -3,6 +3,7 @@
 #include "engine/effect_resources.h"
 #include "engine/sprite_video.h"
 #include <QFutureWatcher>
+#include <QHash>
 #include <QPainter>
 #include <QProgressDialog>
 #include <QTimer>
@@ -137,12 +138,22 @@ EffectClip renderEffectClip(const Rom &rom, const AttackVisual &visual, int inhe
         EffectPlayer player(rom);
         player.startVisual(visual, inherited, scene);
         quint64 pixels = 0;
+        QHash<QByteArray, QImage> repeatedFrames;
         while (player.advance()) {
             if (cancel->load()) return {};
             auto image = player.draw({320, 240}, .75).image;
             if (!clip.images.isEmpty() && clip.images.last() == image) ++clip.holds.last();
             else {
-                pixels += 320 * 240;
+                // Repeated strikes often revisit identical frames. Share their
+                // image storage without changing timing or export order.
+                const auto key = scene.strikeCount ? sha256(QByteArray::fromRawData(
+                    reinterpret_cast<const char *>(image.constBits()), image.sizeInBytes())) : QByteArray{};
+                const auto found = repeatedFrames.constFind(key);
+                if (scene.strikeCount && found != repeatedFrames.cend() && *found == image) image = *found;
+                else {
+                    pixels += 320 * 240;
+                    if (scene.strikeCount) repeatedFrames.insert(key, image);
+                }
                 if (pixels > 64 * 1024 * 1024) throw Error("Effect preview exceeds its image budget");
                 clip.images << image;
                 clip.holds << 1;
