@@ -69,7 +69,8 @@ QStringList Project::deletionUses(const QString &kind,int id) {
     if(kind=="classes" || kind=="items" || kind=="shops") {
         for(const auto &ref:projectReferences(*this)) {
             if(ref.kind!=kind || ref.id!=id || contentDeleted(ref.location.editor,ref.location.id))continue;
-            if(kind=="classes" && ref.location.editor=="classes" && ref.location.id==id)continue;
+            if(kind=="classes" && ref.location.editor=="classes" && ref.location.id==id &&
+               ref.location.key!="section:Combat")continue;
             uses<<ref.description;
         }
         // Authored cutscene actors can refer to custom identities directly.

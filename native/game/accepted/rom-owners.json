@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "04E67D51492FC6021F3CE743FC76EF730C4148E50A891517B23C221DC4F54ADE",
-  "revision": "8038c3493ff6dd03f556e4bc3afac98b3cc3206e",
+  "fingerprint": "51174C7C86B20D82B20106F28DC0D79E6DDD0837FD4C86AEC46D34CB8303F162",
+  "revision": "0b972a783252620b587cc623f16551444dd9f7d1",
   "counts": {
-    "owners": 1604,
-    "functions": 1650,
-    "producerSources": 1473,
-    "sourceAndHeaderFiles": 1513
+    "owners": 1611,
+    "functions": 1657,
+    "producerSources": 1480,
+    "sourceAndHeaderFiles": 1521
   },
   "sources": [
     {
@@ -8851,6 +8851,113 @@
       ]
     },
     {
+      "name": "func_00040FF4",
+      "source": "game/accepted/library/src/lib/func_00040FF4.c",
+      "sourcePath": "src/lib/func_00040FF4.c",
+      "sourceSha256": "06D7A3001EE5DD37A4C513404A89EAD053724E29B64C8582554F87A8D902D2A6",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2148970740,
+      "bindings": {
+        "D_801953F2": 2149143538,
+        "D_8019532C": 2149143340,
+        "D_80190F82": 2149126018,
+        "D_80190EBC": 2149125820
+      },
+      "sections": {
+        ".text": 2148970740
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 266228,
+          "address": 2148970740,
+          "size": 12,
+          "sha256": "F3DC2A53525C8E8C658A834AEC961AFB1850968895331D540E89DC275AD1593E",
+          "code": 1
+        },
+        {
+          "section": ".text",
+          "offset": 12,
+          "start": 266240,
+          "address": 2148970752,
+          "size": 152,
+          "sha256": "E24F43AADEDEBE067243B1CAC49DEBE2CC1AE3160D19F92860768CFB38C375DE",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00040FF4"
+      ]
+    },
+    {
+      "name": "func_00041098",
+      "source": "game/accepted/library/src/lib/func_00041098.c",
+      "sourcePath": "src/lib/func_00041098.c",
+      "sourceSha256": "A95DCDE9AC0A9723BFCEB34A4A1E4AB7E9E2028EA3152636D50F09E67DE8AB70",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2148970904,
+      "bindings": {
+        "D_80193BC0": 2149137344,
+        "D_80190EBC": 2149125820,
+        "D_80190F82": 2149126018,
+        "D_80191010": 2149126160,
+        "rand": 2148124620,
+        "func_00044aa4": 2148985764
+      },
+      "sections": {
+        ".text": 2148970904,
+        ".rodata": 2149121632
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 266392,
+          "address": 2148970904,
+          "size": 1380,
+          "sha256": "1A04986B509EA8DB35549F889D240AD75278F035CB30938EA4C199FA156FDD18",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 417120,
+          "address": 2149121632,
+          "size": 76,
+          "sha256": "06532D7BCA4FD20FF9409CCEEFAF0B518250005DB000039CFDF66FFB375D1D04",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_00041098"
+      ]
+    },
+    {
       "name": "func_000415fc",
       "source": "game/accepted/library/src/lib/func_000415fc.c",
       "sourcePath": "src/lib/func_000415fc.c",
@@ -15268,6 +15375,60 @@
       ]
     },
     {
+      "name": "func_000c4650",
+      "source": "game/accepted/library/src/lib/func_000c4650.c",
+      "sourcePath": "src/lib/func_000c4650.c",
+      "sourceSha256": "AAED38651AC8E3175B1C1D7C729853CC0D035BF14682D6E16E4BC62A8F23A8D9",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2149415920,
+      "bindings": {
+        "func_00045440": 2148988224,
+        "D_80190EBC": 2149125820,
+        "D_80196AF8": 2149149432,
+        "D_80193BC0": 2149137344,
+        "D_80191010": 2149126160
+      },
+      "sections": {
+        ".text": 2149415920,
+        ".rodata": 2149514240
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 804432,
+          "address": 2149415920,
+          "size": 1004,
+          "sha256": "AA294CAE373A1C436488B1839F9A9EE46184F8CDA662CABC8D0EFE76E05B35F9",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 902752,
+          "address": 2149514240,
+          "size": 40,
+          "sha256": "162A20FCC6664558D072AA6DFB5228C89A4B0558A5DDB0B8F5BA9ACD0C14051F",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_000c4650"
+      ]
+    },
+    {
       "name": "func_000c4a40",
       "source": "game/accepted/library/src/lib/func_000c4a40.c",
       "sourcePath": "src/lib/func_000c4a40.c",
@@ -15364,6 +15525,95 @@
       ],
       "targets": [
         "func_000c91a0"
+      ]
+    },
+    {
+      "name": "func_000c9850",
+      "source": "game/accepted/library/src/lib/func_000c9850.c",
+      "sourcePath": "src/lib/func_000c9850.c",
+      "sourceSha256": "472FB0C67F1F6644688E4C2CED214BA4EFA3C41C5EEEF88A86F4C5E31D84941A",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2149436912,
+      "bindings": {
+        "D_80196AF8": 2149149432,
+        "func_000b4a70": 2149351440,
+        "func_00001330": 2147946288,
+        "func_0002e138": 2148130104,
+        "func_000bc464": 2149382660,
+        "D_80193AC0": 2149137088,
+        "func_000b4b08": 2149351592,
+        "func_000c8d28": 2149434056,
+        "func_00045460": 2148988256,
+        "func_000c54c0": 2149419616,
+        "func_000b6b70": 2149359888,
+        "func_000c4650": 2149415920,
+        "func_00045440": 2148988224,
+        "func_000b1f4c": 2149340396,
+        "func_000BA2C0": 2149374048,
+        "func_000b8a94": 2149367860,
+        "func_000b8d70": 2149368592,
+        "func_000ae30c": 2149324972,
+        "func_000c8f04": 2149434532,
+        "D_800E8100": 2148434176,
+        "D_801939D4": 2149136852,
+        "func_000c4a40": 2149416928,
+        "D_801939D5": 2149136853,
+        "func_000c6fe8": 2149426568,
+        "func_000b8aec": 2149367948,
+        "func_000bc828": 2149383624,
+        "func_000bc7e4": 2149383556,
+        "func_000b9234": 2149369812,
+        "func_000b6ba8": 2149359944,
+        "func_000b1f00": 2149340320,
+        "func_00041098": 2148970904,
+        "D_8019A41C": 2149164060,
+        "D_8019A384": 2149163908,
+        "D_8019A3DC": 2149163996,
+        "func_000b8b60": 2149368064,
+        "rand": 2148124620,
+        "func_00066e10": 2149153648,
+        "func_000b8e70": 2149368848,
+        "func_000016C4": 2147947204,
+        "func_000b4bb8": 2149351768
+      },
+      "sections": {
+        ".text": 2149436912,
+        ".rodata": 2149515144
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 825424,
+          "address": 2149436912,
+          "size": 3992,
+          "sha256": "83D4FBB1EE7EF0D53F51163A69C4D152B81302D959FD7C4A776B2C3C2B7BA1DD",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 903656,
+          "address": 2149515144,
+          "size": 400,
+          "sha256": "7963B26012BA49FA412F50D25560638F450CD50594C9071FAE278F5A4DD24E01",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_000c9850"
       ]
     },
     {
@@ -22680,6 +22930,261 @@
       ],
       "targets": [
         "func_001A404C"
+      ]
+    },
+    {
+      "name": "func_001A9290",
+      "source": "game/accepted/library/src/lib/func_001A9290.c",
+      "sourcePath": "src/lib/func_001A9290.c",
+      "sourceSha256": "644F5FF93CBF6340D0254959FE4C15EF3019C97ADBBD4D857C17A52796F650DB",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2149666688,
+      "bindings": {
+        "D_8021E194": 2149704084,
+        "func_8021741C": 2149676060,
+        "D_8021E3C3": 2149704643,
+        "D_8021E3B4": 2149704628,
+        "D_8021E3A0": 2149704608,
+        "D_8021E3AA": 2149704618,
+        "D_8021E3AB": 2149704619,
+        "func_8016B738": 2148972344,
+        "D_80193AC0": 2149137088,
+        "D_8021E3C0": 2149704640,
+        "D_8021E368": 2149704552,
+        "func_8020CDA0": 2149633440,
+        "D_80217648": 2149676616,
+        "func_8017BFB0": 2149040048,
+        "D_8021E388": 2149704584,
+        "func_801FE190": 2149573008,
+        "D_801971F2": 2149151218,
+        "D_80218400": 2149680128,
+        "D_802187A0": 2149681056,
+        "func_80217488": 2149676168,
+        "func_802174CC": 2149676236,
+        "D_8021E369": 2149704553,
+        "D_80214F50": 2149666640,
+        "D_8021E3BF": 2149704639,
+        "D_8021E3BC": 2149704636,
+        "D_80214F4C": 2149666636,
+        "D_8021E3BD": 2149704637,
+        "D_800C4BDC": 2148289500,
+        "D_801F0CA0": 2149518496,
+        "D_80193BC0": 2149137344,
+        "D_8021E3C4": 2149704644,
+        "D_8021E3C8": 2149704648,
+        "func_00045440": 2148988224,
+        "D_8021E3BE": 2149704638,
+        "D_801F0CB0": 2149518512,
+        "func_801DA228": 2149425704,
+        "D_8018F481": 2149119105,
+        "func_001AD8CC": 2149684668,
+        "D_801ED5B0": 2149504432,
+        "D_801F0B94": 2149518228,
+        "D_801F0B98": 2149518232,
+        "D_801F3618": 2149529112,
+        "D_8021E360": 2149704544,
+        "func_8020DDD0": 2149637584,
+        "D_800C4C4C": 2148289612,
+        "func_800712C4": 2147947204,
+        "D_8021E198": 2149704088,
+        "D_80218888": 2149681288,
+        "D_8021E3B8": 2149704632,
+        "func_8017C384": 2149041028,
+        "D_8018F58C": 2149119372,
+        "sqrtf": 2148075488,
+        "D_8021E1F0": 2149704176,
+        "func_80092DB0": 2148085168,
+        "D_8021E1F8": 2149704184,
+        "func_800907F0": 2148075504,
+        "D_8021E200": 2149704192,
+        "func_801B8D44": 2149289284,
+        "D_801F3658": 2149529176,
+        "D_80190EBC": 2149125820,
+        "func_8021997C": 2149685628,
+        "func_8016F4E0": 2148988128,
+        "D_8021E36C": 2149704556,
+        "func_801E027C": 2149450364,
+        "D_8019EE40": 2149183040,
+        "func_00041098": 2148970904,
+        "D_8021E364": 2149704548,
+        "func_00040FF4": 2148970740,
+        "func_8021DC08": 2149702664,
+        "D_80190F82": 2149126018,
+        "func_801E00F0": 2149449968,
+        "func_80217458": 2149676120,
+        "D_80214F68": 2149666664,
+        "D_80214ED9": 2149666521,
+        "D_80214ECB": 2149666507,
+        "func_8009C7CC": 2148124620,
+        "func_801B2D2C": 2149264684,
+        "D_80214EC0": 2149666496,
+        "func_8021D97C": 2149702012
+      },
+      "sections": {
+        ".text": 2149666688
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 1741456,
+          "address": 2149666688,
+          "size": 9372,
+          "sha256": "F6ACD62419003CCFF0C29AB34B4F2AF968F41D070B4A926220EAE4CA9D404290",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_001A9290"
+      ]
+    },
+    {
+      "name": "func_001AD0E4",
+      "source": "game/accepted/library/src/lib/func_001AD0E4.c",
+      "sourcePath": "src/lib/func_001AD0E4.c",
+      "sourceSha256": "CBAD2EBE3057EA11DB133C8496C3DF5FD651432966F1D768BD23BB650165CF28",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2149682644,
+      "bindings": {
+        "D_801F3658": 2149529176,
+        "D_8021E3AA": 2149704618,
+        "D_801971F2": 2149151218,
+        "func_802027DC": 2149591004,
+        "D_80193BC0": 2149137344,
+        "func_00040FF4": 2148970740,
+        "D_8021DF80": 2149703552,
+        "func_802028A4": 2149591204,
+        "func_802012D8": 2149585624,
+        "D_80210258": 2149646936,
+        "func_80200DD0": 2149584336,
+        "D_80210298": 2149647000,
+        "func_802001A8": 2149581224,
+        "D_8021DF94": 2149703572,
+        "func_001AD8CC": 2149684668,
+        "D_8021DFA0": 2149703584,
+        "D_8021DFBC": 2149703612,
+        "D_80210DA8": 2149649832,
+        "D_800E9BA0": 2148440992,
+        "D_80213648": 2149660232,
+        "func_80200F70": 2149584752,
+        "func_00153898": 2149590824,
+        "func_80201A44": 2149587524,
+        "D_8021DFCC": 2149703628,
+        "D_8021DFD8": 2149703640,
+        "D_8021DFE8": 2149703656,
+        "D_8021DFF0": 2149703664,
+        "D_8021DFF8": 2149703672,
+        "D_8021E000": 2149703680,
+        "D_8021E008": 2149703688,
+        "D_8021E010": 2149703696,
+        "D_8021E018": 2149703704,
+        "D_8021E024": 2149703716,
+        "D_8021E030": 2149703728,
+        "func_80179034": 2149027892
+      },
+      "sections": {
+        ".text": 2149682644,
+        ".rodata": 2149704288
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 1757412,
+          "address": 2149682644,
+          "size": 2024,
+          "sha256": "72304DD2E9D392491483C5A4F774690EB70A468D75CAB71ED20ECDE530E13FAC",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 1779056,
+          "address": 2149704288,
+          "size": 112,
+          "sha256": "48C80A7BAB33DC237EB4A2B3069DA3C191F0045756951F795E10C7B4F2B356B4",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_001AD0E4"
+      ]
+    },
+    {
+      "name": "func_001AD8CC",
+      "source": "game/accepted/library/src/lib/func_001AD8CC.c",
+      "sourcePath": "src/lib/func_001AD8CC.c",
+      "sourceSha256": "30E8ED466A1B511E7978D58CFA99B07D96F5F399BB846F893A9B80745950EDF6",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/scenario_item_views.h",
+          "file": "game/accepted/library/include/game/scenario_item_views.h",
+          "sha256": "1450076A16F8C2B6EEC9689F0F4EEA7CE748847C6A4EFFAF9F70278BC0192F27"
+        }
+      ],
+      "address": 2149684668,
+      "bindings": {
+        "func_00040FF4": 2148970740,
+        "D_80190F82": 2149126018,
+        "D_801971F2": 2149151218,
+        "func_00153898": 2149590824
+      },
+      "sections": {
+        ".text": 2149684668,
+        ".rodata": 2149704400
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 1759436,
+          "address": 2149684668,
+          "size": 704,
+          "sha256": "69763FA9932B70A278FFEF254FBA5719267B34FC5EA5F3810C4371E23056A42F",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 1779168,
+          "address": 2149704400,
+          "size": 76,
+          "sha256": "D26E4684BB71112C0E98091CF7CE1047787824B09BDA6221758BA91CF43C3987",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_001AD8CC"
       ]
     },
     {

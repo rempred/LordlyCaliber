@@ -3,6 +3,8 @@
 #include "engine/capacity_placement.h"
 #include "engine/class_runtime_inventory.h"
 #include "engine/class_text.h"
+#include "engine/location_text.h"
+#include "engine/campaign_runtime.h"
 #include "engine/consumable_effects.h"
 #include "engine/custom_squads.h"
 #include "engine/eset.h"
@@ -178,6 +180,96 @@ class EngineTests : public QObject {
             for(int id=0;id<256;++id)QCOMPARE(reducedRead.randomName(0,id),names.randomName(0,id));
         } catch(const std::exception &e){QFAIL(e.what());}
     }
+    void campaignArtwork() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();auto map=*p.campaignMap();
+            QTemporaryDir build;QCOMPARE(rebuild(p,tools,build.path()).image,p.rom().bytes());
+            const auto originalBackground=map.backgroundBytes(),originalFlag=map.iconFrameBytes(0,1,0);
+            QImage image(512,320,QImage::Format_RGBA8888);
+            // Incompressible indexed input exercises relocation beyond the retail resource.
+            quint32 rng=0x12345678;for(int y=0;y<320;++y)for(int x=0;x<512;++x){rng=rng*1664525+1013904223;const int n=rng>>24;image.setPixelColor(x,y,QColor((n&7)*255/7,((n>>3)&7)*255/7,(n>>6)*255/3));}
+            const auto background=CampaignMap::prepareArtwork(image,256,true);map.setBackground(background);
+            QVERIFY(background!=originalBackground);
+            QVERIFY_THROWS_EXCEPTION(Error,map.setBackground(QByteArray(4,0)));
+            QImage icon(16,16,QImage::Format_RGBA8888);icon.fill(QColor(255,0,0));
+            const auto red=CampaignMap::prepareArtwork(icon,16,false);
+            const int custom=map.createIcon("Red keep",1);map.setIconFrame(custom,1,0,red);map.setIconFrame(custom,2,0,red);
+            map.setIcon(6,custom);QCOMPARE(map.iconFrameBytes(0,1,0),originalFlag);
+            QVERIFY_THROWS_EXCEPTION(Error,map.removeIcon(custom));
+            const int deleted=map.createIcon("Discard",0);map.removeIcon(deleted);QVERIFY(!map.iconIds().contains(deleted));
+            const int last=map.createIcon("Last animated flag",0);map.setIcon(40,last);
+            // Deleted IDs are reusable; assignments are independent of the old five-byte bitset.
+            QCOMPARE(last,deleted);map.setIconFrame(last,1,1,red);
+            while(map.iconIds().size()<CampaignMap::iconCapacity)map.createIcon(QString("Icon %1").arg(map.iconIds().size()),0);
+            map.renameIcon(63,"LCCAMP01");map.setIcon(40,63);map.setIconFrame(63,1,1,red);
+            QVERIFY_THROWS_EXCEPTION(Error,map.createIcon("Overflow",0));
+            p.setCampaignMap(map.json());QTemporaryDir folder;p.saveFolder(folder.path());
+            auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(loaded.campaignMap()->json(),map.json());
+            auto result=rebuild(loaded,tools,build.path());
+            auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum.mid(16,8),result.image.mid(16,8));
+            const auto candidates=QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");QTemporaryDir output(candidates+"/campaign-art-XXXXXX");output.setAutoRemove(false);QVERIFY(output.isValid());
+            const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(loaded,result,dest);qInfo().noquote()<<"Map-art candidate:"<<dest;
+            auto reopened=Project::fromRom(Rom::open(dest));reopened.loadCampaignMap();
+            QCOMPARE(reopened.campaignMap()->backgroundBytes(),background);QCOMPARE(reopened.campaignMap()->iconCatalog(),map.iconCatalog());
+            QCOMPARE(reopened.campaignMap()->iconAssignments(),map.iconAssignments());QCOMPARE(reopened.campaignMap()->changedNodes(),0);
+            QCOMPARE(rebuild(reopened,tools,build.path()).image,result.image);
+            QProcess instructions;instructions.start("node",{QFINDTESTDATA("campaign-art-mips.cjs"),dest,path});
+            QVERIFY(instructions.waitForFinished(120000));const auto log=instructions.readAllStandardOutput()+instructions.readAllStandardError();
+            QVERIFY2(instructions.exitStatus()==QProcess::NormalExit && instructions.exitCode()==0,log.constData());qInfo().noquote()<<log;
+            auto changed=*reopened.campaignMap();changed.setName(6,"Reopened map location");reopened.setCampaignMap(changed.json());
+            auto again=rebuild(reopened,tools,build.path());auto retained=Project::fromRom(Rom::fromBytes(again.image));retained.loadCampaignMap();
+            QCOMPARE(retained.campaignMap()->backgroundBytes(),background);QCOMPARE(retained.campaignMap()->iconCatalog(),map.iconCatalog());
+            QCOMPARE(retained.campaignMap()->name(6),QString("Reopened map location"));
+            auto smaller=*retained.campaignMap();image.fill(Qt::blue);smaller.setBackground(CampaignMap::prepareArtwork(image,256,true));retained.setCampaignMap(smaller.json());
+            const auto replaced=rebuild(retained,tools,build.path());
+            QCOMPARE(CampaignPlacement::read(replaced.image)->backgroundOffset,CampaignPlacement::read(again.image)->backgroundOffset);
+            QCOMPARE(CampaignPlacement::read(replaced.image)->backgroundAllocation,CampaignPlacement::read(again.image)->backgroundAllocation);
+            auto broken=again.image;const auto placement=CampaignPlacement::read(broken);QVERIFY(placement);broken[placement->backgroundOffset+20]^=1;
+            QVERIFY_THROWS_EXCEPTION(Error,CampaignPlacement::read(broken));
+            QCOMPARE(Rom::open(path).bytes(),p.rom().bytes());
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void campaignStoryRoads() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();auto map=*p.campaignMap();
+            const auto replaced=map.road(30),removed=map.road(17);map.removeRoad(30);map.removeRoad(17);
+            QCOMPARE(map.addRoad(replaced.first,replaced.second),41);
+            for(int a=1;a<=40 && map.totalRoads()<96;++a)for(int b=a+1;b<=40 && map.totalRoads()<96;++b) {
+                if(!map.position(a).x()||!map.position(b).x()||qMakePair(a,b)==removed||qMakePair(b,a)==removed)continue;
+                bool exists=false;for(int id=1;id<=map.totalRoads();++id){const auto e=map.road(id);exists|=e==qMakePair(a,b)||e==qMakePair(b,a);}
+                if(!exists)map.addRoad(a,b);
+            }
+            QCOMPARE(map.totalRoads(),96);p.setCampaignMap(map.json());
+            QTemporaryDir saved;p.saveFolder(saved.path());auto restored=Project::fromRom(Rom::open(path));restored.applyManifest(Project::readProject(saved.path()));
+            QTemporaryDir build;const auto result=rebuild(restored,tools,build.path());
+            const auto placement=CampaignPlacement::read(result.image);QVERIFY(placement);QCOMPARE(placement->version,6);QCOMPARE(int(quint8(placement->roadFlags[40])),30);
+            auto reopened=Project::fromRom(Rom::fromBytes(result.image));reopened.loadCampaignMap();QCOMPARE(reopened.campaignMap()->roadBytes(),map.roadBytes());
+            QCOMPARE(rebuild(reopened,tools,build.path()).image,result.image);
+            auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,result.image);
+            QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/campaign-story-XXXXXX");QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(restored,result,dest);qInfo().noquote()<<"Story-road candidate:"<<dest;
+            QProcess instructions;instructions.start("node",{QFINDTESTDATA("campaign-story-roads-mips.cjs"),dest,path});
+            QVERIFY(instructions.waitForFinished(120000));const auto log=instructions.readAllStandardOutput()+instructions.readAllStandardError();
+            QVERIFY2(instructions.exitStatus()==QProcess::NormalExit && instructions.exitCode()==0,log.constData());qInfo().noquote()<<log;
+            // Older campaign formats upgrade on export, even without opening
+            // World Map or adding another edit; unknown table/artwork data stays.
+            auto older=result.image;put32(older,placement->descriptor+8,4);
+            older.replace(0x48a68,0x88,p.rom().bytes().mid(0x48a68,0x88));
+            auto legacy=Project::fromRom(Rom::fromBytes(older));QVERIFY(!legacy.campaignMap());
+            const auto upgraded=rebuild(legacy,tools,build.path());QCOMPARE(CampaignPlacement::read(upgraded.image)->version,6);
+            QCOMPARE(CampaignPlacement::read(upgraded.image)->roads,placement->roads);
+            QCOMPARE(CampaignPlacement::read(upgraded.image)->displayDots,placement->displayDots);
+            // A foreign resident patch is not silently overwritten.
+            auto foreign=result.image;foreign[0x48a68]^=1;auto conflict=Project::fromRom(Rom::fromBytes(foreign));conflict.loadCampaignMap();
+            auto moved=*conflict.campaignMap();moved.setName(6,"Check owner");conflict.setCampaignMap(moved.json());
+            QVERIFY_THROWS_EXCEPTION(Error,rebuild(conflict,tools,build.path()));
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void campaignRoadDotsAndRemoval() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
@@ -194,15 +286,30 @@ class EngineTests : public QObject {
             map.setRoadDots(road,straight);const auto spaced=map.roadDots(road);QVERIFY(spaced.size()>7);
             const auto pull=map.pulledRoad(road,spaced.size()/2,{0,80});
             int most=0,least=80;for(const auto &point:pull){most=qMax(most,point.y()-160);least=qMin(least,point.y()-160);}
-            QCOMPARE(most,80);QVERIFY(least<most);QVERIFY(least>0);
+            QCOMPARE(most,80);QCOMPARE(least,0);
+            const auto grabbed=spaced[spaced.size()/2];
+            QVERIFY(pull.contains(grabbed+QPoint(0,80)));
+            // Fixed local boundaries leave the distant straight road in place.
+            for(const auto &point:pull)if(qAbs(point.x()-grabbed.x())>34)QCOMPARE(point.y(),160);
             QCOMPARE(map.position(ends.first),QPoint(40,160));QCOMPARE(map.position(ends.second),QPoint(470,160));
             map.setRoadDots(road,pull);const auto longer=map.roadDots(road);QVERIFY(longer.size()>spaced.size());
             const auto otherName=map.name(ends.second);map.setName(ends.first,"Independent coast");QCOMPARE(map.name(ends.second),otherName);
             for(int n=1;n<longer.size();++n){const auto gap=QLineF(longer[n-1],longer[n]).length();QVERIFY(gap>=8 && gap<=13);}
+            QVector<QPoint> twoSections;
+            for(int n=1;n<=14;++n)twoSections<<QPoint(40+qRound(430.0*n/15),n%2?150:170);
+            map.setRoadDots(road,twoSections);QCOMPARE(map.roadWaypoints(road).size(),14);
+            const auto fullDots=map.roadDots(road);const auto fullShape=map.json();bool capacityReached=false;
+            for(int n=0;n<fullDots.size() && !capacityReached;++n) {
+                try {map.pulledRoad(road,n,{0,35});}
+                catch(const Error &error){QVERIFY(QString::fromUtf8(error.what()).contains("14 bends"));capacityReached=true;}
+            }
+            QVERIFY(capacityReached);QCOMPARE(map.json(),fullShape);
+            auto tooMany=twoSections;tooMany<<QPoint(465,160);
+            QVERIFY_THROWS_EXCEPTION(Error,map.setRoadDots(road,tooMany));QCOMPARE(map.json(),fullShape);
             p.setCampaignMap(map.json());QTemporaryDir folder;p.saveFolder(folder.path());
             auto loaded=Project::fromRom(Rom::open(path));loaded.applyManifest(Project::readProject(folder.path()));loaded.loadCampaignMap();
             QCOMPARE(loaded.campaignMap()->dotBytes(),map.dotBytes());QCOMPARE(loaded.campaignMap()->roadBytes(),map.roadBytes());
-            QCOMPARE(loaded.campaignMap()->roadDots(road),longer);
+            QCOMPARE(loaded.campaignMap()->roadDots(road),fullDots);
             QTemporaryDir build;const auto result=rebuild(loaded,tools,build.path());
             const auto candidates=QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");QTemporaryDir output(candidates+"/road-dots-XXXXXX");output.setAutoRemove(false);QVERIFY(output.isValid());
             const auto dest=output.filePath(QFileInfo(path).fileName());exportRom(loaded,result,dest);qInfo().noquote()<<"Road-dot candidate:"<<dest;
@@ -212,6 +319,9 @@ class EngineTests : public QObject {
             QCOMPARE(reopened.campaignMap()->name(ends.first),QString("Independent coast"));
             for(int id=1;id<=40;++id)if(id!=ends.first)QCOMPARE(u32(result.image,0x864a0+(id-1)*8+4),u32(p.rom().bytes(),0x864a0+(id-1)*8+4));
             QCOMPARE(rebuild(reopened,tools,build.path()).image,result.image);
+            QProcess instructions;instructions.start("node",{QFINDTESTDATA("campaign-road-edit-mips.cjs"),dest,path});
+            QVERIFY(instructions.waitForFinished(120000));const auto log=instructions.readAllStandardOutput()+instructions.readAllStandardError();
+            QVERIFY2(instructions.exitStatus()==QProcess::NormalExit && instructions.exitCode()==0,log.constData());
         } catch(const std::exception &e){QFAIL(e.what());}
     }
     void customContentLifecycle() {
@@ -336,7 +446,12 @@ class EngineTests : public QObject {
             QCOMPARE(sha256(rom.bytes()), QByteArray("571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a"));
             auto image = rom.bytes();
             const auto coverage = applyAcceptedRom(image);
-            QVERIFY(coverage.codeRegions >= 1604);
+            QVERIFY(coverage.codeRegions >= 1611);
+            QFile compiledBaseline(":/generated/accepted-rom.bin"); QVERIFY(compiledBaseline.open(QIODevice::ReadOnly));
+            const auto compiled = compiledBaseline.readAll();
+            QSet<quint32> additions{0x40ff4,0x41098,0xc4650,0xc9850,0x1a9290,0x1ad0e4,0x1ad8cc};
+            for(qsizetype at=44;at<compiled.size();){const auto start=u32(compiled,at),size=u32(compiled,at+8),code=u32(compiled,at+12);if(code)additions.remove(start);at+=16+size;}
+            QVERIFY(additions.isEmpty()); // New sources must be in the executable's active ROM baseline.
             QVERIFY(coverage.dataRegions > 0);
             QCOMPARE(coverage.retainedRegions, 0);
             QVERIFY(image == rom.bytes());
@@ -434,6 +549,81 @@ class EngineTests : public QObject {
         auto reopened=Persuasion::load(Rom::fromBytes(stored));
         QVERIFY2(reopened.unavailable().isEmpty(),qPrintable(reopened.unavailable())); QCOMPARE(reopened.json(),legacy);
     }
+    void combatAffinityGroups() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto model=LeaderAffinity::load(rom);
+        const auto retail=model.json();
+        const QJsonObject legacy{{"version",1},{"rows",retail["rows"]}};
+        model.apply(legacy);QCOMPARE(model.json(),retail);QVERIFY(!model.modified());
+        model.addGroup("Guardians",{5,0x4e,165},256);const int group=4;
+        QCOMPARE(model.groupFor(0x4e),group);QVERIFY(!model.groups()[1].members.contains(0x4e));
+        QCOMPARE(model.strength(0x19,1),15);QCOMPARE(model.strength(0x19,group),0);
+        model.set(165,group,24);model.set(255,group,-100);
+        QCOMPARE(model.leaders(group),QList<int>({165,255}));
+        model.editGroup(group,"Protectors",{5,165},256);QCOMPARE(model.groupFor(0x4e),-1);
+        const auto edited=model.json();auto read=LeaderAffinity::load(rom);read.apply(edited);QCOMPARE(read.json(),edited);
+        QVERIFY_THROWS_EXCEPTION(Error,model.editGroup(group,"Beasts",{5},256));
+        QVERIFY_THROWS_EXCEPTION(Error,model.editGroup(group,"Invalid",{5,5},256));
+        QVERIFY_THROWS_EXCEPTION(Error,model.editGroup(group,"Invalid",{256},256));
+        QVERIFY_THROWS_EXCEPTION(Error,model.validateClasses(165));QCOMPARE(model.json(),edited);
+        model.removeGroup(1);QCOMPARE(model.groupFor(165),3);QCOMPARE(model.strength(255,3),-100);
+        model.removeGroup(3);QCOMPARE(model.groupFor(165),-1);QVERIFY(!model.json()["rows"].toObject().contains("165"));
+        model.apply(legacy);QVERIFY(!model.modified());
+
+        auto project=Project::fromRom(rom);project.loadTools();
+        QCOMPARE(project.createClass("Affinity member"),165);QCOMPARE(project.createClass("Affinity leader"),166);
+        model.addGroup("Guardians",{165},167);model.set(166,4,27);
+        auto settings=project.tools()->json();settings["leaderAffinity"]=model.json();project.setTools(settings);
+        QVERIFY(project.deletionUses("classes",165).join(';').contains("Guardians"));
+        QVERIFY(project.deletionUses("classes",166).join(';').contains("Combat leader affinity"));
+        QVERIFY_THROWS_EXCEPTION(Error,project.deleteCustomContent("classes",165));
+        QVERIFY_THROWS_EXCEPTION(Error,project.deleteCustomContent("classes",166));
+        QVERIFY(project.changeReport().text().contains("Guardians"));
+        QTemporaryDir folder;project.saveFolder(folder.path());
+        auto reopened=Project::fromRom(rom);reopened.applyManifest(Project::readProject(folder.path()));reopened.loadTools();
+        QCOMPARE(reopened.tools()->leaderAffinity().json(),model.json());
+        model.removeGroup(4);settings["leaderAffinity"]=model.json();project.setTools(settings);
+        QVERIFY(project.deletionUses("classes",165).isEmpty());QVERIFY(project.deletionUses("classes",166).isEmpty());
+    }
+    void roadDotAppearance() {
+        const QVector<QVector<QPoint>> roads{{},{{10,10},{21,10},{32,10}},{{12,11},{21,20}},{{60,60}}};
+        const auto before=roads;const auto visible=CampaignMap::mergedRoadDots(roads);
+        QCOMPARE(roads,before);QCOMPARE(visible.size(),roads.size());
+        QCOMPARE(visible[1],roads[1]);QCOMPARE(visible[2][0],QPoint(10,10));
+        QCOMPARE(visible[2][1],QPoint(21,20));QCOMPARE(visible[3],roads[3]);
+        // Moving one road reveals its dot independently, with the other road intact.
+        auto moved=roads;moved[2][0]+=QPoint(20,20);const auto after=CampaignMap::mergedRoadDots(moved);
+        QCOMPARE(after[1],roads[1]);QCOMPARE(after[2][0],moved[2][0]);
+    }
+    void roadRepeatedDragging() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        auto map=CampaignMap(Rom::open(path));
+        const int road=2;const auto ends=map.road(road);
+        map.setNode(ends.first,{40,160},map.label(ends.first));
+        map.setNode(ends.second,{470,160},map.label(ends.second));
+        QVector<QPoint> straight;
+        for(int n=1;n<=7;++n)straight<<QPoint(40+qRound(430.0*n/8),160);
+        map.setRoadDots(road,straight);
+        QPoint target(255,160);
+        for(int step=0;step<30;++step) {
+            const auto dots=map.roadDots(road);int selected=0;
+            for(int n=1;n<dots.size();++n)
+                if(QLineF(dots[n],target).length()<QLineF(dots[selected],target).length())selected=n;
+            const QPoint delta(step%4<2?2:-2,step%2?-3:4);
+            const auto before=map.roadWaypoints(road);
+            QVector<QPoint> next;
+            try {next=map.pulledRoad(road,selected,delta);}
+            catch(const Error &e) {QFAIL(qPrintable(QString("Drag %1: %2").arg(step+1).arg(e.what())));}
+            QVERIFY2(next!=before,qPrintable(QString("Drag %1 did not move").arg(step+1)));
+            QVERIFY(next.size()<=CampaignMap::bendCapacity);
+            map.setRoadDots(road,next);target=dots[selected]+delta;
+            for(const auto point:next)if(point.x()<190 || point.x()>320)QCOMPARE(point.y(),160);
+        }
+        QCOMPARE(map.position(ends.first),QPoint(40,160));
+        QCOMPARE(map.position(ends.second),QPoint(470,160));
+    }
     void leaderAffinityAndPersuasion() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
         if(path.isEmpty()) QSKIP("Private ROM required");
@@ -519,7 +709,9 @@ class EngineTests : public QObject {
         if(path.isEmpty() || toolchain.isEmpty()) QSKIP("Private ROM and compiler required");
         try {
             const auto rom=Rom::open(path); auto project=Project::fromRom(rom); project.loadTools(); project.loadEncounters();
+            const int member=project.createClass("Affinity member"),leader=project.createClass("Affinity leader");
             auto combat=project.tools()->leaderAffinity(); combat.set(5,0,17);
+            combat.addGroup("Export guardians",{5,0x45,member},leader+1);combat.set(leader,4,37);combat.set(24,4,-25);
             auto tools=project.tools()->json(); tools["leaderAffinity"]=combat.json(); project.setTools(tools);
             auto talk=project.encounters()->persuasion(); talk.addLeader(1); talk.addGroup("Test group",{0x45},talk.groupFor(0x45),165);
             talk.setScore(1,talk.groupFor(0x45),91);
@@ -537,6 +729,20 @@ class EngineTests : public QObject {
             QVERIFY(candidate.open(QIODevice::WriteOnly)); const auto serialized=rom.serialize(output.image);
             QCOMPARE(candidate.write(serialized),serialized.size()); candidate.close();
             QCOMPARE(Rom::open(candidate.fileName()).bytes(),output.image);
+            // Execute the newly exported C, including the preserved native eligibility checks.
+            QProcess instructions;instructions.start("node",{QFINDTESTDATA("affinity-mips.cjs"),path,"--export",candidate.fileName()});
+            QVERIFY(instructions.waitForFinished(120000));const auto log=instructions.readAllStandardOutput()+instructions.readAllStandardError();
+            QVERIFY2(instructions.exitStatus()==QProcess::NormalExit && instructions.exitCode()==0,log.constData());
+            const auto restored=LeaderAffinity::load(Rom::fromBytes(output.image));QVERIFY(restored.extended());
+            const auto placement=ClassPlacement::read(Rom::fromBytes(output.image));QVERIFY(placement);
+            const int descriptor=LeaderAffinity::offset+0x5c+24;const auto dataAt=u32(output.image,descriptor+8);
+            QVERIFY(dataAt>=placement->dataRomOffset);QVERIFY(dataAt+u32(output.image,descriptor+16)<=placement->dataRomOffset+placement->layout.end-placement->layout.indexBase);
+            auto damaged=output.image;damaged[dataAt+64+5]^=1;
+            QVERIFY(!LeaderAffinity::load(Rom::fromBytes(damaged)).unavailable().isEmpty());
+            // Rebuild an opened extended ROM while growing unrelated class data.
+            reopened.createClass("Unrelated class growth");QTemporaryDir again;
+            const auto grown=rebuild(reopened,toolchain,again.path());
+            QCOMPARE(LeaderAffinity::load(Rom::fromBytes(grown.image)).json(),combat.json());
         } catch(const Error &e) { QFAIL(e.what()); }
     }
     void acceptedSourceOwners() {
@@ -3466,6 +3672,43 @@ class EngineTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void consumableCExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom=Rom::open(path);auto effects=ConsumableEffects::load(rom);const auto retail=effects.json();
+            QTemporaryDir work;Compiler compiler(tools);compiler.authenticate();
+            const auto code=compiler.compileQualifiedOwner(ConsumableEffects::runtimeOwner(),work.path(),"consumable_c");
+            QVERIFY(code.tables.isEmpty());QCOMPARE(code.code.size(),1300);QVERIFY(!effects.needsCBuild());
+            auto changed=rom.bytes();changed.replace(ConsumableEffects::romOffset,ConsumableEffects::codeSize,effects.runtimeImage(code.code));
+            QCOMPARE(ConsumableEffects::load(Rom::fromBytes(changed)).json(),retail);
+            QCOMPARE(changed.mid(0x65d60,76),rom.bytes().mid(0x65d60,76));
+            QCOMPARE(changed.left(ConsumableEffects::romOffset),rom.bytes().left(ConsumableEffects::romOffset));
+            QCOMPARE(changed.sliced(ConsumableEffects::romOffset+ConsumableEffects::codeSize),rom.bytes().sliced(ConsumableEffects::romOffset+ConsumableEffects::codeSize));
+            for(int at:{0x41098,0x41098+1300,0x41098+1300+48}){auto bad=changed;bad[at]^=1;QVERIFY_THROWS_EXCEPTION(Error,ConsumableEffects::load(Rom::fromBytes(bad)));}
+            effects.setModel("healLeaf",{{"magnitude",0}});effects.setModel("healSeed",{{"magnitude",999}});effects.setModel("healPack",{{"magnitude",1}});
+            effects.setModel("powerFruit",{{"magnitude",65535}});effects.setModel("angelFruit",{{"magnitude",0}});
+            effects.setModel("cupOfLife",{{"minimum",0},{"maximum",999}});effects.setModel("sharedStatBoosters11To16",{{"minimum",0},{"maximum",0}});
+            effects.setModel("scrollOfDiscipline",{{"minimum",1},{"maximum",100}});effects.setModel("urnOfChaos",{{"minimum",-100},{"maximum",-1}});
+            effects.setModel("gobletOfDestiny",{{"minimum",-100},{"maximum",100}});
+            // Recreate the old instruction-parameter format independently of
+            // the new C, then export without opening the Consumables tab.
+            auto old=rom.bytes();old.replace(ConsumableEffects::romOffset,ConsumableEffects::codeSize,effects.expectedCode(old.mid(ConsumableEffects::romOffset,ConsumableEffects::codeSize)));
+            auto project=Project::fromRom(Rom::fromBytes(old));QVERIFY(!project.consumableEffects());
+            const auto built=rebuild(project,tools,work.path());QVERIFY(built.report.join('\n').contains("consumable effects from accepted-derived C"));
+            QCOMPARE(built.image.mid(ConsumableEffects::romOffset+1300,8),QByteArray("LCCONS01"));
+            auto reopened=Project::fromRom(Rom::fromBytes(built.image));reopened.loadConsumableEffects();QCOMPARE(reopened.consumableEffects()->json(),effects.json());
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            auto checksum=built.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,built.image);
+            QTemporaryDir output(QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/consumable-c-XXXXXX"));QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto target=output.filePath(QFileInfo(path).fileName());exportRom(project,built,target);
+            atomicWrite(output.filePath("effects.json"),QJsonDocument(QJsonObject{{"rom",target},{"models",effects.models()}}).toJson());
+            qInfo().noquote()<<"Consumable C limits and legacy upgrade:"<<output.filePath("effects.json");
+            reopened.editConsumableEffect("healLeaf",{{"magnitude",200}});reopened.saveFolder(work.filePath("project"));
+            auto restored=Project::fromRom(Rom::fromBytes(built.image));restored.applyManifest(Project::readProject(work.filePath("project")));restored.loadConsumableEffects();
+            QCOMPARE(restored.consumableEffects()->json(),reopened.consumableEffects()->json());
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void consumableEffectSource() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -5035,6 +5278,127 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         QVERIFY_THROWS_EXCEPTION(Error, bank.setText(201, "{HELP:2800}"));
         QCOMPARE(bank.serialized(), chained);
         QVERIFY_THROWS_EXCEPTION(Error, bank.setText(2, "{REF:10}"));
+    }
+    void locationDescriptions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM not supplied");
+        const auto source = Rom::open(path);
+        auto project = Project::fromRom(source);
+        project.loadTexts();
+        const auto original = project.textBanks();
+        const auto &locations = original["locations"];
+        QCOMPARE(locations.entries.size(), 48);
+        QVERIFY(locations.text(5).contains("Castrato Sea")); // Tenne = map location 6.
+        QVERIFY(locations.text(38).contains("Fort Romulus"));
+        QCOMPARE(locations.entries[3].bytes, locations.entries[4].bytes); // Separate Volmus rows.
+        QCOMPARE(locations.serialized(), locations.resource.original);
+        project.setText("locations", 3, "The western mine.\nRich in Baldr.");
+        project.setText("locations", 5, "The southern plains.");
+        project.setText("locations", 12, "A newly created settlement."); // Unused map slot 13.
+        QTemporaryDir saved;
+        QVERIFY(saved.isValid());
+        project.saveFolder(saved.filePath("project"));
+        auto loaded = Project::fromRom(source);
+        loaded.applyManifest(Project::readProject(saved.filePath("project")));
+        QCOMPARE(loaded.textBanks()["locations"].serialized(), project.textBanks()["locations"].serialized());
+        QCOMPARE(loaded.textBanks()["locations"].entries[4].bytes, locations.entries[4].bytes);
+        for (auto it = original.begin(); it != original.end(); ++it)
+            if (it.key() != "locations") QCOMPARE(loaded.textBanks()[it.key()].serialized(), it->serialized());
+        // In-place resource encoding preserves the following settings resource.
+        auto image = source.bytes();
+        const auto container = locations.resource.container(project.textBanks()["locations"].serialized());
+        image.replace(locations.resource.romOffset, container.size(), container);
+        QCOMPARE(TextBank::load(Rom::fromBytes(image))["locations"].serialized(),
+                 project.textBanks()["locations"].serialized());
+        QCOMPARE(image.mid(0x237d432, 0x234), source.bytes().mid(0x237d432, 0x234));
+        // Relocation shares a directory with item/class descriptions. Exercise both orders.
+        image = linkLocationText(Rom::fromBytes(image), project.textBanks()["locations"].serialized());
+        for (const bool items : {false, true})
+            image = linkClassText(Rom::fromBytes(image), original[items ? "items" : "classes"].serialized(),
+                                  items ? 278 : 225, items);
+        image = linkLocationText(Rom::fromBytes(image), project.textBanks()["locations"].serialized());
+        const auto banks = TextBank::load(Rom::fromBytes(image));
+        for (auto it = original.begin(); it != original.end(); ++it)
+            QCOMPARE(banks[it.key()].serialized(), project.textBanks()[it.key()].serialized());
+        QCOMPARE(ClassTextPlacement::canonicalAll(Rom::fromBytes(image), image.mid(0x66d4c, 84), 0x66d4c),
+                 source.bytes().mid(0x66d4c, 84));
+        const auto placement = LocationTextPlacement::read(Rom::fromBytes(image));
+        QVERIFY(placement);
+        for (const quint32 at : {LocationTextPlacement::directoryWord,
+                                LocationTextPlacement::descriptorOffset + 12, placement->offset + 12}) {
+            auto damaged = image;
+            damaged[at] = char(u8(damaged, at) ^ 1);
+            QVERIFY_THROWS_EXCEPTION(Error, TextBank::load(Rom::fromBytes(damaged)));
+        }
+        QCOMPARE(Rom::open(path).bytes(), source.bytes());
+    }
+    void locationDescriptionExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM not supplied");
+        const auto source = Rom::open(path);
+        auto project = Project::fromRom(source);
+        project.loadTexts();
+        const auto original = project.textBanks();
+        QTemporaryDir build;
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        QCOMPARE(rebuild(project, tools, build.path()).image, source.bytes());
+        quint32 random = 0x18462476;
+        for (int record = 5; record <= 38; ++record) {
+            QString text;
+            for (int line = 0; line < 4; ++line) {
+                if (line) text += '\n';
+                for (int col = 0; col < 36; ++col) {
+                    random = random * 1664525U + 1013904223U;
+                    text += QChar('A' + int((random >> 16) % 26));
+                }
+            }
+            project.setText("locations", record, text);
+        }
+        QVERIFY(encodeLzss(project.textBanks()["locations"].serialized()).size() > 2271);
+        // Exercise all pending storage changes together, not only in isolation.
+        project.loadTools();
+        auto affinity = project.tools()->leaderAffinity();
+        affinity.addGroup("Location test leaders", {5}, 165);
+        affinity.set(5, 4, 23);
+        auto settings = project.tools()->json(); settings["leaderAffinity"] = affinity.json();
+        project.setTools(settings);
+        project.loadCampaignMap();
+        auto map = *project.campaignMap();
+        QVector<QPoint> bends;
+        for (int n = 1; n <= 14; ++n) bends << QPoint(40 + n * 29, n % 2 ? 150 : 170);
+        map.setRoadDots(2, bends); project.setCampaignMap(map.json());
+        // Force shared-directory class runtime validation after text relocation.
+        project.setClassNameBytes(5, encodeClassName("Description test Knight"));
+        const auto result = rebuild(project, tools, build.path());
+        const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+        QVERIFY(QDir().mkpath(candidates));
+        QTemporaryDir output(candidates + "/native-location-text-XXXXXX");
+        QVERIFY(output.isValid());
+        const auto filename = output.filePath(QFileInfo(path).fileName());
+        exportRom(project, result, filename);
+        auto reopened = Project::fromRom(Rom::open(filename));
+        reopened.loadTexts();
+        QVERIFY(LocationTextPlacement::read(reopened.rom()));
+        reopened.loadTools(); reopened.loadCampaignMap();
+        QCOMPARE(reopened.tools()->leaderAffinity().json(), affinity.json());
+        QCOMPARE(reopened.campaignMap()->roadWaypoints(2), bends);
+        for (auto it = original.begin(); it != original.end(); ++it)
+            QCOMPARE(reopened.textBanks()[it.key()].serialized(), project.textBanks()[it.key()].serialized());
+        for (int record : {0, 3, 4, 39, 40, 47})
+            QCOMPARE(reopened.textBanks()["locations"].entries[record].bytes, original["locations"].entries[record].bytes);
+        QCOMPARE(result.image.mid(0x237d432, 0x234), source.bytes().mid(0x237d432, 0x234));
+        auto crc = result.image; Rom::updateChecksum(crc); QCOMPARE(crc, result.image);
+        QProcess instructions;
+        instructions.start("node", {QFINDTESTDATA("location-text-mips.cjs"), filename});
+        QVERIFY(instructions.waitForFinished(30000));
+        const auto log = instructions.readAllStandardOutput() + instructions.readAllStandardError();
+        QVERIFY2(instructions.exitStatus() == QProcess::NormalExit && instructions.exitCode() == 0, log.constData());
+        reopened.setText("locations", 5, "The edited plains.");
+        const auto again = rebuild(reopened, tools, build.path());
+        QCOMPARE(TextBank::load(Rom::fromBytes(again.image))["locations"].text(5), QString("The edited plains."));
+        QCOMPARE(LeaderAffinity::load(Rom::fromBytes(again.image)).json(), affinity.json());
+        QCOMPARE(CampaignMap(Rom::fromBytes(again.image)).roadWaypoints(2), bends);
+        QCOMPARE(Rom::open(path).bytes(), source.bytes());
     }
     void retailDescriptionExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

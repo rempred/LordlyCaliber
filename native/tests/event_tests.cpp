@@ -14,6 +14,214 @@ using namespace lordly;
 class EventTests : public QObject {
     Q_OBJECT
   private slots:
+    void fullRetailDescriptions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            int programs = 0, words = 0;
+            for (int row = 0; row < 115; ++row) {
+                if (row == 2 || row == 3) continue;
+                const auto bytes = SceneEvents::retailRow(rom, row);
+                const auto before = bytes;
+                const auto handlers = EventScript::display(bytes, row);
+                QVERIFY2(!handlers.isEmpty(), qPrintable(QString("Missing event row %1").arg(row)));
+                int previous = -1;
+                for (const auto &handler : handlers) {
+                    QVERIFY(!handler.title.isEmpty());
+                    for (const auto &step : handler.steps) {
+                        QVERIFY(step.researched);
+                        QVERIFY(step.offset > previous); previous = step.offset;
+                        QVERIFY(!step.text.isEmpty());
+                        QVERIFY(!step.text.startsWith("Game command "));
+                        QVERIFY(step.offset + step.length <= bytes.size());
+                        words += step.length / 2;
+                    }
+                }
+                QCOMPARE(bytes, before);
+                QCOMPARE(EventScript::apply(bytes, {}), before);
+                ++programs;
+            }
+            // Counts come from the independently audited native VM corpus, not
+            // the older viewer's CFG (which missed shared and direct programs).
+            QCOMPARE(programs, 113); QCOMPARE(words, 55471);
+            QMap<int, QString> rebel;
+            for (const auto &handler : EventScript::display(SceneEvents::retailRow(rom, 28), 28))
+                for (const auto &step : handler.steps) rebel[step.offset] = step.text;
+            QVERIFY(rebel[318].contains("R1 (flag to check) = 201"));
+            QVERIFY(rebel[320].contains("R0 (flag value: ON/OFF)"));
+            QVERIFY(rebel[388].contains("R1 (hour)"));
+            QVERIFY(!rebel[388].contains("flag to check"));
+            QVERIFY(EventScript::flagName(169).contains("Ankiseth"));
+            QVERIFY(EventScript::flagName(202, 28).contains("Biske"));
+            const auto original = SceneEvents::retailRow(rom, 10);
+            auto changed = original; changed[0xa5] = char(14); // Katreda -> Asnabel template.
+            bool sawRecruitment = false;
+            for (const auto &handler : EventScript::display(changed, 10))
+                for (const auto &step : handler.steps) {
+                    QVERIFY(!step.researched);
+                    if (step.offset == 0xa8) {
+                        QVERIFY(step.text.contains("Asnabel"));
+                        QVERIFY(!step.text.contains("Katreda"));
+                        sawRecruitment = true;
+                    }
+                }
+            QVERIFY(sawRecruitment);
+            // A direct-routing program cannot borrow original story labels
+            // after an operand changes, even though its physical layout matches.
+            const auto world = SceneEvents::retailRow(rom, 0);
+            auto modified = world;
+            const int first = EventScript::display(world, 0).first().steps.first().offset;
+            modified[first+1] = char(u8(world, first+1) ^ 1);
+            for (const auto &handler : EventScript::display(modified, 0))
+                for (const auto &step : handler.steps) QVERIFY(!step.researched);
+            // Names are read-only annotations. Reinstating the original bytes
+            // reinstates the correct contextual description.
+            QVERIFY(EventScript::display(original, 10).first().steps.first().researched);
+            for (const auto &handler : EventScript::display(original, 10, false))
+                for (const auto &step : handler.steps) QVERIFY(!step.researched);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void semanticEventInstructions() {
+        const auto program = [](const char *code) {
+            return QByteArray::fromHex("000c000c000c000c000c000c0010ffff") + QByteArray::fromHex(code);
+        };
+        const auto lines = [](const QByteArray &bytes, int row = 10) {
+            QStringList result;
+            const auto handlers = EventScript::decode(bytes, row);
+            for (const auto &step : handlers.first().steps) result << step.text;
+            return result;
+        };
+        QCOMPARE(EventScript::flagName(202, 10), QString("Flag 202 (Katreda encountered this mission)"));
+        QCOMPARE(EventScript::flagName(202, 77), QString("Flag 202"));
+        QCOMPARE(EventScript::flagName(202), QString("Flag 202"));
+        QCOMPARE(EventScript::flagName(250, 10), QString("Flag 250"));
+        auto text = lines(program("680f8802160113162f00"));
+        QVERIFY(text[0].contains("R0 = 15"));
+        QVERIFY(text[0].contains("low byte of recruitment template 527 (Katreda)"));
+        QVERIFY(text[1].contains("R0 = 527"));
+        QCOMPARE(text[2], QString("Queue individual recruitment from recruitment template 527 (Katreda)"));
+        QVERIFY(text[3].contains("Process queued army operation"));
+        QVERIFY(lines(program("68d5880116002f00"))[2].contains("squad recruitment"));
+        QVERIFY(lines(program("680e880216012f00"))[2].contains("526 (Asnabel)"));
+        QVERIFY(!lines(program("6810880216012f00")).join('\n').contains("Katreda"));
+        // Different incoming templates must not borrow either branch's name.
+        QVERIFY(!lines(program("680f8802ac02680e880216012f00")).last().contains("Katreda"));
+        text = lines(program("680f8802ac02680e880216012f00"));
+        QCOMPARE(text[text.size()-2], QString("Queue individual recruitment from R0 (recruitment template)"));
+        // A call / unrecognized command can change registers. Do not infer past it.
+        text = lines(program("680f88023f0016012f00"));
+        QCOMPARE(text[3], QString("Queue individual recruitment from R0 (recruitment template)"));
+        QVERIFY(!text.join('\n').contains("Katreda"));
+        // R1 is an index, not a flag operation; branching into a read keeps it separate.
+        text = lines(program("69ca01006061ac002f00"));
+        QVERIFY(text[0].contains("R1 = 202 (Flag 202 (Katreda encountered this mission))"));
+        QVERIFY(text[2].startsWith("READ Flag 202"));
+        QVERIFY(text[3].startsWith("CHECK Flag 202 (Katreda encountered this mission) = OFF"));
+        text = lines(program("6862690171602f00"));
+        QCOMPARE(text[0], QString("SET Flag 98 (Asnabel recruitment recorded) = ON"));
+        text = lines(program("6862690071602f00"));
+        QCOMPARE(text[0], QString("CLEAR Flag 98 (Asnabel recruitment recorded) = OFF"));
+        text = lines(program("69ca6061ac002f00"));
+        QVERIFY(text[0].startsWith("CHECK Flag 202 (Katreda encountered this mission) = OFF"));
+        text = lines(program("69036aff6391ab002f00"));
+        QCOMPARE(text[0], QString("Prepare R1 = 3 (dialogue answer control)"));
+        QVERIFY(text[1].contains("comparison value for dialogue answer"));
+        QCOMPARE(text[2], QString("READ dialogue answer, control 3 → R3"));
+        QVERIFY(text[3].startsWith("CHECK R2 (255) = R3 (dialogue answer, control 3)"));
+        text = lines(program("68021100"));
+        QVERIFY(text.last().startsWith("Request transition 2"));
+        QVERIFY(!text.last().contains("Switch"));
+        text = lines(program("68c888ff120a"));
+        QCOMPARE(text.last(), QString("Switch to event row 10; CLEAR Flags 200–254"));
+        const auto intro = QByteArray::fromHex("00020006ffff6862690171602f00");
+        const auto introHandlers = EventScript::decode(intro, 113);
+        QCOMPARE(introHandlers.size(), 1);
+        QCOMPARE(introHandlers.first().steps.first().offset, 6);
+        QCOMPARE(introHandlers.first().steps.first().text, QString("SET Flag 98 (Asnabel recruitment recorded) = ON"));
+        QVERIFY_THROWS_EXCEPTION(Error, EventScript::decode(QByteArray::fromHex("00020002ffff2f00")));
+    }
+    void retailEventSemanticLabels() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto stepMap = [](const QByteArray &bytes, int row) {
+                QMap<int, EventStep> result;
+                for (const auto &handler : EventScript::decode(bytes, row))
+                    for (const auto &step : handler.steps) result[step.offset] = step;
+                return result;
+            };
+            const auto gunther = SceneEvents::retailRow(rom, 10);
+            const auto steps = stepMap(gunther, 10);
+            QVERIFY(steps[0xa4].text.contains("527 (Katreda)"));
+            QVERIFY(steps[0xa6].text.contains("R0 = 527"));
+            QVERIFY(steps[0xa8].text.contains("individual recruitment"));
+            QVERIFY(steps[0xa8].text.contains("Katreda"));
+            QVERIFY(steps[0x420].text.contains("526 (Asnabel)"));
+            QVERIFY(steps[0x424].text.startsWith("SET Flag 98 (Asnabel recruitment recorded) = ON"));
+            bool encountered = false;
+            for (const auto &step : steps) if (step.flag == 202) {
+                encountered = true; QVERIFY(step.text.contains("Katreda encountered this mission"));
+            }
+            QVERIFY(encountered);
+            const auto edited = EventScript::apply(gunther, {{"1060", QJsonObject{{"flag", 250}, {"value", false}}}});
+            QCOMPARE(stepMap(edited, 10)[0x424].text, QString("CLEAR Flag 250 = OFF"));
+            auto expected = gunther; put8(expected, 0x425, 250); expected[0x427] = 0;
+            QCOMPARE(edited, expected);
+            const auto ankiseth = stepMap(SceneEvents::retailRow(rom, 113), 113);
+            bool foundSquad = false, foundPrerequisite = false;
+            for (const auto &step : ankiseth) {
+                foundSquad |= step.text.contains("Queue squad recruitment from recruitment template 469 (Ankiseth and four companions)");
+                foundPrerequisite |= step.flag == 17 && step.text.contains("Magnus refused to execute Frederick");
+            }
+            QVERIFY(foundSquad); QVERIFY(foundPrerequisite);
+            const auto wentinus = stepMap(SceneEvents::retailRow(rom, 22), 22);
+            bool foundPeace = false;
+            for (const auto &step : wentinus)
+                foundPeace |= step.text.contains("scenario 21 (Wentinus: fight Baldwin)");
+            QVERIFY(foundPeace);
+            // Reading annotations is not an edit, and a no-edit byte writer is exact.
+            QCOMPARE(EventScript::apply(gunther, {}), gunther);
+            QCOMPARE(SceneEvents::retailRow(rom, 10), gunther);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void interludeFlagsProjectAndExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and N64 tools required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom); project.loadSceneEvents();
+            const auto original = project.sceneEvents()->program(113);
+            const auto controls = EventScript::flagSteps(original);
+            int at = -1;
+            for (const auto &step : controls) if (step.flag == 17 && step.check) { at = step.offset; break; }
+            QVERIFY(at >= 0);
+            auto events = *project.sceneEvents();
+            events.editFlag(113, at, 17, !controls[at].value);
+            project.setSceneEvents(events.json());
+            auto expected = original; put8(expected, at + 4, controls[at].value ? 0xac : 0xbc);
+            QCOMPARE(project.sceneEvents()->program(113), expected);
+            QTemporaryDir folder; project.saveFolder(folder.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(folder.filePath("project")));
+            QCOMPARE(restored.sceneEvents()->program(113), expected);
+            const auto built = rebuild(restored, tools, folder.path());
+            auto checked = built.image; Rom::updateChecksum(checked); QCOMPARE(checked, built.image);
+            const auto exported = Rom::fromBytes(built.image);
+            QCOMPARE(SceneEvents::readRow(exported, 113), expected);
+            QCOMPARE(SceneEvents::retailRow(exported, 113), original);
+            const auto reopened = SceneEvents::load(exported);
+            QCOMPARE(reopened.json(), events.json());
+            QDir parent(QFileInfo(path).absolutePath()); QVERIFY(parent.mkpath("Test ROMs"));
+            QTemporaryDir output(parent.filePath("Test ROMs/event-row-labels-XXXXXX"));
+            QVERIFY(output.isValid()); output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, candidate);
+            QCOMPARE(SceneEvents::load(Rom::open(candidate)).program(113), expected);
+            qInfo().noquote() << "Chapter-introduction event export:" << candidate;
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void campaignMapBranchesAndExport() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and N64 tools required");
@@ -72,14 +280,46 @@ class EventTests : public QObject {
             const auto rebuilt=rebuild(continued,tools,work.path());QCOMPARE(rebuilt.image.size(),built.image.size());
             auto continuedRead=Project::fromRom(Rom::fromBytes(rebuilt.image));continuedRead.loadCampaignMap();QCOMPARE(continuedRead.campaignMap()->dotBytes(),continuedMap.dotBytes());QCOMPARE(continuedRead.campaignMap()->road(42),qMakePair(id,3));
             QCOMPARE(continuedRead.campaignMap()->icon(6),0);QCOMPARE(continuedRead.campaignMap()->icon(7),1);
-            // Version 2 has the native membership loop and no icon bitmap.
-            auto old=built.image;const auto placement=*CampaignPlacement::read(old);
-            put32(old,placement.descriptor+8,2);
-            old.replace(placement.overlayOffset+0x81d98-CampaignPlacement::sourceStart,40,rom.bytes().mid(0x81d98,40));
-            old.replace(placement.overlayOffset+CampaignPlacement::codeAddress+8192+4-CampaignPlacement::ramStart,5,QByteArray(5,0));
-            old.replace(placement.descriptor+32,32,QByteArray::fromHex(sha256(old.mid(placement.overlayOffset,placement.overlaySize))));
-            auto legacy=Project::fromRom(Rom::fromBytes(old));legacy.loadCampaignMap();
-            for(int node=1;node<=40;++node)QCOMPARE(legacy.campaignMap()->icon(node),castles.contains(node)?1:0);
+            // Older layouts have seven bends, not just a different version word.
+            // These reader fixtures model v1/v2/v3 data; their synthetic code is
+            // not executed. Native travel is checked on the real exported v4 ROM.
+            const auto placement=*CampaignPlacement::read(built.image);
+            for (int version : {1,2,3}) {
+                auto old=built.image;
+                const auto offset=[&](quint32 address){return placement.overlayOffset+address-CampaignPlacement::ramStart;};
+                const auto directory=placement.dotAddress+96*28,points=directory+400;
+                const auto pointCount=u32(old,placement.descriptor+72);
+                const auto display=old.mid(offset(placement.displayDirectory),400);
+                const auto pointBytes=old.mid(offset(placement.displayPoints),pointCount*4);
+                old.replace(offset(placement.dotAddress),96*28,QByteArray(96*28,0));
+                for(int road=0;road<42;++road)
+                    old.replace(offset(placement.dotAddress)+road*28,28,placement.dots.mid(road*56,28));
+                old.replace(offset(directory),400,display);
+                old.replace(offset(points),pointBytes.size(),pointBytes);
+                put32(old,placement.descriptor+8,version);
+                put32(old,placement.descriptor+64,version>=2?directory:0);
+                put32(old,placement.descriptor+68,version>=2?points:0);
+                if(version<3) {
+                    old.replace(placement.overlayOffset+0x81d98-CampaignPlacement::sourceStart,40,rom.bytes().mid(0x81d98,40));
+                    old.replace(offset(CampaignPlacement::codeAddress+8192+4),5,QByteArray(5,0));
+                }
+                if(version==1) {
+                    put32(old,placement.descriptor+72,0);put32(old,placement.descriptor+76,0);
+                    // Version 1 predates authored location names and display dots.
+                    old.replace(placement.overlayOffset+0x86040-CampaignPlacement::sourceStart,1120,old.mid(0x86040,1120));
+                    for(int node=1;node<=40;++node) {
+                        const int name=0x864a0+(node-1)*8+4;
+                        put32(old,name,u32(rom.bytes(),name));
+                        put32(old,placement.overlayOffset+name-CampaignPlacement::sourceStart,u32(rom.bytes(),name));
+                    }
+                }
+                old.replace(placement.descriptor+32,32,QByteArray::fromHex(sha256(old.mid(placement.overlayOffset,placement.overlaySize))));
+                auto legacy=Project::fromRom(Rom::fromBytes(old));legacy.loadCampaignMap();
+                for(int node=1;node<=40;++node)QCOMPARE(legacy.campaignMap()->icon(node),version>=3?1:(castles.contains(node)?1:0));
+                QCOMPARE(legacy.campaignMap()->road(41),qMakePair(6,id));
+                for(int road=1;road<=42;++road)
+                    QCOMPARE(legacy.campaignMap()->roadWaypoints(road),map.roadWaypoints(road));
+            }
 
             QDir parent(QFileInfo(path).absolutePath());QVERIFY(parent.mkpath("Test ROMs"));QTemporaryDir output(parent.filePath("Test ROMs/campaign-workspace-XXXXXX"));QVERIFY(output.isValid());output.setAutoRemove(false);
             const auto candidate=output.filePath(QFileInfo(path).fileName());exportRom(saved,built,candidate);qInfo().noquote()<<"Campaign candidate:"<<candidate;
@@ -140,7 +380,7 @@ class EventTests : public QObject {
             const int selector = scenes.resource(added).selectors.first(); QVERIFY(selector > 255);
             project.setScenePrograms(scenes.json()); events.bind(launch, selector, scenes);
             project.setSceneEvents(events.json());
-            QVERIFY(project.changeReport().text().contains("Tenne Plains completed"));
+            QVERIFY(project.changeReport().text().contains("Tenne Plains: The Southern Reaches completed"));
             QVERIFY(project.changeReport().text().contains("Flag 250"));
             QTemporaryDir work;
             project.saveFolder(work.filePath("flags-project"));

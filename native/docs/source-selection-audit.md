@@ -1,5 +1,28 @@
 # Native export source audit
 
+## Consumable C intake and migration — 2026-11-04
+
+Decomp snapshot `51174C7C` adds seven accepted pure-C producers: `00040FF4`,
+`00041098`, `000C4650`, `000C9850`, `001A9290`, `001AD0E4`, and `001AD8CC`.
+No previously carried source or header changed. The active ROM baseline now
+compiles 1480 producers covering 1657 functions from 1611 accepted owners,
+with 1696 exact code/table blocks. All seven additions are included in that
+baseline, rather than only bundled as reference files.
+
+The newly recovered consumable application function `00041098` also replaces
+the editor's whole-function assembly implementation. Its maintained C adaptation
+preserves the query/apply phases and special Soldier-pool healing limits. The
+ten authored models use fifteen parameter halfwords in a checked footer, within
+the original 1380-byte allocation. User exports compile and authenticate the C;
+reopening authenticates its code and parameters. Older parameter-edited ROMs
+upgrade automatically without losing their values. Unchanged retail exports
+still use the exact accepted implementation.
+
+`consumables/effects.s` remains a compatibility fixture, not an export source.
+The source-selection gate again has zero whole-owner assembly gaps and zero
+unclassified assembly files. The seven larger adapters and 33 extension hooks
+described below remain deferred mixed groups; this is not a C-only exporter.
+
 ## Adapter migration — 2026-11-01
 
 The follow-up migration replaces six previously reported C-covered sites with

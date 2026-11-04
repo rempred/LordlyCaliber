@@ -11,9 +11,13 @@
 #define LC_SAVE_PACK_WORK_BYTES(size) (2U * (LC_SAVE_PACK_HEADS + (size)))
 #define LC_SAVE_PACK_IMAGE_BYTES 32768U
 #define LC_SAVE_PACK_SUSPEND_OFFSET 0x30F0U
+#define LC_SAVE_PACK_CUSTOM_SUSPEND_OFFSET 0x3170U
 #define LC_SAVE_PACK_IMAGE_MARKER 0x7FF0U
 #define LC_SAVE_PACK_SUSPEND_CAPACITY (LC_SAVE_PACK_IMAGE_MARKER - LC_SAVE_PACK_SUSPEND_OFFSET)
+#define LC_SAVE_PACK_CUSTOM_SUSPEND_CAPACITY (LC_SAVE_PACK_IMAGE_MARKER - LC_SAVE_PACK_CUSTOM_SUSPEND_OFFSET)
 #define LC_SAVE_PACK_COMMIT_WORK_BYTES(size) (LC_SAVE_PACK_SUSPEND_CAPACITY + LC_SAVE_PACK_WORK_BYTES(size))
+/* Staged migration, including maximum logical record and encoder workspace. */
+#define LC_SAVE_UPGRADE_WORK_BYTES (LC_SAVE_PACK_IMAGE_BYTES + 27320U + LC_SAVE_PACK_COMMIT_WORK_BYTES(27320U))
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,6 +48,10 @@ int lc_save_commit_compressed(unsigned char *image, unsigned int capacity,
  */
 unsigned int lc_save_read_compressed(const unsigned char *image, unsigned int capacity,
                                     unsigned char *output, unsigned int output_capacity);
+/* Upgrade retail/LC05/LC06 images to the separate custom-bank layout. All
+ * failures leave the source image untouched, including incompressible saves. */
+int lc_save_upgrade_image(unsigned char *image, unsigned int capacity,
+                          unsigned char *scratch, unsigned int scratch_size);
 #ifdef __cplusplus
 }
 #endif

@@ -1,5 +1,6 @@
 #include "engine/text.h"
 #include "engine/class_text.h"
+#include "engine/location_text.h"
 #include <QRegularExpression>
 #include <functional>
 
@@ -103,10 +104,12 @@ QMap<QString, TextBank> TextBank::load(const Rom &rom) {
         {"classes", "Class descriptions", 0x353f92, 6399, 6408, 225, false},
         {"actions", "Action descriptions", 0x356180, 3145, 3154, 159, true},
         {"items", "Item descriptions", 0x34fa4e, 9702, 9710, 278, true},
-        {"consumables", "Consumable descriptions", 0x352b88, 2055, 2064, 50, true}};
+        {"consumables", "Consumable descriptions", 0x352b88, 2055, 2064, 50, true},
+        {"locations", "Location descriptions", 0x358288, 2271, 2280, 48, true}};
     QMap<QString, TextBank> result;
     const auto classText = rom.revision() == 0 ? ClassTextPlacement::read(rom) : std::nullopt;
     const auto itemText = rom.revision() == 0 ? ClassTextPlacement::read(rom, true) : std::nullopt;
+    const auto locationText = LocationTextPlacement::read(rom);
     auto gap = rom.revision() == 0 ? 0x20248c2 : 0x2024516;
     for (const auto &spec : specs) {
         TextBank bank;
@@ -114,7 +117,11 @@ QMap<QString, TextBank> TextBank::load(const Rom &rom) {
         const auto placement = spec.id == "classes" ? classText
                                : spec.id == "items" ? itemText
                                                     : std::nullopt;
-        if (placement) {
+        if (spec.id == "locations" && locationText) {
+            bank.resource = Resource::load(rom, locationText->offset, locationText->allocation);
+            bank.spec.capacity = int(locationText->allocation) - 8;
+            bank.spec.allocation = int(locationText->allocation);
+        } else if (placement) {
             bank.resource = Resource::load(rom, placement->offset, placement->allocation);
             bank.spec.count = int(placement->count);
             bank.spec.capacity = int(placement->allocation) - 8;

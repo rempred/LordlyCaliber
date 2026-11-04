@@ -7,6 +7,7 @@
 namespace lordly {
 struct PromotionRuntimeBuild;
 struct CapacityRuntimeBuild;
+class LeaderAffinity;
 struct ClassRuntimeBuild {
     ClassDataImage data;
     QByteArray compiledData;
@@ -15,7 +16,7 @@ struct ClassRuntimeBuild {
     QByteArray descriptor;
     std::optional<SaveRuntimeBuild> saves;
     std::optional<AttackPlacement> attacks;
-    QByteArray resident, personalNamesCode;
+    QByteArray resident, personalNamesCode, affinityOwner;
     bool removeResident = false;
     quint32 dataRomOffset = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
@@ -30,7 +31,8 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   quint32 dataRomOffset, bool expandedSaves = false,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder = {},
                   const ItemData *items = nullptr, CapacityRuntimeBuild *capacity = nullptr,
-                  const AttackData *attacks = nullptr);
+                  const AttackData *attacks = nullptr, const LeaderAffinity *affinity = nullptr,
+                  bool customStoryFlags = false);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

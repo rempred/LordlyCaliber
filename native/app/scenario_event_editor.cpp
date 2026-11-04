@@ -1,4 +1,5 @@
 #include "app/scenario_event_editor.h"
+#include "app/event_flow_editor.h"
 #include "app/pending_edits.h"
 #include <QScopedValueRollback>
 #include "app/content_refresh.h"
@@ -8,15 +9,38 @@
 #include <QCompleter>
 #include <QFormLayout>
 #include <QHeaderView>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QPushButton>
 #include <QShowEvent>
 #include <QSignalBlocker>
+#include <QSpinBox>
+#include <QStackedWidget>
+#include <QTabBar>
+#include <QTimer>
+#include <QStyledItemDelegate>
 #include <QTreeWidget>
 #include <QUndoStack>
 #include <QVBoxLayout>
 namespace lordly {
 namespace {
+class EventTextDelegate final : public QStyledItemDelegate {
+  public:
+    explicit EventTextDelegate(QTreeWidget *tree) : QStyledItemDelegate(tree), tree_(tree) {}
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override {
+        auto size = QStyledItemDelegate::sizeHint(option, index);
+        if (index.column() == 1) {
+            auto prepared = option; initStyleOption(&prepared, index);
+            const int width = qMax(40, tree_->columnWidth(1) - 12);
+            const auto text = prepared.fontMetrics.boundingRect(QRect(0, 0, width, 0),
+                Qt::TextWordWrap, prepared.text);
+            size.setHeight(qMax(size.height(), text.height() + 6));
+        }
+        return size;
+    }
+  private:
+    QTreeWidget *tree_;
+};
 class FlagCommand final : public QUndoCommand {
   public:
     FlagCommand(Project *p, QJsonObject after, const QString &label)
@@ -34,23 +58,46 @@ QString position(int at) { return QString("@%1").arg(at, 4, 16, QChar('0')).toUp
 ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::function<void()> changed, QWidget *parent)
     : QWidget(parent), project_(p), undo_(undo), changed_(std::move(changed)) {
     setObjectName("scenarioEvents");
-    auto layout = new QVBoxLayout(this);
-    auto help = new QLabel("Edit what the game sets or checks during this scenario. These are script instructions, not the current values in a saved game. "
-        "Named flags have confirmed meanings; other flags keep their IDs. Branches may skip or repeat steps.");
+    auto outer=new QVBoxLayout(this);
+    auto mode=new QHBoxLayout;mode->addWidget(new QLabel("Events"));mode->addStretch();
+    otherPrograms_=new QCheckBox("All event programs");otherPrograms_->setObjectName("scenarioEventOtherPrograms");mode->addWidget(otherPrograms_);
+    raw_=new QCheckBox("Raw instructions");raw_->setObjectName("scenarioEventRaw");mode->addWidget(raw_);outer->addLayout(mode);
+    auto locationLine=new QHBoxLayout;
+    locationLabel_=new QLabel("Map location");locationLine->addWidget(locationLabel_);
+    locations_=new QComboBox;locations_->setObjectName("scenarioEventLocation");locationLine->addWidget(locations_,1);outer->addLayout(locationLine);
+    phases_=new QTabBar;phases_->setObjectName("scenarioEventPhase");phases_->setExpanding(false);
+    phases_->addTab("Arrival");phases_->addTab("Mission");phases_->addTab("Area Investigation");outer->addWidget(phases_);
+    rows_ = new QComboBox; rows_->setObjectName("scenarioEventRow");outer->addWidget(rows_);
+    views_=new QStackedWidget;outer->addWidget(views_,1);
+    eventsView_=new EventFlowEditor(project_,undo_,[this]{refresh();changed_();},this);views_->addWidget(eventsView_);
+    eventsView_->rawInstructions=[this](int at){setRawInstructions(true);selectEventRow(rows_->currentData().toInt(),at);};
+    eventsView_->editCutscene=[this](int selector){if(editCutscene)editCutscene(selector);};
+    eventsView_->openEventProgram=[this](int row){selectEventRow(row);};
+    eventsView_->openEventInstruction=[this](int row,int at){setRawInstructions(false);selectEventRow(row,at);};
+    auto rawPage=new QWidget;views_->addWidget(rawPage);auto layout = new QVBoxLayout(rawPage);layout->setContentsMargins(0,0,0,0);
+    connect(raw_,&QCheckBox::toggled,this,[this](bool checked){
+        if(!checked&&!drafts_.isEmpty()&&!applyDrafts()){const QSignalBlocker guard(raw_);raw_->setChecked(true);return;}
+        views_->setCurrentIndex(checked?1:0);
+        if(checked&&eventsView_->selectedOffset()>=0&&rows_->currentIndex()>=0)selectEventRow(rows_->currentData().toInt(),eventsView_->selectedOffset());
+        if(!checked&&rows_->currentIndex()>=0)eventsView_->setRow(rows_->currentData().toInt(),selectedEntry());
+        if(!checked&&steps_->currentItem())eventsView_->selectOffset(steps_->currentItem()->data(0,offsetRole).toInt());});
+    auto help = new QLabel("ROM instructions: CHECK tests a flag; SET / CLEAR changes it when this step runs.");
     help->setWordWrap(true); layout->addWidget(help);
-    rows_ = new QComboBox; rows_->setObjectName("scenarioEventRow");
-    layout->addWidget(rows_);
-    all_ = new QCheckBox("Show all commands, including read-only game instructions");
+    all_ = new QCheckBox("Show all instructions");all_->setChecked(true);
     all_->setObjectName("scenarioEventAll"); layout->addWidget(all_);
     steps_ = new QTreeWidget; steps_->setObjectName("scenarioEventSteps");
-    steps_->setHeaderLabels({"Position", "Event / action"});
+    steps_->setHeaderLabels({"Position", "Event / action", "Editable values"});
+    steps_->header()->setStretchLastSection(false);
     steps_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     steps_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    steps_->header()->setSectionResizeMode(2,QHeaderView::Interactive);steps_->setColumnWidth(2,380);
     steps_->setWordWrap(true); steps_->setTextElideMode(Qt::ElideNone);
+    steps_->setItemDelegate(new EventTextDelegate(steps_));
+    connect(steps_->header(), &QHeaderView::sectionResized, steps_, &QTreeWidget::doItemsLayout);
     layout->addWidget(steps_, 1);
     detail_ = new QLabel; detail_->setWordWrap(true); detail_->setObjectName("scenarioEventDetail");
     layout->addWidget(detail_);
-    auto form = new QFormLayout;
+    flagPanel_=new QWidget;auto form = new QFormLayout(flagPanel_);form->setContentsMargins(0,0,0,0);
     flags_ = new QComboBox; flags_->setObjectName("scenarioEventFlag");
     flags_->setEditable(true); flags_->setInsertPolicy(QComboBox::NoInsert);
     flags_->completer()->setCompletionMode(QCompleter::PopupCompletion);
@@ -58,14 +105,14 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     flags_->completer()->setCaseSensitivity(Qt::CaseInsensitive);
     for (int flag = 0; flag < 256; ++flag) flags_->addItem(EventScript::flagName(flag), flag);
     action_ = new QComboBox; action_->setObjectName("scenarioEventAction");
-    form->addRow("Flag", flags_); form->addRow("Action", action_); layout->addLayout(form);
-    auto branch = new QHBoxLayout;
+    form->addRow("Flag", flags_); form->addRow("Action", action_); layout->addWidget(flagPanel_);
+    branchPanel_=new QWidget;auto branch = new QHBoxLayout(branchPanel_);branch->setContentsMargins(0,0,0,0);
     branchTarget_ = new QComboBox; branchTarget_->setObjectName("scenarioEventBranchTarget");
     branchTarget_->setMinimumContentsLength(35);
     branchTarget_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     branch->addWidget(new QLabel("Branch destination")); branch->addWidget(branchTarget_,1);
     applyBranch_ = new QPushButton("Change destination"); applyBranch_->setObjectName("scenarioEventApplyBranch");
-    branch->addWidget(applyBranch_);layout->addLayout(branch);
+    branch->addWidget(applyBranch_);layout->addWidget(branchPanel_);
     connect(applyBranch_, &QPushButton::clicked, this, [this] {
         const auto item=steps_->currentItem();if(!item || !item->parent() || branchTarget_->currentIndex()<0)return;
         try {
@@ -84,7 +131,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
         for(const auto &site:SceneEvents::sites())if(site.row==rows_->currentData().toInt()&&site.offset==item->data(0,offsetRole).toInt()) {editCutscene(project_->sceneEvents()->target(site.id));return;}
     });
     buttons->addStretch();
-    restore_ = new QPushButton("Restore loaded flag instructions"); restore_->setObjectName("scenarioEventRestore"); buttons->addWidget(restore_);
+    restore_ = new QPushButton("Restore loaded instruction values"); restore_->setObjectName("scenarioEventRestore"); buttons->addWidget(restore_);
     layout->addLayout(buttons);
     notice_ = new QLabel; notice_->setWordWrap(true); notice_->setObjectName("scenarioEventNotice"); layout->addWidget(notice_);
     pending_ = new PendingEdits(this);
@@ -101,6 +148,10 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     connect(flags_, &QComboBox::currentTextChanged, this, [this] { rememberDraft(); });
     connect(action_, &QComboBox::currentIndexChanged, this, [this] { rememberDraft(); });
     connect(rows_, &QComboBox::currentIndexChanged, this, [this] { if (!loading_) showRow(); });
+    connect(otherPrograms_,&QCheckBox::toggled,this,[this]{if(!loading_)refresh();});
+    connect(locations_,&QComboBox::currentIndexChanged,this,[this]{
+        if(loading_)return;location_=locations_->currentData().toInt();refresh();});
+    connect(phases_,&QTabBar::currentChanged,this,[this]{if(!loading_)refresh();});
     connect(all_, &QCheckBox::toggled, this, [this] { showRow(); });
     connect(steps_, &QTreeWidget::currentItemChanged, this, [this] { selectStep(); });
     connect(apply_, &QPushButton::clicked, this, &ScenarioEventEditor::apply);
@@ -130,13 +181,36 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
 }
 void ScenarioEventEditor::selectScenario(int key) {
     const bool changed = key != scenario_; scenario_ = key;
-    if (changed) { QSignalBlocker block(rows_); rows_->clear(); }
+    if (changed) { QSignalBlocker block(rows_); rows_->clear();
+        const QSignalBlocker programsBlock(otherPrograms_);otherPrograms_->setChecked(false);
+        const QSignalBlocker phaseBlock(phases_);phases_->setCurrentIndex(1); }
     if (changed && isVisible()) refresh();
 }
+void ScenarioEventEditor::selectLocation(int location) {
+    if(location<1||location>40)return;
+    const bool changed=location_!=location||!allRows_;location_=location;allRows_=true;
+    if(changed){const QSignalBlocker block(otherPrograms_);otherPrograms_->setChecked(false);}
+    if(changed||!contexts_)refresh();
+}
 void ScenarioEventEditor::showAllRows() { allRows_=true;all_->setChecked(true);refresh(); }
+void ScenarioEventEditor::setRawInstructions(bool enabled){raw_->setChecked(enabled);}
 void ScenarioEventEditor::selectEventRow(int row, int offset) {
-    if(rows_->findData(row)<0)showAllRows();
-    rows_->setCurrentIndex(rows_->findData(row));
+    if(!contexts_)refresh();
+    try {
+    if(!otherPrograms_->isChecked()&&contexts_&&allRows_){
+        const auto locations=contexts_->locationsForProgram(row,offset);
+        if(!locations.isEmpty()&&!locations.contains(location_)){location_=locations.first();refresh();}
+    }
+    if(!otherPrograms_->isChecked()&&contexts_&&location_>0&&rows_->findData(row)<0){
+        const auto context=contexts_->location(location_);
+        for(int phase=0;phase<3;++phase)for(const auto &choice:context.phases[phase])if(choice.row==row){
+            const QSignalBlocker block(phases_);phases_->setCurrentIndex(phase);populatePrograms(row);break;
+        }
+    }
+    }catch(const Error &e){notice_->setText(QString::fromUtf8(e.what()));}
+    if(rows_->findData(row)<0){otherPrograms_->setChecked(true);if(rows_->findData(row)<0)refresh();}
+    {const QSignalBlocker block(rows_);rows_->setCurrentIndex(rows_->findData(row));}showRow();
+    if(offset>=0&&!raw_->isChecked())eventsView_->selectOffset(offset);
     if(offset>=0)for(int i=0;i<steps_->topLevelItemCount();++i) {
         auto handler=steps_->topLevelItem(i);
         for(int j=0;j<handler->childCount();++j)if(handler->child(j)->data(0,offsetRole).toInt()==offset) {
@@ -150,33 +224,85 @@ void ScenarioEventEditor::refresh() {
     const int previous = rows_->currentIndex() >= 0 ? rows_->currentData().toInt() : -1;
     rows_->clear(); notice_->clear();
     try {
-        if(allRows_) {
-            project_->loadSceneEvents();
-            for(int row=4;row<115;++row) {
-                try { EventScript::decode(project_->sceneEvents()->program(row)); }
-                catch(const Error &) { continue; }
-                rows_->addItem(QString("Event row %1").arg(row),row);
-            }
-        } else if (scenario_ >= 0) {
-            project_->loadSceneEvents();
-            for (int row : project_->sceneEvents()->scenarioRows(scenario_))
-                rows_->addItem(QString("%1 · Event row %2").arg(row >= 71 && row <= 109 ? "Area investigation" : "Story mission").arg(row), row);
-        }
-        rows_->setCurrentIndex(qMax(0, rows_->findData(previous)));
+        project_->loadSceneEvents();project_->loadCampaignMap();
+        refreshContext();populatePrograms(previous);
     } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
     loading_ = false;
     showRow();
 }
+void ScenarioEventEditor::refreshContext(){
+    const auto signature=QJsonDocument(project_->sceneEvents()->json()).toJson(QJsonDocument::Compact);
+    const auto rom=project_->rom().bytes().constData();
+    if(!contexts_||signature!=contextSignature_||rom!=contextRom_){
+        contexts_=std::make_unique<EventContexts>(project_->rom(),*project_->sceneEvents());
+        contextSignature_=signature;contextRom_=rom;
+    }
+    if(otherPrograms_->isChecked()){
+        locations_->hide();locationLabel_->hide();phases_->hide();return;
+    }
+    const QSignalBlocker locationBlock(locations_);locations_->clear();
+    QVector<int> available;
+    if(allRows_)for(int id=1;id<=40;++id){if(project_->campaignMap()->position(id).x())available<<id;}
+    else available=contexts_->locationsForScenario(scenario_);
+    for(int id:available)locations_->addItem(project_->campaignMap()->name(id),id);
+    if(!available.contains(location_))location_=available.isEmpty()?-1:available.first();
+    locations_->setCurrentIndex(locations_->findData(location_));
+    const bool showPicker=!otherPrograms_->isChecked()&&(allRows_||locations_->count()>1);
+    locations_->setVisible(showPicker);
+    locationLabel_->setVisible(!otherPrograms_->isChecked());
+    locationLabel_->setText(showPicker?"Map location":location_>0?project_->campaignMap()->name(location_):"Selected scenario");
+    phases_->setVisible(!otherPrograms_->isChecked());
+    // Keep empty phases selectable so the reason is clear instead of silently
+    // switching the user's activity when a location has no corresponding event.
+}
+int ScenarioEventEditor::selectedEntry()const{
+    return rows_->currentIndex()<0?-1:rows_->currentData(Qt::UserRole+1).toInt();
+}
+void ScenarioEventEditor::populatePrograms(int preferredRow){
+    const QSignalBlocker block(rows_);rows_->clear();
+    const bool all=otherPrograms_->isChecked();
+    if(all){
+        for(int row=0;row<115;++row){if(EventScript::instructionOffsets(row).isEmpty())continue;
+            rows_->addItem(EventScript::rowName(row),row);rows_->setItemData(rows_->count()-1,-1,Qt::UserRole+1);}
+    }else if(contexts_){
+        QVector<EventProgramChoice> choices;
+        if(location_>0)choices=contexts_->location(location_).phases[qMax(0,phases_->currentIndex())];
+        else if(scenario_>=0&&phases_->currentIndex()>0)for(int row:contexts_->scenarioPrograms(scenario_)){
+            const bool investigation=row>=71&&row<=109;
+            if(investigation==(phases_->currentIndex()==2))choices.append({row,-1,EventContexts::programName(row)});
+        }
+        for(const auto &choice:choices){rows_->addItem(choice.name,choice.row);rows_->setItemData(rows_->count()-1,choice.entry,Qt::UserRole+1);}
+    }
+    rows_->setCurrentIndex(qMax(0,rows_->findData(preferredRow)));
+    rows_->setVisible(all||rows_->count()>1);
+}
 void ScenarioEventEditor::showRow() {
+    const QScopedValueRollback<bool> loading(loading_,true);
     const int previous = steps_->currentItem() ? steps_->currentItem()->data(0, offsetRole).toInt() : -1;
     const QSignalBlocker block(steps_);
-    steps_->clear();
+    clearParameters();steps_->clear();
     restore_->setEnabled(rows_->currentIndex() >= 0);
-    if (rows_->currentIndex() < 0) { detail_->setText("No mission event row is mapped to this scenario."); selectStep(); return; }
+    if (rows_->currentIndex() < 0) { eventsView_->setRow(-1);
+        const auto message=QString("No %1 events are assigned to this map location.").arg(phases_->tabText(phases_->currentIndex()));
+        if(notice_->text().isEmpty())notice_->setText(message);
+        detail_->setText(notice_->text());selectStep();return; }
     try {
         const int row = rows_->currentData().toInt();
-        const auto bytes = SceneEvents::flagRow(SceneEvents::retailRow(project_->rom(), row), row, project_->sceneEvents()->flagEdits());
-        const auto handlers = EventScript::decode(bytes);
+        if(!raw_->isChecked())eventsView_->setRow(row,selectedEntry());
+        {
+            const QSignalBlocker flagBlock(flags_);
+            for (int i = 0; i < flags_->count(); ++i)
+                flags_->setItemText(i, EventScript::flagName(flags_->itemData(i).toInt(), row));
+        }
+        const auto bytes = project_->sceneEvents()->program(row);
+        // Reopened ROMs can contain changed scene/dialogue resources without
+        // pending project edits. Narrative meanings require the researched base.
+        const bool originalScenes = sha256(project_->rom().bytes()) ==
+            "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a" &&
+            !project_->scenePrograms()->modified() &&
+            (!project_->dialogues() || !project_->dialogues()->modified());
+        const auto handlers = EventScript::display(bytes, row, originalScenes);
+        const auto retailOffsets=EventScript::instructionOffsets(row);
         QMap<int, QString> sceneNames;
         for (const auto &id : project_->scenePrograms()->scenes())
             for (int selector : project_->scenePrograms()->resource(id).selectors)
@@ -185,26 +311,36 @@ void ScenarioEventEditor::showRow() {
         for (const auto &site : SceneEvents::sites()) if (site.row == row) launches[site.offset] = site;
         int handlerNumber = 0;
         for (const auto &handler : handlers) {
-            auto parent = new QTreeWidgetItem(steps_, {QString::number(++handlerNumber), EventScript::groupName(handler.group) + " · " + position(handler.entry)});
+            auto parent = new QTreeWidgetItem(steps_, {QString::number(++handlerNumber),
+                (handler.title.isEmpty() ? EventScript::groupName(handler.group) : handler.title) + " · " + position(handler.entry)});
             parent->setData(0, offsetRole, -1); parent->setExpanded(true);
             for (const auto &step : handler.steps) {
                 if (!all_->isChecked() && step.flag < 0 && step.target<0 && !launches.contains(step.offset)) continue;
                 QString text = step.text;
-                if (launches.contains(step.offset)) {
+                if (launches.contains(step.offset) && !step.researched) {
                     const auto &site = launches[step.offset];
                     const int selector = project_->sceneEvents()->target(site.id);
                     text = QString("Play cutscene %1 · %2").arg(selector).arg(sceneNames.value(selector, site.name));
                 }
-                auto item = new QTreeWidgetItem(parent, {position(step.offset), text});
+                QString value=QString::number(u8(bytes,step.offset+1))+" · Edit…";
+                const int opcode=u8(bytes,step.offset);
+                if(opcode==0||opcode==4||opcode==0x20||opcode==0x29||opcode==0x2f)value="—";
+                if(step.flag>=0)value=QString("Flag %1 · %2").arg(step.flag).arg(step.value?"ON":"OFF");
+                else if(step.target>=0)value=position(step.target)+" · Choose destination…";
+                else if(u8(bytes,step.offset)>=0x68&&u8(bytes,step.offset)<=0x6f&&step.offset+3<bytes.size()&&u8(bytes,step.offset+2)==u8(bytes,step.offset)+0x20)
+                    value=QString::number(u8(bytes,step.offset+1)|(u8(bytes,step.offset+3)<<8))+" · Edit…";
+                if(!retailOffsets.contains(step.offset))value="Edit in Events";
+                auto item = new QTreeWidgetItem(parent, {position(step.offset), text,value});
                 item->setData(0, offsetRole, step.offset); item->setData(0, flagRole, step.flag);
                 item->setData(0, checkRole, step.check); item->setData(0, valueRole, step.value);
                 item->setData(0, targetRole, step.target);
+                item->setData(0, Qt::UserRole + 5, step.flagLabel);
                 item->setToolTip(1, text + "\nOriginal instruction location: " + position(step.offset));
                 if (step.offset == previous) steps_->setCurrentItem(item);
             }
             if (!parent->childCount()) delete parent;
         }
-        notice_->setText("Edit flags and branch destinations. Other instructions keep their original data. Branch destinations are limited to the game's jump range.");
+        notice_->clear();
     } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); restore_->setEnabled(false); }
     selectStep();
 }
@@ -224,7 +360,7 @@ void ScenarioEventEditor::selectStep() {
             if(controls.contains(at)) {
                 const int end=at+controls[at].length;
                 QSet<int> listed;
-                for(const auto &handler:EventScript::decode(original))for(const auto &step:handler.steps) {
+                for(const auto &handler:EventScript::decode(original, row))for(const auto &step:handler.steps) {
                     const int distance=(step.offset-end)/2;
                     if(distance < -128 || distance > 127 || listed.contains(step.offset))continue;
                     listed.insert(step.offset);
@@ -236,14 +372,21 @@ void ScenarioEventEditor::selectStep() {
     }
     branchTarget_->setEnabled(branchTarget_->count()>0);applyBranch_->setEnabled(branchTarget_->count()>0);
     const bool editable = item && item->parent() && item->data(0, flagRole).toInt() >= 0;
+    flagPanel_->setVisible(editable);branchPanel_->setVisible(editable&&branch);
+    apply_->setVisible(editable);
+    showParameters(editable?nullptr:item);
     flags_->setEnabled(editable); action_->setEnabled(editable); apply_->setEnabled(editable);
     jump_->setEnabled(item && item->parent() && item->data(0, targetRole).toInt() >= 0);
     action_->clear();
     discard_->hide();
     selection_ = editable ? QPair(rows_->currentData().toInt(), item->data(0, offsetRole).toInt()) : QPair(-1, -1);
-    if (!editable) { detail_->setText(item ? item->text(1) + " — read-only" : "Select a flag instruction to edit it."); return; }
+    if (!editable) { detail_->setText(item&&item->parent()?QString{}:"Select an instruction to edit its values."); return; }
     const bool check = item->data(0, checkRole).toBool();
+    for (int i = 0; i < flags_->count(); ++i)
+        flags_->setItemText(i, EventScript::flagName(flags_->itemData(i).toInt(), rows_->currentData().toInt()));
     flags_->setCurrentIndex(flags_->findData(item->data(0, flagRole)));
+    const auto scopedName = item->data(0, Qt::UserRole + 5).toString();
+    if (!scopedName.isEmpty()) flags_->setItemText(flags_->currentIndex(), scopedName);
     action_->addItem(check ? "Check OFF — take the branch when OFF" : "Clear — turn OFF", false);
     action_->addItem(check ? "Check ON — take the branch when ON" : "Set — turn ON", true);
     action_->setCurrentIndex(action_->findData(item->data(0, valueRole)));
@@ -302,6 +445,74 @@ void ScenarioEventEditor::apply() {
 }
 void ScenarioEventEditor::commit(const SceneEvents &next, const QString &label) {
     if (next.json() != project_->sceneEvents()->json()) undo_->push(new FlagCommand(project_, next.json(), label));
-    refresh(); changed_(); pending_->notify();
+    showRow(); changed_(); pending_->notify();
+}
+void ScenarioEventEditor::clearParameters() {
+    if(parameterItem_){steps_->removeItemWidget(parameterItem_,2);parameterItem_->setSizeHint(2,QSize{});
+        parameterItem_->setText(2,parameterItem_->data(2,Qt::UserRole).toString());}
+    if(parameterWidget_){parameterWidget_->hide();parameterWidget_->deleteLater();}
+    parameterWidget_=nullptr;parameterItem_=nullptr;
+}
+void ScenarioEventEditor::showParameters(QTreeWidgetItem *item) {
+    clearParameters();if(!item||!item->parent())return;
+    const int row=rows_->currentData().toInt(),offset=item->data(0,offsetRole).toInt();
+    try {
+        const auto bytes=SceneEvents::flagRow(SceneEvents::retailRow(project_->rom(),row),row,project_->sceneEvents()->flagEdits());
+        auto fields=EventScript::parameters(bytes,row,offset);
+        if(fields.isEmpty())return;
+        for(auto &f:fields)if(f.kind=="identity-class"||f.kind=="equipment"||f.kind=="consumable") {
+            const auto table=f.kind=="identity-class"?Table::Classes:f.kind=="equipment"?Table::Items:Table::Consumables;
+            f.choices.clear();for(const auto &record:project_->records(table))
+                if(record.id>=f.minimum&&record.id<=f.maximum)f.choices[record.id]=record.name;
+        }
+        for(auto &f:fields)if(f.key=="destination")
+            for(int h=0;h<steps_->topLevelItemCount();++h) {
+                const auto handler=steps_->topLevelItem(h);
+                for(int n=0;n<handler->childCount();++n) {
+                    const auto step=handler->child(n);const int at=step->data(0,offsetRole).toInt();
+                    if(f.choices.contains(at))f.choices[at]=position(at)+" · "+step->text(1).left(120);
+                }
+            }
+        for(const auto &site:SceneEvents::sites())if(site.row==row&&offset==site.offset-(site.shortForm?2:4)) {
+            for(auto &f:fields)if(f.key=="value") {
+                f.label="Cutscene";f.maximum=65535;f.value=project_->sceneEvents()->target(site.id);f.choices.clear();
+                for(const auto &id:project_->scenePrograms()->scenes())for(int selector:project_->scenePrograms()->resource(id).selectors)
+                    f.choices[selector]=project_->scenePrograms()->displayName(id);
+            }
+        }
+        parameterWidget_=new QWidget;parameterWidget_->setAutoFillBackground(true);parameterItem_=item;
+        item->setData(2,Qt::UserRole,item->text(2));item->setText(2,{});
+        auto form=new QFormLayout(parameterWidget_);form->setContentsMargins(5,3,5,3);
+        form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+        auto change=[this,row,offset](const QString &key,int value) {
+            // Finish the widget's event before refreshing the instruction tree.
+            QTimer::singleShot(0,this,[this,row,offset,key,value] {
+                try {
+                    auto next=*project_->sceneEvents();next.editParameter(row,offset,key,value,*project_->scenePrograms());
+                    commit(next,"Edit event instruction value");
+                }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+            });
+        };
+        for(const auto &f:fields) {
+            const auto name="scenarioEventParameter_"+f.key;
+            if(f.choices.isEmpty()) {
+                auto number=new QSpinBox;number->setObjectName(name);number->setRange(f.minimum,f.maximum);
+                number->setKeyboardTracking(false);number->setValue(f.value);form->addRow(f.label,number);
+                connect(number,&QSpinBox::valueChanged,this,[change,key=f.key](int value){change(key,value);});
+            }else {
+                auto choice=new QComboBox;choice->setObjectName(name);choice->setMinimumContentsLength(15);
+                choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+                choice->setEditable(true);choice->setInsertPolicy(QComboBox::NoInsert);
+                for(auto it=f.choices.begin();it!=f.choices.end();++it)choice->addItem(QString::number(it.key())+" · "+it.value(),it.key());
+                if(choice->findData(f.value)<0)choice->addItem(QString("Existing ID %1").arg(f.value),f.value);
+                choice->setCurrentIndex(choice->findData(f.value));choice->completer()->setFilterMode(Qt::MatchContains);
+                choice->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+                form->addRow(f.label,choice);
+                connect(choice,&QComboBox::activated,this,[change,choice,key=f.key](int index){change(key,choice->itemData(index).toInt());});
+            }
+        }
+        item->setSizeHint(2,parameterWidget_->sizeHint());steps_->setItemWidget(item,2,parameterWidget_);
+        steps_->doItemsLayout();steps_->scrollToItem(item);
+    }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
 }
 } // namespace lordly

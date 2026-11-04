@@ -5,8 +5,21 @@ Choose opens a searchable picker with separate Personal, Male, Female and
 Creature name tables, Add name and Random name. Selecting a random-list entry
 as a unique name creates/reuses a fixed personal-name entry.
 
-**World Map → Location icon** selects the game's Flag or Castle artwork for each
-location. The choice updates the map immediately and survives ROM export/reopen.
+**World Map → Replace map artwork** imports a512×320 image with an Original /
+Game result comparison and optional dithering. Colours convert to the game's
+256-colour palette. **Location icon → Edit icons** supports named new icons,
+independent copies, deletion when unused, pixel/palette editing and frame PNG
+import/export. Up to64 icons retain the original static-building or animated-flag
+behaviour and both map-state appearances. Select an icon separately for each
+location. These edits use project Undo/Redo, persistence and ROM export/reopen.
+**Export PNG** saves the current 512×320 background without locations or roads,
+ready to edit externally and bring back through **Replace map artwork**.
+Recreating an original road keeps its story unlock/close rule. New connections
+open when both locations are revealed. Removed roads remain unavailable in old
+saves, and road-reveal animations follow the edited shape.
+
+**Neutral encounters → Persuasion** shows leader groups down the left and target
+groups across the top. Cell editing and both group editors follow those axes.
 **Storyline → Branches** lists the game's existing routes alongside added branches;
 existing routes open their destination event. The W.I.P badge belongs inside the
 Storyline tab, with bold red text.
@@ -306,11 +319,15 @@ share the same rounded camera basis. Original-instruction comparisons cover
 trigonometry, camera matrices and actor/channel/shadow transforms. Desktop
 rasterization and remaining host math services retain their existing limits.
 
-Classes → Combat includes leader affinity
-strengths for the four native member groups, their class names and a live score
-multiplier example. Default-current-class links identify shared values. Edits,
-Retail restore, Undo and project persistence use the Tools model; export replaces
-only the bounded affinity dispatch inside its original routine.
+Classes → Combat includes leader-affinity strengths, member classes and score
+multipliers. Manage groups adds, renames and removes groups, moves member classes,
+and assigns leader classes with individual strengths. A member belongs to one
+group; leaders can affect several groups. Default-current-class links identify
+shared strengths. Group changes use one undoable edit and persist with Tools.
+Export uses a compiled C lookup in the permanent class allocation, retaining the
+native leader-selection and eligibility checks. Older projects and in-place
+leader-affinity exports remain readable. These November 3 changes are source-only;
+build, UI and exported-instruction verification are held at Joe's request.
 
 Encounters → Persuasion shows an editable affinity matrix with leader groups across
 the top and target groups down the left. A cell edits every leader in its group in
@@ -336,6 +353,10 @@ current-project mode builds changed projects and reuses an unchanged verified bu
 The test ROM has a persistent visible location; mission seeding launches Project64.
 Future direct launches of the assigned ROM use its save without the editor.
 Reassigning backs up the previous save. Existing-ROM mission testing remains available.
+Mission test saves follow the exported road network, including added connections.
+Removed retail connections no longer prevent the Testing tab from loading. If the
+story journey leaves no usable path, the test save opens a path through the current
+connections; it does not change the project's roads or story rules.
 
 Tools → Status effects provides global Poison, Power Up and Power Down strength
 (0–100%) plus Sleep and Paralysis recovery (Luck-based retail or fixed 0–100%).
@@ -375,7 +396,10 @@ routine's allocation and upgrades earlier Poison exports. The retail shop summar
 still omits the three extended effects; editable item descriptions are independent.
 
 Scenario → Events lists the selected mission's story and investigation scripts,
-with named flags where confirmed and numeric IDs elsewhere. Existing Boolean
+with researched labels for all 113 original event programs, including named flags,
+register arguments, cutscene purposes and handlers. Storyline also exposes the
+world-routing, report and chapter programs. Contextual labels are checked against
+the loaded instructions; edited scripts use current-byte decoding. Existing Boolean
 writes and recognized checks edit through flag and Set/Clear/Check dropdowns;
 branch destinations and unsupported commands are preserved. Edits support Undo,
 project persistence, change summaries and compiled ROM export/readback. See
@@ -1368,3 +1392,44 @@ Classes has a Rename class button beside New class and Copy class. Its dialog
 shows the selected class ID and edits the actual in-game name, with up to two
 lines, inline validation, Save and Cancel. Renames use the existing Undo history
 and keep the selected class visible after sorting or filtering changes.
+
+## World-map road follow-up — source only (November 3)
+
+Overlapping dots share a drawing position in the editor; connections remain
+independent. A selected road takes priority when picking a shared dot. Dragging
+uses a three-dot neighborhood with fixed outer boundaries. If its two sections
+cannot fit the shape without deleting a real corner elsewhere, the drag is not
+applied and a short message appears.
+
+Roads support two internal sections of seven bends, 14 total, while remaining one
+map connection. They use one availability flag and require no extra Map Location.
+The runtime pages each section through the native travel buffer; the drawn road
+and travel use the same full path. Version 4 exports store both sections and
+continue to read earlier seven-bend exports. These changes and the new regression
+cases have not been compiled or run; the current live editor is unchanged.
+
+
+### Map Location descriptions - pending build, 2026-11-03
+
+World Map now has a description preview and Edit description button for the
+selected Map Location. Names and Text includes Location descriptions under
+Descriptions and help text. Both edit the same records and share Undo/Redo;
+renaming a location updates its label without changing its description ID.
+Project persistence, ROM export and reopening are wired through the shared
+text banks. Longer text banks can relocate without overwriting adjacent
+resources. Native lookup checks passed; compiled/UI/export checks await the
+next authorized build. No live update was made.
+
+
+2026-11-03 follow-up: the affinity groups, local road dragging/appearance merge,
+14-bend road paging and shared Map Location description changes above are now
+built, tested and installed in native/live. Focused project/export/reopen and
+Undo/Redo checks passed, as did exported-instruction regressions. A combined
+affinity/road/expanded-description export passed. Full-console gameplay was not
+run; overlapping-dot appearance merging remains an editor drawing feature.
+
+
+2026-11-03 road follow-up: repeated drags no longer retain tiny redundant local
+bends until the road stops moving. The editor refits only the edited span while
+retaining the grabbed point, distant geometry, three-dot reach and 14-bend limit.
+Thirty consecutive model and mouse drags plus Undo/Redo passed.

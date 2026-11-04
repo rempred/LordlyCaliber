@@ -1,13 +1,21 @@
 #include "app/campaign_editor.h"
+#include "app/campaign_art_editor.h"
+#include "app/text_workspace.h"
 #include "app/content_refresh.h"
 #include "app/cutscene_editor.h"
 #include "app/scenario_editor.h"
 #include "app/scenario_event_editor.h"
+#include "app/event_flag_links.h"
 #include "engine/event_script.h"
 #include <QComboBox>
+#include <QCompleter>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QImageWriter>
+#include <QSaveFile>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHideEvent>
@@ -20,7 +28,9 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
+#include <QScrollArea>
 #include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
@@ -28,6 +38,7 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTreeWidget>
+#include <QTimer>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -73,6 +84,12 @@ QString conditions(const QJsonArray &a) {
     }
     return text.isEmpty() ? QString("Always") : text.join("; ");
 }
+QString entryIdentity(const EntryConditions &entry) {
+    QSet<int> checks;for(const auto &condition:entry.flags)for(int at:condition.comparisonOffsets)checks.insert(at);
+    for(const auto &condition:entry.numbers)checks.insert(condition.comparisonOffset);
+    auto offsets=checks.values();std::sort(offsets.begin(),offsets.end());QString key=QString::number(entry.eventOffset);
+    for(int at:offsets)key+="/"+QString::number(at);return key;
+}
 } // namespace
 class CampaignCanvas final : public QWidget {
   public:
@@ -98,6 +115,7 @@ class CampaignCanvas final : public QWidget {
     std::function<void(int, QPoint)> moved;
     std::function<void(int)> roadPicked;
     std::function<void(int,const QVector<QPoint> &)> roadShaped;
+    std::function<void(const QString &)> roadMessage;
     std::function<void(int,int)> connectionPicked;
     std::function<void(bool)> connectionModeChanged;
     std::function<void(int,QPoint)> locationPlaced;
@@ -114,10 +132,16 @@ class CampaignCanvas final : public QWidget {
     }
     void syncMap() {
         const auto &map=*p_->campaignMap();
+        if(backgroundBytes_!=map.backgroundBytes()) {
+            backgroundBytes_=map.backgroundBytes();
+            background_=CampaignMap::artworkImage(backgroundBytes_,{512,320},256);cacheSize_={};
+        }
         nodePositions_.resize(CampaignMap::nodeCount+1);
         for(int id=1;id<nodePositions_.size();++id) {
             nodePositions_[id]=map.position(id);
-            if(markerTypes_.value(id,-1)==map.icon(id))continue;
+            const auto pixels=map.iconFrameBytes(map.icon(id),1,0);
+            if(markerTypes_.value(id,-1)==map.icon(id) && markerBytes_.value(id)==pixels)continue;
+            markerBytes_[id]=pixels;
             markerTypes_[id]=map.icon(id);
             const auto art=map.nodeArtwork(id);
             const auto image=QImage(reinterpret_cast<const uchar *>(art.rgba.constData()),art.width,art.height,QImage::Format_RGBA8888).copy();
@@ -125,6 +149,7 @@ class CampaignCanvas final : public QWidget {
         }
         roadPoints_.resize(map.totalRoads()+1);
         for(int id=1;id<roadPoints_.size();++id)roadPoints_[id]=map.roadDots(id);
+        visibleRoadPoints_=CampaignMap::mergedRoadDots(roadPoints_);
         update();
     }
 
@@ -176,14 +201,16 @@ class CampaignCanvas final : public QWidget {
         auto draw = [&](QPoint p, const QPixmap &art) {
             painter.drawPixmap(screen(p),art);
         };
-        for (int id = 1; id < roadPoints_.size(); ++id) {
-            for (const auto point:roadPoints_[id]) {
-                draw(point,dotCache_);
-                if (id==selectedRoad) {
-                    painter.setPen(QPen(QColor(255,225,110),1));painter.setBrush(Qt::NoBrush);
-                    painter.drawEllipse(screen(point+QPoint(3,3)),5*scale,5*scale);
-                }
+        QSet<int> drawn;
+        for (int id = 1; id < visibleRoadPoints_.size(); ++id)
+            for (const auto point:visibleRoadPoints_[id]) {
+                const int key=point.y()*512+point.x();
+                if(!drawn.contains(key)){draw(point,dotCache_);drawn.insert(key);}
             }
+        if(selectedRoad>0 && selectedRoad<visibleRoadPoints_.size()) {
+            painter.setPen(QPen(QColor(255,225,110),1));painter.setBrush(Qt::NoBrush);
+            for(const auto point:visibleRoadPoints_[selectedRoad])
+                painter.drawEllipse(screen(point+QPoint(3,3)),5*scale,5*scale);
         }
         if (choosingConnection()) {
             painter.save();
@@ -260,14 +287,17 @@ class CampaignCanvas final : public QWidget {
             double closest=qMax(7.,mapRect().width()/512.*5);
             int road=0,dot=-1;QPoint point;
             for(int id=1;id<=p_->campaignMap()->totalRoads();++id) {
-                const auto dots=p_->campaignMap()->roadDots(id);
+                const auto &dots=visibleRoadPoints_[id];
                 for(int n=0;n<dots.size();++n) {
                     const auto distance=QLineF(screen(dots[n]+QPoint(3,3)),e->position()).length();
-                    if(distance<closest){closest=distance;road=id;dot=n;point=dots[n];}
+                    if(distance<closest || (road && qAbs(distance-closest)<0.01 && id==selectedRoad)){
+                        closest=distance;road=id;dot=n;point=roadPoints_[id][n];
+                    }
                 }
             }
             if(!road)return;
             selectedRoad=road;dragDot_=dot;preview_=originPoint_=point;origin_=e->position();
+            roadDragValid_=true;if(roadMessage)roadMessage({});
             if(roadPicked)roadPicked(road);
             dragMap_=*p_->campaignMap();previewBends_=dragMap_->roadWaypoints(road);
             update();return;
@@ -293,18 +323,25 @@ class CampaignCanvas final : public QWidget {
                   qBound(1,originPoint_.y()+qRound(delta.y()*320/r.height()),319)};
         auto map=*dragMap_;
         if(dragDot_>=0) {
-            previewBends_=dragMap_->pulledRoad(selectedRoad,dragDot_,preview_-originPoint_);
-            map.setRoadDots(selectedRoad,previewBends_);roadPoints_[selectedRoad]=map.roadDots(selectedRoad);
+            try {
+                previewBends_=dragMap_->pulledRoad(selectedRoad,dragDot_,preview_-originPoint_);
+                map.setRoadDots(selectedRoad,previewBends_);roadPoints_[selectedRoad]=map.roadDots(selectedRoad);
+                roadDragValid_=true;if(roadMessage)roadMessage({});
+            } catch(const Error &error) {
+                roadDragValid_=false;roadPoints_[selectedRoad]=dragMap_->roadDots(selectedRoad);
+                if(roadMessage)roadMessage(QString::fromUtf8(error.what()));
+            }
         } else {
             map.setNode(drag_,preview_,map.label(drag_));nodePositions_[drag_]=preview_;
             for(int id=1;id<roadPoints_.size();++id){const auto ends=map.road(id);if(ends.first==drag_ || ends.second==drag_)roadPoints_[id]=map.roadDots(id);}
         }
+        visibleRoadPoints_=CampaignMap::mergedRoadDots(roadPoints_);
         update();
     }
     void mouseReleaseEvent(QMouseEvent *e) override {
         if (dragDot_>=0) {
             dragDot_=-1;dragMap_.reset();
-            if (preview_!=originPoint_ && roadShaped) roadShaped(selectedRoad,previewBends_);
+            if (roadDragValid_ && preview_!=originPoint_ && roadShaped) roadShaped(selectedRoad,previewBends_);
             syncMap();return;
         }
         if (drag_ < 0) return;
@@ -319,13 +356,14 @@ class CampaignCanvas final : public QWidget {
   private:
     Project *p_;
     int drag_ = -1, dragDot_ = -1;
+    bool roadDragValid_ = true;
     int connectionSource_ = 0;
     int placementId_ = 0;
     QPointF placementCursor_;
     QPointF connectionCursor_;
     std::optional<CampaignMap> dragMap_;
     QVector<QPoint> nodePositions_,previewBends_;
-    QVector<QVector<QPoint>> roadPoints_;
+    QVector<QVector<QPoint>> roadPoints_,visibleRoadPoints_;
     QSize cacheSize_;
     qreal cacheRatio_ = 0;
     QPixmap backgroundCache_,dotCache_;
@@ -335,12 +373,15 @@ class CampaignCanvas final : public QWidget {
     QImage background_, dot_;
     QMap<int, QImage> markers_;
     QMap<int,int> markerTypes_;
+    QByteArray backgroundBytes_;
+    QMap<int,QByteArray> markerBytes_;
 };
 CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void()> changed,
                                QWidget *parent)
     : QWidget(parent), project_(p), undo_(undo), changed_(std::move(changed)), routes_(p->rom()) {
     setObjectName("campaignEditor");
     p->loadCampaignMap();
+    p->loadTexts();
     p->loadSceneEvents();
     p->loadScenarios();
     auto layout = new QVBoxLayout(this);
@@ -352,6 +393,24 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     auto worldLayout = new QVBoxLayout(world);
     auto actions = new QHBoxLayout;
     auto create = button(actions, "Create map location", "campaignCreateNode");
+    auto artwork = button(actions,"Replace map artwork…","campaignReplaceArtwork");
+    auto exportArtwork = button(actions,"Export PNG…","campaignExportArtwork");
+    connect(exportArtwork,&QPushButton::clicked,this,[this]{
+        try {
+            const auto path=QFileDialog::getSaveFileName(this,"Export world map artwork","World map.png","PNG (*.png)");
+            if(path.isEmpty())return;
+            QSaveFile file(path);
+            if(!file.open(QIODevice::WriteOnly))throw Error("Could not create the map PNG: "+file.errorString());
+            const auto image=CampaignMap::artworkImage(project_->campaignMap()->backgroundBytes(),{512,320},256);
+            QImageWriter writer(&file,"png");
+            if(!writer.write(image))throw Error("Could not export map artwork: "+writer.errorString());
+            if(!file.commit())throw Error("Could not finish the map PNG: "+file.errorString());
+            notice_->setText("Map artwork exported.");
+        }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+    });
+    connect(artwork,&QPushButton::clicked,this,[this]{
+        try{replaceCampaignBackground(this,project_,undo_);}catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+    });
 
     actions->addStretch();
     worldLayout->addLayout(actions);
@@ -379,12 +438,12 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     y_->setObjectName("campaignNodeY");
     form->addRow("Map location name", label_);
     icon_=new QComboBox;icon_->setObjectName("campaignLocationIcon");icon_->setIconSize({32,32});
-    for(int type=0;type<2;++type) {
-        const auto art=p->campaignMap()->iconArtwork(type);
-        const QImage image(reinterpret_cast<const uchar *>(art.rgba.constData()),art.width,art.height,QImage::Format_RGBA8888);
-        icon_->addItem(QIcon(QPixmap::fromImage(image.scaled(32,32,Qt::IgnoreAspectRatio,Qt::FastTransformation))),type?"Castle":"Flag",type);
-    }
-    form->addRow("Location icon",icon_);
+    auto iconRow=new QHBoxLayout;iconRow->addWidget(icon_,1);
+    auto editIcons=button(iconRow,"Edit icons…","campaignEditIcons");
+    form->addRow("Location icon",iconRow);
+    connect(editIcons,&QPushButton::clicked,this,[this]{
+        try{editCampaignIcons(this,project_,undo_,icon_->currentData().toInt());}catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+    });
     form->addRow("X", x_);
     form->addRow("Y", y_);
     detail->addLayout(form);
@@ -400,6 +459,9 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     roadLayout->addLayout(roadActions);
 
     detail->addWidget(roadBox);
+    description_ = new DescriptionPanel(p, undo, changed_);
+    description_->setObjectName("campaignLocationDescription");
+    detail->addWidget(description_);
     detail->addStretch();
     split->addWidget(fields);
     split->setSizes({210, 600, 310});
@@ -443,7 +505,9 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     rules_->setSelectionBehavior(QAbstractItemView::SelectRows);
     rules_->setSelectionMode(QAbstractItemView::SingleSelection);
     rules_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    branchLayout->addWidget(rules_, 1);
+    auto branchSplit=new QSplitter;branchSplit->addWidget(rules_);
+    branchDetails_=new QScrollArea;branchDetails_->setObjectName("storylineBranchDetails");branchDetails_->setWidgetResizable(true);branchSplit->addWidget(branchDetails_);
+    branchSplit->setStretchFactor(0,3);branchSplit->setStretchFactor(1,2);branchSplit->setSizes({900,600});branchLayout->addWidget(branchSplit,1);
     auto ruleActions = new QHBoxLayout;
     auto addRule = button(ruleActions, "Add branch…", "storylineAddBranch"),
          editRuleButton = button(ruleActions, "Edit branch…", "storylineEditBranch"),
@@ -541,6 +605,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     notice_->setObjectName("campaignNotice");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
+    canvas_->roadMessage=[this](const QString &message){notice_->setText(message);};
     connect(nodes_, &QListWidget::currentRowChanged, this, [this] {
         if (!loading_) {
             if(nodes_->currentItem())preferredNode_=nodes_->currentItem()->data(Qt::UserRole).toInt();
@@ -632,9 +697,10 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     });
     connect(addRule, &QPushButton::clicked, this, [this] { editRule(-1); });
     connect(editRuleButton, &QPushButton::clicked, this, [this] {
-        if (rules_->currentRow() >= 0 && rules_->item(rules_->currentRow(),0)->data(Qt::UserRole).toInt()>=0)
+        if (rules_->currentRow() >= 0)
             editRule(rules_->currentRow());
     });
+    connect(rules_,&QTableWidget::cellDoubleClicked,this,[this](int row,int){editRule(row);});
     connect(removeRule, &QPushButton::clicked, this, [this] {
         const int row = rules_->currentRow(), node = branchNode_->currentData().toInt();
         if (row < 0 || rules_->item(row,0)->data(Qt::UserRole).toInt()<0)
@@ -660,7 +726,8 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     connect(rules_,&QTableWidget::itemSelectionChanged,this,[this,editRuleButton,removeRule,openEvent] {
         const int row=rules_->currentRow();const auto item=row>=0?rules_->item(row,0):nullptr;
         const bool custom=item && item->data(Qt::UserRole).toInt()>=0;
-        editRuleButton->setEnabled(custom);removeRule->setEnabled(custom);openEvent->setEnabled(item!=nullptr);
+        editRuleButton->setEnabled(item!=nullptr);editRuleButton->setText(custom?"Edit branch…":"Edit entry conditions…");removeRule->setEnabled(custom);openEvent->setEnabled(item!=nullptr);
+        showBranchConditions();
     });
     canvas_->roadPicked=[this](int id) {
         const auto ends=project_->campaignMap()->road(id);
@@ -716,6 +783,9 @@ void CampaignEditor::refresh() {
     branchNode_->clear();
 
     const auto &map = *project_->campaignMap();
+    {const QSignalBlocker block(icon_);icon_->clear();
+        for(int id:map.iconIds())icon_->addItem(QIcon(QPixmap::fromImage(map.iconFrame(id,1,0).scaled(32,32))),map.iconName(id),id);
+    }
     for (int id = 1; id <= CampaignMap::nodeCount; ++id)
         if (map.position(id).x()) {
             const auto text = QString("%1 · %2").arg(id).arg(map.name(id));
@@ -763,16 +833,21 @@ void CampaignEditor::showNode() {
     x_->setValue(map.position(node).x());
     y_->setValue(map.position(node).y());
     label_->setText(map.name(node));
+    description_->selectDescription("locations", node - 1);
     {const QSignalBlocker block(icon_);icon_->setCurrentIndex(icon_->findData(map.icon(node)));}
     canvas_->selected = node;
     canvas_->syncMap();
+    // Refreshing an edited event must not navigate Storyline back to the map's
+    // last selection. Follow locations only while the user is on World Map.
+    if(tabs_->currentIndex()==0)events_->selectLocation(node);
 }
 void CampaignEditor::selectNode(int node) {
     for (int row = 0; row < nodes_->count(); ++row)
         if (nodes_->item(row)->data(Qt::UserRole).toInt() == node) {
             preferredNode_=node;
-            nodes_->setCurrentRow(row);
             tabs_->setCurrentIndex(0);
+            nodes_->setCurrentRow(row);
+            showNode();
             return;
         }
 }
@@ -847,6 +922,11 @@ void CampaignEditor::refreshFlow() {
 }
 void CampaignEditor::showBranches() {
     const int node = branchNode_->currentData().toInt();
+    const bool sameNode=branchDetailsNode_==node;
+    const int previous=sameNode?rules_->currentRow():0;branchDetailsNode_=node;
+    const auto previousKey=sameNode&&branchEntries_.contains(previous)?entryIdentity(branchEntries_[previous]):QString{};
+    const QSignalBlocker block(rules_);branchEntries_.clear();branchEntryErrors_.clear();
+    if(node>0&&story_->isVisible()&&story_->currentIndex()==1)events_->selectLocation(node);
     const auto rules =
         project_->sceneEvents()->flagEdits()["0"].toObject()[QString::number(node)].toArray();
     rules_->setRowCount(rules.size());
@@ -861,7 +941,8 @@ void CampaignEditor::showBranches() {
     }
     routeInfo_->clear();routeInfo_->hide();
     try {
-        auto native=routes_;native.scripts[0]=SceneEvents::retailRow(project_->rom(),0);
+        auto native=routes_;const auto retail=SceneEvents::retailRow(project_->rom(),0);
+        native.scripts[0]=EventScript::applyOperands(retail,0,project_->sceneEvents()->flagEdits()["0"].toObject()["operands"].toObject());
         QVector<StoryRoute> original;QVector<QVector<int>> chaosValues;
         for(int chaos=0;chaos<=100;++chaos)for(const auto &route:native.routes(node,chaos)) {
             int index=original.indexOf(route);
@@ -885,19 +966,76 @@ void CampaignEditor::showBranches() {
             const int row=rules_->rowCount();rules_->insertRow(row);
             auto when=new QTableWidgetItem(checks.isEmpty()?"Always":checks.join("; "));when->setData(Qt::UserRole,-1);
             auto event=new QTableWidgetItem(eventName(route.event));event->setData(Qt::UserRole,route.event);
-            rules_->setItem(row,0,when);rules_->setItem(row,1,event);rules_->setItem(row,2,new QTableWidgetItem("Game"));
+            rules_->setItem(row,0,when);rules_->setItem(row,1,event);rules_->setItem(row,2,new QTableWidgetItem(native.scripts[0]==retail?"Game":"Edited game logic"));
+            try {branchEntries_[row]=EntryConditions::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),route,chaosValues[index].first());}
+            catch(const Error &e){branchEntryErrors_[row]=QString::fromUtf8(e.what());}
         }
     } catch (const Error &e) {
         routeInfo_->setText(QString::fromUtf8(e.what()));routeInfo_->show();
     }
-    if(rules_->rowCount())rules_->setCurrentCell(0,0);
+    int selectedRow=qBound(0,previous,rules_->rowCount()-1);
+    if(!previousKey.isEmpty())for(auto entry=branchEntries_.begin();entry!=branchEntries_.end();++entry)if(entryIdentity(entry.value())==previousKey){selectedRow=entry.key();break;}
+    if(rules_->rowCount())rules_->setCurrentCell(selectedRow,0);
     else if(routeInfo_->text().isEmpty()){routeInfo_->setText("No entry branches for this location.");routeInfo_->show();}
     const auto selected=rules_->currentRow()>=0?rules_->item(rules_->currentRow(),0):nullptr;
     const bool custom=selected && selected->data(Qt::UserRole).toInt()>=0;
-    findChild<QPushButton *>("storylineEditBranch")->setEnabled(custom);
+    findChild<QPushButton *>("storylineEditBranch")->setEnabled(selected!=nullptr);
+    findChild<QPushButton *>("storylineEditBranch")->setText(custom?"Edit branch…":"Edit entry conditions…");
     findChild<QPushButton *>("storylineRemoveBranch")->setEnabled(custom);
     findChild<QPushButton *>("storylineOpenEvent")->setEnabled(selected!=nullptr);
     rules_->resizeRowsToContents();
+    showBranchConditions();
+}
+void CampaignEditor::changeBranch(std::function<void(SceneEvents &)> edit,const QString &label) {
+    QTimer::singleShot(0,this,[this,edit=std::move(edit),label]{try{
+        auto next=*project_;auto events=*next.sceneEvents();edit(events);next.setSceneEvents(events.json());commit(std::move(next),label);
+    }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}});
+}
+void CampaignEditor::showBranchConditions() {
+    if(auto old=branchDetails_->takeWidget()){old->hide();old->deleteLater();}
+    auto content=new QWidget;auto layout=new QVBoxLayout(content);branchDetails_->setWidget(content);
+    const int row=rules_->currentRow(),node=branchNode_->currentData().toInt();
+    if(row<0||!rules_->item(row,0)){layout->addWidget(new QLabel("Select a branch to edit its conditions."));layout->addStretch();return;}
+    auto heading=new QLabel("Entry conditions");auto bold=heading->font();bold.setBold(true);heading->setFont(bold);layout->addWidget(heading);
+    const int custom=rules_->item(row,0)->data(Qt::UserRole).toInt();
+    auto makeFlag=[&](int id,int minimum,int maximum){auto box=new QComboBox;box->setObjectName(QString("branchFlag_%1").arg(id));box->setEditable(true);box->setInsertPolicy(QComboBox::NoInsert);box->setMinimumContentsLength(20);box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        for(int flag=minimum;flag<=maximum;++flag)box->addItem(project_->sceneEvents()->flagName(flag,0),flag);box->setCurrentIndex(box->findData(id));box->completer()->setFilterMode(Qt::MatchContains);box->completer()->setCaseSensitivity(Qt::CaseInsensitive);box->lineEdit()->setCursorPosition(0);return box;};
+    auto makeState=[&](int flag,int value){auto box=new QComboBox;box->setObjectName(QString("branchFlagState_%1").arg(flag));box->addItem("OFF",0);box->addItem("ON",1);box->setCurrentIndex(box->findData(value));return box;};
+    auto makeCheck=[&](int number){auto group=new QGroupBox(QString("IF %1").arg(number));auto form=new QFormLayout(group);form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);layout->addWidget(group);return form;};
+    auto links=[&](QFormLayout *form,int flag){form->addRow(eventFlagLinks(project_,0,flag,[this](int r,int at){selectEvent(r,at);}));};
+    if(custom>=0) {
+        const auto all=project_->sceneEvents()->flagEdits()["0"].toObject()[QString::number(node)].toArray();
+        if(custom>=all.size())return;const auto rule=all[custom].toObject();const auto conditions=rule["conditions"].toArray();
+        for(int i=0;i<conditions.size();++i){const auto c=conditions[i].toObject();const int flag=c["flag"].toInt();auto form=makeCheck(i+1);auto flagBox=makeFlag(flag,0,255);auto state=makeState(flag,c["value"].toBool());form->addRow("Flag",flagBox);form->addRow("State",state);links(form,flag);
+            auto update=[=,this](const QString &key,QJsonValue value){changeBranch([=](SceneEvents &events){auto rules=events.flagEdits()["0"].toObject()[QString::number(node)].toArray();auto r=rules[custom].toObject();auto tests=r["conditions"].toArray();auto test=tests[i].toObject();test[key]=value;tests[i]=test;r["conditions"]=tests;rules[custom]=r;events.setWorldRules(node,rules);},"Edit entry condition");};
+            connect(flagBox,&QComboBox::activated,this,[=](int at){update("flag",flagBox->itemData(at).toInt());});connect(state,&QComboBox::activated,this,[=](int at){update("value",state->itemData(at).toInt()!=0);});
+        }
+        if(conditions.isEmpty())layout->addWidget(new QLabel("Always"));
+        auto destination=eventPicker();destination->setObjectName("branchDestination");destination->setCurrentIndex(destination->findData(rule["event"].toInt()));layout->addWidget(new QLabel("THEN enter"));layout->addWidget(destination);
+        connect(destination,&QComboBox::activated,this,[=,this](int at){const int event=destination->itemData(at).toInt();changeBranch([=](SceneEvents &events){auto rules=events.flagEdits()["0"].toObject()[QString::number(node)].toArray();auto r=rules[custom].toObject();r["event"]=event;rules[custom]=r;events.setWorldRules(node,rules);},"Change branch destination");});
+        auto edit=new QPushButton("Add or remove conditions…");layout->addWidget(edit);connect(edit,&QPushButton::clicked,this,[this,row]{editRule(row);});
+    }else if(branchEntries_.contains(row)) {
+        const auto entry=branchEntries_[row];int number=0;
+        for(const auto &condition:entry.flags){auto form=makeCheck(++number);auto flag=makeFlag(condition.flag,condition.minimum,condition.maximum);auto state=makeState(condition.flag,condition.value);form->addRow("Flag",flag);form->addRow("State",state);links(form,condition.flag);
+            flag->setEnabled(condition.unavailable.isEmpty()&&!condition.flagOffsets.isEmpty());state->setEnabled(condition.stateEditable);
+            if(!condition.unavailable.isEmpty()){auto info=new QLabel(condition.unavailable);info->setWordWrap(true);form->addRow(info);}
+            bool shared=false;for(auto other=branchEntries_.begin();other!=branchEntries_.end();++other)if(other.key()!=row)for(const auto &check:other->flags)for(int at:condition.comparisonOffsets)shared|=check.comparisonOffsets.contains(at);
+            if(shared){auto info=new QLabel("Shared check — edits also update the other branches using it.");info->setWordWrap(true);form->addRow(info);}
+            connect(flag,&QComboBox::activated,this,[=,this](int at){const int value=flag->itemData(at).toInt();changeBranch([=,this](SceneEvents &events){EntryConditions::setFlag(events,*project_->scenePrograms(),condition,value);},"Change entry flag");});
+            connect(state,&QComboBox::activated,this,[=,this](int at){const int value=state->itemData(at).toInt();changeBranch([=,this](SceneEvents &events){EntryConditions::setState(events,*project_->scenePrograms(),condition,value);},"Change entry flag state");});
+        }
+        for(const auto &condition:entry.numbers){auto form=makeCheck(++number);auto relation=new QComboBox;relation->setObjectName(QString("branchNumberRelation_%1").arg(condition.comparisonOffset));
+            for(auto [id,name]:QMap<int,QString>{{10,"Equals"},{11,"Does not equal"},{12,"Greater than"},{13,"Less than"},{14,"At least"},{15,"At most"}}.asKeyValueRange())relation->addItem(name,id);relation->setCurrentIndex(relation->findData(condition.relation));
+            auto value=new QSpinBox;value->setObjectName(QString("branchNumberValue_%1").arg(condition.valueOffset));value->setRange(condition.minimum,condition.maximum);value->setValue(condition.value);value->setKeyboardTracking(false);form->addRow(condition.name,relation);form->addRow("Value",value);
+            connect(relation,&QComboBox::activated,this,[=,this](int at){const int selected=relation->itemData(at).toInt();changeBranch([=,this](SceneEvents &events){EntryConditions::setNumberRelation(events,*project_->scenePrograms(),condition,selected);},"Change entry comparison");});
+            connect(value,&QSpinBox::valueChanged,this,[=,this](int selected){changeBranch([=,this](SceneEvents &events){EntryConditions::setNumberValue(events,*project_->scenePrograms(),condition,selected);},"Change entry value");});
+        }
+        if(!number)layout->addWidget(new QLabel("Always"));
+        auto destination=eventPicker();destination->setObjectName("branchDestination");destination->setCurrentIndex(destination->findData(entry.event));layout->addWidget(new QLabel("THEN enter"));layout->addWidget(destination);
+        connect(destination,&QComboBox::activated,this,[=,this](int at){const int value=destination->itemData(at).toInt();changeBranch([=,this](SceneEvents &events){EntryConditions::setEvent(events,*project_->scenePrograms(),entry,value);},"Change branch destination");});
+    }else{auto error=new QLabel(branchEntryErrors_.value(row,"This entry has no editable conditions."));error->setWordWrap(true);layout->addWidget(error);}
+    auto full=new QPushButton("Show full entry logic");layout->addWidget(full);connect(full,&QPushButton::clicked,this,[this,node]{events_->selectLocation(node);events_->setRawInstructions(false);selectEvent(0,u16(SceneEvents::retailRow(project_->rom(),0),node*2));});
+    layout->addStretch();
 }
 void CampaignEditor::commit(Project after, const QString &label) {
     if (after.manifest() != project_->manifest())
@@ -910,6 +1048,9 @@ void CampaignEditor::commitMap(const CampaignMap &map,const QString &label) {
 }
 void CampaignEditor::editRule(int row) {
     const int node = branchNode_->currentData().toInt();
+    if(row>=0&&row<rules_->rowCount()&&rules_->item(row,0)->data(Qt::UserRole).toInt()<0){
+        showBranchConditions();branchDetails_->setFocus();return;
+    }
     auto rules =
         project_->sceneEvents()->flagEdits()["0"].toObject()[QString::number(node)].toArray();
     if (node < 1 || (row >= 0 && row >= rules.size()))

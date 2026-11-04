@@ -35,7 +35,7 @@ quint32 saveRuntimeOwnerChecksum(const QByteArray &rom, quint32 version) {
 }
 void SavePlacement::validate() const {
     if ((!codeBytes && (codeChecksum || ownerChecksum || version)) || codeBytes > capacity ||
-        codeBytes % 4 || (codeBytes && (version < 1 || version > 4)))
+        codeBytes % 4 || (codeBytes && (version < 1 || version > 5)))
         throw Error("Unsupported expanded save code allocation");
 }
 void SavePlacement::verify(const QByteArray &rom) const {
@@ -64,6 +64,13 @@ void SavePlacement::verify(const QByteArray &rom) const {
     if (u32(rom, table + 4 * 28 + 12) != 0x1844 ||
         rom.mid(table + 4 * 28 + 16, 12) != QByteArray(12, 0))
         throw Error("Expanded discovery callback has an invalid record allocation");
+    if (version >= 5) {
+        for (int i = 0; i < 3; ++i)
+            entry(u32(rom, table + 5 * 28 + i * 4));
+        if (u32(rom, table + 5 * 28 + 12) != 0x1864 ||
+            rom.mid(table + 5 * 28 + 16, 12) != QByteArray(12, 0))
+            throw Error("Custom story flag callback has an invalid record allocation");
+    }
     if (version >= 2)
         for (const auto value : catalog["pakOwners"].toArray()) {
             const auto row = value.toObject();

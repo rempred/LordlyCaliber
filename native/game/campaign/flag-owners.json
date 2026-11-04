@@ -1,0 +1,36 @@
+{
+  "generator": "native/tools/generate-campaign-flags.cjs",
+  "originalGetter": {
+    "start": 297660,
+    "address": 2149002172,
+    "size": 52,
+    "source": "accepted/library/src/lib/func_00048abc.c",
+    "sourceSha256": "c93bce7a88992cb67a119d94f065573e27ce493d1888c39a63236eae2e6668b5",
+    "sha256": "af4c5c3b266602d9e780653d820fc1549b6e3ffc40bdab2056810e71461af57e",
+    "padToOwner": true,
+    "headers": [],
+    "symbols": {}
+  },
+  "set": {
+    "start": 297576,
+    "address": 2149002088,
+    "size": 84,
+    "source": "campaign/road-flags.c",
+    "sourceSha256": "33f4069d34beef282a19a5535d5197b1eeb116539e33f090aed0e14a596d1aeb",
+    "sha256": "e98cd4400f57bbc447ea75c1fad4f5f3ac820130c89f4a951ebcc790bcec4b11",
+    "padToOwner": true,
+    "headers": [],
+    "symbols": {}
+  },
+  "get": {
+    "start": 297660,
+    "address": 2149002172,
+    "size": 52,
+    "source": "campaign/road-get.c",
+    "sourceSha256": "860cb92da94623d6b4330028a079182b9d1ca69e730f05b464626b7e18565945",
+    "sha256": "deb8c67d4b4794764757c078daa16f73cf1c794a5dffe68ea01c085c21774d30",
+    "padToOwner": true,
+    "headers": [],
+    "symbols": {}
+  }
+}

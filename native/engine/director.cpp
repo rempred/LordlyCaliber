@@ -18,6 +18,20 @@ const QJsonObject &catalog() {
     }();
     return value;
 }
+const QMap<int, QString> &researchedSceneNames() {
+    static const auto names = [] {
+        QFile file(":/game/director/event-semantics.json");
+        if (!file.open(QIODevice::ReadOnly)) throw Error("Missing event descriptions");
+        QMap<int, QString> result;
+        for (const auto &value : QJsonDocument::fromJson(file.readAll()).object()["names"].toArray()) {
+            const auto entry = value.toArray();
+            if (entry[0] == "scene" && entry[1] == "global")
+                result[entry[2].toInt()] = entry[3].toString();
+        }
+        return result;
+    }();
+    return names;
+}
 } // namespace
 const QMap<quint32, DirectorOpcode> &Directors::grammar() {
     static const QMap<quint32, DirectorOpcode> result = [] {
@@ -148,6 +162,18 @@ Directors Directors::load(const Rom &rom) {
             result.resources_.insert(key, std::move(resource));
         }
         result.resources_[key].selectors << i;
+    }
+    // These are default names for retail selector identities. Explicit project
+    // names and authored scenes take precedence in ScenePrograms::displayName.
+    // Keep all distinct names when several selectors share one physical scene.
+    const auto &research = researchedSceneNames();
+    for (auto &resource : result.resources_) {
+        QStringList titles;
+        for (int selector : resource.selectors) {
+            const auto title = research.value(selector);
+            if (!title.isEmpty() && !titles.contains(title)) titles << title;
+        }
+        if (!titles.isEmpty()) resource.name = titles.join(" / ");
     }
     constexpr quint32 continuationTable = base + 0x0189099e;
     const auto continuationSize = u32(bytes, continuationTable);

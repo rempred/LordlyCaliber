@@ -30,7 +30,14 @@ static QString descriptionLabel(const Project &project, const QString &kind, int
     QString name;
     if (kind == "actions")
         name = project.catalog()["ACTION_NAMES"].toObject()[QString::number(id)].toString();
-    else {
+    else if (kind == "locations") {
+        const int location = id + 1;
+        if (const auto &map = project.campaignMap())
+            name = location <= CampaignMap::nodeCount ? map->name(location)
+                                                       : map->labels().value(location);
+        if (name.isEmpty()) name = QString("Location description %1").arg(location);
+        return QString("%1 · %2").arg(location).arg(name);
+    } else {
         const auto table = kind == "classes" ? Table::Classes
                            : kind == "items" ? Table::Items : Table::Consumables;
         const auto &records = project.records(table);
@@ -107,7 +114,8 @@ void editDescription(QWidget *parent, Project *project, QUndoStack *undo, const 
     editor->setObjectName("recordDescriptionText");
     editor->setPlaceholderText("No description is stored. Type here to add one.");
     layout->addWidget(editor, 1);
-    auto notice = new QLabel("Up to four game text lines. Existing hidden help references are preserved.");
+    auto notice = new QLabel(kind == "locations" ? "Up to four game text lines."
+        : "Up to four game text lines. Existing hidden help references are preserved.");
     notice->setObjectName("recordDescriptionNotice");
     notice->setWordWrap(true);
     layout->addWidget(notice);
@@ -119,7 +127,8 @@ void editDescription(QWidget *parent, Project *project, QUndoStack *undo, const 
     QObject::connect(editor, &QPlainTextEdit::textChanged, &dialog, [&] {
         try {
             draft.setText(entry, editor->toPlainText());
-            notice->setText("Ready to save. Existing hidden help references are preserved.");
+            notice->setText(kind == "locations" ? "Ready to save."
+                : "Ready to save. Existing hidden help references are preserved.");
             buttons->button(QDialogButtonBox::Save)->setEnabled(true);
         } catch (const std::exception &error) {
             notice->setText(QString::fromUtf8(error.what()));
@@ -195,6 +204,8 @@ void DescriptionPanel::refresh() {
     preview_->setText(valid ? (text.isEmpty() ? "No description yet." : text) : "Select a record.");
 }
 QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<void()> changed) {
+    project->loadTexts();
+    if (!project->rom().revision()) project->loadCampaignMap();
     auto page = new QWidget;
     page->setObjectName("descriptionsWorkspace");
     auto outer = new QVBoxLayout(page);
@@ -334,7 +345,7 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
     watchContentChanges(undo, page, [=] {
         if (!selected->editing)
             selectBank();
-    });
+    }, true);
     QObject::connect(search, &QLineEdit::textChanged, page, [=] { filter(); });
     QObject::connect(showEmpty, &QCheckBox::toggled, page, [=] { filter(); });
     QObject::connect(editor, &QPlainTextEdit::textChanged, page, [=] {
@@ -350,7 +361,8 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
             banks->setEnabled(true);
             search->setEnabled(true);
             showEmpty->setEnabled(true);
-            validation->setText("Description updated. Hidden game references remain intact.");
+            validation->setText(selected->bank == "locations" ? "Description updated."
+                : "Description updated. Hidden game references remain intact.");
             if (before != after) {
                 selected->editing = true;
                 undo->push(

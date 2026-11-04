@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/project.h"
+#include "engine/entry_conditions.h"
 #include <QWidget>
 #include <functional>
 class QUndoStack;
@@ -11,10 +12,12 @@ class QLabel;
 class QTableWidget;
 class QTreeWidget;
 class QLineEdit;
+class QScrollArea;
 namespace lordly {
 class ScenarioEditor;
 class ScenarioEventEditor;
 class CampaignCanvas;
+class DescriptionPanel;
 class CampaignEditor : public QWidget {
   public:
     CampaignEditor(Project *, QUndoStack *, std::function<void()>, QWidget *parent = nullptr);
@@ -25,6 +28,8 @@ class CampaignEditor : public QWidget {
     void refresh();
     void showNode();
     void showBranches();
+    void showBranchConditions();
+    void changeBranch(std::function<void(SceneEvents &)>, const QString &);
     void refreshFlow();
     void openCutscene(int selector);
     void editRule(int row);
@@ -43,9 +48,14 @@ class CampaignEditor : public QWidget {
     CampaignCanvas *canvas_;
     QListWidget *nodes_, *roads_;
     QLineEdit *label_;
+    DescriptionPanel *description_;
     QComboBox *branchNode_, *icon_;
     QSpinBox *x_, *y_;
     QTableWidget *rules_;
+    QScrollArea *branchDetails_;
+    QMap<int,EntryConditions> branchEntries_;
+    QMap<int,QString> branchEntryErrors_;
+    int branchDetailsNode_=-1;
     QTreeWidget *flow_;
     QSpinBox *flowChaos_;
     QLabel *notice_, *routeInfo_;

@@ -1,6 +1,7 @@
 #include "engine/project.h"
 #include "engine/save_document.h"
 #include "engine/scenario_seeder.h"
+#include "engine/campaign_runtime.h"
 #include "game/classes/save_format.h"
 #include "game/classes/save_compression.h"
 #include "game/army/soldier_reserve.h"
@@ -17,6 +18,39 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioSeederCurrentRoads() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        try {
+            const auto rom=Rom::open(path);ScenarioSeeder seeder(rom);
+            const auto campaign=CampaignPlacement::read(rom.bytes());
+            const auto roads=campaign?campaign->roads:rom.bytes().mid(0x858e4,80);
+            QVERIFY(!seeder.choices().isEmpty());
+            for(int n=0;n<seeder.choices().size();++n) {
+                const auto &choice=seeder.choices()[n];
+                qInfo().noquote()<<QString("Seed %1: location %2, event %3").arg(n).arg(choice.route.node).arg(choice.route.event);
+                const auto bytes=seeder.seed(n);auto save=SaveDocument::open(rom,bytes);
+                QVERIFY(save.battery());QVERIFY(save.saveSlots()[0].valid);
+                save.selectSlot(0);const auto &memory=save.memory();
+                const auto visible=[&](int id){return id>0 && id<=40 &&
+                    ((u8(memory,0x196a86+(id-1)/4)>>(((id-1)%4)*2))&3)!=0;};
+                QSet<int> reached;const int start=u8(memory,0x1936aa);QVERIFY(visible(start));reached<<start;
+                bool changed=true;
+                while(changed) {
+                    changed=false;
+                    for(int at=0;at<roads.size();at+=2) {
+                        const int a=u8(roads,at),b=u8(roads,at+1),id=at/2;
+                        // Independent readback of the runtime's road-open rules.
+                        const int flag=campaign?quint8(campaign->roadFlags[id]):id+1;
+                        if(!visible(a)||!visible(b)||(flag && !(u8(memory,0x196a81+(flag-1)/8)&(1<<((flag-1)%8)))))continue;
+                        if(reached.contains(a)==reached.contains(b))continue;
+                        reached<<a<<b;changed=true;
+                    }
+                }
+                QVERIFY2(reached.contains(choice.route.node),qPrintable(QString("No usable route from %1 to mission %2").arg(start).arg(choice.route.node)));
+                QCOMPARE(int(u8(memory,0x196a9a)),start);
+            }
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void scenarioSeederParity() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto refs = qEnvironmentVariable("LORDLY_SEED_REFERENCE");
@@ -3227,9 +3261,31 @@ class SaveDocumentTests : public QObject {
             const auto compressed = compress(LC_SAVE_EXPANDED_SUSPEND_BYTES);
             const auto largeCompressed = compress(LC_SAVE_LARGE_SUSPEND_BYTES);
             const auto capacityCompressed = compress(LC_SAVE_CAPACITY_SUSPEND_BYTES);
+            // The same decoder/edit/reopen checks below cover both generations
+            // of physical layout. Nonzero custom bytes must survive every edit.
+            auto custom = [&](QByteArray image) {
+                QVector<quint16> migration((LC_SAVE_UPGRADE_WORK_BYTES + 1) / 2);
+                if (!lc_save_upgrade_image(reinterpret_cast<unsigned char *>(image.data()), unsigned(image.size()),
+                                           reinterpret_cast<unsigned char *>(migration.data()), LC_SAVE_UPGRADE_WORK_BYTES))
+                    throw Error("Cannot upgrade custom flag fixture");
+                for (int slot : {0, 1}) {
+                    const int at = int(lc_save_record_offset(slot, 4));
+                    image.replace(at + LC_SAVE_CUSTOM_FLAG_OFFSET, LC_SAVE_CUSTOM_FLAG_BYTES,
+                                  QByteArray(LC_SAVE_CUSTOM_FLAG_BYTES, char(0x81 + slot)));
+                    lc_save_record_seal(reinterpret_cast<unsigned char *>(image.data() + at),
+                                         LC_SAVE_CUSTOM_NORMAL_BYTES, slot, 4);
+                }
+                return image;
+            };
+            const auto customRaw = custom(expanded);
+            const auto customCompressed = custom(compressed);
+            const auto customLarge = custom(largeCompressed);
+            const auto customCapacity = custom(capacityCompressed);
             for (const auto &input : {battery, swapped(battery.first(0x8000)), expanded,
                                       compressed, swapped(compressed), largeCompressed, swapped(largeCompressed),
-                                      capacityCompressed, swapped(capacityCompressed)}) {
+                                      capacityCompressed, swapped(capacityCompressed), customRaw, swapped(customRaw),
+                                      customCompressed, swapped(customCompressed), customLarge, swapped(customLarge),
+                                      customCapacity, swapped(customCapacity)}) {
                 auto doc = SaveDocument::open(rom, input, 256);
                 QCOMPARE(doc.serialize(), input);
                 QCOMPARE(doc.saveSlots().size(), 3);
@@ -3261,6 +3317,14 @@ class SaveDocumentTests : public QObject {
                 QCOMPARE(reopened.value(SaveTable::Game, 0, "goth").toUInt(), 2147483647U);
                 reopened.selectSlot(15);
                 QCOMPARE(reopened.value(SaveTable::Characters, 2, "weapon").toUInt(), 256U);
+                auto physical = doc.serialize();
+                if (physical.mid(4 + lc_save_record_offset(0, 4), 8) != "LC07OG3!")
+                    physical = swapped(physical);
+                if (physical.mid(4 + lc_save_record_offset(0, 4), 8) == "LC07OG3!")
+                    for (int slot : {0, 1})
+                        QCOMPARE(physical.mid(int(lc_save_record_offset(slot, 4)) + LC_SAVE_CUSTOM_FLAG_OFFSET,
+                                               LC_SAVE_CUSTOM_FLAG_BYTES),
+                                 QByteArray(LC_SAVE_CUSTOM_FLAG_BYTES, char(0x81 + slot)));
                 // Exact backward patches preserve tokens, unrelated slots, padding and unused bits.
                 for (const auto &change : {suspend, funds, c, b, a})
                     doc.apply(change, false);

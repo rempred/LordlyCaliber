@@ -840,6 +840,10 @@ class DirectorTests : public QObject {
         const auto directory = Directors::load(rom);
         QCOMPARE(directory.selectors().size(), 1693);
         QCOMPARE(directory.entries().size(), 1498);
+        QCOMPARE(directory.entries()[directory.selectors()[610]].name,
+                 QString("Townsperson explains Palatinus's four regions"));
+        const auto chapter = directory.entries()[0x01a1625a].name;
+        QVERIFY(chapter.contains("prologue chapter"));QVERIFY(chapter.contains("Final Chapter"));
         QFile catalog(":/game/director/grammar.json");
         QVERIFY(catalog.open(QIODevice::ReadOnly));
         const auto metadata = QJsonDocument::fromJson(catalog.readAll()).object();

@@ -1,0 +1,43 @@
+{
+  "generator": "native/tools/generate-consumable-c.cjs",
+  "source": "consumables/effects.c",
+  "sourceSha256": "85aa22de31e03c43b2b06774a5590f6cb6c60057206d30d3cdd65645e784db4e",
+  "original": {
+    "source": "game/accepted/library/src/lib/func_00041098.c",
+    "sourceSha256": "A95DCDE9AC0A9723BFCEB34A4A1E4AB7E9E2028EA3152636D50F09E67DE8AB70",
+    "start": 266392,
+    "size": 1380
+  },
+  "address": 2148970904,
+  "size": 1300,
+  "padToOwner": true,
+  "sha256": "6ee881489421af44cb9c666156eb314dca083ae3edf3ed9e1865e08aa7d107b3",
+  "symbols": {
+    "D_80193BC0": 2149137344,
+    "D_80190EBC": 2149125820,
+    "D_80190F82": 2149126018,
+    "D_80191010": 2149126160,
+    "rand": 2148124620,
+    "func_00044aa4": 2148985764,
+    "lc_effect_parameters": 2148972252
+  },
+  "headers": [
+    {
+      "name": "common/types.h",
+      "source": "accepted/library/include/common/types.h",
+      "sha256": "943133aae4a5a2df5fc41f480d969df1dad701c2c238b70e2db42e168c922ab7"
+    },
+    {
+      "name": "game/scenario_item_views.h",
+      "source": "accepted/library/include/game/scenario_item_views.h",
+      "sha256": "1450076a16f8c2b6eec9689f0f4eea7ce748847c6a4effaf9f70278bc0192f27"
+    }
+  ],
+  "metadata": {
+    "magic": "LCCONS01",
+    "version": 1,
+    "size": 80,
+    "parametersOffset": 48,
+    "parameterCount": 15
+  }
+}

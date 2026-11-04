@@ -45,6 +45,7 @@ console.log('PASS: exported native VM unlock/marker writes, retail picking of ne
 const descriptor=image.lastIndexOf('LCCAMP01');assert.ok(descriptor>=0);
 const overlay=image.readUInt32BE(descriptor+12),size=image.readUInt32BE(descriptor+16),count=image.readUInt32BE(descriptor+20);
 const roadAddress=image.readUInt32BE(descriptor+24),dotAddress=image.readUInt32BE(descriptor+28);
+const bendCapacity=image.readUInt32BE(descriptor+8)>=4?14:7,roadStride=bendCapacity*4;
 assert.equal(count,42);
 // Execute the actual changed loader, with DMA and cache services recorded.
 {
@@ -78,7 +79,7 @@ for(const [from,to,signedRoad] of [[6,created,41],[created,6,-41]]){
  m.w32(0x80197af8,ctx);m.w8(ctx+0xa1,from);m.w8(ctx+0xa2,to);m.w8(ctx+0xe1,signedRoad);m.set('a0',ctx);m.set('t0',1);
  m.call(0x8019c2a0,0x8019c434,100000);
  const points=[];for(let n=0;n<16;++n){const x=m.r16(ctx+0x60+n*2),y=m.r16(ctx+0x80+n*2);if(!x)break;points.push([x,y]);}
- const dots=[];for(let n=0;n<7;++n){const x=m.r16(dotAddress+40*28+n*4),y=m.r16(dotAddress+40*28+n*4+2);if(x)dots.push([x,y]);}
+ const dots=[];for(let n=0;n<bendCapacity;++n){const x=m.r16(dotAddress+40*roadStride+n*4),y=m.r16(dotAddress+40*roadStride+n*4+2);if(x)dots.push([x,y]);}
  if(signedRoad<0)dots.reverse();
  const position=id=>[image.readInt16BE(0x864a0+(id-1)*8),image.readInt16BE(0x864a2+(id-1)*8)];
  assert.deepEqual(points,[position(from),...dots,position(to)],'native travel follows the newly exported connection');

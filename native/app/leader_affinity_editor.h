@@ -2,11 +2,13 @@
 #include "engine/project.h"
 #include <QWidget>
 #include <array>
+#include <QVector>
 #include <functional>
 class QLabel;
 class QSpinBox;
 class QUndoStack;
 class QPushButton;
+class QTableWidget;
 namespace lordly {
 class LeaderAffinityEditor : public QWidget {
   public:
@@ -20,8 +22,9 @@ class LeaderAffinityEditor : public QWidget {
     std::function<void()> changed_;
     int selected_ = -1, leader_ = -1;
     QLabel *scope_, *notice_;
-    std::array<QLabel *, 4> members_, effects_;
-    std::array<QSpinBox *, 4> strength_;
-    QPushButton *retail_;
+    QTableWidget *table_;
+    QVector<QLabel *> effects_;
+    QVector<QSpinBox *> strength_;
+    QPushButton *retail_, *manage_;
 };
 }

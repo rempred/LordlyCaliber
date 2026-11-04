@@ -4,7 +4,7 @@
 namespace lordly {
 SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
                                   const QString &directory, quint32 compressionAddress,
-                                  bool expandedArmies) {
+                                  bool expandedArmies, quint32 customFlagsRam) {
     auto source = [](const QString &name) {
         QFile file(":/game/classes/" + name);
         if (!file.open(QIODevice::ReadOnly))
@@ -12,9 +12,15 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
         return file.readAll();
     };
     SaveRuntimeBuild result;
-    result.compression = compiler.compileModule(source("save-compression.c"), directory,
-                                                "save_compression", compressionAddress,
-                                                {{"save_compression.h", source("save_compression.h")}}, {});
+    QMap<QString,QByteArray> headers{{"save_format.h",source("save_format.h")},
+        {"save_compression.h",source("save_compression.h")},{"save_checksums.h",source("save_checksums.h")}};
+    // Image migration must coexist with the optional resident encounter
+    // extension. Like the codec, format/image helpers live in permanent class
+    // storage, loaded and instruction-cache-invalidated before gameplay.
+    const auto codecSource = source("save-compression.c") + "\n" + source("save-format.c") +
+        "\n" + source("save-image.c");
+    result.compression = compiler.compileModule(codecSource, directory,
+                                                "save_compression", compressionAddress, headers, {});
     QMap<QString, quint32> services = {{"lc_save_cache", 0x800a83b8},
                                           {"lc_save_dirty", 0x800a83bc},
                                           {"lc_discovery_flags", discovery},
@@ -42,21 +48,30 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
         "    lc_native_class_dma(rom, data, size);\n"
         "    lc_native_invalidate_code(data, size);\n}\n";
     QByteArray capacityCode;
-    QMap<QString,QByteArray> headers{{"save_format.h",source("save_format.h")},
-        {"save_compression.h",source("save_compression.h")},{"save_checksums.h",source("save_checksums.h")}};
+    services.insert(result.compression.entries);
     if(expandedArmies) {
         QFile migration(":/game/scenarios/capacity-save.c"),header(":/game/scenarios/capacity-save.h");
         if(!migration.open(QIODevice::ReadOnly)||!header.open(QIODevice::ReadOnly))
             throw Error("Missing expanded-army save migration");
-        capacityCode="\n"+migration.readAll();headers["capacity-save.h"]=header.readAll();
+        capacityCode=QByteArray(customFlagsRam ? "#define LC_CUSTOM_STORY_FLAGS 1\n" : "")+"\n"+migration.readAll();headers["capacity-save.h"]=header.readAll();
         services["lc_save_expand_capacity"]=(compressionAddress+quint32(result.compression.bytes.size())+15U)&~15U;
     }
-    const auto runtimeSource=(expandedArmies?QByteArray("#define LC_SAVE_RUNTIME_FORMAT 3\n"):QByteArray{})+
-        source("save-format.c")+"\n"+source("save-image.c")+"\n"+source("save-runtime.c")+prepareCode;
+    if (customFlagsRam) {
+        services["lc_custom_story_flags"] = customFlagsRam;
+        services["lc_native_story_flag_get"] = 0x801702f8U;
+        services["lc_native_story_flag_set"] = 0x8017049cU;
+    }
+    const auto defines = customFlagsRam
+        ? QByteArray("#define LC_CUSTOM_STORY_FLAGS 1\n#define LC_SAVE_RUNTIME_FORMAT ") + (expandedArmies ? "5\n" : "4\n")
+        : (expandedArmies ? QByteArray("#define LC_SAVE_RUNTIME_FORMAT 3\n") : QByteArray{});
+    const auto runtimeSource=defines+source("save-runtime.c")+prepareCode+
+        (customFlagsRam ? source("event-flags.c") : QByteArray{});
     result.code=compiler.compileModule(runtimeSource,directory,"save_runtime",SavePlacement::ramAddress,headers,services);
     if(expandedArmies) {
+        auto migrationServices = result.code.entries;
+        migrationServices.insert(result.compression.entries);
         result.capacityMigration=compiler.compileModule(capacityCode,directory,"capacity_migration",
-            services["lc_save_expand_capacity"],headers,result.code.entries);
+            services["lc_save_expand_capacity"],headers,migrationServices);
         services["lc_save_expand_capacity"]=result.capacityMigration.entries.value("lc_save_expand_capacity");
         const auto rebound=compiler.compileModule(runtimeSource,directory,"save_runtime",SavePlacement::ramAddress,headers,services);
         if(!services["lc_save_expand_capacity"] || rebound.entries!=result.code.entries || rebound.bytes.size()!=result.code.bytes.size())
@@ -65,7 +80,7 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
     }
     result.placement.codeBytes = quint32(result.code.bytes.size());
     result.placement.codeChecksum = crc32(result.code.bytes);
-    result.placement.version = 4;
+    result.placement.version = customFlagsRam ? 5 : 4;
     result.placement.validate();
     for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
         const auto row = value.toObject();
@@ -146,6 +161,12 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
     put32(rom, table + 4 * 28 + 4, entry("lc_discovery_load"));
     put32(rom, table + 4 * 28 + 8, entry("lc_discovery_save"));
     put32(rom, table + 4 * 28 + 12, 0x1844);
+    if (next.version >= 5) {
+        put32(rom, table + 5 * 28, entry("lc_custom_flags_init"));
+        put32(rom, table + 5 * 28 + 4, entry("lc_custom_flags_load"));
+        put32(rom, table + 5 * 28 + 8, entry("lc_custom_flags_save"));
+        put32(rom, table + 5 * 28 + 12, 0x1864);
+    }
     for (const auto value : catalog["pakOwners"].toArray()) {
         const auto row = value.toObject();
         const auto start = row["fragment"].toInt(), size = row["fragmentSize"].toInt();

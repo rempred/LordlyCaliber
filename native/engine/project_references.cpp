@@ -85,7 +85,7 @@ EquipmentWarningReview reviewEquipmentWarnings(Project p, const Rom *reference) 
 QVector<ProjectReference> projectReferences(Project p) {
     QVector<ProjectReference> uses;
     if (p.rom().revision() == 0) {
-        p.loadShops(); p.loadTraining(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes();
+        p.loadShops(); p.loadTraining(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes(); p.loadTools();
     }
     const QMap<QString, int> counts{{"classes", int(p.records(Table::Classes).size())},
         {"items", int(p.records(Table::Items).size())},
@@ -172,6 +172,10 @@ QVector<ProjectReference> projectReferences(Project p) {
         const auto rows = affinity.json()["rows"].toObject();
         for (auto it = rows.begin(); it != rows.end(); ++it)
             add("classes", it.key().toInt(), "Combat leader affinity", {"classes",it.key().toInt(),-1,"section:Combat"}, affinity.modified());
+        for (const auto &group : affinity.groups())
+            for (int member : group.members)
+                add("classes", member, "Combat affinity / " + group.name,
+                    {"classes",member,-1,"section:Combat"}, affinity.modified());
     }
     if (p.encounters()) {
         const auto original = Encounters::load(p.rom(), int(p.records(Table::Classes).size()));

@@ -303,6 +303,61 @@ class UiTests : public QObject {
         for(int id:{168,169,170})QCOMPARE(reopened.record(Table::Classes,id).bytes,project.record(Table::Classes,id).bytes);
         QVERIFY(input.open(QIODevice::ReadOnly));QCOMPARE(input.readAll(),original);
     }
+    void campaignArtworkEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);applyEditorTheme(*qApp);
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});
+        editor.resize(1500,950);editor.show();editor.selectNode(6);QCoreApplication::processEvents();
+        auto canvas=editor.findChild<QWidget *>("campaignMapCanvas");QVERIFY(canvas);
+        const auto before=canvas->grab().toImage(),originalBackground=CampaignMap::artworkImage(project.campaignMap()->backgroundBytes(),{512,320},256);
+        QTemporaryDir files;
+        auto exportPng=[&](const QString &path){
+            QTimer choose;choose.setInterval(20);connect(&choose,&QTimer::timeout,&editor,[&]{
+                if(auto dialog=qobject_cast<QFileDialog *>(QApplication::activeModalWidget())){
+                    choose.stop();dialog->selectFile(path);QMetaObject::invokeMethod(dialog,"accept");
+                }
+            });
+            choose.start();editor.findChild<QPushButton *>("campaignExportArtwork")->click();choose.stop();
+            return QImage(path).convertToFormat(QImage::Format_RGBA8888);
+        };
+        const auto png=files.filePath("map.png");
+        const auto originalMap=project.campaignMap()->json();
+        QCOMPARE(exportPng(png),originalBackground);QCOMPARE(undo.count(),0);QCOMPARE(project.campaignMap()->json(),originalMap);
+        // Edit the exported artwork, import it, then export the current edit.
+        QImage red(512,320,QImage::Format_RGBA8888);red.fill(QColor(255,0,0));QVERIFY(red.save(png));
+        QTimer picker;picker.setInterval(20);connect(&picker,&QTimer::timeout,&editor,[&]{
+            auto active=QApplication::activeModalWidget();
+            if(auto dialog=qobject_cast<QFileDialog *>(active)){dialog->selectFile(png);QMetaObject::invokeMethod(dialog,"accept");}
+            else if(active && active->objectName()=="campaignBackgroundImport"){picker.stop();qobject_cast<QDialog *>(active)->accept();}
+        });
+        picker.start();editor.findChild<QPushButton *>("campaignReplaceArtwork")->click();picker.stop();
+        QCOMPARE(CampaignMap::artworkImage(project.campaignMap()->backgroundBytes(),{512,320},256),red);
+        QVERIFY(canvas->grab().toImage()!=before);undo.undo();QCOMPARE(CampaignMap::artworkImage(project.campaignMap()->backgroundBytes(),{512,320},256),originalBackground);undo.redo();
+        const int edits=undo.count();const auto editedMap=project.campaignMap()->json();
+        QCOMPARE(exportPng(files.filePath("edited.png")),red);QCOMPARE(undo.count(),edits);QCOMPARE(project.campaignMap()->json(),editedMap);
+        const auto originalFlag=project.campaignMap()->iconFrameBytes(0,1,0);
+        bool editedIcon=false;
+        QTimer::singleShot(0,&editor,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);QCOMPARE(dialog->objectName(),QString("campaignIconEditor"));
+            QTimer::singleShot(0,dialog,[&]{auto prompt=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(prompt);prompt->findChild<QLineEdit *>()->setText("Independent banner");prompt->accept();});
+            dialog->findChild<QPushButton *>("campaignArtworkCopy")->click();
+            const int created=project.campaignMap()->iconIds().last();QVERIFY(created>=2);
+            auto pixels=dialog->findChild<SpriteCanvas *>("campaignArtworkCanvas");QVERIFY(pixels);
+            const auto frame=project.campaignMap()->iconFrameBytes(created,1,0);QByteArray painted(256,1);
+            QVERIFY(QMetaObject::invokeMethod(pixels,"indicesCommitted",Qt::DirectConnection,Q_ARG(QByteArray,painted),Q_ARG(QPoint,QPoint())));
+            QVERIFY(project.campaignMap()->iconFrameBytes(created,1,0)!=frame);QCOMPARE(project.campaignMap()->iconFrameBytes(0,1,0),originalFlag);
+            undo.undo();QCOMPARE(project.campaignMap()->iconFrameBytes(created,1,0),frame);undo.redo();
+            QVERIFY(dialog->grab().save(QCoreApplication::applicationDirPath()+"/campaign-icon-editor.png"));editedIcon=true;dialog->reject();
+        });
+        editor.findChild<QPushButton *>("campaignEditIcons")->click();
+        QVERIFY2(editedIcon,qPrintable(editor.findChild<QLabel *>("campaignNotice")->text()));
+        const int created=project.campaignMap()->iconIds().last();auto selector=editor.findChild<QComboBox *>("campaignLocationIcon");
+        QVERIFY(created>=2);
+        const int index=selector->findData(created);QVERIFY(index>=0);selector->setCurrentIndex(index);QMetaObject::invokeMethod(selector,"activated",Qt::DirectConnection,Q_ARG(int,index));
+        QCOMPARE(project.campaignMap()->icon(6),created);undo.undo();QCOMPARE(project.campaignMap()->icon(6),0);undo.redo();
+        QTemporaryDir saved;project.saveFolder(saved.path());auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(Project::readProject(saved.path()));
+        QCOMPARE(reopened.campaignMap()->json(),project.campaignMap()->json());QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/campaign-artwork.png"));
+    }
     void campaignRoadControls() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});editor.resize(1500,950);editor.show();editor.selectNode(6);QCoreApplication::processEvents();
@@ -334,6 +389,41 @@ class UiTests : public QObject {
         QCOMPARE(project.campaignMap()->position(ends.first),pos);QVERIFY(canvas->grab().toImage()!=priorImage);
         QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,screen(pos+QPoint(5,3)));QVERIFY(project.campaignMap()->roadDots(road)!=priorDots);undo.undo();QCOMPARE(project.campaignMap()->roadDots(road),priorDots);
         QCoreApplication::processEvents();QVERIFY(editor.grab().save("campaign-road-controls.png"));
+    }
+    void campaignRepeatedRoadDragging() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadCampaignMap();
+        auto map=*project.campaignMap();const int road=2;const auto ends=map.road(road);
+        map.setNode(ends.first,{40,20},map.label(ends.first));
+        map.setNode(ends.second,{470,20},map.label(ends.second));
+        QVector<QPoint> straight;for(int n=1;n<=7;++n)straight<<QPoint(40+qRound(430.0*n/8),20);
+        map.setRoadDots(road,straight);project.setCampaignMap(map.json());
+        QUndoStack undo;CampaignEditor editor(&project,&undo,[]{});editor.resize(1500,950);editor.show();
+        editor.selectNode(ends.first);QCoreApplication::processEvents();
+        auto roads=editor.findChild<QListWidget *>("campaignRoads");
+        for(int row=0;row<roads->count();++row)if(roads->item(row)->data(Qt::UserRole).toInt()==road)roads->setCurrentRow(row);
+        auto canvas=editor.findChild<QWidget *>("campaignMapCanvas");QVERIFY(canvas);
+        auto screen=[&](QPointF p){const double scale=qMin(canvas->width()/512.,canvas->height()/320.);return (QPointF((canvas->width()-512*scale)/2,(canvas->height()-320*scale)/2)+p*scale).toPoint();};
+        const auto original=project.campaignMap()->roadWaypoints(road);QPoint target(255,20);
+        for(int step=0;step<30;++step) {
+            QVector<QVector<QPoint>> all(project.campaignMap()->totalRoads()+1);
+            for(int id=1;id<all.size();++id)all[id]=project.campaignMap()->roadDots(id);
+            int selected=0;for(int n=1;n<all[road].size();++n)
+                if(QLineF(all[road][n],target).length()<QLineF(all[road][selected],target).length())selected=n;
+            const auto visible=CampaignMap::mergedRoadDots(all)[road][selected];
+            const QPoint delta(step%4<2?2:-2,step%2?-3:4);
+            const auto before=project.campaignMap()->roadWaypoints(road);
+            const auto begin=screen(visible+QPoint(3,3)),end=screen(visible+QPoint(3,3)+delta);
+            QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,begin);
+            QTest::mouseMove(canvas,end,1);QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,end);
+            QCoreApplication::processEvents();
+            QVERIFY2(project.campaignMap()->roadWaypoints(road)!=before,qPrintable(QString("Road stopped on drag %1: %2").arg(step+1).arg(editor.findChild<QLabel *>("campaignNotice")->text())));
+            QCOMPARE(undo.count(),step+1);
+            target=all[road][selected]+delta;
+        }
+        const auto edited=project.campaignMap()->roadWaypoints(road);
+        undo.setIndex(0);QCOMPARE(project.campaignMap()->roadWaypoints(road),original);
+        undo.setIndex(undo.count());QCOMPARE(project.campaignMap()->roadWaypoints(road),edited);
     }
     void campaignNavigationAndEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
@@ -638,7 +728,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             EffectLibraryEditor gallery(&project,&undo,[]{});gallery.resize(1100,720);gallery.show();gallery.selectSavedEffect(asset.id);
             QVERIFY(gallery.findChild<QPushButton *>("effectLibraryEdit")->isEnabled());QVERIFY(gallery.findChild<QPushButton *>("effectLibraryAssign")->isEnabled());
             AttackEffectEditor attack(&project,id,2);attack.show();
-            QCOMPARE(attack.findChild<QPushButton *>("composeAttackEffect")->text(),"Edit pieces…");
+            QCOMPARE(attack.findChild<QPushButton *>("composeAttackEffect")->text(),"Edit piecesâ€¦");
             QVERIFY(!attack.findChild<QListWidget *>("effectFrames")->isVisible());
             QTimer::singleShot(0,&attack,[&]{auto composer=attack.findChild<EffectComposer *>();QVERIFY(composer);QCOMPARE(composer->composition().pieces,model.pieces);composer->reject();});
             attack.findChild<QPushButton *>("composeAttackEffect")->click();QCOMPARE(attack.visual(),assigned.visual);
@@ -1223,7 +1313,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editor.selectAttack(21); // Mesmerize: a cross and Sleep on success, then half accuracy.
         QVERIFY(choice("attackPattern")->currentText().startsWith("Cross through target"));
         QVERIFY(choice("attackStatus")->currentText().startsWith("Sleep"));
-        QVERIFY(detail("attackNativeStatus").contains("80% hit chance → 40% effect chance"));
+        QVERIFY(detail("attackNativeStatus").contains("80% hit chance â†’ 40% effect chance"));
         editor.selectAttack(22); // Life Drain uses calculated amount, not clipped HP loss.
         QVERIFY(choice("attackAfter")->currentText().startsWith("Heal the attacker (drain)"));
         QVERIFY(detail("attackNativeAfter").contains("Last target's calculated amount"));
@@ -1248,7 +1338,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QVERIFY(choice("attackStatus")->currentText().startsWith("Remove ailments"));
         editor.selectAttack(125);
         QVERIFY(choice("attackStatus")->currentText().startsWith("Poison"));
-        QVERIFY(detail("attackNativeStatus").contains("80% hit chance → 20% effect chance"));
+        QVERIFY(detail("attackNativeStatus").contains("80% hit chance â†’ 20% effect chance"));
         editor.selectAttack(45);
         QCOMPARE(choice("attackPattern")->currentText(), QString("From resolved spell"));
         QVERIFY(!choice("attackPattern")->isEnabled());
@@ -1381,6 +1471,53 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(exported.readAll(), growth);
         QVERIFY(window.grab().save("native/build/data-table-export.png"));
     }
+    void combatAffinityGroupEditing() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));project.loadTools();
+        const int leader=project.createClass("Group leader");
+        QUndoStack undo;LeaderAffinityEditor editor(&project,&undo,[]{});editor.selectClass(leader);
+        const auto original=project.tools()->leaderAffinity().json();
+        auto manage=editor.findChild<QPushButton *>("leaderAffinityManageGroups");QVERIFY(manage);
+        QTimer::singleShot(0,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QTimer::singleShot(0,[&] {
+                auto prompt=qobject_cast<QInputDialog *>(QApplication::activeModalWidget());QVERIFY(prompt);
+                prompt->setTextValue("Guardians");prompt->accept();
+            });
+            dialog->findChild<QPushButton *>("combatAffinityAddGroup")->click();
+            auto groups=dialog->findChild<QListWidget *>("combatAffinityGroupsList");QVERIFY(groups);
+            QCOMPARE(groups->count(),5);QCOMPARE(groups->currentRow(),4);
+            auto members=dialog->findChild<QListWidget *>("combatAffinityMembers");QVERIFY(members);
+            for(int i=0;i<members->count();++i)if(members->item(i)->data(Qt::UserRole).toInt()==0x45)
+                members->item(i)->setCheckState(Qt::Checked);
+            auto leaders=dialog->findChild<QTableWidget *>("combatAffinityLeaders");QVERIFY(leaders);
+            for(int row=0;row<leaders->rowCount();++row)if(leaders->item(row,0)->data(Qt::UserRole).toInt()==leader) {
+                leaders->item(row,0)->setCheckState(Qt::Checked);
+                auto strength=qobject_cast<QSpinBox *>(leaders->cellWidget(row,1));QVERIFY(strength);QVERIFY(strength->isEnabled());strength->setValue(23);
+            }
+            // The modal edits a draft until confirmed.
+            QCOMPARE(project.tools()->leaderAffinity().json(),original);dialog->accept();
+        });
+        manage->click();QCOMPARE(project.tools()->leaderAffinity().groupFor(0x45),4);
+        QCOMPARE(project.tools()->leaderAffinity().strength(leader,4),23);QCOMPARE(undo.count(),1);
+        QCOMPARE(editor.findChild<QSpinBox *>("leaderAffinityStrength4")->value(),23);
+        const auto applied=project.tools()->leaderAffinity().json();
+        undo.undo();QCOMPARE(project.tools()->leaderAffinity().json(),original);
+        undo.redo();QCOMPARE(project.tools()->leaderAffinity().json(),applied);
+        QTimer::singleShot(0,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            dialog->findChild<QListWidget *>("combatAffinityGroupsList")->setCurrentRow(4);
+            dialog->findChild<QPushButton *>("combatAffinityDeleteGroup")->click();dialog->reject();
+        });
+        manage->click();QCOMPARE(project.tools()->leaderAffinity().json(),applied);QCOMPARE(undo.count(),1);
+        QTimer::singleShot(0,[&] {
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            dialog->findChild<QListWidget *>("combatAffinityGroupsList")->setCurrentRow(4);
+            dialog->findChild<QPushButton *>("combatAffinityDeleteGroup")->click();dialog->accept();
+        });
+        manage->click();QCOMPARE(project.tools()->leaderAffinity().groups().size(),4);
+        QCOMPARE(project.tools()->leaderAffinity().groupFor(0x45),-1);undo.undo();QCOMPARE(project.tools()->leaderAffinity().json(),applied);
+    }
     void leaderAffinityEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         applyEditorTheme(*qApp);
@@ -1417,43 +1554,43 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         auto tabs=editor.findChild<QTabWidget *>("encounterTabs"); QVERIFY(tabs);
         for(int tab=0;tab<tabs->count();++tab) if(tabs->tabText(tab)=="Persuasion") tabs->setCurrentIndex(tab);
         auto table=editor.findChild<QTableWidget *>("persuasionTable"); QVERIFY(table);
-        auto columnFor=[&](int id) {
+        auto rowFor=[&](int id) {
             const auto groups=project.encounters()->persuasion().leaderGroups();
             for(int col=0;col<groups.size();++col) if(groups[col].members.contains(id)) return col;
             return -1;
         };
         const int beasts=project.encounters()->persuasion().groupFor(0x45);
-        QCOMPARE(table->rowCount(),project.encounters()->persuasion().groups().size());
-        QCOMPARE(table->columnCount(),project.encounters()->persuasion().leaderGroups().size()+1);
-        const int masters=columnFor(24); QVERIFY(masters>=0);
-        table->setCurrentCell(beasts,masters);
+        QCOMPARE(table->columnCount(),project.encounters()->persuasion().groups().size());
+        QCOMPARE(table->rowCount(),project.encounters()->persuasion().leaderGroups().size()+1);
+        const int masters=rowFor(24); QVERIFY(masters>=0);
+        table->setCurrentCell(masters,beasts);
         QTest::qWait(40); QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath()+"/persuasion-matrix.png"));
-        QCOMPARE(table->item(beasts,masters)->data(Qt::EditRole).toInt(),80);
-        table->item(beasts,masters)->setData(Qt::EditRole,42);
+        QCOMPARE(table->item(masters,beasts)->data(Qt::EditRole).toInt(),80);
+        table->item(masters,beasts)->setData(Qt::EditRole,42);
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),42);
         QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
         QCOMPARE(project.encounters()->persuasion().score(9,beasts),60);
-        undo.undo(); QCOMPARE(table->item(beasts,masters)->data(Qt::EditRole).toInt(),80); undo.redo();
+        undo.undo(); QCOMPARE(table->item(masters,beasts)->data(Qt::EditRole).toInt(),80); undo.redo();
         // A prior individual edit must remain visible, without flattening it on display.
         auto mixed=project.encounters()->persuasion(); mixed.setScore(24,beasts,73);
         auto changed=*project.encounters(); changed.setPersuasion(mixed.json(),project.records(Table::Classes).size());
         project.setEncounters(changed.json());
         static_cast<PersuasionEditor *>(editor.findChild<QWidget *>("persuasionEditor"))->refresh();
-        QCOMPARE(table->item(beasts,masters)->text(),QString("Mixed"));
+        QCOMPARE(table->item(masters,beasts)->text(),QString("Mixed"));
         QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
-        table->editItem(table->item(beasts,masters));
+        table->editItem(table->item(masters,beasts));
         auto spin=table->findChild<QSpinBox *>(); QVERIFY(spin); QVERIFY(spin->text().isEmpty());
         QTest::keyClick(spin,Qt::Key_Escape);
         QTest::qWait(10);
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),73);
-        table->editItem(table->item(beasts,masters));
+        table->editItem(table->item(masters,beasts));
         spin=table->findChild<QSpinBox *>(); QVERIFY(spin);
         QTest::keyClick(spin,Qt::Key_Tab); QTest::qWait(10);
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),73);
         QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),42);
         // Close any editor Tab opened in the next cell before editing this one again.
         if(auto nextSpin=table->findChild<QSpinBox *>()) { QTest::keyClick(nextSpin,Qt::Key_Escape); QTest::qWait(10); }
-        table->editItem(table->item(beasts,masters));
+        table->editItem(table->item(masters,beasts));
         spin=table->findChild<QSpinBox *>(); QVERIFY(spin);
         spin->setValue(55); QTest::keyClick(spin,Qt::Key_Return);
         QTRY_COMPARE(project.encounters()->persuasion().score(24,beasts),55);
@@ -1468,15 +1605,15 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             dialog->accept();
         });
         editor.findChild<QPushButton *>("persuasionAddLeader")->click();
-        const int leaders=columnFor(custom); QVERIFY(leaders>=0); QCOMPARE(columnFor(24),leaders);
+        const int leaders=rowFor(custom); QVERIFY(leaders>=0); QCOMPARE(rowFor(24),leaders);
         QCOMPARE(project.encounters()->persuasion().score(custom,beasts),30);
-        QCOMPARE(table->item(beasts,leaders)->text(),QString("Mixed"));
-        table->item(beasts,leaders)->setData(Qt::EditRole,91);
+        QCOMPARE(table->item(leaders,beasts)->text(),QString("Mixed"));
+        table->item(leaders,beasts)->setData(Qt::EditRole,91);
         QCOMPARE(project.encounters()->persuasion().score(custom,beasts),91);
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),91);
         QCOMPARE(project.encounters()->persuasion().score(0x45,beasts),55);
         const auto leaderMembership=project.encounters()->persuasion().json()["leaderGroups"];
-        table->setCurrentCell(beasts,leaders);
+        table->setCurrentCell(leaders,beasts);
         QTimer::singleShot(0,&editor,[&] {
             auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
             dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom creatures");
@@ -1486,12 +1623,12 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             dialog->accept();
         });
         editor.findChild<QPushButton *>("persuasionCreateGroup")->click();
-        const int created=table->currentRow(); QVERIFY(created!=beasts);
+        const int created=table->currentColumn(); QVERIFY(created!=beasts);
         QCOMPARE(project.encounters()->persuasion().groupFor(custom),created);
         QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
         QCOMPARE(project.encounters()->persuasion().score(24,created),91);
         QCOMPARE(project.encounters()->persuasion().json()["leaderGroups"],leaderMembership);
-        table->item(created,leaders)->setData(Qt::EditRole,67);
+        table->item(leaders,created)->setData(Qt::EditRole,67);
         QCOMPARE(project.encounters()->persuasion().score(custom,created),67);
         QCOMPARE(project.encounters()->persuasion().score(24,created),67);
         const auto manifest=project.manifest(); QTemporaryDir saved; project.saveFolder(saved.path());
@@ -1499,7 +1636,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(reopened.manifest(),manifest);
         undo.undo(); undo.undo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),beasts);
         undo.redo(); QCOMPARE(project.encounters()->persuasion().groupFor(0x45),created);
-        table->setCurrentCell(created,columnFor(custom));
+        table->setCurrentCell(rowFor(custom),created);
         QTimer::singleShot(0,&editor,[&] {
             auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
             dialog->findChild<QLineEdit *>("persuasionGroupName")->setText("Custom leader only");
@@ -1508,7 +1645,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             dialog->accept();
         });
         editor.findChild<QPushButton *>("persuasionEditLeader")->click();
-        QVERIFY(columnFor(24)!=columnFor(custom));
+        QVERIFY(rowFor(24)!=rowFor(custom));
         QCOMPARE(project.encounters()->persuasion().score(24,beasts),91);
         QCOMPARE(project.encounters()->persuasion().score(custom,beasts),91);
     }
@@ -1774,7 +1911,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(pendingEdits(&window).size(), 1);
         int checked = 0;
         for (auto command : window.findChildren<QAction *>())
-            if (command->text() == "Save project &folder…" || command->text() == "Save sharing &archive…" || command->text() == "Build and &export ROM…") {
+            if (command->text() == "Save project &folderâ€¦" || command->text() == "Save sharing &archiveâ€¦" || command->text() == "Build and &export ROMâ€¦") {
                 prompted = false;
                 QTimer::singleShot(0, &window, [&] {
                     auto dialog = window.findChild<QDialog *>("pendingEditsDialog");
@@ -2979,9 +3116,9 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 {"existingActors", known(QJsonObject{{"slots", entries}, {"otherJobsEmpty", true}})}};
             preview->importPlaybackInputs(QJsonDocument(input).toJson());
             auto state = preview->findChild<QLabel *>("sceneActorState");
-            QVERIFY2(state->text().contains("X 10.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            QVERIFY2(state->text().contains("X 10.000 Â· Y 7.000 Â· Z 20.000"), qPrintable(state->text()));
             preview->seekToUpdate(1); QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
-            QVERIFY2(state->text().contains("X 12.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            QVERIFY2(state->text().contains("X 12.000 Â· Y 7.000 Â· Z 20.000"), qPrintable(state->text()));
             const auto frame = preview->renderedFrame();
             auto bad = input; bad["assetId"] = "wrong-resource";
             QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QJsonDocument(bad).toJson()));
@@ -3003,7 +3140,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             preview->importPlaybackInputs(QJsonDocument(input).toJson());
             QCOMPARE(preview->property("sceneTick").toInt(), 0);
             QVERIFY(preview->property("sceneStopped").toBool());
-            QVERIFY(state->text().contains("X 10.000 · Y 7.000 · Z 20.000"));
+            QVERIFY(state->text().contains("X 10.000 Â· Y 7.000 Â· Z 20.000"));
             QVERIFY(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("no elapsed updates"));
             // The qualified one-update profile supplies a real held query and disjoint owners.
             auto captured = input["capturedSnapshot"].toObject()["value"].toObject();
@@ -3021,7 +3158,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QVERIFY(!preview->property("sceneStopped").toBool());
             preview->seekToUpdate(10); QTRY_VERIFY(preview->property("sceneStopped").toBool());
             QCOMPARE(preview->property("sceneTick").toInt(), 1);
-            QVERIFY2(state->text().contains("X 12.000 · Y 7.000 · Z 20.000"), qPrintable(state->text()));
+            QVERIFY2(state->text().contains("X 12.000 Â· Y 7.000 Â· Z 20.000"), qPrintable(state->text()));
             QVERIFY(preview->findChild<QLabel *>("scenePlaybackStatus")->text().contains("declared 1 updates"));
             const auto resumedFrame = preview->renderedFrame();
             auto endingMovement = movement; put16(endingMovement, 12, 1);
@@ -3122,7 +3259,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             for (const auto &entry : expected["actors"].toArray()) if (entry.toObject()["slot"].toInt() == 1)
                 record = QByteArray::fromHex(entry.toObject()["recordHex"].toString().toLatin1());
             QCOMPARE(record.size(), 336);
-            const auto position = QString("X %1 · Y %2 · Z %3")
+            const auto position = QString("X %1 Â· Y %2 Â· Z %3")
                 .arg(std::bit_cast<float>(u32(record, 0x11c)),0,'f',3)
                 .arg(std::bit_cast<float>(u32(record, 0x120)),0,'f',3)
                 .arg(std::bit_cast<float>(u32(record, 0x124)),0,'f',3);
@@ -3287,7 +3424,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             auto negativePrograms = *project.scenePrograms(); negativePrograms.replace(id, negative.source);
             ScenePreview negativePreview(project.rom()); negativePreview.selectScene(negativePrograms, id, 2);
             negativePreview.seekToUpdate(3); QTRY_COMPARE(negativePreview.property("sceneTick").toInt(), 3);
-            QVERIFY2(negativePreview.findChild<QLabel *>("sceneActorState")->text().contains("X -1.000 · Y 0.000 · Z -1.000"),
+            QVERIFY2(negativePreview.findChild<QLabel *>("sceneActorState")->text().contains("X -1.000 Â· Y 0.000 Â· Z -1.000"),
                      qPrintable(negativePreview.findChild<QLabel *>("sceneActorState")->text()));
             auto checksum = built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum, built.image);
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
@@ -3449,7 +3586,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QCOMPARE(actors->count(), 1);
             QCOMPARE(actors->currentData().toInt(), 5);
             const auto expectedState =
-                QString("Class pair 84 / 85 · X 40.000 · Y 0.000 · Z 10.000");
+                QString("Class pair 84 / 85 Â· X 40.000 Â· Y 0.000 Â· Z 10.000");
             auto actorState = preview->findChild<QLabel *>("sceneActorState");
             QCOMPARE(actorState->text(), expectedState);
             step->click();
@@ -8808,7 +8945,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 sawDialog = name && choices && choices->count() > 0;
                 if (choices)
                     for (int i = 0; i < choices->count(); ++i)
-                        if (choices->itemText(i).startsWith("Room ·")) {
+                        if (choices->itemText(i).startsWith("Room Â·")) {
                             choices->setCurrentIndex(i);
                             break;
                         }
@@ -8904,7 +9041,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 auto choices = dialog->findChild<QComboBox *>("newSceneTemplate");
                 selectedEnvironment = choices &&
                                       choices->currentData().toUInt() == source.nativeKey &&
-                                      choices->currentText().startsWith("Environment ·");
+                                      choices->currentText().startsWith("Environment Â·");
                 dialog->findChild<QLineEdit *>("newSceneName")->setText("A new world scene");
                 dialog->accept();
             }
@@ -9268,6 +9405,13 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         auto view = editor.findChild<QGraphicsView *>("cutsceneCanvas");
         QVERIFY(scenes && assets && tabs && commands && requests && frames && layers && view);
         QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1498, 10000);
+        auto researchedNameSearch = editor.findChild<QLineEdit *>("cutsceneScenesSearch");QVERIFY(researchedNameSearch);
+        researchedNameSearch->setText("Palatinus's four regions");
+        int matches = 0;
+        for (int i = 0; i < scenes->count(); ++i) if (!scenes->item(i)->isHidden()) {
+            QVERIFY(scenes->item(i)->text().contains("610"));++matches;
+        }
+        QCOMPARE(matches,1);researchedNameSearch->clear();
         QCOMPARE(assets->count(), 366);
         auto selectScene = [&](quint32 key) {
             for (int i = 0; i < scenes->count(); ++i)
@@ -9973,7 +10117,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             steps->selectNode(first);activate("squadStepWhen",4);activate("squadStepConditionA",ca);activate("squadStepConditionB",cb);
             activate("squadStepFork",second+4);activate("squadStepNext",third+4);
             const auto branch=project.scenarios()->json();
-            QVERIFY(list->item(0)->text().contains("A → Step 2; B → Step 3"));
+            QVERIFY(list->item(0)->text().contains("A â†’ Step 2; B â†’ Step 3"));
             QCOMPARE(u8(project.scenarios()->scenario(key).layout.nodes[first],11),1);
             const auto nodesBefore=project.scenarios()->scenario(key).layout.nodes;
             // Other squads sharing this graph cannot be changed silently.
@@ -10536,7 +10680,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QCOMPARE(objects->item(0)->icon().pixmap(32, 32).toImage(), leaderIcon);
             int treasureIconRow = -1;
             for (int row = 0; row < objects->count(); ++row)
-                if (objects->item(row)->text().startsWith("Treasure 1 ·")) treasureIconRow = row;
+                if (objects->item(row)->text().startsWith("Treasure 1 Â·")) treasureIconRow = row;
             QVERIFY(treasureIconRow >= 0);
             QVERIFY(!objects->item(treasureIconRow)->icon().isNull());
             const auto treasureIcon = objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage();
@@ -10638,7 +10782,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 const auto label = objects->item(i)->text();
                 if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
                     waypointItem = i;
-                if (label.startsWith("Treasure 1 ·"))
+                if (label.startsWith("Treasure 1 Â·"))
                     treasureItem = i;
                 if (label == townName)
                     siteItem = i;
@@ -11385,9 +11529,9 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         tools.findChild<QPushButton *>("ruleReset_resistanceStrength")->click();
         QVERIFY(example("resistance").contains("Current setting (100%): about 60 damage"));
         spin("restHealing")->setValue(5);spin("recoveryRate")->setValue(200);
-        QCOMPARE(project.tools()->gameRules().value("restHealing"),5);QVERIFY(example("recovery").contains("10×"));
+        QCOMPARE(project.tools()->gameRules().value("restHealing"),5);QVERIFY(example("recovery").contains("10Ã—"));
         spin("restHealing")->setValue(0);QVERIFY(example("recovery").contains("HP healing is disabled"));
-        undo.undo();QCOMPARE(spin("restHealing")->value(),5);QVERIFY(example("recovery").contains("10×"));
+        undo.undo();QCOMPARE(spin("restHealing")->value(),5);QVERIFY(example("recovery").contains("10Ã—"));
         tools.findChild<QPushButton *>("ruleReset_restHealing")->click();QCOMPARE(spin("restHealing")->value(),1);
         QTest::qWait(30);QVERIFY(tools.grab().save("native/build/rule-strength-tools.png"));
         for(const auto group:{"tactics","elements","weapons","recovery","resistance"}) {
@@ -11472,6 +11616,109 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         legacyUndo.undo();QCOMPARE(oldLimit->value(),23);QVERIFY(!oldLimit->isEnabled());
         legacyUndo.redo();QCOMPARE(oldLimit->value(),20);QVERIFY(oldLimit->isEnabled());
     }
+    void scenarioEventSemanticLabels() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); project.loadSceneEvents();
+            const auto initial = project.manifest();
+            const auto bytes = project.sceneEvents()->program(10);
+            QUndoStack undo;
+            ScenarioEventEditor editor(&project, &undo, [] {});
+            editor.setRawInstructions(true);
+            editor.resize(1200, 800); editor.showAllRows(); editor.show();
+            editor.selectEventRow(10, 0x424); QApplication::processEvents();
+            auto tree = editor.findChild<QTreeWidget *>("scenarioEventSteps");
+            auto flags = editor.findChild<QComboBox *>("scenarioEventFlag");
+            auto action = editor.findChild<QComboBox *>("scenarioEventAction");
+            QVERIFY(tree && flags && action && tree->currentItem());
+            QCOMPARE(tree->currentItem()->text(1), QString("SET Flag 98 (Asnabel recruitment recorded) = ON"));
+            QCOMPARE(flags->itemText(flags->findData(202)), QString("Flag 202 (Katreda encountered this mission)"));
+            QCOMPARE(project.manifest(), initial); QCOMPARE(undo.count(), 0);
+            QCOMPARE(project.sceneEvents()->program(10), bytes);
+            flags->setCurrentIndex(flags->findData(250));
+            action->setCurrentIndex(action->findData(false));
+            editor.findChild<QPushButton *>("scenarioEventApply")->click();
+            QCOMPARE(tree->currentItem()->text(1), QString("CLEAR Flag 250 = OFF"));
+            const auto edited = project.sceneEvents()->program(10);
+            auto expected = bytes; put8(expected, 0x425, 250); expected[0x427] = 0;
+            QCOMPARE(edited, expected);
+            undo.undo(); QApplication::processEvents();
+            QCOMPARE(tree->currentItem()->text(1), QString("SET Flag 98 (Asnabel recruitment recorded) = ON"));
+            QCOMPARE(project.manifest(), initial);
+            undo.redo(); QApplication::processEvents();
+            QCOMPARE(tree->currentItem()->text(1), QString("CLEAR Flag 250 = OFF"));
+            QTemporaryDir folder; project.saveFolder(folder.path());
+            auto reopened = Project::fromRom(Rom::open(path));
+            reopened.applyManifest(Project::readProject(folder.path())); reopened.loadSceneEvents();
+            QCOMPARE(reopened.sceneEvents()->program(10), edited);
+            editor.selectEventRow(77);
+            QCOMPARE(flags->itemText(flags->findData(202)), QString("Flag 202"));
+            auto rows = editor.findChild<QComboBox *>("scenarioEventRow");
+            editor.selectEventRow(113);
+            QVERIFY(editor.findChild<QCheckBox *>("scenarioEventOtherPrograms")->isChecked());
+            QCOMPARE(rows->currentData().toInt(), 113);
+            QVERIFY(tree->topLevelItemCount() > 0);
+            editor.selectEventRow(10, 0xa4);
+            QVERIFY(tree->currentItem()->text(1).contains("527"));
+            QVERIFY(tree->currentItem()->text(1).contains("Katreda"));
+            undo.undo(); QApplication::processEvents();
+            QVERIFY(editor.grab().save("native/build/event-row-labels.png"));
+            QCOMPARE(project.manifest(), initial);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void scenarioEventResearchRows() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); project.loadSceneEvents();
+            const auto initial = project.manifest();
+            QUndoStack undo;
+            ScenarioEventEditor editor(&project, &undo, [] {});
+            editor.setRawInstructions(true);
+            editor.resize(1440, 950); editor.showAllRows(); editor.show();
+            editor.findChild<QCheckBox *>("scenarioEventOtherPrograms")->setChecked(true);
+            auto rows = editor.findChild<QComboBox *>("scenarioEventRow");
+            auto tree = editor.findChild<QTreeWidget *>("scenarioEventSteps");
+            QCOMPARE(rows->count(), 113);
+            for (int row : {0, 1, 66, 67, 68, 70, 114}) {
+                editor.selectEventRow(row); QApplication::processEvents();
+                QCOMPARE(rows->currentData().toInt(), row);
+                QVERIFY(tree->topLevelItemCount() > 0);
+            }
+            const auto directory = qEnvironmentVariable("LORDLY_EVENT_SCREENSHOTS");
+            const QList<QPair<int,int>> samples{{28, 318}, {62, 654}, {89, 72}};
+            for (const auto &sample : samples) {
+                editor.selectEventRow(sample.first, sample.second); QApplication::processEvents();
+                QVERIFY(tree->currentItem());
+                QCOMPARE(tree->currentItem()->data(0, Qt::UserRole).toInt(), sample.second);
+                if (sample.first == 28)
+                    QVERIFY(tree->currentItem()->text(1).contains("R1 (flag to check) = 201"));
+                // Include working flag controls as well as read-only register
+                // instructions in the representative captures.
+                tree->scrollToItem(sample.first == 89 ? tree->currentItem()->parent() : tree->currentItem(),
+                    QAbstractItemView::PositionAtTop);
+                QApplication::processEvents();
+                if (sample.first == 89) {
+                    auto handler = tree->currentItem()->parent();
+                    bool wrapped = false;
+                    for (int n = 0; n < handler->childCount(); ++n) {
+                        auto item = handler->child(n);
+                        if (editor.fontMetrics().horizontalAdvance(item->text(1)) > tree->columnWidth(1)) {
+                            QVERIFY(tree->visualItemRect(item).height() > editor.fontMetrics().height() + 6);
+                            wrapped = true; break;
+                        }
+                    }
+                    QVERIFY(wrapped);
+                }
+                if (!directory.isEmpty()) {
+                    QDir().mkpath(directory);
+                    QVERIFY(editor.grab().save(QDir(directory).filePath(QString("event-row-%1.png").arg(sample.first))));
+                }
+            }
+            QCOMPARE(project.manifest(), initial); QCOMPARE(undo.count(), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void scenarioEventFlags() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -11484,7 +11731,8 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editor.findChild<QTabBar *>("scenarioNavigation")->setCurrentIndex(4);
         QApplication::processEvents();
         auto rows = editor.findChild<QComboBox *>("scenarioEventRow");
-        QVERIFY(rows); QCOMPARE(rows->currentData().toInt(), 4); QCOMPARE(rows->count(), 2);
+        QVERIFY(rows); QCOMPARE(rows->currentData().toInt(), 4); QCOMPARE(rows->count(), 1);
+        editor.findChild<QCheckBox *>("scenarioEventRaw")->setChecked(true);
         auto tree = editor.findChild<QTreeWidget *>("scenarioEventSteps");
         auto select = [&](int offset) {
             for (int h = 0; h < tree->topLevelItemCount(); ++h)
@@ -11495,14 +11743,14 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             return false;
         };
         const auto original = project.sceneEvents()->json();
-        QVERIFY(select(0x2f0)); QVERIFY(tree->currentItem()->text(1).contains("Tenne Plains completed"));
+        QVERIFY(select(0x2f0)); QVERIFY(tree->currentItem()->text(1).contains("Tenne Plains: The Southern Reaches completed"));
         auto flags = editor.findChild<QComboBox *>("scenarioEventFlag");
         auto action = editor.findChild<QComboBox *>("scenarioEventAction");
         flags->setCurrentIndex(flags->findData(250)); action->setCurrentIndex(action->findData(false));
         editor.findChild<QPushButton *>("scenarioEventApply")->click();
         QCOMPARE(u8(project.sceneEvents()->program(4), 0x2f1), quint8(250));
         QCOMPARE(u8(project.sceneEvents()->program(4), 0x2f3), quint8(0));
-        QVERIFY(tree->currentItem()->text(1).contains("Clear Flag 250"));
+        QVERIFY(tree->currentItem()->text(1).contains("CLEAR Flag 250 = OFF"));
         undo.undo(); QCOMPARE(project.sceneEvents()->json(), original);
         undo.redo(); QVERIFY(select(0x2f0));
         editor.findChild<QPushButton *>("scenarioEventRestore")->click(); QCOMPARE(project.sceneEvents()->json(), original);
@@ -11526,7 +11774,8 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editor.findChild<QCheckBox *>("scenarioEventAll")->setChecked(false);
         QVERIFY(select(0x2f0)); QApplication::processEvents();
         QVERIFY(editor.grab().save("native/build/scenario-events.png"));
-        rows->setCurrentIndex(rows->findData(71)); QVERIFY(tree->topLevelItemCount() > 0);
+        editor.findChild<QTabBar *>("scenarioEventPhase")->setCurrentIndex(2);
+        QCOMPARE(rows->currentData().toInt(),71);QVERIFY(tree->topLevelItemCount() > 0);
         while (undo.index()) undo.undo(); QCOMPARE(project.sceneEvents()->json(), original);
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
@@ -11794,7 +12043,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
             dialog->findChild<QSpinBox *>("scenarioLevel_0")->setValue(127);
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
-            QVERIFY(dialog->isVisible());QVERIFY(dialog->findChild<QLabel *>("scenarioMemberError")->text().contains("level 1–99"));
+            QVERIFY(dialog->isVisible());QVERIFY(dialog->findChild<QLabel *>("scenarioMemberError")->text().contains("level 1â€“99"));
             QCOMPARE(project.scenarios()->json(),authored);
         });
         editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
@@ -11933,9 +12182,9 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QTest::mouseRelease(board, Qt::LeftButton, Qt::NoModifier, end);
         };
         drag(0, -1); // Releasing outside the angled board must leave the member in place.
-        QVERIFY(button("customCell_0")->toolTip().startsWith("3 ·"));
+        QVERIFY(button("customCell_0")->toolTip().startsWith("3 Â·"));
         drag(0, 8); // Swap two ordinary members.
-        QVERIFY(button("customCell_8")->toolTip().startsWith("3 ·"));
+        QVERIFY(button("customCell_8")->toolTip().startsWith("3 Â·"));
         drag(8, 0);
         drag(0, 4); // Adjacent to a large member: refuse without altering the draft.
         QVERIFY(editor.findChild<QLabel *>("customFormationNotice")->text().contains("adjacent"));
@@ -12659,6 +12908,58 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         undo.redo();
         QCOMPARE(project.manifest(), blank);
     }
+    void locationDescriptionEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CampaignEditor campaign(&project, &undo, [] {});
+        NamesTextEditor names(&project, &undo, [] {});
+        campaign.selectNode(6);
+        auto panel = campaign.findChild<QWidget *>("campaignLocationDescription");
+        QVERIFY(panel);
+        auto preview = panel->findChild<QLabel *>("recordDescriptionPreview");
+        auto banks = names.findChild<QComboBox *>("descriptionBank");
+        auto entries = names.findChild<QListWidget *>("descriptionEntries");
+        auto text = names.findChild<QPlainTextEdit *>("descriptionEditor");
+        QVERIFY(preview && banks && entries && text);
+        banks->setCurrentIndex(banks->findData("locations"));
+        QCOMPARE(entries->count(), 48);
+        entries->setCurrentRow(5);
+        QVERIFY(entries->item(5)->text().contains("Tenne Plains"));
+        const auto original = project.textBanks()["locations"].text(5);
+        QCOMPARE(preview->text(), original);
+        text->setPlainText("A peaceful southern plain.");
+        QCOMPARE(preview->text(), QString("A peaceful southern plain."));
+        undo.undo(); QCOMPARE(preview->text(), original); QCOMPARE(text->toPlainText(), original);
+        undo.redo(); QCOMPARE(preview->text(), QString("A peaceful southern plain."));
+        bool saved = false;
+        QTimer::singleShot(0, [&] {
+            auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            auto close = qScopeGuard([&] { if (dialog->isVisible()) dialog->reject(); });
+            auto edit = dialog->findChild<QPlainTextEdit *>("recordDescriptionText");
+            QVERIFY(edit);
+            edit->setPlainText("The southern plain.\nHome to new settlers.");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+            saved = true;
+        });
+        panel->findChild<QPushButton *>("editRecordDescription")->click();
+        QVERIFY(saved);
+        QCOMPARE(text->toPlainText(), QString("The southern plain.\nHome to new settlers."));
+        QCOMPARE(preview->text(), text->toPlainText());
+        undo.undo(); QCOMPARE(text->toPlainText(), QString("A peaceful southern plain."));
+        undo.redo(); QCOMPARE(preview->text(), text->toPlainText());
+        // Moving/renaming a map location retains its independent description ID.
+        campaign.findChild<QLineEdit *>("campaignNodeName")->setText("New Tenne");
+        campaign.findChild<QPushButton *>("campaignApplyNode")->click();
+        QVERIFY(entries->item(5)->text().contains("New Tenne"));
+        QCOMPARE(preview->text(), text->toPlainText());
+        campaign.selectNode(4);
+        QCOMPARE(preview->text(), project.textBanks()["locations"].text(3));
+        campaign.selectNode(6);
+        QCOMPARE(preview->text(), text->toPlainText());
+    }
     void descriptionWorkspaceEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -12678,7 +12979,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         auto search = page->findChild<QLineEdit *>("descriptionSearch");
         auto counts = page->findChild<QLabel *>("descriptionCounts");
         QCOMPARE(banks->currentData().toString(), QString("actions"));
-        QCOMPARE(counts->text(), QString("102 with text · 57 empty entries"));
+        QCOMPARE(counts->text(), QString("102 with text Â· 57 empty entries"));
         QVERIFY(!entries->item(55)->isHidden());
         QVERIFY(entries->item(56)->isHidden());
         entries->setCurrentRow(55);
@@ -12697,7 +12998,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QVERIFY(!entries->item(56)->isHidden()); // Keep typing even when the label no longer matches.
         QCOMPARE(project.textBanks()["actions"].entries[55].bytes, action55);
         QVERIFY(!entries->item(56)->text().contains("Empty"));
-        QCOMPARE(counts->text(), QString("103 with text · 56 empty entries"));
+        QCOMPARE(counts->text(), QString("103 with text Â· 56 empty entries"));
         search->clear();
         empty->setChecked(false);
         undo.undo();
@@ -12714,7 +13015,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         search->clear();
         QVERIFY(editor->isEnabled());
         banks->setCurrentIndex(banks->findData("classes"));
-        QCOMPARE(counts->text(), QString("188 with text · 37 empty entries"));
+        QCOMPARE(counts->text(), QString("188 with text Â· 37 empty entries"));
         QVERIFY(entries->item(165)->isHidden());
         QVERIFY(entries->item(165)->text().contains("Reserved slot"));
         QVERIFY(entries->item(200)->text().contains("Class-change help 2800"));
@@ -12722,7 +13023,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(model.createClass("Blank hero"), 165);
         empty->setChecked(true);
         entries->setCurrentRow(225);
-        QVERIFY(entries->item(225)->text().contains("Class 165 · Blank hero"));
+        QVERIFY(entries->item(225)->text().contains("Class 165 Â· Blank hero"));
         QVERIFY(editor->toPlainText().isEmpty());
         banks->setCurrentIndex(banks->findData("consumables"));
         QVERIFY(entries->item(1)->text().contains(project.record(Table::Consumables, 1).name));
@@ -13364,7 +13665,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
         auto category=editor.findChild<QComboBox *>("compatibilityMask");QVERIFY(category);
         auto family = editor.findChild<QComboBox *>("classFamily");
-        QCOMPARE(family->currentText(), QString("1 · Male"));
+        QCOMPARE(family->currentText(), QString("1 Â· Male"));
         editor.selectClass(38); // Lich uses both compatibility bits, but family None.
         QCOMPARE(category->currentData().toInt(), 3);
         QCOMPARE(family->currentData().toInt(), 0);

@@ -52,13 +52,15 @@ StoryRoutes::StoryRoutes(const Rom &rom) {
                 b.mid(text + 1, end - text - 1).replace(QByteArray::fromHex("1034"), " ")),
             {qint16(u16(b, at)), qint16(u16(b, at + 2))}};
     }
-    for (int at = 0x858e4; at < 0x85934; at += 2) {
-        const int a = u8(b, at), c = u8(b, at + 1);
+    const auto roads = campaign ? campaign->roads : b.mid(0x858e4, 80);
+    for (int at = 0; at < roads.size(); at += 2) {
+        const int a = u8(roads, at), c = u8(roads, at + 1);
         edges << qMakePair(a, c);
-        if (nodes.contains(a))
+        roadFlags+=campaign?campaign->roadFlags[at/2]:char(at/2+1);
+        if (a > 0 && c > 0 && nodes.contains(a) && nodes.contains(c)) {
             travelNodes << a;
-        if (nodes.contains(c))
             travelNodes << c;
+        }
     }
 }
 QVector<StoryRoute> StoryRoutes::routes(int node, int chaos, QMap<int, int> flags) const {
@@ -121,16 +123,13 @@ QVector<StoryRoute> StoryRoutes::routes(int node, int chaos, QMap<int, int> flag
                 s.pc += 2 + 2 * qint16((arg << 8) | (r[0] & 255));
                 continue;
             }
-            else if (op == 0xac)
-                jump = r[0] == 0;
-            else if (op == 0xbc)
-                jump = r[0] != 0;
-            else if (op == 0xa1)
-                jump = r[0] == r[1];
-            else if (op == 0xc1)
-                jump = r[1] < r[0];
-            else if (op == 0xcc)
-                jump = r[0] > 0 && r[0] < 0x8000;
+            else if (op >= 0xa0 && QSet<int>{1,2,3,6,7,11,12,13,14,15}.contains(op&15)) {
+                const int low=op&15, relation=op>>4;
+                int left=r[low>=12?low&3:(low>>2)&3],right=low>=12?0:r[low&3];
+                if(relation>=12){left=qint16(left);right=qint16(right);}
+                jump=relation==10?left==right:relation==11?left!=right:relation==12?left>right:
+                    relation==13?left<right:relation==14?left>=right:left<=right;
+            }
             else if (op == 0x12) {
                 StoryRoute route{node, arg, r[0] & 255, r[0] >> 8, s.required, s.writes};
                 if (!output.contains(route))
@@ -235,9 +234,11 @@ void WorldProgress::applyList(const QVector<int> &values) {
             int edge = routing_.edges.indexOf(pair);
             if (edge < 0)
                 edge = routing_.edges.indexOf(qMakePair(node, previous->first));
-            if (edge < 0)
-                throw Error("Story journey references a road absent from this ROM");
-            roads_[edge + 1] = previous->second != 0 && previous->second != 4;
+            // Edited maps can remove a connection named in the retail journey.
+            // Retain its story/node changes; only the first 40 roads have save bits.
+            const int flag=edge>=0?quint8(routing_.roadFlags[edge]):0;
+            if (flag)
+                roads_[flag] = previous->second != 0 && previous->second != 4;
         }
         previous = qMakePair(node, mode);
     }
@@ -347,7 +348,7 @@ void WorldProgress::advanceTo(int row) {
     for (int event : journey(row))
         complete(event);
 }
-QByteArray WorldProgress::forEntry(const StoryRoute &route) {
+QByteArray WorldProgress::forEntry(const StoryRoute &route, int start) {
     advanceTo(route.event);
     for (auto i = route.requirements.begin(); i != route.requirements.end(); ++i)
         flags[i.key()] = i.value();
@@ -356,13 +357,51 @@ QByteArray WorldProgress::forEntry(const StoryRoute &route) {
     nodes_[route.node] = 2;
     for (auto i = markers_.begin(); i != markers_.end(); ++i)
         i.value() = i.key() == route.node;
-    bool connected = false;
-    for (int n = 0; n < routing_.edges.size(); ++n)
-        if (roads_.value(n + 1) &&
-            (routing_.edges[n].first == route.node || routing_.edges[n].second == route.node))
-            connected = true;
-    if (!connected)
-        throw Error("The story journey did not open a road to this mission");
+    // Keep an already usable journey unchanged. Otherwise prepare a path in the
+    // test save through the edited network, without rewriting project story rules.
+    // Match campaign_road_open: added roads use visible endpoints, not save bits.
+    auto pathToMission = [&](bool openOnly) {
+        QMap<int, int> previous;
+        QVector<int> pending;
+        if (start < 1 || start > 40 || (openOnly && !nodes_.value(start)))
+            return previous;
+        pending << start;
+        previous[start] = -1;
+        for (int at = 0; at < pending.size() && !previous.contains(route.node); ++at) {
+            const int current = pending[at];
+            for (int n = 0; n < routing_.edges.size(); ++n) {
+                const auto edge = routing_.edges[n];
+                const int next = edge.first == current ? edge.second
+                               : edge.second == current ? edge.first : 0;
+                if (next < 1 || next > 40 || !routing_.nodes.contains(next) || previous.contains(next))
+                    continue;
+                const int flag=quint8(routing_.roadFlags[n]);
+                if (openOnly && (!nodes_.value(next) || (flag && !roads_.value(flag))))
+                    continue;
+                previous[next] = n;
+                pending << next;
+            }
+        }
+        return previous;
+    };
+    if (!pathToMission(true).contains(route.node)) {
+        const auto path = pathToMission(false);
+        if (!path.contains(route.node))
+            throw Error(QString("No road connects the test starting location (%1) to %2. Add a connection in World Map.")
+                            .arg(routing_.nodes.value(start).name, routing_.nodes.value(route.node).name));
+        for (int node = route.node;;) {
+            if (!nodes_.value(node))
+                nodes_[node] = 1;
+            const int edge = path.value(node);
+            if (edge < 0)
+                break;
+            const int flag=quint8(routing_.roadFlags[edge]);
+            if (flag)
+                roads_[flag] = 1;
+            const auto ends = routing_.edges[edge];
+            node = ends.first == node ? ends.second : ends.first;
+        }
+    }
     auto out = memory_;
     put8(out, 0x1936a7, quint8(key_));
     auto pack = [&](int at, int count, int bits, int first, const QMap<int, int> &data) {

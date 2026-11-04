@@ -21,7 +21,7 @@ struct ClassAsset {
 };
 struct ClassDataLayout {
     quint32 indexBase = 0, records = 0, appearances = 0, aliases = 0, names = 0;
-    quint32 discovery = 0, end = 0;
+    quint32 discovery = 0, customFlags = 0, end = 0;
     int count = 0;
     quint32 items = 0;
     int itemCount = 0;
@@ -35,6 +35,8 @@ struct ClassPlacement {
     quint32 dataRomOffset = 0, codeBytes = 0;
     quint32 bootEntry = 0, heapEntry = 0, secondaryEntry = 0;
     quint32 descriptionEntry = 0;
+    quint32 customFlagsGetter = 0, customFlagsSetter = 0;
+    static constexpr quint32 flagGetterSlot = 0x650e0, flagSetterSlot = 0x65150;
     quint32 directory = 0;
     int directoryCapacity = 0;
     SavePlacement saves;

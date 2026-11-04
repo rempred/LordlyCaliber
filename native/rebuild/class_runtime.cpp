@@ -2,6 +2,7 @@
 #include "rebuild/class_runtime.h"
 #include "rebuild/attack_runtime.h"
 #include "rebuild/capacity_runtime.h"
+#include "rebuild/leader_affinity.h"
 #include "engine/class_text.h"
 #include "engine/art_resource_links.h"
 #include "engine/promotion.h"
@@ -19,7 +20,8 @@ ClassRuntimeBuild
 buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
                   quint32 dataRomOffset, bool expandedSaves,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder,
-                  const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks) {
+                  const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
+                  const LeaderAffinity *affinity, bool customStoryFlags) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -50,10 +52,15 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.bytes+=QByteArray(capacity->base-result.data.layout.end,0)+capacity->storage;
         result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
     }
-    if (capacity || expandedSaves || result.data.layout.count > 165) {
+    if (customStoryFlags) {
+        result.data.layout.customFlags = result.data.layout.end;
+        result.data.bytes += QByteArray(64, 0);
+        result.data.layout.end += 64;
+    }
+    if (capacity || expandedSaves || customStoryFlags || result.data.layout.count > 165) {
         const quint32 codecAddress = (result.data.layout.end + 15U) & ~15U;
         result.data.bytes += QByteArray(codecAddress - result.data.layout.end, 0);
-        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory, codecAddress,capacity!=nullptr);
+        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory, codecAddress,capacity!=nullptr, result.data.layout.customFlags);
         result.data.bytes += result.saves->compression.bytes;
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
         if(capacity) {
@@ -86,6 +93,34 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         compileCapacityRuntime(*capacity,result.data.layout.end,result.data.layout,compiler,directory);
         result.data.bytes+=capacity->code;
         result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+    }
+    if (affinity) {
+        while (result.data.bytes.size()%16) result.data.bytes.append(char(0));
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        const auto payload = buildLeaderAffinity(*affinity, result.data.layout.end,
+            dataRomOffset + quint32(result.data.bytes.size()), compiler, directory);
+        result.data.bytes += payload.data;
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        if (result.data.layout.end > 0x80400000U)
+            throw Error("Combat affinity exceeds permanent class storage");
+        result.affinityOwner = payload.owner;
+    }
+    if (customStoryFlags) {
+        while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
+        QByteArray metadata(32, 0);
+        metadata.replace(0, 8, "LCFLAGS1");
+        result.placement.customFlagsGetter = result.saves->code.entries.value("lc_event_story_flag_get");
+        result.placement.customFlagsSetter = result.saves->code.entries.value("lc_event_story_flag_set");
+        put32(metadata, 8, result.data.layout.customFlags);
+        put32(metadata, 12, result.placement.customFlagsGetter);
+        put32(metadata, 16, result.placement.customFlagsSetter);
+        put32(metadata, 20, 256);
+        put32(metadata, 24, 512);
+        put32(metadata, 28, crc32(metadata.first(28)));
+        result.data.bytes += metadata;
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        if (result.data.layout.end > 0x80400000U)
+            throw Error("Custom story flags exceed permanent class storage");
     }
     result.dataRomOffset = dataRomOffset;
     if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
@@ -166,6 +201,15 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
     const auto shopPlacement = ShopPlacement::read(rom);
+    if (prior && prior->layout.customFlags && !build.data.layout.customFlags)
+        throw Error("Rebuilding classes must preserve their custom story flags");
+    for (const auto slot : {ClassPlacement::flagGetterSlot, ClassPlacement::flagSetterSlot}) {
+        const auto expected = prior && prior->layout.customFlags
+            ? (slot == ClassPlacement::flagGetterSlot ? prior->customFlagsGetter : prior->customFlagsSetter)
+            : (slot == ClassPlacement::flagGetterSlot ? 0x801702f8U : 0x8017049cU);
+        if (build.data.layout.customFlags && u32(rom.bytes(), slot) != expected)
+            throw Error("Unrecognized primary event story flag service");
+    }
     if (prior && prior->saves.installed() && !build.saves)
         throw Error("Rebuilding this class allocation also requires its expanded save runtime");
     if (prior && prior->residentBytes && build.resident.isEmpty() && !build.removeResident)
@@ -330,6 +374,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         if (rom.bytes().mid(at,8)=="LCNAMES1") priorNames=rom.bytes().mid(at,u32(rom.bytes(),at+8));
     }
     PersonalNames::verifyOwner(rom, priorNames);
+    if (!build.affinityOwner.isEmpty() && !LeaderAffinity::load(rom).unavailable().isEmpty())
+        throw Error("Cannot replace unrecognized combat-affinity code");
     auto image = rom.bytes();
     image.replace(PersonalNames::ownerOffset, PersonalNames::ownerSize, build.personalNamesCode);
     if (prior && prior->residentBytes)
@@ -359,9 +405,15 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     if (placement.descriptionEntry)
         installClassDescriptionRouting(image, prior ? prior->descriptionEntry : 0,
                                        placement.descriptionEntry);
+    if (build.data.layout.customFlags) {
+        put32(image, ClassPlacement::flagGetterSlot, build.placement.customFlagsGetter);
+        put32(image, ClassPlacement::flagSetterSlot, build.placement.customFlagsSetter);
+    }
     const auto descriptor = placement.descriptor(build.compiledData, build.code.bytes);
     image.replace(ClassPlacement::descriptorRomOffset, descriptor.size(), descriptor);
     image.replace(at, bytes, build.compiledData);
+    if (!build.affinityOwner.isEmpty())
+        image.replace(LeaderAffinity::offset, LeaderAffinity::size, build.affinityOwner);
     if (build.attacks) {
         const auto old = rom.bytes().mid(AttackPlacement::descriptorOffset, AttackPlacement::descriptorSize);
         if (!AttackPlacement::read(rom) && old != QByteArray(AttackPlacement::descriptorSize, char(-1)))

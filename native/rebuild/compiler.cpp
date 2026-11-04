@@ -15,6 +15,7 @@
 #include "rebuild/pose_runtime.h"
 #include "rebuild/body_visual_policy.h"
 #include "engine/class_text.h"
+#include "engine/location_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
 #include "engine/legacy_scene_arena.h"
@@ -721,6 +722,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
     const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
+    if (!p.consumableEffects() && !p.rom().revision()) {
+        try {
+            if (ConsumableEffects::load(p.rom()).needsCBuild()) p.loadConsumableEffects();
+        } catch (const Error &) {
+            // An unrelated mod's unknown consumable implementation stays intact.
+            // Explicit editing still requires the normal complete-owner check.
+        }
+    }
     if (!p.tools() && p.rom().revision() == 0 &&
         (!deploymentRules.builds().isEmpty() || ChaosCounter::load(p.rom()).enabled()))
         p.loadTools(); // Upgrade recognized C-backed adapters even if Tools was never opened.
@@ -828,7 +837,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             throw Error("Item records, descriptions, icons and weapon appearances must have "
                         "matching counts");
     }
-    const bool relocateClasses = relocateItems || priorClassPlacement.has_value() ||
+    const auto affinity = p.tools() ? p.tools()->leaderAffinity() : LeaderAffinity::load(p.rom());
+    const bool relocateAffinity = affinity.modified() || affinity.extended();
+    if (relocateAffinity) affinity.validateClasses(int(p.records(Table::Classes).size()));
+    const bool customStoryFlags = (p.sceneEvents() && p.sceneEvents()->hasCustomFlags()) ||
+        (priorClassPlacement && priorClassPlacement->layout.customFlags);
+    const bool relocateClasses = customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
@@ -875,6 +889,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     encodeLzss(compiled).size() > bank.resource.capacity)) {
             result.image = linkClassText(Rom::fromBytes(result.image), compiled,
                                          int(bank.entries.size()), true);
+        } else if (bank.spec.id == "locations" && !p.rom().revision() &&
+                   (LocationTextPlacement::read(p.rom()) ||
+                    encodeLzss(compiled).size() > bank.resource.capacity)) {
+            result.image = linkLocationText(Rom::fromBytes(result.image), compiled);
         } else {
             auto container = bank.resource.container(compiled);
             result.image.replace(bank.resource.romOffset, container.size(), container);
@@ -948,19 +966,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                  "combat code allocation")
                              .arg(p.tools()->experiencePercent());
     }
-    if (p.consumableEffects() && p.consumableEffects()->modified()) {
+    if (p.consumableEffects() && p.consumableEffects()->needsCBuild()) {
         const auto &effects = *p.consumableEffects();
         ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.
-        const auto built = compiler.assembleOwner(
-            effects.assemblyDefinitions() + readFile(":/game/consumables/effects.s"), directory,
-            "consumable_effects", ConsumableEffects::ramAddress,
-            ConsumableEffects::serviceAddresses(), true);
-        if (built != effects.expectedCode(p.rom().bytes().mid(ConsumableEffects::romOffset,
-                                                              ConsumableEffects::codeSize)))
-            throw Error("Compiled consumable effects differ outside their authored parameters");
+        const auto compiled = compiler.compileQualifiedOwner(ConsumableEffects::runtimeOwner(), directory, "consumable_effects");
+        const auto built = effects.runtimeImage(compiled.code);
         result.image.replace(ConsumableEffects::romOffset, ConsumableEffects::codeSize, built);
-        result.report << "Compiled all ten consumable effect models from maintained assembly "
-                         "within the original resident allocation";
+        result.report << "Compiled consumable effects from accepted-derived C with all ten authored models; retained the original resident allocation";
     }
     if (p.shops() &&
         (p.shops()->modified() || priorShopPlacement)) {
@@ -1040,9 +1052,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         auto classes = buildClassRuntime(
             data, compiler, directory, offset,
-            expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
+            customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1053,9 +1065,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             customIndex=quint32((quint64(offset)+std::max<qsizetype>(classes.data.bytes.size(),expandedArmies?0x40000:0)+15)&~quint64(15));
             if(capacityRuntime)capacityRuntime=prepareCapacityRuntime(capacityRuntime->base,p.rom());
             classes=buildClassRuntime(data,compiler,directory,offset,
-                expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
+                customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1066,9 +1078,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 quint64(offset) + std::max<qsizetype>(classes.data.bytes.size(), expandedArmies ? 0x40000 : 0)) + 15) & ~quint64(15));
             if (capacityRuntime) capacityRuntime = prepareCapacityRuntime(capacityRuntime->base, p.rom());
             classes = buildClassRuntime(data, compiler, directory, offset,
-                expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
+                customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
@@ -1344,25 +1356,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);
-    if (p.tools() && p.tools()->leaderAffinity().modified()) {
-        const auto &affinity = p.tools()->leaderAffinity();
-        if (result.image.mid(LeaderAffinity::offset, LeaderAffinity::size) !=
-            p.rom().bytes().mid(LeaderAffinity::offset, LeaderAffinity::size))
-            throw Error("Another export owner overlaps leader affinity");
-        const auto rows = affinity.json()["rows"].toObject();
-        for (auto it = rows.begin(); it != rows.end(); ++it)
-            if (it.key().toInt() >= p.records(Table::Classes).size())
-                throw Error("Leader affinity references a missing class");
-        const auto bytes = compiler.assembleOwner(affinity.assembly(), directory,
-            "leader_affinity", LeaderAffinity::address, {}, true);
-        if (bytes.size() != LeaderAffinity::size || bytes != affinity.image())
-            throw Error("Leader-affinity code differs from its bounded allocation");
-        result.image.replace(LeaderAffinity::offset, LeaderAffinity::size, bytes);
-        const auto reopened = LeaderAffinity::load(Rom::fromBytes(result.image));
-        if (!reopened.unavailable().isEmpty() || reopened.json() != affinity.json())
-            throw Error("Rebuilt leader affinity differs from the project");
-        result.report << "Compiled combat leader affinity within its original code allocation";
-    }
+    if (relocateAffinity)
+        result.report << "Compiled combat-affinity groups and leader strengths into permanent storage";
     if (p.encounters() && p.encounters()->persuasion().modified()) {
         if (result.image.mid(Persuasion::ownerOffset,Persuasion::ownerSize) !=
             p.rom().bytes().mid(Persuasion::ownerOffset,Persuasion::ownerSize))
@@ -1424,8 +1419,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     if (p.campaignMap()) {
         result.image = p.campaignMap()->rebuild(result.image);
-        result.image = rebuildCampaignRuntime(p,result.image,compiler,directory);
     }
+    if(!p.rom().revision())result.image = rebuildCampaignRuntime(p,result.image,compiler,directory);
     if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
         result.image=writeDeletedContent(result.image,p.deletedContent());
     reporter.stage(6, "Verifying ROM");
@@ -1453,6 +1448,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         throw Error("Exported deleted entries differ from the project");
     if (p.campaignMap()) {
         reopened.loadCampaignMap();
+        if(reopened.campaignMap()->backgroundBytes()!=p.campaignMap()->backgroundBytes() ||
+           reopened.campaignMap()->iconCatalog()!=p.campaignMap()->iconCatalog() ||
+           reopened.campaignMap()->iconAssignments()!=p.campaignMap()->iconAssignments())
+            throw Error("Exported world-map artwork differs from the project");
         for(int id=1;id<=CampaignMap::nodeCount;++id)
             if(reopened.campaignMap()->position(id)!=p.campaignMap()->position(id) ||
                reopened.campaignMap()->name(id)!=p.campaignMap()->name(id)) throw Error("Exported world-map node differs from the project");

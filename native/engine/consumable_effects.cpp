@@ -13,6 +13,11 @@ QJsonObject ConsumableEffects::catalog() {
 QJsonArray ConsumableEffects::definitions() {
     return catalog()["models"].toArray();
 }
+QJsonObject ConsumableEffects::runtimeOwner() {
+    QFile file(":/game/consumables/effects-c.json");
+    if (!file.open(QIODevice::ReadOnly)) throw Error("Missing consumable C source catalog");
+    return QJsonDocument::fromJson(file.readAll()).object();
+}
 QMap<QString, quint32> ConsumableEffects::serviceAddresses() {
     QMap<QString, quint32> result;
     const auto calls = catalog()["calls"].toObject();
@@ -49,6 +54,27 @@ ConsumableEffects ConsumableEffects::load(const Rom &rom) {
     if (canonical.size() != codeSize)
         throw Error("Truncated consumable effect routine");
     ConsumableEffects result;
+    const int metadataAt = codeSize - 80;
+    if (canonical.mid(metadataAt, 8) == "LCCONS01") {
+        const auto storedHash = canonical.mid(metadataAt + 16, 32);
+        canonical.replace(metadataAt + 16, 32, QByteArray(32, 0));
+        if (u32(canonical, metadataAt + 8) != 1 || u32(canonical, metadataAt + 12) != 15 ||
+            QByteArray::fromHex(sha256(canonical)) != storedHash ||
+            sha256(canonical.first(metadataAt)) != runtimeOwner()["sha256"].toString().toLatin1())
+            throw Error("Consumable C runtime or its parameters are damaged or unsupported");
+        int at = metadataAt + 48;
+        for (const auto &entry : definitions()) {
+            const auto def = entry.toObject(); QJsonObject values;
+            if (def["kind"] == "magnitude") { values["magnitude"] = u16(canonical, at); at += 2; }
+            else {
+                const int minimum = qint16(u16(canonical, at)), width = u16(canonical, at + 2);
+                values = {{"minimum", minimum}, {"maximum", minimum + width - 1}}; at += 4;
+            }
+            result.models_[def["key"].toString()] = validate(def, values);
+        }
+        if (at != codeSize - 2) throw Error("Consumable C parameter layout changed");
+        result.original_ = result.models_; result.cRuntime_ = true; return result;
+    }
     for (const auto &value : definitions()) {
         const auto def = value.toObject();
         QJsonObject fields;
@@ -138,6 +164,35 @@ void ConsumableEffects::importLegacy(const QJsonObject &object, int version) {
 static int parameter(const QJsonObject &model, const QString &kind) {
     return kind == "width" ? model["maximum"].toInt() - model["minimum"].toInt() + 1
                            : model[kind].toInt();
+}
+bool ConsumableEffects::needsCBuild() const {
+    if (cRuntime_ || modified()) return true;
+    // Reopened pre-C exports upgrade even without a new UI edit. A completely
+    // unmodified retail ROM keeps its exact accepted source-built baseline.
+    for (const auto &entry : definitions()) {
+        const auto def = entry.toObject(), model = models_[def["key"].toString()].toObject();
+        for (const auto &fieldValue : def["fields"].toArray()) {
+            const auto field = fieldValue.toObject();
+            if (quint16(parameter(model, field["kind"].toString())) != quint16(field["retail"].toInteger())) return true;
+        }
+    }
+    return false;
+}
+QByteArray ConsumableEffects::runtimeImage(const QByteArray &code) const {
+    const int metadataAt = codeSize - 80;
+    if (code.size() != metadataAt || sha256(code) != runtimeOwner()["sha256"].toString().toLatin1())
+        throw Error("Compiled consumable C does not match its qualified implementation");
+    auto image = code + QByteArray(80, 0);
+    image.replace(metadataAt, 8, "LCCONS01"); put32(image, metadataAt + 8, 1); put32(image, metadataAt + 12, 15);
+    int at = metadataAt + 48;
+    for (const auto &entry : definitions()) {
+        const auto def = entry.toObject(), model = validate(def, models_[def["key"].toString()].toObject());
+        if (def["kind"] == "magnitude") { put16(image, at, quint16(model["magnitude"].toInt())); at += 2; }
+        else { put16(image, at, quint16(model["minimum"].toInt())); put16(image, at + 2, quint16(parameter(model, "width"))); at += 4; }
+    }
+    if (at != codeSize - 2) throw Error("Consumable C parameter layout changed");
+    image.replace(metadataAt + 16, 32, QByteArray::fromHex(sha256(image)));
+    return image;
 }
 QByteArray ConsumableEffects::assemblyDefinitions() const {
     QByteArray result;

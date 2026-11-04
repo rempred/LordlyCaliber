@@ -14,18 +14,18 @@ static void put32(u8 *p, u32 value)
 }
 u32 lc_save_record_offset(u32 slot, u32 expanded)
 {
-    if (expanded > 3) return ~0U;
+    if (expanded > 6) return ~0U;
     if (slot == 14) return 0;
-    if (slot == 15) return expanded ? 0x30F0U : 0x30B0U;
-    if (slot < 2) return 16U + slot * (expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES);
+    if (slot == 15) return expanded >= 4 ? 0x3170U : expanded ? 0x30F0U : 0x30B0U;
+    if (slot < 2) return 16U + slot * (expanded >= 4 ? LC_SAVE_CUSTOM_NORMAL_BYTES : expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES);
     return ~0U;
 }
 u32 lc_save_record_size(u32 slot, u32 expanded)
 {
-    if (expanded > 3) return 0;
+    if (expanded > 6) return 0;
     if (slot == 14) return 16;
-    if (slot == 15) return expanded == 3 ? LC_SAVE_CAPACITY_SUSPEND_BYTES : expanded == 2 ? LC_SAVE_LARGE_SUSPEND_BYTES : expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
-    if (slot < 2) return expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES;
+    if (slot == 15) return expanded == 6 ? LC_SAVE_CUSTOM_LARGE_SUSPEND_BYTES : expanded == 5 ? LC_SAVE_CUSTOM_CAPACITY_SUSPEND_BYTES : expanded == 4 ? LC_SAVE_CUSTOM_SUSPEND_BYTES : expanded == 3 ? LC_SAVE_CAPACITY_SUSPEND_BYTES : expanded == 2 ? LC_SAVE_LARGE_SUSPEND_BYTES : expanded ? LC_SAVE_EXPANDED_SUSPEND_BYTES : LC_SAVE_SUSPEND_BYTES;
+    if (slot < 2) return expanded >= 4 ? LC_SAVE_CUSTOM_NORMAL_BYTES : expanded ? LC_SAVE_EXPANDED_NORMAL_BYTES : LC_SAVE_NORMAL_BYTES;
     return 0;
 }
 /* Accepted func_00005D9C signs the payload after the twelve-byte header.
@@ -36,12 +36,18 @@ static u32 checksums(const u8 *p, u32 length, u32 offset)
     return (lc_save_byte_sum(p + 12, length - 12, offset) << 16) |
            lc_save_bit_sum(p + 12, length - 12, offset);
 }
+static u32 signature(u32 slot, u32 format)
+{
+    if (slot == 14 || !format) return 0x51756573U;
+    if (format >= 4) return slot == 15 ? 0x4C433033U + format : 0x4C433037U;
+    return slot == 15 && format >= 2 ? 0x4C433034U + format : 0x4C433035U;
+}
 int lc_save_record_seal(u8 *record, u32 capacity, u32 slot, u32 expanded)
 {
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
     put32(record, checksums(record, length, lc_save_record_offset(slot, expanded)));
-    put32(record + 4, expanded >= 2 && slot == 15 ? 0x4C433034U + expanded : expanded && slot != 14 ? 0x4C433035U : 0x51756573U);
+    put32(record + 4, signature(slot, expanded));
     put32(record + 8, expanded && slot != 14 ? 0x4F473321U : 0x744F4733U);
     return 1;
 }
@@ -52,7 +58,7 @@ int lc_save_record_valid(const u8 *record, u32 capacity, u32 slot, u32 expanded)
      */
     u32 length = lc_save_record_size(slot, expanded);
     if (!record || !length || capacity < length) return 0;
-    if (get32(record + 4) != (expanded >= 2 && slot == 15 ? 0x4C433034U + expanded : expanded && slot != 14 ? 0x4C433035U : 0x51756573U) ||
+    if (get32(record + 4) != signature(slot, expanded) ||
         get32(record + 8) != (expanded && slot != 14 ? 0x4F473321U : 0x744F4733U)) return 0;
     /* The game uses a signed but zero-checksum suspend record as 'no suspend'. */
     if (slot == 15 && get32(record) == 0) return 1;
@@ -83,6 +89,24 @@ int lc_save_expand_record(u8 *record, u32 capacity, u32 slot)
     if (cleared) put32(record, 0);
     return 1;
 }
+int lc_save_upgrade_record(u8 *record, u32 capacity, u32 slot, u32 old_format)
+{
+    u32 i, size, target, cleared;
+    if (old_format > 6) return 0;
+    target = old_format >= 4 ? old_format : old_format == 3 ? 5 : old_format == 2 ? 6 : 4;
+    size = lc_save_record_size(slot, target);
+    if (!record || !size || capacity < size || !lc_save_record_valid(record, capacity, slot, old_format)) return 0;
+    if (slot == 14 || old_format >= 4) return 1;
+    cleared = slot == 15 && !get32(record);
+    if (!old_format && !lc_save_expand_record(record, capacity, slot)) return 0;
+    size = lc_save_record_size(slot, old_format ? old_format : 1);
+    for (i = size; i > LC_SAVE_CUSTOM_FLAG_OFFSET; --i)
+        record[i - 1 + LC_SAVE_CUSTOM_FLAG_BYTES] = record[i - 1];
+    for (i = 0; i < LC_SAVE_CUSTOM_FLAG_BYTES; ++i) record[LC_SAVE_CUSTOM_FLAG_OFFSET + i] = 0;
+    lc_save_record_seal(record, capacity, slot, target);
+    if (cleared) put32(record, 0);
+    return 1;
+}
 static u32 marker_crc(const u8 *data)
 {
     u32 crc = ~0U, i, bit;
@@ -93,33 +117,56 @@ static u32 marker_crc(const u8 *data)
     }
     return ~crc;
 }
+static int unsupported_marker(const u8 *p)
+{
+    return (get32(p) & 0xFFFF0000U) == 0x4C430000U &&
+           (get32(p + 4) & 0xFFFFFF00U) == 0x53524100U;
+}
 int lc_save_image_version(const u8 *image, u32 capacity)
 {
     const u8 *marker, *record;
     u32 i, slot;
     if (!image || capacity < LC_SAVE_IMAGE_BYTES) return -1;
     marker = image + LC_SAVE_PACK_IMAGE_MARKER;
+    if (get32(marker) == 0x4C433038U) {
+        if (get32(marker + 4) != 0x53524134U || get32(marker + 8) != 0x00040060U ||
+            get32(marker + 12) != marker_crc(marker)) return -1;
+        return 4;
+    }
     if (get32(marker) == 0x4C433036U) {
         if (get32(marker + 4) != 0x53524132U || get32(marker + 8) != 0x00020020U ||
             get32(marker + 12) != marker_crc(marker)) return -1;
         return 2;
     }
+    if (unsupported_marker(marker)) return -1;
     /* A compressed record without its complete marker is an interrupted or
      * damaged image. Never migrate it as retail or silently clear its data.
      */
+    if (get32(image + LC_SAVE_PACK_CUSTOM_SUSPEND_OFFSET) == 0x4C433036U &&
+        get32(image + LC_SAVE_PACK_CUSTOM_SUSPEND_OFFSET + 4) == 0x5A535631U) return -1;
     if (get32(image + LC_SAVE_PACK_SUSPEND_OFFSET) == 0x4C433036U &&
         get32(image + LC_SAVE_PACK_SUSPEND_OFFSET + 4) == 0x5A535631U) return -1;
+    marker = image + LC_SAVE_CUSTOM_IMAGE_MARKER;
+    if (get32(marker) == 0x4C433037U) {
+        if (get32(marker + 4) != 0x53524133U || get32(marker + 8) != 0x00030060U ||
+            get32(marker + 12) != marker_crc(marker)) return -1;
+        return 3;
+    }
+    if (unsupported_marker(marker)) return -1;
     marker = image + LC_SAVE_IMAGE_MARKER;
     if (get32(marker) == 0x4C433035U) {
         if (get32(marker + 4) != 0x53524131U || get32(marker + 8) != 0x00010020U ||
             get32(marker + 12) != marker_crc(marker)) return -1;
         return 1;
     }
+    if (unsupported_marker(marker)) return -1;
     /* A new record without its layout marker may be a partial write. Do not
      * interpret it as legacy merely because the marker itself is damaged.
      */
     for (i = 0; i < 3; ++i) {
         slot = i == 2 ? 15 : i;
+        record = image + lc_save_record_offset(slot, 4);
+        if (get32(record + 4) == 0x4C433037U && get32(record + 8) == 0x4F473321U) return -1;
         record = image + lc_save_record_offset(slot, 1);
         if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) return -1;
         record = image + lc_save_record_offset(slot, 0);
@@ -133,7 +180,8 @@ int lc_save_expand_image(u8 *image, u32 capacity)
     u32 n, slot, oldOffset, offset, oldSize, size, i;
     u8 *record, *marker;
     if (version < 0) return 0;
-    if (version == 1 || version == 2) return 1;
+    if (version >= 3) return 0;
+    if (version) return 1;
     /* Move later records first so no unread legacy payload is overwritten. */
     for (n = 3; n; --n) {
         slot = n == 3 ? 15 : n - 1;
@@ -159,17 +207,20 @@ int lc_save_pak_decode(u8 *record, u32 capacity, u32 slot)
 {
     u32 expanded, length;
     if (!record || slot >= 2 || capacity < LC_SAVE_EXPANDED_NORMAL_BYTES) return 0;
-    if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) expanded = 1;
+    if (get32(record + 4) == 0x4C433037U && get32(record + 8) == 0x4F473321U) expanded = 4;
+    else if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) expanded = 1;
     else if (get32(record + 4) == 0x51756573U && get32(record + 8) == 0x744F4733U) expanded = 0;
     else return 0;
     length = lc_save_record_size(slot, expanded);
+    if (capacity < length) return 0;
     if (get32(record) != checksums(record, length, 0)) return 0;
     lc_save_record_seal(record, capacity, slot, expanded);
     return expanded || lc_save_expand_record(record, capacity, slot);
 }
 int lc_save_pak_encode(u8 *record, u32 capacity, u32 slot)
 {
-    if (slot >= 2 || !lc_save_record_valid(record, capacity, slot, 1)) return 0;
-    put32(record, checksums(record, LC_SAVE_EXPANDED_NORMAL_BYTES, 0));
+    u32 format = record && capacity >= 12 && get32(record + 4) == 0x4C433037U ? 4 : 1;
+    if (slot >= 2 || !lc_save_record_valid(record, capacity, slot, format)) return 0;
+    put32(record, checksums(record, lc_save_record_size(slot, format), 0));
     return 1;
 }

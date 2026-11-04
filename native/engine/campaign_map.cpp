@@ -2,6 +2,7 @@
 #include "engine/campaign_runtime.h"
 #include "engine/scene_images.h"
 #include <QJsonArray>
+#include <QHash>
 #include <QLineF>
 #include <cmath>
 namespace lordly {
@@ -21,16 +22,18 @@ CampaignMap::CampaignMap(const Rom &rom) {
     nodes_ = original_ = rom.bytes().mid(nodeOffset, nodeCount * 8);
     roads_ = originalRoads_ = rom.bytes().mid(roadOffset, roadCount * 2);
     originalDots_ = rom.bytes().mid(0x86040, roadCount * 28);
-    icons_=QByteArray(5,0);
+    icons_=QByteArray(nodeCount,0);
     for(const auto value:rom.bytes().mid(0x871a8,10)) {
         const int id=quint8(value);
-        if(id>=1 && id<=nodeCount)icons_[(id-1)/8]|=char(1<<((id-1)%8));
+        if(id>=1 && id<=nodeCount)icons_[id-1]=1;
     }
     if (const auto placement = CampaignPlacement::read(rom.bytes())) {
         roads_ = originalRoads_ = placement->roads;
         originalDots_ = placement->dots;
+        originalBendCapacity_ = placement->bendCapacity;
         originalDisplayDots_ = placement->displayDots;
-        if(!placement->locationIcons.isEmpty())icons_=placement->locationIcons;
+        if(!placement->locationIcons.isEmpty())for(int id=1;id<=nodeCount;++id)
+            icons_[id-1]=char((quint8(placement->locationIcons[(id-1)/8])>>((id-1)%8))&1);
         for(auto it=placement->locationNames.begin();it!=placement->locationNames.end();++it)
             ownedNamePointers_[u32(original_,(it.key()-1)*8+4)]=it.value();
     }
@@ -40,6 +43,14 @@ CampaignMap::CampaignMap(const Rom &rom) {
     };
     mapArtwork_ = resource(0x1d91cf6);
     markers_ = resource(0x1dd2486);
+    initializeArtwork();
+    if(const auto placement=CampaignPlacement::read(rom.bytes());placement && !placement->artworkIcons.isEmpty()) {
+        loadIconCatalog(placement->artworkIcons);
+        icons_=placement->artworkAssignments;
+        mapArtwork_=placement->background;
+        for(int id=1;id<=nodeCount;++id)iconName(icon(id));
+    }
+    originalMapArtwork_=mapArtwork_;originalArtworkIcons_=artworkIcons_;
     originalIcons_=icons_;
     worldEntry_ = routes.scripts[0];
     for (auto it = routes.nodes.cbegin(); it != routes.nodes.cend(); ++it) {
@@ -126,7 +137,8 @@ void CampaignMap::removeRoad(int id) {
 }
 void CampaignMap::setRoadDots(int id,const QVector<QPoint> &points) {
     const auto ends=road(id);
-    if (!ends.first || !ends.second || points.isEmpty() || points.size()>7) throw Error("Choose an existing road");
+    if (!ends.first || !ends.second) throw Error("Choose an existing road");
+    if(points.isEmpty() || points.size()>bendCapacity)throw Error("A road supports 1–14 bends across two sections");
     for (const auto &p:points) if (p.x()<1 || p.x()>=mapWidth || p.y()<1 || p.y()>=mapHeight)
         throw Error("Keep road dots inside the map");
     if (points==roadWaypoints(id)) return;
@@ -159,9 +171,9 @@ QVector<QPoint> CampaignMap::roadWaypoints(int id) const {
         }
     } else if (id * 2 <= originalRoads_.size() &&
         roads_.mid((id - 1) * 2, 2) == originalRoads_.mid((id - 1) * 2, 2)) {
-        for (int n = 0; n < 7; ++n) {
-            QPoint dot(qint16(u16(originalDots_, (id - 1) * 28 + n * 4)),
-                       qint16(u16(originalDots_, (id - 1) * 28 + n * 4 + 2)));
+        for (int n = 0; n < originalBendCapacity_; ++n) {
+            QPoint dot(qint16(u16(originalDots_, (id - 1) * originalBendCapacity_ * 4 + n * 4)),
+                       qint16(u16(originalDots_, (id - 1) * originalBendCapacity_ * 4 + n * 4 + 2)));
             if (dot.x())
                 points << dot;
         }
@@ -213,6 +225,23 @@ QVector<QPoint> CampaignMap::roadDots(int id) const {
     }
     return result;
 }
+QVector<QVector<QPoint>> CampaignMap::mergedRoadDots(const QVector<QVector<QPoint>> &roads) {
+    auto result=roads;
+    QHash<int,QVector<QPoint>> cells;
+    for(auto &road:result)for(auto &point:road) {
+        const int x=point.x()/6,y=point.y()/6;
+        QPoint merged=point;int closest=17;bool found=false;
+        for(int dy=-1;dy<=1;++dy)for(int dx=-1;dx<=1;++dx)
+            for(const auto candidate:cells.value((y+dy)*128+x+dx)) {
+                const auto delta=candidate-point;
+                const int square=delta.x()*delta.x()+delta.y()*delta.y();
+                if(square<closest){closest=square;merged=candidate;found=true;}
+            }
+        if(!found)cells[y*128+x].append(point);
+        point=merged;
+    }
+    return result;
+}
 QVector<QPoint> CampaignMap::pulledRoad(int id,int dot,QPoint delta) const {
     const auto visible=roadDots(id),bends=roadWaypoints(id);
     if(dot<0 || dot>=visible.size())throw Error("Choose an existing road dot");
@@ -230,39 +259,79 @@ QVector<QPoint> CampaignMap::pulledRoad(int id,int dot,QPoint delta) const {
         for(int n=0;n<path.size()-1;++n){const auto d=deviation(grabbed,path[n],path[n+1]);if(d<best){best=d;segment=n;}}
         grab=segment+1;path.insert(grab,grabbed);
     }
-    // Keep the grabbed point and the endpoints; use the native seven bends to
-    // distribute the pull without accumulating changes between mouse events.
-    while(path.size()>9) {
-        double best=1e9;int remove=-1;
-        for(int n=1;n<path.size()-1;++n)if(n!=grab){const auto d=deviation(path[n],path[n-1],path[n+1]);if(d<best){best=d;remove=n;}}
-        path.removeAt(remove);if(remove<grab)--grab;
-    }
-    while(path.size()<9) {
-        double longest=2;int segment=-1;
-        for(int n=0;n<path.size()-1;++n){const auto length=QLineF(path[n],path[n+1]).length();if(length>longest){longest=length;segment=n;}}
-        if(segment<0)break;
-        path.insert(segment+1,((QPointF(path[segment])+path[segment+1])/2).toPoint());
-        if(segment<grab)++grab;
-    }
     QVector<double> distance{0};
     for(int n=1;n<path.size();++n)distance<<distance.last()+QLineF(path[n-1],path[n]).length();
-    const double center=distance[grab],length=distance.last();QVector<QPoint> result;
-    for(int n=1;n<path.size()-1;++n) {
-        double t=n<=grab?(center?distance[n]/center:1):
-            (length>center?(length-distance[n])/(length-center):1);
-        t=qBound(0.0,t,1.0);const double weight=t*t*(3-2*t);
-        const auto p=path[n]+QPoint(qRound(delta.x()*weight),qRound(delta.y()*weight));
-        result<<QPoint(qBound(1,p.x(),mapWidth-1),qBound(1,p.y(),mapHeight-1));
+    const double center=distance[grab];
+    // The brush is local to three visible dot intervals, not a fraction of the
+    // entire road. Fixed boundary bends keep its pull from propagating farther.
+    double left=0,right=0;
+    for(int n=dot;n>qMax(0,dot-3);--n)left+=QLineF(visible[n],visible[n-1]).length();
+    for(int n=dot;n<qMin(int(visible.size())-1,dot+3);++n)right+=QLineF(visible[n],visible[n+1]).length();
+    if(dot<3)left=center;
+    if(dot+3>=visible.size())right=distance.last()-center;
+    auto pointAt=[&](double at) {
+        int n=1;while(n<path.size()-1 && distance[n]<at)++n;
+        const double span=distance[n]-distance[n-1],t=span?(at-distance[n-1])/span:0;
+        return (QPointF(path[n-1])+(QPointF(path[n])-path[n-1])*t).toPoint();
+    };
+    const double from=qMax(0.0,center-left),to=qMin(distance.last(),center+right);
+    const auto leftAnchor=pointAt(from),rightAnchor=pointAt(to);
+    QVector<QPoint> shaped;
+    for(int n=0;n<path.size();++n) {
+        if(distance[n]<from)shaped<<path[n];
     }
+    if(shaped.isEmpty() || shaped.last()!=leftAnchor)shaped<<leftAnchor;
+    const int firstEdited=shaped.size()-1;
+    for(int n=1;n<path.size()-1;++n)if(distance[n]>from && distance[n]<to) {
+        const double span=distance[n]<=center?left:right;
+        const double t=span?qBound(0.0,1.0-std::abs(distance[n]-center)/span,1.0):1;
+        const double weight=t*t; // gentler falloff; the grabbed dot still follows the pointer
+        const auto p=path[n]+QPoint(qRound(delta.x()*weight),qRound(delta.y()*weight));
+        shaped<<QPoint(qBound(1,p.x(),mapWidth-1),qBound(1,p.y(),mapHeight-1));
+    }
+    if(shaped.isEmpty() || shaped.last()!=rightAnchor)shaped<<rightAnchor;
+    const int lastEdited=shaped.size()-1;
+    for(int n=0;n<path.size();++n)if(distance[n]>to)shaped<<path[n];
+    const auto moved=QPoint(qBound(1,grabbed.x()+delta.x(),mapWidth-1),qBound(1,grabbed.y()+delta.y(),mapHeight-1));
+    // Refit every drag, not just once the table is full. Resampled visible dots
+    // and rounded brush boundaries otherwise accumulate tiny extra corners on
+    // each gesture. Within the edited span allow less than one map pixel of
+    // error against the whole proposed path, retaining the grabbed point and
+    // both fixed boundaries. Outside it, remove only exactly collinear points.
+    // The shortest-path fit avoids cumulative error from greedy deletions.
+    const int count=shaped.size();
+    QVector<int> cost(count,count+1),previous(count,-1);cost[0]=0;
+    for(int end=1;end<count;++end)for(int start=0;start<end;++start) {
+        if(cost[start]+1>=cost[end])continue;
+        const double tolerance=start>=firstEdited && end<=lastEdited?0.75:0.000001;
+        const QPointF direction=shaped[end]-shaped[start];
+        const double square=direction.x()*direction.x()+direction.y()*direction.y();
+        double lastAlong=0;bool valid=true;
+        for(int n=start+1;n<end;++n) {
+            if(n==firstEdited || n==lastEdited || shaped[n]==moved ||
+               deviation(shaped[n],shaped[start],shaped[end])>tolerance) {valid=false;break;}
+            const QPointF offset=shaped[n]-shaped[start];
+            const double along=square?(offset.x()*direction.x()+offset.y()*direction.y())/square:0;
+            if(along<lastAlong-0.000001){valid=false;break;}
+            lastAlong=along;
+        }
+        if(valid){cost[end]=cost[start]+1;previous[end]=start;}
+    }
+    QVector<QPoint> fitted;
+    for(int at=count-1;at>=0;at=previous[at])fitted.prepend(shaped[at]);
+    if(fitted.size()>bendCapacity+2)
+        throw Error("This shape needs more than 14 bends. Undo a bend or straighten this part of the road first.");
+    QVector<QPoint> result;
+    for(int n=1;n<fitted.size()-1;++n)result<<fitted[n];
     return result;
 }
 QByteArray CampaignMap::dotBytes() const {
-    auto data = QByteArray(totalRoads() * 28, 0);
+    auto data = QByteArray(totalRoads() * bendCapacity * 4, 0);
     for (int id = 1; id <= totalRoads(); ++id) {
         const auto dots = roadWaypoints(id);
         for (int n = 0; n < dots.size(); ++n) {
-            put16(data, (id - 1) * 28 + n * 4, quint16(dots[n].x()));
-            put16(data, (id - 1) * 28 + n * 4 + 2, quint16(dots[n].y()));
+            put16(data, (id - 1) * bendCapacity * 4 + n * 4, quint16(dots[n].x()));
+            put16(data, (id - 1) * bendCapacity * 4 + n * 4 + 2, quint16(dots[n].y()));
         }
     }
     return data;
@@ -280,23 +349,19 @@ RasterImage CampaignMap::nodeArtwork(int node) const {
     return iconArtwork(icon(node));
 }
 int CampaignMap::icon(int node) const {
-    nodeId(node);return (quint8(icons_[(node-1)/8])>>((node-1)%8))&1;
+    nodeId(node);return quint8(icons_[node-1]);
 }
 void CampaignMap::setIcon(int node,int value) {
-    nodeId(node);if(value<0 || value>1)throw Error("Choose Flag or Castle");
-    const int offset=(node-1)/8,mask=1<<((node-1)%8);
-    icons_[offset]=char((quint8(icons_[offset])&~mask)|(value?mask:0));
+    nodeId(node);iconName(value);icons_[node-1]=char(value);
+}
+QByteArray CampaignMap::iconBytes()const {
+    QByteArray bytes(5,0);for(int id=1;id<=nodeCount;++id)
+        if(iconKind(icon(id)))bytes[(id-1)/8]|=char(1<<((id-1)%8));
+    return bytes;
 }
 RasterImage CampaignMap::iconArtwork(int value) const {
-    if(value<0 || value>1)throw Error("Unknown world-map icon");
-    const bool castle=value==1;
-    return decodeRawImage(markers_, {{"width", 16},
-                                     {"height", 16},
-                                     {"pixelFormat", "ci4"},
-                                     {"paletteCount", 16},
-                                     {"paletteOffset", castle ? 0x140 : 0x100},
-                                     {"dataOffset", castle ? 0xf68 : 0xcb0}})
-        .composite;
+    const auto image=iconFrame(value,1,0);
+    return {image.width(),image.height(),QByteArray(reinterpret_cast<const char *>(image.constBits()),image.sizeInBytes())};
 }
 RasterImage CampaignMap::roadArtwork() const {
     return decodeRawImage(markers_, {{"width", 16},
@@ -328,12 +393,13 @@ QJsonObject CampaignMap::json() const {
     if(!names.isEmpty())result["names"]=names;
     QJsonObject icons;
     for(int id=1;id<=nodeCount;++id)
-        if(icon(id)!=((quint8(originalIcons_[(id-1)/8])>>((id-1)%8))&1))icons[QString::number(id)]=icon(id);
+        if(icon(id)!=quint8(originalIcons_[id-1]))icons[QString::number(id)]=icon(id);
     if(!icons.isEmpty())result["icons"]=icons;
+    const auto artwork=artworkEdits();if(!artwork.isEmpty())result["artwork"]=artwork;
     return result;
 }
 void CampaignMap::apply(const QJsonObject &value) {
-    for(const auto &key:value.keys())if(key!="version" && key!="nodes" && key!="roads" && key!="shapes" && key!="names" && key!="icons")
+    for(const auto &key:value.keys())if(key!="version" && key!="nodes" && key!="roads" && key!="shapes" && key!="names" && key!="icons" && key!="artwork")
         throw Error("Unknown campaign map field");
     if ((value.contains("icons") && !value["icons"].isObject()) || (value.contains("shapes") && !value["shapes"].isObject()) || (value.contains("names") && !value["names"].isObject()) || value["version"] != 1 || !value["nodes"].isObject() ||
         !value["roads"].isObject())
@@ -342,6 +408,21 @@ void CampaignMap::apply(const QJsonObject &value) {
     next.shapes_.clear();
     next.names_.clear();
     next.icons_=originalIcons_;
+    next.artworkIcons_=originalArtworkIcons_;next.mapArtwork_=originalMapArtwork_;
+    if(value.contains("artwork")) {
+        if(!value["artwork"].isObject())throw Error("Invalid campaign artwork");
+        const auto art=value["artwork"].toObject();
+        for(const auto &key:art.keys())if(key!="background" && key!="icons")throw Error("Unknown campaign artwork field");
+        if(art.contains("background")) {
+            const auto encoded=art["background"].toString().toLatin1(),data=QByteArray::fromBase64(encoded);
+            if(data.toBase64()!=encoded)throw Error("Invalid map background encoding");
+            next.setBackground(data);
+        }
+        if(art.contains("icons")) {
+            if(!art["icons"].isObject())throw Error("Invalid icon catalog");
+            next.loadIconCatalog(art["icons"].toObject());
+        }
+    }
     next.nodes_ = original_;
     next.roads_ = originalRoads_;
     int lastRoad = next.totalRoads();
@@ -396,7 +477,7 @@ void CampaignMap::apply(const QJsonObject &value) {
             throw Error("Invalid road shape");
         RoadShape shape{point(o["from"]),point(o["to"]),{}};
         const auto points=o["points"].toArray();
-        if (points.isEmpty() || points.size()>7) throw Error("A road needs 1–7 dots");
+        if (points.isEmpty() || points.size()>bendCapacity) throw Error("A road supports 1–14 bends across two sections");
         for (const auto &v:points) shape.points.append(point(v));
         next.shapes_[id]=shape;
     }
@@ -413,6 +494,7 @@ void CampaignMap::apply(const QJsonObject &value) {
             throw Error("Invalid map location icon");
         next.setIcon(id,it.value().toInt());
     }
+    for(int id=1;id<=nodeCount;++id)next.iconName(next.icon(id));
     *this = std::move(next);
 }
 QByteArray CampaignMap::rebuild(const QByteArray &input) const {
@@ -430,16 +512,21 @@ QByteArray CampaignMap::rebuild(const QByteArray &input) const {
             image.replace(roadOffset + id * 2, 2, roads_.mid(id * 2, 2));
         }
     const auto dots = dotBytes();
-    for (int id = 0; id < roadCount; ++id)
-        if (dots.mid(id * 28, 28) != originalDots_.mid(id * 28, 28)) {
-            if (image.mid(0x86040 + id * 28, 28) != originalDots_.mid(id * 28, 28))
+    // Keep the original table's first section mirrored for older readers. The
+    // installed travel helper consumes all sections from its separate allocation.
+    for (int id = 0; id < roadCount; ++id) {
+        const auto before=originalDots_.mid(id*originalBendCapacity_*4,28);
+        const auto after=dots.mid(id*bendCapacity*4,28);
+        if(after!=before) {
+            if(image.mid(0x86040+id*28,28)!=before)
                 throw Error("World-map dots were changed by another export feature");
-            image.replace(0x86040 + id * 28, 28, dots.mid(id * 28, 28));
+            image.replace(0x86040+id*28,28,after);
         }
+    }
     return image;
 }
 int CampaignMap::changedNodes() const {
     const auto edits=json();
-    return edits["nodes"].toObject().size() + edits["roads"].toObject().size() + edits["icons"].toObject().size() + shapes_.size() + names_.size();
+    return edits["nodes"].toObject().size() + edits["roads"].toObject().size() + edits["icons"].toObject().size() + shapes_.size() + names_.size() + edits["artwork"].toObject().size();
 }
 } // namespace lordly

@@ -128,6 +128,7 @@ class SaveDocument {
     int classCount_ = 165, slot_ = -1, chunkSize_ = 0x20000;
     bool swapped_ = false, expanded_ = false;
     bool compressed_ = false;
+    int batteryFormat_ = 0;
     int compressedSuspendSize_ = 0;
     int sourceBase_ = 0x1971f0, activeSourceBase_ = 0x1977d8;
     int daysInMonth(unsigned year, unsigned month) const;

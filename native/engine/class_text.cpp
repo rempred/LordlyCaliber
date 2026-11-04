@@ -1,4 +1,5 @@
 #include "engine/class_text.h"
+#include "engine/location_text.h"
 #include "engine/weapon_types.h"
 #include "engine/class_data.h"
 #include "engine/promotion.h"
@@ -77,6 +78,7 @@ static void verifyOwners(const Rom &rom, quint32 key, bool items) {
         const auto owner = value.toObject();
         const auto start = owner["start"].toInt();
         auto bytes = rom.bytes().mid(start, owner["size"].toInt());
+        bytes = LocationTextPlacement::canonicalReferences(rom, bytes, start);
         bytes = canonicalWeaponTypeText(rom, bytes, start);
         if (classes)
             bytes = classes->canonicalReferences(bytes, start);
@@ -193,6 +195,7 @@ QByteArray linkClassText(const Rom &rom, const QByteArray &compiled, int count, 
     return image;
 }
 QByteArray ClassTextPlacement::canonicalAll(const Rom &rom, QByteArray bytes, qsizetype start) {
+    bytes = LocationTextPlacement::canonicalReferences(rom, bytes, start);
     for (const bool items : {false, true}) {
         const auto p = read(rom, items);
         if (p)

@@ -40,6 +40,19 @@ function claims(){
    for(const ref of row.patches)add(file,row.start.toString(16),ref.site,4);
  for(const row of read('scenarios/capacity-extra.json').patches)add('capacity-extra',row.name,row.site,row.end-row.site);
  for(const row of read('scenarios/capacity-predicates.json').patches)add('capacity-predicates',row.name,row.hook,8);
+ for(const row of read('campaign/owners.json').owners)add('campaign',row.start.toString(16),row.start,row.end-row.start);
+ const affinity=fs.readFileSync(path.resolve(root,'../engine/leader_affinity.h'),'utf8')
+  .match(/offset\s*=\s*(0x[\da-f]+),\s*size\s*=\s*(0x[\da-f]+)/i);
+ if(!affinity)throw Error('Combat-affinity owner declaration changed; update the ownership reader');
+ add('combat-affinity','native eligibility and compiled group lookup',parseInt(affinity[1],16),parseInt(affinity[2],16));
+ const flagSlots=fs.readFileSync(path.resolve(root,'../engine/class_data.h'),'utf8')
+  .match(/flagGetterSlot\s*=\s*(0x[\da-f]+),\s*flagSetterSlot\s*=\s*(0x[\da-f]+)/i);
+ if(!flagSlots)throw Error('Primary custom story flag slot declarations changed');
+ for(const slot of flagSlots.slice(1))add('custom-story-flags','primary VM service12',parseInt(slot,16),4);
+ const locationText=fs.readFileSync(path.resolve(root,'../engine/location_text.h'),'utf8')
+  .match(/directoryWord\s*=\s*(0x[\da-f]+)/i);
+ if(!locationText)throw Error('Location description directory declaration changed');
+ add('location-descriptions','help resource directory',parseInt(locationText[1],16),4);
  return result;
 }
 const family=name=>/^(capacity|scenarios\/capacity)/.test(name)?'capacity':name;

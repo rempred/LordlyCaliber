@@ -93,6 +93,7 @@ try {
     if ($versions['LordlyCaliber'] -cne $versions['LordlyCaliber-cli'].Replace('LordlyCaliber-cli ', 'LordlyCaliber ')) {
         throw 'GUI and CLI versions do not match.'
     }
+    & (Join-Path $PSScriptRoot 'check-windows-file-info.ps1') -Directory $package -Version $versions['LordlyCaliber'].Substring('LordlyCaliber '.Length)
     & (Join-Path $package 'n64-toolchain/mips-kmc-elf-as.exe') --version | Select-Object -First 1
     if ($LASTEXITCODE -ne 0) { throw 'Packaged assembler could not start.' }
 } finally {

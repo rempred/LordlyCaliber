@@ -7,7 +7,7 @@
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("LordlyCaliber");
-    app.setApplicationVersion("0.5.5");
+    app.setApplicationVersion(LORDLY_VERSION);
     app.setOrganizationName("LordlyCaliber");
     lordly::Diagnostics diagnostics;
     lordly::applyEditorTheme(app);

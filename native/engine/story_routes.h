@@ -26,12 +26,13 @@ class StoryRoutes {
     QMap<int, StoryNode> nodes;
     QSet<int> travelNodes;
     QVector<QPair<int, int>> edges;
+    QByteArray roadFlags;
 };
 class WorldProgress {
   public:
     WorldProgress(const StoryRoutes &, const QByteArray &memory);
     void advanceTo(int event);
-    QByteArray forEntry(const StoryRoute &);
+    QByteArray forEntry(const StoryRoute &, int start);
     QMap<int, int> flags;
 
   private:

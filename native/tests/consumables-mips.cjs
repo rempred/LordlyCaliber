@@ -15,14 +15,18 @@ function cpu(){
 }
 function run(m,id,actor,apply,value=0,random=0){
   m.set('a0',apply?1:0);m.set('a1',value);m.set('a2',id);m.set('a3',actor);
-  let randomCalls=0;
+  let randomCalls=0,levelCalls=0;
   m.trap(0x8009c7cc,c=>{
     for(const r of ['v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(r,0xcccccccc);
     c.set('v0',random);randomCalls++;
   });
+  m.trap(0x8016eba4,c=>{
+    assert.equal(c.get('a0'),characters+actor*56);levelCalls++;
+    for(const r of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(r,0xcccccccc);
+  });
   m.call(entry);
   assert.equal(m.get('sp'),0x803f0000);
-  return {value:m.get('v0'),randomCalls};
+  return {value:m.get('v0'),randomCalls,levelCalls};
 }
 const slice=(m,a,n)=>Buffer.from(m.ram.slice(m.phys(a),m.phys(a)+n));
 let queries=0,commits=0,special=0;
@@ -70,9 +74,47 @@ for(const [key,id] of [['healLeaf',1],['healSeed',2],['healPack',3],['powerFruit
     run(m,id,actor,true,result.value);assert.deepEqual(slice(m,0x80190f80,64),expected);special++;
   }
 }
-for(const id of [0,20,65535])for(const apply of [false,true]){
+// Cure removes only Petrification, from the correct ordinary or Soldier status.
+let retained=0;
+for(const actor of [0,99,100,127])for(const status of [0,4,0xff]){
+  const m=cpu(),at=actor<100?characters+actor*56+0x33:0x80191010+actor;
+  m.load(at-8,Buffer.alloc(17,0x55));m.w8(at,status);
+  const before=slice(m,at-8,17);
+  assert.equal(run(m,6,actor,false).value,0);assert.deepEqual(slice(m,at-8,17),before);
+  const expected=Buffer.from(before);expected[8]=status&0xfb;
+  assert.equal(run(m,6,actor,true,999).value,0);assert.deepEqual(slice(m,at-8,17),expected);retained++;
+}
+// Revival returns maximum HP when queried, applies the supplied amount, and
+// clears Petrification without disturbing other flags or nearby character data.
+for(const actor of [0,99])for(const hp of [0,100,249,250])for(const value of [1,37,250,999]){
+  const m=cpu(),base=characters+actor*56;m.load(base-8,Buffer.alloc(72,0x55));
+  m.w16(base+0x16,250);m.w16(base+0x18,hp);m.w8(base+0x33,0xff);
+  const before=slice(m,base-8,72);assert.equal(run(m,7,actor,false).value,250);
+  assert.deepEqual(slice(m,base-8,72),before);
+  const expected=Buffer.from(before);expected.writeUInt16BE(Math.min(250,hp+value),0x18+8);expected[0x33+8]=0xfb;
+  assert.equal(run(m,7,actor,true,value).value,250);assert.deepEqual(slice(m,base-8,72),expected);retained++;
+}
+// Level-up queries consume RNG, but application invokes the existing level-up
+// service exactly once with this character. That service is trapped, not tested.
+for(const actor of [0,43,99]){
+  const m=cpu(),base=characters+actor*56;m.load(base-8,Buffer.alloc(72,0x55));
+  const before=slice(m,base-8,72);
+  assert.deepEqual(run(m,9,actor,false,0,54321),{value:1,randomCalls:1,levelCalls:0});
+  assert.deepEqual(run(m,9,actor,true,1),{value:0,randomCalls:0,levelCalls:1});
+  assert.deepEqual(slice(m,base-8,72),before);retained++;
+}
+// Ordinary healing/fatigue must apply the caller's amount, even if it differs
+// from the configured query result (e.g. a caller scales an effect).
+for(const id of [1,2,3,4,5]){
+  const m=cpu(),base=characters;m.load(base-8,Buffer.alloc(72,0x55));
+  m.w16(base+0x16,250);m.w16(base+0x18,100);m.w8(base+0x32,100);
+  const expected=slice(m,base-8,72);
+  if(id<=3)expected.writeUInt16BE(137,0x18+8);else expected[0x32+8]=63;
+  run(m,id,0,true,37);assert.deepEqual(slice(m,base-8,72),expected);retained++;
+}
+for(const id of [0,8,20,65535])for(const apply of [false,true]){
   const m=cpu();m.load(characters,Buffer.alloc(56,0x55));
   assert.equal(run(m,id,0,apply,123).value,0);
   assert.deepEqual(slice(m,characters,56),Buffer.alloc(56,0x55));
 }
-console.log(`PASS consumable instructions: ${queries} queries, ${commits} ordinary commits, ${special} special-target commits, 6 unsupported dispatch cases; guarded 4 MiB RAM`);
+console.log(`PASS consumable instructions: ${queries} queries, ${commits} ordinary commits, ${special} special-target commits, ${retained} cure/revival/level-up/caller-amount cases, 8 unsupported dispatch cases; guarded 4 MiB RAM`);

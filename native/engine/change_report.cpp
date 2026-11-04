@@ -252,6 +252,7 @@ ChangeReport Project::changeReport(const Project *reference) const {
         settings(lines, before, weaponTypes_.names(), "Weapon type");
         add("Items and equipment", "Named weapon types", lines, {"items"});
     }
+    auto locationNames = campaignMap_;
     for (const auto &bank : texts_) {
         for (int id = 0; id < bank.entries.size(); ++id) {
             const auto &entry = bank.entries[id];
@@ -264,6 +265,15 @@ ChangeReport Project::changeReport(const Project *reference) const {
             if (entry.bytes == original && !added)
                 continue;
             QString subject = bank.spec.label + QString(" %1").arg(id);
+            if (bank.spec.id == "locations") {
+                if (!locationNames && !rom_.revision()) locationNames.emplace(rom_);
+                const int location = id + 1;
+                const auto name = !locationNames ? QString()
+                    : location <= CampaignMap::nodeCount ? locationNames->name(location)
+                                                          : locationNames->labels().value(location);
+                subject = QString("Map location %1%2 description").arg(location)
+                    .arg(name.isEmpty() ? QString() : " · " + name);
+            }
             int recordId = id;
             for (const auto table : {Table::Classes, Table::Items, Table::Consumables})
                 if (tableKey(table) == bank.spec.id)
@@ -360,17 +370,36 @@ ChangeReport Project::changeReport(const Project *reference) const {
     if (tools_ && (reference || tools_->modified())) {
         QStringList lines;
         auto before = ToolSettings::load(baseRom).json(), after = tools_->json();
-        const auto affinityBefore = before.take("leaderAffinity").toObject()["rows"].toObject();
-        const auto affinityAfter = after.take("leaderAffinity").toObject()["rows"].toObject();
-        auto leaders = affinityBefore.keys();
-        for (const auto &key : affinityAfter.keys()) if (!leaders.contains(key)) leaders << key;
+        const auto affinityBefore = before.take("leaderAffinity").toObject();
+        const auto affinityAfter = after.take("leaderAffinity").toObject();
+        const auto oldGroups = affinityBefore["groups"].toArray(), newGroups = affinityAfter["groups"].toArray();
+        const auto oldRows = affinityBefore["rows"].toObject(), newRows = affinityAfter["rows"].toObject();
+        auto membersText = [&](const QJsonArray &members) {
+            QStringList names;for (const auto &member : members) names << className(member.toInt());
+            return names.isEmpty() ? QString("None") : names.join(", ");
+        };
+        for (int group=0;group<qMax(oldGroups.size(),newGroups.size());++group) {
+            const auto oldGroup=(group<oldGroups.size()?oldGroups[group].toObject():QJsonObject{}), newGroup=(group<newGroups.size()?newGroups[group].toObject():QJsonObject{});
+            QStringList changes;
+            if(oldGroup["name"]!=newGroup["name"])
+                changes << transition("Name",oldGroup["name"].toString("None"),newGroup["name"].toString("None"));
+            if(oldGroup["members"]!=newGroup["members"])
+                changes << transition("Member classes",membersText(oldGroup["members"].toArray()),membersText(newGroup["members"].toArray()));
+            add("Classes", "Combat affinity / " + newGroup["name"].toString(oldGroup["name"].toString()), changes,
+                {"classes",5,-1,"section:Combat"});
+        }
+        auto leaders = oldRows.keys();
+        for (const auto &key : newRows.keys()) if (!leaders.contains(key)) leaders << key;
         for (const auto &key : leaders) {
             QStringList bonuses;
-            const auto a = affinityBefore[key].toArray(), b = affinityAfter[key].toArray();
-            for (int group = 0; group < 4; ++group) {
+            const auto a = oldRows[key].toArray(), b = newRows[key].toArray();
+            for (int group = 0; group < qMax(oldGroups.size(),newGroups.size()); ++group) {
                 const int oldValue = group < a.size() ? a[group].toInt() : 0;
                 const int newValue = group < b.size() ? b[group].toInt() : 0;
-                if (oldValue != newValue) bonuses << transition(LeaderAffinity::groupName(group),number(oldValue),number(newValue));
+                const auto oldName=(group<oldGroups.size()?oldGroups[group].toObject():QJsonObject{})["name"].toString();
+                const auto newName=(group<newGroups.size()?newGroups[group].toObject():QJsonObject{})["name"].toString();
+                if (oldValue != newValue || (oldValue && oldName!=newName))
+                    bonuses << transition(newName.isEmpty()?oldName:newName,number(oldValue),number(newValue));
             }
             add("Classes", className(key.toInt()) + " / Leader affinity", bonuses, {"classes",key.toInt(),-1,"section:Combat"});
         }
@@ -465,10 +494,15 @@ ChangeReport Project::changeReport(const Project *reference) const {
     }
     if (campaignMap_ && (reference || campaignMap_->changedNodes())) {
         CampaignMap original(baseRom);
+        if(original.backgroundBytes()!=campaignMap_->backgroundBytes())
+            add("World Map","Map artwork",{"Replaced 512 × 320 background"},{"campaignNode",6});
+        for(int id:campaignMap_->iconIds())if(original.iconCatalog().value(QString::number(id))!=campaignMap_->iconCatalog().value(QString::number(id)))
+            add("World Map",campaignMap_->iconName(id),{original.iconIds().contains(id)?"Edited location icon":"Added location icon"},{"campaignNode",6});
         for(int id=1;id<=CampaignMap::nodeCount;++id) {
             QStringList changes;
             if(original.position(id)!=campaignMap_->position(id))changes<<QString("Position: %1, %2 → %3, %4").arg(original.position(id).x()).arg(original.position(id).y()).arg(campaignMap_->position(id).x()).arg(campaignMap_->position(id).y());
             if(original.name(id)!=campaignMap_->name(id))changes<<transition("Location name",original.name(id),campaignMap_->name(id));
+            if(original.icon(id)!=campaignMap_->icon(id))changes<<transition("Location icon",original.iconName(original.icon(id)),campaignMap_->iconName(campaignMap_->icon(id)));
             if(!changes.isEmpty())add("World Map",QString("Map location %1 · %2").arg(id).arg(campaignMap_->name(id)),changes,{"campaignNode",id});
         }
         for(int id=1;id<=campaignMap_->totalRoads();++id) {
@@ -587,17 +621,39 @@ ChangeReport Project::changeReport(const Project *reference) const {
         for (int row : rows) {
             const auto before = original.flagEdits()[QString::number(row)].toObject();
             const auto after = sceneEvents_->flagEdits()[QString::number(row)].toObject();
+            if(before["trees"]!=after["trees"])add("Storyline",EventScript::rowName(row)+" · custom event trees",{"Created, edited or removed event logic."},{"story-event",row});
+            if(before["triggers"]!=after["triggers"])add("Storyline",EventScript::rowName(row)+" · WHEN triggers",{"Changed when an existing event runs."},{"story-event",row});
+            const auto oldOperands=before["operands"].toObject(),newOperands=after["operands"].toObject();
+            if(oldOperands!=newOperands) {
+                const auto retail=SceneEvents::retailRow(baseRom,row);
+                const auto oldBytes=SceneEvents::flagRow(retail,row,original.flagEdits());
+                const auto newBytes=SceneEvents::flagRow(retail,row,sceneEvents_->flagEdits());
+                auto keys=oldOperands.keys();for(const auto &key:newOperands.keys())if(!keys.contains(key))keys<<key;
+                for(const auto &key:keys){
+                    const bool comparison=key.startsWith("comparison:");
+                    const int at=comparison?key.mid(11).toInt():key.toInt();
+                    const int oldValue=comparison?u8(oldBytes,at)>>4:u8(oldBytes,at+1);
+                    const int newValue=comparison?u8(newBytes,at)>>4:u8(newBytes,at+1);
+                    if(oldValue==newValue)continue;
+                    const QMap<int,QString> relations{{10,"="},{11,"≠"},{12,">"},{13,"<"},{14,"≥"},{15,"≤"}};
+                    add("Event instructions",QString("%1 · @%2").arg(EventScript::rowName(row)).arg(at,4,16,QChar('0')),
+                        {comparison?QString("Comparison: %1 → %2").arg(relations.value(oldValue),relations.value(newValue)):
+                            QString("Instruction value: %1 → %2").arg(oldValue).arg(newValue)},
+                        {"story-event",row,at});
+                }
+            }
             if(row==0) {
                 auto nodes=before.keys();for(const auto &id:after.keys())if(!nodes.contains(id))nodes<<id;
-                for(const auto &id:nodes)if(before[id]!=after[id])add("Storyline",QString("Map location %1 entry rules").arg(id),{"Updated custom branches; unmatched conditions retain the original rules."},{"campaignNode",id.toInt()});
+                for(const auto &id:nodes)if(id!="operands"&&before[id]!=after[id])add("Storyline",QString("Map location %1 entry rules").arg(id),{"Updated custom branches; unmatched conditions retain the original rules."},{"campaignNode",id.toInt()});
                 continue;
             }
             const auto retail=SceneEvents::retailRow(baseRom,row);
-            const auto controls=EventScript::flagSteps(retail),branches=EventScript::branchSteps(retail);
+            QMap<int,EventStep> controls,branches;
+            try { controls=EventScript::flagSteps(retail);branches=EventScript::branchSteps(retail); }catch(const Error &){}
             auto offsets = before.keys();
             for (const auto &offset : after.keys()) if (!offsets.contains(offset)) offsets << offset;
             for (const auto &offset : offsets)
-                if (before[offset] != after[offset]) {
+                if (offset!="operands"&&offset!="trees"&&offset!="triggers"&&before[offset] != after[offset]) {
                     if(offset=="unlockNodes") {add("Storyline",QString("Event row %1 · map location unlocks").arg(row),{"Updated map locations unlocked on mission completion."},{"scenario-event",row});continue;}
                     const auto step = controls.value(offset.toInt());
                     auto describe = [&](const QJsonObject &edits) {

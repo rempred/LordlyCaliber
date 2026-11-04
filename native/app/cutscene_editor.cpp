@@ -92,6 +92,9 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         return list;
     };
     scenes_ = addList("Scenes", "cutsceneScenes");
+    scenes_->setWordWrap(true);
+    scenes_->setTextElideMode(Qt::ElideNone);
+    scenes_->setResizeMode(QListView::Adjust);
     if (project_) {
         auto buttons = new QHBoxLayout;
         newScene_ = new QPushButton("New scene");
@@ -610,10 +613,7 @@ void CutsceneEditor::createScene(bool blank) {
             for (const auto &id : programs().scenes()) {
                 if (!programs().canCreateBlank(id))
                     continue;
-                const auto &scene = programs().resource(id);
-                const auto label = id.authoredId.isEmpty()
-                                       ? scene.name
-                                       : programs().authoredScenes()[id.authoredId].name;
+                const auto label = programs().displayName(id);
                 const auto route =
                     programs().program(id).resourceClass() == 5 ? "Room" : "Environment";
                 templates->addItem(QString("%1 · %2").arg(route, label), id.nativeKey);
@@ -626,10 +626,7 @@ void CutsceneEditor::createScene(bool blank) {
                     "This ROM has no supported room or environment setup for a blank scene");
             layout->addRow("Setup template", templates);
         } else if (source) {
-            const auto &scene = programs().resource(source);
-            name->setText("Copy of " + (source.authoredId.isEmpty()
-                                            ? scene.name
-                                            : programs().authoredScenes()[source.authoredId].name));
+            name->setText(("Copy of " + programs().displayName(source)).left(120));
         } else
             return;
         auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);

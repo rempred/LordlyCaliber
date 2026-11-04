@@ -67,6 +67,17 @@ static void validatePlacement(const ClassPlacement &p) {
                      l.itemCount > 511 || quint64(l.items) + 12 + l.itemCount * 32 >= l.end)) ||
         (!l.items && l.itemCount))
         throw Error("Invalid expanded item allocation");
+    if (l.customFlags) {
+        if (!p.saves.installed() || p.saves.version < 5 || l.customFlags % 16 ||
+            l.customFlags < l.discovery + 32 || quint64(l.customFlags) + 64 > quint64(l.end) - 32)
+            throw Error("Invalid custom story flag bank");
+        for (const auto entry : {p.customFlagsGetter, p.customFlagsSetter})
+            if (entry % 4 || entry < SavePlacement::ramAddress ||
+                entry >= quint64(SavePlacement::ramAddress) + p.saves.codeBytes)
+                throw Error("Custom flag service is outside permanent resident code");
+    } else if (p.customFlagsGetter || p.customFlagsSetter) {
+        throw Error("Custom flag services have no bank");
+    }
     if (l.count < 165 || l.count > 256 || l.indexBase != 0x80243db0 ||
         l.records != l.indexBase + 72 || l.appearances % 16 || l.aliases % 16 || l.names % 16 ||
         l.discovery % 16 || l.end % 16 || l.end > 0x80400000 ||
@@ -100,7 +111,8 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05CLAS");
     put32(header, 8,
-          layout.items        ? 5
+          layout.customFlags  ? 6
+          : layout.items      ? 5
           : residentBytes     ? 4
           : descriptionEntry  ? 3
           : saves.installed() ? 2
@@ -141,7 +153,7 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     if (!header.startsWith("LC05CLAS"))
         return std::nullopt;
     const auto version = u32(header, 8);
-    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 5 ||
+    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 6 ||
         u32(header, 124) != crc32(header.first(124)) ||
         (version < 5 && header.mid(116, 8) != QByteArray(8, 0)) ||
         (version == 5 && !u32(header, 116)) ||
@@ -177,6 +189,22 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     result.residentAddress = u32(header, 104);
     result.residentBytes = u32(header, 108);
     result.residentChecksum = u32(header, 112);
+    if (version == 6) {
+        if (l.end < l.indexBase + 32 || quint64(result.dataRomOffset) + l.end - l.indexBase > quint64(rom.bytes().size()))
+            throw Error("Missing custom flag metadata");
+        const auto metadata = rom.bytes().mid(result.dataRomOffset + l.end - l.indexBase - 32, 32);
+        if (!metadata.startsWith("LCFLAGS1") || u32(metadata, 20) != 256 || u32(metadata, 24) != 512 ||
+            u32(metadata, 28) != crc32(metadata.first(28)))
+            throw Error("Damaged custom story flag metadata");
+        l.customFlags = u32(metadata, 8);
+        result.customFlagsGetter = u32(metadata, 12);
+        result.customFlagsSetter = u32(metadata, 16);
+        if (!l.customFlags || u32(rom.bytes(), flagGetterSlot) != result.customFlagsGetter ||
+            u32(rom.bytes(), flagSetterSlot) != result.customFlagsSetter)
+            throw Error("Custom flag service table differs from its owner metadata");
+        if (rom.bytes().mid(result.dataRomOffset + l.customFlags - l.indexBase, 64) != QByteArray(64, 0))
+            throw Error("Custom story flag initial bank must be empty");
+    }
     validatePlacement(result);
     if (result.residentBytes &&
         crc32(rom.bytes().mid(result.residentAddress - residentDelta, result.residentBytes)) !=

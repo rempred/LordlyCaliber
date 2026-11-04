@@ -8,6 +8,7 @@ class ConsumableEffects {
     static constexpr quint32 romOffset = 0x41098, ramAddress = 0x8016b198, codeSize = 1380;
     static ConsumableEffects load(const Rom &rom);
     static QJsonObject catalog();
+    static QJsonObject runtimeOwner();
     static QJsonArray definitions();
     static QMap<QString, quint32> serviceAddresses();
     const QJsonObject &models() const {
@@ -24,9 +25,12 @@ class ConsumableEffects {
     void importLegacy(const QJsonObject &object, int version);
     QByteArray assemblyDefinitions() const;
     QByteArray expectedCode(const QByteArray &source) const;
+    bool needsCBuild() const;
+    QByteArray runtimeImage(const QByteArray &code) const;
 
   private:
     static QJsonObject validate(const QJsonObject &definition, const QJsonObject &values);
     QJsonObject models_, original_;
+    bool cRuntime_ = false;
 };
 } // namespace lordly

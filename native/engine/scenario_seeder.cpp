@@ -288,10 +288,11 @@ QByteArray ScenarioSeeder::seed(int index, const SaveDocument *army) const {
     auto source = army ? withArmy(source_, *army) : source_;
     const auto &choice = choices_[index];
     const auto &route = choice.route;
-    WorldProgress progress(routing_, source.memory());
-    auto memory = progress.forEntry(route);
-    auto flags = progress.flags;
     const bool first = route.node == 6 && route.event == 4;
+    const int start = route.event == 57 ? 28 : first ? 7 : 6;
+    WorldProgress progress(routing_, source.memory());
+    auto memory = progress.forEntry(route, start);
+    auto flags = progress.flags;
     if (!first)
         flags[102] = 1;
     for (auto i = route.requirements.begin(); i != route.requirements.end(); ++i)
@@ -307,7 +308,6 @@ QByteArray ScenarioSeeder::seed(int index, const SaveDocument *army) const {
         matches |= r.event == route.event;
     if (!matches)
         throw Error("The seeded story flags select a different mission");
-    const int start = route.event == 57 ? 28 : first ? 7 : 6;
     put8(memory, 0x1936a8, 0);
     put8(memory, 0x1936a9, quint8(choice.chaos));
     put8(memory, 0x1936aa, quint8(start));

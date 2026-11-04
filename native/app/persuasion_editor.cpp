@@ -76,9 +76,7 @@ PersuasionEditor::PersuasionEditor(Project *project, QUndoStack *undo,
     std::function<void(const Encounters &, const QString &)> onCommit)
     : project_(project), commit_(std::move(onCommit)) {
     setObjectName("persuasionEditor"); auto layout = new QVBoxLayout(this);
-    layout->addWidget(text("Leader groups run across the top; target groups run down the left. "
-        "Edit any cell to set the starting Talk affinity (0–100) for every leader in that group against that target group. "
-        "Mixed means the leaders currently have different scores; entering a value gives them the same score."));
+    layout->addWidget(text("Edit a cell to set Talk affinity (0–100). Mixed means the leaders currently have different scores."));
     auto actions = new QHBoxLayout;
     addLeader_ = new QPushButton("Add leader group..."); addLeader_->setObjectName("persuasionAddLeader");
     editLeader_ = new QPushButton("Edit leader group..."); editLeader_->setObjectName("persuasionEditLeader");
@@ -86,7 +84,7 @@ PersuasionEditor::PersuasionEditor(Project *project, QUndoStack *undo,
     editTarget_ = new QPushButton("Edit target group..."); editTarget_->setObjectName("persuasionEditGroup");
     actions->addWidget(addLeader_); actions->addWidget(editLeader_); actions->addSpacing(20);
     actions->addWidget(addTarget_); actions->addWidget(editTarget_); actions->addStretch(); layout->addLayout(actions);
-    layout->addWidget(text("Targets ↓     Leaders →     Select a cell to see both groups' classes below."));
+    layout->addWidget(text("Leaders ↓     Targets →"));
     table_ = new QTableWidget; table_->setObjectName("persuasionTable");
     table_->setItemDelegate(new ScoreDelegate(table_));
     table_->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed);
@@ -116,14 +114,14 @@ PersuasionEditor::PersuasionEditor(Project *project, QUndoStack *undo,
         bool ok = false; const int value = item->data(Qt::EditRole).toInt(&ok);
         const int column = item->column(), row = item->row();
         if (!ok) { refresh(); return; }
-        const int leader = table_->horizontalHeaderItem(column)->data(Qt::UserRole).toInt();
-        try { auto next = project_->encounters()->persuasion(); next.setGroupScore(leader, row, value); commit(next, "Change persuasion affinity"); }
+        const int leader = table_->verticalHeaderItem(row)->data(Qt::UserRole).toInt();
+        try { auto next = project_->encounters()->persuasion(); next.setGroupScore(leader, column, value); commit(next, "Change persuasion affinity"); }
         catch (const Error &e) { refresh(); notice_->setText(QString::fromUtf8(e.what())); notice_->show(); }
     });
     watchContentChanges(undo, this, [this] { refresh(); }); refresh();
 }
 int PersuasionEditor::selectedLeader() const {
-    const auto item = table_->horizontalHeaderItem(table_->currentColumn());
+    const auto item = table_->verticalHeaderItem(table_->currentRow());
     return item ? item->data(Qt::UserRole).toInt() : -1;
 }
 void PersuasionEditor::refresh() {
@@ -134,17 +132,17 @@ void PersuasionEditor::refresh() {
     const bool enabled = affinity.unavailable().isEmpty() && !affinity.groups().isEmpty();
     {
         const QSignalBlocker block(table_);
-        table_->setRowCount(affinity.groups().size()); table_->setColumnCount(enabled ? leaders.size() + 1 : 0);
+        table_->setColumnCount(affinity.groups().size()); table_->setRowCount(enabled ? leaders.size() + 1 : 0);
         for (int target = 0; target < affinity.groups().size(); ++target) {
-            auto label = new QTableWidgetItem(affinity.groups()[target].name);
-            label->setToolTip(affinity.groups()[target].name); table_->setVerticalHeaderItem(target, label);
+            auto label = new QTableWidgetItem(wrapped(affinity.groups()[target].name));
+            label->setToolTip(affinity.groups()[target].name); table_->setHorizontalHeaderItem(target, label);
         }
-        for (int col = 0; col < table_->columnCount(); ++col) {
+        for (int col = 0; col < table_->rowCount(); ++col) {
             const int group = col < leaders.size() ? col : -1;
             const QString name = group < 0 ? "Other leaders" : groupName(project_, leaders[group]);
-            auto label = new QTableWidgetItem(wrapped(name)); label->setData(Qt::UserRole, group);
+            auto label = new QTableWidgetItem(name); label->setData(Qt::UserRole, group);
             label->setToolTip(group < 0 ? "Classes without an explicit leader entry" : membersText(project_, leaders[group].members));
-            table_->setHorizontalHeaderItem(col, label);
+            table_->setVerticalHeaderItem(col, label);
             for (int target = 0; target < affinity.groups().size(); ++target) {
                 const auto ids = group < 0 ? QVector<int>{-1} : leaders[group].members;
                 const int value = affinity.score(ids.first(), target);
@@ -156,11 +154,11 @@ void PersuasionEditor::refresh() {
                 auto item = new QTableWidgetItem;
                 item->setData(Qt::EditRole, mixed ? QVariant("Mixed") : QVariant(value));
                 item->setTextAlignment(Qt::AlignCenter); item->setToolTip(details.join('\n'));
-                table_->setItem(target, col, item);
+                table_->setItem(col, target, item);
             }
         }
         table_->setEnabled(enabled);
-        if (enabled) table_->setCurrentCell(qBound(0, row < 0 ? affinity.groupFor(0x45) : row, table_->rowCount()-1), qBound(0, column, table_->columnCount()-1));
+        if (enabled) table_->setCurrentCell(qBound(0, row, table_->rowCount()-1), qBound(0, column < 0 ? affinity.groupFor(0x45) : column, table_->columnCount()-1));
     }
     table_->horizontalScrollBar()->setValue(scroll);
     table_->verticalScrollBar()->setValue(verticalScroll);
@@ -169,7 +167,7 @@ void PersuasionEditor::refresh() {
 }
 void PersuasionEditor::showSelection() {
     const auto &affinity = project_->encounters()->persuasion(); const auto leaders = affinity.leaderGroups();
-    const int leader = selectedLeader(), target = table_->currentRow();
+    const int leader = selectedLeader(), target = table_->currentColumn();
     const bool enabled = affinity.unavailable().isEmpty() && target >= 0;
     editLeader_->setEnabled(enabled && leader >= 0); editTarget_->setEnabled(enabled && target > 0);
     if (!enabled) { members_->clear(); return; }
@@ -191,7 +189,7 @@ void PersuasionEditor::commit(const Persuasion &value, const QString &label) {
 void PersuasionEditor::editGroup(bool leader, bool create) {
     const auto current = project_->encounters()->persuasion();
     const auto groups = leader ? current.leaderGroups() : current.groups();
-    const int selected = leader ? selectedLeader() : table_->currentRow();
+    const int selected = leader ? selectedLeader() : table_->currentColumn();
     if (!create && (selected < 0 || (!leader && selected == 0))) return;
     QDialog dialog(this); dialog.setObjectName("persuasionGroupDialog");
     dialog.setWindowTitle(QString(create ? "Add %1 group" : "Edit %1 group").arg(leader ? "leader" : "target"));
@@ -200,12 +198,12 @@ void PersuasionEditor::editGroup(bool leader, bool create) {
     name->setObjectName("persuasionGroupName"); name->setMaxLength(80); form->addRow("Group name", name);
     auto copy = new QComboBox(&dialog); copy->setObjectName("persuasionCopyGroup");
     for (const auto &g : current.groups()) copy->addItem(g.name);
-    copy->setCurrentIndex(std::max(0, table_->currentRow()));
+    copy->setCurrentIndex(std::max(0, table_->currentColumn()));
     if (create && !leader) form->addRow("Copy starting scores from", copy); else copy->hide();
     layout->addLayout(form);
     layout->addWidget(text(leader ?
         "Select the classes in this leader group. Existing scores are kept; new leaders start with Other leaders scores. "
-        "Selected classes move out of their previous leader group. Removed classes keep their scores in individual columns. "
+        "Selected classes move out of their previous leader group. Removed classes keep their scores in individual rows. "
         "This does not change target groups or grant the ability to lead." :
         "Select the target classes in this group. Selected classes move out of their previous target group; "
         "removed classes return to Other classes. Leader groups and class families are unchanged."));
@@ -242,9 +240,9 @@ void PersuasionEditor::editGroup(bool leader, bool create) {
         if (leader) {
             const auto updated = next.leaderGroups();
             for (int col = 0; col < updated.size(); ++col) if (updated[col].members.contains(members.first())) {
-                table_->setCurrentCell(std::max(0, table_->currentRow()), col); break;
+                table_->setCurrentCell(col, std::max(0, table_->currentColumn())); break;
             }
-        } else table_->setCurrentCell(create ? next.groups().size()-1 : selected, std::max(0, table_->currentColumn()));
+        } else table_->setCurrentCell(std::max(0, table_->currentRow()), create ? next.groups().size()-1 : selected);
     } catch (const Error &e) { notice_->setText(QString::fromUtf8(e.what())); notice_->show(); }
 }
 }

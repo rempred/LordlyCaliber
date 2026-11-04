@@ -4,13 +4,16 @@
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const {Mips}=require('../../tests/lib/mips-interpreter.cjs');
 const rom=fs.readFileSync(process.argv[2]); if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
-const fixture=process.argv[3]?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
+const exported=process.argv[3]==='--export'?fs.readFileSync(process.argv[4]):null;
+if(exported && exported.readUInt32BE(0)===0x37804012)exported.swap16();
+const fixture=process.argv[3]&&!exported?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const from64=s=>Buffer.from(s,'base64');
 const groups=[Array.from({length:8},(_,i)=>0x45+i),[0x4e,0x4f,0x50],Array.from({length:13},(_,i)=>0x38+i),[0x31,0x34,0x35,0x37]];
 const retailRows={9:[10,10,10,10],10:[0,10,10,10],14:[0,0,10,10],24:[15,10,10,10],90:[15,10,10,10],25:[0,15,10,10],123:[0,15,10,10],29:[0,0,15,10],43:[0,0,0,10],54:[0,0,0,10],116:[0,0,0,15]};
-function combat(owner,rows) {
+function combat(owner,rows,memberGroups=groups,resident=null) {
     const m=new Mips(),pool=0x80100000,actors=[0,1,2].map(i=>pool+0x1c4+i*0xf8),sp=0x803fff00;
     m.load(0x801f14e8,owner);
+    if(resident)m.load(resident.address,resident.data);
     for(const [off,address,size] of [[0x20c014,0x801c8b84,32],[0x20c788,0x801c92f8,136],[0x20c810,0x801c9380,140],[0x20c2c0,0x801c8e30,24],[0x20c32c,0x801c8e9c,28]])m.load(address,rom.subarray(off,off+size));
     m.w32(0x801ce8bc,pool); let calls=0;
     function call(leader,member,side,gate='',identity=leader) {
@@ -21,8 +24,8 @@ function combat(owner,rows) {
         if(gate==='missing')m.w32(actors[1]+0x48,0);
         const before=Buffer.from(m.ram.subarray(m.phys(pool),m.phys(pool)+0x1800));
         m.r.fill(0); m.set('sp',sp);m.set('s0',0x12345678);m.set('s1',0x23456789);m.set('a0',actors[2]);
-        m.call(0x801f14e8); const group=groups.findIndex(g=>g.includes(member));
-        const expected=gate||!leader||group<0?0:(rows[leader]||[0,0,0,0])[group];
+        m.call(0x801f14e8); const group=memberGroups.findIndex(g=>g.includes(member));
+        const expected=gate||!leader||group<0?0:(rows[leader]?.[group]??0);
         assert.equal(m.get('v0')|0,expected,JSON.stringify({leader,member,side,gate,identity}));
         assert.equal(m.get('sp'),sp);assert.equal(m.get('s0'),0x12345678);assert.equal(m.get('s1'),0x23456789);
         assert.deepEqual(Buffer.from(m.ram.subarray(m.phys(pool),m.phys(pool)+0x1800)),before);calls++;
@@ -35,6 +38,14 @@ function combat(owner,rows) {
 }
 console.log(`PASS retail combat: ${combat(rom.subarray(0x2347b8,0x2349d0),retailRows)} full calls, both sides and eligibility gates.`);
 if(fixture) console.log(`PASS edited combat: ${combat(from64(fixture.combat.owner),fixture.combat.rows)} calls including signed and custom-class strengths.`);
+if(exported) {
+    const owner=exported.subarray(0x2347b8,0x2349d0),descriptor=owner.subarray(0x5c+24);
+    assert.equal(descriptor.toString('ascii',0,8),'LCAF0002');
+    const offset=descriptor.readUInt32BE(8),address=descriptor.readUInt32BE(12),size=descriptor.readUInt32BE(16);
+    const data=exported.subarray(offset,offset+size);
+    const metadata=JSON.parse(data.toString('utf8',data.readUInt32BE(16),data.readUInt32BE(16)+data.readUInt32BE(20)));
+    console.log(`PASS exported combat C: ${combat(owner,metadata.rows,metadata.groups.map(g=>g.members),{address,data})} calls, native gates and register preservation.`);
+}
 const resource=rom.subarray(0x8b15b0,0x8b15b0+rom.readUInt32BE(0x8b15ac)),ranks=new Map;
 for(let at=resource.readUInt32BE(0);resource[at]!==255;at+=2)ranks.set(resource[at],resource[at+1]);
 const originalScore=(leader,member)=>{if(!leader)return 0;const a=ranks.get(leader)??255,b=ranks.get(member)??255;return a===99?60:a===b?80:Math.abs(a-b)===1?60:30;};

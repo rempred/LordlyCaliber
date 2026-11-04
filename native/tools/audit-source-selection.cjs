@@ -76,8 +76,14 @@ function main(args) {
   const effectsOffset = effectsHeader.match(/romOffset\s*=\s*(0x[0-9a-f]+)/i);
   const effectsSize = effectsHeader.match(/codeSize\s*=\s*(\d+)/);
   if (!effectsOffset || !effectsSize) throw Error('Consumable owner declaration needs audit support');
-  check('consumable effects', Number(effectsOffset[1]), Number(effectsSize[1]), 'assembly-owner',
-    'rebuild/compiler.cpp', 'game/consumables/effects.s');
+  const consumableC = game('consumables/effects-c.json');
+  if (digest(fs.readFileSync(path.join(native,'game',consumableC.source))) !== consumableC.sourceSha256.toUpperCase())
+    throw Error('Changed consumable C adaptation');
+  const consumableOriginal=accepted.find(t=>t.symbol==='func_00041098');
+  if (!consumableOriginal || consumableOriginal.sourceSha256 !== consumableC.original.sourceSha256)
+    throw Error('Consumable C provenance differs from accepted source');
+  check('consumable effects', Number(effectsOffset[1]), Number(effectsSize[1]), 'adapted-c',
+    'rebuild/compiler.cpp', 'game/consumables/effects.c');
   const dataRules = new Set(['tactics', 'elements', 'weapons', 'soldierPopulation']);
   const partialRules = new Set(['deployment', 'deploymentMenu', 'deploymentMessage', 'trainingXp', 'resistance']);
   for (const [name, owner] of Object.entries(game('tools/game-rules.json'))) {
@@ -173,7 +179,7 @@ tools/high-attack-hooks.s tools/high-attack-module.s tools/luck-bootstrap.s tool
 tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/));
   const whole = new Set(checks.map(row => row.source).filter(value => value.endsWith('.s')).map(value => value.slice(5)));
   for (const name of ['tools/clock.s', 'tools/clock-retail.s']) whole.add(name);
-  const unused = new Set(['promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s',
+  const unused = new Set(['consumables/effects.s', 'promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s',
     'shops/consumers.s', 'shops/selection-guard.s', 'tools/goth-retail.s', 'tools/goth-reward.s',
     'tools/reserve-bootstrap.s', 'tools/chaos-hook.s']);
   const assembly = files(path.join(native, 'game')).filter(file => file.endsWith('.s')).map(file => {

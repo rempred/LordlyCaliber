@@ -1,5 +1,45 @@
 # Native Lordly Caliber
 
+## Event descriptions (November 3)
+
+EventScript::display is a presentation layer over the reviewed retail corpus,
+independent of decode/apply's export validation. Its embedded resource is generated
+by tools/import-event-semantics.cjs from the parent event-semantics catalog and row
+inventories. Whole-program digests qualify contextual annotations; edited programs
+use current-byte decoding. Original special layouts use the audited instruction
+inventory, with structure checks before read-only inspection of modified operands.
+Physical instruction order, native IDs and existing editable compound flag controls
+are retained. No description is written into game resources or the project format.
+The presentation importer consumes the reviewed native VM contracts for register
+operand roles; it does not attach a sentence's input description to its output.
+Canonical reference resolution handles global scenes, row-local predicates,
+selector-local dialogue words and scenario-local squads as separate namespaces.
+
+## Campaign artwork (November3)
+
+CampaignMap stores same-resolution512×320 CI8 replacements and independent
+named location icons. Imported images normalize to sRGB before weighted palette
+reduction. Icons have two native states, three160-byte frame records per state
+(32-byte RGBA5551 palette plus128-byte CI4 plane). State2 flags draw13 rows;
+building frames mirror within each state. IDs0/1 retain original types; up to64
+stable slots are supported. Project artwork deltas preserve loaded baselines.
+
+Campaign v5 retains the80-byte descriptor. A pointer in the final4 bytes of the
+8192-byte compiled-code reservation leads to LCMAPA01 in the expanded overlay;
+the compiler budget is therefore8188bytes. It contains a bounded64-entry native
+pointer table,40 byte assignments and a checked editor catalog. The background
+is a separately relocated LZSS resource with allocation/hash checks. Replacing
+it reuses its owned capacity when possible. Both ROM and overlayRAM bounds are
+checked. Reopening follows the actual loader, so icon names containing the
+descriptor marker cannot redirect discovery to text or stale allocations.
+
+The native location renderer retains visibility, clipping and mission markers.
+Only its membership lookup and two texture selection calls use maintained C
+helpers. There is no accepted matching C body for that renderer. Unchanged icons
+retain native state/tick texture choices, and map drawing still uses512×320.
+Fresh-export instruction checks capture texture bytes from the original renderer
+and new helpers; full-console rasterization is outside those checks.
+
 ## Cross-feature runtime ownership (November 2)
 
 `tools/runtime-ownership.cjs` checks catalogued code writes, whole-function
@@ -38,6 +78,27 @@ Capacity placement records exclude the cartridge checksum words at z64 ROM
 Canonical reconstruction recalculates those derived words. All recorded code
 and descriptor edits remain authenticated against their exact installed bytes;
 older records containing the checksum words remain readable.
+
+## Campaign story road safety (November 3)
+
+Campaign v6 keeps the80-byte descriptor and existing road/dot/display addresses.
+The last100 bytes of the8192-byte code reserve hold96 road-flag IDs and the
+existing4-byte artwork pointer; compiled code must fit8092 bytes. Original road
+IDs use their original save bits. Recreated original endpoint pairs map to the
+same original flag, using the authenticated US Rev0 endpoint catalog; unrelated
+new pairs use0 and derive availability from both visible endpoints. No additional
+save-state bits are used. Versions1–5 retain their prior reader behavior and are
+upgraded on ROM export without requiring another map edit.
+
+The world-overlay setter at original z64 0x7D90C dispatches to the mapped C setter.
+Resident event setter/getter z64 0x48A68/0x48ABC are bounded in-place C owners;
+the getter adapts the accepted source and both remain usable without the world
+overlay. Ownership checks accept original bytes or this exact compiled version.
+The maintained renderer submits the resampled road dots, including active seven-
+phase story reveal/hide animation. Calling the original renderer with a zeroed
+seven-dot table was unsafe during reverse reveals and is no longer necessary.
+Story-road instruction tests exercise native list processing, completion,
+resident access, removed/recreated pairs and rendering through connection96.
 
 ## Personal names and removable custom content (November 2)
 
@@ -221,6 +282,33 @@ separates the penalty, prevents the morale127-plus-penalty sentinel collision,
 and remembers the packed value across objective toggles. Unknown record bytes
 remain preserved. Instruction, UI, persistence and export checks are described
 in the audit.
+
+## Accepted consumable C integration (November 4)
+
+Snapshot `51174C7C` adds seven pure-C producers and one header; existing imported
+source/header bytes are unchanged. The baseline now compiles 1480 producers,
+1657 functions and 1696 exact code/table blocks from 1611 accepted owners.
+The November 1 baseline mechanism below remains unchanged. See
+[source-selection-audit.md](source-selection-audit.md) for the new function list
+and migration details.
+
+Consumable edits now compile the maintained accepted-derived `effects.c`.
+The exact retail producer remains in the accepted baseline. The modified owner
+uses 1300 bytes for qualified code/padding and an 80-byte versioned footer for
+its SHA256 and fifteen parameter halfwords, all within the original 1380 bytes
+at z64 ROM `0x41098` / RAM `0x8016B198`. It needs no extra allocation or hook.
+The original switch table is unchanged and unused by the modified owner.
+Readback checks the code identity, footer, parameter domains and layout. Old
+instruction-parameter exports are still recognized, and export upgrades them
+even when Consumables has not been opened. Unknown third-party owners remain
+untouched. The earlier assembly implementation described below remains only
+as a compatibility fixture.
+
+Focused export tests prove untouched-ROM identity, old-format upgrade, extreme
+parameters, project and ROM reopening, deterministic re-export, checksum,
+allocation bounds and corruption rejection. Instruction probes cover the ten
+models plus unchanged cure, revival and level-up dispatch behavior. RNG and the
+existing level-up service are trapped; these checks are not a console playthrough.
 
 ## Complete accepted C baseline (November 1)
 
@@ -5625,6 +5713,9 @@ confirmation paths with guarded4 MiB RAM, including empty shops and maximum
 stock; the normal export also composes with added classes and reopens every row.
 Full-game rendering, navigation and peak memory remain outside those proofs.
 
+The following original consumable assembly design is superseded by the
+November 4 C integration above; it documents the retained compatibility format.
+
 Consumable metadata uses the actual 45 records of 12 bytes at z64 0x645CC
 (US Rev1 adds 0x20), preserving each name pointer. The effect model separately
 owns ten magnitude/range settings in the US Rev0 resident routine at ROM
@@ -7183,3 +7274,115 @@ SaveCharacterCard and SaveUnitEditor use SaveEditor's existing validation and Un
 commands immediately. There are no staged squad Apply/Discard controls. Shared
 FormationBoard drags retain the grab-to-feet offset; external save-member drag
 images place their hotspot at the base and use transparent OS drag cursors.
+
+
+## Combat affinity and road sections — pending build (November 3)
+
+Combat affinity now stores named exclusive member groups and a signed per-leader
+score matrix. JSON v2 migrates v1's four fixed groups. The existing owner at z64
+0x2347B8, overlay RAM 0x801F14E8, keeps its original 0x5C-byte eligibility prologue
+and 0x14-byte epilogue. The custom lookup is compiled from
+`game/tools/leader-affinity.c` into the permanent class allocation, after the
+other extensions. LCAF0002 authenticates the payload's ROM/RAM mapping and SHA;
+LCAFDT02 contains bounded membership bytes, signed strengths, editor metadata and
+compiled code. Existing LCAF0001 exports remain readable. New references cover
+both leaders and members for deletion checks and Find Uses. No matching accepted
+C body for this owner exists in the imported catalog.
+
+The world travel builder at z64 0x7B230 writes two 16-entry s16 arrays at context
++0x60 and +0x80. It appends a zero marker after the destination: 14 bends plus
+two endpoints and that marker cannot fit. Campaign descriptor v4 instead stores
+14 bends per connection and pages seven at a time through these native arrays.
+The next-section cursor occupies the previously zero word at count-table +12.
+The continuation decision at z64 0x7B5E0 retains the native branch and restores v1
+for its unchanged end-of-road path. A continued page duplicates its starting
+join into slot 1 and sets step=1: step=0 would rerun the native initializer and
+restart the first section. The native state machine then traverses the next
+section normally, without advancing its location-route index or story flags.
+
+The original ROM's seven-bend rows mirror the first section; the extended table
+and native travel helper hold the entire road. Earlier v1–v3 descriptors retain
+their original stride. The editor's merge-only drawing cache never changes road
+endpoints, waypoints, or shared dragging ownership. Local drag simplification
+removes only collinear points; it never removes a distant corner to fit capacity.
+
+Verification is pending compilation by explicit user instruction. The added
+model/UI cases and exported-instruction tests cover persistence, Undo/Redo,
+14-bend travel in both directions, section handoff, buffer bounds, native affinity
+eligibility and unrelated class-data growth. Passing static overlap audits are
+not a substitute for those checks or a natural in-game traversal.
+
+
+## 2026-11-03 - Map Location descriptions (source changes; build held)
+
+The selected Map Location inspector and Names and Text use TextBank `locations`,
+with the existing byte-preserving description commands and project manifest.
+The US Rev0 resource at z64 0x0237CB4A has 48 CRLF records; the following settings
+resource begins at 0x0237D432. Native world-map help at z64 0x7A050..0x7A074
+(RAM delta 0x80121070) constructs selector 0x3B000 | (location ID - 1).
+Help bank 11 uses the resource-directory word z64 0x66D78 (RAM 0x80190E78),
+whose retail key 0x01DE88CA is relative to resource base z64 0x594280.
+Descriptions remain independent of the displayed location-name pointer.
+
+Unchanged rows and reserved/story-alias rows retain their original bytes.
+Short edits keep the 2280-byte original allocation. Larger banks relocate at
+the aligned ROM tail through LocationTextPlacement (LCLOCT01, original bank
+header reused for the 64-byte descriptor); only the resource-directory data
+word changes. No game function is patched. Bounds, compressed/decompressed
+checksums, record count and the directory reference are checked on reopening.
+The shared class/item description owner authentication normalizes this word
+without altering either sibling reference. Ordinary export checksum and all-bank
+reopening checks also cover location descriptions.
+
+Read-only location-text-mips.cjs passed 40 native map selections and 48 native
+record reads against retail bytes. Resource I/O is modeled; rendering is not.
+Engine locationDescriptions/locationDescriptionExport and UI
+locationDescriptionEditing are written but not compiled or executed while
+Joe holds the build. The export test also runs the native reader on new output.
+
+
+## 2026-11-03 - Pending affinity, road and location-text verification
+
+Joe lifted the build hold. Release compilation and 23 focused engine/UI/event/
+change-report cases passed. Fixed an ambiguous empty group append found by MSVC.
+The older Campaign reader fixture now actually uses seven-bend rows and the
+corresponding display-directory offsets; v1, v2 and v3 reopen checks pass.
+The location export regression also combines custom affinity, a 14-bend road
+and a relocated location-description bank, then reopens and re-exports them.
+
+Newly exported instruction checks passed affinity eligibility/strength lookup,
+road paging in both directions with native buffer guards, location selection and
+text reads. The Campaign instruction regression additionally passed 120 retail
+path comparisons, new-location picking/unlocks, connection 96 and drawing loops.
+Unedited export equals the source; source preservation, CRC, unrelated text,
+project folder roundtrip, Undo/Redo and shared text-directory ownership pass.
+
+Logs: build/Release/pending-20261103/{engine,ui,ui-followup,campaign-final,
+reports,combined}.txt and build/pending-20261103-live-check.log. The initial UI
+screenshot-path failure was test working-directory setup and passed after its
+output directory was created. Offscreen Qt tests do not prove platform-window
+behavior; natural full-game traversal/rendering remains untested. The live
+package passed isolated startup/export/reopen and was installed locally.
+
+
+## 2026-11-03 - Repeated road-drag lockout
+
+Joe reported road dots stopping while the rest of the editor remained responsive.
+Reproduced with small repeated drags on a straight road: drag 21 exhausted the
+14 bends. The old brush inserted a grabbed point and two boundary points each
+time, only simplifying exactly collinear points after reaching capacity. Integer
+resampling made obsolete points slightly non-collinear and retained them.
+
+CampaignMap::pulledRoad now fits the complete proposed path on every gesture.
+A bounded shortest-path fit retains the grabbed point and fixed brush boundaries.
+Within the three-dot editing span it permits at most 0.75 map pixels deviation
+from any proposed vertex; outside it only exactly collinear points can disappear.
+Monotonic segment projection preserves backtracking corners. Genuine geometry
+that exceeds 14 bends still fails atomically with a specific limit message.
+No project/ROM layout, bend capacity or runtime travel code changed.
+
+Engine roadRepeatedDragging passed 30 successive edits, fixed endpoints and
+unchanged distant straight segments. UI campaignRepeatedRoadDragging passed 30
+mouse gestures and Undo/Redo of the whole series. Existing road controls, overlap
+drawing, description UI and road export/reopen/instruction tests passed. Logs:
+build/Release/pending-20261103/road-freeze-{before,engine,ui}.txt.

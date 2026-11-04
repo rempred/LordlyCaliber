@@ -34,7 +34,18 @@ class SceneEvents {
     QVector<int> scenarioRows(int key) const;
     void editFlag(int row, int offset, int flag, bool value);
     void editBranch(int row, int offset, int target);
+    void editParameter(int row, int offset, const QString &key, int value, const ScenePrograms &);
     void setWorldRules(int node, const QJsonArray &rules);
+    void setTrees(int row, const QJsonArray &, const ScenePrograms &);
+    void setTrigger(int row, int entry, const QJsonObject &, const ScenePrograms &);
+    static constexpr int firstCustomFlag = 256, customFlagCapacity = 512;
+    QJsonArray customFlags() const;
+    bool hasCustomFlags() const;
+    int createFlag(const QString &name);
+    void renameFlag(int id, const QString &name);
+    void removeFlag(int id);
+    QString flagName(int id, int row = -1, int offset = -1) const;
+    QMap<int,QString> flagChoices(int row = -1) const;
     void unlockNodeAfter(int row, int node, bool enabled);
     void restoreFlags(int row);
     const QJsonObject &flagEdits() const { return flags_; }
