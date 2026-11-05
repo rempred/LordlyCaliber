@@ -1,12 +1,39 @@
-# Lordly Caliber
+# Lordly Caliber — Ogre Battle 64 ROM Editor
 
-Lordly Caliber is a native Windows editor for *Ogre Battle 64: Person of
-Lordly Caliber*, built with C++ and Qt. See the [native editor guide](native/README.md)
-for features, supported ROMs, limitations and project/export instructions.
+Lordly Caliber is a free, open-source **Ogre Battle 64 ROM editor and save editor
+for Windows**. Create mods for *Ogre Battle 64: Person of Lordly Caliber* on
+Nintendo 64 (N64), with visual tools for classes, items, attacks, campaign maps,
+story events, sprites and combat animations.
+
+**[Download the latest Windows release](https://github.com/rempred/LordlyCaliber/releases/latest)**
+· [User guide](native/README.md)
+· [Release notes](https://github.com/rempred/LordlyCaliber/releases)
+· [Report a bug](https://github.com/rempred/LordlyCaliber/issues)
+
+## What you can edit
+
+- **Classes and equipment** — Edit stats, growth, promotions and class families.
+  Create classes, items and named weapon types with equipment restrictions.
+- **Attacks, spells and effects** — Create attacks, edit damage, healing, status
+  effects and targeting, assign attacks to classes, and customize visual effects.
+- **Campaign and scenarios** — Edit battlefield maps, squads, shops, neutral
+  encounters, world-map locations, roads, location artwork and descriptions.
+- **Story events and branches** — Edit WHEN / IF / THEN / ELSE logic, recruitment,
+  cutscene assignments, named flags and location entry conditions.
+- **Sprites and combat animations** — Edit frames, timing and colors. Import,
+  export and reuse artwork and animation sequences through the Art Library.
+- **Game saves** — Edit the player army, characters, squads, equipment and stats.
+- **Names, descriptions and balance** — Edit game text and supported game rules,
+  or export data tables to CSV for comparison in a spreadsheet.
+
+Save your edits as a project and build an edited ROM. The native application
+uses C++ and Qt, with recovered game C integrated into supported exports and
+previews. The [user guide](native/README.md) covers supported ROMs, individual
+tools and current limitations.
 
 ## Download and run
 
-Download the Windows application ZIP from [Releases](https://github.com/rempred/LordlyCaliber/releases),
+Download the Windows application ZIP from the [latest release](https://github.com/rempred/LordlyCaliber/releases/latest),
 extract the whole ZIP, and run `LordlyCaliber.exe` inside the application folder.
 Keep its DLLs and other folders beside it. GitHub's **Source code** downloads
 contain source files; use the application ZIP to run the editor without building.
