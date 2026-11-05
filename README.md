@@ -1,8 +1,8 @@
-# Lordly Caliber — Ogre Battle 64 ROM Editor
+# Lordly Caliber — Ogre Battle 64 ROM Editor & Mod Creator
 
-Lordly Caliber is a free, open-source **Ogre Battle 64 ROM editor and save editor
-for Windows**. Create mods for *Ogre Battle 64: Person of Lordly Caliber* on
-Nintendo 64 (N64), with visual tools for classes, items, attacks, campaign maps,
+Lordly Caliber is a free, open-source **Ogre Battle 64 ROM editor, mod creator
+and save editor for Windows**. Create mods and ROM hacks for *Ogre Battle 64:
+Person of Lordly Caliber* on Nintendo 64 (N64), with visual tools for classes, items, attacks, campaign maps,
 story events, sprites and combat animations.
 
 **[Download the latest Windows release](https://github.com/rempred/LordlyCaliber/releases/latest)**
