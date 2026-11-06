@@ -1,5 +1,95 @@
 # Native Lordly Caliber
 
+## New Campaign (November 6)
+
+SceneEvents version 9 stores campaign settings and named army presets in row 1.
+Replacement programs clear active story handlers, including world arrival row 0
+and investigation routing row 70; shared services 64–68 remain. Row 0 retains
+the original flag 99 New Game guard. Original scenario records are archived in
+campaign metadata for explicit template copying, not used as live deployments.
+Scenarios clears an empty ESET's aliased seed when adding its first squad.
+
+Creation options retain world geography and scenario maps/towns by default.
+Clearing the world leaves one placed starting location and reusable location IDs;
+clearing scenarios hides their old battlefield keys while retaining source assets
+for explicit copying. These options and excluded keys live in campaign metadata.
+Event rows can create a scenario at the selected location without a predecessor;
+the campaign-start option makes that location initially accessible. Replaced event
+programs must not use retail instruction offsets, handlers or arrival fallbacks.
+Flowcharts, flag backlinks and raw decoding use the replacement program instead.
+
+Starting army authoring reuses SaveDocument and Army Management. Export copies
+only whitelisted player records, formations, orders, legions, Soldier data and
+inventory. Goth, Chaos Frame and location access come from separate settings.
+Maintained C and preset bytes append to the permanent class allocation. A small
+VM ABI bridge owns unused opcode 9 (z64 ROM dispatch 0x66658), authenticated by
+LCSTART1. The native VM has no accepted full-C owner; the bridge invokes C rather
+than duplicating its behavior in assembly. Source/active-squad pointers follow
+expanded storage. The handler accepts row 1 only. Initialization clears retail
+and custom story flags, location states, mission markers and old road bits.
+The final action sets location/camera, flag 99 and the native world-map request.
+
+Campaign placement version 7 uses endpoint visibility for all retained roads;
+version 6 preserves ordinary projects' story unlock rules. Public tests, private
+project/ROM round trips and exported MIPS probes cover the new paths. MIPS probes
+simulate scene completion; they do not claim full-console rendering or gameplay.
+Encounter-rate, scenario-rate and creature-reward source verification normalizes
+authenticated MissionTables references before checking the original owner or
+payload checksum. This allows full editor/CLI reopening of enlarged mission
+tables without accepting unrelated instruction changes.
+
+## Army display tools (November 6)
+
+LCK module 9 preserves all five arguments to native texture setup, including
+the stack style argument, before returning to the carrying-capacity icon draw.
+Its label uses native 18×8 pixels below Lv, (110,31)–(128,39). Digits retain native
+6×8 pixels at y31 with one-pixel gaps (x131,138,145) for readability. CF module
+5 resolves the digit sheet from the active Army texture pack +0x948 and the
+title palette from its palette pack +0x320. The final-task insertion retains
+the native tail. Prior native modules remain authenticated upgrade inputs;
+edited tool artwork is preserved. Exported-instruction regressions compare
+the native icon commands byte for byte and test relocated menu resources.
+Focused point-sampling tests retain every digit pixel and verify the separating
+gaps for values 0–100. These checks do not rasterize the full game screen.
+
+## Consumable base effect trees (November 4)
+
+ConsumableEffects version2 adds per-item structured trees; version1 models remain
+readable. Unedited trees are derived from the loaded magnitude/range models and
+do not dirty a project. Programs have bounded forward branches, at most64 source
+steps, sixteen actions and eight nesting levels. Conditions use activation state;
+actions apply in order. Per-target plans retain rolls between confirmation and
+application and cannot commit twice.
+
+Authored programs, scratch storage and maintained C append to the existing class
+allocator's boot-loaded data block. The checked LCITEMT1 descriptor at z64
+0x27c5400 points into that allocation. Its model, entry directory, original owner
+checks and payload checksum support reopening and stable re-export. The six
+original function entries redirect into complete accepted-derived item/menu C;
+the original sources remain separate. Generated menu adaptations are owned by
+native/tools/generate-consumable-tree-sources.cjs. Expanded-army bindings use the
+capacity allocator; authentication canonicalizes its recorded operand changes.
+The native map eligibility helper is separate from authored dispatch so retail
+Heal Pack's internal Heal Leaf probe cannot pick up another item's custom tree.
+
+Focused tests exercise actual exported instructions, ordinary and expanded-army
+exports, independent item guards, group/Soldier handling, RNG plans, ordered
+revival/healing, project/UI undo and reopen. Full interactive game-menu playback
+is not part of those checks. Native presentation displays the first applicable
+effect; custom compound animations are outside this base-effects pass.
+
+ConsumableEffects version3 adds independent menu-visual assignments. CI4 pixels
+(four32×32frames) and one16-entry RGBA5551 palette are stored per item, alongside
+the model in the existing class allocation. The item payload bound is256KiB;
+class permanent-memory and ROM-allocation bounds still govern total placement.
+The six existing owners are unchanged as an ownership set. Army confirmation
+and map confirmation call a C helper that copies into their existing resource
+buffers and writes back the texture cache. It preserves the resource pointers,
+the824bytes of result artwork and the middle64bytes of result palettes. Selecting
+an unchanged item restores the native sheet/palettes before playback. The map
+and Army loaders use the same two archive keys1de9bc0/1de9fa4. Combat/Pedra
+effects remain under AttackVisual, separate from these menu effects.
+
 ## Event descriptions (November 3)
 
 EventScript::display is a presentation layer over the reviewed retail corpus,

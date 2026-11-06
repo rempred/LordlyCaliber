@@ -17,7 +17,7 @@ StoryTree storyTree(const StoryEvent &event, const QByteArray &program, int star
         return words.isEmpty() || words.last() >= program.size() ? -1 : int(u8(program, words.last()));
     };
     const auto jump = [&](int i) { return event.actions[i].kind == "route" &&
-                                        (opcode(i) == 1 || opcode(i) == 2); };
+                                        (opcode(i) == 1 || opcode(i) == 2 || opcode(i)==0 || opcode(i)==8); };
     QVector<QVector<int>> edges(size + 1);
     for (int i = 0; i < size; ++i) {
         const auto &a = event.actions[i];

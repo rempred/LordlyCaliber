@@ -1,5 +1,6 @@
 #include "engine/game_rules.h"
 #include "engine/goth_runtime.h"
+#include "engine/mission_runtime.h"
 #include "engine/status_rules.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -103,7 +104,8 @@ QVector<GameRule> GameRules::definitions() {
     result += statusRuleDefinitions();
     return result;
 }
-GameRules GameRules::load(const Rom &rom) {
+GameRules GameRules::load(const Rom &input) {
+    const auto rom = Rom::fromBytes(canonicalMissionImage(input));
     GameRules result;
     bool knownGothC = false, gothCallsReserve = false;
     for (const auto &rule : definitions()) result.values_[rule.key] = rule.retail;

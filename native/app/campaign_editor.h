@@ -34,6 +34,7 @@ class CampaignEditor : public QWidget {
     void openCutscene(int selector);
     void editRule(int row);
     void createNode();
+    void createMission(int location = -1);
     void editUnlocks();
     void commit(Project after, const QString &label);
     void commitMap(const CampaignMap &, const QString &label);

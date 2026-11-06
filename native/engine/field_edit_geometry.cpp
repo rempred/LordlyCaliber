@@ -170,6 +170,29 @@ class BuildingClone {
         return result;
     }
 };
+// Drawing lists also carry material setup inherited by later building lists.
+// Keep that setup in a blank map while removing every original triangle.
+class StateOnlyClone {
+    const QByteArray &original_;
+    Append &out_;
+    QMap<quint32,quint32> lists_;
+    QSet<quint32> active_;
+    int commands_=0;
+  public:
+    StateOnlyClone(const QByteArray &original,Append &out):original_(original),out_(out){}
+    quint32 clone(quint32 address,int depth=0){
+        if(lists_.contains(address))return lists_[address];
+        if(depth>24||active_.contains(address)||address>>24!=2)throw Error("Unsupported blank map material list");
+        active_.insert(address);QByteArray code;
+        for(quint32 p=address&0xffffff;;p+=8){
+            if(++commands_>100000)throw Error("Blank map material list exceeds budget");
+            const int at=out_.geometry+int(p);const auto a=u32(original_,at),b=u32(original_,at+4),op=a>>24;
+            if(op!=5&&op!=6&&op!=7)command(code,a,op==0xde?clone(b,depth+1):b);
+            if(op==0xdf||(op==0xde&&(a&0x10000)))break;
+        }
+        active_.remove(address);return lists_[address]=out_.list(code);
+    }
+};
 struct BrushPoint {
     QPointF grid;
     double distance, influence;
@@ -651,6 +674,89 @@ QByteArray editFieldHeight(const FieldMapSource &source, const FieldChanges &cha
         }
     }
     return out;
+}
+QByteArray blankFieldHeight(const FieldMapSource &source) {
+    auto out=source.geometry[1].data.first(28);
+    const int width=u16(out,0),height=u16(out,2);
+    if(width<2||width>256||height<2||height>256)throw Error("Unsupported blank map height grid");
+    putReal(out,12,0);putReal(out,16,1);
+    out+=QByteArray(height*2,0);
+    for(int y=0;y<height;++y){put16(out,28+y*2,quint16((out.size()-28)/2));
+        for(int x=0;x<width;){const int count=std::min(255,width-x),at=out.size();
+            out+=QByteArray(4,0);put16(out,at,0xff00|count);x+=count;}}
+    return out;
+}
+QByteArray blankFieldModel(const FieldMapSource &source,const FieldBrush &brush,const QVector<int> &sites) {
+    if(brush.texture.isNull()||brush.texture.width()>64||brush.texture.height()>64||brush.texture.width()*brush.texture.height()>2048)
+        throw Error("The plain terrain texture is unavailable for a blank map");
+    const auto &original=source.geometry[0].data;
+    Append out{original,int((u32(original,48)+15)&~15u)};
+    const auto texture=brush.texture.convertToFormat(QImage::Format_RGBA8888);
+    const int width=texture.width(),height=texture.height(),line=(width*2+7)/8;
+    if((width&(width-1))||(height&(height-1)))throw Error("The plain terrain texture must have power-of-two dimensions");
+    const int maskS=int(std::log2(width)),maskT=int(std::log2(height));
+    QByteArray texels(width*height*2,0);
+    for(int y=0;y<height;++y)for(int x=0;x<width;++x){const auto c=texture.pixelColor(x,y);
+        put16(texels,(y*width+x)*2,quint16((c.red()>>3)<<11|(c.green()>>3)<<6|(c.blue()>>3)<<1|1));}
+    QByteArray matrix(64,0);for(int n=0;n<3;++n)putFixed(matrix,n*5,1./64);putFixed(matrix,15,1);
+    QByteArray dl;command(dl,0xe7000000,0);command(dl,0xda380003,out.add(matrix,16));
+    command(dl,0xe3000a01,0);command(dl,0xe3001001,0);command(dl,0xfc127e24,0xfffff9fc);
+    command(dl,0xfa000000,0xffffffff);command(dl,0xe200001c,0x00552078);
+    command(dl,0xd9000000,0x00020405);command(dl,0xd7000002,0xffffffff);
+    command(dl,0xe3001201,brush.filtered?0x2000:0);command(dl,0xfd100000,out.add(texels,8));
+    command(dl,0xf5100000,0x07000000);command(dl,0xe6000000,0);
+    command(dl,0xf3000000,0x07000000|(quint32(width*height-1)<<12)|quint32((2048+line-1)/line));
+    command(dl,0xe7000000,0);command(dl,0xf5100000|(quint32(line)<<9),(quint32(maskT)<<14)|(quint32(maskS)<<4));
+    command(dl,0xf2000000,quint32((width-1)*4)<<12|quint32((height-1)*4));
+    const auto bounds=source.map.bounds;QByteArray vertices(64,0);
+    const std::array<QPointF,4> corners{bounds.topLeft(),bounds.topRight(),bounds.bottomLeft(),bounds.bottomRight()};
+    for(int i=0;i<4;++i){put16(vertices,i*16,quint16(qint16(std::round(corners[i].x()*64))));
+        put16(vertices,i*16+4,quint16(qint16(std::round(corners[i].y()*64))));
+        put16(vertices,i*16+8,i%2?width*32*8:0);put16(vertices,i*16+10,i/2?height*32*8:0);
+        put8(vertices,i*16+13,127);put8(vertices,i*16+15,255);}
+    command(dl,0x01004008,out.add(vertices,16));command(dl,0x06000402,0x00020406);command(dl,0xdf000000,0);
+    QByteArray program;
+    const auto groups=source.field.siteGroups();const auto transforms=source.field.drawTransforms();
+    QMap<int,int> selected;for(int i=0;i<sites.size();++i){
+        if(!groups.contains(sites[i]+1))throw Error("A starting base has no separate building artwork in this map");
+        selected[groups[sites[i]+1]]=i;
+    }
+    constexpr int widths[]{0,1,1,1,1,1,1,1,0,0,3,3,1,1,0,1,1,1,2,2,3,1,2,2,3,2};
+    QSet<int> moved;
+    StateOnlyClone stateOnly(original,out);
+    for(quint32 at=u32(original,0);;){
+        const int instructionAt=int(at);const int op=int(u32(original,at));at+=4;if(!op)break;
+        if(op>25)throw Error("Unsupported starting base drawing program");
+        std::array<quint32,3> args{};for(int i=0;i<widths[op];++i){args[i]=u32(original,at);at+=4;}
+        if(op==25){
+            if(args[0]!=0)continue;
+            const int index=sites.indexOf(int(args[1])-1);if(index<0)continue;args[1]=index+1;
+        }
+        if(op==1||op==19||op==23)args[0]=stateOnly.clone(args[0]);
+        if(op==18||op==20||op==22||op==24){
+            const int group=int(args[1]);if(!selected.contains(group)){
+                args[0]=stateOnly.clone(args[0]);
+                word(program,op);for(int i=0;i<widths[op];++i)word(program,args[i]);continue;
+            }
+            const int site=sites[selected[group]];const auto point=source.map.points[site];
+            const QVector3D shift(0,float(-heightAt(source,point)),0);
+            BuildingClone clone(original,out,shift);auto list=clone.clone(args[0]);
+            const auto state=transforms.value(instructionAt);if(state.size()!=128)throw Error("Missing starting base transform");
+            auto matrix=state.left(64);putFixed(matrix,13,fixed(matrix,13)+shift.y());
+            QByteArray wrapper;auto transform=out.add(matrix,16);out.unwrap(transform,list);
+            command(wrapper,0xda380003,transform);command(wrapper,0xde000000,list);
+            command(wrapper,0xda380003,out.add(state.mid(64),16));command(wrapper,0xdf000000,0);
+            args[0]=out.list(wrapper);
+            if(!moved.contains(group)){
+                const int box=int(u32(original,8))+group*96;
+                for(int vertex=0;vertex<8;++vertex)putReal(out.bytes,box+vertex*12+4,real(original,box+vertex*12+4)+shift.y());
+                moved.insert(group);
+            }
+        }
+        word(program,op);for(int i=0;i<widths[op];++i)word(program,args[i]);
+    }
+    word(program,1);word(program,out.list(dl));word(program,0);
+    return out.finish(out.add(program,4,2));
 }
 QByteArray editFieldModel(const FieldMapSource &source, const FieldChanges &change,
                           const QMap<int, FieldBrush> &tiles, const QVector<CityAsset> &city) {

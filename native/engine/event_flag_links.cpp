@@ -1,6 +1,7 @@
 #include "engine/event_flag_links.h"
 #include "engine/event_authoring.h"
 #include "engine/event_script.h"
+#include "engine/retail_event_gate.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -17,7 +18,7 @@ const QJsonObject &catalog() {
 }
 using Constant = std::optional<int>;
 using Registers = std::array<Constant,8>;
-struct Frame { int pc=0; Registers registers{}; QVector<Constant> stack; QVector<bool> returns; };
+struct Frame { int pc=0; Registers registers{},gateRegisters{}; bool gateSaved=false; QVector<Constant> stack; QVector<bool> returns; };
 struct Root { int entry=-1,group=-1; QString title,id; };
 bool comparison(int op) {
     return op>=0xa0&&QSet<int>{1,2,3,6,7,11,12,13,14,15}.contains(op&15);
@@ -25,6 +26,7 @@ bool comparison(int op) {
 QString address(int at) { return QString("0x%1").arg(at,4,16,QChar('0')).toUpper(); }
 QString key(const Frame &frame) {
     QString result=QString::number(frame.pc);
+    if(frame.gateSaved)result+="/gate";
     // Saved data values merge at a join, like registers. Only return cursors
     // distinguish call contexts; keying arbitrary saved values can explode on
     // loops that update a counter before saving it.
@@ -52,7 +54,12 @@ Constant branch(const Registers &r,int op) {
 void transfer(Frame &frame,const QByteArray &bytes) {
     const int op=u8(bytes,frame.pc),arg=u8(bytes,frame.pc+1),d=op&7;
     auto &r=frame.registers;
-    if(op>=0x68&&op<=0x6f)r[d]=arg;
+    if(op==8) {
+        const int mode=RetailEventGate::transferMode(bytes,frame.pc);
+        if(mode==1){frame.gateRegisters=r;frame.gateSaved=true;}
+        if(mode==2){r=frame.gateSaved?frame.gateRegisters:Registers{};frame.gateSaved=false;}
+    }
+    else if(op>=0x68&&op<=0x6f)r[d]=arg;
     else if(op>=0x88&&op<=0x8f)r[d]=r[d]?Constant{(*r[d]&255)|(arg<<8)}:Constant{};
     else if(op>=0x60&&op<=0x67) {
         if(arg<8)r[d]=r[arg&7]?Constant{*r[arg&7]&255}:Constant{};
@@ -74,17 +81,20 @@ QVector<Root> roots(const QByteArray &bytes,const QByteArray &retail,int row,
                     const QJsonObject &info,const SceneEvents &events,bool sourceQualified,
                     QSet<int> &tables) {
     QMap<int,Root> found;QMap<int,QString> titles;
+    if(const int directory=RetailEventGate::directory(bytes);directory>=0)
+        for(int at=directory;at<u16(bytes,0);at+=2)tables.insert(at);
     for(const auto &value:info["handlers"].toArray()) {
         const auto h=value.toObject();titles[h["entry"].toInt()]=h["title"].toString();
     }
-    const auto offsets=EventScript::instructionOffsets(row);
+    const bool replaced=events.flagEdits()[QString::number(row)].toObject()["replace"].toBool();
+    const auto offsets=replaced?QSet<int>{}:EventScript::instructionOffsets(row);
     // Arrival/investigation and shared People programs have direct pointer tables.
     if(row==0||row==70||row==67) {
-        const int header=offsets.isEmpty()?0:*std::min_element(offsets.begin(),offsets.end());
+        const int header=replaced?(row==0?110:108):offsets.isEmpty()?0:*std::min_element(offsets.begin(),offsets.end());
         for(int at=0;at+1<header;at+=2) {
             tables.insert(at);const int entry=u16(bytes,at);
             if(entry>0&&entry+1<bytes.size()&&entry%2==0&&
-               (offsets.contains(entry)||entry>=retail.size()))found[entry]={entry,-1,{}, {}};
+               ((replaced&&entry>=header)||offsets.contains(entry)||entry>=retail.size()))found[entry]={entry,-1,{}, {}};
         }
     }else {
         const int groups=u16(bytes,0)==2?1:6;
@@ -109,8 +119,7 @@ QVector<Root> roots(const QByteArray &bytes,const QByteArray &retail,int row,
     const auto rowEdits=events.flagEdits()[QString::number(row)].toObject();
     const auto trees=rowEdits["trees"].toArray();
     if(!trees.isEmpty()) {
-        auto base=rowEdits;base.remove("trees");base.remove("triggers");auto edits=events.flagEdits();edits[QString::number(row)]=base;
-        const auto positions=EventAuthoring::entries(SceneEvents::flagRow(retail,row,edits),row,trees,rowEdits["triggers"].toObject());
+        const auto positions=EventAuthoring::entries(events.authoredBase(row),row,trees,rowEdits["triggers"].toObject());
         for(const auto &value:trees) {
             const auto tree=value.toObject();const auto id=tree["id"].toString();const int entry=positions.value(id,-1);
             if(found.contains(entry)){found[entry].id=id;found[entry].title=tree["name"].toString();}
@@ -127,12 +136,15 @@ QVector<Root> roots(const QByteArray &bytes,const QByteArray &retail,int row,
 }
 static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
                                     const ScenePrograms &scenes,int contextRow,int flag,
-                                    bool includeProgramResets,int onlyRow=-1) {
+                                    bool includeProgramResets,int onlyRow=-1,bool includeReads=false) {
     QVector<EventFlagWriter> result;
     const bool all=onlyRow>=0;
     if((flag<0&&!all)||flag>=SceneEvents::firstCustomFlag+SceneEvents::customFlagCapacity)return result;
-    const bool local=(flag>=170&&flag<=173)||(flag>=200&&flag<=254);
-    const auto rows=catalog()["rows"].toObject();
+    const bool local=EventFlagLinks::programScoped(flag);
+    auto rows=catalog()["rows"].toObject();
+    for(int slot:{2,3})if(!events.missionName(slot).isEmpty())rows[QString::number(slot)]=QJsonObject{};
+    for(int slot=SceneEvents::firstCustomRow;slot<SceneEvents::rowCapacity;++slot)
+        if(!events.missionName(slot).isEmpty())rows[QString::number(slot)]=QJsonObject{};
     for(auto rowIt=rows.begin();rowIt!=rows.end();++rowIt) {
         const int row=rowIt.key().toInt();
         if(all&&row!=onlyRow)continue;
@@ -145,13 +157,28 @@ static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
         }
         // Custom flags are written only by authored event programs. Avoid
         // decoding the whole retail corpus for an unused custom flag.
-        if(flag>=256&&events.flagEdits()[rowIt.key()].toObject()["trees"].toArray().isEmpty())continue;
+        if(flag>=256&&row!=0&&events.flagEdits()[rowIt.key()].toObject()["trees"].toArray().isEmpty()&&events.flagEdits()[rowIt.key()].toObject()["gates"].toObject().isEmpty())continue;
         const auto retail=SceneEvents::retailRow(rom,row),bytes=events.program(row);
-        const auto info=rowIt.value().toObject();QSet<int> tables;
-        const bool qualified=bytes==retail&&!scenes.modified();
+        const bool replaced=events.flagEdits()[rowIt.key()].toObject()["replace"].toBool();
+        const auto info=replaced?QJsonObject{}:rowIt.value().toObject();QSet<int> tables;
+        QMap<int,int> gateRegions;
+        const auto structural=events.flagEdits()[rowIt.key()].toObject()["gates"].toObject();
+        for(auto gate=structural.begin();gate!=structural.end();++gate) {
+            const int original=gate.key().toInt();
+            if(gate.value().toObject()["mode"]!="if")continue;
+            const int start=RetailEventGate::originalComparison(bytes,original);
+            if(start>=0)gateRegions[start]=original;
+        }
+        const int gateDirectory=RetailEventGate::directory(bytes);
+        auto displayOffset=[&](int offset){
+            if(gateDirectory<0||offset>=gateDirectory)return offset;
+            auto next=gateRegions.upperBound(offset);if(next==gateRegions.begin())return offset;
+            --next;return next.value();
+        };
+        const bool qualified=!replaced&&bytes==retail&&!scenes.modified();
         const auto handlers=roots(bytes,retail,row,info,events,qualified,tables);
-        auto allowed=EventScript::instructionOffsets(row);
-        for(int at=retail.size();at+1<bytes.size();at+=2)if(!tables.contains(at))allowed.insert(at);
+        auto allowed=replaced?QSet<int>{}:EventScript::instructionOffsets(row);
+        for(int at=replaced?0:retail.size();at+1<bytes.size();at+=2)if(!tables.contains(at))allowed.insert(at);
         for(int at:tables)allowed.remove(at);
         for(const auto &root:handlers) {
             QMap<QString,Frame> inputs;QVector<QString> pending;QSet<QString> queued;
@@ -166,7 +193,8 @@ static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
                 const int op=u8(bytes,at),arg=u8(bytes,at+1);const auto before=frame.registers;
                 transfer(frame,bytes);
                 QVector<int> next;
-                if(op==1)next<<at+2+qint8(arg)*2;
+                if(op==8&&RetailEventGate::destination(bytes,at))next<<*RetailEventGate::destination(bytes,at);
+                else if(op==1)next<<at+2+qint8(arg)*2;
                 else if(comparison(op)) {
                     const auto taken=branch(before,op);
                     if(!taken||*taken)next<<at+2+qint8(arg)*2;
@@ -191,6 +219,7 @@ static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
                         inputs[target]=after;changed=true;
                     }else {
                         for(int r=0;r<8;++r)if(inputs[target].registers[r]&&inputs[target].registers[r]!=after.registers[r]){inputs[target].registers[r]={};changed=true;}
+                        if(after.gateSaved)for(int r=0;r<8;++r)if(inputs[target].gateRegisters[r]&&inputs[target].gateRegisters[r]!=after.gateRegisters[r]){inputs[target].gateRegisters[r]={};changed=true;}
                         for(int n=0;n<after.stack.size();++n)if(inputs[target].stack[n]&&inputs[target].stack[n]!=after.stack[n]){inputs[target].stack[n]={};changed=true;}
                     }
                     if(changed&&!queued.contains(target)){pending<<target;queued.insert(target);}
@@ -201,16 +230,21 @@ static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
             for(const auto &frame:inputs) {
                 const int at=frame.pc;if(!allowed.contains(at))continue;
                 const int op=u8(bytes,at),arg=u8(bytes,at+1);const auto &before=frame.registers;
-                auto record=[&](int writtenFlag,int state,bool reset) {
-                    for(auto &existing:result)if(existing.row==row&&existing.entry==root.entry&&existing.offset==at&&existing.flag==writtenFlag&&existing.programReset==reset) {
+                auto record=[&](int writtenFlag,int state,bool reset,bool read=false) {
+                    const int shown=displayOffset(at);
+                    for(auto &existing:result)if(existing.row==row&&existing.entry==root.entry&&existing.offset==shown&&existing.flag==writtenFlag&&existing.programReset==reset&&existing.read==read) {
                         if(existing.state!=state)existing.state=-1;return;
                     }
-                    EventFlagWriter writer;writer.row=row;writer.offset=at;writer.entry=root.entry;writer.flag=writtenFlag;writer.state=state;
-                    writer.title=root.title;writer.authoredId=root.id;writer.programReset=reset;
+                    EventFlagWriter writer;writer.row=row;writer.offset=shown;writer.entry=root.entry;writer.flag=writtenFlag;writer.state=state;
+                    writer.title=root.title;writer.authoredId=root.id;writer.programReset=reset;writer.read=read;
                     writer.detail=reset?QString("Loading event program %1 clears flags %2 through %3 (upper bound excluded). This is program-reset behavior.").arg(arg).arg(*before[0]&255).arg(*before[0]>>8)
-                        :QString("%1 %2 at %3").arg(state==1?"Set":state==0?"Clear":"Conditionally set or clear",events.flagName(writtenFlag,row,qualified?at:-1),address(at));
+                        :QString("%1 %2 at %3").arg(read?"Read":state==1?"Set":state==0?"Clear":"Conditionally set or clear",events.flagName(writtenFlag,row,qualified?at:-1),address(at));
                     result<<writer;
                 };
+                if(includeReads&&(!local||row==contextRow)&&op>=0x60&&op<=0x67&&(arg>>3)==12&&before[arg&7]){
+                    const int id=qAbs(qint16(*before[arg&7]));
+                    if(id<SceneEvents::firstCustomFlag+SceneEvents::customFlagCapacity&&(all||id==flag))record(id,-1,false,true);
+                }
                 if((!local||row==contextRow)&&op>=0x70&&op<=0x77&&(arg>>3)==12&&before[arg&7]&&
                    (all||*before[arg&7]==flag)&&*before[arg&7]>=0&&*before[arg&7]<768)
                     record(*before[arg&7],before[op&7]?(*before[op&7]==1?1:0):-1,false);
@@ -221,6 +255,13 @@ static QVector<EventFlagWriter> scan(const Rom &rom,const SceneEvents &events,
     std::sort(result.begin(),result.end(),[](const auto &a,const auto &b){if(a.programReset!=b.programReset)return !a.programReset;
         if(a.row!=b.row)return a.row<b.row;if(a.entry!=b.entry)return a.entry<b.entry;return a.offset<b.offset;});
     return result;
+}
+bool EventFlagLinks::programScoped(int flag){return (flag>=170&&flag<=173)||(flag>=200&&flag<=254);}
+QVector<EventFlagWriter> EventFlagLinks::referencesInProgram(const Rom &rom,const SceneEvents &events,const ScenePrograms &scenes,int row){
+    return scan(rom,events,scenes,row,-1,false,row,true);
+}
+QVector<EventFlagWriter> EventFlagLinks::references(const Rom &rom,const SceneEvents &events,const ScenePrograms &scenes,int contextRow,int flag){
+    return scan(rom,events,scenes,contextRow,flag,true,-1,true);
 }
 QVector<EventFlagWriter> EventFlagLinks::writers(const Rom &rom,const SceneEvents &events,
                                                const ScenePrograms &scenes,int contextRow,int flag,

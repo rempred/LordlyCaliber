@@ -16,6 +16,11 @@ struct SceneEventContext {
 class SceneEvents {
   public:
     static constexpr quint32 directory = 0x9398e8, base = 0x594280;
+    static constexpr int retailRowCount = 115, firstCustomRow = retailRowCount,
+                         customRowCapacity = 64, rowCapacity = firstCustomRow + customRowCapacity;
+    static constexpr bool customMissionRow(int row) {
+        return row == 2 || row == 3 || (row >= firstCustomRow && row < rowCapacity);
+    }
     static const QMap<QString, SceneEventSite> &sites();
     static const SceneEventSite &site(const QString &);
     static const QVector<SceneEventContext> &contexts();
@@ -30,12 +35,17 @@ class SceneEvents {
     int target(const QString &) const;
     void bind(const QString &, int selector, const ScenePrograms &);
     void restore(const QString &);
-    QByteArray program(int row) const;
+    QByteArray program(int row,bool structural=true) const;
+    QByteArray authoredBase(int row) const;
     QVector<int> scenarioRows(int key) const;
     void editFlag(int row, int offset, int flag, bool value);
     void editBranch(int row, int offset, int target);
     void editParameter(int row, int offset, const QString &key, int value, const ScenePrograms &);
     void setWorldRules(int node, const QJsonArray &rules);
+    int createMission(int location,int key,const QString &name,int openingScene,int victoryScene,
+                      const ScenePrograms &scenes,int prerequisiteFlag=-1);
+    QString missionName(int row) const;
+    void setRetailGate(int row,int comparison,const QJsonObject &,const ScenePrograms &);
     void setTrees(int row, const QJsonArray &, const ScenePrograms &);
     void setTrigger(int row, int entry, const QJsonObject &, const ScenePrograms &);
     static constexpr int firstCustomFlag = 256, customFlagCapacity = 512;
@@ -49,7 +59,7 @@ class SceneEvents {
     void unlockNodeAfter(int row, int node, bool enabled);
     void restoreFlags(int row);
     const QJsonObject &flagEdits() const { return flags_; }
-    static QByteArray flagRow(const QByteArray &, int row, const QJsonObject &);
+    static QByteArray flagRow(const QByteArray &, int row, const QJsonObject &,bool structural=true);
     static QSet<int> flagRows(const QJsonObject &);
     static bool hasCampaignEdits(const QJsonObject &);
     void validate(const ScenePrograms &) const;

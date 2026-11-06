@@ -1,4 +1,6 @@
 #include "engine/scene_images.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_tables.h"
 #include "engine/archive.h"
 #include "engine/scene_background_edit.h"
 #include <QFile>
@@ -17,6 +19,7 @@ const QJsonObject &metadata() {
     return value;
 }
 QByteArray resource(const Rom &rom, quint32 key) {
+    if (key == 0x18bd022) key = BattlefieldClone::resourceKey(rom, key);
     if (key >= 0x10000000 || key % 2)
         throw Error("Invalid scene resource key");
     const qsizetype at = base + key;
@@ -172,9 +175,9 @@ QString SceneImages::presentationImage(const Rom &rom, int row) {
         throw Error("Image launch selection currently requires US revision zero");
     if (row < 0)
         throw Error("Image launch requires the event's image row");
-    if (row >= 69)
+    if (row >= MissionTables::keyCount || (MissionTables::newKey(row) && !MissionTables::hasScenario(rom, row)))
         throw Error("Image launch row exceeds the evolution table");
-    const int media = qint8(u8(rom.bytes(), 0x654a0 + row * 9 + 3));
+    const int media = qint8(u8(MissionTables::row(rom, MissionTables::Scenario, row), 3));
     const auto key = selectedKey(rom, 0x018bd022, media - 4);
     auto images = knownKey(key, false);
     if (images.isEmpty() && key) {

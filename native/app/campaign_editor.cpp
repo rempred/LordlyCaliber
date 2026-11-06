@@ -1,4 +1,6 @@
 #include "app/campaign_editor.h"
+#include "app/campaign_setup_dialog.h"
+#include "engine/new_campaign.h"
 #include "app/campaign_art_editor.h"
 #include "app/text_workspace.h"
 #include "app/content_refresh.h"
@@ -7,6 +9,8 @@
 #include "app/scenario_event_editor.h"
 #include "app/event_flag_links.h"
 #include "engine/event_script.h"
+#include "engine/event_authoring.h"
+#include "engine/battlefield_clone.h"
 #include <QComboBox>
 #include <QCompleter>
 #include <QDialog>
@@ -389,6 +393,15 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     tabs_ = new QTabWidget;
     tabs_->setObjectName("campaignTabs");
     layout->addWidget(tabs_);
+    auto setupBar=new QWidget;auto setupLayout=new QHBoxLayout(setupBar);setupLayout->setContentsMargins(0,0,0,0);
+    auto newCampaign=new QPushButton("New campaign…"),setupCampaign=new QPushButton("Campaign setup…");
+    newCampaign->setObjectName("campaignNew");setupCampaign->setObjectName("campaignSetup");
+    setupLayout->addWidget(newCampaign);setupLayout->addWidget(setupCampaign);tabs_->setCornerWidget(setupBar);
+    auto configure=[this](bool create){try{if(auto next=editCampaignSetup(*project_,preferredNode_,create,this))commit(std::move(*next),create?"Create new campaign":"Edit campaign setup");}catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}};
+    connect(newCampaign,&QPushButton::clicked,this,[configure]{configure(true);});
+    connect(setupCampaign,&QPushButton::clicked,this,[configure]{configure(false);});
+    auto updateSetup=[this,setupCampaign]{setupCampaign->setVisible(!NewCampaign::settings(*project_->sceneEvents()).isEmpty());};
+    connect(undo_,&QUndoStack::indexChanged,this,updateSetup);updateSetup();
     auto world = new QWidget;
     auto worldLayout = new QVBoxLayout(world);
     auto actions = new QHBoxLayout;
@@ -448,6 +461,8 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     form->addRow("Y", y_);
     detail->addLayout(form);
     auto apply = button(detail, "Apply location", "campaignApplyNode");
+    auto mission = button(detail, "Create scenario…", "campaignCreateScenario");
+    connect(mission,&QPushButton::clicked,this,[this]{createMission();});
     auto branch = button(detail, "Edit storyline…", "campaignEditEntryRules");
     auto roadBox = new QGroupBox("Road connections");
     auto roadLayout = new QVBoxLayout(roadBox);
@@ -521,6 +536,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     branchLayout->addWidget(routeInfo_);
     story_->addTab(branches, "Branches");
     events_ = new ScenarioEventEditor(p, undo, changed_);
+    events_->setCreateScenario([this](int location){createMission(location);});
     events_->showAllRows();
     events_->setObjectName("storylineEvents");
     for (auto child : events_->findChildren<QObject *>())
@@ -631,7 +647,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     canvas_->locationPlaced=[this](int id,QPoint position) {
         try {
             auto map=*project_->campaignMap();
-            if(!map.availableNodes().contains(id))throw Error("This map location slot is already in use");
+            if(!map.availableNodes(!NewCampaign::settings(*project_->sceneEvents()).isEmpty()).contains(id))throw Error("This map location slot is already in use");
             const int label=map.label(id)>0?map.label(id):map.labels().firstKey();
             map.setNode(id,position,label);map.setName(id,"New map location");
             canvas_->cancelPlacement();commitMap(map,"Create map location");selectNode(id);
@@ -758,6 +774,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     refresh();
 }
 QString CampaignEditor::eventName(int row) const {
+    if(project_->sceneEvents()&&!project_->sceneEvents()->missionName(row).isEmpty())return project_->sceneEvents()->missionName(row);
     QStringList names;
     for (int key : routes_.keys.value(row))
         if (project_->scenarios()->entries().contains(key))
@@ -770,8 +787,8 @@ QComboBox *CampaignEditor::eventPicker() const {
     auto box = new QComboBox;
     box->setMinimumContentsLength(42);
     box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    for (int row = 4; row < 115; ++row)
-        if (routes_.scripts.contains(row))
+    for (int row = 2; row < SceneEvents::rowCapacity; ++row)
+        if (routes_.scripts.contains(row)||!project_->sceneEvents()->missionName(row).isEmpty())
             box->addItem(eventName(row), row);
     return box;
 }
@@ -800,8 +817,8 @@ void CampaignEditor::refresh() {
         nodes_->setCurrentRow(0);
     branchNode_->setCurrentIndex(qMax(0, branchNode_->findData(branch)));
     auto create = findChild<QPushButton *>("campaignCreateNode");
-    create->setEnabled(!map.availableNodes().isEmpty());
-    create->setToolTip(map.availableNodes().isEmpty() ? "No unused map location slots remain." : QString());
+    create->setEnabled(!map.availableNodes(!NewCampaign::settings(*project_->sceneEvents()).isEmpty()).isEmpty());
+    create->setToolTip(map.availableNodes(!NewCampaign::settings(*project_->sceneEvents()).isEmpty()).isEmpty() ? "No unused map location slots remain." : QString());
     loading_ = false;
     showNode();
     showBranches();
@@ -814,6 +831,8 @@ void CampaignEditor::showNode() {
     if (!nodes_->currentItem())
         return;
     const int node = nodes_->currentItem()->data(Qt::UserRole).toInt();
+    findChild<QPushButton *>("campaignCreateScenario")->setVisible(
+        project_->sceneEvents().has_value());
     const auto &map = *project_->campaignMap();
     {
         const QSignalBlocker blocked(roads_);
@@ -944,6 +963,7 @@ void CampaignEditor::showBranches() {
         auto native=routes_;const auto retail=SceneEvents::retailRow(project_->rom(),0);
         native.scripts[0]=EventScript::applyOperands(retail,0,project_->sceneEvents()->flagEdits()["0"].toObject()["operands"].toObject());
         QVector<StoryRoute> original;QVector<QVector<int>> chaosValues;
+        if(!project_->sceneEvents()->flagEdits()["0"].toObject()["replace"].toBool())
         for(int chaos=0;chaos<=100;++chaos)for(const auto &route:native.routes(node,chaos)) {
             int index=original.indexOf(route);
             if(index<0){index=original.size();original<<route;chaosValues.append(QVector<int>{});}
@@ -1079,13 +1099,13 @@ void CampaignEditor::editRule(int row) {
     table->setHorizontalHeaderLabels({"Flag", "Required value"});
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     layout->addWidget(table);
-    auto addCondition = [table](int id, bool on) {
+    auto addCondition = [table,this](int id, bool on) {
         int r = table->rowCount();
         table->insertRow(r);
         auto flag = new QComboBox;
-        for (int f = 0; f < 256; ++f)
-            flag->addItem(EventScript::flagName(f), f);
-        flag->setCurrentIndex(id);
+        for(auto [f,label]:project_->sceneEvents()->flagChoices(0).asKeyValueRange())
+            flag->addItem(label,f);
+        flag->setCurrentIndex(flag->findData(id));
         table->setCellWidget(r, 0, flag);
         auto value = new QComboBox;
         value->addItems({"OFF", "ON"});
@@ -1160,8 +1180,125 @@ void CampaignEditor::editRule(int row) {
 }
 void CampaignEditor::createNode() {
     if(canvas_->placingLocation()){canvas_->cancelPlacement();return;}
-    const auto available=project_->campaignMap()->availableNodes();
+    const auto available=project_->campaignMap()->availableNodes(!NewCampaign::settings(*project_->sceneEvents()).isEmpty());
     if(!available.isEmpty())canvas_->beginPlacement(available.first());
+}
+void CampaignEditor::createMission(int location) {
+    if(location<1){if(!nodes_->currentItem())return;location=nodes_->currentItem()->data(Qt::UserRole).toInt();}
+    try {
+        const auto slotsAvailable=project_->availableScenarioBattlefields();
+        if(slotsAvailable.isEmpty())throw Error("No independent battlefield slots are available in this ROM.");
+        int eventSlots=0;
+        for(int row=SceneEvents::firstCustomRow;row<SceneEvents::rowCapacity;++row)
+            eventSlots+=!project_->sceneEvents()->flagEdits().contains(QString::number(row));
+        if(!eventSlots)throw Error("All 64 additional mission slots are in use.");
+        QDialog dialog(this);dialog.setWindowTitle("Create scenario");dialog.setMinimumWidth(540);
+        auto form=new QFormLayout(&dialog);
+        form->addRow(new QLabel(QString("%1 of 64 new scenario slots available").arg(qMin(eventSlots,int(slotsAvailable.size())))));
+        auto name=new QLineEdit(project_->campaignMap()->name(location));name->setMaxLength(80);
+        name->setObjectName("newMissionName");form->addRow("Scenario name",name);
+        auto mode=new QComboBox;mode->setObjectName("newMissionBattlefield");
+        mode->addItem("Copy map and squads","exact");mode->addItem("Copy map without squads","mapOnly");mode->addItem("Blank map to paint","blank");
+        const auto campaignSettings=NewCampaign::settings(*project_->sceneEvents());
+        if(!campaignSettings.isEmpty())mode->setCurrentIndex(campaignSettings["keepScenarioMaps"].toBool(true)?1:2);
+        form->addRow("Battlefield",mode);
+        auto source=new QComboBox;source->setObjectName("newMissionSource");
+        for(const auto &s:project_->scenarios()->entries()){
+            if(s.key!=63&&BattlefieldClone::supportsSource(project_->rom(),s.key))source->addItem(s.name,s.key);
+        }
+        form->addRow("Copy from",source);
+        connect(mode,&QComboBox::currentIndexChanged,&dialog,[&]{form->setRowVisible(source,mode->currentData()!="blank");});
+        const bool newCampaign=!NewCampaign::settings(*project_->sceneEvents()).isEmpty();
+        auto from=new QComboBox;from->setObjectName("newMissionAvailability");form->addRow("Availability",from);
+        if(newCampaign)from->addItem("Available from campaign start",0);
+        auto unlock=new QComboBox;unlock->setObjectName("newMissionPrerequisite");form->addRow("Available after",unlock);
+        EventContexts contexts(project_->rom(),*project_->sceneEvents());
+        int neighbor=-1;
+        for(int r=1;r<=project_->campaignMap()->totalRoads();++r){
+            const auto pair=project_->campaignMap()->road(r);
+            if(pair.first==location||pair.second==location){neighbor=pair.first==location?pair.second:pair.first;break;}
+        }
+        for(int id=1;id<=40;++id)if(project_->campaignMap()->position(id).x()&&
+            !contexts.location(id).phases[1].isEmpty())from->addItem(project_->campaignMap()->name(id),id);
+        const int preferred=from->findData(!contexts.location(location).phases[1].isEmpty()?location:neighbor>0?neighbor:6);if(preferred>=0&&!newCampaign)from->setCurrentIndex(preferred);
+        auto fillUnlock=[&]{
+            unlock->clear();if(from->currentIndex()<0)return;
+            const bool immediate=from->currentData().toInt()==0;form->setRowVisible(unlock,!immediate);
+            if(immediate){unlock->addItem("No previous mission",-1);return;}
+            const auto origin=contexts.location(from->currentData().toInt());
+            for(const auto &p:origin.phases[1]){
+                if(!contexts.scenarioKeys(p.row).isEmpty()&&EventAuthoring::supported(p.row))unlock->addItem(p.name,p.row);
+            }
+        };
+        connect(from,&QComboBox::currentIndexChanged,&dialog,fillUnlock);fillUnlock();
+        auto opening=new QComboBox;opening->addItems({"Start battle","Play cutscene, then start battle"});form->addRow("Opening template",opening);
+        form->addRow("Victory template",new QLabel("Standard mission completion"));
+        auto scenePicker=[&](bool optional){
+            auto box=new QComboBox;box->setEditable(true);box->setInsertPolicy(QComboBox::NoInsert);
+            box->setMinimumContentsLength(25);box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            if(optional)box->addItem("None",-1);
+            for(const auto &id:project_->scenePrograms()->scenes())for(int selector:project_->scenePrograms()->resource(id).selectors)
+                box->addItem(project_->scenePrograms()->displayName(id)+QString(" [%1]").arg(selector),selector);
+            box->completer()->setFilterMode(Qt::MatchContains);box->completer()->setCaseSensitivity(Qt::CaseInsensitive);return box;
+        };
+        auto intro=scenePicker(false),outro=scenePicker(true);form->insertRow(form->rowCount()-1,"Opening cutscene",intro);
+        form->setRowVisible(intro,false);connect(opening,&QComboBox::currentIndexChanged,&dialog,[&]{form->setRowVisible(intro,opening->currentIndex()==1);});
+        form->addRow("Victory cutscene",outro);
+        auto error=new QLabel;error->setWordWrap(true);form->addRow(error);
+        auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);form->addRow(buttons);
+        buttons->button(QDialogButtonBox::Ok)->setText("Create scenario");
+        connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+        int row=-1;
+        connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{
+            try{
+                if(unlock->currentIndex()<0)throw Error("Choose a mission to complete first.");
+                if(name->text().trimmed().isEmpty())throw Error("Enter a scenario name.");
+                auto next=*project_;const int key=slotsAvailable.first();
+                int sourceKey=mode->currentData()=="blank"?1:source->currentData().toInt();
+                next.createScenarioBattlefield(key,sourceKey,mode->currentData().toString(),name->text().trimmed());
+                auto map=*next.campaignMap();const bool immediate=from->currentData().toInt()==0;
+                const int origin=immediate?NewCampaign::settings(*next.sceneEvents())["location"].toInt():from->currentData().toInt();
+                bool linked=false;for(int r=1;r<=map.totalRoads();++r){auto [a,b]=map.road(r);linked|=(a==origin&&b==location)||(b==origin&&a==location);}
+                if(!linked&&origin!=location){map.addRoad(origin,location);next.setCampaignMap(map.json());}
+                auto events=*next.sceneEvents();
+                const int predecessor=unlock->currentData().toInt();
+                auto priorTrees=events.flagEdits()[QString::number(predecessor)].toObject()["trees"].toArray();
+                int ready=-1;
+                if(!immediate){
+                for(int i=0;i<priorTrees.size();++i){auto tree=priorTrees[i].toObject();
+                    if(tree["id"]!="mission-victory")continue;
+                    auto nodes=tree["nodes"].toArray();
+                    for(int n=0;n<nodes.size();++n){auto action=nodes[n].toObject();
+                        if(action["type"]=="flag"&&action["value"].toInt()==1&&ready<0)ready=action["flag"].toInt();
+                        if(action["type"]=="completeMission"&&action["location"].toInt()==location){action["nextMission"]=true;nodes[n]=action;}
+                    }
+                    tree["nodes"]=nodes;priorTrees[i]=tree;
+                }
+                if(ready<0){
+                    for(const auto &value:priorTrees){const auto tree=value.toObject();
+                        if(!tree["id"].toString().startsWith("unlock-mission-"))continue;
+                        const auto nodes=tree["nodes"].toArray();
+                        if(nodes.size()==1&&nodes.first().toObject()["type"]=="flag"&&nodes.first().toObject()["value"].toInt()==1){ready=nodes.first().toObject()["flag"].toInt();break;}
+                    }
+                }
+                if(ready<0){
+                    ready=events.createFlag(eventName(predecessor)+" completed");
+                    priorTrees.prepend(QJsonObject{{"id",QString("unlock-mission-%1").arg(ready)},
+                        {"name","Record mission completion"},{"group",5},
+                        {"nodes",QJsonArray{QJsonObject{{"type","flag"},{"flag",ready},{"value",1}}}}});
+                }
+                events.setTrees(predecessor,priorTrees,*next.scenePrograms());
+                }
+                row=events.createMission(location,key,name->text(),opening->currentIndex()?intro->currentData().toInt():-1,
+                    outro->currentData().toInt(),*next.scenePrograms(),ready);
+                if(!immediate)events.unlockNodeAfter(predecessor,location,true);
+                next.setSceneEvents(events.json());
+                if(immediate){auto config=NewCampaign::settings(events);auto visible=config["locations"].toArray();if(!visible.contains(location))visible.append(location);config["locations"]=visible;NewCampaign::configure(next,config);}
+                commit(std::move(next),"Create scenario");dialog.accept();
+            }catch(const std::exception &e){error->setText(QString::fromUtf8(e.what()));}
+        });
+        if(dialog.exec()==QDialog::Accepted){refresh();events_->selectLocation(location);selectEvent(row);}
+    }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
 }
 void CampaignEditor::editUnlocks() {
     const int location=branchNode_->currentData().toInt();if(location<1)return;
@@ -1171,7 +1308,7 @@ void CampaignEditor::editUnlocks() {
     auto search=new QLineEdit;search->setPlaceholderText("Find a mission…");layout->addWidget(search);
     auto missions=new QListWidget;missions->setObjectName("mapLocationUnlockMissions");layout->addWidget(missions);
     const auto edits=project_->sceneEvents()->flagEdits();
-    for(int row=4;row<115;++row)if(routes_.scripts.contains(row)) {
+    for(int row=2;row<SceneEvents::rowCapacity;++row)if(routes_.scripts.contains(row)||!project_->sceneEvents()->missionName(row).isEmpty()) {
         auto item=new QListWidgetItem(eventName(row),missions);item->setData(Qt::UserRole,row);
         item->setCheckState(edits[QString::number(row)].toObject()["unlockNodes"].toObject()[QString::number(location)].toBool()?Qt::Checked:Qt::Unchecked);
     }

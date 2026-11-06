@@ -1,4 +1,5 @@
 #include "engine/project_references.h"
+#include "engine/new_campaign.h"
 #include "engine/actor_art.h"
 #include "engine/squad_members.h"
 #include "engine/squad_route.h"
@@ -85,7 +86,7 @@ EquipmentWarningReview reviewEquipmentWarnings(Project p, const Rom *reference) 
 QVector<ProjectReference> projectReferences(Project p) {
     QVector<ProjectReference> uses;
     if (p.rom().revision() == 0) {
-        p.loadShops(); p.loadTraining(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes(); p.loadTools();
+        p.loadShops(); p.loadTraining(); p.loadScenarios(); p.loadWorld(); p.loadEncounters(); p.loadAnimationRoutes(); p.loadTools(); p.loadSceneEvents();
     }
     const QMap<QString, int> counts{{"classes", int(p.records(Table::Classes).size())},
         {"items", int(p.records(Table::Items).size())},
@@ -154,7 +155,8 @@ QVector<ProjectReference> projectReferences(Project p) {
                 add("shops", u8(record, 27), p.world()->townName(town) + " / shop", {"town", town},
                     u8(record, 27) != u8(before, 27) || !(u8(before, 25) & 1));
         }
-        for (int key = 1; key <= 64; ++key) {
+        for (int key = 1; key < ScenarioResources::keyCount; ++key) {
+            if(!ScenarioResources::hasScenario(p.rom(),key))continue;
             const auto &data = p.world()->scenario(key).treasures;
             const auto &before = p.world()->original(key).treasures;
             for (int row = 0; row < ScenarioWorld::treasureCount(data); ++row) {
@@ -217,6 +219,22 @@ QVector<ProjectReference> projectReferences(Project p) {
         const int item = routes.entry(cls.id).equipmentArt;
         add("items", item, cls.name + " / fixed equipment artwork", {"animation", cls.id}, routes.edits().contains(cls.id));
     }
+    if(p.sceneEvents()) {
+        const auto settings=NewCampaign::settings(*p.sceneEvents());
+        for(const auto &value:settings["armies"].toArray()) {
+            const auto army=value.toObject();const int armyId=army["id"].toInt();
+            const auto document=SaveDocument::open(p.runtimeRom(),NewCampaign::armyBytes(settings,armyId),p.records(Table::Classes).size());
+            const auto &memory=document.memory();const auto label="Starting army · "+army["name"].toString();
+            const EditLocation location{"story-event",1};
+            for(int id=1;id<100;++id) {
+                const int at=0x193bc0+id*56;if(!u8(memory,at+17))continue;
+                add("classes",u8(memory,at+17),label+QString(" / character %1 identity").arg(id),location,true);
+                add("classes",u8(memory,at+18),label+QString(" / character %1 class").arg(id),location,true);
+                for(int slot=0;slot<4;++slot)add("items",u16(memory,at+42+slot*2),label+QString(" / character %1 equipment").arg(id),location,true);
+            }
+            for(int i=0;i<278;++i)if(u8(memory,0x196b03+i*4))add("items",u16(memory,0x196b00+i*4),label+" / inventory",location,true);
+        }
+    }
     return uses;
 }
 QVector<ProjectChange> findProjectUses(Project p, const QString &kind, int id, const QString &key) {
@@ -226,7 +244,8 @@ QVector<ProjectChange> findProjectUses(Project p, const QString &kind, int id, c
         auto mission = [&](int key) { return p.scenarios()->entries().contains(key) ? p.scenarios()->scenario(key).name : QString("Scenario %1").arg(key); };
         if (kind == "town") {
             p.loadWorld();
-            for (int scenario = 1; scenario <= 64; ++scenario)
+            for (int scenario = 1; scenario < ScenarioResources::keyCount; ++scenario)
+                if(ScenarioResources::hasScenario(p.rom(),scenario))
                 for (int row = 0; row < p.world()->siteCount(scenario); ++row)
                     if (u16(p.world()->scenario(scenario).sites, 1 + row * 4) == id) {
                         result << ProjectChange{"Town details", QString("%1 · %2").arg(scenario).arg(mission(scenario)), {}, {"map", scenario, row, "site"}};

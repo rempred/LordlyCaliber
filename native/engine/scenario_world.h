@@ -34,6 +34,7 @@ class ScenarioWorld {
     bool modified() const;
     int changedEntries() const;
     int siteCount(int key) const;
+    QVector<int> availableTreasureFlags() const;
     static int declaredSiteCount(const QByteArray &data);
     static int treasureCount(const QByteArray &data);
     static QByteArray treasureRecord(const QByteArray &data, int row);

@@ -1,5 +1,6 @@
 #include "engine/campaign_script.h"
 #include "engine/event_script.h"
+#include "engine/scene_events.h"
 #include <QJsonArray>
 #include <QSet>
 namespace lordly {
@@ -29,13 +30,13 @@ QByteArray compileWorldEntries(const QByteArray &source, const QJsonObject &edit
             throw Error("World-entry script exceeds its native pointer range");
         put16(result, node * 2, quint16(result.size()));
         const auto rules = it.value().toArray();
-        if (rules.size() > 32)
-            throw Error("A node supports up to 32 entry rules");
+        if (rules.size() > SceneEvents::customRowCapacity)
+            throw Error(QString("A node supports up to %1 entry rules").arg(SceneEvents::customRowCapacity));
         for (const auto &v : rules) {
             const auto rule = v.toObject();
             if (!v.isObject() || rule.size() != 4 || !rule["conditions"].isArray())
                 throw Error("Invalid world-entry rule");
-            const int event = integer(rule["event"], 1, 114),
+            const int event = integer(rule["event"], 1, SceneEvents::rowCapacity - 1),
                       from = integer(rule["clearFrom"], 0, 255),
                       to = integer(rule["clearTo"], 0, 255);
             if (from > to)
@@ -45,22 +46,25 @@ QByteArray compileWorldEntries(const QByteArray &source, const QJsonObject &edit
                 throw Error("A rule supports up to 16 flag conditions");
             QByteArray body;
             QSet<int> flags;
+            QVector<int> skipOperands;
             for (int n = 0; n < conditions.size(); ++n) {
                 const auto condition = conditions[n].toObject();
                 if (condition.size() != 2 || !condition["value"].isBool())
                     throw Error("Invalid route condition");
-                const int flag = integer(condition["flag"], 0, 255);
+                const int flag = integer(condition["flag"], 0, 767);
                 if (flags.contains(flag))
                     throw Error("A flag can only be checked once per route");
                 flags.insert(flag);
                 word(body, 0x69, flag);
+                if(flag>255)word(body,0x89,flag>>8);
                 word(body, 0x60, 0x61);
-                word(body, condition["value"].toBool() ? 0xac : 0xbc,
-                     (conditions.size() - n - 1) * 3 + 3);
+                word(body, condition["value"].toBool() ? 0xac : 0xbc,0);
+                skipOperands.append(int(body.size()-1));
             }
             word(body, 0x68, from);
             word(body, 0x88, to);
             word(body, 0x12, event);
+            for(int operand:skipOperands)body[operand]=char((body.size()-operand-1)/2);
             result += body;
         }
         const int previous = u16(source, node * 2);

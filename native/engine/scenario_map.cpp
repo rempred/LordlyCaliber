@@ -1,4 +1,6 @@
 #include "engine/scenario_map.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_tables.h"
 #include "engine/archive.h"
 #include "game/scenarios/site-count.h"
 #include <QFile>
@@ -57,6 +59,7 @@ quint32 le32(const QByteArray &data, qsizetype at) {
 // The original -4 loader accepts compact headers in these collections rather
 // than ordinary named LHA headers: mode, stored LE32, decoded LE32, payload.
 QVector<QByteArray> collection(const QByteArray &rom, quint32 root) {
+    root=BattlefieldClone::resourceKey(Rom::fromBytes(rom),root-0x594280)+0x594280;
     const quint64 end = quint64(root) + 4 + u32(rom, root);
     if (end > quint64(rom.size()) || end <= root + 4 || end - root > 0x10000)
         throw Error("Map collection exceeds its resource envelope");
@@ -94,8 +97,9 @@ QMap<int, int> ScenarioMap::initialSiteCounts(const Rom &rom) {
         throw Error("Unrecognized scenario site-count code; active site rows cannot be determined");
     const auto placements = collection(data, 0x2626786);
     QMap<int, int> result;
-    for (int key = 1; key <= 64; ++key) {
-        const int index = u8(data, 0x654a0 + key * 9 + 7);
+    for (int key = 1; key < MissionTables::keyCount; ++key) {
+        if (!MissionTables::hasScenario(rom, key)) continue;
+        const int index = u8(MissionTables::row(rom, MissionTables::Scenario, key), 7);
         if (index >= placements.size())
             throw Error("Site placement selector exceeds its collection");
         const auto &points = placements[index];
@@ -108,13 +112,13 @@ QMap<int, int> ScenarioMap::initialSiteCounts(const Rom &rom) {
 }
 ScenarioMap ScenarioMap::load(const Rom &rom, int key) {
     rom.requireSupported();
-    if (rom.revision() != 0 || key < 1 || key > 64)
+    if (rom.revision() != 0 || !MissionTables::hasScenario(rom, key))
         throw Error("Map preview requires a US revision 0 scenario");
     const auto &data = rom.bytes();
-    const auto row = 0x654a0 + key * 9;
+    const auto row = MissionTables::row(rom, MissionTables::Scenario, key);
     const auto rectangles = collection(data, 0x262610c);
     const auto placements = collection(data, 0x2626786);
-    const int rectangle = u8(data, row + 4), pointSet = u8(data, row + 7);
+    const int rectangle = u8(row, 4), pointSet = u8(row, 7);
     if (rectangle >= rectangles.size() || pointSet >= placements.size())
         throw Error("Map selector exceeds its collection");
     const auto &r = rectangles[rectangle], &p = placements[pointSet];
@@ -131,9 +135,9 @@ ScenarioMap ScenarioMap::load(const Rom &rom, int key) {
         result.points << QPointF(real(p, 28 + i * 8), real(p, 32 + i * 8));
     // Original image caller at z64 0x2B50D0..F0: nine-byte scenario row,
     // signed byte +3 minus four, resource key 0x018BD022.
-    const int imageIndex = qint8(u8(data, row + 3)) - 4;
-    constexpr quint32 root = 0x1e512a2;
-    if (u32(data, root) != 41 * 4 || (imageIndex < 0 && imageIndex != -4) || imageIndex >= 41)
+    const int imageIndex = qint8(u8(row, 3)) - 4;
+    const quint32 root = BattlefieldClone::resourceKey(rom,0x18bd022)+0x594280;
+    if (u32(data, root) != quint32((BattlefieldClone::modelCount(rom)-4)*4) || (imageIndex < 0 && imageIndex != -4) || imageIndex >= BattlefieldClone::modelCount(rom)-4)
         throw Error("Map image selector exceeds its directory");
     // Internal scenario key 10 selects the non-map model (byte +3 is zero).
     if (imageIndex < 0)

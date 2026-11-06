@@ -1951,6 +1951,53 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QVERIFY(window.openProjectFile(folder.filePath("saved.lcproject")));
         QVERIFY(!window.isWindowModified());
     }
+    void projectSourceMismatchChoice() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto source = Project::fromRom(Rom::open(path));
+        const auto name = QString("Imported Knight");
+        source.setClassNameBytes(5, encodeClassName(name));
+        auto manifest = source.manifest();
+        manifest["sourceSha256"] = QString(64, 'a');
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        QFile file(folder.filePath("project.json"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(QJsonDocument(manifest).toJson());
+        file.close();
+        MainWindow window;
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("classesTable"), 30000);
+        const auto hasName = [&] {
+            auto table = window.findChild<QTableView *>("classesTable");
+            for (int row = 0; table && row < table->model()->rowCount(); ++row)
+                if (table->model()->index(row, 1).data().toString() == name) return true;
+            return false;
+        };
+        QVERIFY(!hasName());
+        bool prompted = false, warned = false;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto dialog = window.findChild<QMessageBox *>("projectSourceMismatch")) {
+                prompted = true;
+                warned = dialog->informativeText().contains("edits that are not included in the project");
+                dialog->reject();
+            }
+        });
+        QVERIFY(!window.openProjectFile(file.fileName()));
+        QVERIFY(prompted); QVERIFY(warned);
+        QVERIFY(!hasName()); QVERIFY(!window.isWindowModified());
+        bool imported = false;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto dialog = window.findChild<QMessageBox *>("projectSourceMismatch")) {
+                if (auto button = dialog->findChild<QPushButton *>("importProjectIntoCurrentRom")) {
+                    imported = true;
+                    button->click();
+                } else dialog->reject();
+            }
+        });
+        QVERIFY(window.openProjectFile(file.fileName()));
+        QVERIFY(imported); QVERIFY(hasName()); QVERIFY(window.isWindowModified());
+    }
     void artLibraryRomImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

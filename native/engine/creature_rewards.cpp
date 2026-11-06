@@ -1,5 +1,6 @@
 #include "engine/art_resource_links.h"
 #include "engine/creature_rewards.h"
+#include "engine/mission_tables.h"
 #include "engine/custom_runtime.h"
 #include "engine/promotion.h"
 #include <QFile>
@@ -71,7 +72,7 @@ std::optional<quint32> CreatureRewards::placement(const Rom &rom) {
             throw Error("Creature reward runtime dependency differs from its supported source");
     }
     validateArtOwnerLinks(rom, ownerOffset, ownerSize);
-    auto code = canonicalArtOwner(rom.bytes().mid(ownerOffset, ownerSize), ownerOffset);
+    auto code = canonicalArtOwner(MissionTables::canonicalCode(rom,ownerOffset,ownerSize), ownerOffset);
     if (const auto custom = CustomPlacement::read(rom))
         code = custom->canonicalReferences(code, ownerOffset);
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);

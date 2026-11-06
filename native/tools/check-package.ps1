@@ -34,10 +34,10 @@ try {
     }
     $gui.WaitForExit()
     if ($gui.ExitCode -ne 0) { throw "Packaged Qt application failed: $($gui.ExitCode); see $versionErrors" }
-    if ((Get-Content -LiteralPath $versionOutput -Raw).Trim() -ne 'LordlyCaliber 0.5.55') {
+    if ((Get-Content -LiteralPath $versionOutput -Raw).Trim() -ne 'LordlyCaliber 0.5.59') {
         throw 'Packaged Qt application did not report the expected version.'
     }
-    & (Join-Path $PSScriptRoot 'check-windows-file-info.ps1') -Directory $Package -Version '0.5.55'
+    & (Join-Path $PSScriptRoot 'check-windows-file-info.ps1') -Directory $Package -Version '0.5.59'
     & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $RomPath --project $project --output $output --report $report
     if ($LASTEXITCODE -ne 0) { throw 'Packaged export failed.' }
     & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $output --report $inspection

@@ -7,6 +7,8 @@ class QLabel;
 class QSpinBox;
 class QCheckBox;
 class QPushButton;
+class QTreeWidget;
+class QTreeWidgetItem;
 namespace lordly {
 class PendingEdits;
 class ConsumableEditor : public QWidget {
@@ -14,9 +16,13 @@ class ConsumableEditor : public QWidget {
     ConsumableEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                      QWidget *parent = nullptr);
     void selectConsumable(int id);
+    void setAdvancedVisible(bool visible);
 
   private:
     void refresh();
+    void openTree(const QList<int> &path);
+    bool moveEffect(QTreeWidgetItem *effect, QTreeWidgetItem *branch);
+    void commitTree(const QJsonArray &tree);
     void apply(bool restore);
     void rememberDraft();
     bool applyDrafts();
@@ -33,5 +39,12 @@ class ConsumableEditor : public QWidget {
     QSpinBox *minimum_, *maximum_;
     QCheckBox *description_;
     QPushButton *apply_, *restore_, *discard_;
+    QTreeWidget *tree_;
+    QPushButton *editTree_, *restoreTree_;
+    QPushButton *editVisual_, *restoreVisual_;
+    QLabel *visualName_;
+    QWidget *originalSettings_;
+    QLabel *originalNote_;
+    bool advanced_ = false;
 };
 } // namespace lordly

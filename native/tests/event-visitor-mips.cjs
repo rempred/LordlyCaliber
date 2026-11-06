@@ -35,7 +35,8 @@ function edit(formation,side,member,hp,petrified){
  return b;
 }
 function execute(program,enemy,flags,aliveByPosition,stoneByPosition,entry=0){
- const squad=enemy?33:3;
+ // Exercise both sides of the exact roster boundary shown in Events.
+ const squad=enemy?30:29;
  m.load(stateStart,gameSeed);m.load(PROGRAM,program);
  m.w8(0x801976dc,squad);m.w8(0x801971f1+squad*25,flags);
  for(let position=0;position<5;position++){

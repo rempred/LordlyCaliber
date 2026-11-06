@@ -40,6 +40,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
@@ -502,23 +503,40 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         grid->setColumnWidth(statusColumn, 180);
         grid->horizontalHeader()->moveSection(statusColumn, 2);
     }
+    QCheckBox *advancedConsumables = nullptr;
     if (table == Table::Consumables) {
+        advancedConsumables = new QCheckBox("Advanced");
+        advancedConsumables->setObjectName("consumablesAdvanced");
+        searchRow->insertWidget(1, advancedConsumables);
         grid->resizeColumnsToContents();
-        grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+        auto showAdvanced = [grid, table](bool advanced) {
+            const auto &columns = fields(table);
+            for (int i = 0; i < columns.size(); ++i)
+                if (columns[i].group == "Advanced")
+                    grid->setColumnHidden(i + 2, !advanced);
+            grid->horizontalHeader()->setSectionResizeMode(
+                1, advanced ? QHeaderView::Interactive : QHeaderView::Stretch);
+            if (advanced)
+                grid->resizeColumnToContents(1);
+        };
+        connect(advancedConsumables, &QCheckBox::toggled, grid, showAdvanced);
+        showAdvanced(false);
     }
     split->addWidget(grid);
     auto inspector = new QWidget;
     inspector->setMinimumWidth(340);
     auto inspectorLayout = new QVBoxLayout(inspector);
     inspectorLayout->setContentsMargins(0, 0, 0, 0);
+    auto inspectorHeader = new QHBoxLayout;
+    inspectorLayout->addLayout(inspectorHeader);
     QComboBox *sections = nullptr;
     auto inspectorPages = new QStackedWidget;
     if (table == Table::Consumables) {
-        inspectorLayout->addWidget(new QLabel("Effects"));
+        inspectorHeader->addWidget(new QLabel("Effects"), 1);
     } else {
         sections = new QComboBox;
         sections->setObjectName(tableKey(table) + "InspectorSection");
-        inspectorLayout->addWidget(sections);
+        inspectorHeader->addWidget(sections, 1);
         connect(sections, &QComboBox::currentIndexChanged, inspectorPages,
                 &QStackedWidget::setCurrentIndex);
     }
@@ -530,7 +548,19 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     };
     split->addWidget(inspector);
     split->setSizes({900, 390});
+    if (table == Table::Consumables)
+        split->setSizes({540, 700});
     auto selected = std::make_shared<int>(-1);
+    QPushButton *editIcon = nullptr;
+    if ((table == Table::Items || table == Table::Consumables) && project_->rom().revision() == 0) {
+        editIcon = new QPushButton("Edit icon…");
+        editIcon->setObjectName(tableKey(table) + "EditIcon");
+        inspectorHeader->addWidget(editIcon);
+        connect(editIcon, &QPushButton::clicked, page, [this, table, selected] {
+            if (*selected > 0)
+                navigateTo({"icon", *selected | (table == Table::Consumables ? 0x200 : 0)});
+        });
+    }
     ClassSetup *setup = nullptr;
     if (table == Table::Classes && project_->hasClassData()) {
         setup = new ClassSetup(project_.get(), [this](const EditLocation &location) {
@@ -978,6 +1008,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     if (table == Table::Consumables) {
         if (project_->consumableEffects()) {
             effects = new ConsumableEditor(project_.get(), undo_, [this] { updateStatus(); });
+            connect(advancedConsumables, &QCheckBox::toggled, effects, &ConsumableEditor::setAdvancedVisible);
             addInspectorPage(effects, "Effects");
         } else {
             auto unavailable = new QLabel("Effect editing is unavailable for this ROM.");
@@ -1015,12 +1046,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     }
     auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
                     addItem, newItem, renameClass, renameItem, description, actionDescriptions, actionId, setup,
-                    weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity, uniqueName, choosePersonalName, deleteRecord] {
+                    weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity, uniqueName, choosePersonalName, deleteRecord, editIcon] {
         if (deleteRecord) deleteRecord->setEnabled(*selected >= (table==Table::Classes?165:278) && !project_->contentDeleted(tableKey(table),*selected));
         if (newItem)
             newItem->setEnabled(project_->nextContentId("items",model->rowCount()) < ItemData::maximumCount);
         if (*selected >= model->rowCount())
             *selected = -1;
+        if (editIcon)
+            editIcon->setEnabled(*selected > 0 && !project_->contentDeleted(tableKey(table), *selected));
         if (uniqueName) {
             const auto names=project_->personalNames();
             const int id=*selected>=0?names.assignment(*selected):-1;
@@ -1155,7 +1188,7 @@ void MainWindow::openProject() {
     if (loading_)
         return;
     if (!project_) {
-        report("Open the source ROM before opening a project.");
+        report("Open a ROM before opening a project.");
         return;
     }
     auto path = QFileDialog::getOpenFileName(this, "Open project manifest or sharing archive", {},
@@ -1171,6 +1204,27 @@ void MainWindow::openProject() {
 bool MainWindow::openProjectFile(const QString &path) {
     if (loading_ || !project_ || !confirmDiscard()) return false;
     const auto object = Project::readProject(path);
+    auto sourcePolicy = Project::SourcePolicy::RequireMatch;
+    const auto sourceHash = object.value("sourceSha256").toString().toLatin1().toLower();
+    if (object.value("format") == "LordlyCaliberProject" && object.value("version").toInt() == 1 &&
+        sourceHash.size() == 64 && QByteArray::fromHex(sourceHash).toHex() == sourceHash &&
+        sourceHash != sha256(project_->runtimeRom().bytes())) {
+        QMessageBox choice(QMessageBox::Warning, "Project uses a different ROM",
+                           "Import this project's saved edits into the ROM you have open?",
+                           QMessageBox::Cancel, this);
+        choice.setObjectName("projectSourceMismatch");
+        choice.setTextFormat(Qt::PlainText);
+        choice.setInformativeText(
+            "Current ROM: " + QFileInfo(project_->runtimeRom().sourcePath()).fileName() +
+            "\n\nThe original project ROM may contain edits that are not included in the project. "
+            "Those edits will not be imported. Saved project edits replace the corresponding data in your ROM.");
+        auto importButton = choice.addButton("Import into this ROM", QMessageBox::AcceptRole);
+        importButton->setObjectName("importProjectIntoCurrentRom");
+        choice.setDefaultButton(QMessageBox::Cancel);
+        choice.exec();
+        if (choice.clickedButton() != importButton) return false;
+        sourcePolicy = Project::SourcePolicy::ImportIntoCurrentRom;
+    }
     // Manifests identify the actual input ROM, including installed runtimes.
     auto next = Project::fromRom(project_->runtimeRom(), catalog_);
     next.loadTexts();
@@ -1183,12 +1237,17 @@ bool MainWindow::openProjectFile(const QString &path) {
         next.loadWorld();
     }
     if (object.value("format") == "LordlyCaliberProject")
-        next.applyManifest(object);
+        next.applyManifest(object, sourcePolicy);
     else
         next.importLegacy(object);
     auto warnings = next.importWarnings();
     installProject(std::move(next));
     projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
+    if (sourcePolicy == Project::SourcePolicy::ImportIntoCurrentRom) {
+        undo_->resetClean();
+        updateStatus();
+        statusBar()->showMessage("Project imported into this ROM. Save the project to keep this ROM assignment.", 10000);
+    }
     if (!warnings.isEmpty())
         report(warnings.join('\n'));
     return true;

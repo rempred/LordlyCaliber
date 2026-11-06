@@ -1,4 +1,5 @@
 #include "engine/encounter_rate.h"
+#include "engine/mission_tables.h"
 #include "engine/custom_runtime.h"
 #include "engine/scenario_rates.h"
 #include <QFile>
@@ -64,7 +65,7 @@ EncounterRate EncounterRate::load(const Rom &rom) {
         result.original_ = result.json();
         return result;
     }
-    auto source = rom.bytes().mid(romOffset, codeSize);
+    auto source = MissionTables::canonicalCode(rom,romOffset,codeSize);
     if (const auto custom = CustomPlacement::read(rom))
         source = custom->canonicalReferences(source, romOffset);
     auto masked = source;

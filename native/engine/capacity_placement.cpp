@@ -63,7 +63,8 @@ Rom CapacityPlacement::canonical(const Rom &rom) const {
     Rom::updateChecksum(bytes);
     return Rom::fromBytes(rom.serialize(bytes),rom.sourcePath());
 }
-QByteArray CapacityPlacement::record(const QByteArray &before,const QByteArray &after,quint32 base,quint32 codeAddress) {
+QByteArray CapacityPlacement::record(const QByteArray &before,const QByteArray &after,quint32 base,quint32 codeAddress,
+                                    const std::optional<CapacityPlacement> &prior) {
     if(before.size()!=after.size() || before.size()<0x2800000 || before.mid(0x2800000)!=after.mid(0x2800000))
         throw Error("Capacity patch record must preserve all resource allocations");
     QJsonArray patches;
@@ -78,14 +79,25 @@ QByteArray CapacityPlacement::record(const QByteArray &before,const QByteArray &
             QString::fromLatin1(after.mid(start,at-start).toHex())});
     }
     const auto payload=QJsonDocument(patches).toJson(QJsonDocument::Compact);
-    auto image=after;while(image.size()%16)image.append(char(-1));
-    const auto at=quint32(image.size()),size=(64U+quint32(payload.size())+15U)&~15U;
+    auto image=after;
+    const auto required=(64U+quint32(payload.size())+15U)&~15U;
+    // canonical() clears a non-tail record without truncating later feature
+    // allocations. Reuse only that authenticated record's still-empty extent.
+    const bool reuse=prior && prior->offset>=0x2800000 && prior->offset%16==0 &&
+        prior->originalSize<=prior->offset && prior->offset-prior->originalSize<=15 &&
+        prior->size>=required && prior->size%16==0 &&
+        quint64(prior->offset)+prior->size<=quint64(image.size()) &&
+        image.mid(prior->offset,prior->size)==QByteArray(prior->size,char(-1));
+    if(!reuse)while(image.size()%16)image.append(char(-1));
+    const auto at=reuse?prior->offset:quint32(image.size()),size=reuse?prior->size:required;
     if(quint64(at)+size>0x4000000)throw Error("Capacity metadata exceeds cartridge space");
     QByteArray header(64,0);header.replace(0,8,"LC07CAPA");
-    put32(header,8,1);put32(header,12,at);put32(header,16,size);put32(header,20,quint32(before.size()));
+    put32(header,8,1);put32(header,12,at);put32(header,16,size);
+    put32(header,20,reuse?prior->originalSize:quint32(before.size()));
     put32(header,24,base);put32(header,28,codeAddress);put32(header,32,quint32(payload.size()));
     put32(header,36,crc32(payload));put32(header,40,quint32(patches.size()));put32(header,60,crc32(header.first(60)));
-    image+=header+payload+QByteArray(size-64-payload.size(),char(-1));
+    const auto record=header+payload+QByteArray(size-64-payload.size(),char(-1));
+    if(reuse)image.replace(at,size,record);else image+=record;
     return image;
 }
 } // namespace lordly

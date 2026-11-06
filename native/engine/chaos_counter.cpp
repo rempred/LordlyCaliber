@@ -40,7 +40,10 @@ ChaosCounter ChaosCounter::load(const Rom &rom) {
             const auto site = value.toObject();
             const auto bytes = rom.bytes().mid(site["rom"].toInt(), site["size"].toInt());
             retail &= matches(bytes, site, "retailSha256");
-            native &= matches(canonical(site, bytes), site, "normalizedSha256");
+            const auto normalized = canonical(site, bytes);
+            native &= matches(normalized, site, "normalizedSha256") ||
+                      site["previousNativeSha256"].toArray().contains(
+                          QString::fromLatin1(sha256(normalized)));
             legacy &=
                 matches(rom.bytes().mid(site["legacyRom"].toInt(), site["legacyBytes"].toInt()),
                         site, "legacySha256");

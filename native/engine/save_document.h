@@ -38,6 +38,7 @@ struct SaveLegion {
 class SaveDocument {
   public:
     static SaveDocument open(const Rom &, const QByteArray &, int classCount = 165);
+    static SaveDocument newArmy(const Project &);
     QVector<SaveSlot> saveSlots() const;
     void selectSlot(int);
     int selectedSlot() const {

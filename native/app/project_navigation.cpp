@@ -7,6 +7,7 @@
 #include "app/text_workspace.h"
 #include "app/dialogue_inspector.h"
 #include "app/army_editor.h"
+#include "app/art_editor.h"
 #include "app/attack_editor.h"
 #include <QTabBar>
 #include <QScrollArea>
@@ -172,7 +173,7 @@ void MainWindow::navigateTo(const EditLocation &location) {
             if (kind == "town") {
                 id = -1;
                 project_->loadWorld();
-                for (int key = 1; key <= 64 && id < 0; ++key)
+                for (int key = 1; key < ScenarioResources::keyCount && id < 0; ++key)
                     for (int row = 0; row < project_->world()->siteCount(key); ++row)
                         if (u16(project_->world()->scenario(key).sites, 1 + row * 4) == location.id) {
                             id = key; siteRow = row; break;
@@ -231,7 +232,10 @@ void MainWindow::navigateTo(const EditLocation &location) {
             }
         } else if (kind == "scene") { clear("cutsceneScenesSearch"); destination = location.key.isEmpty() ? list("cutsceneScenes", uint(id)) : list("cutsceneScenes", location.key, Qt::UserRole + 1); }
         else if (kind == "icon") {
-            combo("artIconPack", (id & 0x200) ? 1 : 0); destination = list("artIcons", id);
+            if (auto editor = findChild<ArtEditor *>()) {
+                editor->selectIcon(quint16(id));
+                destination = editor;
+            }
         } else {
             const QMap<QString, QString> panels{{"Optional tools", "toolsEditor"},
                 {"UI and Icons", "categoryIconEditor"}, {"Class families", "promotionEditor"},

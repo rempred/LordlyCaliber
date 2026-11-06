@@ -1,4 +1,5 @@
 #include "engine/event_script.h"
+#include "engine/retail_event_gate.h"
 #include <QMap>
 #include <algorithm>
 #include <array>
@@ -15,6 +16,7 @@ bool comparison(int op) {
 }
 QVector<int> successors(const QByteArray &bytes, int at, int appendedFrom = 0x7fffffff) {
     const int op = u8(bytes, at), arg = u8(bytes, at + 1), next = at + 2;
+    if(op==8)if(auto target=RetailEventGate::destination(bytes,at))return {*target};
     if ((op==2||op==3)&&at>=appendedFrom&&at>=2&&u8(bytes,at-2)==0x68) {
         const int target=quint16(next/2+(arg<<8)+u8(bytes,at-1))*2;
         return op==2?QVector<int>{target}:QVector<int>{next,target};
@@ -212,12 +214,25 @@ void annotate(QVector<EventStep> &steps, const QByteArray &bytes,
 QVector<EventHandler> EventScript::decode(const QByteArray &bytes, int eventRow) {
     if (bytes.size() < 8 || bytes.size() % 2) throw Error("Invalid event script");
     // Retail chapter introductions 110–114 have only the entry-handler group.
-    // Mission programs have six; world-routing programs use a separate decoder.
-    const int headerBytes = u16(bytes, 0) == 2 ? 2 : 12;
+    // Mission programs have six groups; world routing uses direct entry pointers.
+    const bool world=eventRow==0||eventRow==70;
+    const int headerBytes = world?(eventRow==0?110:108):u16(bytes, 0) == 2 ? 2 : 12;
     if (bytes.size() < headerBytes) throw Error("Invalid event handler header");
     QVector<EventHandler> handlers;
     QSet<int> tableWords, entries, targets;
+    if(const int directory=RetailEventGate::directory(bytes);directory>=0)
+        for(int at=directory;at<u16(bytes,0);at+=2)tableWords.insert(at);
     for (int i = 0; i < headerBytes; i += 2) tableWords.insert(i);
+    if(world) {
+        for(int at=0;at<headerBytes;at+=2) {
+            const int entry=u16(bytes,at);if(!entry||entry==65535)continue;
+            if(entry<headerBytes||entry%2||entry>=bytes.size())throw Error("Invalid world event handler pointer");
+            if(!entries.contains(entry)) {
+                EventHandler handler{-1,entry,{}};handler.title=at?QString("Map location %1").arg(at/2):"New Game";
+                handlers<<handler;entries.insert(entry);
+            }
+        }
+    }else
     for (int group = 0; group < headerBytes / 2; ++group) {
         const int table = u16(bytes, group * 2);
         if (table < headerBytes || table % 2 || table >= bytes.size())
@@ -249,7 +264,7 @@ QVector<EventHandler> EventScript::decode(const QByteArray &bytes, int eventRow)
             const int op = u8(bytes, at);
             const auto next = successors(bytes, at, appendedFrom);
             for (int dest : next) {
-                if (op == 1 || ((comparison(op) || op == 0x2d) && dest != at + 2)) targets.insert(dest);
+                if (op == 1 || op==8 || ((comparison(op) || op == 0x2d) && dest != at + 2)) targets.insert(dest);
                 pending << dest;
             }
         }
@@ -279,6 +294,9 @@ QVector<EventHandler> EventScript::decode(const QByteArray &bytes, int eventRow)
             } else if (op == 1 || comparison(op) || op == 0x2d) {
                 step.target = at + 2 + qint8(arg) * 2;
                 step.text = QString("%1 → %2").arg(op == 1 ? "Go to" : "Conditional branch", address(step.target));
+            } else if(op==8&&RetailEventGate::destination(bytes,at)) {
+                step.target=*RetailEventGate::destination(bytes,at);
+                step.text="Continue at "+address(step.target);
             } else if (op >= 0x68 && op <= 0x6f) {
                 step.text = QString("Prepare value %1 in register %2").arg(arg).arg(op & 7);
             } else if (op >= 0x88 && op <= 0x8f) {

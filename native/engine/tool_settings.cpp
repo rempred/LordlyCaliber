@@ -85,7 +85,11 @@ void ToolSettings::validateExport(const ToolSettings &actual) const {
         if (expected.available())
             require(found.available() && found.enabled() == expected.enabled(), name);
     };
-    toggle(chaos_, actual.chaos_, "the Chaos Frame counter");
+    if (chaos_.installation() == ChaosCounter::Installation::Legacy &&
+        chaos_.modified() && !chaos_.enabled())
+        require(!actual.chaos_.enabled(), "the removed legacy Chaos Frame counter");
+    else
+        toggle(chaos_, actual.chaos_, "the Chaos Frame counter");
     toggle(highAttack_, actual.highAttack_, "High Attack");
     for (auto kind : {ToolLabel::Luck, ToolLabel::Alignment}) {
         const auto &expected = displayTool(kind), &found = actual.displayTool(kind);

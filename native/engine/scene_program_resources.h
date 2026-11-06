@@ -29,6 +29,9 @@ struct SceneProgramPlacement {
 class SceneProgramResources {
   public:
     static constexpr int descriptorOffset = 0x27c4700, descriptorSize = 96;
+    static constexpr quint32 expandedEventDirectory = 0x27c5800;
+    static int eventRowCount(const Rom &);
+    static quint32 eventWord(int row);
     static std::optional<SceneProgramPlacement> placement(const Rom &);
     static QByteArray rebuild(const Rom &, const QMap<quint32, QByteArray> &compiled,
                               const std::optional<QVector<AuthoredSceneBuild>> &authored = {},

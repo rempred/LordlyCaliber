@@ -1,7 +1,9 @@
+#include "engine/mission_tables.h"
 #include "rebuild/capacity_runtime.h"
 #include "engine/capacity_placement.h"
 #include "engine/scenario_member_runtime.h"
 #include "engine/goth_runtime.h"
+#include "engine/shop_runtime.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -51,6 +53,29 @@ void pair(CapacityRuntimeBuild &b, quint32 hi, quint32 lo, quint32 hw, quint32 l
     word(b,hi,hw,(hw & 0xffff0000U) | upper);
     word(b,lo,lw,(lw & 0xffff0000U) | (address & 65535U));
 }
+void linkShopCapacity(CapacityRuntimeBuild &build) {
+    // Pinned shop C for func_001977E0 changes instruction scheduling. Its
+    // authenticated replacement keeps these four pool references.
+    struct Reference {
+        quint32 retailHigh, retailLow, high, low, highWord, lowWord;
+        const char *group;
+        quint32 addend;
+    };
+    constexpr Reference references[] = {
+        {0x197bc8, 0x197bd0, 0x197bb0, 0x197bb8, 0x3c04801f, 0x8c840cb0, "pointers", 0},
+        {0x19828c, 0x198294, 0x198278, 0x198280, 0x3c038019, 0x906371f2, "sources", 2},
+        {0x1983b8, 0x1983bc, 0x1983a4, 0x1983a8, 0x3c028019, 0x244271fd, "sources", 13},
+        {0x1986f8, 0x1986fc, 0x1986e4, 0x1986e8, 0x3c058019, 0x24a571fd, "sources", 13},
+    };
+    for (const auto &ref : references) {
+        for (const auto at : {ref.retailHigh, ref.retailLow}) {
+            build.expected.remove(at);
+            build.words.remove(at);
+        }
+        pair(build, ref.high, ref.low, ref.highWord, ref.lowWord,
+             groupBase(build, ref.group) + ref.addend);
+    }
+}
 bool rewritten(const CapacityRuntimeBuild &b, quint32 site) {
     for (auto it=b.rewrittenOwners.cbegin();it!=b.rewrittenOwners.cend();++it)
         if (site >= it.key() && site < it.key()+it.value()) return true;
@@ -84,7 +109,7 @@ CapacityRuntimeBuild prepareCapacityRuntime(quint32 base, const Rom &rom) {
     auto guardEntry=[&](quint32 at) { b.entryGuards[at]=u32(rom.bytes(),at);b.entryGuards[at+4]=u32(rom.bytes(),at+4); };
     const auto classes=ClassPlacement::read(rom);
     auto ownerBytes=[&](quint32 at,quint32 size) {
-        auto bytes=rom.bytes().mid(at,size);
+        auto bytes=MissionTables::canonicalCode(rom,at,size);
         return classes?classes->canonicalReferences(bytes,at):bytes;
     };
     for(const auto v:catalog("capacity/owners")["owners"].toArray()) {
@@ -156,7 +181,10 @@ void compileCapacityRuntime(CapacityRuntimeBuild &b, quint32 codeAddress,
         const auto original=o["symbols"].toObject();
         for(auto it=original.begin();it!=original.end();++it)
             symbols[it.key()]=b.relocated(number(it.value()),classes);
-        if(start==0x1960a8) symbols["D_8019367C"]=groupBase(b,"drops_source_index");
+        if (start == 0x1960a8) {
+            symbols["D_8019367C"] = groupBase(b, "drops_source_index");
+            if (b.missionWorldTable) symbols["D_801E7E16"] = b.missionWorldTable + 6;
+        }
         module(QFileInfo(o["adaptedSource"].toString()).baseName(),text,symbols);
     }
     QMap<QString,quint32> training{{"load_resource",0x8009dbb8},{"resource_size",0x8009daf4},
@@ -271,6 +299,8 @@ void applyCapacityRuntime(QByteArray &rom,const CapacityRuntimeBuild &b) {
     // capacity replaces its entry with the same helper linked to the new pools.
     const auto input=Rom::fromBytes(rom);
     auto selected = b;
+    if (const auto shop = ShopPlacement::read(input); shop && shop->version >= 5)
+        linkShopCapacity(selected);
     if (const auto goth = GothRuntime::read(input)) {
         // Only reference locations changed in the complete C settlement owner.
         // Keep every mixed C/assembly capacity behavior unchanged.
@@ -289,7 +319,7 @@ void applyCapacityRuntime(QByteArray &rom,const CapacityRuntimeBuild &b) {
     const auto classes=ClassPlacement::read(input);
     bool memberVariant=false,trainingVariant=false;
     for(auto it=b.ownerGuards.cbegin();it!=b.ownerGuards.cend();++it) {
-        auto bytes=rom.mid(it.key(),it.value().size());
+        auto bytes=MissionTables::canonicalCode(input,it.key(),it.value().size());
         if(classes)bytes=classes->canonicalReferences(bytes,it.key());
         if(bytes==it.value())continue;
         if(it.key()==0x19554c && scenarioMemberRuntimeInstalled(input)){memberVariant=true;continue;}
@@ -304,7 +334,8 @@ void applyCapacityRuntime(QByteArray &rom,const CapacityRuntimeBuild &b) {
             throw Error("Unrecognized capacity operand at z64 "+QString::number(it.key(),16));
     for(auto it=selected.words.cbegin();it!=selected.words.cend();++it)put32(rom,it.key(),it.value());
 }
-QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &b) {
+QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &b,
+                                 const std::optional<CapacityPlacement> &prior) {
     auto classes=ClassPlacement::read(rom);
     if(!classes || !classes->saves.installed() || b.base<classes->layout.indexBase ||
         quint64(b.codeAddress)+b.code.size()>classes->layout.end)
@@ -319,7 +350,7 @@ QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &b) 
     image.replace(ClassPlacement::descriptorRomOffset,ClassPlacement::descriptorSize,
         classes->descriptor(data,image.mid(ClassPlacement::codeRomOffset,classes->codeBytes)));
     Rom::updateChecksum(image);
-    image=CapacityPlacement::record(before,image,b.base,b.codeAddress);
+    image=CapacityPlacement::record(before,image,b.base,b.codeAddress,prior);
     ClassPlacement::read(Rom::fromBytes(image));
     return image;
 }

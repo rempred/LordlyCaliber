@@ -1,4 +1,5 @@
 #include "rebuild/campaign.h"
+#include "engine/new_campaign.h"
 #include "engine/campaign_runtime.h"
 #include <QFile>
 #include <QJsonArray>
@@ -27,11 +28,12 @@ void loader(QByteArray &b, quint32 offset, quint32 size, bool stock = false) {
 QByteArray rebuildCampaignRuntime(const Project &p, const QByteArray &input,
                                   const Compiler &compiler, const QString &directory) {
     const auto prior = CampaignPlacement::read(p.rom().bytes());
-    if (!p.campaignMap() && !prior)
+    const bool newCampaign=p.sceneEvents()&&!NewCampaign::settings(*p.sceneEvents()).isEmpty();
+    if (!p.campaignMap() && !prior && !newCampaign)
         return input;
     const auto loaded=p.campaignMap()?std::optional<CampaignMap>{}:std::optional<CampaignMap>{p.rom()};
     const auto &map = p.campaignMap()?*p.campaignMap():*loaded;
-    if (!map.changedNodes() && (!prior || prior->version>=6))
+    if (!newCampaign && !map.changedNodes() && (!prior || prior->version==6))
         return input;
     const bool artwork=!map.artworkEdits().isEmpty() || (prior && !prior->artworkIcons.isEmpty());
     auto output=input;
@@ -111,7 +113,7 @@ QByteArray rebuildCampaignRuntime(const Project &p, const QByteArray &input,
             const auto a=u8(originalRoads,n*2),b=u8(originalRoads,n*2+1);
             if((ends.first==a && ends.second==b)||(ends.first==b && ends.second==a)){flag=n+1;break;}
         }
-        put8(overlay,countAddress-100-CampaignPlacement::ramStart+id-1,quint8(flag));
+        put8(overlay,countAddress-100-CampaignPlacement::ramStart+id-1,quint8(newCampaign?0:flag));
     }
     auto data = QByteArray(16 + 192 + 96 * CampaignMap::bendCapacity * 4 + 400, 0);
     put32(data, 0, quint32(map.totalRoads()));
@@ -143,6 +145,9 @@ QByteArray rebuildCampaignRuntime(const Project &p, const QByteArray &input,
             put32(overlay,0x864a0-CampaignPlacement::sourceStart+(it.key()-1)*8+4,pointer);
         }
     }
+    // Location names have variable byte lengths. Keep the overlay DMA and the
+    // cartridge image aligned even when no artwork follows the last name.
+    while(overlay.size()%16)overlay.append(char(0));
     if(artwork) {
         while(overlay.size()%16)overlay.append(char(0));
         const int artOffset=overlay.size();const quint32 artAddress=CampaignPlacement::ramStart+artOffset;
@@ -236,7 +241,7 @@ QByteArray rebuildCampaignRuntime(const Project &p, const QByteArray &input,
         output += QByteArray(descriptor + 80 + overlay.size() - output.size(), char(0xff));
     auto header = QByteArray(80, 0);
     header.replace(0, 8, "LCCAMP01");
-    put32(header, 8, 6);
+    put32(header, 8, newCampaign?7:6);
     put32(header, 12, descriptor + 80);
     put32(header, 16, quint32(overlay.size()));
     put32(header, 20, quint32(map.totalRoads()));

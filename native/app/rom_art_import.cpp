@@ -67,7 +67,8 @@ SpriteAsset resourceAsset(const Rom &rom, quint32 key) {
     return asset;
 }
 } // namespace
-RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink, QWidget *parent)
+RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink, QWidget *parent,
+                           const QString &purpose)
     : QDialog(parent) {
     setObjectName("romArtImport");
     setWindowTitle("Import from ROM");
@@ -80,8 +81,9 @@ RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink
     auto choose = new QPushButton("Choose another ROM…");
     top->addWidget(choose);
     layout->addLayout(top);
-    auto note = new QLabel("Import an editable copy into Art Library. Original game artwork stays "
-                           "assigned until you replace it in Art and Animation.");
+    auto note = new QLabel(purpose.isEmpty()
+        ? "Import an editable copy into Art Library. Original game artwork stays assigned until you replace it in Art and Animation."
+        : purpose);
     note->setWordWrap(true);
     layout->addWidget(note);
     auto tabs = new QTabWidget;
@@ -91,6 +93,10 @@ RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink
         sink(std::move(asset));
         accept();
     });
+    if (!purpose.isEmpty()) {
+        auto use = actors->findChild<QPushButton *>("actorCopyToLibrary");
+        use->setText("Use these frames");
+    }
     tabs->addTab(actors, "Sprites and animations");
     auto images = new QWidget;
     auto il = new QVBoxLayout(images);
@@ -285,13 +291,13 @@ RomArtImport::RomArtImport(const Rom &rom, std::function<void(SpriteAsset)> sink
             rawStatus->setText(QString::fromUtf8(e.what()));
         }
     });
-    connect(choose, &QPushButton::clicked, this, [this, sink] {
+    connect(choose, &QPushButton::clicked, this, [this, sink, purpose] {
         const auto path = QFileDialog::getOpenFileName(this, "Choose artwork ROM", {},
                                                        "N64 ROM (*.v64 *.z64 *.n64)");
         if (path.isEmpty())
             return;
         try {
-            RomArtImport dialog(Rom::open(path), sink, this);
+            RomArtImport dialog(Rom::open(path), sink, this, purpose);
             if (dialog.exec() == QDialog::Accepted)
                 accept();
         } catch (const std::exception &e) {

@@ -15,24 +15,26 @@ QWidget *eventFlagLinks(Project *project, int row, int flag,
                        std::function<void(int,int)> open, QWidget *parent) {
     auto widget=new QWidget(parent);auto layout=new QHBoxLayout(widget);
     layout->setContentsMargins(0,0,0,0);
-    for(int state:{1,0}) {
-        auto link=new QLabel(state?"<a href=\"open\">Where set ON…</a>":"<a href=\"open\">Where cleared…</a>");
-        link->setObjectName(QString("flagSources%1_%2").arg(state?"On":"Off").arg(flag));layout->addWidget(link);
+    for(int state:{1,0,2}) {
+        const bool checks=state==2;
+        auto link=new QLabel(checks?"<a href=\"open\">Where checked…</a>":state?"<a href=\"open\">Where set ON…</a>":"<a href=\"open\">Where cleared…</a>");
+        link->setObjectName(QString("flagSources%1_%2").arg(checks?"Check":state?"On":"Off").arg(flag));layout->addWidget(link);
         QObject::connect(link,&QLabel::linkActivated,widget,[=]{
             try {
-                const auto writers=EventFlagLinks::writers(project->rom(),*project->sceneEvents(),*project->scenePrograms(),row,flag,state==0);
+                const auto writers=checks?EventFlagLinks::references(project->rom(),*project->sceneEvents(),*project->scenePrograms(),row,flag)
+                    :EventFlagLinks::writers(project->rom(),*project->sceneEvents(),*project->scenePrograms(),row,flag,state==0);
                 QVector<EventFlagWriter> matches;
-                for(const auto &writer:writers)if(writer.state==state||writer.state<0)matches<<writer;
+                for(const auto &writer:writers)if(checks?writer.read:writer.state==state||writer.state<0)matches<<writer;
                 if(matches.size()==1){open(matches.first().row,matches.first().offset);return;}
                 QDialog dialog(widget);dialog.setWindowTitle(project->sceneEvents()->flagName(flag,row));dialog.resize(760,430);
                 auto contents=new QVBoxLayout(&dialog);
-                auto title=new QLabel(state?"Events that set this flag ON":"Events that clear this flag");contents->addWidget(title);
+                auto title=new QLabel(checks?"Events that check this flag":state?"Events that set this flag ON":"Events that clear this flag");contents->addWidget(title);
                 auto list=new QListWidget;list->setObjectName("flagWriterChoices");list->setWordWrap(true);list->setTextElideMode(Qt::ElideNone);contents->addWidget(list,1);
                 for(const auto &writer:matches) {
-                    const auto action=writer.programReset?QString("Cleared when the event program changes"):writer.state<0?QString("Sets or clears according to a condition"):writer.state?QString("Sets ON"):QString("Clears OFF");
+                    const auto action=checks?QString("Checks"):writer.programReset?QString("Cleared when the event program changes"):writer.state<0?QString("Sets or clears according to a condition"):writer.state?QString("Sets ON"):QString("Clears OFF");
                     list->addItem(writer.title+"\n"+EventScript::rowName(writer.row)+" · "+action+(writer.detail.isEmpty()?QString{}:"\n"+writer.detail));
                 }
-                if(matches.isEmpty())contents->addWidget(new QLabel("No matching event writes were found for this flag’s scope."));
+                if(matches.isEmpty())contents->addWidget(new QLabel("No matching events found in this flag’s scope."));
                 auto buttons=new QDialogButtonBox(QDialogButtonBox::Cancel);auto jump=buttons->addButton("Open event",QDialogButtonBox::AcceptRole);jump->setEnabled(!matches.isEmpty());contents->addWidget(buttons);
                 if(!matches.isEmpty())list->setCurrentRow(0);
                 QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);

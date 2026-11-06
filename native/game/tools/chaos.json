@@ -1,7 +1,8 @@
 {
   "generatedBy": "native/tools/generate-tools-catalog.cjs",
   "inputs": [
-    "native-rebuild-data.js phase3; tools-data.js cf-army-counter"
+    "native-rebuild-data.js phase3; tools-data.js cf-army-counter",
+    "maintained native/game/tools/chaos-*.s; compiled with pinned native N64 assembler"
   ],
   "sites": [
     {
@@ -36,12 +37,15 @@
       "rom": 216696,
       "ram": 2148158072,
       "size": 136,
-      "payloadBytes": 44,
+      "payloadBytes": 64,
       "retailSha256": "b707241545a346265aab1ffb32ff64b55bf8f8dc1b56a46ef33ce3d15db11d33",
-      "normalizedSha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b",
+      "normalizedSha256": "537da8ec18e9fd6c6ef3e69c88f97795fc14d2cfad6acb453c7b1badaa3fe99c",
       "legacyRom": 216696,
       "legacyBytes": 136,
-      "legacySha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b"
+      "legacySha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b",
+      "previousNativeSha256": [
+        "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b"
+      ]
     },
     {
       "name": "source-module",
@@ -51,10 +55,13 @@
       "size": 4096,
       "payloadBytes": 2560,
       "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
-      "normalizedSha256": "3379f4b180d418525180d34210ae28914f15e6b0725a4db55b76d41a86d12a41",
+      "normalizedSha256": "a4fdb6ff9a2cdd14f405abb326ff5c656de64186dcd80f3a067f3d4d6434d069",
       "legacyRom": 41484288,
       "legacyBytes": 2560,
-      "legacySha256": "e2e78113be22bccfb57809fff874c7e5126064e96c83c6865e3f5bdab19f65cf"
+      "legacySha256": "e2e78113be22bccfb57809fff874c7e5126064e96c83c6865e3f5bdab19f65cf",
+      "previousNativeSha256": [
+        "3379f4b180d418525180d34210ae28914f15e6b0725a4db55b76d41a86d12a41"
+      ]
     }
   ]
 }

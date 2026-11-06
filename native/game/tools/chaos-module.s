@@ -2,7 +2,7 @@
 # and Decomp e50fe500 tools/lordly_phase3_native_payload.py. Assembled at user export.
 # Army final-task insertion: guard owner, bounded task, trailer and roster marker.
 # Shift the original tail, insert the authored plate and substitute live CF digits.
-    .word 0x4f424346,0x00000004,0x00000100,0x00000398
+    .word 0x4f424346,0x00000005,0x00000100,0x00000398
     .word 0x000003c0,0x00000700,0x00000a00,0x00000298
     .word 0x00000028,0x00000340,0x00000248,0x00000030
 .org 0x100
@@ -168,6 +168,8 @@ copy_payload_loop:
     sw $t1,0x27c($t0)
     sw $t2,0x2a4($t0)
     sw $t3,0x2cc($t0)
+    jal bind_current_artwork
+    nop
 call_original:
     lw $a0,0x4($sp)
     lw $a1,0x8($sp)
@@ -177,12 +179,7 @@ call_original:
     addiu $sp,$sp,0x20
     j CF_RETURN
     nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
+.org 0x398
     .word 0x00000340,0x00000200,0x00e00200,0x01c00200
     .word 0x02a00200,0x03800200,0x04600200,0x05400200
     .word 0x06200200,0x07000200

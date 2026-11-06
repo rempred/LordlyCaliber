@@ -1,5 +1,6 @@
 #include "engine/story_routes.h"
 #include "engine/campaign_runtime.h"
+#include "engine/scene_events.h"
 #include <algorithm>
 #include <array>
 namespace lordly {
@@ -8,11 +9,9 @@ StoryRoutes::StoryRoutes(const Rom &rom) {
     if (rom.revision())
         throw Error("Scenario seeding requires a US revision-zero ROM");
     const auto &b = rom.bytes();
-    const int size = int(u32(b, 0x9398e8));
-    if (size % 4 || size < 4 || size > 0x1000)
-        throw Error("Unsupported event directory");
-    for (int row = 0; row < size / 4; ++row) {
-        const auto key = u32(b, 0x9398ec + row * 4);
+    const int count = SceneProgramResources::eventRowCount(rom);
+    for (int row = 0; row < count; ++row) {
+        const auto key = u32(b, SceneProgramResources::eventWord(row));
         if (!key)
             continue;
         const quint64 at = 0x594280ULL + key;
@@ -77,12 +76,15 @@ QVector<StoryRoute> StoryRoutes::routes(int node, int chaos, QMap<int, int> flag
     };
     QVector<State> pending{{start, 0, {}, flags, {}, {}}};
     QVector<StoryRoute> output;
+    // Allow a full authored prefix followed by the original branch. Each
+    // compiled predicate can occupy four instructions and each switch three.
+    constexpr int maxPathSteps = 1000 + SceneEvents::customRowCapacity * (16 * 4 + 3);
     int total = 0;
     while (!pending.isEmpty()) {
         auto s = pending.takeLast();
         auto &r = s.regs;
         for (;;) {
-            if (++s.steps > 1000 || ++total > 100000 || s.pc < 0 || s.pc + 2 > world.size())
+            if (++s.steps > maxPathSteps || ++total > 100000 || s.pc < 0 || s.pc + 2 > world.size())
                 throw Error("Invalid or looping world-entry script");
             const int op = u8(world, s.pc), arg = u8(world, s.pc + 1);
             bool jump = false;
@@ -93,7 +95,7 @@ QVector<StoryRoute> StoryRoutes::routes(int node, int chaos, QMap<int, int> flag
             else if (op >= 0x60 && op <= 0x67) {
                 if (arg == 0x61) {
                     const int flag = r[1];
-                    if (flag < 0 || flag >= 256)
+                    if (flag < 0 || flag >= 768)
                         throw Error("Unsupported world-entry flag");
                     if (!s.known.contains(flag)) {
                         for (int value : {0, 1}) {
@@ -345,6 +347,12 @@ void WorldProgress::complete(int row) {
         flags[29] = 1;
 }
 void WorldProgress::advanceTo(int row) {
+    // Authored missions branch from the player's present campaign.
+    if (SceneEvents::customMissionRow(row)) {
+        if (!routing_.scripts.contains(row) || routing_.keys.value(row).isEmpty())
+            throw Error("The custom mission has no playable battlefield");
+        return;
+    }
     for (int event : journey(row))
         complete(event);
 }

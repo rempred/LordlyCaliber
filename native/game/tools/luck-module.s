@@ -1,27 +1,36 @@
 # Maintained luck source adapted from parent tools/luck_alignment_display_patch.py.
-# Module version 6; assembled during user export.
-    .word 0x4f424c4b,0x00000006,0x00000c00,0x00000100
+# Module version 9; assembled during user export.
+    .word 0x4f424c4b,0x00000009,0x00000c00,0x00000100
     .word 0x00000500,0x00000520,0x00000720,0x000000f8
-    .word 0x00e70029
+    .word 0x006e001f
 .org 0x100
 feature_entry:
-    addiu $sp,$sp,-32
-    sw $ra,0x0($sp)
-    sw $a0,0x4($sp)
-    sw $a1,0x8($sp)
+    # Native texture setup takes palette, texture, width, height and style.
+    # Keep all five arguments, including the caller's stack argument. Its
+    # outgoing argument area must not overlap our saved registers.
+    addiu $sp,$sp,-48
+    sw $ra,0x14($sp)
+    sw $a0,0x18($sp)
+    sw $a1,0x1c($sp)
+    sw $a2,0x20($sp)
+    sw $a3,0x24($sp)
+    lw $t0,0x40($sp)
+    sw $t0,0x10($sp)
     lbu $v1,0x28($s5)
     lui $a3,0x8048
     ori $a3,$a3,0x720
     jal display_draw
     nop
 luck_after_custom_draw:
-    lw $a0,0x4($sp)
-    lw $a1,0x8($sp)
+    lw $a0,0x18($sp)
+    lw $a1,0x1c($sp)
+    lw $a2,0x20($sp)
+    lw $a3,0x24($sp)
     jal TOOL_NATIVE_DRAW
     nop
 luck_after_native_draw:
-    lw $ra,0x0($sp)
-    addiu $sp,$sp,0x20
+    lw $ra,0x14($sp)
+    addiu $sp,$sp,0x30
     jr $ra
     nop
 display_draw:

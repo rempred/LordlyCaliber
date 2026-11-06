@@ -1,10 +1,13 @@
 #include "engine/shop_runtime.h"
+#include "engine/capacity_placement.h"
+#include "engine/mission_tables.h"
 #include "engine/weapon_types.h"
 #include "engine/class_data.h"
 #include "engine/promotion.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <algorithm>
 
 namespace lordly {
 QJsonArray shopConsumerOwners() {
@@ -61,10 +64,20 @@ void verifyShopRuntime(const Rom &rom, int version) {
     if (rom.revision() != 0)
         throw Error("Shop rebuilding currently supports US Rev 0");
     const auto classes = ClassPlacement::read(rom);
+    const auto capacity = CapacityPlacement::read(rom);
     for (const auto &value : shopRuntimeCatalog()["owners"].toArray()) {
         const auto owner = value.toObject();
         const auto start = owner["start"].toInt(), size = owner["size"].toInt();
-        auto bytes = rom.bytes().mid(start, size);
+        auto bytes = MissionTables::canonicalCode(rom, start, size);
+        if (capacity) {
+            for (const auto &patch : capacity->patches) {
+                const auto first = std::max<qsizetype>(start, patch.site);
+                const auto last = std::min<qsizetype>(start + size, patch.site + patch.before.size());
+                if (first < last)
+                    bytes.replace(first - start, last - first,
+                                  patch.before.mid(first - patch.site, last - first));
+            }
+        }
         bytes = canonicalWeaponTypeText(rom, bytes, start);
         if (bytes.size() != size)
             throw Error("Truncated shop runtime owner");
@@ -129,8 +142,8 @@ std::optional<ShopPlacement> ShopPlacement::read(const Rom &rom) {
         quint64(result.offset) + result.byteSize() > 0x4000000 ||
         quint64(result.offset) + result.byteSize() > quint64(rom.bytes().size()) ||
         crc32(rom.bytes().mid(result.offset, result.byteSize())) != u32(header, 28) ||
-        crc32(rom.bytes().mid(result.version < 4 ? producerOffset : stockOffset,
-                             result.version < 4 ? producerSize : stockSize)) != u32(header, 32))
+        crc32(MissionTables::canonicalCode(rom, result.version < 4 ? producerOffset : stockOffset,
+                                           result.version < 4 ? producerSize : stockSize)) != u32(header, 32))
         throw Error("Shop data or producer differs from its declared placement");
     if (result.version >= 4) {
         const auto hi = u32(header, 36), lo = u32(header, 40);

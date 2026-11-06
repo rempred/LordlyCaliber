@@ -14,6 +14,7 @@ struct CapacityPlacement {
     static std::optional<CapacityPlacement> read(const Rom &rom);
     Rom canonical(const Rom &rom) const;
     static QByteArray record(const QByteArray &before,const QByteArray &after,
-                             quint32 base,quint32 codeAddress);
+                             quint32 base,quint32 codeAddress,
+                             const std::optional<CapacityPlacement> &prior = {});
 };
 } // namespace lordly

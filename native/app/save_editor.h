@@ -17,6 +17,7 @@ class SaveEditor : public QWidget {
     ~SaveEditor() override;
     void loadBytes(const QByteArray &, const QString &sourcePath = {});
     bool editDefaultArmy(const QByteArray &, std::function<void(const QByteArray &)>);
+    bool editStartingArmy(const QByteArray &, std::function<void(const QByteArray &)>);
     void exportFile(const QString &);
     const std::optional<SaveDocument> &document() const {
         return document_;

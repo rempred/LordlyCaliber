@@ -9,9 +9,9 @@ namespace {
 QByteArray selectors(const Rom &rom) {
     QByteArray result;
     for (int key = 0; key < WorldResources::keyCount; ++key) {
-        const auto at = WorldResources::selectorTable + key * WorldResources::selectorStride;
-        result += char(u8(rom.bytes(), at + 6));
-        result += char(u8(rom.bytes(), at + 5));
+        const auto row = WorldResources::row(rom, key);
+        result += char(u8(row, 6));
+        result += char(u8(row, 5));
     }
     return result;
 }
@@ -62,7 +62,7 @@ WorldResources WorldResources::load(const Rom &rom) {
     for (const auto &value :
          QJsonDocument::fromJson(owners.readAll()).object()["spans"].toArray()) {
         const auto span = value.toObject();
-        if (sha256(rom.bytes().mid(span["start"].toInt(), span["size"].toInt())) !=
+        if (sha256(MissionTables::canonicalCode(rom, span["start"].toInt(), span["size"].toInt())) !=
             span["sha256"].toString().toLatin1())
             throw Error(span["name"].toString() +
                         " differs from the supported world resource path");
@@ -91,7 +91,7 @@ WorldResources WorldResources::load(const Rom &rom) {
     result.baseline_ = result.selectors_;
     const auto h = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (h.startsWith("LC05WRLD")) {
-        if (h.size() != descriptorSize || u32(h, 8) != 1 || h.mid(56, 36) != QByteArray(36, 0) ||
+        if (h.size() != descriptorSize || (u32(h, 8) != 1 && u32(h, 8) != 2) || h.mid(56, 36) != QByteArray(36, 0) ||
             crc32(h.first(92)) != u32(h, 92))
             throw Error("Damaged world resource descriptor");
         const WorldPlacement p{u32(h, 12), u32(h, 16)};
@@ -100,14 +100,16 @@ WorldResources WorldResources::load(const Rom &rom) {
             quint64(p.offset) + p.allocation > quint64(rom.bytes().size()))
             throw Error("World resource allocation exceeds the cartridge");
         const auto data = rom.bytes().mid(p.offset, p.allocation);
+        const int storedCount = u32(h, 8) == 1 ? MissionTables::retailKeyCount : keyCount;
         const auto tn = u32(h, 20), so = u32(h, 24), sn = u32(h, 28), bo = u32(h, 32);
         if (tn < 4 || so != ((quint64(tn) + 15) & ~quint64(15)) || sn < 4 ||
-            quint64(so) + sn != bo || quint64(bo) + keyCount * 2 > p.allocation || te != p.offset ||
+            quint64(so) + sn != bo || quint64(bo) + storedCount * 2 > p.allocation || te != p.offset ||
             se != p.offset + so || u32(data, 0) + 4 != tn || u32(data, so) + 4 != sn ||
-            crc32(data) != u32(h, 36) || crc32(result.selectors_) != u32(h, 40) ||
+            crc32(data) != u32(h, 36) || crc32(result.selectors_.first(storedCount * 2)) != u32(h, 40) ||
             u32(h, 44) != 40 || u32(h, 48) != 61 || u32(h, 52) != u32(rom.bytes(), root + 8))
             throw Error("World resources differ from their declared allocation");
-        result.baseline_ = data.mid(bo, keyCount * 2);
+        result.baseline_ = data.mid(bo, storedCount * 2);
+        result.baseline_ += result.selectors_.mid(storedCount * 2);
         result.placement_ = p;
     } else if (result.treasure_.size() != 40 || result.sites_.size() != 61) {
         throw Error("Expanded world resources require an allocation descriptor");
@@ -154,8 +156,8 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
         const auto &edits = type ? siteEdits : treasureEdits;
         for (auto it = edits.begin(); it != edits.end(); ++it) {
             keyRange(it.key());
-            if (!it.key() || it.value().isEmpty() || (type && !siteSelector(it.key())))
-                throw Error("Choose a scenario with an existing world resource for editing");
+            if (!it.key() || it.value().isEmpty())
+                throw Error("Choose a scenario with complete world resource data for editing");
             changed |= it.value() != (type ? sites(rom, it.key()) : treasure(rom, it.key()));
         }
     }
@@ -164,6 +166,8 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
     if (!placement_ &&
         rom.bytes().mid(descriptorOffset, descriptorSize) != QByteArray(descriptorSize, char(-1)))
         throw Error("World descriptor space belongs to another modification");
+    const bool expanded = !MissionTables::runtimeData(rom).isEmpty();
+    const int storedCount = expanded ? keyCount : MissionTables::retailKeyCount;
     QByteArray nextSelectors = baseline_, collections[2];
     for (int type = 0; type < 2; ++type) {
         const auto &members = type ? sites_ : treasure_;
@@ -179,12 +183,12 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
         QMap<QPair<int, QByteArray>, int> added;
         for (int key = 0; key < keyCount; ++key) {
             const int original = u8(baseline_, key * 2 + type);
-            if (type && !original)
+            if (type && !original && !edits.contains(key) && !siteSelector(key))
                 continue;
             const auto desired = edits.contains(key) ? edits[key]
                                  : type              ? sites(rom, key)
                                                      : treasure(rom, key);
-            if (desired == decoded[original])
+            if ((!type || original) && desired == decoded[original])
                 continue;
             const QPair<int, QByteArray> identity{original, desired};
             if (!added.contains(identity)) {
@@ -192,7 +196,9 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
                 if (ordinal > 255)
                     throw Error("World collection exceeds its unsigned member selector");
                 added[identity] = ordinal;
-                collections[type] += members[original].rebuild(rom, desired);
+                // Site selector zero means no SCINCSV, rather than ktenmain.
+                // New missions use the first real SCINCSV as an envelope only.
+                collections[type] += members[type && !original ? 1 : original].rebuild(rom, desired);
             }
             nextSelectors[key * 2 + type] = char(added[identity]);
         }
@@ -203,7 +209,7 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
     const auto siteOffset = quint32(payload.size());
     payload += collections[1];
     const auto baselineOffset = quint32(payload.size());
-    payload += baseline_;
+    payload += baseline_.first(storedCount * 2);
     payload += QByteArray((16 - payload.size() % 16) % 16, char(-1));
     const quint32 allocation = quint32(payload.size());
     const bool tail = placement_ && quint64(placement_->offset) + placement_->allocation ==
@@ -224,13 +230,10 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
     image.replace(offset, allocation, payload);
     put32(image, root + 4, offset - keyBase);
     put32(image, root + 12, offset + siteOffset - keyBase);
-    for (int key = 0; key < keyCount; ++key) {
-        put8(image, selectorTable + key * selectorStride + 6, u8(nextSelectors, key * 2));
-        put8(image, selectorTable + key * selectorStride + 5, u8(nextSelectors, key * 2 + 1));
-    }
+    MissionTables::updateSelectors(image, MissionTables::World, nextSelectors.first(storedCount * 2));
     QByteArray descriptor(descriptorSize, 0);
     descriptor.replace(0, 8, "LC05WRLD");
-    put32(descriptor, 8, 1);
+    put32(descriptor, 8, expanded ? 2 : 1);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, allocation);
     put32(descriptor, 20, quint32(collections[0].size()));
@@ -238,7 +241,7 @@ QByteArray WorldResources::rebuild(const Rom &rom, const QByteArray &townsData,
     put32(descriptor, 28, quint32(collections[1].size()));
     put32(descriptor, 32, baselineOffset);
     put32(descriptor, 36, crc32(payload));
-    put32(descriptor, 40, crc32(nextSelectors));
+    put32(descriptor, 40, crc32(nextSelectors.first(storedCount * 2)));
     put32(descriptor, 44, 40);
     put32(descriptor, 48, 61);
     put32(descriptor, 52, u32(image, root + 8));

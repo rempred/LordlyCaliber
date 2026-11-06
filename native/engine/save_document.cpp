@@ -116,6 +116,43 @@ int SaveDocument::daysInMonth(unsigned year, unsigned month) const {
     const bool leap = shifted % 4 == 0 && (shifted % 100 != 0 || shifted % 400 == 0);
     return quint8(monthLengths_[int(month) - 1]) + (month == 3 && leap ? 1 : 0);
 }
+SaveDocument SaveDocument::newArmy(const Project &project) {
+    SaveDocument result;
+    const auto capacity=CapacityPlacement::read(project.rom());
+    result.readCodec(capacity?capacity->canonical(project.rom()):project.rom());
+    result.data_=QByteArray(LC_SAVE_IMAGE_BYTES,0);
+    result.format_=Format::Battery;result.slot_=0;
+    result.classCount_=project.records(Table::Classes).size();
+    auto classes=project.classData();auto items=project.itemData();
+    QByteArray record(56,0),classBytes,itemBytes;
+    record[17]=char(0x51);record[18]=char(0x51);record[52]=1;
+    for(const auto &entry:classes.entries())classBytes+=entry.record;
+    for(const auto &entry:items.entries())itemBytes+=entry.record;
+    quint32 seed=1;
+    const auto random=[](void *state)->uint32_t {auto &n=*static_cast<quint32 *>(state);n=n*1664525U+1013904223U;return n>>1;};
+    if(!lordly_character_initialize(reinterpret_cast<uint8_t *>(record.data()),1,
+       reinterpret_cast<const uint8_t *>(classBytes.constData()),classes.entries().size(),
+       reinterpret_cast<const uint8_t *>(itemBytes.constData()),items.entries().size(),random,&seed))
+        throw Error("Cannot initialize the starting character");
+    for(int i=0;i<13;++i)record[i]=char(i<6?QByteArray("Magnus")[i]+16:255);
+    QByteArray memory(0x400000,0);
+    memory.replace(roster+stride,56,record);
+    put8(memory,0x197711,1);
+    put16(memory,0x196a30,251);put8(memory,0x196a32,3);put8(memory,0x196a33,3);
+    // Only persistent fields are encoded. Empty slots, spare bits and the second
+    // save slot start empty; no story or tester-save state is inherited.
+    for(const auto &cell:result.codec_) {
+        const auto value=number(memory,cell.address,cell.bytes);
+        for(int b=0;b<cell.bits;++b) {
+            const int bit=cell.bit+b,at=16+0x2a+bit/8,shift=7-bit%8;
+            put8(result.data_,at,quint8(u8(result.data_,at)|(((value>>(cell.bits-1-b))&1)<<shift)));
+        }
+    }
+    lc_save_record_seal(reinterpret_cast<unsigned char *>(result.data_.data()+16),LC_SAVE_NORMAL_BYTES,0,0);
+    result=open(project.rom(),result.data_,result.classCount_);
+    result.apply(result.planCreateUnit(1,5,classes),true);
+    return result;
+}
 SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int classCount) {
     if (classCount < 165 || classCount > 256)
         throw Error("Invalid save class catalog");

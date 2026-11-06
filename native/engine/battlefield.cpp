@@ -1,4 +1,6 @@
 #include "engine/battlefield.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_tables.h"
 #include "engine/archive.h"
 #include "engine/color_combiner.h"
 #include "engine/field_span.h"
@@ -631,14 +633,15 @@ struct Battlefield::Data {
 Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint16> &siteFlags,
                               const QByteArray &overrideModel) {
     rom.requireSupported();
-    if (rom.revision() || scenario < 1 || scenario > 64)
+    if (rom.revision() || !MissionTables::hasScenario(rom, scenario))
         throw Error("Battlefield preview requires a revision-0 scenario");
-    const int modelId = qint8(u8(rom.bytes(), 0x654a0 + scenario * 9 + 3));
-    if (modelId < 0 || modelId >= 69)
+    const auto scenarioRow = MissionTables::row(rom, MissionTables::Scenario, scenario);
+    const int modelId = qint8(u8(scenarioRow, 3));
+    if (modelId < 0 || modelId >= BattlefieldClone::modelCount(rom))
         throw Error("Scenario has no battlefield model");
-    const int row = 0x65710 + modelId * 12;
-    const quint32 flags = u32(rom.bytes(), row + 8), selection = u32(rom.bytes(), row);
-    const auto root = resource(rom, 0x1e39dce);
+    const auto row = BattlefieldClone::modelRow(rom,modelId);
+    const quint32 flags = u32(row,8), selection = u32(row,0);
+    const auto root = resource(rom, BattlefieldClone::resourceKey(rom,0x1e39dce));
     if (selection >= quint32(root.size() / 4))
         throw Error("Battlefield model exceeds its collection");
     Builder b(rom, siteFlags);
@@ -817,8 +820,8 @@ Battlefield Battlefield::load(const Rom &rom, int scenario, const QVector<quint1
     // Their independent culling box is authored around the site point. Accept a
     // unique co-located anchor only, within the source's decimal/float precision;
     // never choose a merely nearby chunk or a connected fortress wall.
-    if (modelId >= 4 && modelId < 42) {
-        const auto points = member(rom, 0x2092506, u8(rom.bytes(), 0x654a0 + scenario * 9 + 7));
+    if ((modelId >= 4 && modelId < 42) || modelId >= 45) {
+        const auto points = member(rom, BattlefieldClone::resourceKey(rom,0x2092506), u8(scenarioRow, 7));
         const int count = int(u32(points, 24));
         if (count > 255 || points.size() != 28 + count * 8)
             throw Error("Invalid battlefield site anchors");

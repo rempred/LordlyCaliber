@@ -1,4 +1,46 @@
 {
+  "authored-missions + capacity-references": {
+    "reason": "Mission settlement is qualified against complete accepted C after canonicalizing authenticated capacity pointer references. Only its native victory-predicate call is redirected; current relocated references remain intact. Regression: scenario_battlefield_tests::exportWithGothAndExpandedArmies and mission-template-mips.cjs.",
+    "ranges": [
+      [
+        "13915c",
+        "139164"
+      ],
+      [
+        "139174",
+        "13917c"
+      ],
+      [
+        "1394a4",
+        "1394a8"
+      ],
+      [
+        "1394ac",
+        "1394b0"
+      ],
+      [
+        "13994c",
+        "139954"
+      ],
+      [
+        "139970",
+        "139978"
+      ],
+      [
+        "139b10",
+        "139b18"
+      ]
+    ]
+  },
+  "authored-missions + tools/game-rules.json": {
+    "reason": "Goth builds its complete accepted settlement C first. Mission linking then authenticates that configured owner and redirects only its victory-predicate call. canonicalMissionImage reverses that authenticated call for Goth readers and subsequent edits. Regression: scenario_battlefield_tests::exportWithGothAndExpandedArmies and mission-template-mips.cjs.",
+    "ranges": [
+      [
+        "1399c0",
+        "139ab4"
+      ]
+    ]
+  },
   "art/animation-overrides.json + attacks/hooks.json": {
     "reason": "canonicalArtOwner/retainArtReferences authenticate OBSO carrier operands. The grouped physical C adapters emit the same carrier and route through the native selector. Regression: attack-effects-mips.cjs.",
     "ranges": [
@@ -670,7 +712,7 @@
     ]
   },
   "capacity-references + shops/owners.json": {
-    "reason": "CapacityRuntimeBuild verifies original operands and composes its relocation map after other owners; Project::fromRom restores authenticated before-images for model readers. Full attack C also receives relocated source/roster symbols. Regression: capacityPublicExport; repeatedStrikesExportAndReopen expanded-army rows and attack-capacity-mips.cjs (new, pending build).",
+    "reason": "Capacity relocation follows the qualified retail or rebuilt shop C schedule. Shop readers canonicalize recorded capacity edits before checking the complete owner. Regression: scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended keys), including edited shops and stable export/reopen.",
     "ranges": [
       [
         "00197bc8",
@@ -695,6 +737,38 @@
       [
         "001986f8",
         "00198700"
+      ],
+      [
+        "197bb0",
+        "197bb4"
+      ],
+      [
+        "197bb8",
+        "197bbc"
+      ],
+      [
+        "198278",
+        "19827c"
+      ],
+      [
+        "198280",
+        "198284"
+      ],
+      [
+        "1983a4",
+        "1983a8"
+      ],
+      [
+        "1983a8",
+        "1983ac"
+      ],
+      [
+        "1986e4",
+        "1986e8"
+      ],
+      [
+        "1986e8",
+        "1986ec"
       ]
     ]
   },
@@ -943,6 +1017,272 @@
       [
         "0019a3cc",
         "0019a3d0"
+      ]
+    ]
+  },
+  "capacity-references + consumable-trees": {
+    "reason": "Item menu C binds relocated map arrays through the capacity allocator. Native owner CRCs use authenticated capacity before-images. consumable_tree_tests::exportAndInstructions(expanded-armies) verifies export, reopening, stable re-export, target eligibility and Soldier/squad execution.",
+    "ranges": [
+      [
+        "1a9620",
+        "1a9628"
+      ],
+      [
+        "1a9810",
+        "1a9818"
+      ],
+      [
+        "1a9840",
+        "1a9844"
+      ],
+      [
+        "1a9848",
+        "1a984c"
+      ],
+      [
+        "1a986c",
+        "1a9870"
+      ],
+      [
+        "1a9874",
+        "1a9878"
+      ],
+      [
+        "1a9900",
+        "1a9908"
+      ],
+      [
+        "1a99d4",
+        "1a99d8"
+      ],
+      [
+        "1a99dc",
+        "1a99e0"
+      ],
+      [
+        "1a9c20",
+        "1a9c28"
+      ],
+      [
+        "1a9cd4",
+        "1a9cdc"
+      ],
+      [
+        "1a9ec4",
+        "1a9ec8"
+      ],
+      [
+        "1a9ecc",
+        "1a9ed0"
+      ],
+      [
+        "1aa100",
+        "1aa108"
+      ],
+      [
+        "1aa234",
+        "1aa238"
+      ],
+      [
+        "1aa23c",
+        "1aa240"
+      ],
+      [
+        "1aa3b8",
+        "1aa3c0"
+      ],
+      [
+        "1aa594",
+        "1aa59c"
+      ],
+      [
+        "1aa618",
+        "1aa620"
+      ],
+      [
+        "1aa980",
+        "1aa988"
+      ],
+      [
+        "1aa9a4",
+        "1aa9a8"
+      ],
+      [
+        "1aa9ac",
+        "1aa9b0"
+      ],
+      [
+        "1aa9f4",
+        "1aa9f8"
+      ],
+      [
+        "1aa9fc",
+        "1aaa00"
+      ],
+      [
+        "1aaa34",
+        "1aaa38"
+      ],
+      [
+        "1aaa3c",
+        "1aaa40"
+      ],
+      [
+        "1aaa8c",
+        "1aaa90"
+      ],
+      [
+        "1aaa94",
+        "1aaa98"
+      ],
+      [
+        "1aab84",
+        "1aab8c"
+      ],
+      [
+        "1aae24",
+        "1aae2c"
+      ],
+      [
+        "1aaf78",
+        "1aaf80"
+      ],
+      [
+        "1ab2f0",
+        "1ab2f8"
+      ],
+      [
+        "1ab3d8",
+        "1ab3dc"
+      ],
+      [
+        "1ab3e0",
+        "1ab3e4"
+      ],
+      [
+        "1ab3f0",
+        "1ab3f4"
+      ],
+      [
+        "1ab3f8",
+        "1ab3fc"
+      ],
+      [
+        "1ab414",
+        "1ab418"
+      ],
+      [
+        "1ab41c",
+        "1ab420"
+      ],
+      [
+        "1ab42c",
+        "1ab430"
+      ],
+      [
+        "1ab438",
+        "1ab43c"
+      ],
+      [
+        "1ab45c",
+        "1ab464"
+      ],
+      [
+        "1ab5d8",
+        "1ab5dc"
+      ],
+      [
+        "1ab5e0",
+        "1ab5e4"
+      ],
+      [
+        "1ab5f8",
+        "1ab5fc"
+      ],
+      [
+        "1ab600",
+        "1ab604"
+      ],
+      [
+        "1ad134",
+        "1ad13c"
+      ],
+      [
+        "1ada0c",
+        "1ada14"
+      ]
+    ]
+  },
+  "authored-missions + mission-tables": {
+    "reason": "The complete settlement owner is qualified first, its victory call is rebound, then the uniquely located payout table constructor is relocated. canonicalMissionImage normalizes both before reopening. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
+    "ranges": [
+      [
+        "1390f0",
+        "139c10"
+      ]
+    ]
+  },
+  "capacity-references + mission-tables": {
+    "reason": "Table linking runs before capacity installation, preserving current squad pointers; reopen canonicalizes table references and authenticated capacity patches independently. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
+    "ranges": [
+      [
+        "13915c",
+        "139164"
+      ],
+      [
+        "139174",
+        "13917c"
+      ],
+      [
+        "1394a4",
+        "1394a8"
+      ],
+      [
+        "1394ac",
+        "1394b0"
+      ],
+      [
+        "13994c",
+        "139954"
+      ],
+      [
+        "139970",
+        "139978"
+      ],
+      [
+        "139b10",
+        "139b18"
+      ]
+    ]
+  },
+  "mission-tables + tools/game-rules.json": {
+    "reason": "The payout constructor is located in the configured Goth/reserve C variant, then normalized for subsequent owner authentication. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
+    "ranges": [
+      [
+        "1399c0",
+        "139ab4"
+      ]
+    ]
+  },
+  "mission-tables + scenarios/capacity/owners.json": {
+    "reason": "The expanded-army treasure owner receives the relocated mission world table symbol. Its original owner is qualified after normalizing table constructors. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
+    "ranges": [
+      [
+        "196158",
+        "19615c"
+      ],
+      [
+        "196160",
+        "196164"
+      ]
+    ]
+  },
+  "mission-tables + shops/owners.json": {
+    "reason": "The stock owner is qualified against accepted C after normalizing its site selector; table linking locates the retail or rebuilt instruction schedule and refreshes owner authentication. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
+    "ranges": [
+      [
+        "19be8c",
+        "19be9c"
       ]
     ]
   }

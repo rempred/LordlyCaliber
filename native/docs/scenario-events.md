@@ -1,5 +1,18 @@
 # Scenario event instructions
 
+**Event tree** is the default. Select a row to edit its fields. **Scenario
+flowchart** groups the selected location's Arrival, Mission and Area
+Investigation events by trigger. Click an event to unfold it. Solid arrows
+show execution, including branches and shared destinations. Click a flag to
+highlight its uses and see a list of checks and writes. Dashed lines connect
+visible checks with writes for the selected flag. **Find all campaign uses**
+also searches other event programs and lists automatic clears on program
+changes separately. Reused mission flags keep their program scope.
+
+Double-click a step to open its controls in the tree. For an authored event
+this selects the exact nested condition or action in the authoring dialog.
+Changing views, expanding events and inspecting flags are navigation only.
+
 The location view provides Arrival, Mission and Area Investigation. Named
 mission variants come from current routing, including authored arrival rules;
 an explicit All event programs option retains access to shared/global scripts.
@@ -12,6 +25,18 @@ It preserves shared exits, loops and calls; it does not generate a second script
 Pure value preparation may be grouped into its consumer, but side effects remain
 explicit actions. Source fields, including numeric comparison relations, use
 the same project/undo/export representation as Raw instructions.
+
+The squad roster selector describes which character table the event checks.
+Squad slots 0–29 use the player army roster. Slot 30 begins the opposing
+roster. For example, Kinseya reads HP and petrification from the visiting
+member's corresponding roster. A check for one particular squad still names
+that squad. A custom numeric cutoff displays its slot number.
+
+Shared character checks have names in both the caller and the destination.
+In Gunther Piedmont, Katreda's confrontation checks the member's identity,
+including equivalent class variants, then checks the current class separately.
+The editor recognizes these routines from their complete instructions and
+keeps their calls, return paths and original bytes available in Raw instructions.
 
 Comparison overrides are stored in the operands object as
 `comparison:<instruction byte offset>` with relation10..15. The original low
@@ -269,3 +294,74 @@ story flags; the unreachable world-map panel is a Pedra summon-name list.
 Its six valid flag entries are 5–10. Padding/graphics overreads at entries
 11–20 do not establish additional unlock meanings. These findings do not add
 gameplay controls or change the custom-flag bank.
+
+## Scenario creation and flowchart editing
+
+The World Map's Create scenario action attaches a mission to a new or existing Map
+Location. Its battlefield can copy a supported map and squads, copy the map
+without squads, or start with flat paintable terrain and two bases. Opening
+and victory templates create editable event trees. The setup connects a road,
+adds an unlock after a chosen existing mission, and allocates a named custom
+completion flag. Creating the scenario is one undo operation.
+
+There are 64 additional mission programs (115–178) and 64 independent battlefield
+keys (69–132). Earlier custom programs 2/3 and battlefield keys 10/22/35/62 remain
+readable. Native media keys 65–68, including class media 67, are preserved. The
+40 physical world-map locations are separate: successive missions can share a
+location and use distinct prerequisite/completion flags. Special battlefield models 23, 24 and 42–44 are excluded
+from the copy selector. Town definitions, including names and shops, retain
+their shared ownership. Mission site state and treasure progress are separate.
+
+The 179-entry event directory lives at z64 ROM `0x27c5800`; all four native
+lookup paths use it. The extended mission descriptor at `0x27c5600` points to
+the independent rows and their 4,928-byte runtime copy in the boot-loaded
+permanent class-data allocation. The smaller model table and victory helper
+remain resident. Each native table constructor is rebound and authenticated;
+configured Goth, shops and expanded-army consumers share the same tables.
+
+The flowchart provides Create event, Add step and Delete controls. Authored
+conditions can retain either branch when removed. Double-clicking a step opens
+its editing controls. Supported original comparisons can be wrapped in an
+additional condition or bypassed toward a chosen outcome. Both the flowchart
+and compact view project these changes from the same graph.
+
+SceneEvents JSON version 7 records mission names and original-comparison
+edits; version 8 adds the extended event rows. The ROM's LC05SCPT version 7
+authenticates the relocated directory. An added comparison uses the verified unused VM opcode 8 and a bounded
+resident bridge. The bridge saves and restores the eight temporary registers
+without consuming the original interpreter's value stack. Original instruction
+addresses remain stable. Removing the final added comparison restores the
+original dispatcher. Flag references include the added predicates.
+
+Opening templates select the private battlefield, play loading cutscene 1078,
+optionally play an introduction, and request battle entry. Native settlement
+awards mission rewards, restores existing undead and processes Angel Knight /
+Zombie opportunities before dispatching the mission-completion event. The
+template must not repeat those operations. Victory templates set the custom
+completion flag, clear the mission marker (or retain it for a following mission),
+restore world event program 0 and return to the physical map location. Native
+location aliases remain intact. Request 27 is the save menu, not battle results;
+older generated endings migrate to the corrected completion action. New custom
+arrivals clear no retail temporary flags. Blank and map-only missions require capture of the
+enemy base. Exact copies use their source mission's victory rules.
+
+The compact completion view and Scenario flowchart show the standard native
+closing flow separately from editable event instructions. It includes undead HP
+recovery, roster/class eligibility, leader exclusion, Angel Knight spare gear,
+permanent-stat/Alignment/Luck checks, the Zombie roll, Barrier protection, class
+and identity writes, and equipment/HP updates. The shared flow appears once per
+mission program in the chart. It is a presentation of game-run code, so it does
+not emit extra transformation calls or offer false event-row edit/delete controls.
+Descriptions are qualified against five reviewed native owners, normalizing
+authenticated class/capacity relocations. Unknown modified owners are identified
+instead of receiving stock branch descriptions. Equipment names follow the
+project's current Angel Knight defaults. Authored compact trees are populated
+from their saved nodes, including closing scenes, completion flags and returns.
+
+Independent field resources are immutable project snapshots, with checked
+relocated resource links and expanded model tables. Canonical accepted code is
+emitted before those data references are rebound. Reopening an exported ROM
+retains the snapshots and supports byte-stable rebuilding. Instruction-level
+checks exercise mission entry, completion, town actions, loader paths and
+Testing save routes. Full console rendering and the complete battle-results
+screen lifecycle remain gameplay verification limits.

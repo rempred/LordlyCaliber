@@ -1,3 +1,30 @@
+**Campaign → New campaign** offers Keep world map, locations and roads and
+Keep scenario maps and towns, both checked by default. Unchecking the first
+starts an empty map with one starting location; unchecking the second starts
+without scenarios in the campaign list. Original maps remain available to copy.
+It clears active story routes, mission events and deployed squads. Original
+squads remain available through Copy map and squads.
+The reset is one undoable project change and can be cancelled before applying.
+
+**Campaign setup** selects the starting location, accessible locations, Goth,
+Chaos Frame and default army. Up to sixteen named starting armies can be edited
+with Army Management, including characters, formations, equipment and inventory.
+**Edit opening and army choices** uses the event tree: play a cutscene, test
+Last dialogue answer, then Use starting army in the appropriate branch. The
+required initialization and final world-map transition stay in the opening.
+Presets contain army data; they do not import story progress from a saved game.
+All settings persist in projects and exported ROMs and reopen for further edits.
+**Storyline → Event rows → Create scenario** creates a map and its event row
+from an empty location. Available from campaign start needs no previous mission;
+later missions can unlock after another mission. Opening and victory templates
+are installed with the new event row.
+
+**Import into this ROM** is offered when opening a project saved against a
+different ROM. The warning explains that edits inherited from the original ROM
+may not be stored in the project. Import applies the saved edits to the open ROM;
+saving afterward records that ROM as the project's source. Cancelling or failing
+validation leaves the current project unchanged.
+
 **Classes → Identity → Unique Name** assigns an existing personal name, a new
 independent name or Random name to newly created characters. It is separate from
 the class display name and does not rename characters already in a save.
@@ -467,6 +494,8 @@ class's sentinel values are excluded. Compilation retains the existing final bou
 resource and checksum checks.
 
 Art and Animation → UI and Icons groups Item icons and Class category icons.
+Items and Consumables have an **Edit icon…** button that opens the selected item's
+icon directly, selecting its category and clearing any previous icon search.
 The category editor reads all eight original List Classes symbols from the ROM.
 Create or copy an icon, paint pixels, replace it from an image, or export a PNG;
 colors use the game's existing palette. Class family editing shows an icon
@@ -617,8 +646,38 @@ The existing eight-decimal precision and later-check explanation remain.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
-Consumables always shows all table columns and a fixed Effects inspector, without
-column-group or inspector-section selectors.
+Click a condition or action in the Consumables overview to open that step in the
+effect tree. Select an IF to add to its THEN branch, ELSE to add an alternative,
+or **WHEN item used** to add a top-level step. In the overview or the tree editor,
+drag an existing effect onto THEN, ELSE or WHEN to move it to the end of that branch.
+Selecting an action inserts the
+next step immediately below it in the same branch. Each numeric action has its own fixed amount or random range. **Edit
+effect tree** also opens the tree for adding and moving steps. Base-use
+items (1–19, excluding Quit Gate) support nested IF/ELSE, named conditions,
+ordered healing, fatigue, petrification cure, revival, level-up, permanent stat,
+alignment and luck effects. HP effects can use percentages and numeric effects
+can use ranges. Original target scope and consumption stay with the item. Custom
+trees are independent per item, with undo, restore, project persistence and ROM
+reopening. Special map items, Unity, carried passives, quest items and Pedras keep
+their existing game behavior. In-game presentation shows the first applicable
+effect; compound effects are not a new animation
+system. Untouched items retain native execution, including Heal Pack's internal
+native healing-eligibility probe.
+
+**Edit use animation** assigns independent four-frame, 32×32 effects to ordinary use
+items and Flag of Unity. Import a sequence or replace one frame from ROM sprites,
+ROM attack-effect artwork, Art Library or files. The picker opens on effect artwork.
+Choose the four source frames
+explicitly for longer sequences. Artwork fits without changing its proportions,
+with smooth/nearest resizing and a source/game-colour comparison. Copies and
+names are independent per item. Play, Step and Loop preview the artwork. The
+game's native movement, fades, result icons, numbers and gameplay timing remain.
+Project save/import, undo/redo, restore and ROM reopen retain these assignments.
+Pedras continue to use full combat attack effects; ordinary combat scroll
+activation is outside this menu-visual feature.
+
+Consumables shows ID, Name and Price. **Advanced** shows the original metadata
+columns and, where applicable, the original ROM values and their description controls.
 Record tables and one-line name pickers display game line breaks as spaces;
 the stored names and multiline class-name editor retain their original text.
 Classes and Items use matching New… / Copy… button order and dialog titles.
@@ -923,7 +982,7 @@ acceptance requirements for the editor rewrite.
 | Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, names/descriptions, promotion, compatibility, equipment-list availability, families and class creation through ID 255 now persist, undo and export through coordinated source rebuilds. Dynamic allocations and reopened-ROM growth verified; full-game validation and remaining feature audit pending |
 | Items | Equipment creation, names/stats/prices/resistances, packed growth, descriptions, preserved raw fields | New IDs 278–510, independent ROM artwork, dynamic record/name/description allocation, dependent pickers, Undo/project/save/export reopening implemented and checked. Original-ID scripted effects stay with their original IDs. |
 | Shops | Original shops plus new shops through ID 255, stronghold assignment, equipment/consumable inventories, expanded capacity and reopen | Search, add/remove/reorder, copy/restore, undo, project persistence/import and source-built export implemented. Supports 50 equipment/30 consumables in the original RAM arrays. Export/reopen and instruction checks pass, including empty stock; full-game validation remains |
-| Consumables | Values/descriptions, supported behavior/effect editing, rebuild ownership | 45 price/metadata records and ten magnitude/range models edit, undo, persist, import and compile/export. Healing description numbers can update with the effect. Shared stat boosters remain one model; unsupported item behaviors retain their source. Integrated export/reopen and instruction checks implemented; full-game validation remains |
+| Consumables | Values/descriptions, base-effect trees, rebuild ownership | 45 price/metadata records, ten legacy magnitude/range models, and independent base-effect trees edit, undo, persist, import and compile/export. Trees support nested IF/ELSE and ordered healing, fatigue, petrification removal, revival, level and stat effects. Legacy stat ranges remain shared; authored trees are independent. Special map, passive, quest and Pedra behaviors retain their source. Export/reopen and instruction checks cover ordinary and expanded armies; full-game validation remains |
 | Encounters | Pools, terrain/scenario/global rates, custom squads, persuasion/retreat/rewards/card text | All 45 pools, 32 terrain rates/slots, global and independent scenario rates, weighted class rewards, and custom squads now edit, undo, persist, import and compile/export, including added class IDs. Squads support independent members/equipment, formation, card text, persuasion, retreat and rewards. Selectors and callers rebuild from source; the custom runtime uses reclaimed resident memory within 4 MiB. Full pools decline custom encounters before spawning. Full-game validation remains |
 | Scenarios | Enemy squads/formations/equipment, placements/routes, triggers/treasure/towns, added squads | Squad/cohort records, equipment, formation, base levels, placement, drops, supplies, added squads, movement nodes, conditions and groups edit with undo, persist and rebuild/reopen. Browser imports preserve these edits and explicit level intent. Global site metadata, per-scenario allegiance and treasure edits/additions also persist and compile/export; original collection links support independent scenario resources. Class-size/capacity changes receive cross-feature checks. Unknown extended gates are preserved; original condition identities cannot yet be deleted because mission scripts may consume them. Browser imports also preserve site/treasure edits and shared-resource semantics. The coordinate map supports selection, field navigation, route links and undoable movement, with ROM imagery alongside. Calibrated current-ROM terrain overlays now cover49 of57 image selections with an optional view toggle; eight uncertain image/reference matches retain the separate preview. Site lists now follow the original initializer count, exposing all six initial sites in key64 while preserving its one-row header. Dynamic special placements, alternate-overlay key54 and full-game validation remain |
 | Cutscenes | Resource catalog, native scheduler/cast/camera/rendering, seeking/selection, actor/action/dialogue editing, new/wiped scenes, events/backgrounds, export | Native Director directory/stream reader, C condition scanner and bounded C dispatcher control core implemented; 51 original-MIPS control comparisons pass. Continuation ownership, scene replacement and explicit launch translations are implemented and checked. All 1,498 streams preserve 193,771 commands; CLI inspection works. Searchable desktop scene/image catalog and command fields with insert/remove/restore, undo, project persistence and compiled dynamic resource export are implemented. Background preview and dialogue navigation consume edited commands. A dedicated current-ROM background selector now supports preview-before-apply, restore and undo for qualified room and fresh environment launches, preserving every other command;172 original-MIPS selector checks and four scene rebuild/reopen checks pass. All 1,998 game event launch sites support target assignment, restore, undo, persistence and compiled export, including authored scenes and short launches. Blank scenes from current-ROM setups, duplication, naming and removal of authored scenes after static transfer and event reference checks support undo, persistence, compiled export and reopening with stable authored identities. Both dialogue archive tables support source editing, new entries, restore, undo, persistence and source-built ROM export with dynamic allocation. BF navigation and standalone native dialogue playback use edited text, stepping, input, script resume and current-ROM artwork. Browser scene documents, dialogue, authored UUIDs, event bindings and wipes convert with source validation into native models; explicit conversion snapshots preserve subsequent edits. Existing browser-ROM authored identities and event bindings now load and migrate together while preserving the old arena; deleted scenes stay deleted on reopen. Shared window tracking advances within ScenePlayback. Native 64/K/B5/HUFF/raw previews preserve signed layers and frame/palette banks; all 366 images and the six-part composite checked. Asynchronous decoding, layer selection/visibility and zoom work. Actor bodies, entrance/return presentation lifecycle, poses, height, scale/opacity, cameras, projection, fades and resumable update ordering now have native execution components. Manual Actor channel assignment and the automatic layer divider execute before movement, preserving native boundary rules and release behavior. Mode-zero transform keyframe resources and completion queries execute with native integer interpolation, verified against all 61 populated resources. Packed channel/background matrices and clipped projection now drive an isolated transform preview with command navigation, channel selection, playback and backward seeking. Mode-zero Actor main and shadow matrices preserve native packed intermediate steps, camera roles, facing and shadow-height modes, with atomic pool preparation and 468 original-instruction comparisons. World main and two-shadow matrices, camera basis, light modes, terrain-height input and depth attachments also have atomic preparation, matching 732 original-instruction cases; the inspector supports both placement paths. Depth queue construction and the original tie-sensitive sort now agree across 648 instruction cases; mode-zero per-channel shadow/main/object pass selection matches 288 original-driver cases. Mode-two shadow, Actor and world/projected-object pass selection matches 192 original-driver cases, including independent shadow opacities. Ordinary and class-body layers now project through native matrices with primitive color, opacity and shadows; a reference-camera placement inspector supports command navigation, layer controls and seeking. Native tint and material color programs now consume separately retained color/alpha textures, with command state and inspector color controls. Sampling, coverage and blending remain approximations. Composed Actor passes now join queue selection, matrices, draw-driven material updates and the native world environment gradient, with atomic rollback. The Scene playback panel executes current edits with step/play, cancellable seeking, draw snapshots and explicit reference-stage assumptions. Missing scene services pause. Layered backgrounds retain original channels and native image geometry, with all31 groups loaded and room occlusion checked; world backgrounds and regular sprites now use native orthographic matrices and common-launch camera defaults, including projection pans and independent foreground selection in the engine. Layered scene sprites now render before each channel’s Actors with verified packed transforms and overlap/seek checks. Orthographic Stage props now retain normal/randomized placement, draw-driven pose updates, three image-relative depth phases, intensity textures and exact desktop seeking. All 80 selectors render with 116 flat and 102 perspective instances. Perspective props retain world depth ordering, separate screen positions, below-ground pose changes and scrolling materials; original record/matrix and desktop seek checks pass. Authored scene-color transitions now reach layered backgrounds, sprites and mask-selected world images/props with exact desktop seeking and original mask-routing checks. Captured-frame sepia/restore transitions now render with native timing, persistent vignette, source color conversion, resource restoration and exact desktop seeking. The special black pass and conditional Actor crossfade now retain original first-match selection and opacity behavior. Sepia setup and Actor color selection now preserve ordinary image-cache behavior, repeated conversion, expiry and seeking. Linked secondary bodies now follow their primary before matrix preparation and depth sorting, verified against 240 original prepasses. Body layers now use native equipment-child and item-palette selection, replacement frames and warm tint; scene rendering consumes actual appearance rows. Scripted image pan/zoom executes recovered timing with explicit image context, retargeting and snapshot replay; the launch-selected source, native vignette constructor and image compositor now render with pan and exact desktop seeking. Image transitions now retain native interpolation, three trail matrices, alpha aging, query timing and draw order. The image owner renders special sprite records800/801 with the enclosing channel transform; their launch creation remains open. Dynamic launch context, gameplay lighting and special sprites remain incomplete. ScenePlayback connects supported stages with explicit pauses at missing domains; terrain data, other scene services, complete native scene playback and structured timeline authoring remain pending. The native Actions inspector adds, removes and reorders complete actions at checked script positions and edits creation/state/movement, turns, room channels, release, cameras, fades, scale/opacity and recognized waits. Shared counter waits shift later deadlines consistently when added, edited or removed. Complete dialogue actions retain linked window IDs, placement/portrait fields and direct text editing; their lifecycle and source export/reopen checks pass. It supports these edits with game-unit coordinates, shared selection/undo, project persistence and source rebuild/reopen; control compounds and unknown words remain intact Ordinary sprite creation, pose changes and release now have Actions fields with independent slot allocation, current-ROM pose checks, live preview undo and source-built export/reopening. |
@@ -1433,3 +1492,22 @@ run; overlapping-dot appearance merging remains an editor drawing feature.
 bends until the road stops moving. The editor refits only the edited span while
 retaining the grabbed point, distant geometry, three-dot reach and 14-bend limit.
 Thirty consecutive model and mouse drags plus Undo/Redo passed.
+
+### Scenario authoring, 2026-11-04
+
+Create scenario connects a new or existing Map Location to a new mission. Choose a copy
+of a supported map and squads, a map copy without squads, or a blank battlefield
+to paint. Opening and victory templates produce editable event trees, with a
+separate completion flag and a connection unlocked after a selected mission.
+The expanded tables support 64 additional missions and independent battlefields.
+Missions may revisit one of the 40 physical Map Locations, with separate
+completion flags and prerequisites. Standard endings retain the native rewards,
+undead recovery and Angel Knight/Zombie processing before running the closing
+event, then clear completed mission state and return to the world map.
+
+The Scenario flowchart supports creating events, adding actions/conditions,
+removing branches and double-click editing. Supported original comparisons can
+receive additional conditions or retain a chosen branch. Project persistence,
+undo/redo, export/reopen and native instruction checks cover the workflow.
+Town definitions remain shared. Special battlefield donors and full-console
+rendering verification limits are recorded in scenario-events.md.

@@ -2,8 +2,13 @@
 #include "app/event_tree_dialog.h"
 #include "app/campaign_editor.h"
 #include "app/scenario_event_editor.h"
+#include "app/scenario_flowchart_model.h"
 #include "app/theme.h"
 #include "engine/event_authoring.h"
+#include "engine/event_flag_links.h"
+#include "engine/new_campaign.h"
+#include "engine/squad_members.h"
+#include "engine/capacity_placement.h"
 #include "engine/event_flow.h"
 #include "engine/event_script.h"
 #include "engine/entry_conditions.h"
@@ -13,7 +18,9 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QInputDialog>
+#include <QMessageBox>
 #include <QListWidget>
 #include <QTableWidget>
 #include <QTabBar>
@@ -42,6 +49,228 @@ class EventAuthoringTests:public QObject {
     return {{"id","test-tree"},{"name","Encounter test"},{"group",3},{"target",30},{"nodes",QJsonArray{branch}}};
  }
  private slots:
+ void newCampaignModel(){
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();p.loadWorld();p.loadScenarios();p.loadSceneEvents();
+     const auto before=p.manifest(),world=p.world()->json(),map=p.campaignMap()->json();
+     auto config=NewCampaign::defaults(p,6);NewCampaign::initialize(p,config);
+     QCOMPARE(p.world()->json(),world);QCOMPARE(p.campaignMap()->json(),map);
+     for(const auto &s:p.scenarios()->entries()){QVERIFY(s.squads.isEmpty());QVERIFY(s.layout.deployments.isEmpty());QVERIFY(s.layout.conditions.isEmpty());}
+     StoryRoutes routes(p.rom());routes.scripts[0]=p.sceneEvents()->program(0);
+     for(int node:routes.nodes.keys())QVERIFY(routes.routes(node).isEmpty());
+     for(int node=1;node<=53;++node)QCOMPARE(u16(routes.scripts[0],node*2),0);
+     for(int node=1;node<=52;++node)QCOMPARE(u16(p.sceneEvents()->program(70),node*2),0);
+     QVERIFY(p.sceneEvents()->program(1).contains(QByteArray::fromHex("0901")));
+     auto army=SaveDocument::open(p.runtimeRom(),NewCampaign::armyBytes(config,0));QCOMPARE(army.units().size(),1);QVERIFY(u16(army.memory(),0x193bc0+56+24)>0);
+     auto armies=config["armies"].toArray();armies.append(NewCampaign::army(p,1,"Second army",army.serialize()));config["armies"]=armies;NewCampaign::configure(p,config);
+     config["army"]=1;NewCampaign::configure(p,config);
+     QCOMPARE(p.sceneEvents()->flagEdits()["1"].toObject()["trees"].toArray()[0].toObject()["nodes"].toArray()[1].toObject()["army"].toInt(),1);
+     config["army"]=0;NewCampaign::configure(p,config);
+     auto incomplete=*p.sceneEvents();auto broken=incomplete.flagEdits()["1"].toObject()["trees"].toArray();auto brokenTree=broken[0].toObject();
+     auto brokenNodes=brokenTree["nodes"].toArray();brokenNodes.removeLast();brokenTree["nodes"]=brokenNodes;broken[0]=brokenTree;
+     QVERIFY_EXCEPTION_THROWN(incomplete.setTrees(1,broken,*p.scenePrograms()),Error);
+     auto events=*p.sceneEvents();auto trees=events.flagEdits()["1"].toObject()["trees"].toArray();auto opening=trees[0].toObject();auto nodes=opening["nodes"].toArray();
+     nodes.insert(2,QJsonObject{{"type","if"},{"condition",QJsonObject{{"type","answer"},{"value",1}}},{"then",QJsonArray{QJsonObject{{"type","startingArmy"},{"army",1}}}},{"else",QJsonArray{}}});
+     opening["nodes"]=nodes;trees[0]=opening;events.setTrees(1,trees,*p.scenePrograms());p.setSceneEvents(events.json());
+     auto reopened=Project::fromRom(p.rom());reopened.applyManifest(p.manifest());QCOMPARE(reopened.sceneEvents()->json(),p.sceneEvents()->json());
+     auto squads=*reopened.scenarios();const int added=squads.addSquad(1,-1,reopened.classData());squads.removeSquad(1,added,reopened.classData());QVERIFY(squads.scenario(1).squads.isEmpty());
+     auto missing=config;auto only=missing["armies"].toArray();only.removeAt(1);missing["armies"]=only;
+     QVERIFY_EXCEPTION_THROWN(NewCampaign::configure(reopened,missing),Error);
+     QCOMPARE(reopened.sceneEvents()->json(),p.sceneEvents()->json());
+     reopened.applyManifest(before);QCOMPARE(reopened.sceneEvents()->program(1),SceneEvents::retailRow(p.rom(),1));
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void newCampaignLayoutOptions_data(){
+   QTest::addColumn<bool>("keepWorld");QTest::addColumn<bool>("keepMaps");
+   QTest::newRow("keep-both")<<true<<true;QTest::newRow("keep-world")<<true<<false;
+   QTest::newRow("keep-maps")<<false<<true;QTest::newRow("empty")<<false<<false;
+ }
+ void newCampaignLayoutOptions(){
+   QFETCH(bool,keepWorld);QFETCH(bool,keepMaps);
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));p.loadWorld();p.loadCampaignMap();p.loadScenarios();
+     const auto world=p.world()->json(),map=p.campaignMap()->json();
+     auto config=NewCampaign::defaults(p,6);config["keepWorldMap"]=keepWorld;config["keepScenarioMaps"]=keepMaps;NewCampaign::initialize(p,config);
+     QCOMPARE(p.world()->json(),world);
+     if(keepWorld)QCOMPARE(p.campaignMap()->json(),map);
+     else {
+       for(int id=1;id<=40;++id)QCOMPARE(p.campaignMap()->position(id),id==6?QPoint(256,160):QPoint());
+       QCOMPARE(p.campaignMap()->availableNodes(true).size(),39);
+       for(int id=1;id<=p.campaignMap()->totalRoads();++id)QCOMPARE(p.campaignMap()->road(id),qMakePair(0,0));
+     }
+     for(int key:p.scenarios()->entries().keys())QCOMPARE(NewCampaign::includesBattlefield(*p.sceneEvents(),key),keepMaps);
+     auto reopened=Project::fromRom(p.runtimeRom());reopened.applyManifest(p.manifest());reopened.loadCampaignMap();
+     QCOMPARE(reopened.campaignMap()->json(),p.campaignMap()->json());QCOMPARE(reopened.sceneEvents()->json(),p.sceneEvents()->json());
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void newCampaignDialogUndo_data(){QTest::addColumn<bool>("keep");QTest::newRow("keep")<<true;QTest::newRow("empty")<<false;}
+ void newCampaignDialogUndo(){
+   QFETCH(bool,keep);
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));QUndoStack undo;CampaignEditor editor(&p,&undo,[]{});const auto before=p.manifest();
+     auto create=editor.findChild<QPushButton *>("campaignNew");QVERIFY(create);
+     bool dialogSeen=false;QTimer timer;QObject::connect(&timer,&QTimer::timeout,&editor,[&]{
+       auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog||dialog->objectName()!="campaignSetupDialog")return;
+       timer.stop();dialogSeen=true;auto start=dialog->findChild<QComboBox *>("campaignStartLocation");QVERIFY(start);start->setCurrentIndex(start->findData(7));
+       for(auto id:{"campaignKeepWorldMap","campaignKeepScenarioMaps"}){auto box=dialog->findChild<QCheckBox *>(id);QVERIFY(box);QVERIFY(box->isChecked());box->setChecked(keep);}
+       auto armies=dialog->findChild<QListWidget *>("campaignStartingArmies");QVERIFY(armies);QCOMPARE(armies->count(),1);
+       auto buttons=dialog->findChild<QDialogButtonBox *>();QVERIFY(buttons);buttons->button(QDialogButtonBox::Ok)->click();
+       if(dialog->isVisible())dialog->reject();
+     });timer.start(20);create->click();timer.stop();QVERIFY(dialogSeen);QCOMPARE(undo.count(),1);
+     QCOMPARE(NewCampaign::settings(*p.sceneEvents())["location"].toInt(),7);const auto after=p.manifest();
+     QCOMPARE(NewCampaign::settings(*p.sceneEvents())["keepWorldMap"].toBool(),keep);
+     QCOMPARE(NewCampaign::settings(*p.sceneEvents())["keepScenarioMaps"].toBool(),keep);
+     if(!keep)QCOMPARE(editor.findChild<QListWidget *>("scenarioList")->count(),0);
+     undo.undo();QCOMPARE(p.manifest(),before);undo.redo();QCOMPARE(p.manifest(),after);
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void newCampaignExport_data(){QTest::addColumn<bool>("expanded");QTest::addColumn<bool>("empty");QTest::newRow("ordinary")<<false<<false;QTest::newRow("expanded")<<true<<false;QTest::newRow("empty")<<false<<true;}
+ void newCampaignExport(){
+   QFETCH(bool,expanded);QFETCH(bool,empty);
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"),out=qEnvironmentVariable("LORDLY_CAMPAIGN_OUTPUT");
+   if(path.isEmpty()||tools.isEmpty()||out.isEmpty())QSKIP("Private ROM, toolchain and owned output required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));auto config=NewCampaign::defaults(p,6);
+     auto army=SaveDocument::open(p.runtimeRom(),NewCampaign::armyBytes(config,0));
+     army.apply(army.planEdit(SaveTable::Characters,1,"name","Choice Two"),true);
+     auto armies=config["armies"].toArray();armies.append(NewCampaign::army(p,1,"Second army",army.serialize()));config["armies"]=armies;
+     config["goth"]=1234;config["chaos"]=37;config["locations"]=QJsonArray{6,7};config["keepWorldMap"]=!empty;config["keepScenarioMaps"]=!empty;NewCampaign::initialize(p,config);
+     const auto originalSquads=Scenarios::load(p.rom()).scenario(1).squads;
+     const int key=p.availableScenarioBattlefields().first();p.createScenarioBattlefield(key,1,"exact","Campaign battle");
+     QCOMPARE(p.scenarios()->scenario(key).squads,originalSquads);
+     if(expanded){auto scenarios=*p.scenarios();QVector<CustomMember> members;for(int cell=0;cell<5;++cell)members.append({5,0,8-cell,{0,0}});
+       for(int row=0;row<scenarios.scenario(key).squads.size();++row)scenarios.setSquad(key,row,editSquadMembers(scenarios.scenario(key).squads[row],members),p.classData());
+       while(scenarios.scenario(key).squads.size()<30)scenarios.addSquad(key,0,p.classData());p.setScenarios(scenarios.json());QVERIFY(p.expandedArmies());}
+     auto missionEvents=*p.sceneEvents();const int mission=missionEvents.createMission(6,key,"Campaign battle",-1,-1,*p.scenePrograms());p.setSceneEvents(missionEvents.json());
+     p.loadEncounters();
+     if(expanded){auto encounters=p.encounters()->json();auto rates=encounters["scenarioRates"].toObject();
+       rates["rows"]=QJsonObject{{QString::number(key),QJsonObject{{"normal",QJsonObject{{"mode","override"},{"divisor",100},{"passCount",27}}},{"alternate",QJsonObject{{"mode","inherit"}}}}}};
+       encounters["scenarioRates"]=rates;p.setEncounters(encounters);}
+     auto events=*p.sceneEvents();auto trees=events.flagEdits()["1"].toObject()["trees"].toArray();auto tree=trees[0].toObject();auto nodes=tree["nodes"].toArray();
+     nodes.insert(2,QJsonObject{{"type","if"},{"condition",QJsonObject{{"type","answer"},{"value",1}}},{"then",QJsonArray{QJsonObject{{"type","startingArmy"},{"army",1}}}},{"else",QJsonArray{}}});
+     tree["nodes"]=nodes;trees[0]=tree;events.setTrees(1,trees,*p.scenePrograms());p.setSceneEvents(events.json());
+     QTemporaryDir work;const auto result=rebuild(p,tools,work.path());auto rom=Rom::fromBytes(result.image);auto reopened=Project::fromRom(rom);reopened.loadSceneEvents();
+     reopened.loadTexts();reopened.loadPromotion();reopened.loadShops();reopened.loadConsumableEffects();reopened.loadEncounters();
+     QCOMPARE(reopened.encounters()->json(),p.encounters()->json());
+     reopened.loadCampaignMap();for(int id=1;id<=40;++id)QCOMPARE(reopened.campaignMap()->position(id),p.campaignMap()->position(id));
+     QCOMPARE(reopened.campaignMap()->roadBytes(),p.campaignMap()->roadBytes());QCOMPARE(reopened.campaignMap()->backgroundBytes(),p.campaignMap()->backgroundBytes());
+     QCOMPARE(reopened.sceneEvents()->json(),p.sceneEvents()->json());QCOMPARE(SceneEvents::readRow(rom,1),events.program(1));
+     QCOMPARE(rebuild(reopened,tools,work.path()).image,result.image);
+     auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,result.image);
+     const auto dir=QFileInfo(out).dir().filePath(QTest::currentDataTag());QVERIFY(QDir().mkpath(dir));exportRom(p,result,QDir(dir).filePath(QFileInfo(out).fileName()));
+     const auto capacity=CapacityPlacement::read(rom);
+     QFile fixture(QDir(dir).filePath("campaign-fixture.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
+     fixture.write(QJsonDocument(QJsonObject{{"settings",NewCampaign::settings(*p.sceneEvents())},{"mission",mission},{"capacity",capacity?double(capacity->base):0},{"arrival",QString::fromLatin1(events.program(0).toHex())},{"program",QString::fromLatin1(events.program(1).toHex())},{"army0",QString::fromLatin1(NewCampaign::armyMemory(p,NewCampaign::armyBytes(config,0)).toHex())},{"army1",QString::fromLatin1(NewCampaign::armyMemory(p,NewCampaign::armyBytes(config,1)).toHex())}}).toJson());
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void firstScenarioFromEmptyStoryline(){
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));NewCampaign::initialize(p,NewCampaign::defaults(p,6));
+     const auto before=p.manifest();QUndoStack undo;CampaignEditor editor(&p,&undo,[]{});
+     QStringList errors;QTimer guard;QObject::connect(&guard,&QTimer::timeout,&editor,[&]{if(auto message=qobject_cast<QMessageBox *>(QApplication::activeModalWidget())){errors.append(message->text());qWarning().noquote()<<message->text();message->accept();}});guard.start(50);
+     auto pane=static_cast<ScenarioEventEditor *>(editor.findChild<QWidget *>("storylineEvents"));QVERIFY(pane);pane->selectLocation(27);
+     pane->findChild<QTabBar *>("storylineEventViewChoice")->setCurrentIndex(1);
+     auto create=pane->findChild<QPushButton *>("storyCreateScenario");QVERIFY(create&&!create->isHidden()&&create->isEnabled());
+     bool sawDialog=false;QTimer timer;QObject::connect(&timer,&QTimer::timeout,&editor,[&]{
+       auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog)return;
+       auto mode=dialog->findChild<QComboBox *>("newMissionBattlefield");if(!mode)return;
+       timer.stop();sawDialog=true;
+       auto available=dialog->findChild<QComboBox *>("newMissionAvailability");QVERIFY(available);QCOMPARE(available->currentData().toInt(),0);
+       mode->setCurrentIndex(mode->findData("blank"));dialog->findChild<QLineEdit *>("newMissionName")->setText("First campaign mission");
+       dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+       if(dialog->isVisible()){for(auto label:dialog->findChildren<QLabel *>())qWarning().noquote()<<label->text();dialog->reject();}
+     });timer.start(30);create->click();timer.stop();QVERIFY2(errors.isEmpty(),qPrintable(errors.join('\n')));QVERIFY(sawDialog);QCOMPARE(undo.count(),1);
+     const int row=SceneEvents::firstCustomRow;QCOMPARE(p.sceneEvents()->missionName(row),QString("First campaign mission"));
+     const auto context=EventContexts(p.rom(),*p.sceneEvents()).location(27);QVERIFY(!context.phases[1].isEmpty());QCOMPARE(context.phases[1].first().row,row);
+     const auto writers=EventFlagLinks::writers(p.rom(),*p.sceneEvents(),*p.scenePrograms(),row,256,1);
+     QVERIFY(std::any_of(writers.cbegin(),writers.cend(),[&](const auto &writer){return writer.row==row;}));
+     QVERIFY(!EventScript::decode(p.sceneEvents()->program(0),0).isEmpty());
+     QVERIFY(!EventFlow::read(p.rom(),*p.sceneEvents(),*p.scenePrograms(),1).isEmpty());
+     QVERIFY(NewCampaign::settings(*p.sceneEvents())["locations"].toArray().contains(27));
+     const auto after=p.manifest();undo.undo();QCOMPARE(p.manifest(),before);undo.redo();QCOMPARE(p.manifest(),after);
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void createScenarioFromWorldMap(){
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+   auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();p.loadSceneEvents();
+   auto map=*p.campaignMap();const int location=map.availableNodes().first();
+   map.setNode(location,{150,100},map.label(6));map.setName(location,"New crossing");p.setCampaignMap(map.json());
+   const auto before=p.manifest();QUndoStack undo;CampaignEditor editor(&p,&undo,[]{});editor.selectNode(location);
+   auto create=editor.findChild<QPushButton *>("campaignCreateScenario");QVERIFY(create&&!create->isHidden());
+   bool sawDialog=false;QTimer timer;QObject::connect(&timer,&QTimer::timeout,&editor,[&]{
+     auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog)return;
+     auto presets=dialog->findChild<QComboBox *>("newMissionBattlefield");if(!presets)return;
+     timer.stop();sawDialog=true;QCOMPARE(presets->count(),3);presets->setCurrentIndex(presets->findData("blank"));
+     auto name=dialog->findChild<QLineEdit *>("newMissionName");QVERIFY(name);name->setText("Crossing campaign");
+     auto buttons=dialog->findChild<QDialogButtonBox *>();QVERIFY(buttons);
+     buttons->button(QDialogButtonBox::Ok)->click();
+     if(dialog->isVisible()){QStringList errors;for(auto label:dialog->findChildren<QLabel *>())if(label->isVisible())errors<<label->text();qWarning().noquote()<<errors.join("\n");dialog->reject();}
+   });timer.start(30);create->click();QVERIFY(sawDialog);
+   const int key=MissionTables::firstKey,row=SceneEvents::firstCustomRow;
+   QCOMPARE(undo.count(),1);QCOMPARE(p.scenarioName(key),QString("Crossing campaign"));
+   QCOMPARE(p.scenarios()->scenario(key).squads.size(),0);QCOMPARE(p.sceneEvents()->missionName(row),QString("Crossing campaign"));
+   auto context=EventContexts(p.rom(),*p.sceneEvents()).location(location);QCOMPARE(context.phases[1].size(),1);QCOMPARE(context.phases[1].first().row,row);
+   auto steps=EventFlow::read(p.rom(),*p.sceneEvents(),*p.scenePrograms(),row);QCOMPARE(steps.size(),2);
+   const auto charts=scenarioChart(p,{{"Arrival",context.phases[0].first()}});
+   QVERIFY(!charts.isEmpty());QCOMPARE(charts.first().title,QString("Arrival · New crossing"));
+   bool namedMission=false;for(const auto &chart:charts)for(const auto &step:chart.steps){
+       QVERIFY(!step.title.contains("Volmus"));namedMission|=step.title=="Load mission · Crossing campaign";
+   }QVERIFY(namedMission);
+   const auto compact=EventFlow::read(p.rom(),*p.sceneEvents(),*p.scenePrograms(),0,true,true,&*p.campaignMap());
+   bool namedArrival=false;for(const auto &event:compact)if(event.entry==context.phases[0].first().entry){namedArrival=true;QCOMPARE(event.title,charts.first().title);}
+   QVERIFY(namedArrival);
+   auto rename=*p.campaignMap();rename.setName(location,"North Castle");p.setCampaignMap(rename.json());
+   QCOMPARE(scenarioChart(p,{{"Arrival",context.phases[0].first()}}).first().title,QString("Arrival · North Castle"));
+   undo.undo();QCOMPARE(p.manifest(),before);undo.redo();QCOMPARE(p.sceneEvents()->missionName(row),QString("Crossing campaign"));
+ }
+ void customMissionCampaign(){
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),toolchain=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+   if(path.isEmpty()||toolchain.isEmpty())QSKIP("US Rev 0 ROM and native toolchain required");
+   try{
+     const auto rom=Rom::open(path);auto p=Project::fromRom(rom);p.loadCampaignMap();p.loadSceneEvents();
+     auto map=*p.campaignMap();const int location=map.availableNodes().first();
+     map.setNode(location,{150,100},map.label(6));map.setName(location,"North Crossing");map.addRoad(6,location);p.setCampaignMap(map.json());
+     qInfo()<<"Creating private battlefield";
+     p.createScenarioBattlefield(10,1,"blank","Battle of North Crossing");
+     auto events=*p.sceneEvents();const auto &scenes=*p.scenePrograms();
+     const int row=events.createMission(location,10,"Battle of North Crossing",-1,-1,scenes);
+     QCOMPARE(row,SceneEvents::firstCustomRow);events.unlockNodeAfter(4,location,true);
+     auto trees=events.flagEdits()[QString::number(row)].toObject()["trees"].toArray();
+     const int flag=events.createFlag("Met at the crossing");
+     trees.append(QJsonObject{{"id","town-visit"},{"name","Meet the defenders"},{"group",2},{"target",1},
+       {"nodes",QJsonArray{QJsonObject{{"type","flag"},{"flag",flag},{"value",1}}}}});
+     events.setTrees(row,trees,scenes);p.setSceneEvents(events.json());
+     qInfo()<<"Checking new mission routing";
+     auto checkRoutes=[&](const Project &project){
+        StoryRoutes routing(project.rom());routing.nodes[location]={};routing.scripts[0]=project.sceneEvents()->program(0);
+        auto routes=routing.routes(location,50,{{256,0}});QCOMPARE(routes.size(),1);QCOMPARE(routes.first().event,row);
+        QVERIFY(routing.routes(location,50,{{256,1}}).isEmpty());
+        const auto flow=EventFlow::read(project.rom(),*project.sceneEvents(),*project.scenePrograms(),row);
+        QCOMPARE(flow.size(),3);QCOMPARE(flow[0].title,QString("Start the battle"));
+     };
+     checkRoutes(p);QTemporaryDir work;p.saveFolder(work.filePath("project"));
+     auto loaded=Project::fromRom(rom);loaded.applyManifest(Project::readProject(work.filePath("project")));loaded.loadSceneEvents();
+     QCOMPARE(loaded.sceneEvents()->json(),events.json());checkRoutes(loaded);
+     qInfo()<<"Exporting new mission";
+     const auto built=rebuild(loaded,toolchain,work.path());const auto output=Rom::fromBytes(built.image);
+     qInfo()<<"Reopening exported mission";
+     auto reopened=Project::fromRom(output);reopened.loadSceneEvents();checkRoutes(reopened);
+     QCOMPARE(SceneEvents::readRow(output,row),events.program(row));
+     QCOMPARE(reopened.sceneEvents()->flagEdits(),events.flagEdits());
+     auto crc=built.image;Rom::updateChecksum(crc);QCOMPARE(crc,built.image);
+     QCOMPARE(rebuild(reopened,toolchain,work.path()).image,built.image);
+     const auto folder=qEnvironmentVariable("LORDLY_MISSION_FIXTURE_DIR");
+     if(!folder.isEmpty()){
+       QVERIFY(QDir().mkpath(folder));exportRom(loaded,built,QDir(folder).filePath(QFileInfo(path).fileName()));
+       QFile fixture(QDir(folder).filePath("mission-fixture.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
+       fixture.write(QJsonDocument(QJsonObject{{"event",row},{"battlefield",10},{"location",location},{"completionFlag",256},{"townFlag",flag},{"closingRequest",3},{"objective",2},{"mode","blank"}}).toJson());
+     }
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
  void initTestCase(){QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");qApp->setFont(QFont("Segoe UI",10));applyEditorTheme(*qApp);}
  void triggerAndState(){const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("ROM required");
    try{auto project=Project::fromRom(Rom::open(path));project.loadSceneEvents();auto events=*project.sceneEvents();const auto before=events.program(4);
@@ -72,6 +301,65 @@ class EventAuthoringTests:public QObject {
      const auto authored=project.sceneEvents()->json();undo.undo();QCOMPARE(project.sceneEvents()->json(),original);undo.redo();QCOMPARE(project.sceneEvents()->json(),authored);
      QTRY_VERIFY(editor->findChild<QListWidget *>("storyEventList")->currentItem()->text().contains("New branching event"));
    }catch(const std::exception &e){QFAIL(e.what());}}
+ void groupedActionsAndRecruitmentPresets() {
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+   if(path.isEmpty())QSKIP("ROM required");
+   try {
+     auto project=Project::fromRom(Rom::open(path));project.loadSceneEvents();
+     auto original=tree();
+     original["nodes"]=QJsonArray{QJsonObject{{"type","recruit"},{"template",11},{"mode",1}}};
+     QTimer::singleShot(0,[]{
+       auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+       QTimer::singleShot(15000,dialog,&QDialog::reject);
+       auto character=dialog->findChild<QComboBox *>("eventRecruitCharacter");QVERIFY(character);
+       QCOMPARE(character->currentData().toInt(),6);
+       int berserkers=0;for(int i=0;i<character->count();++i)berserkers+=character->itemData(i).toInt()==6;
+       QCOMPARE(berserkers,1);
+       auto preset=dialog->findChild<QComboBox *>("eventRecruitPreset");QVERIFY(preset);
+       QCOMPARE(preset->currentData().toInt(),11);
+       dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+     });
+     const auto unchanged=editEventTree(&project,10,original,nullptr);
+     QVERIFY(unchanged);QCOMPARE((*unchanged)["nodes"],original["nodes"]);
+     QTimer::singleShot(0,[]{
+       auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+       QTimer::singleShot(15000,dialog,&QDialog::reject);
+       QTimer::singleShot(0,[]{
+         auto picker=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(picker);
+         QTimer::singleShot(15000,picker,&QDialog::reject);
+         auto groups=picker->findChild<QComboBox *>("eventActionGroup");QVERIFY(groups);
+         auto search=picker->findChild<QLineEdit *>("eventActionSearch");QVERIFY(search);
+         auto actions=picker->findChild<QTableWidget *>("eventActionList");QVERIFY(actions);
+         auto buttons=picker->findChild<QDialogButtonBox *>();QVERIFY(buttons);
+         groups->setCurrentIndex(groups->findData("Characters and squads"));
+         search->setText("no such action");QVERIFY(!buttons->button(QDialogButtonBox::Ok)->isEnabled());
+         search->setText("recruit");actions->sortItems(0,Qt::DescendingOrder);
+         int visible=0;
+         for(int r=0;r<actions->rowCount();++r)if(!actions->isRowHidden(r)) {
+           ++visible;QCOMPARE(actions->item(r,0)->data(Qt::UserRole).toString(),QString("recruit"));
+           actions->setCurrentCell(r,0);
+         }
+         QCOMPARE(visible,1);QVERIFY(buttons->button(QDialogButtonBox::Ok)->isEnabled());
+         buttons->button(QDialogButtonBox::Ok)->click();
+       });
+       dialog->findChild<QPushButton *>("eventTreeAddAction")->click();
+       QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+       auto character=dialog->findChild<QComboBox *>("eventRecruitCharacter");QVERIFY(character);
+       const int index=character->findData(6);QVERIFY(index>=0);character->setCurrentIndex(index);
+       QMetaObject::invokeMethod(character,"activated",Q_ARG(int,index));
+       QTRY_COMPARE(dialog->findChild<QComboBox *>("eventRecruitPreset")->currentData().toInt(),1);
+       dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+     });
+     const auto edited=editEventTree(&project,10,original,nullptr);QVERIFY(edited);
+     const auto nodes=(*edited)["nodes"].toArray();QCOMPARE(nodes.size(),2);
+     QCOMPARE(nodes[0].toObject()["template"].toInt(),11);
+     QCOMPARE(nodes[1].toObject()["template"].toInt(),1);
+     auto events=*project.sceneEvents();events.setTrees(10,{*edited},*project.scenePrograms());
+     project.setSceneEvents(events.json());
+     auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(project.manifest());
+     QCOMPARE(reopened.sceneEvents()->program(10),project.sceneEvents()->program(10));
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
  void customNamesAndCancel(){const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("ROM required");
    try{auto project=Project::fromRom(Rom::open(path));project.loadSceneEvents();auto events=*project.sceneEvents();const int id=events.createFlag("Cayes helped");QCOMPARE(id,256);events.renameFlag(id,"Cayes rescued");QVERIFY(events.flagChoices(10)[id].contains("Cayes rescued"));
      QVERIFY_EXCEPTION_THROWN(events.createFlag("cayes rescued"),Error);QVERIFY_EXCEPTION_THROWN(events.createFlag(" "),Error);
@@ -84,7 +372,7 @@ class EventAuthoringTests:public QObject {
        create->click();QCOMPARE(combo->currentData().toInt(),200);
        QTimer::singleShot(0,[]{auto input=qobject_cast<QInputDialog *>(QApplication::activeModalWidget());QVERIFY(input);input->setTextValue("Katreda joined my quest");input->accept();});
        create->click();QCOMPARE(combo->currentData().toInt(),256);QVERIFY(combo->currentText().contains("Katreda joined my quest"));
-       QTimer::singleShot(0,[]{auto input=qobject_cast<QInputDialog *>(QApplication::activeModalWidget());QVERIFY(input);input->setTextValue(EventAuthoring::actions().value("flag"));input->accept();});
+       QTimer::singleShot(0,[]{auto picker=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(picker);QTimer::singleShot(15000,picker,&QDialog::reject);auto actions=picker->findChild<QTableWidget *>("eventActionList");QVERIFY(actions);for(int r=0;r<actions->rowCount();++r)if(actions->item(r,0)->data(Qt::UserRole)=="flag"){actions->setCurrentCell(r,0);picker->accept();return;}QFAIL("Flag action missing");});
        dialog->findChild<QPushButton *>("eventTreeAddAction")->click();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
        combo=dialog->findChild<QComboBox *>("eventTreeFlag");QVERIFY(combo);QVERIFY(combo->findData(256)>=0);
        create=dialog->findChild<QPushButton *>("eventTreeCreateFlag");QVERIFY(create);QTRY_VERIFY(create->isVisible());

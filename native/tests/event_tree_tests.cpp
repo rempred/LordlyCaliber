@@ -86,6 +86,8 @@ class EventTreeTests:public QObject {
         for(const auto &event:flow)if(event.entry==330)for(const auto &a:event.actions)
             if(a.title.contains("Chaos Frame"))for(const auto &field:a.condition.fields)if(field.key=="comparison")comparisonAt=field.offset;
         QVERIFY(comparisonAt>=0);
+        editor.selectOffset(comparisonAt);
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
         auto comparison=editor.findChild<QComboBox *>(QString("storyValue_%1_comparison").arg(comparisonAt));QVERIFY(comparison);
         QVERIFY(editor.findChildren<QGroupBox *>().size()<200);
         const auto original=project.sceneEvents()->program(16);const int choice=comparison->findData(15);QVERIFY(choice>=0);

@@ -8,6 +8,7 @@
 #include "engine/promotion.h"
 #include "engine/shop_runtime.h"
 #include "engine/weapon_types.h"
+#include "engine/mission_tables.h"
 #include "rebuild/promotion_runtime.h"
 #include <QFile>
 #include <QJsonArray>
@@ -21,7 +22,8 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   quint32 dataRomOffset, bool expandedSaves,
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder,
                   const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
-                  const LeaderAffinity *affinity, bool customStoryFlags) {
+                  const LeaderAffinity *affinity, bool customStoryFlags, const ConsumableTreeInput *consumableTrees,
+                  const QByteArray &missionTables, const NewCampaignInput *campaign) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -74,6 +76,15 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
             throw Error("Save compression exceeds permanent class storage");
         result.placement.saves = result.saves->placement;
     }
+    if (!missionTables.isEmpty()) {
+        while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
+        result.missionTableAddress = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        result.data.bytes += missionTables;
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        if (result.data.layout.end > 0x80400000U)
+            throw Error("Extended mission tables exceed permanent class storage");
+        if (capacity) capacity->missionWorldTable = MissionTables::worldAddress(result.missionTableAddress);
+    }
     auto reclaimStart =
         result.saves ? result.saves->placement.endAddress() : ClassRuntimeBuild::reclaimedStart;
     if (residentBuilder) {
@@ -104,6 +115,24 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         if (result.data.layout.end > 0x80400000U)
             throw Error("Combat affinity exceeds permanent class storage");
         result.affinityOwner = payload.owner;
+    }
+    if(consumableTrees){
+        while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+        result.consumableTrees=buildConsumableTrees(*consumableTrees,result.data.layout.end,
+            dataRomOffset+quint32(result.data.bytes.size()),compiler,directory,
+            [&](quint32 at){return capacity?capacity->relocated(at,result.data.layout):at;});
+        result.data.bytes+=result.consumableTrees->data;
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+    }
+    if(campaign && !campaign->settings.isEmpty()) {
+        while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+        const auto module=buildNewCampaignRuntime(*campaign,compiler,directory,result.data.layout.end,
+            [&](quint32 at){return capacity?capacity->relocated(at,result.data.layout):at;},result.data.layout.customFlags);
+        result.data.bytes+=module.bytes;result.campaignBridge=module.entries.value("lc_campaign_bridge");
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+        if(result.data.layout.end>0x80400000U)throw Error("Starting armies exceed permanent game storage");
     }
     if (customStoryFlags) {
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
@@ -259,7 +288,7 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     for (const auto entry : catalog["owners"].toArray()) {
         const auto owner = entry.toObject();
         const qsizetype start = owner["start"].toInt(), size = owner["size"].toInt();
-        auto canonical = rom.bytes().mid(start, size);
+        auto canonical = MissionTables::canonicalCode(rom, start, size);
         if (canonical.size() != size)
             throw Error("Truncated class runtime owner");
         if (configuredOwners.contains(quint32(start))) {
@@ -414,6 +443,7 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     image.replace(at, bytes, build.compiledData);
     if (!build.affinityOwner.isEmpty())
         image.replace(LeaderAffinity::offset, LeaderAffinity::size, build.affinityOwner);
+    if(build.consumableTrees)image=installConsumableTrees(image,*build.consumableTrees);
     if (build.attacks) {
         const auto old = rom.bytes().mid(AttackPlacement::descriptorOffset, AttackPlacement::descriptorSize);
         if (!AttackPlacement::read(rom) && old != QByteArray(AttackPlacement::descriptorSize, char(-1)))

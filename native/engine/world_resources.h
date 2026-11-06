@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/archive.h"
+#include "engine/mission_tables.h"
 #include <QMap>
 #include <QVector>
 #include <optional>
@@ -12,9 +13,10 @@ struct WorldPlacement {
 // Index 60 in the site collection remains shopcsv even when new members follow it.
 class WorldResources {
   public:
-    static constexpr int keyCount = 65, selectorTable = 0x13c550, selectorStride = 12;
+    static constexpr int keyCount = MissionTables::keyCount, selectorTable = 0x13c550, selectorStride = 12;
     static constexpr int descriptorOffset = 0x27c4500, descriptorSize = 96;
     static constexpr quint32 keyBase = 0x594280, root = 0x2743c78;
+    static QByteArray row(const Rom &rom, int key) { return MissionTables::row(rom, MissionTables::World, key); }
     static WorldResources load(const Rom &rom);
     const QVector<LhaMember> &treasureMembers() const {
         return treasure_;

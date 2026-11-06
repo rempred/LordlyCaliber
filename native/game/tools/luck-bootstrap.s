@@ -1,5 +1,5 @@
 # Maintained luck source adapted from parent tools/luck_alignment_display_patch.py.
-# Module version 6; assembled during user export.
+# Module version 9; assembled during user export.
 # Preserve hook arguments; verify sentinel and version before cache-coherent PI load.
     addu $t4,$ra,$zero
     addu $t5,$a0,$zero
@@ -12,7 +12,7 @@
     bne $t1,$t2,bootstrap_reload
     nop
     lw $t1,0x4($t0)
-    addiu $t2,$zero,0x6
+    addiu $t2,$zero,0x9
     beq $t1,$t2,bootstrap_loaded
     nop
 bootstrap_reload:

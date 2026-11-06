@@ -1,4 +1,6 @@
 #include "engine/map_edits.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_tables.h"
 #include "engine/field_borders.h"
 #include "engine/field_brush.h"
 #include <QImage>
@@ -156,6 +158,9 @@ QByteArray briefing(const FieldMapSource &s, const Battlefield &field, const Rom
     return member.rebuild(rom, data) + char(0);
 }
 } // namespace
+QByteArray fieldBriefing(const FieldMapSource &source,const Battlefield &field,const Rom &rom){
+    return briefing(source,field,rom);
+}
 MapEdits MapEdits::load(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision())
@@ -165,10 +170,10 @@ MapEdits MapEdits::load(const Rom &rom) {
     return out;
 }
 int MapEdits::modelId(int key) const {
-    if (key < 1 || key > 64 || key == 54)
+    if (!MissionTables::hasScenario(rom_, key) || key == 54)
         throw Error("Choose a supported scenario map");
-    const int id = u8(rom_.bytes(), 0x654a0 + key * 9 + 3);
-    if (id < 4 || id > 44)
+    const int id = u8(MissionTables::row(rom_, MissionTables::Scenario, key), 3);
+    if (id < 4 || id >= BattlefieldClone::modelCount(rom_))
         throw Error("This internal key has no editable battlefield");
     return id;
 }
@@ -176,19 +181,19 @@ const FieldMapSource &MapEdits::source(int key) const {
     const int id = modelId(key);
     if (const auto found = sources_.constFind(id); found != sources_.cend())
         return found.value();
-    const int row = 0x654a0 + key * 9;
+    const auto row = MissionTables::row(rom_, MissionTables::Scenario, key);
     FieldMapSource s;
     s.key = key;
     s.modelId = id;
     s.map = ScenarioMap::load(rom_, key);
-    s.geometryIndex = int(u32(rom_.bytes(), 0x65710 + id * 12));
-    s.terrainIndex = u8(rom_.bytes(), row + 5);
-    s.pointIndex = u8(rom_.bytes(), row + 7);
+    s.geometryIndex = int(u32(BattlefieldClone::modelRow(rom_,id),0));
+    s.terrainIndex = u8(row, 5);
+    s.pointIndex = u8(row, 7);
     for (int shared : sharedScenarios(key)) {
-        const int other = 0x654a0 + shared * 9;
-        if (u8(rom_.bytes(), other + 4) != u8(rom_.bytes(), row + 4) ||
-            u8(rom_.bytes(), other + 5) != s.terrainIndex ||
-            u8(rom_.bytes(), other + 7) != s.pointIndex)
+        const auto other = MissionTables::row(rom_, MissionTables::Scenario, shared);
+        if (u8(other, 4) != u8(row, 4) ||
+            u8(other, 5) != s.terrainIndex ||
+            u8(other, 7) != s.pointIndex)
             throw Error("Shared model has different gameplay maps; this ROM needs separate map "
                         "ownership before editing");
     }
@@ -202,9 +207,9 @@ const FieldMapSource &MapEdits::source(int key) const {
     s.field = Battlefield::load(rom_, key);
     s.visualTerrain = s.field.terrainGrid(s.terrain[0].data, s.map.bounds);
     s.terrainFaces = s.field.terrainFaces(s.terrain[0].data, s.map.bounds);
-    const int edge = 0x13c874 + key * 4;
-    s.boundary = QRectF(QPointF(u8(rom_.bytes(), edge), u8(rom_.bytes(), edge + 1)),
-                        QPointF(u8(rom_.bytes(), edge + 2), u8(rom_.bytes(), edge + 3)));
+    const auto edge = MissionTables::row(rom_, MissionTables::Boundary, key);
+    s.boundary = QRectF(QPointF(u8(edge, 0), u8(edge, 1)),
+                        QPointF(u8(edge, 2), u8(edge, 3)));
     sources_[id] = s;
     return sources_.constFind(id).value();
 }
@@ -214,16 +219,16 @@ const FieldChanges &MapEdits::changes(int key) const {
     return i == edits_.cend() ? empty : i.value();
 }
 int MapEdits::scenarioForModel(int model) const {
-    for (int key = 1; key <= 64; ++key)
-        if (key != 54 && model >= 4 && model <= 44 &&
-            u8(rom_.bytes(), 0x654a0 + key * 9 + 3) == model) return key;
+    for (int key = 1; key < MissionTables::keyCount; ++key)
+        if (MissionTables::hasScenario(rom_, key) && key != 54 && model >= 4 && model < BattlefieldClone::modelCount(rom_) &&
+            u8(MissionTables::row(rom_, MissionTables::Scenario, key), 3) == model) return key;
     return -1;
 }
 QVector<int> MapEdits::sharedScenarios(int key) const {
     const int id = modelId(key);
     QVector<int> out;
-    for (int k = 1; k <= 64; ++k)
-        if (u8(rom_.bytes(), 0x654a0 + k * 9 + 3) == id)
+    for (int k = 1; k < MissionTables::keyCount; ++k)
+        if (MissionTables::hasScenario(rom_, k) && u8(MissionTables::row(rom_, MissionTables::Scenario, k), 3) == id)
             out << k;
     return out;
 }
@@ -489,10 +494,11 @@ FieldBrush MapEdits::texture(int code) const {
         return brush;
     }
     QSet<int> visited;
-    for (int key = 1; key <= 64; ++key) {
+    for (int key = 1; key < MissionTables::keyCount; ++key) {
+        if (!MissionTables::hasScenario(rom_, key)) continue;
         if (key == 54)
             continue;
-        const int id = u8(rom_.bytes(), 0x654a0 + key * 9 + 3);
+        const int id = u8(MissionTables::row(rom_, MissionTables::Scenario, key), 3);
         if (id < 4 || visited.contains(id))
             continue;
         visited.insert(id);
@@ -611,8 +617,8 @@ QVector<FieldPlan> MapEdits::plan() const {
     QVector<FieldPlan> out;
     for (auto e = edits_.begin(); e != edits_.end(); ++e) {
         int key = 0;
-        for (int k = 1; k <= 64; ++k)
-            if (u8(rom_.bytes(), 0x654a0 + k * 9 + 3) == e.key()) {
+        for (int k = 1; k < MissionTables::keyCount; ++k)
+            if (MissionTables::hasScenario(rom_, k) && u8(MissionTables::row(rom_, MissionTables::Scenario, k), 3) == e.key()) {
                 key = k;
                 break;
             }
@@ -658,8 +664,8 @@ QByteArray MapEdits::rebuild(const Rom &rom) const {
     }
     for (auto it = edits_.begin(); it != edits_.end(); ++it) {
         int key = 0;
-        for (int k = 1; k <= 64; ++k)
-            if (u8(rom_.bytes(), 0x654a0 + k * 9 + 3) == it.key()) {
+        for (int k = 1; k < MissionTables::keyCount; ++k)
+            if (MissionTables::hasScenario(rom_, k) && u8(MissionTables::row(rom_, MissionTables::Scenario, k), 3) == it.key()) {
                 key = k;
                 break;
             }
@@ -673,14 +679,15 @@ QByteArray MapEdits::rebuild(const Rom &rom) const {
     }
     for (auto it = edits_.begin(); it != edits_.end(); ++it)
         if (it->boundary)
-            for (int key = 1; key <= 64; ++key)
-                if (u8(rom_.bytes(), 0x654a0 + key * 9 + 3) == it.key()) {
+            for (int key = 1; key < MissionTables::keyCount; ++key)
+                if (MissionTables::hasScenario(rom_, key) && u8(MissionTables::row(rom_, MissionTables::Scenario, key), 3) == it.key()) {
                     const auto b = *it->boundary;
-                    const int at = 0x13c874 + key * 4;
-                    put8(image, at, quint8(b.left()));
-                    put8(image, at + 1, quint8(b.top()));
-                    put8(image, at + 2, quint8(b.right()));
-                    put8(image, at + 3, quint8(b.bottom()));
+                    QByteArray row(4, 0);
+                    put8(row, 0, quint8(b.left()));
+                    put8(row, 1, quint8(b.top()));
+                    put8(row, 2, quint8(b.right()));
+                    put8(row, 3, quint8(b.bottom()));
+                    MissionTables::replace(image, MissionTables::Boundary, key, row);
                 }
     const auto reopened = Rom::fromBytes(image);
     for (const auto &p : plans) {
@@ -750,8 +757,8 @@ void MapEdits::apply(const QJsonObject &o) {
         bool ok;
         int id = i.key().toInt(&ok);
         int key = 0;
-        for (int k = 1; k <= 64; ++k)
-            if (u8(rom_.bytes(), 0x654a0 + k * 9 + 3) == id && k != 54) {
+        for (int k = 1; k < MissionTables::keyCount; ++k)
+            if (MissionTables::hasScenario(rom_, k) && u8(MissionTables::row(rom_, MissionTables::Scenario, k), 3) == id && k != 54) {
                 key = k;
                 break;
             }

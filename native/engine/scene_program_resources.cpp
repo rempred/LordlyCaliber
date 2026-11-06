@@ -10,13 +10,49 @@
 namespace lordly {
 namespace {
 constexpr quint32 base = 0x594280;
+constexpr quint32 eventDirectoryBytes = 4 + SceneEvents::rowCapacity * 4;
+constexpr quint32 retailEventBytes = SceneEvents::retailRowCount * 4;
+// Resident event-state loader, world-program loader and the two saved-row paths.
+// Each pair constructs the key for the same generic resource directory reader.
+struct EventDirectoryReference {
+    quint32 high, low;
+};
+constexpr EventDirectoryReference eventReferences[] = {
+    {0x47f40, 0x47f44}, {0x480c4, 0x480cc}, {0x483a4, 0x483ac}, {0x48448, 0x48458}};
+constexpr quint32 retailHigh = 0x3c05003a, retailLow = 0x34a55668;
+constexpr quint32 expandedKey = SceneProgramResources::expandedEventDirectory - base;
+constexpr quint32 expandedHigh = 0x3c050000 | (expandedKey >> 16),
+                  expandedLow = 0x34a50000 | (expandedKey & 0xffff);
+void checkEventReferences(const QByteArray &image, bool expanded) {
+    for (const auto &ref : eventReferences) {
+        if (u32(image, ref.high) != (expanded ? expandedHigh : retailHigh) ||
+            u32(image, ref.low) != (expanded ? expandedLow : retailLow))
+            throw Error("The native event directory loader has unrecognized changes");
+    }
+}
+void changeEventDirectory(QByteArray &image, bool expanded) {
+    checkEventReferences(image, !expanded);
+    if (expanded && image.mid(SceneProgramResources::expandedEventDirectory, eventDirectoryBytes) !=
+                        QByteArray(eventDirectoryBytes, char(-1)))
+        throw Error("The expanded event directory allocation is occupied");
+    for (const auto &ref : eventReferences) {
+        put32(image, ref.high, expanded ? expandedHigh : retailHigh);
+        put32(image, ref.low, expanded ? expandedLow : retailLow);
+    }
+    image.replace(SceneProgramResources::expandedEventDirectory, eventDirectoryBytes,
+                  QByteArray(eventDirectoryBytes, expanded ? 0 : char(-1)));
+    if (expanded)
+        put32(image, SceneProgramResources::expandedEventDirectory, SceneEvents::rowCapacity * 4);
+}
 quint32 align(quint32 value) {
     return (value + 15U) & ~15U;
 }
 QVector<quint32> referenceWords(const Rom &rom) {
     QVector<quint32> result;
-    // Top-level Director, continuation and parent event directories.
-    for (const quint32 root : {0x9398e8U, 0x1e24c1eU, 0x1f3ca84U}) {
+    const int eventCount = SceneProgramResources::eventRowCount(rom);
+    for (int row = 0; row < SceneEvents::retailRowCount; ++row)
+        result << SceneProgramResources::eventWord(row);
+    for (const quint32 root : {0x1e24c1eU, 0x1f3ca84U}) {
         const auto extent = u32(rom.bytes(), root);
         if (!extent || extent % 4 || extent > 262144 ||
             quint64(root) + 4 + extent > quint64(rom.bytes().size()))
@@ -24,6 +60,8 @@ QVector<quint32> referenceWords(const Rom &rom) {
         for (quint32 at = root + 4; at < root + 4 + extent; at += 4)
             result << at;
     }
+    for (int row = SceneEvents::firstCustomRow; row < eventCount; ++row)
+        result << SceneProgramResources::eventWord(row);
     return result;
 }
 QVector<quint32> references(const Rom &rom, quint32 key) {
@@ -34,6 +72,28 @@ QVector<quint32> references(const Rom &rom, quint32 key) {
     return result;
 }
 } // namespace
+quint32 SceneProgramResources::eventWord(int row) {
+    if (row < 0 || row >= SceneEvents::rowCapacity)
+        throw Error("Invalid event directory row");
+    return (row < SceneEvents::retailRowCount ? SceneEvents::directory : expandedEventDirectory) +
+           4 + quint32(row) * 4;
+}
+int SceneProgramResources::eventRowCount(const Rom &rom) {
+    const auto &image = rom.bytes();
+    if (u32(image, SceneEvents::directory) != retailEventBytes)
+        throw Error("Event directory differs from the supported layout");
+    const auto header = image.mid(descriptorOffset, descriptorSize);
+    if (header.first(8) != "LC05SCPT" || u32(header, 8) != 7)
+        return SceneEvents::retailRowCount;
+    const auto directory = image.mid(expandedEventDirectory, eventDirectoryBytes);
+    if (u32(header, 92) != crc32(header.first(92)) ||
+        directory.size() != eventDirectoryBytes || u32(directory, 0) != SceneEvents::rowCapacity * 4 ||
+        u32(header, 36) != crc32(directory) ||
+        directory.mid(4, retailEventBytes) != image.mid(SceneEvents::directory + 4, retailEventBytes))
+        throw Error("The expanded event directory is damaged");
+    checkEventReferences(image, true);
+    return SceneEvents::rowCapacity;
+}
 std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision())
@@ -41,10 +101,11 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
+    const auto version = u32(header, 8);
+    const int reserved = version == 1 ? 28 : version == 7 ? 40 : 36;
     if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
-        (u32(header, 8) < 1 || u32(header, 8) > 6) ||
-        header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
-            QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
+        (version < 1 || version > 7) ||
+        header.mid(reserved, 92 - reserved) != QByteArray(92 - reserved, 0) ||
         u32(header, 92) != crc32(header.first(92)))
         throw Error("Scene allocation descriptor is damaged or occupied");
     SceneProgramPlacement result{u32(header, 12), u32(header, 16), {}};
@@ -152,7 +213,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
             result.eventRows.insert(site.row);
         }
         for (const auto eventRow : result.eventRows) {
-            const auto owner = SceneEvents::directory + 4 + quint32(eventRow) * 4;
+            const auto owner = eventWord(eventRow);
             if (!result.members.contains(owner) ||
                 result.members[owner].references != QVector<quint32>{owner})
                 throw Error("Event row does not exclusively own its resource link");
@@ -164,6 +225,17 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
                 throw Error("Event bindings differ from the rebuilt program");
         }
         metadataEnd += size;
+    }
+    if (version == 7) {
+        bool occupied = false;
+        for (int row = SceneEvents::firstCustomRow; row < SceneEvents::rowCapacity; ++row) {
+            const bool present = u32(rom.bytes(), eventWord(row)) != 0;
+            if (present != result.eventRows.contains(row))
+                throw Error("Expanded event row differs from its scene allocation");
+            occupied |= present;
+        }
+        if (!occupied)
+            throw Error("Expanded event directory has no authored missions");
     }
     quint32 cursor = align(metadataEnd);
     for (const auto &member : result.members) {
@@ -347,6 +419,10 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         eventRows.insert(site.row);
         bindingMetadata[it.key()] = it.value();
     }
+    const bool hadExpanded = eventRowCount(rom) == SceneEvents::rowCapacity;
+    bool expanded = false;
+    for (int row : eventRows)
+        expanded |= row >= SceneEvents::firstCustomRow;
     if (events) {
         QSet<int> supplied;
         for (auto it = events->rows.cbegin(); it != events->rows.cend(); ++it)
@@ -361,20 +437,27 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
             oldRows.insert(SceneEvents::site(it.key()).row);
         for (int row : oldRows) {
             if (!eventRows.contains(row)) {
-                const auto owner = SceneEvents::directory + 4 + quint32(row) * 4;
+                const auto owner = eventWord(row);
                 members.remove(owner);
-                restored[owner] = SceneEvents::retailKey(row);
+                if (row < SceneEvents::firstCustomRow || expanded)
+                    restored[owner] = SceneEvents::retailKey(row);
             }
         }
         for (auto it = events->rows.cbegin(); it != events->rows.cend(); ++it) {
             const auto original = SceneEvents::retailRow(rom, it.key());
             if (it.value() != SceneEvents::bindRow(SceneEvents::flagRow(original, it.key(), eventFlags), it.key(), eventBindings))
                 throw Error("Compiled event program differs from its binding plan");
-            const auto owner = SceneEvents::directory + 4 + quint32(it.key()) * 4;
-            const auto key = u32(rom.bytes(), owner), at = base + key, size = u32(rom.bytes(), at);
-            qsizetype consumed = 0;
-            decodeLzss(rom.bytes().mid(at + 8, size - 4), u32(rom.bytes(), at + 4), &consumed);
-            const auto trailing = rom.bytes().mid(at + 8 + consumed, size - 4 - consumed);
+            const auto owner = eventWord(it.key());
+            const auto key = it.key() < SceneEvents::firstCustomRow || hadExpanded
+                                 ? u32(rom.bytes(), owner)
+                                 : 0;
+            QByteArray trailing;
+            if (key) {
+                const auto at = base + key, size = u32(rom.bytes(), at);
+                qsizetype consumed = 0;
+                decodeLzss(rom.bytes().mid(at + 8, size - 4), u32(rom.bytes(), at + 4), &consumed);
+                trailing = rom.bytes().mid(at + 8 + consumed, size - 4 - consumed);
+            }
             const auto packed = encodeLzss(it.value());
             QByteArray envelope(8, 0);
             put32(envelope, 0, quint32(4 + packed.size() + trailing.size()));
@@ -388,6 +471,8 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         auto image = rom.bytes();
         for (auto it = restored.cbegin(); it != restored.cend(); ++it)
             put32(image, it.key(), it.value());
+        if (hadExpanded)
+            changeEventDirectory(image, false);
         if (prior) {
             if (quint64(prior->offset) + prior->allocation == quint64(image.size()))
                 image.resize(prior->offset);
@@ -433,6 +518,8 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     if (offset < 0x2800000 || quint64(offset) + allocation > 0x4000000)
         throw Error("Rebuilt scenes exceed the cartridge");
     auto image = rom.bytes();
+    if (hadExpanded != expanded)
+        changeEventDirectory(image, expanded);
     if (prior)
         image.replace(prior->offset, prior->allocation, QByteArray(prior->allocation, char(-1)));
     if (tail && offset == prior->offset)
@@ -448,15 +535,20 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
             put32(image, word, offset + u32(payload, row * 20 + 4) - base);
         ++row;
     }
+    if (expanded)
+        image.replace(expandedEventDirectory + 4, retailEventBytes,
+                      image.mid(SceneEvents::directory + 4, retailEventBytes));
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, SceneEvents::hasCampaignEdits(eventFlags) ? 6 : eventFlags.isEmpty() ? 4 : 5);
+    put32(header, 8, expanded ? 7 : SceneEvents::hasCampaignEdits(eventFlags) ? 6 : eventFlags.isEmpty() ? 4 : 5);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));
     put32(header, 24, crc32(payload));
     put32(header, 28, metadataOffset);
     put32(header, 32, quint32(metadata.size()));
+    if (expanded)
+        put32(header, 36, crc32(image.mid(expandedEventDirectory, eventDirectoryBytes)));
     put32(header, 92, crc32(header.first(92)));
     image.replace(descriptorOffset, descriptorSize, header);
     const auto reopened = Rom::fromBytes(image);

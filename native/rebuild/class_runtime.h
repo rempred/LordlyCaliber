@@ -3,6 +3,8 @@
 #include "engine/item_data.h"
 #include "rebuild/compiler.h"
 #include "rebuild/save_runtime.h"
+#include "rebuild/consumable_tree_runtime.h"
+#include "rebuild/new_campaign_runtime.h"
 
 namespace lordly {
 struct PromotionRuntimeBuild;
@@ -16,9 +18,10 @@ struct ClassRuntimeBuild {
     QByteArray descriptor;
     std::optional<SaveRuntimeBuild> saves;
     std::optional<AttackPlacement> attacks;
+    std::optional<ConsumableTreePlacement> consumableTrees;
     QByteArray resident, personalNamesCode, affinityOwner;
     bool removeResident = false;
-    quint32 dataRomOffset = 0;
+    quint32 dataRomOffset = 0, missionTableAddress = 0, campaignBridge = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
     static constexpr quint32 directoryAddress = 0x80187e00;
     static constexpr int directoryCapacity = 10;
@@ -32,7 +35,8 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder = {},
                   const ItemData *items = nullptr, CapacityRuntimeBuild *capacity = nullptr,
                   const AttackData *attacks = nullptr, const LeaderAffinity *affinity = nullptr,
-                  bool customStoryFlags = false);
+                  bool customStoryFlags = false, const ConsumableTreeInput *consumableTrees = nullptr,
+                  const QByteArray &missionTables = {}, const NewCampaignInput *campaign = nullptr);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

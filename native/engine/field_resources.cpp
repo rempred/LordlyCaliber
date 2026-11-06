@@ -1,4 +1,5 @@
 #include "engine/field_resources.h"
+#include "engine/battlefield_clone.h"
 #include <QCryptographicHash>
 namespace lordly {
 namespace {
@@ -19,6 +20,7 @@ QByteArray stored(const QByteArray &b) {
 }
 } // namespace
 QByteArray fieldResource(const Rom &rom, quint32 key) {
+    key=BattlefieldClone::resourceKey(rom,key);
     const quint64 at = quint64(key) + 0x594280;
     if (key & 1 || at + 4 > quint64(rom.bytes().size()))
         throw Error("Invalid field resource key");
@@ -79,6 +81,7 @@ quint32 fieldChild(const Rom &rom, quint32 root, int index) {
 }
 void replaceFieldChild(QByteArray &image, quint32 root, int index, const QByteArray &payload) {
     const auto rom = Rom::fromBytes(image);
+    root=BattlefieldClone::resourceKey(rom,root);
     const auto key = fieldChild(rom, root, index);
     const auto previous = fieldResource(rom, key);
     if (payload.isEmpty() || payload.size() > 8 * 1024 * 1024)
@@ -134,10 +137,17 @@ void replaceFieldChild(QByteArray &image, quint32 root, int index, const QByteAr
     put32(image, root + 0x594284 + index * 4, quint32(at - 0x594280));
 }
 void replaceFieldMemberInPlace(QByteArray &image, quint32 key, int index, const QByteArray &data) {
-    const auto members = fieldMembers(fieldResource(Rom::fromBytes(image), key));
+    const auto originalKey=key;
+    key=BattlefieldClone::resourceKey(Rom::fromBytes(image),key);
+    auto members = fieldMembers(fieldResource(Rom::fromBytes(image), key));
     if (index < 0 || index >= members.size())
         throw Error("Invalid field placement selector");
     const auto &m = members[index];
+    if(key!=originalKey){
+        members[index].data=data;
+        BattlefieldClone::replaceCollection(image,originalKey,encodeFieldMembers(members));
+        return;
+    }
     if (u8(m.original, 0) != 0x80 || m.data.size() != data.size())
         throw Error("This placement collection needs relocation support");
     image.replace(key + 0x594284 + m.offset + 9, data.size(), data);

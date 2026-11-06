@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/new_campaign.h"
 #include "engine/deleted_content.h"
 #include "engine/effect_resources.h"
 #include "engine/capacity_placement.h"
@@ -6,6 +7,9 @@
 #include "engine/pose_runtime.h"
 #include "engine/body_visual_policy.h"
 #include "engine/scene_import.h"
+#include "engine/scenario_battlefields.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_battlefield.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -158,7 +162,7 @@ const QVector<Field> &fields(Table table) {
     }();
     static const QVector<Field> consumables = {{"price", "Price (Goth)", "Values", 6, 2},
                                                {"flagHi", "Category metadata", "Advanced", 4, 2},
-                                               {"tier", "Tier", "Values", 8},
+                                               {"tier", "Target mode (1: character, 2: squad)", "Advanced", 8},
                                                {"metadata", "Raw metadata byte", "Advanced", 9},
                                                {"raw10", "Raw byte 10", "Advanced", 10},
                                                {"raw11", "Raw byte 11", "Advanced", 11}};
@@ -172,6 +176,10 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         rom=capacity->canonical(rom);
     }
     p.rom_ = std::move(rom);
+    if (!p.rom_.revision()) {
+        p.scenarioBattlefields_ = readScenarioBattlefields(p.rom_);
+        p.originalScenarioBattlefields_ = p.scenarioBattlefields_;
+    }
     p.catalog_ = catalog;
     p.catalog_["CLASS_LABELS"] = catalog.contains("CLASS_LABELS")
                                      ? catalog["CLASS_LABELS"] : catalog["CLASS_NAMES"];
@@ -374,6 +382,7 @@ int Project::changedRecords() const {
     if (training_ && training_->modified()) ++count;
     if (scenarios_)
         count += scenarios_->changedScenarios();
+    if (scenarioBattlefields_ != originalScenarioBattlefields_) count += scenarioBattlefields_.size();
     if (world_)
         count += world_->changedEntries();
     if (campaignMap_) count += campaignMap_->changedNodes();
@@ -916,16 +925,22 @@ void Project::setTraining(const QJsonObject &value) {
     loadTraining(); training_->apply(value,classData(),int(records(Table::Items).size()));
 }
 void Project::loadScenarios() {
-    if (!scenarios_)
-        scenarios_ = Scenarios::load(rom_);
+    if (!scenarios_) {
+        scenarios_ = Scenarios::load(rom(), battlefieldRom_.has_value());
+        for (const auto &value : scenarioBattlefields_) {
+            const auto row = value.toObject();
+            scenarios_->setAuthoredScenario(row["key"].toInt(), row["name"].toString());
+        }
+    }
+    if(sceneEvents_)scenarios_->setNewCampaign(!NewCampaign::settings(*sceneEvents_).isEmpty());
 }
 void Project::loadWorld() {
     if (!world_)
-        world_ = ScenarioWorld::load(rom_);
+        world_ = ScenarioWorld::load(rom());
 }
 void Project::loadCampaignMap() { if (!campaignMap_) campaignMap_.emplace(rom_); }
 void Project::setCampaignMap(const QJsonObject &value) { loadCampaignMap(); campaignMap_->apply(value); }
-void Project::loadMapEdits() {if(!mapEdits_)mapEdits_=MapEdits::load(rom_);}
+void Project::loadMapEdits() {if(!mapEdits_)mapEdits_=MapEdits::load(rom());}
 void Project::setMapEdits(const QJsonObject &value){loadMapEdits();mapEdits_->apply(value);}
 void Project::applyMapDelta(const FieldEditDelta &delta, bool forward) {
     loadMapEdits(); mapEdits_->applyDelta(delta, forward);
@@ -937,6 +952,130 @@ void Project::setWorld(const QJsonObject &value) {
 void Project::setScenarios(const QJsonObject &value) {
     loadScenarios();
     scenarios_->apply(value, classData());
+}
+QVector<int> Project::availableScenarioBattlefields() const {
+    QVector<int> available;
+    if (rom_.revision()) return available;
+    QSet<int> assigned;
+    for (const auto &value : scenarioBattlefields_)
+        assigned.insert(value.toObject()["key"].toInt());
+    for (int key = 1; key < ScenarioResources::keyCount; ++key)
+        if (ScenarioResources::isNewKey(key) && !assigned.contains(key) &&
+            !ScenarioResources::hasScenario(rom(),key)) available.append(key);
+    for (int key : {10, 22, 35, 62}) {
+        if (assigned.contains(key)) continue;
+        if (ScenarioResources::row(rom(),key) == QByteArray::fromHex("000000000000ff0000") &&
+            WorldResources::row(rom(),key) == QByteArray(12, 0)) available.append(key);
+    }
+    return available;
+}
+QString Project::scenarioName(int key) const {
+    for (const auto &value : scenarioBattlefields_) {
+        const auto row = value.toObject();
+        if (row["key"].toInt() == key) return row["name"].toString();
+    }
+    return scenarios_ && scenarios_->entries().contains(key)
+               ? scenarios_->scenario(key).name : QString("Scenario %1").arg(key);
+}
+void Project::setScenarioBattlefields(const QJsonArray &entries) {
+    validateScenarioBattlefieldMetadata(entries);
+    if (entries == scenarioBattlefields_) return;
+    const auto oldScenarios = scenarios_ ? scenarios_->json() : QJsonObject{};
+    const auto oldWorld = world_ ? world_->json() : QJsonObject{};
+    const auto oldMap = mapEdits_ ? mapEdits_->json() : QJsonObject{};
+    const auto originalWorld = world_ ? ScenarioWorld::load(rom()).json() : QJsonObject{};
+    bool appendOnly=entries.size()>scenarioBattlefields_.size();
+    for(int i=0;appendOnly&&i<scenarioBattlefields_.size();++i)
+        appendOnly=entries[i]==scenarioBattlefields_[i];
+    auto image = appendOnly ? rom().bytes() : rom_.bytes();
+    for (int index=appendOnly?int(scenarioBattlefields_.size()):0;index<entries.size();++index) {
+        const auto value=entries[index];
+        const auto row = value.toObject(), snapshot = row["snapshot"].toObject();
+        const int key = row["key"].toInt();
+        // A snapshot in the opened ROM already owns its native resources.
+        // Later edits baked into that ROM are its current starting point.
+        if (originalScenarioBattlefields_.contains(value)) continue;
+        auto working = Rom::fromBytes(image);
+        image = MissionBattlefield::prepare(working, key, snapshot["units"].toObject());
+        image = BattlefieldClone::apply(Rom::fromBytes(image), key, snapshot["art"].toObject());
+    }
+    auto next = *this;
+    next.scenarioBattlefields_ = entries;
+    next.battlefieldRom_ = Rom::fromBytes(rom_.serialize(image), rom_.sourcePath());
+    next.scenarios_.reset(); next.world_.reset(); next.mapEdits_.reset();
+    if (!oldScenarios.isEmpty()) {
+        next.loadScenarios();
+        auto rows = oldScenarios["scenarios"].toObject();
+        const auto initial = next.scenarios_->json()["scenarios"].toObject();
+        for (const auto &value : entries) {
+            const auto row = value.toObject();
+            const auto key = QString::number(row["key"].toInt());
+            bool previouslyAssigned = false;
+            for (const auto &prior : scenarioBattlefields_)
+                previouslyAssigned |= prior.toObject()["key"] == row["key"];
+            if (!previouslyAssigned) rows[key] = initial[key];
+        }
+        auto state = oldScenarios; state["scenarios"] = rows;
+        next.scenarios_->apply(state, next.classData());
+    }
+    if (!oldWorld.isEmpty()) {
+        next.loadWorld();
+        auto rows = oldWorld["scenarios"].toObject();
+        const auto initial = next.world_->json();
+        const auto initialRows = initial["scenarios"].toObject();
+        for (const auto &value : entries) {
+            const auto row = value.toObject();
+            const auto key = QString::number(row["key"].toInt());
+            bool previouslyAssigned = false;
+            for (const auto &prior : scenarioBattlefields_)
+                previouslyAssigned |= prior.toObject()["key"] == row["key"];
+            if (!previouslyAssigned) rows[key] = initialRows[key];
+        }
+        auto state = oldWorld; state["scenarios"] = rows;
+        // Keep pre-existing edits to global town definitions while allowing
+        // the clone materializer to establish any new baseline records.
+        auto towns = QByteArray::fromHex(initial["towns"].toString().toLatin1());
+        const auto before = QByteArray::fromHex(originalWorld["towns"].toString().toLatin1());
+        const auto after = QByteArray::fromHex(oldWorld["towns"].toString().toLatin1());
+        for (int at = 0; at < after.size(); at += 28)
+            if (before.mid(at, 28) != after.mid(at, 28)) towns.replace(at, 28, after.mid(at, 28));
+        state["towns"] = QString::fromLatin1(towns.toHex());
+        next.world_->apply(state);
+    }
+    if (!oldMap.isEmpty()) { next.loadMapEdits(); next.mapEdits_->apply(oldMap); }
+    *this = std::move(next);
+}
+void Project::createScenarioBattlefield(int targetKey, int sourceKey, const QString &mode,
+                                        const QString &value) {
+    if (!availableScenarioBattlefields().contains(targetKey))
+        throw Error("Choose an unused battlefield slot");
+    const auto name = value.trimmed();
+    if (name.isEmpty() || name.size() > 120) throw Error("Enter a scenario name of 1–120 characters");
+    if (mode != "exact" && mode != "mapOnly" && mode != "blank")
+        throw Error("Choose how to create the battlefield");
+    auto next = *this;
+    next.loadScenarios(); next.loadWorld(); next.loadMapEdits();
+    const auto rendered = next.mapEdits_->modified() ? next.mapEdits_->rebuild(next.rom()) : next.rom().bytes();
+    auto sourceScenarios=*next.scenarios_;
+    // New Campaign clears active deployments but retains their templates for
+    // an explicit "Copy map and squads" operation, including after ROM reopen.
+    if(mode=="exact"&&next.sceneEvents_) {
+        const auto templates=NewCampaign::settings(*next.sceneEvents_)["templates"].toObject()["scenarios"].toObject();
+        if(templates.contains(QString::number(sourceKey))) {
+            auto json=sourceScenarios.json();auto rows=json["scenarios"].toObject();
+            rows[QString::number(sourceKey)]=templates[QString::number(sourceKey)];json["scenarios"]=rows;
+            sourceScenarios.apply(json,next.classData());
+        }
+    }
+    const auto units = MissionBattlefield::capture(next.rom(), sourceScenarios, *next.world_, sourceKey, mode);
+    QVector<int> pointRows;
+    for (const auto &value : units["pointRows"].toArray()) pointRows.append(value.toInt());
+    const auto art = BattlefieldClone::capture(Rom::fromBytes(rendered), sourceKey, mode == "blank", pointRows);
+    auto entries = next.scenarioBattlefields_;
+    entries.append(QJsonObject{{"key", targetKey}, {"source", sourceKey}, {"mode", mode}, {"name", name},
+                              {"snapshot", QJsonObject{{"art", art}, {"units", units}}}});
+    next.setScenarioBattlefields(entries);
+    *this = std::move(next);
 }
 void Project::setConsumableEffects(const QJsonObject &value) {
     loadConsumableEffects();
@@ -1279,6 +1418,8 @@ QJsonObject Project::manifest() const {
         result["scenarios"] = scenarios_->json();
     else
         result.remove("scenarios");
+    if (scenarioBattlefields_.isEmpty()) result.remove("scenarioBattlefields");
+    else result["scenarioBattlefields"] = scenarioBattlefields_;
     if(training_ && training_->modified()) result["training"]=training_->json();
     else result.remove("training");
     if (world_ && (world_->modified() || oldPatches["scenario"].isObject()))
@@ -1328,10 +1469,12 @@ void Project::loadSceneEvents() {
     loadScenePrograms();
     if (!sceneEvents_)
         sceneEvents_ = SceneEvents::load(rom_);
+    if(scenarios_)scenarios_->setNewCampaign(!NewCampaign::settings(*sceneEvents_).isEmpty());
 }
 void Project::setSceneEvents(const QJsonObject &value) {
     loadSceneEvents();
     sceneEvents_->apply(value, *scenePrograms_);
+    if(scenarios_)scenarios_->setNewCampaign(!NewCampaign::settings(*sceneEvents_).isEmpty());
 }
 void Project::loadDialogues() {
     if (!dialogues_)
@@ -1341,14 +1484,23 @@ void Project::setDialogues(const QJsonObject &value) {
     loadDialogues();
     dialogues_->apply(value);
 }
-void Project::applyManifest(const QJsonObject &object) {
+void Project::applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy) {
     if (object.value("format") != "LordlyCaliberProject" || object.value("version").toInt() != 1)
         throw Error("Unsupported native project format");
-    if (object.value("sourceSha256").toString().toLatin1() != sha256(runtimeRom().bytes()))
+    const auto sourceHash = object.value("sourceSha256").toString().toLatin1().toLower();
+    if (sourceHash.size() != 64 || QByteArray::fromHex(sourceHash).toHex() != sourceHash)
+        throw Error("Invalid project source ROM fingerprint");
+    // An explicit import changes only source identity policy. All data validation
+    // still runs on a candidate, so a failed import cannot replace the open project.
+    if (sourcePolicy == SourcePolicy::RequireMatch && sourceHash != sha256(runtimeRom().bytes()))
         throw Error("Project requires a different source ROM");
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
     auto candidate = Project::fromRom(runtimeRom(), catalog_);
+    if (object.contains("scenarioBattlefields")) {
+        if (!object["scenarioBattlefields"].isArray()) throw Error("Invalid custom battlefield directory");
+        candidate.setScenarioBattlefields(object["scenarioBattlefields"].toArray());
+    }
     const auto inheritedDeleted=candidate.deletedContent_;candidate.deletedContent_={};
     if (attacks_) candidate.loadAttacks();
     if (object.contains("attacks")) {
@@ -1448,6 +1600,12 @@ void Project::applyManifest(const QJsonObject &object) {
             auto bytes = QByteArray::fromHex(text);
             if (text.toLower() != bytes.toHex())
                 throw Error("Invalid project record bytes");
+            // Name addresses belong to the source ROM's allocations, not to the
+            // authored stats. Keep the destination's address; names are imported
+            // separately below and allocated normally during export.
+            if (sourcePolicy == SourcePolicy::ImportIntoCurrentRom &&
+                bytes.size() == candidate.record(table, id).bytes.size())
+                bytes.replace(0, 4, candidate.record(table, id).original.first(4));
             candidate.replaceBytes(table, id, bytes);
         }
     }
@@ -2175,7 +2333,7 @@ void Project::saveArchive(const QString &path) const {
     atomicWrite(path, "LC05PACK\n" + qCompress(bytes, 9));
 }
 QByteArray Project::rebuildRecords() const {
-    auto out = rom_.bytes();
+    auto out = rom().bytes();
     for (const auto &[table, records] : tables_)
         for (const auto &r : records) {
             if (r.romOffset < 0 || r.romOffset + r.bytes.size() > out.size())

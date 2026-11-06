@@ -14,11 +14,9 @@ class ConsumableEffects {
     const QJsonObject &models() const {
         return models_;
     }
-    QJsonObject json() const {
-        return {{"version", 1}, {"models", models_}};
-    }
+    QJsonObject json() const;
     bool modified() const {
-        return models_ != original_;
+        return models_ != original_ || trees_ != originalTrees_ || visuals_ != originalVisuals_;
     }
     void setModel(const QString &key, const QJsonObject &values);
     void apply(const QJsonObject &object);
@@ -27,10 +25,21 @@ class ConsumableEffects {
     QByteArray expectedCode(const QByteArray &source) const;
     bool needsCBuild() const;
     QByteArray runtimeImage(const QByteArray &code) const;
+    QJsonArray tree(int item) const;
+    void setTree(int item, const QJsonArray &tree);
+    void restoreTree(int item);
+    bool hasTrees() const { return !trees_.isEmpty(); }
+    const QJsonObject &trees() const { return trees_; }
+    const QJsonObject &visuals() const { return visuals_; }
+    bool hasVisuals() const { return !visuals_.isEmpty(); }
+    void setVisual(int item, const QJsonObject &);
+    void restoreVisual(int item) { visuals_.remove(QString::number(item)); }
 
   private:
     static QJsonObject validate(const QJsonObject &definition, const QJsonObject &values);
     QJsonObject models_, original_;
+    QJsonObject trees_, originalTrees_;
+    QJsonObject visuals_, originalVisuals_;
     bool cRuntime_ = false;
 };
 } // namespace lordly

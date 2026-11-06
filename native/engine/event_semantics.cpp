@@ -1,4 +1,5 @@
 #include "engine/event_script.h"
+#include "engine/scene_events.h"
 #include <QCryptographicHash>
 #include <QFile>
 #include <QJsonArray>
@@ -86,6 +87,70 @@ QMap<int, QString> referenceNames(const QString &kind, const QString &scope) {
     for (auto it=local.begin();it!=local.end();++it) result[it.key()]=it.value();
     return result;
 }
+void propertyLiteralDomain(const QByteArray &bytes,int row,int at,EventParameter &field) {
+    const auto &source=instructions(row);
+    const int op=u8(bytes,at);
+    if(op<0x68 || op>0x6f)return;
+    const bool wide=source.contains(at+2) && at+3<bytes.size() && u8(bytes,at+2)==op+0x20;
+    const int consumer=at+(wide?4:2);
+    if(!source.contains(consumer) || consumer+1>=bytes.size() || u8(bytes,consumer)!=0x70+(op&7))return;
+    const int property=u8(bytes,consumer+1);
+    const auto definition=catalog()["properties"].toObject()[QString::number(property)].toObject();
+    if(definition["status"]!="verified" || definition["writeBehavior"]!="truncate to storage width")return;
+    QMap<int,QString> choices;QString kind,label;
+    switch(property){
+    case 0xe4:kind="scripted-death-subject";label="Scripted death subject";choices=referenceNames(kind,"global");break;
+    case 0xe5:kind="scene-skipped-marker";label="Current scene skipped marker";choices={{0,"Not skipped"},{1,"Skipped"}};break;
+    case 0xe6: {
+        kind="scripted-opposing-template";label="Scripted opposing squad / second scene unit";
+        choices[0]="No scripted opposing-squad override";
+        const auto templates=referenceNames("recruitment-template","global");
+        for(auto it=templates.cbegin();it!=templates.cend();++it){
+            if(it.key()<0 || it.key()>32767)continue;
+            if(it.key()!=0)choices[it.key()]=it.value()+" · second scene unit: normal";
+            choices[it.key()|32768]=it.value()+" · second scene unit: leader only";
+        }
+        break;
+    }
+    case 0xe8:kind="event-row";label="Current event row";choices=referenceNames(kind,"global");break;
+    case 0xeb:kind="scene-history";label="Birthday history record";choices=referenceNames(kind,"global");break;
+    case 0xec:kind="reward-display";label="Birthday reward-panel item";choices=referenceNames(kind,"global");break;
+    case 0xfa:
+        kind="world-followup-selection-mode";label="Successor-mission location checks";
+        choices={{0,"Apply cached-location exclusions"},{1,"Bypass cached-location exclusions"},
+                 {65535,"Apply cached-location exclusions (stored −1)"}};break;
+    case 0xfd: {
+        // Preserve a proved source domain; a dispatch-target byte by itself
+        // does not universally select a town or an opposing-squad namespace.
+        kind=field.kind;label="Scene/contact dispatch target index";
+        choices=field.choices;
+        const auto keys=rowInfo(row)["scenarioKeys"].toArray();
+        if(keys.size()==1 && (kind=="scenario-squad" || kind=="opposing-squad")){
+            kind="scenario-squad";
+            choices=referenceNames(kind,QString("scenario:%1").arg(keys.first().toInt()));
+        }
+        break;
+    }
+    default:return;
+    }
+    // Imported reference hints may have narrowed a FLAG-like literal. This
+    // proved scalar/packed consumer instead uses the actual existing width.
+    field.minimum=0;field.maximum=wide?65535:255;
+    // A byte property ignores the literal's upper byte. Projection edits that
+    // byte through StoryField::mask; accept the corresponding full SOURCE
+    // values without changing its ignored upper byte. Literal parts and width
+    // remain exactly those of the existing instruction/pair.
+    const bool byte=definition["storage"].toObject()["bytes"].toInt()==1;
+    const int upper=byte?field.value&0xff00:0;
+    QMap<int,QString> encoded;
+    for(auto it=choices.cbegin();it!=choices.cend();++it){
+        if(byte && (it.key()<0 || it.key()>255))continue;
+        const int token=upper|it.key();
+        if(token>=field.minimum && token<=field.maximum)encoded[token]=it.value();
+    }
+    if(!encoded.isEmpty() && !encoded.contains(field.value))encoded[field.value]=QString("Existing value %1").arg(field.value);
+    field.label=label;field.kind=kind;field.choices=std::move(encoded);
+}
 }
 QSet<int> EventScript::instructionOffsets(int row) {
     const auto &source = instructions(row); QSet<int> result;
@@ -137,6 +202,7 @@ QVector<EventParameter> EventScript::parameters(const QByteArray &bytes, int row
                 for(auto it=f.choices.begin();it!=f.choices.end();)if(it.key()<f.minimum||it.key()>f.maximum)it=f.choices.erase(it);else ++it;
             }
         }
+        propertyLiteralDomain(bytes,row,at,f);
     } else if (op>=0x88 && op<=0x8f) {
         add("value",QString("R%1 upper byte").arg(op&7),arg,0,255,{{at}});
     } else if (!bankFor(op).isEmpty()) {
@@ -163,7 +229,7 @@ QVector<EventParameter> EventScript::parameters(const QByteArray &bytes, int row
     } else {
         const auto name=catalog()["opcodes"].toObject()[QString::number(op)].toString();
         auto &f=add("operand",name=="native no-op"||op==4||op==0x2f?"Unused stored operand":"Operand",arg,0,255,{{at}});
-        if(op==0x12){f.label="Event row";f.maximum=114;for(int r=0;r<115;++r)f.choices[r]=rowName(r);}
+        if(op==0x12){f.label="Event row";f.maximum=SceneEvents::rowCapacity-1;for(int r=0;r<SceneEvents::rowCapacity;++r)f.choices[r]=rowName(r);}
         if(op==0x16){f.label="Army action";f.choices={{0,"Queue squad recruitment"},{1,"Queue individual recruitment"},{2,"Queue recruitment of opposing squad"},{5,"Initial army selection 5"},{6,"Initial army selection 6"},{7,"Initial army selection 7"},{8,"Initial army selection 8"},{64,"Squad recruitment · initialization option 1"},{65,"Individual recruitment · initialization option 1"},{66,"Opposing squad recruitment · initialization option 1"},{129,"Permanently remove identity in R0"}};if(!f.choices.contains(arg))f.choices[arg]=QString("Action ID %1").arg(arg);}
         if(op==0x15)f.label="History entry";
         if(op==0x19){f.label="Map location";f.choices=referenceNames("world-location","global");}

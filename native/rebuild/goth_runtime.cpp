@@ -1,5 +1,6 @@
 #include "rebuild/goth_runtime.h"
 #include "engine/goth_runtime.h"
+#include "engine/mission_runtime.h"
 #include <QJsonArray>
 namespace lordly {
 void rebuildGothRuntime(const Project &project, const Compiler &compiler,
@@ -11,8 +12,9 @@ void rebuildGothRuntime(const Project &project, const Compiler &compiler,
     const auto catalog = GothRuntime::definition();
     const auto retailOwner = catalog["retail"].toObject();
     const auto original = compiler.compileQualifiedOwner(retailOwner, directory, "settlement_retail");
-    const auto before = project.rom().bytes().mid(GothRuntime::offset, GothRuntime::size);
-    if (result.image.mid(GothRuntime::offset, GothRuntime::size) != before)
+    const auto before = canonicalMissionImage(project.rom()).mid(GothRuntime::offset, GothRuntime::size);
+    if (result.image.mid(GothRuntime::offset, GothRuntime::size) !=
+        project.rom().bytes().mid(GothRuntime::offset, GothRuntime::size))
         throw Error("Another rebuild owner overlaps settlement code");
     const auto prior = GothRuntime::read(project.rom());
     if (!prior) {

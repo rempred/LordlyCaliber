@@ -291,7 +291,12 @@ void ArtEditor::selectIcon(quint16 item) {
     if (!project_->iconArtwork())
         throw Error("Icon artwork is unavailable");
     selected_ = item;
+    {
+        const QSignalBlocker blocker(search_);
+        search_->clear();
+    }
     refresh();
+    icons_->scrollToItem(icons_->currentItem());
 }
 void ArtEditor::refresh() {
     const ViewPosition keepView(this);

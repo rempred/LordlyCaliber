@@ -94,10 +94,10 @@ QPair<int, int> CampaignMap::road(int id) const {
         throw Error("Road does not exist");
     return {u8(roads_, (id - 1) * 2), u8(roads_, (id - 1) * 2 + 1)};
 }
-QVector<int> CampaignMap::availableNodes() const {
+QVector<int> CampaignMap::availableNodes(bool clearedStory) const {
     QVector<int> result;
     for (int id = 1; id <= nodeCount; ++id) {
-        if (position(id) != QPoint() || u16(worldEntry_, id * 2))
+        if (position(id) != QPoint() || (!clearedStory && u16(worldEntry_, id * 2)))
             continue;
         bool connected = false;
         for (int r = 1; r <= totalRoads(); ++r)
@@ -115,6 +115,15 @@ void CampaignMap::setNode(int id, QPoint p, int labelId) {
     put16(nodes_, (id - 1) * 8, quint16(p.x()));
     put16(nodes_, (id - 1) * 8 + 2, quint16(p.y()));
     put32(nodes_, (id - 1) * 8 + 4, pointers_[labelId]);
+}
+void CampaignMap::startEmpty(int startingLocation) {
+    nodeId(startingLocation);
+    for(int id=1;id<=nodeCount;++id){put16(nodes_,(id-1)*8,0);put16(nodes_,(id-1)*8+2,0);}
+    roads_.fill(0);shapes_.clear();names_.clear();
+    QImage blank(mapWidth,mapHeight,QImage::Format_RGBA8888);blank.fill(QColor(238,222,181));
+    setBackground(prepareArtwork(blank,256,true));
+    setNode(startingLocation,{mapWidth/2,mapHeight/2},label(startingLocation));
+    setName(startingLocation,"Starting location");
 }
 void CampaignMap::setRoad(int id, int from, int to) {
     roadId(id);
@@ -450,8 +459,13 @@ void CampaignMap::apply(const QJsonObject &value) {
             for (const auto v : a)
                 if (!v.isDouble() || v.toDouble() != v.toInt())
                     throw Error("Campaign map fields must be integers");
-            if (kind == "nodes")
-                next.setNode(id, {a[0].toInt(), a[1].toInt()}, a[2].toInt());
+            if (kind == "nodes") {
+                if(a[0].toInt()==0&&a[1].toInt()==0) {
+                    nodeId(id);if(!next.pointers_.contains(a[2].toInt()))throw Error("Invalid cleared map location label");
+                    put16(next.nodes_,(id-1)*8,0);put16(next.nodes_,(id-1)*8+2,0);
+                    put32(next.nodes_,(id-1)*8+4,next.pointers_[a[2].toInt()]);
+                }else next.setNode(id, {a[0].toInt(), a[1].toInt()}, a[2].toInt());
+            }
             else {
                 roadId(id);
                 if (a[0].toInt() || a[1].toInt()) { nodeId(a[0].toInt()); nodeId(a[1].toInt()); }
@@ -463,6 +477,10 @@ void CampaignMap::apply(const QJsonObject &value) {
     for (int id = 1; id <= next.totalRoads(); ++id)
         if (id > totalRoads() || next.road(id) != road(id))
             next.setRoad(id, next.road(id).first, next.road(id).second);
+    for(int id=1;id<=next.totalRoads();++id) {
+        const auto ends=next.road(id);
+        if(ends.first&&(!next.position(ends.first).x()||!next.position(ends.second).x()))throw Error("A road connects to a cleared map location");
+    }
     const auto shapeEdits=value["shapes"].toObject();
     auto point=[](const QJsonValue &v) {
         const auto a=v.toArray();

@@ -17,6 +17,7 @@ class QTabBar;
 namespace lordly {
 class PendingEdits;
 class EventFlowEditor;
+class ScenarioFlowchart;
 class ScenarioEventEditor : public QWidget {
   public:
     ScenarioEventEditor(Project *, QUndoStack *, std::function<void()>, QWidget *parent = nullptr);
@@ -25,6 +26,7 @@ class ScenarioEventEditor : public QWidget {
     void showAllRows();
     void selectEventRow(int row, int offset = -1);
     void setRawInstructions(bool);
+    void setCreateScenario(std::function<void(int)>);
     std::function<void(int)> editCutscene;
   protected:
     void showEvent(QShowEvent *) override;
@@ -34,6 +36,8 @@ class ScenarioEventEditor : public QWidget {
     void populatePrograms(int preferredRow = -1);
     int selectedEntry() const;
     void showRow();
+    void showChart();
+    void updateView();
     void selectStep();
     void showParameters(QTreeWidgetItem *);
     void clearParameters();
@@ -56,6 +60,8 @@ class ScenarioEventEditor : public QWidget {
     QComboBox *rows_, *flags_, *action_;
     QComboBox *locations_;
     QLabel *locationLabel_;
+    QPushButton *createScenario_;
+    std::function<void(int)> createScenarioCallback_;
     QTabBar *phases_;
     QCheckBox *otherPrograms_;
     std::unique_ptr<EventContexts> contexts_;
@@ -74,5 +80,9 @@ class ScenarioEventEditor : public QWidget {
     QCheckBox *raw_;
     QStackedWidget *views_;
     EventFlowEditor *eventsView_;
+    QTabBar *viewChoice_;
+    ScenarioFlowchart *chart_;
+    bool chartDirty_=true;
+    QString chartKey_;
 };
 } // namespace lordly

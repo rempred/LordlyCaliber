@@ -2,6 +2,7 @@
 #include "engine/event_script.h"
 #include "engine/scene_events.h"
 namespace lordly {
+class CampaignMap;
 struct StoryField {
     QString label, key;
     int offset = -1, value = 0, minimum = 0, maximum = 255;
@@ -40,7 +41,7 @@ class EventFlow {
   public:
     // Projection of current instructions, never a second saved event model.
     static QVector<StoryEvent> read(const Rom &, const SceneEvents &, const ScenePrograms &, int row,
-                                    bool originalSceneText = true);
+                                    bool originalSceneText = true,bool structural=true,const CampaignMap *locations=nullptr);
     static void set(SceneEvents &, const ScenePrograms &, int row, const StoryField &, int value);
 };
 }

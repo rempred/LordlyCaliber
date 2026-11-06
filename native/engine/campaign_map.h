@@ -63,8 +63,9 @@ class CampaignMap {
     QByteArray iconBytes() const;
     QByteArray iconAssignments() const { return icons_; }
     RasterImage roadArtwork() const;
-    QVector<int> availableNodes() const;
+    QVector<int> availableNodes(bool clearedStory = false) const;
     void setNode(int id, QPoint position, int label);
+    void startEmpty(int startingLocation);
     void setRoad(int id, int from, int to);
     QJsonObject json() const;
     void apply(const QJsonObject &);

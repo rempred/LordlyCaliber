@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 #include "engine/eset.h"
 #include "engine/scenario_resources.h"
+#include <QSet>
 
 namespace lordly {
 struct Scenario {
@@ -22,7 +23,9 @@ struct SquadCommand {
 };
 class Scenarios {
   public:
-    static Scenarios load(const Rom &rom);
+    static Scenarios load(const Rom &rom, bool uncompiledSnapshot = false);
+    void setAuthoredScenario(int key, const QString &name = {});
+    void setNewCampaign(bool enabled) { newCampaign_ = enabled; }
     const QMap<int, Scenario> &entries() const {
         return rows_;
     }
@@ -69,5 +72,7 @@ class Scenarios {
     QMap<int, Scenario> rows_, originals_;
     QByteArray enemies_;
     QVector<QPair<int, int>> originalClassLimits_;
+    QSet<int> authoredKeys_;
+    bool newCampaign_ = false;
 };
 } // namespace lordly

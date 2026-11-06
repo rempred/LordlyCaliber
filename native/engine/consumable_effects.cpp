@@ -1,9 +1,18 @@
 #include "engine/consumable_effects.h"
+#include "engine/consumable_tree.h"
+#include "engine/consumable_tree_runtime.h"
+#include "engine/consumable_visual.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QSet>
 #include <cmath>
 namespace lordly {
+QJsonObject ConsumableEffects::json() const {
+    QJsonObject result{{"version", !visuals_.isEmpty()?3:trees_.isEmpty()?1:2}, {"models", models_}};
+    if(!trees_.isEmpty())result["trees"]=trees_;
+    if(!visuals_.isEmpty())result["visuals"]=visuals_;
+    return result;
+}
 QJsonObject ConsumableEffects::catalog() {
     QFile file(":/game/consumables/effects.json");
     if (!file.open(QIODevice::ReadOnly))
@@ -50,6 +59,14 @@ ConsumableEffects ConsumableEffects::load(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision() != 0)
         throw Error("Native consumable effects currently support US Rev0");
+    if (const auto prior = ConsumableTreePlacement::read(rom)) {
+        auto result = load(Rom::fromBytes(prior->remove(rom)));
+        result.apply(prior->model);
+        result.original_ = result.models_;
+        result.originalTrees_ = result.trees_;
+        result.originalVisuals_ = result.visuals_;
+        return result;
+    }
     auto canonical = rom.bytes().mid(romOffset, codeSize);
     if (canonical.size() != codeSize)
         throw Error("Truncated consumable effect routine");
@@ -118,7 +135,7 @@ void ConsumableEffects::setModel(const QString &key, const QJsonObject &values) 
     throw Error("Unknown consumable effect model");
 }
 void ConsumableEffects::apply(const QJsonObject &object) {
-    if (object["version"] != 1 || !object["models"].isObject())
+    if ((object["version"] != 1 && object["version"] != 2 && object["version"] != 3) || !object["models"].isObject())
         throw Error("Unsupported consumable effect project format");
     const auto values = object["models"].toObject();
     if (values.size() != definitions().size())
@@ -129,8 +146,40 @@ void ConsumableEffects::apply(const QJsonObject &object) {
             throw Error("Invalid consumable effect model");
         next.setModel(it.key(), it.value().toObject());
     }
+    next.trees_ = {};
+    if(object["version"]==1&&object.contains("trees"))throw Error("Item trees require consumable format version 2");
+    if (object.contains("trees") && !object["trees"].isObject()) throw Error("Invalid consumable effect trees");
+    const auto trees = object["trees"].toObject();
+    for (auto it=trees.begin();it!=trees.end();++it) {
+        bool ok=false;const int id=it.key().toInt(&ok);
+        if(!ok||QString::number(id)!=it.key()||!it->isArray())throw Error("Invalid item effect tree");
+        next.setTree(id,it->toArray());
+    }
+    next.visuals_ = {};
+    if (object.contains("visuals") && (object["version"] != 3 || !object["visuals"].isObject()))
+        throw Error("Item artwork requires consumable format version 3");
+    const auto visuals = object["visuals"].toObject();
+    for (auto it = visuals.begin(); it != visuals.end(); ++it) {
+        bool ok = false; const int id = it.key().toInt(&ok);
+        if (!ok || QString::number(id) != it.key() || !it->isObject()) throw Error("Invalid item visual assignment");
+        next.setVisual(id, it->toObject());
+    }
     *this = std::move(next);
 }
+void ConsumableEffects::setVisual(int item, const QJsonObject &visual) {
+    if (!ConsumableTree::supported(item) && item != 20) throw Error("This item uses a separate visual system");
+    visuals_[QString::number(item)] = ConsumableVisual::fromJson(visual).json();
+}
+QJsonArray ConsumableEffects::tree(int item) const {
+    return trees_.contains(QString::number(item)) ? trees_[QString::number(item)].toArray() : ConsumableTree::retail(item,*this);
+}
+void ConsumableEffects::setTree(int item,const QJsonArray &tree) {
+    if(!ConsumableTree::supported(item))throw Error("This item uses a separate game behavior");
+    ConsumableTree::validate(tree);
+    const auto key=QString::number(item);
+    if(tree==ConsumableTree::retail(item,*this))trees_.remove(key);else trees_[key]=tree;
+}
+void ConsumableEffects::restoreTree(int item){trees_.remove(QString::number(item));}
 void ConsumableEffects::importLegacy(const QJsonObject &object, int version) {
     auto next = *this;
     for (auto it = object.begin(); it != object.end(); ++it) {

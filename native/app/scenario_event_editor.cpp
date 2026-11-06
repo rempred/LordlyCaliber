@@ -1,16 +1,20 @@
 #include "app/scenario_event_editor.h"
 #include "app/event_flow_editor.h"
+#include "app/scenario_flowchart.h"
 #include "app/pending_edits.h"
 #include <QScopedValueRollback>
 #include "app/content_refresh.h"
 #include "engine/event_script.h"
+#include "engine/event_authoring.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QJsonDocument>
+#include <QInputDialog>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QShowEvent>
 #include <QSignalBlocker>
@@ -59,12 +63,15 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     : QWidget(parent), project_(p), undo_(undo), changed_(std::move(changed)) {
     setObjectName("scenarioEvents");
     auto outer=new QVBoxLayout(this);
-    auto mode=new QHBoxLayout;mode->addWidget(new QLabel("Events"));mode->addStretch();
+    auto mode=new QHBoxLayout;viewChoice_=new QTabBar;viewChoice_->setObjectName("scenarioEventViewChoice");
+    viewChoice_->setExpanding(false);viewChoice_->addTab("Event tree");viewChoice_->addTab("Scenario flowchart");mode->addWidget(viewChoice_);mode->addStretch();
     otherPrograms_=new QCheckBox("All event programs");otherPrograms_->setObjectName("scenarioEventOtherPrograms");mode->addWidget(otherPrograms_);
     raw_=new QCheckBox("Raw instructions");raw_->setObjectName("scenarioEventRaw");mode->addWidget(raw_);outer->addLayout(mode);
     auto locationLine=new QHBoxLayout;
     locationLabel_=new QLabel("Map location");locationLine->addWidget(locationLabel_);
     locations_=new QComboBox;locations_->setObjectName("scenarioEventLocation");locationLine->addWidget(locations_,1);outer->addLayout(locationLine);
+    createScenario_=new QPushButton("Create scenario…");createScenario_->setObjectName("storyCreateScenario");locationLine->addWidget(createScenario_);createScenario_->hide();
+    connect(createScenario_,&QPushButton::clicked,this,[this]{if(createScenarioCallback_&&location_>0)createScenarioCallback_(location_);});
     phases_=new QTabBar;phases_->setObjectName("scenarioEventPhase");phases_->setExpanding(false);
     phases_->addTab("Arrival");phases_->addTab("Mission");phases_->addTab("Area Investigation");outer->addWidget(phases_);
     rows_ = new QComboBox; rows_->setObjectName("scenarioEventRow");outer->addWidget(rows_);
@@ -75,9 +82,100 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     eventsView_->openEventProgram=[this](int row){selectEventRow(row);};
     eventsView_->openEventInstruction=[this](int row,int at){setRawInstructions(false);selectEventRow(row,at);};
     auto rawPage=new QWidget;views_->addWidget(rawPage);auto layout = new QVBoxLayout(rawPage);layout->setContentsMargins(0,0,0,0);
+    chart_=new ScenarioFlowchart(project_,this);views_->addWidget(chart_);
+    chart_->navigate=[this](ChartAddress address){
+        viewChoice_->setCurrentIndex(0);
+        selectEventRow(address.row,address.offset);
+        if(!address.tree.isEmpty())eventsView_->editTree(address.tree,address.path,address.offset);
+    };
+    chart_->editStructure=[this](ChartAddress address,ChartTreeEdit operation){
+        try{
+            auto next=*project_->sceneEvents();const auto &scenes=*project_->scenePrograms();
+            auto trees=next.flagEdits()[QString::number(address.row)].toObject()["trees"].toArray();
+            int index=-1;for(int i=0;i<trees.size();++i)if(trees[i].toObject()["id"]==address.tree){index=i;break;}
+            if(index<0&&!address.tree.isEmpty())throw Error("This event was removed");
+            if(operation==ChartTreeEdit::Remove&&address.path.isEmpty()&&index>=0){
+                if(QMessageBox::question(chart_,"Delete event","Delete "+trees[index].toObject()["name"].toString()+"?",
+                   QMessageBox::Yes|QMessageBox::Cancel,QMessageBox::Cancel)!=QMessageBox::Yes)return;
+                trees.removeAt(index);next.setTrees(address.row,trees,scenes);commit(next,"Delete scenario event");refresh();return;
+            }
+            QJsonObject flags;
+            auto result=editEventTree(project_,address.row,index>=0?trees[index].toObject():QJsonObject{},chart_,&flags,address.path,operation,true);
+            if(!result)return;
+            next.apply(flags,scenes);if(index>=0)trees[index]=*result;else trees.append(*result);
+            next.setTrees(address.row,trees,scenes);commit(next,"Edit scenario flowchart");refresh();
+            chart_->focusTree(address.row,(*result)["id"].toString(),operation==ChartTreeEdit::Remove?QVector<int>{}:address.path);
+        }catch(const std::exception &e){QMessageBox::warning(chart_,"Edit event",QString::fromUtf8(e.what()));}
+    };
+    chart_->edit=[this](ChartAddress address){
+        if(!address.tree.isEmpty())chart_->editStructure(address,ChartTreeEdit::Edit);
+        else if(address.gateControl&&chart_->editGate)chart_->editGate(address,-1,false);
+        else {eventsView_->editChartStep(address.row,address.offset,chart_);refresh();}
+    };
+    chart_->editGate=[this](ChartAddress address,int group,bool remove){
+        if(address.gate<0)return;
+        try{
+            auto next=*project_->sceneEvents();auto flags=next.json();
+            auto old=next.flagEdits()[QString::number(address.row)].toObject()["gates"].toObject()[QString::number(address.gate)].toObject();
+            auto friendly=[&](QJsonObject value){
+                if(address.gateReversed)for(const QString key:{"yes","no","outcome"}){
+                    if(value[key]=="yes")value[key]="no";else if(value[key]=="no")value[key]="yes";
+                }return value;
+            };
+            QJsonObject gate;
+            if(remove){
+                if(address.gateControl&&old["mode"]=="if"){
+                    // Removing an added check restores the complete original decision.
+                    gate={};
+                }else{
+                    QMessageBox dialog(QMessageBox::Question,"Remove condition","Which branch should run in its place?",QMessageBox::Cancel,chart_);
+                    auto yes=dialog.addButton("Keep Yes",QMessageBox::ActionRole),no=dialog.addButton("Keep No",QMessageBox::ActionRole);
+                    dialog.exec();if(dialog.clickedButton()!=yes&&dialog.clickedButton()!=no)return;
+                    gate=friendly({{"mode","keep"},{"outcome",dialog.clickedButton()==yes?"yes":"no"}});
+                    if(old["mode"]=="if"){
+                        const auto outcome=gate["outcome"].toString();
+                        gate=old;
+                        for(const QString key:{"yes","no"})if(gate[key]=="original")gate[key]=outcome;
+                    }
+                }
+            }else if(address.gateControl&&old["mode"]=="keep"){
+                if(QMessageBox::question(chart_,"Restore condition","Restore the original IF condition?",
+                    QMessageBox::Yes|QMessageBox::Cancel,QMessageBox::Cancel)!=QMessageBox::Yes)return;
+            }else{
+                if(group<0){
+                    const auto events=EventFlow::read(project_->rom(),next,*project_->scenePrograms(),address.row);
+                    for(const auto &event:events){
+                        if(event.triggerInstructions.contains(address.gate))group=event.group;
+                        for(const auto &step:event.requirements+event.actions)if(step.instructions.contains(address.gate))group=event.group;
+                    }
+                }
+                auto result=editRetailCondition(project_,address.row,group,friendly(old),chart_,&flags);
+                if(!result)return;gate=friendly(*result);next.apply(flags,*project_->scenePrograms());
+            }
+            next.setRetailGate(address.row,address.gate,gate,*project_->scenePrograms());
+            commit(next,"Edit event condition");refresh();
+        }catch(const std::exception &e){QMessageBox::warning(chart_,"Edit condition",QString::fromUtf8(e.what()));}
+    };
+    chart_->createEvent=[this](int row){
+        if(!EventAuthoring::supported(row)){
+            QMap<QString,int> programs;
+            if(otherPrograms_->isChecked()&&rows_->currentIndex()>=0){const int id=rows_->currentData().toInt();if(EventAuthoring::supported(id))programs[EventScript::rowName(id)]=id;}
+            else if(location_>0){
+                const auto context=contexts_->location(location_);
+                for(int phase:{1,2})for(const auto &p:context.phases[phase])if(EventAuthoring::supported(p.row))
+                    programs[phases_->tabText(phase)+" · "+p.name+" ["+QString::number(p.row)+"]"]=p.row;
+            }else for(int id:contexts_->scenarioPrograms(scenario_))if(EventAuthoring::supported(id))programs[EventScript::rowName(id)]=id;
+            if(programs.isEmpty())return;
+            row=programs.first();
+            if(programs.size()>1){bool ok=false;const auto choice=QInputDialog::getItem(chart_,"Create event","Add to",programs.keys(),0,false,&ok);if(!ok)return;row=programs[choice];}
+        }
+        chart_->editStructure({row},ChartTreeEdit::Edit);
+    };
+    connect(viewChoice_,&QTabBar::currentChanged,this,[this]{updateView();});
     connect(raw_,&QCheckBox::toggled,this,[this](bool checked){
         if(!checked&&!drafts_.isEmpty()&&!applyDrafts()){const QSignalBlocker guard(raw_);raw_->setChecked(true);return;}
         views_->setCurrentIndex(checked?1:0);
+        viewChoice_->setEnabled(!checked);
         if(checked&&eventsView_->selectedOffset()>=0&&rows_->currentIndex()>=0)selectEventRow(rows_->currentData().toInt(),eventsView_->selectedOffset());
         if(!checked&&rows_->currentIndex()>=0)eventsView_->setRow(rows_->currentData().toInt(),selectedEntry());
         if(!checked&&steps_->currentItem())eventsView_->selectOffset(steps_->currentItem()->data(0,offsetRole).toInt());});
@@ -176,7 +274,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
             if (it.key().first == rows_->currentData().toInt()) it = drafts_.erase(it); else ++it;
         commit(next, "Restore scenario event flags");
     });
-    watchContentChanges(undo_, this, [this] { if (isVisible()) refresh(); });
+    watchContentChanges(undo_, this, [this] { chartDirty_=true;if (isVisible()) refresh(); });
     selectStep();
 }
 void ScenarioEventEditor::selectScenario(int key) {
@@ -193,8 +291,9 @@ void ScenarioEventEditor::selectLocation(int location) {
     if(changed||!contexts_)refresh();
 }
 void ScenarioEventEditor::showAllRows() { allRows_=true;all_->setChecked(true);refresh(); }
-void ScenarioEventEditor::setRawInstructions(bool enabled){raw_->setChecked(enabled);}
+void ScenarioEventEditor::setRawInstructions(bool enabled){if(enabled)viewChoice_->setCurrentIndex(0);raw_->setChecked(enabled);}
 void ScenarioEventEditor::selectEventRow(int row, int offset) {
+    if(offset>=0)viewChoice_->setCurrentIndex(0);
     if(!contexts_)refresh();
     try {
     if(!otherPrograms_->isChecked()&&contexts_&&allRows_){
@@ -234,6 +333,7 @@ void ScenarioEventEditor::refreshContext(){
     const auto signature=QJsonDocument(project_->sceneEvents()->json()).toJson(QJsonDocument::Compact);
     const auto rom=project_->rom().bytes().constData();
     if(!contexts_||signature!=contextSignature_||rom!=contextRom_){
+        chartDirty_=true;
         contexts_=std::make_unique<EventContexts>(project_->rom(),*project_->sceneEvents());
         contextSignature_=signature;contextRom_=rom;
     }
@@ -262,8 +362,9 @@ void ScenarioEventEditor::populatePrograms(int preferredRow){
     const QSignalBlocker block(rows_);rows_->clear();
     const bool all=otherPrograms_->isChecked();
     if(all){
-        for(int row=0;row<115;++row){if(EventScript::instructionOffsets(row).isEmpty())continue;
-            rows_->addItem(EventScript::rowName(row),row);rows_->setItemData(rows_->count()-1,-1,Qt::UserRole+1);}
+        for(int row=0;row<SceneEvents::rowCapacity;++row){const auto name=project_->sceneEvents()->missionName(row);
+            if(name.isEmpty()&&EventScript::instructionOffsets(row).isEmpty())continue;
+            rows_->addItem(name.isEmpty()?EventScript::rowName(row):name,row);rows_->setItemData(rows_->count()-1,-1,Qt::UserRole+1);}
     }else if(contexts_){
         QVector<EventProgramChoice> choices;
         if(location_>0)choices=contexts_->location(location_).phases[qMax(0,phases_->currentIndex())];
@@ -276,7 +377,39 @@ void ScenarioEventEditor::populatePrograms(int preferredRow){
     rows_->setCurrentIndex(qMax(0,rows_->findData(preferredRow)));
     rows_->setVisible(all||rows_->count()>1);
 }
+void ScenarioEventEditor::setCreateScenario(std::function<void(int)> callback){
+    createScenarioCallback_=std::move(callback);updateView();
+}
+void ScenarioEventEditor::updateView(){
+    createScenario_->setVisible(bool(createScenarioCallback_)&&!otherPrograms_->isChecked()&&location_>0);
+    const bool chart=viewChoice_->currentIndex()==1;
+    raw_->setVisible(!chart);
+    phases_->setVisible(!chart&&!otherPrograms_->isChecked());
+    rows_->setVisible((!chart||otherPrograms_->isChecked())&&(otherPrograms_->isChecked()||rows_->count()>1));
+    views_->setCurrentIndex(chart?2:raw_->isChecked()?1:0);
+    if(chart)showChart();
+    else if(!loading_)showRow();
+}
+void ScenarioEventEditor::showChart(){
+    if(!project_->sceneEvents())return;
+    const bool single=otherPrograms_->isChecked();
+    const int row=rows_->currentIndex()>=0?rows_->currentData().toInt():-1;
+    const QString key=single?QString("program/%1").arg(row):QString("scenario/%1/location/%2").arg(scenario_).arg(location_);
+    if(key==chartKey_&&!chartDirty_)return;
+    QVector<QPair<QString,EventProgramChoice>> choices;
+    try{
+        if(single&&row>=0)choices.append({"Event program",{row,-1,EventContexts::programName(row)}});
+        else if(contexts_&&location_>0){
+            const auto context=contexts_->location(location_);
+            for(int phase=0;phase<3;++phase)for(const auto &p:context.phases[phase])
+                choices.append({phases_->tabText(phase),p});
+        }else if(contexts_&&scenario_>=0)for(int id:contexts_->scenarioPrograms(scenario_))
+            choices.append({id>=71&&id<=109?"Area Investigation":"Mission",{id,-1,EventContexts::programName(id)}});
+        chart_->setScenario(key,scenarioChart(*project_,choices));chartKey_=key;chartDirty_=false;
+    }catch(const std::exception &e){chart_->setScenario(key,{});QMessageBox::warning(this,"Scenario flowchart",QString::fromUtf8(e.what()));}
+}
 void ScenarioEventEditor::showRow() {
+    if(viewChoice_->currentIndex()==1){updateView();return;}
     const QScopedValueRollback<bool> loading(loading_,true);
     const int previous = steps_->currentItem() ? steps_->currentItem()->data(0, offsetRole).toInt() : -1;
     const QSignalBlocker block(steps_);
@@ -297,12 +430,13 @@ void ScenarioEventEditor::showRow() {
         const auto bytes = project_->sceneEvents()->program(row);
         // Reopened ROMs can contain changed scene/dialogue resources without
         // pending project edits. Narrative meanings require the researched base.
-        const bool originalScenes = sha256(project_->rom().bytes()) ==
+        const bool originalScenes = sha256(project_->runtimeRom().bytes()) ==
             "571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a" &&
             !project_->scenePrograms()->modified() &&
             (!project_->dialogues() || !project_->dialogues()->modified());
-        const auto handlers = EventScript::display(bytes, row, originalScenes);
-        const auto retailOffsets=EventScript::instructionOffsets(row);
+        const bool replaced=project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["replace"].toBool();
+        const auto handlers = replaced?EventScript::decode(bytes,row):EventScript::display(bytes, row, originalScenes);
+        const auto retailOffsets=replaced?QSet<int>{}:EventScript::instructionOffsets(row);
         QMap<int, QString> sceneNames;
         for (const auto &id : project_->scenePrograms()->scenes())
             for (int selector : project_->scenePrograms()->resource(id).selectors)

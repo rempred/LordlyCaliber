@@ -21,10 +21,10 @@ class EventContexts {
     QVector<int> locationsForScenario(int key) const;
     QVector<int> locationsForProgram(int row, int offset = -1) const;
     QVector<int> scenarioPrograms(int key) const;
+    QVector<int> scenarioKeys(int row) const;
     static QString programName(int row);
   private:
     QVector<int> destinations(int location, int routingRow) const;
-    QVector<int> scenarioKeys(int row) const;
     SceneEvents events_;
     StoryRoutes routes_;
     mutable QMap<int, EventLocationContext> locations_;

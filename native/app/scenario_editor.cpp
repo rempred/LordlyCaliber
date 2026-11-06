@@ -1,6 +1,7 @@
 #include "app/content_refresh.h"
 #include "app/view_position.h"
 #include "app/scenario_editor.h"
+#include "engine/new_campaign.h"
 #include "app/game_rules_editor.h"
 #include "app/scenario_squad_panel.h"
 #include "app/scenario_map_editor.h"
@@ -334,6 +335,10 @@ void ScenarioEditor::refresh() {
     QSet<int> devKeys;
     for (const auto value : catalog["devKeys"].toArray()) {
         const int id = value.toInt();
+        bool authored = false;
+        for (const auto &battlefield : project_->scenarioBattlefields())
+            authored |= battlefield.toObject()["key"].toInt() == id;
+        if (authored) continue;
         devKeys.insert(id);
         if (!entries.contains(id))
             keys.append(id);
@@ -345,9 +350,11 @@ void ScenarioEditor::refresh() {
     });
     scenarios_->clear();
     for (const int id : keys) {
+        if(project_->sceneEvents()&&!NewCampaign::includesBattlefield(*project_->sceneEvents(),id))continue;
+        if(devKeys.contains(id)&&project_->sceneEvents()&&!NewCampaign::settings(*project_->sceneEvents())["keepScenarioMaps"].toBool(true))continue;
         const auto entry = entries.constFind(id);
         const bool editable = entry != entries.cend();
-        const auto name = editable ? entry->name : names[QString::number(id)].toString();
+        const auto name = editable ? project_->scenarioName(id) : names[QString::number(id)].toString();
         const bool modified = editable && entry->json() != project_->scenarios()->original(id).json();
         auto item = new QListWidgetItem(
             QString("%1 · %2%3%4").arg(id).arg(name)
@@ -406,7 +413,7 @@ void ScenarioEditor::showScenario() {
         editingRow_ = 0;
     editingKey_ = key();
     { const QSignalBlocker baseBlock(base_);base_->setValue(s.layout.baseLevel()); }
-    findChild<QLabel *>("scenarioCurrentTitle")->setText(s.name);
+    findChild<QLabel *>("scenarioCurrentTitle")->setText(project_->scenarioName(s.key));
     {
         const QSignalBlocker blocker(missionTime_);
         missionTime_->setTime(QTime(s.layout.startHour(), s.layout.startMinute()));

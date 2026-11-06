@@ -2,6 +2,7 @@
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/new_campaign_runtime.h"
 #include "engine/deleted_content.h"
 #include "rebuild/goth_runtime.h"
 #include "rebuild/accepted_rom.h"
@@ -16,6 +17,10 @@
 #include "rebuild/body_visual_policy.h"
 #include "engine/class_text.h"
 #include "engine/location_text.h"
+#include "engine/scenario_battlefields.h"
+#include "engine/retail_event_gate.h"
+#include "engine/battlefield_clone.h"
+#include "engine/mission_tables.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
 #include "engine/legacy_scene_arena.h"
@@ -31,6 +36,8 @@
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
 #include "rebuild/scenario_members.h"
+#include "rebuild/mission_runtime.h"
+#include "rebuild/retail_event_gate_runtime.h"
 #include "engine/squad_members.h"
 #include "rebuild/shop_runtime.h"
 #include <QDir>
@@ -715,6 +722,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     });
     compiler.authenticate();
     result.image = removeWeaponTypes(p.rom(), compiler, directory);
+    const auto priorItemTrees=ConsumableTreePlacement::read(p.rom());
+    if(priorItemTrees){p.loadConsumableEffects();result.image=priorItemTrees->remove(Rom::fromBytes(result.image));}
     const auto priorAttacks = AttackPlacement::read(p.rom());
     if (priorAttacks) p.loadAttacks();
     const bool relocateAttacks = p.attacks() && (p.attacks()->modified() || priorAttacks.has_value());
@@ -840,9 +849,36 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const auto affinity = p.tools() ? p.tools()->leaderAffinity() : LeaderAffinity::load(p.rom());
     const bool relocateAffinity = affinity.modified() || affinity.extended();
     if (relocateAffinity) affinity.validateClasses(int(p.records(Table::Classes).size()));
+    const auto priorGateAddress = u32(p.rom().bytes(), 0x66654);
+    const bool priorEventGates = priorClassPlacement &&
+        priorGateAddress >= priorClassPlacement->residentAddress + 8 &&
+        quint64(priorGateAddress) < quint64(priorClassPlacement->residentAddress) + priorClassPlacement->residentBytes &&
+        p.rom().bytes().mid(priorGateAddress - ClassPlacement::residentDelta - 8, 8) == QByteArray("LCGATE01", 8);
+    if (priorEventGates) p.loadSceneEvents();
+    const quint32 priorCampaignBridge=p.rom().revision()?0:u32(p.rom().bytes(),0x66658);
+    const bool priorCampaign=priorClassPlacement && priorCampaignBridge>=priorClassPlacement->layout.indexBase+8 &&
+        priorCampaignBridge<priorClassPlacement->layout.end &&
+        p.rom().bytes().mid(priorClassPlacement->dataRomOffset+priorCampaignBridge-priorClassPlacement->layout.indexBase-8,8)=="LCSTART1";
+    if(priorCampaign)p.loadSceneEvents();
+    const auto campaignStart=prepareNewCampaign(p);
+    quint32 campaignBridge=0;
+    const bool retailEventGates = p.sceneEvents() && RetailEventGate::needsRuntime(p.sceneEvents()->flagEdits());
+    quint32 eventGateBridge = 0;
     const bool customStoryFlags = (p.sceneEvents() && p.sceneEvents()->hasCustomFlags()) ||
         (priorClassPlacement && priorClassPlacement->layout.customFlags);
-    const bool relocateClasses = customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
+    const bool itemTrees = p.consumableEffects() && (p.consumableEffects()->hasTrees() || p.consumableEffects()->hasVisuals());
+    // An imported project can remove scenario metadata while the opened ROM
+    // still owns private map assets. Keep their native loaders and model table
+    // valid when rebuilding another resident feature or removing its last hook.
+    const bool privateBattlefields = p.rom().bytes().mid(BattlefieldClone::descriptorOffset, 8) == "LC08FLDS";
+    const auto battlefieldModels = p.scenarioBattlefields().isEmpty() && !privateBattlefields
+                                       ? QByteArray{} : BattlefieldClone::modelTable(p.rom());
+    quint32 battlefieldModelAddress = 0;
+    const auto missionTables = MissionTables::runtimeData(p.rom());
+    quint32 missionTableAddress = 0;
+    std::optional<MissionRuntimeBuild> missionRuntime;
+    const bool customMissionVictory = !p.scenarioBattlefields().isEmpty();
+    const bool relocateClasses = !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
@@ -982,6 +1018,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Compiled shop stock, producer and halfword readers; retained original "
                          "RAM allocations";
     }
+    std::optional<ConsumableTreeInput> itemTreeInput;
+    if(itemTrees)itemTreeInput=ConsumableTreeInput{*p.consumableEffects(),Rom::fromBytes(result.image)};
     if (!expandedClasses)
         rebuildPromotion(p, compiler, directory, result);
     if (relocateClasses) {
@@ -1050,11 +1088,52 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 return custom->bytes;
             };
         }
+        if (retailEventGates) {
+            const auto priorBuilder = residentBuilder;
+            residentBuilder = [&, priorBuilder](quint32 address, quint32 capacity) {
+                const auto gate = buildRetailEventGateRuntime(compiler, directory, address);
+                auto bytes = gate.bytes;
+                eventGateBridge = gate.entries.value("lc_event_gate_bridge");
+                if (!eventGateBridge || bytes.isEmpty() || bytes.size() % 16 || quint32(bytes.size()) > capacity)
+                    throw Error("The editable event condition helper exceeds resident storage");
+                if (priorBuilder) bytes += priorBuilder(address + quint32(bytes.size()), capacity - quint32(bytes.size()));
+                return bytes;
+            };
+        }
+        if (customMissionVictory) {
+            const auto priorBuilder = residentBuilder;
+            residentBuilder = [&, priorBuilder](quint32 address, quint32 capacity) {
+                missionRuntime = buildMissionRuntime(p, compiler, directory, address, capacity);
+                auto bytes = missionRuntime->bytes;
+                if (bytes.isEmpty() || bytes.size() % 16 || quint32(bytes.size()) > capacity)
+                    throw Error("The mission victory helper exceeds resident storage");
+                if (priorBuilder) bytes += priorBuilder(address + quint32(bytes.size()), capacity - quint32(bytes.size()));
+                return bytes;
+            };
+        }
+        if (!battlefieldModels.isEmpty()) {
+            const auto priorBuilder = residentBuilder;
+            residentBuilder = [&, priorBuilder](quint32 address, quint32 capacity) {
+                const quint32 tableSize = (quint32(battlefieldModels.size()) + 15U) & ~15U;
+                const quint32 lead = address < 0x80188000 ? 0x80188000 - address : 0;
+                if (capacity < lead + tableSize)
+                    throw Error("The independent battlefield model table exceeds resident storage");
+                auto bytes = priorBuilder ? priorBuilder(address, capacity - tableSize) : QByteArray{};
+                const auto tableAt = qMax(lead, (quint32(bytes.size()) + 15U) & ~15U);
+                if (tableAt + tableSize > capacity)
+                    throw Error("The independent battlefield model table overlaps resident code");
+                bytes += QByteArray(tableAt - bytes.size(), 0);
+                battlefieldModelAddress = address + tableAt;
+                bytes += battlefieldModels;
+                bytes += QByteArray(tableSize - battlefieldModels.size(), 0);
+                return bytes;
+            };
+        }
         auto classes = buildClassRuntime(
             data, compiler, directory, offset,
             customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1067,7 +1146,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes=buildClassRuntime(data,compiler,directory,offset,
                 customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1080,11 +1159,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes = buildClassRuntime(data, compiler, directory, offset,
                 customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
-        classes.removeResident = priorCustom.has_value() && !customSquads;
+        missionTableAddress = classes.missionTableAddress;
+        campaignBridge=classes.campaignBridge;
+        classes.removeResident = (priorCustom.has_value() && !customSquads) ||
+                                 (priorEventGates && !retailEventGates);
         const auto menus = expandedClasses
                                ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
                                      p.rom(), classes.data.layout, *p.promotion(), compiler,
@@ -1134,7 +1216,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                          "complete 48-byte owner";
     }
     reporter.stage(2, "Building scenarios and story");
-    if ((p.scenarios() && p.scenarios()->modified()) || (p.training() && p.training()->modified())) {
+    if (!p.scenarioBattlefields().isEmpty() || (p.scenarios() && p.scenarios()->modified()) || (p.training() && p.training()->modified())) {
         p.loadScenarios();
         auto plan = p.scenarios()->plan(p.classData());
         QByteArray trainingTable;
@@ -1391,8 +1473,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 !reopenedRules.unavailable(rule.group).isEmpty())
                 throw Error("Rebuilt game rule failed authentication: " + rule.label);
     }
+    if (!missionTables.isEmpty()) {
+        if (!missionTableAddress) throw Error("Expanded mission tables were not allocated");
+        MissionTables::linkRuntime(result.image, missionTableAddress);
+        result.report << "Linked expanded mission, battlefield and world resource tables";
+    }
     if(capacityRuntime) {
-        result.image=installCapacityRuntime(Rom::fromBytes(result.image),*capacityRuntime);
+        result.image=installCapacityRuntime(Rom::fromBytes(result.image),*capacityRuntime,
+                                           CapacityPlacement::read(p.runtimeRom()));
         result.report<<"Compiled 30 enemy/allied squad slots and a separate temporary encounter slot; retained the 99-character player roster, all 30 organized player squads and 32 KB battery saves.";
     }
     rebuildWeaponStatus(p, compiler, directory, result);
@@ -1421,12 +1509,37 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = p.campaignMap()->rebuild(result.image);
     }
     if(!p.rom().revision())result.image = rebuildCampaignRuntime(p,result.image,compiler,directory);
+    if (retailEventGates || priorEventGates) {
+        linkRetailEventGateRuntime(result.image, eventGateBridge, p.rom());
+        result.report << (retailEventGates ? "Linked editable conditions into original event branches"
+                                         : "Restored the native event dispatcher after removing custom conditions");
+    }
+    if(campaignBridge||priorCampaign)linkNewCampaignRuntime(result.image,campaignBridge,p.rom());
+    if (customMissionVictory && !missionRuntime)
+        throw Error("The mission victory helper was not allocated");
+    result.image = linkMissionRuntime(Rom::fromBytes(result.image), p,
+                                      missionRuntime.value_or(MissionRuntimeBuild{}), compiler, directory);
+    if (customMissionVictory) {
+        result.report << "Compiled native victory checks for independently created scenarios";
+    }
+    if (!battlefieldModels.isEmpty()) {
+        if (!battlefieldModelAddress) throw Error("Independent battlefield model table was not allocated");
+        BattlefieldClone::linkRuntime(result.image, battlefieldModelAddress);
+        result.report << "Linked independent battlefield models to the native resource loaders";
+    }
+    if (!p.rom().revision()) {
+        result.image = writeScenarioBattlefields(Rom::fromBytes(result.image), p.scenarioBattlefields());
+        if (!p.scenarioBattlefields().isEmpty())
+            result.report << "Preserved independent battlefield snapshots and scenario identities";
+    }
     if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
         result.image=writeDeletedContent(result.image,p.deletedContent());
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");
     Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (reopened.scenarioBattlefields() != p.scenarioBattlefields())
+        throw Error("Exported custom battlefield snapshots differ from the project");
     if (!p.rom().revision()) {
         // Recheck even tools the user never opened: another feature must not
         // silently disable an existing setting or damage an original owner.

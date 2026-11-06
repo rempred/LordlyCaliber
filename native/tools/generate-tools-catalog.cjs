@@ -1,6 +1,22 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
 const root=path.resolve(__dirname,'../..');global.window=global;global.OB64={};
+const assembleDisplayTool=require('./lib/assemble-display-tool.cjs');
+function qualifySources(name,catalog,definition={}) {
+ const file=path.join(root,'native/game/tools',name==='chaos'?'chaos.json':'displays.json');
+ const previous=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):null;
+ const oldSites=name==='chaos'?previous?.sites:previous?.features?.find(f=>f.name===name)?.sites;
+ for(const site of catalog) {
+  const old=oldSites?.find(s=>s.name===site.name);
+  const history=new Set([site.normalizedSha256,...(old?.previousNativeSha256||[])]);
+  // Opt in only when upgrading a version already distributed to users. Normal
+  // regeneration must not authenticate intermediate development binaries.
+  if(old&&process.argv.includes('--remember-current'))history.add(old.normalizedSha256);
+  site.normalizedSha256=hash(assembleDisplayTool(name,site,definition).toString('hex'));
+  history.delete(site.normalizedSha256);
+  if(history.size)site.previousNativeSha256=[...history].sort();
+ }
+}
 vm.runInThisContext(fs.readFileSync(path.join(root,'tools-data.js'),'utf8'));
 const feature=OB64.TOOLS_FEATURES.find(f=>f.id==='experience-size-scale');
 const hash=hex=>crypto.createHash('sha256').update(Buffer.from(hex,'hex')).digest('hex');
@@ -27,6 +43,9 @@ const cf={generatedBy:'native/tools/generate-tools-catalog.cjs',
    normalizedSha256:hash(canonical.toString('hex')),legacyRom:legacy.offset,
    legacyBytes:padded.length,legacySha256:hash(padded.toString('hex'))};
  })};
+qualifySources('chaos',cf.sites);
+cf.sites.find(s=>s.name==='source-loader-bootstrap').payloadBytes=64;
+cf.inputs.push('maintained native/game/tools/chaos-*.s; compiled with pinned native N64 assembler');
 fs.writeFileSync(path.join(root,'native/game/tools/chaos.json'),JSON.stringify(cf,null,2)+'\n');
 const displays={generatedBy:'native/tools/generate-tools-catalog.cjs',
  inputs:['native-rebuild-data.js; parent tools/luck_alignment_display_patch.py (Luck 6, Alignment 10)'],
@@ -46,4 +65,6 @@ const displays={generatedBy:'native/tools/generate-tools-catalog.cjs',
   return {id,name,setting:index?'squadMenuAlignment':'characterCardLuck',
    nativeDraw:index?0x80176c6c:0x8019b0d0,sites};
  })};
+for(const def of displays.features)qualifySources(def.name,def.sites,def);
+displays.inputs.push('maintained native/game/tools/{luck,alignment}-*.s; compiled with pinned native N64 assembler');
 fs.writeFileSync(path.join(root,'native/game/tools/displays.json'),JSON.stringify(displays,null,2)+'\n');

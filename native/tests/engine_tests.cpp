@@ -507,6 +507,11 @@ class EngineTests : public QObject {
             const auto normalized = Rom::fromBytes(rom.bytes());
             QVERIFY(normalized.serialize(built.image) == rom.bytes());
             qInfo().noquote() << "No-edit C-backed export is byte-identical; candidate:" << candidate;
+            auto foreign = rom.bytes();
+            put32(foreign,0x66658,0x80200000); // An unrelated mod owns reserved event opcode 9.
+            Rom::updateChecksum(foreign);
+            const auto foreignProject=Project::fromRom(Rom::fromBytes(foreign));
+            QCOMPARE(rebuild(foreignProject,tools,work.path()).image,foreign);
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void persuasionMatrixGroups() {
@@ -5133,6 +5138,125 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }
+    }
+    void projectImportIntoDifferentRom() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto classOffset = Project::fromRom(rom).record(Table::Classes, 7).romOffset;
+            auto originalSource = rom.bytes();
+            put16(originalSource, classOffset + 12, 777);
+            auto source = Project::fromRom(Rom::fromBytes(originalSource));
+            auto changed = source.record(Table::Classes, 5).bytes;
+            put16(changed, 12, 333);
+            source.replaceBytes(Table::Classes, 5, changed);
+            source.setClassNameBytes(5, encodeClassName("Imported Knight"));
+            const auto saved = source.manifest();
+
+            auto targetBytes = rom.bytes();
+            const auto otherOffset = source.record(Table::Classes, 6).romOffset;
+            put16(targetBytes, otherOffset + 12, 444);
+            auto target = Project::fromRom(Rom::fromBytes(targetBytes));
+            const auto before = target.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, target.applyManifest(saved));
+            QCOMPARE(target.manifest(), before);
+            auto invalid = saved;
+            auto records = invalid["records"].toObject();
+            auto classes = records["classes"].toObject();
+            classes["99999"] = QString::fromLatin1(changed.toHex());
+            records["classes"] = classes;
+            invalid["records"] = records;
+            QVERIFY_THROWS_EXCEPTION(Error, target.applyManifest(invalid, Project::SourcePolicy::ImportIntoCurrentRom));
+            QCOMPARE(target.manifest(), before);
+            invalid = saved;
+            invalid["sourceSha256"] = "not a fingerprint";
+            QVERIFY_THROWS_EXCEPTION(Error, target.applyManifest(invalid, Project::SourcePolicy::ImportIntoCurrentRom));
+            QCOMPARE(target.manifest(), before);
+
+            target.applyManifest(saved, Project::SourcePolicy::ImportIntoCurrentRom);
+            QCOMPARE(target.record(Table::Classes, 5).bytes, changed);
+            QCOMPARE(target.classNameBytes(5), source.classNameBytes(5));
+            QCOMPARE(u16(target.record(Table::Classes, 6).bytes, 12), quint16(444));
+            // An edit inherited from the foreign source is absent from the manifest.
+            QCOMPARE(target.record(Table::Classes, 7).bytes, Project::fromRom(rom).record(Table::Classes, 7).bytes);
+            QCOMPARE(target.runtimeRom().bytes(), targetBytes);
+            // Source name addresses can differ after relocation. Import keeps
+            // the current ROM's allocations while applying explicit name edits.
+            auto relocated = saved;
+            records = relocated["records"].toObject();
+            for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
+                auto rows = records[tableKey(table)].toObject();
+                auto record = source.record(table, 5).bytes;
+                put32(record, 0, 0x80600000);
+                rows["5"] = QString::fromLatin1(record.toHex());
+                records[tableKey(table)] = rows;
+            }
+            relocated["records"] = records;
+            target.applyManifest(relocated, Project::SourcePolicy::ImportIntoCurrentRom);
+            for (auto table : {Table::Classes, Table::Items, Table::Consumables})
+                QCOMPARE(target.record(table, 5).bytes.first(4), target.record(table, 5).original.first(4));
+            QCOMPARE(target.record(Table::Classes, 5).bytes, changed);
+            QCOMPARE(target.classNameBytes(5), source.classNameBytes(5));
+            QCOMPARE(target.manifest()["sourceSha256"].toString(), QString::fromLatin1(sha256(targetBytes)));
+            QTemporaryDir folder;
+            QVERIFY(folder.isValid());
+            target.saveArchive(folder.filePath("imported.lcproject"));
+            auto reopened = Project::fromRom(Rom::fromBytes(targetBytes));
+            reopened.applyManifest(Project::readProject(folder.filePath("imported.lcproject")));
+            QCOMPARE(reopened.record(Table::Classes, 5).bytes, changed);
+            QCOMPARE(reopened.record(Table::Classes, 6).bytes, target.record(Table::Classes, 6).bytes);
+            QCOMPARE(reopened.classNameBytes(5), target.classNameBytes(5));
+            QCOMPARE(saved["sourceSha256"], source.manifest()["sourceSha256"]);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &error) { QFAIL(error.what()); }
+    }
+    void externalProjectImportExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto manifestPath = qEnvironmentVariable("LORDLY_TEST_IMPORT_PROJECT");
+        if (path.isEmpty() || manifestPath.isEmpty()) QSKIP("Private ROM and foreign project fixture required");
+        try {
+            QFile input(manifestPath);
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto originalManifest = input.readAll();
+            input.close();
+            const auto source = Rom::open(path);
+            const auto saved = Project::readProject(manifestPath);
+            auto project = Project::fromRom(source);
+            QVERIFY_THROWS_EXCEPTION(Error, project.applyManifest(saved));
+            project.applyManifest(saved, Project::SourcePolicy::ImportIntoCurrentRom);
+            QTemporaryDir folder;
+            QVERIFY(folder.isValid());
+            project.saveFolder(folder.path());
+            auto restored = Project::fromRom(source);
+            restored.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(restored.manifest(), project.manifest());
+            const auto result = rebuild(restored, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), folder.path());
+            auto checked = result.image;
+            Rom::updateChecksum(checked);
+            QCOMPARE(checked, result.image);
+            auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QVERIFY(QDir().mkpath(candidates));
+            QTemporaryDir output(candidates + "/project-import-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto outputPath = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, result, outputPath);
+            auto reopened = Project::fromRom(Rom::open(outputPath));
+            for (const auto table : {Table::Classes, Table::Items, Table::Consumables}) {
+                QCOMPARE(reopened.records(table).size(), restored.records(table).size());
+                for (int id = 0; id < restored.records(table).size(); ++id)
+                    // Export may relocate class/item names; compare their text
+                    // separately, rather than requiring identical RAM pointers.
+                    QCOMPARE(reopened.record(table, id).bytes.sliced(4), restored.record(table, id).bytes.sliced(4));
+            }
+            for (int id = 0; id < restored.records(Table::Classes).size(); ++id)
+                QCOMPARE(reopened.classNameBytes(id), restored.classNameBytes(id));
+            for (int id = 0; id < restored.records(Table::Items).size(); ++id)
+                QCOMPARE(reopened.itemNameBytes(id), restored.itemNameBytes(id));
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            QCOMPARE(input.readAll(), originalManifest);
+        } catch (const std::exception &error) { QFAIL(error.what()); }
     }
     void retailChecksumAndCompiledExport() {
         try {

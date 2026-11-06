@@ -1,3 +1,4 @@
+#include "engine/mission_tables.h"
 #include "engine/project.h"
 #include "engine/weapon_status.h"
 #include "engine/squad_members.h"
@@ -837,7 +838,7 @@ ChangeReport Project::changeReport(const Project *reference) const {
         }
         QSet<int> maps;
         for(const auto &scenario:scenarios_->entries()) {
-            const int key=scenario.key, modelId=u8(rom_.bytes(),0x654a0+key*9+3);
+            const int key=scenario.key, modelId=u8(MissionTables::row(rom_, MissionTables::Scenario, key), 3);
             if(key==54 || modelId<4 || modelId>44) continue;
             const auto &src=mapEdits_->source(key);
             if(maps.contains(src.modelId)) continue; maps.insert(src.modelId);

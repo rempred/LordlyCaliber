@@ -30,6 +30,7 @@
 #include "engine/tool_settings.h"
 #include "engine/training.h"
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QStringList>
 #include <QVector>
 #include <map>
@@ -60,9 +61,10 @@ QString tableKey(Table table);
 const QVector<Field> &fields(Table table);
 class Project {
   public:
+    enum class SourcePolicy { RequireMatch, ImportIntoCurrentRom };
     static Project fromRom(Rom rom, const QJsonObject &catalog = {});
     const Rom &rom() const {
-        return rom_;
+        return battlefieldRom_ ? *battlefieldRom_ : rom_;
     }
     const Rom &runtimeRom() const { return runtimeRom_ ? *runtimeRom_ : rom_; }
     bool expandedArmies() const;
@@ -83,7 +85,7 @@ class Project {
     ChangeReport changeReport(const Project *reference = nullptr) const;
     ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
-    void applyManifest(const QJsonObject &object);
+    void applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy = SourcePolicy::RequireMatch);
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
@@ -162,6 +164,11 @@ class Project {
         return scenarios_;
     }
     void setScenarios(const QJsonObject &value);
+    QVector<int> availableScenarioBattlefields() const;
+    void createScenarioBattlefield(int targetKey, int sourceKey, const QString &mode,
+                                   const QString &name);
+    const QJsonArray &scenarioBattlefields() const { return scenarioBattlefields_; }
+    QString scenarioName(int key) const;
     void loadWorld();
     const std::optional<ScenarioWorld> &world() const {
         return world_;
@@ -251,6 +258,7 @@ class Project {
     int createEncounterPool();
 
   private:
+    void setScenarioBattlefields(const QJsonArray &);
     void importLegacyShops(const QJsonObject &object);
     void importLegacyConsumables(const QJsonObject &object);
     void importLegacyConsumableEffects(const QJsonObject &object);
@@ -271,6 +279,8 @@ class Project {
     void importLegacyWorld(const QJsonObject &object);
     Rom rom_;
     std::optional<Rom> runtimeRom_;
+    std::optional<Rom> battlefieldRom_;
+    QJsonArray scenarioBattlefields_, originalScenarioBattlefields_;
     QJsonObject catalog_, retained_, legacy_;
     bool legacyScenesImported_ = false;
     bool legacyAnimationSequencesImported_ = false;

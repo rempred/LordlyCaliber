@@ -1,7 +1,8 @@
 {
   "generatedBy": "native/tools/generate-tools-catalog.cjs",
   "inputs": [
-    "native-rebuild-data.js; parent tools/luck_alignment_display_patch.py (Luck 6, Alignment 10)"
+    "native-rebuild-data.js; parent tools/luck_alignment_display_patch.py (Luck 6, Alignment 10)",
+    "maintained native/game/tools/{luck,alignment}-*.s; compiled with pinned native N64 assembler"
   ],
   "features": [
     {
@@ -18,10 +19,15 @@
           "size": 192,
           "payloadBytes": 192,
           "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
-          "normalizedSha256": "91bd6be695c6b6d1fdebe4602b91f5539caefeebabf0326de1e3e955a6dcd611",
+          "normalizedSha256": "94b82403349cb9da968f1c7241603bd1a64f581fc34e9c7da455b17fda6fff18",
           "legacyRom": 217344,
           "legacyBytes": 192,
-          "legacySha256": "7597230d878ed453b9eea0fd75007b4a4add63bc19744de5aad2952a96904f30"
+          "legacySha256": "7597230d878ed453b9eea0fd75007b4a4add63bc19744de5aad2952a96904f30",
+          "previousNativeSha256": [
+            "201b26f5383c5307d9bc367a4e6c63c6a3efff27559cf0924e51f3410b85a53c",
+            "91bd6be695c6b6d1fdebe4602b91f5539caefeebabf0326de1e3e955a6dcd611",
+            "d8c044e6e767ccc444086cd47b37441d490b1d79d6526e3c05b005782e244c6d"
+          ]
         },
         {
           "name": "native-hook",
@@ -44,10 +50,15 @@
           "size": 4096,
           "payloadBytes": 3072,
           "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
-          "normalizedSha256": "82bd8d99962528a2238b5dede427f82531b3f41110e77598b4d90575310ee8b0",
+          "normalizedSha256": "377189aa9c71f5966e41cb0174d38b7f878c6732235c15774285fe3ee8e74cba",
           "legacyRom": 41877504,
           "legacyBytes": 3072,
-          "legacySha256": "be37c8a78ce4de4b761e44c4dab9c6dc30168d6d8697494ac43f1600c85b9497"
+          "legacySha256": "be37c8a78ce4de4b761e44c4dab9c6dc30168d6d8697494ac43f1600c85b9497",
+          "previousNativeSha256": [
+            "82bd8d99962528a2238b5dede427f82531b3f41110e77598b4d90575310ee8b0",
+            "8e442ee54c81173adcf3d9a2d83aa67a7c7c6c5c67530d59b1ea29f4b9b0c6c4",
+            "98f3a74a11381ab34b6e6f6267cba7209a934e973c788aea8e96113f70ec867c"
+          ]
         }
       ]
     },

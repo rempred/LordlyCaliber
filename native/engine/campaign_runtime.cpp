@@ -14,7 +14,7 @@ std::optional<CampaignPlacement> CampaignPlacement::read(const QByteArray &b) {
     }
     if (at < 0)
         return {};
-    if (at < 0x2800000 || at + 80 > b.size() || u32(b,at+8)<1 || u32(b,at+8)>6)
+    if (at < 0x2800000 || at + 80 > b.size() || u32(b,at+8)<1 || u32(b,at+8)>7)
         throw Error("Invalid campaign runtime descriptor");
     CampaignPlacement p;
     p.version=int(u32(b,at+8));
@@ -38,7 +38,7 @@ std::optional<CampaignPlacement> CampaignPlacement::read(const QByteArray &b) {
     if(p.version>=6) {
         p.roadFlags=b.mid(p.overlayOffset+codeAddress+8192-100-ramStart,count);
         for(int id=0;id<int(count);++id)
-            if(u8(p.roadFlags,id)>40 || (id<40 && u8(p.roadFlags,id)!=id+1))
+            if(p.version==7 ? u8(p.roadFlags,id)!=0 : (u8(p.roadFlags,id)>40 || (id<40 && u8(p.roadFlags,id)!=id+1)))
                 throw Error("Invalid campaign road flag mapping");
     }else for(int id=0;id<int(count);++id)p.roadFlags+=char(id<40?id+1:0);
     p.dots = b.mid(p.overlayOffset + p.dotAddress - ramStart, count * stride);

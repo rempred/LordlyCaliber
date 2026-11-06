@@ -1,4 +1,5 @@
 #include "engine/scenario_rates.h"
+#include "engine/mission_tables.h"
 #include "engine/custom_runtime.h"
 #include "engine/promotion.h"
 #include <cmath>
@@ -135,7 +136,7 @@ std::optional<ScenarioRatePlacement> ScenarioRates::placement(const Rom &rom) {
     if (offset < 0x2800000 || offset % 16 || quint64(offset) + dataSize > 0x4000000 ||
         quint64(offset) + dataSize > quint64(rom.bytes().size()))
         throw Error("Scenario-rate allocation exceeds the cartridge range");
-    auto code = rom.bytes().mid(EncounterRate::romOffset, EncounterRate::codeSize);
+    auto code = MissionTables::canonicalCode(rom,EncounterRate::romOffset,EncounterRate::codeSize);
     if (const auto custom = CustomPlacement::read(rom))
         code = custom->canonicalReferences(code, EncounterRate::romOffset);
     const auto data = rom.bytes().mid(offset, dataSize);

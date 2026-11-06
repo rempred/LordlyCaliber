@@ -6,6 +6,7 @@ namespace lordly {
 class RomArtImport : public QDialog {
     Q_OBJECT
   public:
-    RomArtImport(const Rom &, std::function<void(SpriteAsset)>, QWidget *parent = nullptr);
+    RomArtImport(const Rom &, std::function<void(SpriteAsset)>, QWidget *parent = nullptr,
+                 const QString &purpose = {});
 };
 } // namespace lordly

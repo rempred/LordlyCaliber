@@ -34,7 +34,7 @@ QJsonObject Scenario::json() const {
         records << QString::fromLatin1(record.toHex());
     return {{"layout", QString::fromLatin1(logical.encode().toHex())}, {"squads", records}};
 }
-Scenarios Scenarios::load(const Rom &rom) {
+Scenarios Scenarios::load(const Rom &rom, bool uncompiledSnapshot) {
     const auto resources = ScenarioResources::load(rom);
     Scenarios result;
     result.enemies_ = resources.enemyData();
@@ -48,7 +48,7 @@ Scenarios Scenarios::load(const Rom &rom) {
     if (labels.open(QIODevice::ReadOnly))
         names = QJsonDocument::fromJson(labels.readAll()).object()["labels"].toObject();
     for (int key = 1; key < ScenarioResources::keyCount; ++key) {
-        if (key == 54)
+        if (key == 54 || !ScenarioResources::hasScenario(rom, key))
             continue;
         Scenario s{key,
                    names[QString::number(key)].toString(QString("Scenario %1").arg(key)),
@@ -68,7 +68,7 @@ Scenarios Scenarios::load(const Rom &rom) {
     bool extended = false;
     for (const auto &row : result.rows_)
         for (const auto &record : row.squads) extended |= independentSquad(record);
-    if (extended && !scenarioMemberRuntimeInstalled(rom))
+    if (extended && !uncompiledSnapshot && !scenarioMemberRuntimeInstalled(rom))
         throw Error("Independent squad data needs its matching member constructor");
     result.originals_ = result.rows_;
     return result;
@@ -78,6 +78,16 @@ const Scenario &Scenarios::scenario(int key) const {
     if (it == rows_.end())
         throw Error("Choose a supported playable scenario");
     return it.value();
+}
+void Scenarios::setAuthoredScenario(int key, const QString &name) {
+    scenario(key);
+    if (!ScenarioResources::isAuthoringKey(key))
+        throw Error("Only an independently created scenario can own its copied deployments");
+    authoredKeys_.insert(key);
+    if (!name.isEmpty()) {
+        rows_[key].name = name;
+        originals_[key].name = name;
+    }
 }
 const Scenario &Scenarios::original(int key) const {
     scenario(key);
@@ -247,6 +257,9 @@ void Scenarios::editSquad(int key, int row, const QByteArray &squad, const QByte
 int Scenarios::addSquad(int key, int templateRow, const ClassData &classes) {
     auto next = scenario(key);
     if (templateRow >= 0) rowIndex(next, templateRow);
+    // In an empty ESET, the seed bytes alias the movement-node header.
+    // They are not an inherited route assignment for the first new squad.
+    if(next.layout.deployments.isEmpty())next.layout.seed=QByteArray(2,0);
     QSet<int> used;
     for (const auto &row : next.layout.deployments)
         used.insert(sourceId(row));
@@ -279,7 +292,7 @@ void Scenarios::removeSquad(int key, int row, const ClassData &classes) {
     auto next = scenario(key);
     rowIndex(next, row);
     const int source = sourceId(next.layout.deployments[row]);
-    if (sourceRow(original(key), source) >= 0)
+    if (!newCampaign_ && !authoredKeys_.contains(key) && sourceRow(original(key), source) >= 0)
         throw Error(
             "Original squads may be referenced by game events; only added squads can be removed");
     for (const auto &condition : next.layout.conditions)

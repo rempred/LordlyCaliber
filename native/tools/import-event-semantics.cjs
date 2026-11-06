@@ -80,7 +80,7 @@ for (const info of catalog.rows) {
     rowFlags[flag]=name;
   }
   const handlers = [...new Map(row.handlers.map(h => [h.entry, {
-    entry:h.entry, group:h.group, title:clean(h.title)
+    entry:h.entry, group:h.group, title:clean(h.title,(h.cutscenes || []).map(id=>({kind:'scene',id,scope:'global'})))
   }])).values()].sort((a,b) => a.entry-b.entry);
   const instructions = [...row.instructions].sort((a,b) => a.offset-b.offset);
   // Older reviewed rows omit inputRegisters. Recover facts from their exact

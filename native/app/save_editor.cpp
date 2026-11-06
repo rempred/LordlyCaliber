@@ -432,9 +432,20 @@ bool SaveEditor::editDefaultArmy(const QByteArray &bytes, std::function<void(con
     loadBytes(bytes);
     document_->selectSlot(0);
     defaultArmySink_ = std::move(sink);
+    defaultArmy_->setText("Use as Tester Army");
     defaultArmy_->show();
     error_->setText("Editing the tester army. Click Use as Tester Army when finished.");
     tables_->setCurrentIndex(0);
+    return true;
+}
+bool SaveEditor::editStartingArmy(const QByteArray &bytes, std::function<void(const QByteArray &)> sink) {
+    if(!editDefaultArmy(bytes,std::move(sink)))return false;
+    defaultArmy_->setText("Use starting army");
+    slots_->hide();export_->hide();
+    for(auto widget:findChildren<QPushButton *>())if(widget->objectName()=="openSave")widget->hide();
+    for(int tab=0;tab<tables_->count();++tab)if(tables_->tabText(tab)=="Game state")tables_->setTabVisible(tab,false);
+    defaultArmy_->setToolTip({});
+    error_->clear();
     return true;
 }
 void SaveEditor::exportFile(const QString &path) {

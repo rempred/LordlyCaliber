@@ -1,6 +1,8 @@
 #include "engine/scenario_seeder.h"
 #include "engine/class_data.h"
+#include "engine/scene_events.h"
 #include "game/classes/save_format.h"
+#include "game/classes/save_compression.h"
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
@@ -50,6 +52,7 @@ SaveDocument ScenarioSeeder::expanded(SaveDocument source) {
                                   unsigned(source.data_.size())))
             throw Error("Cannot convert the battery save to the expanded layout");
         source.expanded_ = true;
+        source.batteryFormat_ = 1;
         source.selectSlot(source.slot_);
     }
     return source;
@@ -60,7 +63,7 @@ SaveDocument ScenarioSeeder::patch(SaveDocument source, const QByteArray &memory
     // Match the standalone seeder's selective patch: keep all other packed
     // fields and unused payload bits exactly as they were loaded.
     QSet<int> mapped;
-    const int base = int(lc_save_record_offset(source.slot_, source.expanded_));
+    const int base = int(lc_save_record_offset(source.slot_, source.batteryFormat_));
     for (const auto &cell : source.codec_) {
         if (memory.mid(cell.address, cell.bytes) == source.ram_.mid(cell.address, cell.bytes))
             continue;
@@ -216,6 +219,18 @@ ScenarioSeeder::ScenarioSeeder(Rom rom) : rom_(std::move(rom)), routing_(rom_) {
         }
     }
     source_ = patch(std::move(source_), memory);
+    const auto placement = ClassPlacement::read(rom_);
+    if (placement && placement->layout.customFlags) {
+        QByteArray scratch(LC_SAVE_UPGRADE_WORK_BYTES, 0);
+        if (!lc_save_upgrade_image(reinterpret_cast<unsigned char *>(source_.data_.data()),
+                                   unsigned(source_.data_.size()),
+                                   reinterpret_cast<unsigned char *>(scratch.data()),
+                                   unsigned(scratch.size())))
+            throw Error("Cannot prepare the custom story flags in the test save");
+        source_ = SaveDocument::open(rom_, source_.swapped_ ? wordSwap(source_.data_)
+                                                         : source_.data_);
+        source_.selectSlot(0);
+    }
     QMap<int, QString> labels;
     QMap<int, int> order;
     for (auto v : QJsonDocument::fromJson(read(":/game/seeder/mission-labels.json"))
@@ -270,6 +285,10 @@ ScenarioSeeder::ScenarioSeeder(Rom rom) : rom_(std::move(rom)), routing_(rom_) {
         }
         if (routing_.keys[b.route.event] == QVector<int>{20, 21})
             titles = {"The Grim Path — opening peace decision"};
+        if (SceneEvents::customMissionRow(b.route.event)) {
+            const auto name=SceneEvents::load(rom_).missionName(b.route.event);
+            titles = {name.isEmpty()?routing_.nodes[b.route.node].name:name};
+        }
         choices_ << SeedChoice{b.route, b.cf, routing_.nodes[b.route.node].name,
                                titles.join(" / "), routing_.keys[b.route.event]};
     }
@@ -323,12 +342,28 @@ QByteArray ScenarioSeeder::seed(int index, const SaveDocument *army) const {
     int chapter = 0;
     for (int f = 1; f <= 4 && flags.value(f); ++f)
         ++chapter;
-    int at = int(lc_save_record_offset(0, source.expanded_)),
-        size = int(lc_save_record_size(0, source.expanded_));
+    const int format = source.slotFormat(0);
+    int at = int(lc_save_record_offset(0, source.batteryFormat_)),
+        size = int(lc_save_record_size(0, format));
+    if (format >= 4) {
+        for (int i = 0; i < int(LC_SAVE_CUSTOM_FLAG_BYTES); ++i) {
+            int value = u8(source.data_, at + LC_SAVE_CUSTOM_FLAG_OFFSET + i);
+            for (int bit = 0; bit < 8; ++bit) {
+                const int flag = 256 + i * 8 + bit;
+                if (flags.contains(flag))
+                    value = (value & ~(1 << bit)) | (flags.value(flag) << bit);
+            }
+            put8(source.data_, at + LC_SAVE_CUSTOM_FLAG_OFFSET + i, quint8(value));
+        }
+    } else {
+        for (auto requirement = flags.cbegin(); requirement != flags.cend(); ++requirement)
+            if (requirement.key() >= 256 && requirement.value())
+                throw Error("This test ROM cannot persist its custom story flags");
+    }
     put8(source.data_, at + 0x10, quint8(chapter));
     put8(source.data_, at + 0x12, quint8(start));
     if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(source.data_.data() + at), size, 0,
-                             source.expanded_))
+                             format))
         throw Error("Cannot sign seeded save");
     source.clearSuspend();
     const auto encoded = source.serialize();

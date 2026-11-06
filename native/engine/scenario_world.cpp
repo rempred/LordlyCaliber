@@ -31,6 +31,16 @@ int ScenarioWorld::siteCount(int key) const {
     scenario(key);
     return siteCounts_.value(key);
 }
+QVector<int> ScenarioWorld::availableTreasureFlags() const {
+    auto used = reservedTreasureIds_;
+    for (const auto &s : rows_)
+        for (int i = 0; i < treasureCount(s.treasures); ++i)
+            used.insert(u8(s.treasures, 1 + i * 6));
+    QVector<int> result;
+    for (int id = 1; id <= 255; ++id)
+        if (!used.contains(id)) result << id;
+    return result;
+}
 int ScenarioWorld::treasureCount(const QByteArray &data) {
     return framedCount(data, 6);
 }
@@ -54,6 +64,7 @@ ScenarioWorld ScenarioWorld::load(const Rom &rom) {
             result.reservedTreasureIds_.insert(u8(data, 1 + i * 6));
     }
     for (int key = 1; key < WorldResources::keyCount; ++key) {
+        if (!MissionTables::hasScenario(rom, key)) continue;
         WorldScenario row{resources.treasure(rom, key), resources.sites(rom, key)};
         const int count = row.sites.isEmpty() ? 0 : counts.value(key);
         declaredSiteCount(row.sites);
@@ -177,15 +188,10 @@ int ScenarioWorld::addTreasure(int key) {
     const int count = treasureCount(next.treasures);
     if (count >= treasureCapacity)
         throw Error("This scenario already uses all 16 treasure slots");
-    auto used = reservedTreasureIds_;
-    for (const auto &s : rows_)
-        for (int i = 0; i < treasureCount(s.treasures); ++i)
-            used.insert(u8(s.treasures, 1 + i * 6));
-    int id = 1;
-    while (id <= 255 && used.contains(id))
-        ++id;
-    if (id > 255)
+    const auto available = availableTreasureFlags();
+    if (available.isEmpty())
         throw Error("All 255 nonzero collection flags are reserved");
+    const int id = available.first();
     QByteArray record(6, 0);
     put8(record, 0, quint8(id));
     put8(record, 1, 128);

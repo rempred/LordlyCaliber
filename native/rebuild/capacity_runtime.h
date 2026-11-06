@@ -1,12 +1,13 @@
 #pragma once
 #include "engine/class_data.h"
+#include "engine/capacity_placement.h"
 #include "rebuild/compiler.h"
 
 namespace lordly {
 // All arrays have independent allocations. Authored map sources end at59;
 // slot60 is reserved for temporary wild encounters and never borrows a player.
 struct CapacityRuntimeBuild {
-    quint32 base = 0, codeAddress = 0;
+    quint32 base = 0, codeAddress = 0, missionWorldTable = 0;
     QByteArray storage, code;
     QMap<QString, quint32> symbols, entries, custom;
     QMap<quint32, quint32> words, expected;
@@ -23,5 +24,6 @@ void compileCapacityRuntime(CapacityRuntimeBuild &build, quint32 codeAddress,
 // Applies only exact guarded instruction/data operands. Kept separate from
 // export orchestration so tests can inspect every allocation and final target.
 void applyCapacityRuntime(QByteArray &rom, const CapacityRuntimeBuild &build);
-QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &build);
+QByteArray installCapacityRuntime(const Rom &rom,const CapacityRuntimeBuild &build,
+                                 const std::optional<CapacityPlacement> &prior = {});
 } // namespace lordly

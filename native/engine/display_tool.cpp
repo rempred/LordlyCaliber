@@ -37,7 +37,9 @@ DisplayTool DisplayTool::load(const Rom &rom, ToolLabel kind) {
             const auto site = value.toObject();
             const auto bytes = rom.bytes().mid(site["rom"].toInt(), site["size"].toInt());
             retail &= matches(bytes, site, "retailSha256");
-            native &= matches(canonical(site, bytes), site, "normalizedSha256");
+            const auto digest = QString::fromLatin1(sha256(canonical(site, bytes)));
+            native &= digest == site["normalizedSha256"].toString() ||
+                      site["previousNativeSha256"].toArray().contains(digest);
             legacy &=
                 matches(rom.bytes().mid(site["legacyRom"].toInt(), site["legacyBytes"].toInt()),
                         site, "legacySha256");

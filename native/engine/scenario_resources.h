@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/archive.h"
+#include "engine/mission_tables.h"
 #include <QMap>
 #include <QVector>
 #include <array>
@@ -12,9 +13,13 @@ struct ScenarioPlacement {
 // Original resource envelopes and ordinal selection, without a PI/DMA redirect.
 class ScenarioResources {
   public:
-    static constexpr int keyCount = 65, selectorTable = 0x654a0, selectorStride = 9;
+    static constexpr int keyCount = MissionTables::keyCount, selectorTable = 0x654a0, selectorStride = 9;
     static constexpr int descriptorOffset = 0x27c4400, descriptorSize = 64;
     static constexpr quint32 keyBase = 0x594280, enemyLink = 0x27429cc, esetLink = 0x2747832;
+    static bool isNewKey(int key) { return MissionTables::newKey(key); }
+    static bool isAuthoringKey(int key) { return MissionTables::authoringKey(key); }
+    static bool hasScenario(const Rom &rom, int key) { return MissionTables::hasScenario(rom, key); }
+    static QByteArray row(const Rom &rom, int key) { return MissionTables::row(rom, MissionTables::Scenario, key); }
     static ScenarioResources load(const Rom &rom);
     const LhaMember &enemyMember() const {
         return enemy_;

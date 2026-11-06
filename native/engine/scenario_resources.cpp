@@ -9,8 +9,7 @@ namespace lordly {
 static QByteArray selectors(const Rom &rom) {
     QByteArray result;
     for (int key = 0; key < ScenarioResources::keyCount; ++key)
-        result += char(u8(rom.bytes(), ScenarioResources::selectorTable +
-                                           key * ScenarioResources::selectorStride + 8));
+        result += char(u8(ScenarioResources::row(rom, key), 8));
     return result;
 }
 static quint32 linkedEntry(const Rom &rom, quint32 link) {
@@ -32,8 +31,8 @@ static QVector<LhaMember> group(const Rom &rom, quint32 entry) {
     while (at < end - 1) {
         const auto member = LhaMember::read(bytes, at);
         at += member.headerSize + member.storedSize;
-        if (at > end - 1 || result.size() == 128)
-            throw Error("Scenario archive member exceeds its envelope or signed index");
+        if (at > end - 1 || result.size() == 256)
+            throw Error("Scenario archive member exceeds its envelope or byte index");
         result << member;
     }
     if (at != end - 1 || u8(bytes, at) != 0 || result.isEmpty())
@@ -54,7 +53,7 @@ ScenarioResources ScenarioResources::load(const Rom &rom) {
     for (const auto &value :
          QJsonDocument::fromJson(owners.readAll()).object()["spans"].toArray()) {
         const auto span = value.toObject();
-        if (sha256(rom.bytes().mid(span["start"].toInt(), span["size"].toInt())) !=
+        if (sha256(MissionTables::canonicalCode(rom, span["start"].toInt(), span["size"].toInt())) !=
             span["sha256"].toString().toLatin1())
             throw Error(span["name"].toString() +
                         " differs from the supported resource path; redirected archives cannot "
@@ -72,7 +71,7 @@ ScenarioResources ScenarioResources::load(const Rom &rom) {
     result.selectors_ = selectors(rom);
     const auto h = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (h.startsWith("LC05SCEN")) {
-        if (h.size() != descriptorSize || u32(h, 8) != 1 || h.mid(52, 8) != QByteArray(8, 0) ||
+        if (h.size() != descriptorSize || (u32(h, 8) != 1 && u32(h, 8) != 2) || h.mid(52, 8) != QByteArray(8, 0) ||
             crc32(h.first(60)) != u32(h, 60))
             throw Error("Damaged scenario resource descriptor");
         const ScenarioPlacement p{u32(h, 12), u32(h, 16)};
@@ -81,15 +80,17 @@ ScenarioResources ScenarioResources::load(const Rom &rom) {
             quint64(p.offset) + p.allocation > quint64(rom.bytes().size()))
             throw Error("Scenario resource allocation exceeds the cartridge");
         const auto data = rom.bytes().mid(p.offset, p.allocation);
+        const int storedCount = u32(h, 8) == 1 ? MissionTables::retailKeyCount : keyCount;
         const auto eo = u32(h, 20), en = u32(h, 24), so = u32(h, 28), sn = u32(h, 32),
                    bo = u32(h, 48);
-        if (crc32(data) != u32(h, 36) || crc32(result.selectors_) != u32(h, 40) || eo != 0 ||
+        if (crc32(data) != u32(h, 36) || crc32(result.selectors_.first(storedCount)) != u32(h, 40) || eo != 0 ||
             en < 4 || so != ((en + 15u) & ~15u) || sn < 4 || quint64(so) + sn != bo ||
-            quint64(bo) + keyCount > p.allocation || enemyEntry != p.offset + eo ||
+            quint64(bo) + storedCount > p.allocation || enemyEntry != p.offset + eo ||
             esetEntry != p.offset + so || u32(data, eo) + 4 != en || u32(data, so) + 4 != sn)
             throw Error("Scenario resources differ from their declared allocation");
         result.baselineCount_ = int(u32(h, 44));
-        result.baselineSelectors_ = data.mid(bo, keyCount);
+        result.baselineSelectors_ = data.mid(bo, storedCount);
+        result.baselineSelectors_ += result.selectors_.mid(storedCount);
         result.placement_ = p;
     } else {
         result.baselineCount_ = int(result.members_.size());
@@ -143,6 +144,8 @@ QByteArray ScenarioResources::rebuild(const Rom &rom, const QByteArray &enemyDat
 
     // Original members retain their ordinals and exact stored bytes. Added versions
     // are compacted on every rebuild, so repeated edits do not consume more indices.
+    const bool expanded = !MissionTables::runtimeData(rom).isEmpty();
+    const int storedCount = expanded ? keyCount : MissionTables::retailKeyCount;
     QByteArray collection, nextSelectors = baselineSelectors_;
     QVector<QByteArray> decoded;
     for (int i = 0; i < baselineCount_; ++i) {
@@ -159,8 +162,8 @@ QByteArray ScenarioResources::rebuild(const Rom &rom, const QByteArray &enemyDat
         const QPair<int, QByteArray> identity{original, desired};
         if (!added.contains(identity)) {
             const int ordinal = baselineCount_ + int(added.size());
-            if (ordinal > 127)
-                throw Error("Scenario collection exceeds the original signed member index");
+            if (ordinal > (expanded ? 255 : 127))
+                throw Error("Scenario collection exceeds its native archive index");
             added[identity] = ordinal;
             collection += members_[original].rebuild(rom, desired);
         }
@@ -178,7 +181,7 @@ QByteArray ScenarioResources::rebuild(const Rom &rom, const QByteArray &enemyDat
     payload += envelope(collection);
     const auto esetSize = quint32(payload.size()) - esetOffset;
     const auto baselineOffset = quint32(payload.size());
-    payload += baselineSelectors_;
+    payload += baselineSelectors_.first(storedCount);
     payload += QByteArray((16 - payload.size() % 16) % 16, char(-1));
     const quint32 allocation = quint32(payload.size());
     const bool tail = placement_ && quint64(placement_->offset) + placement_->allocation ==
@@ -199,18 +202,17 @@ QByteArray ScenarioResources::rebuild(const Rom &rom, const QByteArray &enemyDat
     image.replace(offset, allocation, payload);
     put32(image, enemyLink + 4, offset - keyBase);
     put32(image, esetLink + 4, offset + esetOffset - keyBase);
-    for (int key = 0; key < keyCount; ++key)
-        put8(image, selectorTable + key * selectorStride + 8, u8(nextSelectors, key));
+    MissionTables::updateSelectors(image, MissionTables::Scenario, nextSelectors.first(storedCount));
     QByteArray descriptor(descriptorSize, 0);
     descriptor.replace(0, 8, "LC05SCEN");
-    put32(descriptor, 8, 1);
+    put32(descriptor, 8, expanded ? 2 : 1);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, allocation);
     put32(descriptor, 24, enemySize);
     put32(descriptor, 28, esetOffset);
     put32(descriptor, 32, esetSize);
     put32(descriptor, 36, crc32(payload));
-    put32(descriptor, 40, crc32(nextSelectors));
+    put32(descriptor, 40, crc32(nextSelectors.first(storedCount)));
     put32(descriptor, 44, quint32(baselineCount_));
     put32(descriptor, 48, baselineOffset);
     put32(descriptor, 60, crc32(descriptor.first(60)));

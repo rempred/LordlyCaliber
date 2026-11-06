@@ -6,8 +6,13 @@
     lw $t1,0x0($t0)
     lui $t2,0x4f42
     ori $t2,$t2,0x4346
+    bne $t1,$t2,reload
+    nop
+    lw $t1,0x4($t0)
+    addiu $t2,$zero,5
     beq $t1,$t2,loaded
     nop
+reload:
     j CF_CONTINUATION
     nop
 loaded:

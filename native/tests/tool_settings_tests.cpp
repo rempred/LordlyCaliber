@@ -630,6 +630,19 @@ class ToolSettingsTests : public QObject {
                 Rom::updateChecksum(expected);
                 const auto built = rebuild(project, tools, work.path());
                 QCOMPARE(built.image, expected);
+                auto previous = rom.bytes();
+                for (int i = 0; i < 2; ++i)
+                    if (mask & (1 << i))
+                        for (const auto &v : cases[i].toObject()["previousComponents"].toArray()) {
+                            const auto row = v.toObject();
+                            const auto bytes = QByteArray::fromHex(row["dataHex"].toString().toLatin1());
+                            previous.replace(row["romStart"].toInt(), bytes.size(), bytes);
+                        }
+                Rom::updateChecksum(previous);
+                auto upgraded = Project::fromRom(Rom::fromBytes(previous));
+                upgraded.loadTools();
+                QCOMPARE(upgraded.tools()->json(), settings);
+                QCOMPARE(rebuild(upgraded, tools, work.path()).image, expected);
                 auto reopened = Project::fromRom(save(project, built, QString::number(mask)));
                 reopened.loadTools();
                 QCOMPARE(reopened.tools()->json(), settings);
@@ -694,6 +707,7 @@ class ToolSettingsTests : public QObject {
                     const int at = site["rom"].toInt();
                     auto foreign = rom.bytes();
                     foreign[at] ^= 1;
+                    Rom::updateChecksum(foreign);
                     auto held = Project::fromRom(Rom::fromBytes(foreign));
                     held.loadTools();
                     QVERIFY(!held.tools()->displayTool(kind).available());
@@ -731,6 +745,12 @@ class ToolSettingsTests : public QObject {
             reopened.loadTools();
             QCOMPARE(reopened.tools()->json(), settings);
             QCOMPARE(reopened.records(Table::Classes).size(), 166);
+            QProcess drawingCheck;
+            drawingCheck.start("node", {QFINDTESTDATA("army-display-mips.cjs"),
+                QDir(output.filePath("combined")).filePath(QFileInfo(path).fileName())});
+            QVERIFY(drawingCheck.waitForFinished(60000));
+            QVERIFY2(drawingCheck.exitCode() == 0, drawingCheck.readAllStandardError().constData());
+            qInfo().noquote() << drawingCheck.readAllStandardOutput();
             QCOMPARE(Rom::open(path).bytes(), rom.bytes());
             output.setAutoRemove(false);
             qInfo().noquote() << "Luck/Alignment export candidates:" << output.path();
@@ -907,6 +927,18 @@ class ToolSettingsTests : public QObject {
             const auto built = rebuild(project, tools, work.path());
             QCOMPARE(built.image, expected);
             QVERIFY(built.report.join(" ").contains("Expansion Pak"));
+            auto previous = rom.bytes();
+            for (const auto &v : data["previousComponents"].toArray()) {
+                const auto row = v.toObject();
+                const auto bytes = QByteArray::fromHex(row["dataHex"].toString().toLatin1());
+                previous.replace(row["romStart"].toInt(), bytes.size(), bytes);
+            }
+            put32(previous, 0x23f7c, 0x0c000000U | ((0x800a4a78U >> 2) & 0x3ffffffU));
+            Rom::updateChecksum(previous);
+            auto upgraded = Project::fromRom(Rom::fromBytes(previous));
+            upgraded.loadTools();
+            QVERIFY(upgraded.tools()->chaosCounter().enabled());
+            QCOMPARE(rebuild(upgraded, tools, work.path()).image, expected);
             QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/native-chaos-XXXXXX");
             QVERIFY(output.isValid());
             auto save = [&](const BuildResult &build, const QString &name) {
@@ -969,6 +1001,7 @@ class ToolSettingsTests : public QObject {
             for (const int at : {0x23f7c, 0x3078c, 0x34e78, 0x27c1000}) {
                 auto foreign = rom.bytes();
                 foreign[at] ^= 1;
+                Rom::updateChecksum(foreign);
                 auto held = Project::fromRom(Rom::fromBytes(foreign));
                 held.loadTools();
                 QVERIFY(!held.tools()->chaosCounter().available());

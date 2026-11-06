@@ -18,6 +18,40 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void authoredMissionSeederCustomFlags() {
+        const auto path = qEnvironmentVariable("LORDLY_CUSTOM_MISSION_ROM");
+        if (path.isEmpty()) QSKIP("Exported authored mission ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const ScenarioSeeder seeder(rom);
+            int authored = 0;
+            for (int choice = 0; choice < seeder.choices().size(); ++choice) {
+                const auto &route = seeder.choices()[choice].route;
+                if (route.event != 2 && route.event != 3) continue;
+                const auto bytes = seeder.seed(choice);
+                const auto reopened = SaveDocument::open(rom, bytes);
+                QVERIFY(reopened.battery());
+                QVERIFY(reopened.saveSlots()[0].valid);
+                QVERIFY(int(u8(reopened.memory(), 0x1936aa)) > 0);
+                // SaveDocument returns Project64 word order; inspect the actual
+                // production compressed record and bank, independently of RAM.
+                auto packed = bytes;
+                for (int at = 0; at < packed.size(); at += 4) {
+                    std::swap(packed[at], packed[at + 3]);
+                    std::swap(packed[at + 1], packed[at + 2]);
+                }
+                const auto at = int(lc_save_record_offset(0, 4));
+                for (auto requirement = route.requirements.cbegin(); requirement != route.requirements.cend(); ++requirement) {
+                    if (requirement.key() < 256) continue;
+                    const int bit = requirement.key() - 256;
+                    QCOMPARE(bool(u8(packed, at + LC_SAVE_CUSTOM_FLAG_OFFSET + bit / 8) & (1 << (bit % 8))),
+                             bool(requirement.value()));
+                }
+                ++authored;
+            }
+            QVERIFY2(authored > 0, "The fixture must expose a newly authored mission");
+        } catch (const std::exception &error) { QFAIL(error.what()); }
+    }
     void scenarioSeederCurrentRoads() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         try {

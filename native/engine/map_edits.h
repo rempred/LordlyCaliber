@@ -110,5 +110,8 @@ class MapEdits {
 QByteArray editFieldModel(const FieldMapSource &, const FieldChanges &,
                           const QMap<int, FieldBrush> &, const QVector<CityAsset> &city = {});
 QByteArray editFieldHeight(const FieldMapSource &, const FieldChanges &);
+QByteArray blankFieldModel(const FieldMapSource &,const FieldBrush &,const QVector<int> &sites={});
+QByteArray blankFieldHeight(const FieldMapSource &);
+QByteArray fieldBriefing(const FieldMapSource &,const Battlefield &,const Rom &);
 QVector<MountainPeak> fieldMountainPeaks(const FieldMapSource &, const FieldChanges &);
 } // namespace lordly

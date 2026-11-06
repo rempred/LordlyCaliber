@@ -1,4 +1,5 @@
 #include "engine/goth_runtime.h"
+#include "engine/mission_runtime.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -16,7 +17,7 @@ std::optional<GothRuntime> GothRuntime::read(const Rom &rom) {
         throw Error("Invalid C settlement settings");
     GothRuntime result{u16(header, 8), u16(header, 10), u32(header, 12) != 0};
     const auto owner = definition()[result.reserve ? "reserve" : "plain"].toObject();
-    if (sha256(rom.bytes().mid(offset, size - 16)) != owner["sha256"].toString().toLatin1())
+    if (sha256(canonicalMissionImage(rom).mid(offset, size - 16)) != owner["sha256"].toString().toLatin1())
         throw Error("Settlement C changed outside its declared settings");
     for (const auto &v : owner["tables"].toArray()) {
         const auto table = v.toObject();

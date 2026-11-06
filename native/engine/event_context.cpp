@@ -38,7 +38,7 @@ EventLocationContext EventContexts::location(int id) const {
     if (entry) result.phases[0].append({0, entry, "Arrival"});
     for (const auto &[routingRow, phase] : {qMakePair(0, 1), qMakePair(70, 2)})
         for (int row : destinations(id, routingRow))
-            result.phases[phase].append({row, -1, programName(row)});
+            result.phases[phase].append({row, -1, events_.missionName(row).isEmpty()?programName(row):events_.missionName(row)});
     const auto &investigation = routes_.scripts[70];
     const int investigationEntry = u16(investigation, id * 2);
     if (investigationEntry) result.phases[2].append({70, investigationEntry, "Entry conditions"});
@@ -93,7 +93,7 @@ QVector<int> EventContexts::locationsForScenario(int key) const {
 QVector<int> EventContexts::scenarioPrograms(int key) const {
     QVector<int> result;
     if (key < 0 || key > 255) return result;
-    for (int row = 4; row < 115; ++row)
+    for (int row = 2; row < SceneEvents::rowCapacity; ++row)
         if (row != 70 && scenarioKeys(row).contains(key)) result.append(row);
     return result;
 }

@@ -30,6 +30,9 @@ function claims(){
    for(const key of ['high','low','word'])if(key in row)add(file,row.start.toString(16),row.start+row[key],4);
  for(const row of read('attacks/hooks.json').hooks)
   add('attacks/hooks.json',row.entry,row.rom,row.original?(row.sharedOwnerSize||8):row.size);
+ add('consumable-trees','item executor',0x41098,1380);
+ for(const owner of read('consumables/tree-owners.json').owners)
+  for(const part of owner.parts)if(part.code)add('consumable-trees',owner.name,part.start,part.size);
  for(const row of read('scenarios/capacity-references.json').owners)
   for(const ref of row.references){
    add('capacity-references',row.start.toString(16),ref.high,4);
@@ -53,6 +56,51 @@ function claims(){
   .match(/directoryWord\s*=\s*(0x[\da-f]+)/i);
  if(!locationText)throw Error('Location description directory declaration changed');
  add('location-descriptions','help resource directory',parseInt(locationText[1],16),4);
+ const fieldSource=fs.readFileSync(path.resolve(root,'../engine/battlefield_clone.cpp'),'utf8');
+ const modelLoads=fieldSource.match(/modelLoads\[\]\s*\{([^}]+)\}/);
+ const rootUses=fieldSource.match(/resourceUses\[\]\s*\{([\s\S]+?)\};/);
+ if(!modelLoads||!rootUses)throw Error('Independent battlefield native hook declarations changed');
+ for(const address of modelLoads[1].matchAll(/0x[\da-f]+/gi))
+  add('scenario-battlefields','native model table reference',parseInt(address[0],16),4);
+ let rootPairs=0;
+ for(const use of rootUses[1].matchAll(/\{\s*\d+\s*,\s*(0x[\da-f]+)\s*,\s*(0x[\da-f]+)\s*,\s*0x[\da-f]+\s*,\s*0x[\da-f]+\s*\}/gi)){
+  rootPairs++;
+  for(const address of use.slice(1))add('scenario-battlefields','native resource directory reference',parseInt(address,16),4);
+ }
+ if(!rootPairs)throw Error('Independent battlefield resource hook declarations were not collected');
+ const gateSource=fs.readFileSync(path.resolve(root,'../rebuild/retail_event_gate_runtime.cpp'),'utf8');
+ const gate=gateSource.match(/constexpr\s+quint32\s+slot\s*=\s*(0x[\da-f]+)/i);
+ if(!gate)throw Error('Editable event-VM dispatch declaration changed');
+ add('retail-event-gates','opcode8 dispatch slot',parseInt(gate[1],16),4);
+ const campaignSource=fs.readFileSync(path.resolve(root,'../rebuild/new_campaign_runtime.cpp'),'utf8');
+ const campaignSlot=campaignSource.match(/constexpr\s+quint32\s+dispatch\s*=\s*(0x[\da-f]+)/i);
+ if(!campaignSlot)throw Error('New Campaign dispatch declaration changed');
+ add('new-campaign','opcode9 dispatch slot',parseInt(campaignSlot[1],16),4);
+ const settlement=read('tools/goth-owner.json').retail;
+ add('authored-missions','complete accepted mission settlement owner',settlement.start,settlement.size);
+ const missionSource=fs.readFileSync(path.resolve(root,'../engine/mission_tables.cpp'),'utf8');
+ const missionRefs=missionSource.match(/constexpr Reference references\[\] = \{([\s\S]+?)\n\};/);
+ if(!missionRefs)throw Error('Extended mission table reference declarations changed');
+ for(const ref of missionRefs[1].matchAll(/\{\s*(0x[\da-f]+),\s*(0x[\da-f]+),/gi))
+  for(const at of ref.slice(1))add('mission-tables','native table reference',parseInt(at,16),4);
+ const modelLimit=missionSource.match(/modelSearchLimit\s*=\s*(0x[\da-f]+)/i);
+ if(!modelLimit)throw Error('Extended mission model search declaration changed');
+ add('mission-tables','model lookup bound',parseInt(modelLimit[1],16),4);
+ // The payout and rebuilt shop constructors are located inside authenticated
+ // complete C owners, whose instruction scheduling can change with settings.
+ add('mission-tables','configured settlement table reference',settlement.start,settlement.size);
+ for(const at of [0x19be8c,0x19be90,0x19be94,0x19be98])
+  add('mission-tables','qualified retail/rebuilt shop table reference',at,4);
+ const capacitySource=fs.readFileSync(path.resolve(root,'../rebuild/capacity_runtime.cpp'),'utf8');
+ const shopCapacity=capacitySource.match(/void linkShopCapacity\([\s\S]+?constexpr Reference references\[\] = \{([\s\S]+?)\};/);
+ if(!shopCapacity)throw Error('Rebuilt shop capacity references changed');
+ for(const ref of shopCapacity[1].matchAll(/\{\s*0x[\da-f]+,\s*0x[\da-f]+,\s*(0x[\da-f]+),\s*(0x[\da-f]+),/gi))
+  for(const at of ref.slice(1))add('capacity-references','rebuilt shop pool reference',parseInt(at,16),4);
+ const eventSource=fs.readFileSync(path.resolve(root,'../engine/scene_program_resources.cpp'),'utf8');
+ const eventRefs=eventSource.match(/eventReferences\[\] = \{([\s\S]+?)\};/);
+ if(!eventRefs)throw Error('Extended event directory references changed');
+ for(const at of eventRefs[1].matchAll(/0x[\da-f]+/gi))
+  add('event-directory','native event directory reference',parseInt(at[0],16),4);
  return result;
 }
 const family=name=>/^(capacity|scenarios\/capacity)/.test(name)?'capacity':name;
@@ -103,6 +151,14 @@ function fixedStorage(){
  const item=fs.readFileSync(path.join(engine,'class_text.h'),'utf8').match(/itemDescriptorOffset\s*=\s*(0x[\da-f]+)/i);
  if(!item)throw Error('Item description storage declaration changed; update the ownership reader');
  add('item description descriptor',parseInt(item[1],16),64);
+ const mission=fs.readFileSync(path.join(engine,'mission_tables.h'),'utf8').match(/descriptorOffset\s*=\s*(0x[\da-f]+)/i);
+ const missionSize=fs.readFileSync(path.join(engine,'mission_tables.cpp'),'utf8').match(/headerSize\s*=\s*(\d+)/);
+ const eventDirectory=fs.readFileSync(path.join(engine,'scene_program_resources.h'),'utf8').match(/expandedEventDirectory\s*=\s*(0x[\da-f]+)/i);
+ const eventHeader=fs.readFileSync(path.join(engine,'scene_events.h'),'utf8');
+ const retailRows=eventHeader.match(/retailRowCount\s*=\s*(\d+)/),customRows=eventHeader.match(/customRowCapacity\s*=\s*(\d+)/);
+ if(!mission||!missionSize||!eventDirectory||!retailRows||!customRows)throw Error('Expanded mission storage declarations changed');
+ add('mission table descriptor',parseInt(mission[1],16),Number(missionSize[1]));
+ add('expanded event directory',parseInt(eventDirectory[1],16),4+4*(Number(retailRows[1])+Number(customRows[1])));
  return {rom,ram};
 }
 function checkStorage(storage){

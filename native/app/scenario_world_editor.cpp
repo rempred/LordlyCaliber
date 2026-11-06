@@ -332,7 +332,7 @@ void ScenarioWorldEditor::showSite() {
             .arg(raw, 4, 16, QChar('0')));
     allegiance_->setCurrentIndex(0);
     siteHelp_->setObjectName("townEditImpact");
-    showEditImpact(siteHelp_, "Town name, population and facilities affect these missions",
+    showEditImpact(siteHelp_, "Town details and shop are shared by these missions",
                    findProjectUses(*project_, "town", id), "Allegiance changes only the selected mission. Changes apply automatically and can be undone.");
     loading_ = false;
 }
