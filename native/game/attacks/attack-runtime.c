@@ -406,8 +406,7 @@ void lc_attack_result_event(int event,int time,void *target,int kind,
         if(CTX->target==target && CTX->targetHP>0 && H(target,0x20)==0 &&
            func_0020C1B4(target) && lc_roll(lc_rules(CTX->source)[10])) extra=7;
     }
-    if(event==0x1f && CTX->source && CTX->repeatVisual &&
-       lc_rules(CTX->source)[2]==11 && target==CTX->target) {
+    if(event==0x1f && CTX->source && CTX->repeatVisual && target==CTX->target) {
         if(CTX->resultStarted)kind|=128;
         CTX->resultStarted=1;
     }
@@ -422,13 +421,20 @@ int lc_attack_status(void *target,int effect,int time) {
     if(effect==16) {
         amount=H(target,0x20);
         func_0022A7B8(target,0,time,amount,0,0);
-        lc_attack_result_event(0x1f,time,target,0,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
+        lc_attack_result_event(0x1f,time,target,CTX->repeatVisual?0:0x50,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         return 1;
     }
     if(!func_002379AC(effect,target)) return 0;
     flags=W(target,0x40); applied=effect;
     func_0022B06C(target,&applied);
     if(!applied) return 0;
+    if(CTX->repeatVisual) {
+        /* Secondary spell status belongs to the visual contact, after the main
+         * result, not the predicted pose time. Otherwise a late petrification
+         * can undo a cure that the calculation already applied after it. */
+        lc_attack_result_event(0x1f,time,target,32,flags&0x3e,0,0,STATE_B(*(void **)0x801ce8c0,0x823),applied);
+        return 1;
+    }
     pose=0; duration=0;
     if(effect==3) { func_0021D230(0x23,time,target,255); pose=0x26; }
     if(effect==4) { func_0021D230(0x25,time,target,255); pose=0x22; }
@@ -475,10 +481,10 @@ void lc_attack_finish(void *source,int time) {
         if(kind==1) {
             amount=func_0020D4C8(source,amount); H(source,0x20)+=amount;
             if(amount>0)
-                lc_attack_result_event(0x1f,time,source,2,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
+                func_0021D334(0x1f,time,source,CTX->repeatVisual?0x42:0x52,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         } else {
             func_0022A7B8(source,0,time,amount,0,0);
-            lc_attack_result_event(0x1f,time,source,0,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
+            func_0021D334(0x1f,time,source,CTX->repeatVisual?0x40:0x50,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         }
     }
     CTX->source=0;
@@ -496,7 +502,7 @@ void lc_attack_hit(void *target,int offset,int time,int amount,int parameter,u8 
     }
     else if(effect==2) {
         amount=func_0020D4C8(target,amount); H(target,0x20)+=amount;
-        func_0021D334(0x1f,time,target,2,amount>>8,amount&255,parameter,STATE_B(*(void **)0x801ce8c0,0x823),0);
+        func_0021D334(0x1f,time,target,0x52,amount>>8,amount&255,parameter,STATE_B(*(void **)0x801ce8c0,0x823),0);
     } else if(effect) lc_attack_status(target,effect,time);
     lc_attack_record(source,target,calculated,before,1,time);
 }

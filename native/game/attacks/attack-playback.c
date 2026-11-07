@@ -396,7 +396,13 @@ void lc_attack_playback(void)
             goto advance_command;
         }
         case 0x20: /* 21F1C4 */
-            if (LC_STREAM_TAIL->byte822 != 0) goto exit_checks;
+            if (LC_STREAM_TAIL->byte822 != 0) {
+                /* Keep a reached barrier reached while its visual is active.
+                 * Resetting this timer to zero lets later impact seeks escape
+                 * past a positive-delay barrier into the following attack. */
+                D_801CE8C0->word04 = command[2];
+                goto exit_checks;
+            }
             lc_strike_end();
             goto advance_command;
         case 0x1E:

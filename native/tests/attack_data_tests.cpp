@@ -636,6 +636,29 @@ class AttackDataTests : public QObject {
             qInfo().noquote()<<"Battle name candidate:"<<output.path();
         } catch(const std::exception &e) {QFAIL(e.what());}
     }
+    void playbackPipeline() {
+        try {
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(tools.isEmpty())QSKIP("Private compiler required");
+            auto project=Project::fromRom(source());project.loadAttacks();project.loadTools();
+            auto attacks=*project.attacks();QCOMPARE(attacks.duplicate(55,"Playback fixture"),159);
+            QCOMPARE(attacks.duplicate(55,"Following action"),160);
+            project.setAttacks(attacks.json());
+            auto options=project.tools()->json();options["highAttackStreamSplit"]=true;project.setTools(options);
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).absoluteDir().filePath("Test ROMs/native-playback-XXXXXX"));
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            const auto built=rebuild(project,tools,output.path());
+            const auto candidate=output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(project,built,candidate);
+            qInfo().noquote()<<"Playback pipeline candidate:"<<candidate;
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadAttacks();
+            QCOMPARE(reopened.attacks()->json(),attacks.json());
+            QProcess runner;runner.start("node",{QFINDTESTDATA("attack-playback-mips.cjs"),candidate});
+            QVERIFY(runner.waitForFinished(120000));
+            qInfo().noquote()<<runner.readAllStandardOutput();
+            QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+        } catch(const std::exception &e) {QFAIL(e.what());}
+    }
     void repeatedStrikesExportAndReopen_data() {
         QTest::addColumn<bool>("highAttack");
         QTest::addColumn<bool>("expandedArmy");
