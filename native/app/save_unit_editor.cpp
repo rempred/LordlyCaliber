@@ -616,8 +616,9 @@ QImage SaveUnitEditor::memberSprite(int id) const {
         editor_->project()->loadArmyArtwork();
         const auto classes=editor_->project()->classData();
         if (classId<0 || classId>=classes.entries().size()) return {};
-        const auto &asset=classes.entries()[classId];
-        return editor_->project()->armyArtwork()->image(ArmyArtwork::classLane(asset)*2,ArmyArtwork::classModel(asset));
+        const int current = id>=100 ? 0 : editor_->document()->value(SaveTable::Characters,id,"secondaryClass").toInt();
+        const auto route = ArmyArtwork::characterRoute(classes,classId,current);
+        return editor_->project()->armyArtwork()->image(route.lane*2,route.model);
     } catch (const Error &) {return {};}
 }
 void SaveUnitEditor::selectLeader(int id) {
@@ -671,9 +672,13 @@ void SaveUnitEditor::refresh() {
             for (int i=0;i<unit.members.size();++i) if (unit.members[i]) {
                 const int member=unit.members[i];
                 if(member>=100 && member<220)soldiers+=doc.soldiersInGroup(member);
-                int classId=-1;
-                try {classId=member>=100 && member<220?0:doc.value(SaveTable::Characters,member,"class").toInt();} catch(const Error &){}
-                thumbnail.setUnit(unit.cells[i],classId,memberName(member));
+                int classId=-1,current=-1;
+                try {
+                    const bool soldier=member>=100 && member<220;
+                    classId=soldier?0:doc.value(SaveTable::Characters,member,"class").toInt();
+                    current=soldier?0:doc.value(SaveTable::Characters,member,"secondaryClass").toInt();
+                } catch(const Error &){}
+                thumbnail.setUnit(unit.cells[i],classId,memberName(member),false,false,current);
             }
             auto item=new QListWidgetItem((commander?"Command · ":"Squad "+QString::number(unit.label)+" · ")+memberName(unit.members[0]),list);
             item->setData(Qt::UserRole,unit.index); item->setData(ArmyOverviewImage,thumbnail.overviewImage());
@@ -766,17 +771,19 @@ void SaveUnitEditor::drawFormation() {
     board_->clearUnits();
     for (int cell = 0; cell < 9; ++cell) {
         QStringList names;
-        int classId = 0;
+        int classId = 0, currentClass = 0;
         bool selected = false;
         for (int member = 0; member < ids_.size(); ++member)
             if (ids_[member] && cells_[member] == cell) {
                 names << memberName(ids_[member]) + (member == 0 ? " · Leader" : "");
                 selected |= members_->currentRow() == member;
-                if (ids_[member] < 100)
+                if (ids_[member] < 100) {
                     classId = editor_->document()->value(SaveTable::Characters, ids_[member], "class").toInt();
+                    currentClass = editor_->document()->value(SaveTable::Characters, ids_[member], "secondaryClass").toInt();
+                }
             }
         grid_[cell]->setText(QString("%1\n%2").arg(cell + 1).arg(names.join(" + ")));
-        if (!names.isEmpty()) board_->setUnit(cell, classId, grid_[cell]->text(), selected, names.size()>1);
+        if (!names.isEmpty()) board_->setUnit(cell, classId, grid_[cell]->text(), selected, names.size()>1,currentClass);
         grid_[cell]->setEnabled(unity_->isEnabled());
     }
     board_->finishUpdate();

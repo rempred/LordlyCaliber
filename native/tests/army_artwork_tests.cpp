@@ -21,6 +21,94 @@ class ArmyArtworkTests : public QObject {
         return QJsonDocument::fromJson(file.readAll()).object()["atlases"].toArray();
     }
   private slots:
+    void retailCharacterRouting() {
+        try {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto classes = ClassData::load(rom);
+        QTemporaryDir work;
+        QProcess node;
+        const auto output = work.filePath("routes.json");
+        node.start("node", {QFINDTESTDATA("army-class-route-reference.cjs"), path, output});
+        QVERIFY(node.waitForFinished(30000));
+        QVERIFY2(node.exitCode() == 0, node.readAllStandardError().constData());
+        QFile results(output); QVERIFY(results.open(QIODevice::ReadOnly));
+        const auto routes = QJsonDocument::fromJson(results.readAll()).array();
+        QCOMPARE(routes.size(), 165 * 165);
+        for (const auto &value : routes) {
+            const auto row = value.toArray();
+            const auto route = ArmyArtwork::characterRoute(classes, row[0].toInt(), row[1].toInt());
+            QCOMPARE(route.lane, row[2].toInt());
+            QCOMPARE(route.model, row[3].toInt());
+            const int identity=row[0].toInt(),link=u8(classes.entries()[identity].record,69);
+            if(row[1].toInt()==(identity && link ? link : identity)) {
+                const auto initial=ArmyArtwork::characterRoute(classes,identity);
+                QCOMPARE(initial.lane,row[2].toInt());
+                QCOMPARE(initial.model,row[3].toInt());
+            }
+        }
+        QCOMPARE(ArmyArtwork::characterRoute(classes, 146).model,
+                 ArmyArtwork::characterRoute(classes, 10).model);
+        QCOMPARE(ArmyArtwork::characterRoute(classes, 148).model,
+                 ArmyArtwork::characterRoute(classes, 27).model);
+        auto army = ArmyArtwork::load(rom);
+        const auto route = ArmyArtwork::characterRoute(classes, 146);
+        QVERIFY(army.consumers(classes, route.lane * 2, route.model).contains(146));
+        // Editing an inherited model changes its actual owner, not a selector
+        // the game ignores. The image and class routing survive project reload.
+        auto project = Project::fromRom(rom);
+        project.loadArmyArtwork();
+        const auto baseline = project.classData();
+        const auto pixels = army.indices(route.lane * 2, route.model);
+        const int copy = army.isolateClass(classes, 146);
+        auto changed = pixels; changed[0] = char((u8(changed,0)+1)%256);
+        army.setIndices(route.lane * 2, copy, changed);
+        project.setArmyArtwork(army.json());
+        QCOMPARE(ArmyArtwork::characterRoute(project.classData(), 146).model, copy);
+        QCOMPARE(project.classData().entries()[146].appearance, baseline.entries()[146].appearance);
+        QCOMPARE(army.indices(route.lane * 2, route.model), pixels);
+        auto reopened = Project::fromRom(rom); reopened.applyManifest(project.manifest());
+        QCOMPARE(ArmyArtwork::characterRoute(reopened.classData(), 146).model, copy);
+        QCOMPARE(reopened.armyArtwork()->indices(route.lane * 2, copy), changed);
+        army.restoreRoute(ArmyArtwork::modelClass(classes, 146));
+        project.setArmyArtwork(army.json());
+        QCOMPARE(ArmyArtwork::characterRoute(project.classData(), 146).model, route.model);
+        } catch(const Error &e) { QFAIL(e.what()); }
+    }
+    void inheritedCharacterArtworkExport() {
+        try {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        const auto rom=Rom::open(path);
+        auto project=Project::fromRom(rom); project.loadArmyArtwork();
+        const auto original=project.classData();
+        auto army=*project.armyArtwork();
+        const int model=army.isolateClass(original,146);
+        auto pixels=army.indices(0,model); pixels[0]=char((u8(pixels,0)+1)%256);
+        army.setIndices(0,model,pixels); project.setArmyArtwork(army.json());
+        QTemporaryDir work;
+        const auto built=rebuild(project,tools,work.path());
+        QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-character-routing-XXXXXX"));
+        QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+        const auto candidate=candidates.filePath(QFileInfo(path).fileName());
+        exportRom(project,built,candidate);
+        const auto exported=Rom::open(candidate);
+        auto reopened=Project::fromRom(exported); reopened.loadArmyArtwork();
+        QCOMPARE(ArmyArtwork::characterRoute(reopened.classData(),146).model,model);
+        QCOMPARE(reopened.armyArtwork()->indices(0,model),pixels);
+        for(int id=0;id<original.entries().size();++id) {
+            // The first word is a relocated name pointer; compare its payload
+            // separately, then require every other class byte to be unchanged.
+            QCOMPARE(reopened.classData().entries()[id].name,original.entries()[id].name);
+            QCOMPARE(reopened.classData().entries()[id].record.mid(4),original.entries()[id].record.mid(4));
+            if(id!=10) QCOMPARE(reopened.classData().entries()[id].appearance,original.entries()[id].appearance);
+        }
+        auto checksum=built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum,built.image);
+        QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+        qInfo().noquote()<<"Inherited artwork candidate:"<<candidate;
+        } catch(const Error &e) { QFAIL(e.what()); }
+    }
     void changedClassSizeNeedsValidModels() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
@@ -246,11 +334,8 @@ class ArmyArtworkTests : public QObject {
                     ArmyArtwork::classLane(classData.entries()[id]),
                     (QStringList{"ordinary", "special", "large"}).indexOf(row["lane"].toString()));
                 QCOMPARE(ArmyArtwork::classModel(classData.entries()[id]), row["modelId"].toInt());
-                QVERIFY(original
-                            .consumers(classData,
-                                       ArmyArtwork::classLane(classData.entries()[id]) * 2,
-                                       ArmyArtwork::classModel(classData.entries()[id]))
-                            .contains(id));
+                const auto character = ArmyArtwork::characterRoute(classData, id);
+                QVERIFY(original.consumers(classData, character.lane * 2, character.model).contains(id));
             }
             QCOMPARE(legacyRows.size(), 8);
             QJsonObject importedArt{{"schemaVersion", 5}, {"armySprites", legacyRows}};

@@ -18,7 +18,7 @@ class FormationBoard final : public QWidget {
     int cellAt(QPoint position) const;
     void clearUnits();
     void setUnit(int cell, int classId, const QString &label, bool selected = false,
-                 bool conflict = false);
+                 bool conflict = false, int currentClass = -1);
     void setCellHint(int cell, const QString &label);
     void finishUpdate();
     QImage overviewImage();

@@ -26,6 +26,10 @@ class ArmyArtwork {
     static void validateRelocations(const Rom &);
     static int classLane(const ClassAsset &);
     static int classModel(const ClassAsset &);
+    // The raw selectors above describe stored artwork. Character previews use
+    // the game's identity/current-class pair; -1 supplies the creation default.
+    static int modelClass(const ClassData &, int identity, int current = -1);
+    static ArmyClassRoute characterRoute(const ClassData &, int identity, int current = -1);
     QVector<int> consumers(const ClassData &, int atlas, int model) const;
     const QMap<int, ArmyClassRoute> &routes() const {
         return routes_;

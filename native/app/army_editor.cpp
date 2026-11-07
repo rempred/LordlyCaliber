@@ -101,7 +101,8 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     action("Copy to Art Library", "armyCopyToLibrary", [this] { copyToLibrary(); });
     restoreSprite_ = action("Restore loaded sprite", "armyRestore", [this] {
         auto next = *project_->armyArtwork();
-        if (class_ >= 0 && next.routes().contains(class_)) next.restoreRoute(class_);
+        const int owner = class_ < 0 ? -1 : ArmyArtwork::modelClass(project_->classData(), class_);
+        if (owner >= 0 && next.routes().contains(owner)) next.restoreRoute(owner);
         else next.restore(atlas_, model_);
         if (next.json() != project_->armyArtwork()->json())
             undo_->push(new ArmyCommand(project_, "Restore Army sprite", next.json()));
@@ -119,7 +120,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     browse->setContentsMargins(0, 0, 0, 0);
     viewMode_ = new QComboBox;
     viewMode_->setObjectName("armyViewMode");
-    viewMode_->addItems({"Classes — independent edits", "Shared models — advanced"});
+    viewMode_->addItems({"Classes", "Shared models — advanced"});
     browse->addWidget(viewMode_);
     atlasSelect_ = new QComboBox;
     atlasSelect_->setObjectName("armyAtlas");
@@ -388,7 +389,7 @@ void ArmyEditor::selectClass(int id, int facing, int palette) {
         throw Error("Invalid Army class or facing");
     {const QSignalBlocker block(viewMode_); viewMode_->setCurrentIndex(0);}
     class_ = id;
-    atlas_ = ArmyArtwork::classLane(classes.entries()[id]) * 2 + facing;
+    atlas_ = ArmyArtwork::characterRoute(classes, id).lane * 2 + facing;
     paletteOrdinal_ = palette;
     refresh();
 }
@@ -399,8 +400,9 @@ void ArmyEditor::refresh() {
     refreshing_ = true;
     const auto classes = project_->classData();
     if (viewMode_->currentIndex() == 0 && class_ >= 0 && class_ < classes.entries().size()) {
-        atlas_ = ArmyArtwork::classLane(classes.entries()[class_]) * 2 + atlas_ % 2;
-        model_ = ArmyArtwork::classModel(classes.entries()[class_]);
+        const auto route = ArmyArtwork::characterRoute(classes, class_);
+        atlas_ = route.lane * 2 + atlas_ % 2;
+        model_ = route.model;
     }
     atlasSelect_->setCurrentIndex(atlas_);
     paletteSelect_->setCurrentIndex(paletteOrdinal_);
@@ -430,9 +432,10 @@ void ArmyEditor::refresh() {
             models_->setCurrentItem(item);
     };
     if (viewMode_->currentIndex() == 0) {
-        for (int id = 1; id < classes.entries().size(); ++id)
-            if (ArmyArtwork::classLane(classes.entries()[id]) == atlas_ / 2)
-                append(ArmyArtwork::classModel(classes.entries()[id]), id);
+        for (int id = 1; id < classes.entries().size(); ++id) {
+            const auto route = ArmyArtwork::characterRoute(classes, id);
+            if (route.lane == atlas_ / 2) append(route.model, id);
+        }
     } else {
         class_ = -1;
         for (int model = 0; model < ArmyArtwork::specs()[atlas_].capacity; ++model) append(model, -1);
@@ -516,9 +519,24 @@ void ArmyEditor::refreshPlane() {
     consumers_->setText(names.isEmpty() ? "No current class uses this model."
                        : (class_ >= 0 ? "Currently uses the same source artwork as: " : "Shared by: ") + names.join(", "));
     restoreSprite_->setText(class_ >= 0 ? "Restore class artwork" : "Restore loaded sprite");
+    QString inheritance;
+    if (class_ >= 0) {
+        const auto classes = project_->classData();
+        const int owner = ArmyArtwork::modelClass(classes, class_);
+        QStringList inheritors;
+        for (int id = 1; id < classes.entries().size(); ++id)
+            if (id != owner && ArmyArtwork::modelClass(classes, id) == owner)
+                inheritors << project_->record(Table::Classes, id).name.simplified();
+        if (!inheritors.isEmpty())
+            inheritance = QString("Edits %1 artwork, also used by %2.")
+                              .arg(project_->record(Table::Classes, owner).name.simplified(),
+                                   inheritors.join(", "));
+    }
     notice_->setText(
         present
-            ? (class_ >= 0 ? "Editing automatically separates shared artwork. Other classes remain unchanged."
+            ? (class_ >= 0 ? (inheritance.isEmpty()
+                                  ? "Editing automatically separates shared artwork. Other classes remain unchanged."
+                                  : inheritance)
                            : "Paint indices to retain both palette appearances. Edits affect every listed class.")
             : "This plane is absent in the loaded ROM. Create a plane or import "
               "artwork to author it.");
@@ -533,13 +551,17 @@ void ArmyEditor::refreshRoute() {
     const bool compatible = (u8(asset.record, ClassData::unitSizeOffset) == 2) == (atlas_ / 2 == 2);
     assignRoute_->setEnabled(compatible);
     restoreRoute_->setEnabled(project_->armyArtwork()->routes().contains(id));
-    QString info = QString("Assigned: %1 · Model 0x%2. ")
+    QString info = QString("Stored assignment: %1 · Model 0x%2. ")
                        .arg(QStringList{"Ordinary", "Special", "Large"}[lane])
                        .arg(model, 2, 16, QChar('0'));
     if (!compatible)
         info += "Choose a model group matching this class's unit size.";
     else
         info += "An assignment selects both the front and player-facing model.";
+    const int owner = ArmyArtwork::modelClass(project_->classData(), id);
+    if (owner != id)
+        info += QString(" This identity uses %1's model in game; edit that class to change its artwork.")
+                    .arg(project_->record(Table::Classes, owner).name.simplified());
     if (!project_->armyArtwork()->present(lane * 2, model) ||
         !project_->armyArtwork()->present(lane * 2 + 1, model))
         info += " A facing is missing; create or import it before exporting a new assignment.";

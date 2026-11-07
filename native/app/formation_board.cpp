@@ -103,7 +103,7 @@ void FormationBoard::clearUnits() {
     }
 }
 void FormationBoard::setUnit(int cell, int classId, const QString &label, bool selected,
-                            bool conflict) {
+                            bool conflict, int currentClass) {
     if (cell < 0 || cell >= 9) return;
     occupied_[cell] = true; conflicts_[cell] = conflict;
     cells_[cell]->setText(label); cells_[cell]->setToolTip(label + QString("\nCell %1").arg(cell+1));
@@ -113,9 +113,8 @@ void FormationBoard::setUnit(int cell, int classId, const QString &label, bool s
         project_->loadArmyArtwork();
         const auto classes = project_->classData();
         if (classId < 0 || classId >= classes.entries().size()) throw Error("Class has no Army sprite route");
-        const auto &asset = classes.entries().at(classId);
-        const int lane = ArmyArtwork::classLane(asset), model = ArmyArtwork::classModel(asset);
-        sprites_[cell] = project_->armyArtwork()->image(lane * 2, model);
+        const auto route = ArmyArtwork::characterRoute(classes, classId, currentClass);
+        sprites_[cell] = project_->armyArtwork()->image(route.lane * 2, route.model);
         cells_[cell]->setIcon(QPixmap::fromImage(sprites_[cell]));
     } catch (const std::exception &e) {
         cells_[cell]->setToolTip(label + "\nArtwork unavailable: " + QString::fromUtf8(e.what()));

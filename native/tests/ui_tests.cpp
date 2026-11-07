@@ -120,6 +120,7 @@
 #include <QUndoGroup>
 #include <QWheelEvent>
 #include <QtTest>
+#include <QColorSpace>
 #include <QtConcurrent>
 #include <bit>
 #include <cmath>
@@ -4903,7 +4904,10 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QCOMPARE(u8(project.armyArtwork()->indices(3,24),3*16+2),quint8(1));QCOMPARE(undo.count(),2);
             const auto painted=project.armyArtwork()->indices(3,24);undo.undo();QCOMPARE(project.armyArtwork()->indices(3,24),QByteArray(384,char(-1)));undo.redo();
             editor.findChild<QComboBox *>("armyPalette")->setCurrentIndex(1);QCOMPARE(project.armyArtwork()->indices(3,24),painted);
-            const auto image=project.armyArtwork()->image(3,24,1);const auto pixel=image.pixelColor(2,3);const auto copied=editor.copyToLibrary();QCOMPARE(project.sprites().asset(copied).frames[0].layers[0].image,image);
+            const auto image=project.armyArtwork()->image(3,24,1);const auto pixel=image.pixelColor(2,3);const auto copied=editor.copyToLibrary();
+            auto libraryImage=project.sprites().asset(copied).frames[0].layers[0].image;
+            libraryImage.setColorSpace(image.colorSpace()); // Library storage tags unprofiled game pixels as sRGB.
+            QCOMPARE(libraryImage,image);
             editor.selectModel(3,25,1);auto library=editor.findChild<QComboBox *>("armyLibrary");library->setCurrentIndex(library->findData(copied));
             QTimer::singleShot(0,&editor,[&]{auto dialog=editor.findChild<QDialog *>("armyImagePreparation");QVERIFY(dialog);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();});editor.findChild<QPushButton *>("armyAssignLibrary")->click();
             QVERIFY(project.armyArtwork()->present(3,25));QCOMPARE(project.armyArtwork()->image(3,25,1).pixelColor(2,3),pixel);QCOMPARE(project.armyArtwork()->image(3,25,1).pixelColor(0,0).alpha(),0);
@@ -4949,6 +4953,54 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(reopened.record(Table::Classes,154).name,QString("Custom duelist"));
         QCOMPARE(reopened.classNameBytes(154),QByteArray("Custom duelist"));
         QCOMPARE(reopened.record(Table::Classes,103).name,QString("Temple Cmdr (Baldwin)"));
+    }
+    void armyCharacterRouting() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));
+        QUndoStack undo; ArmyEditor editor(&project,&undo,[]{}); editor.show();
+        FormationBoard board(&project,"routeTest");
+        QTemporaryDir work;
+        for (const auto pair : {qMakePair(146,10),qMakePair(148,27)}) {
+            for (int side=0;side<2;++side) {
+                editor.selectClass(pair.first,side);
+                editor.exportImage(work.filePath("preview.png"));
+                const auto expected=project.armyArtwork()->image(side,ArmyArtwork::classModel(project.classData().entries()[pair.second]));
+                QCOMPARE(QImage(work.filePath("preview.png")).convertToFormat(QImage::Format_RGBA8888),expected);
+            }
+            board.setUnit(4,pair.first,"Inherited sprite");
+            const auto original=board.cell(4)->icon().pixmap(16,24).toImage();
+            board.setUnit(4,pair.second,"Native class");
+            QCOMPARE(board.cell(4)->icon().pixmap(16,24).toImage(),original);
+            // A saved character uses its actual current class, not its default.
+            board.setUnit(4,pair.first,"Changed to Knight",false,false,5);
+            const auto changed=board.cell(4)->icon().pixmap(16,24).toImage();
+            QVERIFY(changed!=original);
+            board.setUnit(4,5,"Knight");
+            QCOMPARE(board.cell(4)->icon().pixmap(16,24).toImage(),changed);
+        }
+        editor.selectClass(146);
+        QVERIFY(editor.findChild<QLabel *>("armyNotice")->text().contains("also used by"));
+        const auto before=project.armyArtwork()->json();
+        auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");
+        const auto route=ArmyArtwork::characterRoute(project.classData(),146);
+        const auto pixels=project.armyArtwork()->indices(route.lane*2,route.model);
+        auto ink=editor.findChild<QSpinBox *>("armyInk");
+        ink->setValue((u8(pixels,0)+1)%256);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,2));
+        const auto copied=ArmyArtwork::characterRoute(project.classData(),146);
+        QVERIFY(copied.model!=route.model);
+        QCOMPARE(ArmyArtwork::characterRoute(project.classData(),10).model,copied.model);
+        const auto once=project.armyArtwork()->json();
+        ink->setValue((u8(pixels,1)+2)%256);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(canvas->zoom()+2,2));
+        QCOMPARE(ArmyArtwork::characterRoute(project.classData(),146).model,copied.model);
+        QVERIFY(project.armyArtwork()->json()!=once);
+        undo.undo(); QCOMPARE(project.armyArtwork()->json(),once);
+        undo.undo(); QCOMPARE(project.armyArtwork()->json(),before);
+        undo.redo(); QCOMPARE(project.armyArtwork()->json(),once);
+        editor.findChild<QPushButton *>("armyRestore")->click();
+        QCOMPARE(ArmyArtwork::characterRoute(project.classData(),146).model,route.model);
     }
     void armyClassIsolation() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -267,12 +267,41 @@ QImage ArmyArtwork::floorImage(const Rom &rom) {
 int ArmyArtwork::classModel(const ClassAsset &asset) {
     return u8(asset.appearance, 4) & 63;
 }
+int ArmyArtwork::modelClass(const ClassData &classes, int identity, int current) {
+    if (identity < 0 || identity >= classes.entries().size())
+        throw Error("Army sprite refers to an unavailable identity class");
+    const auto &primary = classes.entries()[identity];
+    const int link = u8(primary.record, 69);
+    // Soldier groups use model/class zero directly; that placeholder is not
+    // a newly created character (its unused record link is 0xFF in retail).
+    if (current == -1) current = identity && link ? link : identity;
+    if (current < 0 || current >= classes.entries().size())
+        throw Error("Army sprite refers to an unavailable current class");
+    // Accepted func_00043e18: ordinary identities use the current class's
+    // model. Special identities retain theirs only while their link matches.
+    return (u8(primary.appearance, 4) & 0x80) && link == current ? identity : current;
+}
+ArmyClassRoute ArmyArtwork::characterRoute(const ClassData &classes, int identity, int current) {
+    const int source = modelClass(classes, identity, current);
+    const auto &primary = classes.entries()[identity];
+    if (current == -1) {
+        current = u8(primary.record, 69);
+        if (!identity || !current) current = identity;
+    }
+    // Army renderer ROM84B7C/84B8C calls the size and model getters separately;
+    // ROM84BD4..84C10 chooses the small atlas from the identity's special bit.
+    const int lane = classes.unitSize(identity, current) == 2 ? 2
+                     : (u8(primary.appearance, 4) & 0x80) ? 1 : 0;
+    return {lane, classModel(classes.entries()[source])};
+}
 QVector<int> ArmyArtwork::consumers(const ClassData &data, int atlas, int model) const {
     validate(atlas, model);
     QVector<int> result;
-    for (int id = 0; id < data.entries().size(); ++id)
-        if (classLane(data.entries()[id]) == atlas / 2 && classModel(data.entries()[id]) == model)
+    for (int id = 0; id < data.entries().size(); ++id) {
+        const auto route = characterRoute(data, id);
+        if (route.lane == atlas / 2 && route.model == model)
             result.append(id);
+    }
     return result;
 }
 void ArmyArtwork::setRoute(const ClassData &classes, int id, int lane, int model) {
@@ -284,14 +313,31 @@ void ArmyArtwork::setRoute(const ClassData &classes, int id, int lane, int model
 }
 int ArmyArtwork::isolateClass(const ClassData &classes, int id) {
     if (id < 0 || id >= classes.entries().size()) throw Error("Choose an Army class");
+    // An inherited model is owned by the game's resolved class. Writing the
+    // identity's unused selector would make the editor disagree with the ROM.
+    id = modelClass(classes, id);
     const auto &asset = classes.entries()[id];
     const int lane = classLane(asset), model = classModel(asset), front = lane * 2;
-    if (consumers(classes, front, model).size() <= 1) return model;
+    const auto usedByAnotherOwner = [&](int candidate) {
+        for (int other = 0; other < classes.entries().size(); ++other) {
+            if (modelClass(classes, other) == id) continue;
+            const auto route = characterRoute(classes, other);
+            const auto &raw = classes.entries()[other];
+            if ((route.lane == lane && route.model == candidate) ||
+                (classLane(raw) == lane && classModel(raw) == candidate)) return true;
+        }
+        return false;
+    };
+    // Inheritors remain attached to this owner. They must not cause a fresh
+    // allocation on every brush stroke after the owner has been isolated.
+    const bool otherOwner = usedByAnotherOwner(model);
+    if (!otherOwner && (consumers(classes, front, model).size() <= 1 ||
+                       privateModels_.contains(lane * 64 + model))) return model;
     // Only allocate beyond loaded planes; preserve unused original artwork and
     // authored unassigned slots. A model assignment owns both facings.
     for (int copy = std::max(sourceCount(front), sourceCount(front + 1)); copy < 64; ++copy) {
         if (((modified(front, copy) || modified(front + 1, copy)) && !privateModels_.contains(lane * 64 + copy)) ||
-            !consumers(classes, front, copy).isEmpty()) continue;
+            usedByAnotherOwner(copy)) continue;
         auto next = *this;
         for (int side = 0; side < 2; ++side) {
             auto pixels = indices(front + side, model);
