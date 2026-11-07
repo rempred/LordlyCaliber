@@ -88,5 +88,51 @@ for(const shifted of [false,true]){
   const handoff=shifted&&terminal&&phase<=1;
   assert.equal(m.r8(tail+0x864),handoff?5:phase);assert.equal(m.r32(tail+0x868),handoff?0:17);assert.equal(m.r32(0x801ce8c4),0);
  }
- console.log(`${shifted?'Expanded':'Normal'} buffer: real layout transition, 1/6/18 timed impacts, continuation counters, missing actors/children and phase handoff PASS.`);
+ // Mesmerize regression: a late final impact seeks into a wait marker before
+ // zeroing its delay. Run the real clock service; stubbing it hides the stall.
+ m.traps.delete(0x801d9860);
+ for(const count of [0,1,6,18])for(const elapsed of [1,5,200]) {
+  call(e.lc_strike_end);
+  if(count) {
+   [22,0,0,0,101,0,255,...Array(count).fill(9),255,128,...Array(count-1).fill(0),255]
+    .forEach((v,i)=>m.w8(command+i,v));
+   call(e.lc_strike_command,[command]);
+  }
+  const n=count||1,wait=n*10,barrier=wait+3,next=barrier+4;
+  m.w32(tail+0x814,next+3);m.w8(tail+0x823,1);m.w8(tail+0x824,n);
+  m.w8(tail+0x820,101);m.w8(tail+0x822,1);m.w32(0x801ce8c4,1);
+  for(let i=0;i<n;i++) {
+   [31,0,0,9,0,0,20+i,0,1,0].forEach((v,j)=>m.w8(stream+16+i*10+j,v));
+   if(count)call(e.lc_strike_result,[actor,i*10]);
+  }
+  [30,0,255,32,0,241,1,64,0,12].forEach((v,j)=>m.w8(stream+16+wait+j,v));
+  delivered.length=0;
+  for(let i=0;i<n;i++) {
+   if(!count){m.w32(actor+0xb0,0);m.w8(actor+0xd0,1);m.w8(actor+0xd1,1);}
+   m.w32(stream+4,elapsed);m.w32(stream+8,elapsed);m.w32(tail+0x810,wait);
+   call(e.lc_attack_visual_impact,[9,10]);
+   assert.equal(m.r32(tail+0x810),wait,'native seek reached the wait');
+   assert.equal(m.r32(stream+8),elapsed,'absolute playback time preserved');
+   assert.equal(m.r32(stream+4),elapsed,'elapsed time retained for subsequent seeks');
+   assert.equal(m.r8(stream+18+wait),i===n-1?elapsed:255,'only final impact releases elapsed wait');
+  }
+  assert.equal(delivered.length,n);
+  call(e.lc_attack_playback);
+  assert.equal(m.r32(tail+0x810),barrier,'still waits for the actual effect to finish');
+  m.w8(tail+0x822,0);call(e.lc_attack_playback);
+  assert.equal(m.r32(tail+0x810),next,'next action reachable after the effect');
+  assert.equal(m.r32(stream+4),1);
+  assert.equal(m.r8(stream+18+next),12,'ordinary delay unchanged');
+  call(0x801d9860,[m.r32(stream+8)]);
+  assert.equal(m.r32(tail+0x810),next,'future native seeks stay on the same command');
+  assert.equal(m.r32(stream+4),1,'future seeks preserve progress in that command');
+ }
+ // Finishing a contact while already in an ordinary timed command must not
+ // rewind that command, even though the earlier barrier becomes zero-delay.
+ m.w32(stream+4,5);m.w32(stream+8,5);m.w32(tail+0x810,17);
+ [31,0,0,9,0,0,25,0,1,0,30,0,0,32,0,0,1,64,0,12].forEach((v,j)=>m.w8(stream+16+j,v));
+ m.w32(tail+0x814,20);m.w8(tail+0x824,1);m.w32(actor+0xb0,0);m.w8(actor+0xd0,1);m.w8(actor+0xd1,1);
+ call(e.lc_attack_visual_impact,[9,10]);
+ assert.equal(m.r32(tail+0x810),17);assert.equal(m.r32(stream+4),5);
+ console.log(`${shifted?'Expanded':'Normal'} buffer: real layout transition, 1/6/18 timed impacts, continuation counters, missing actors/children, phase handoff and late-impact clock regression PASS.`);
 }

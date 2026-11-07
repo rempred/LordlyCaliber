@@ -474,7 +474,8 @@ void lc_attack_finish(void *source,int time) {
     if(amount>0 && !func_0020C2C0(source)) {
         if(kind==1) {
             amount=func_0020D4C8(source,amount); H(source,0x20)+=amount;
-            lc_attack_result_event(0x1f,time,source,2,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
+            if(amount>0)
+                lc_attack_result_event(0x1f,time,source,2,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);
         } else {
             func_0022A7B8(source,0,time,amount,0,0);
             lc_attack_result_event(0x1f,time,source,0,amount>>8,amount&255,0,STATE_B(*(void **)0x801ce8c0,0x823),0);

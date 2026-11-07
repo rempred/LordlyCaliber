@@ -174,6 +174,11 @@ for(const chance of [0,1,25,50,99,100]){let applied=0;for(sample=0;sample<100;sa
 m.w32(target+0x40,0);m.w8(rules+10,100);call('lc_attack_begin',[source]);call('lc_attack_record',[source,target,0,100,0,50]);assert.equal(m.r32(target+0x40),0);m.w8(rules+9,0);call('lc_attack_record',[source,target,0,100,0,50]);assert.equal(m.r32(target+0x40),16);
 // Sum actual HP lost, not overkill or the last calculated amount; cap healing.
 m.w8(rules+8,0);m.w8(rules+11,1);m.w8(rules+12,0);m.w16(rules+14,50);m.w32(source+0x40,0x100);m.w16(source+0x20,200);m.w16(source+0x22,500);call('lc_attack_begin',[source]);m.w16(target+0x20,0);call('lc_attack_record',[source,target,100,10,1,50]);m.w16(target+0x20,50);call('lc_attack_record',[source,target,50,100,1,60]);call('lc_attack_finish',[source,70]);assert.equal(m.r16(source+0x20),230);
+// A caster already at maximum HP must not queue a zero-point impact result
+// waiting for a caster contact that an ordinary spell visual never sends.
+m.w16(source+0x20,500);events.length=0;call('lc_attack_begin',[source]);
+call('lc_attack_record',[source,target,40,90,1,60]);call('lc_attack_finish',[source,70]);
+assert.equal(m.r16(source+0x20),500);assert.equal(events.length,0,'no zero-point heal result');
 m.w8(rules+11,2);m.w8(rules+12,2);m.w16(rules+14,100);call('lc_attack_begin',[source]);call('lc_attack_finish',[source,80]);assert.equal(m.r16(source+0x20),0);assert.equal(m.r32(source+0x40)&1,1);
 console.log(JSON.stringify({mirroredFormationCells:18,targetPatterns:23,statusesAndImmunity:'PASS',chanceBoundarySamples:600,multiTargetDrainAndLethalRecoil:'PASS',limit:'Compiled adapters and original status applier; controlled actor lookup, immunity, timing, RNG and event sinks. Visual replay and full console battle are not simulated.'}));
 

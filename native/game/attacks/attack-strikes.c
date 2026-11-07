@@ -80,15 +80,34 @@ int lc_strike_result(void *actor,u32 cursor) {
     command[4]&=127;
     return 1;
 }
+static void lc_complete_visual_impact(int id,int kind) {
+    u8 *stream=*(u8 **)0x801ce8c0;
+    u32 cursor;
+    int pending=stream?*(u8 *)lc_battle_field(stream,0x824):0;
+    lc_original_visual_impact(id,kind);
+    if(!stream || stream!=*(u8 **)0x801ce8c0 || !pending ||
+       *(u8 *)lc_battle_field(stream,0x824))return;
+    cursor=*(u32 *)lc_battle_field(stream,0x810);
+    if(cursor>=*(u32 *)lc_battle_field(stream,0x814))return;
+    /* The native final contact seeks to the current playback time, then clears
+     * this group's wait delays. If contact arrives partway through the wait,
+     * its elapsed clock can no longer equal the new zero delay. Retain the
+     * elapsed portion, as the native special-visual path does. This releases
+     * the wait on the next tick without desynchronizing future absolute-time
+     * seeks. The separate visual-active barrier still owns effect completion. */
+    if((stream[16+cursor]==0x1e || stream[16+cursor]==0x20) &&
+       stream[18+cursor]==0 && SW(stream,4)<256)
+        stream[18+cursor]=(u8)SW(stream,4);
+}
 void lc_attack_visual_impact(int id,int kind) {
     u8 *actor;
     int at,end;
     if(id<0 || id>=20 || !PLAY->enabled || PLAY->stream!=*(u32 *)0x801ce8c0) {
-        lc_original_visual_impact(id,kind); return;
+        lc_complete_visual_impact(id,kind); return;
     }
     actor=(u8 *)(*(u32 *)0x801ce8bc+0x1c4+id*0xf8);
     at=PLAY->next[id];
-    if(!PLAY->count[id]) { lc_original_visual_impact(id,kind); return; }
+    if(!PLAY->count[id]) { lc_complete_visual_impact(id,kind); return; }
     if(at>=PLAY->count[id])return;
     end=at+1;
     while(end<PLAY->count[id] && (PLAY->results[id][end]&0x80000000U))++end;
@@ -100,7 +119,7 @@ void lc_attack_visual_impact(int id,int kind) {
     do {
         SW(actor,0xb0)=PLAY->results[id][at]&0x7fffffffU;
         SB(actor,0xd0)=1; SB(actor,0xd1)=1;
-        lc_original_visual_impact(id,kind);
+        lc_complete_visual_impact(id,kind);
         if(SB(actor,0xd0))return;
         PLAY->next[id]=++at;
         if(at>=end)break;
