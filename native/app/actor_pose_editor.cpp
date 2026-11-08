@@ -671,7 +671,7 @@ void ActorPoseEditor::loadSources() {
         QSignalBlocker banksBlock(banks_), ownerBlock(owners_);
         banks_->clear();
         owners_->clear();
-        owners_->addItem("Same as source", -1);
+        owners_->addItem("Default current class", -1);
         if (body) {
             const auto &classes = bodyAnimations_->classes();
             for (int i = 0; i < classes.entries().size(); ++i) {
@@ -691,14 +691,24 @@ void ActorPoseEditor::loadSources() {
     }
     loadBank();
 }
+int ActorPoseEditor::currentClass() const {
+    const int selected = owners_->currentData().toInt();
+    if (selected >= 0) return selected;
+    const int identity = banks_->currentData().toInt();
+    const auto &entries = bodyAnimations_->classes().entries();
+    if (identity < 0 || identity >= entries.size()) throw Error("Choose an available identity class");
+    const int link = u8(entries[identity].record, 69);
+    // Creation's one-step current-class assignment; Soldier groups use zero.
+    return identity && link ? link : identity;
+}
 void ActorPoseEditor::loadBank() {
     stop();
     art_.reset();
     player_.reset();
     try {
-        const int source = banks_->currentData().toInt(), owner = owners_->currentData().toInt();
+        const int source = banks_->currentData().toInt();
         const bool body = kinds_->currentIndex() == 1;
-        art_ = body ? ActorArt::loadBody(rom_, source, owner < 0 ? source : owner,
+        art_ = body ? ActorArt::loadBody(rom_, source, currentClass(),
                                          flags_->currentIndex() >> 1, flags_->currentIndex() & 1, bodyAnimations_)
                     : ActorArt::load(rom_, source);
         if (body) {
@@ -824,8 +834,8 @@ void ActorPoseEditor::step() {
 void ActorPoseEditor::resolveAction() {
     if (kinds_->currentIndex()!=1 || actions_->currentData().toInt()<0) { restart(); return; }
     try {
-        const int source=banks_->currentData().toInt(), owner=owners_->currentData().toInt();
-        const int state=bodyAnimations_->attackSelector(source,owner<0?source:owner,actions_->currentData().toInt(),actionModes_->currentIndex(),flags_->currentIndex());
+        const int source=banks_->currentData().toInt();
+        const int state=bodyAnimations_->attackSelector(source,currentClass(),actions_->currentData().toInt(),actionModes_->currentIndex(),flags_->currentIndex());
         const int index=poses_->findData(state);
         if (index<0) throw Error("The selected action refers to an absent pose in this body");
         const QSignalBlocker block(poses_); poses_->setCurrentIndex(index); restart();
@@ -852,7 +862,7 @@ void ActorPoseEditor::setBodyAnimations(BodyAnimationData::Pointer animations) {
     const int source=banks_->currentData().toInt(),owner=owners_->currentData().toInt(),state=poses_->currentData().toInt(),target=step_;
     {
         const QSignalBlocker bankBlock(banks_),ownerBlock(owners_);
-        banks_->clear(); owners_->clear(); owners_->addItem("Same as source",-1);
+        banks_->clear(); owners_->clear(); owners_->addItem("Default current class",-1);
         const auto &entries=bodyAnimations_->classes().entries();
         for(int id=0;id<entries.size();++id) {
             const auto label=QString("%1 · %2").arg(id).arg(decodeText(entries[id].name));

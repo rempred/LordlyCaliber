@@ -47,6 +47,7 @@ class ActorPoseEditor : public QWidget {
   private:
     void loadSources();
     void loadBank();
+    int currentClass() const;
     void resolveAction();
     void restart();
     void seek(int step);

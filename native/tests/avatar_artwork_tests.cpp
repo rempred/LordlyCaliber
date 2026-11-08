@@ -12,6 +12,26 @@ using namespace lordly;
 class AvatarArtworkTests : public QObject {
     Q_OBJECT
   private slots:
+    void selectionAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);
+        const auto classes=ClassData::load(rom);
+        const auto artwork=AvatarArtwork::load(rom);
+        const auto library=AvatarLibrary::load(rom);
+        QTemporaryDir work; QProcess node;
+        node.start("node",{QFINDTESTDATA("portrait-selection-mips.cjs"),path,work.filePath("portraits.json")});
+        QVERIFY(node.waitForFinished(30000));
+        QVERIFY2(node.exitCode()==0,node.readAllStandardError().constData());
+        QFile results(work.filePath("portraits.json")); QVERIFY(results.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(results.readAll()).object();
+        QCOMPARE(data["cards"].toArray().size(),165*165);
+        const auto portraits=data["portraits"].toArray(); QCOMPARE(portraits.size(),330);
+        for(const auto &v:portraits) {
+            const auto row=v.toArray();
+            QCOMPARE(artwork.words(classes,row[0].toInt(),row[1].toInt()),library.words(quint16(row[2].toInt())));
+        }
+    }
     void imageMappingAndLivePreview() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

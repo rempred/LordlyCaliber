@@ -10,6 +10,7 @@
 #include "app/change_report_dialog.h"
 #include "app/class_setup.h"
 #include "app/combat_editor.h"
+#include "app/combat_animation_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
@@ -5484,6 +5485,35 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void savePortraitIdentity() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work; QProcess generator;
+        generator.start("node",{QFINDTESTDATA("save-unit-mips.cjs"),work.path(),"generate"});
+        QVERIFY(generator.waitForFinished(30000)); QVERIFY2(!generator.exitCode(),generator.readAllStandardError().constData());
+        QFile payload(work.filePath("unit-payload.bin")); QVERIFY(payload.open(QIODevice::ReadOnly));
+        QByteArray input(0x10000,0); input.replace(0x3a,6180,payload.readAll());
+        QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data()+0x10),0x1850,0,0));
+        auto project=Project::fromRom(Rom::open(path)); project.loadAvatarArtwork();
+        SaveEditor editor(&project); editor.loadBytes(input);
+        auto card=dynamic_cast<SaveCharacterCard *>(editor.findChild<QWidget *>("saveCharacterCard")); QVERIFY(card);
+        auto portrait=card->findChild<QLabel *>("saveCardPortrait"); QVERIFY(portrait);
+        for(const int identity:{91,146,148}) {
+            editor.loadBytes(input);
+            QVERIFY(editor.edit(SaveTable::Characters,2,"class",identity));
+            card->selectCharacter(2);
+            const auto expected=QPixmap::fromImage(project.avatarArtwork()->image(project.classData(),identity,0))
+                                    .scaled(portrait->size(),Qt::KeepAspectRatio,Qt::FastTransformation).toImage();
+            QCOMPARE(portrait->pixmap().toImage(),expected);
+            QVERIFY(editor.edit(SaveTable::Characters,2,"secondaryClass",5));
+            QCOMPARE(editor.document()->value(SaveTable::Characters,2,"class").toInt(),identity);
+            QCOMPARE(portrait->pixmap().toImage(),expected);
+            const auto changedSave=editor.document()->serialize();
+            editor.undoStack()->undo(); QCOMPARE(portrait->pixmap().toImage(),expected);
+            editor.undoStack()->redo(); QCOMPARE(portrait->pixmap().toImage(),expected);
+            editor.loadBytes(changedSave); card->selectCharacter(2);
+            QCOMPARE(portrait->pixmap().toImage(),expected);
+        }
+    }
     void saveArmyLiveWorkflow() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         try {
@@ -8613,6 +8643,69 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(image(), first);
         projected->setChecked(false);
         QVERIFY(layers->count() > 0);
+    }
+    void bodyPreviewCurrentClass() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); const auto data=BodyAnimationData::load(rom);
+        ActorPoseEditor editor(rom);
+        auto kinds=editor.findChild<QComboBox *>("actorSourceKind");
+        auto classes=editor.findChild<QComboBox *>("actorBank");
+        auto current=editor.findChild<QComboBox *>("actorOwner");
+        auto flags=editor.findChild<QComboBox *>("actorBodyFlags");
+        auto actions=editor.findChild<QComboBox *>("actorAttackAction");
+        auto mode=editor.findChild<QComboBox *>("actorAttackMode");
+        QVERIFY(kinds && classes && current && flags && actions && mode);
+        editor.findChild<QCheckBox *>("actorProjected")->setChecked(false);
+        kinds->setCurrentIndex(1);
+        for(const int identity:{91,117,118,146,148}) {
+            classes->setCurrentIndex(classes->findData(identity));
+            current->setCurrentIndex(current->findData(-1));
+            const int link=u8(data->classes().entries()[identity].record,69),owner=link?link:identity;
+            for(int f=0;f<4;++f) {
+                flags->setCurrentIndex(f);
+                QCOMPARE(editor.playbackSource().art.ownerClass(),owner);
+                QCOMPARE(editor.playbackSource().art.bodyHandle(),data->handle(identity,owner,f>>1,f&1));
+            }
+            const int action=4;
+            actions->setCurrentIndex(actions->findData(action));
+            QCOMPARE(editor.playbackSource().state,data->attackSelector(identity,owner,action,mode->currentIndex(),3));
+            editor.setBodyAnimations(data);
+            QCOMPARE(editor.playbackSource().art.ownerClass(),owner);
+            actions->setCurrentIndex(0);
+            current->setCurrentIndex(current->findData(5));
+            QCOMPARE(editor.playbackSource().art.ownerClass(),5);
+            QCOMPARE(editor.playbackSource().art.bodyHandle(),data->handle(identity,5,1,1));
+        }
+    }
+    void combatPreviewSideDefaults() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path)); QUndoStack undo;
+        CombatAnimationEditor editor(&project,&undo,[]{});
+        auto classes=editor.findChild<QComboBox *>("combatAnimationClass");
+        auto side=editor.findChild<QComboBox *>("combatAnimationSide");
+        auto variant=editor.findChild<QComboBox *>("combatAnimationVariant");
+        auto preview=editor.findChild<ActorPoseEditor *>("sequencePreview");
+        QVERIFY(classes && side && variant && preview);
+        QCOMPARE(variant->currentText(),QString("Game default"));
+        // Native battle construction (0020DB10) sets/clears bits 10 and 8
+        // together by facing side, including bosses and named identities.
+        for(const int identity:{5,15,30,91,117,118,146,148}) {
+            classes->setCurrentIndex(classes->findData(identity));
+            const int link=u8(project.record(Table::Classes,identity).bytes,69),owner=link?link:identity;
+            for(int facing=0;facing<2;++facing) {
+                side->setCurrentIndex(facing);
+                for(int alternative=0;alternative<2;++alternative) {
+                    variant->setCurrentIndex(alternative);
+                    const auto art=preview->playbackSource().art;
+                    QCOMPARE(art.sourceClass(),identity);
+                    QCOMPARE(art.ownerClass(),owner);
+                    QCOMPARE(art.bodyHandle(),project.bodyAnimationData()->handle(identity,owner,facing^alternative,facing));
+                }
+                variant->setCurrentIndex(0);
+            }
+        }
+        QCOMPARE(project.changedRecords(),0);
+        QVERIFY(undo.isClean());
     }
     void equipmentBodyPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

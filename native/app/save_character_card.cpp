@@ -105,7 +105,9 @@ void SaveCharacterCard::refresh() {
     portrait_->clear();
     try {
         project->loadAvatarArtwork(); project->loadIconArtwork();
-        const auto image=project->avatarArtwork()->image(classes,effective,0);
+        // The Army portrait loader receives character +0x11 (identity), not
+        // the class selected for stats/name. See retail C77C0 -> C6BEC -> 45AE0.
+        const auto image=project->avatarArtwork()->image(classes,primary,0);
         portrait_->setPixmap(QPixmap::fromImage(image).scaled(portrait_->size(),Qt::KeepAspectRatio,Qt::FastTransformation));
     } catch (const Error &) {}
     const QStringList keys{"weapon","body","offhand","head"};

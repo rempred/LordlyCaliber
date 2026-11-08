@@ -66,8 +66,8 @@ CombatAnimationEditor::CombatAnimationEditor(Project *project, QUndoStack *undo,
     mode_->addItems({"Normal (modes 0 / 1)", "Blocked (mode 2)"});
     mode_->setToolTip("Normal assignments apply to both game modes 0 and 1, preserving the existing animation patch behavior.");
     variant_ = combo("combatAnimationVariant", "Artwork variant", 4);
-    variant_->addItems({"Base", "Alternate"});
-    variant_->setToolTip("The game has two artwork variants per side. Each can have its own animation set.");
+    variant_->addItems({"Game default", "Alternate"});
+    variant_->setToolTip("Game default uses the artwork selected when the game creates a combat actor on this side. Alternate shows the other artwork bank.");
     layout->addLayout(filters);
     auto primary = new QHBoxLayout;
     replace_ = new QPushButton("Replace animation…", this);
@@ -159,9 +159,10 @@ int CombatAnimationEditor::owner() const {
     return copy ? copy : id;
 }
 int CombatAnimationEditor::flags() const {
-    // Valkyrie and Freya use the opposite artwork variant on the enemy side.
-    const bool reversed = side_->currentIndex() == 1 && (owner() == 15 || owner() == 30);
-    return ((variant_->currentIndex() ^ int(reversed)) << 1) | side_->currentIndex();
+    // Retail func_0020DB10 sets both actor bits 10/8 for the enemy-facing
+    // side, and clears both for the player-facing side. No class exception.
+    const int side = side_->currentIndex();
+    return ((variant_->currentIndex() ^ side) << 1) | side;
 }
 int CombatAnimationEditor::assignedPose(int mode) const {
     const int action = actions_->currentData().toInt();

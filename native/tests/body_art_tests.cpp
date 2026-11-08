@@ -303,6 +303,7 @@ class BodyArtTests : public QObject {
         for (int i = 0; i < bytes.size(); i += 2)
             table << u16(bytes, i);
         const auto classes = ClassData::load(Rom::open(path));
+        const auto preview = BodyAnimationData::load(Rom::open(path));
         for (const auto &v : rows) {
             const auto r = v.toArray();
             unsigned short handle = 0;
@@ -312,6 +313,9 @@ class BodyArtTests : public QObject {
                                               r[2].toInt(), r[3].toInt(), &handle),
                      0);
             QCOMPARE(handle & 0xfff, r[4].toInt());
+            QCOMPARE(handle >> 12, r[5].toInt());
+            // Verify the actual preview snapshot too, including palette bits.
+            QCOMPARE(preview->handle(r[0].toInt(), r[1].toInt(), r[2].toInt(), r[3].toInt()), handle);
         }
         unsigned short retained = 0x1234;
         QCOMPARE(lordly_actor_body_handle(table.constData(), int(table.size()), 0, 9999, 0, 0, 0,
