@@ -1,5 +1,6 @@
 #include "engine/effect_player.h"
 #include "engine/attack_data.h"
+#include "engine/actor_art.h"
 #include "engine/class_data.h"
 #include "engine/effect_resources.h"
 #include "engine/accepted_effect_code.h"
@@ -30,11 +31,20 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     if (effect < -1 || effect > 254 || (effect > 132 && effect < 136))
         throw Error("This entry is a battle transition, not an attack effect");
     if (scene.sourceClass < 0 || scene.sourceClass > 255 || scene.targetClass < 0 ||
-        scene.targetClass > 255 || scene.sourceHeight < 1 || scene.sourceHeight > 1024 ||
-        scene.targetHeight < 1 || scene.targetHeight > 1024 || scene.targetCount < 1 ||
+        scene.targetClass > 255 || scene.sourceHeight < 0 || scene.sourceHeight > 1024 ||
+        scene.targetHeight < 0 || scene.targetHeight > 1024 || scene.targetCount < 1 ||
         scene.targetCount > 5 || scene.strikeCount < 0 || scene.strikeCount > AttackData::maximumStrikes)
         throw Error("Invalid effect preview actors");
     scene_ = scene;
+    if (!scene_.bodyAnimations)
+        scene_.bodyAnimations = BodyAnimationData::load(Rom::fromBytes(rom_));
+    const auto &classes = scene_.bodyAnimations->classes();
+    if (scene_.sourceCurrentClass < 0)
+        scene_.sourceCurrentClass = classes.initialCurrentClass(scene_.sourceClass);
+    if (scene_.targetCurrentClass < 0)
+        scene_.targetCurrentClass = classes.initialCurrentClass(scene_.targetClass);
+    if (scene_.sourceCurrentClass >= classes.entries().size() || scene_.targetCurrentClass >= classes.entries().size())
+        throw Error("Effect preview current class is outside the class table");
     tick_ = 0;
     heap_ = 0x80500000;
     visual_ = {};
@@ -150,10 +160,25 @@ void EffectPlayer::start(int effect, const Scene &scene) {
             throw Error("Effect resource exceeds the source ROM");
         c.mount(c.registers[5], rom_.mid(at, size));
     });
-    m.service(0x801ca100, [this] {
+    // func_0020D590 receives an actor pointer, not its formation index. Its
+    // result comes from the idle frame's artwork bounds, including orientation.
+    m.service(0x801ca100, [this, heights = QMap<quint64, int>{}]() mutable {
         auto &c = *machine_;
-        c.registers[2] = (c.registers[4] < 9) == scene_.enemyCaster
-                             ? scene_.sourceHeight : scene_.targetHeight;
+        const auto actor = c.registers[4], flags = c.word(actor + 0x40);
+        const int identity = int(c.word(actor + 0x48)), current = int(c.word(actor + 0x4c));
+        const auto caster = c.word(0x801ce8bc) + 0x1c4 + (scene_.enemyCaster ? 0 : 9) * 0xf8;
+        const int explicitHeight = actor == caster ? scene_.sourceHeight : scene_.targetHeight;
+        if (identity == 0x101 || explicitHeight) {
+            c.registers[2] = identity == 0x101 ? 38 : explicitHeight;
+            return;
+        }
+        const int flagA = (flags >> 10) & 1, flagB = (flags >> 8) & 1;
+        const quint64 key = (quint64(quint32(identity)) << 32) | (quint64(quint16(current)) << 2) |
+                            (flagA << 1) | flagB;
+        if (!heights.contains(key))
+            heights.insert(key, ActorArt::loadBody(Rom::fromBytes(rom_), identity, current,
+                                                  flagA, flagB, scene_.bodyAnimations).combatHeight());
+        c.registers[2] = heights.value(key);
     });
     // Capture the unrelocated resource before the native consumer fixes its
     // internal pointers. The original loader and its cache remain in use.
@@ -219,11 +244,11 @@ void EffectPlayer::start(int effect, const Scene &scene) {
         const auto a = battle + 0x1c4 + i * 0xf8;
         const int cell = i % 9, row = cell / 3, col = cell % 3;
         const bool occupied = cell < 5;
-        const bool casterSide = (i < 9) == scene.enemyCaster;
-        const int classId = occupied ? (casterSide ? scene.sourceClass : scene.targetClass) : 0;
+        const bool caster = i == sourceBase;
+        const int classId = occupied ? (caster ? scene.sourceClass : scene.targetClass) : 0;
         m.word(a + 0x48, classId);
-        m.word(a + 0x4c, classId);
-        m.word(a + 0x40, i < 9 ? 0x100 : 0);
+        m.word(a + 0x4c, occupied ? (caster ? scene_.sourceCurrentClass : scene_.targetCurrentClass) : 0);
+        m.word(a + 0x40, i < 9 ? 0x500 : 0);
         m.word(a + 0x54, i < 9 ? col : 2 - col);
         m.word(a + 0x58, i < 9 ? 2 - row : 6 + row);
         m.half(a + 0x20, occupied ? 100 : 0);

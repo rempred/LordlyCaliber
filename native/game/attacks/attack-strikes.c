@@ -13,6 +13,7 @@ enum { STRIKE_LIMIT = 18, RESULT_LIMIT = 36 };
 typedef struct {
     u32 stream;
     int enabled;
+    u32 sharedImpactTargets;
     u8 sources[20], targets[20], flags[20];
     u8 count[20], next[20];
     u32 results[20][RESULT_LIMIT];
@@ -34,6 +35,7 @@ int lc_strike_command(u8 *command) {
     while(*flags!=255)++flags;
     ++flags;
     PLAY->enabled=0;
+    PLAY->sharedImpactTargets=0;
     PLAY->afterStream=*(u32 *)0x801ce8c0;
     PLAY->afterCount=0;
     if(targets[0]==255)return 0;
@@ -61,6 +63,13 @@ int lc_strike_round_mode(void) {
 u8 *lc_strike_sources(void) { return PLAY->sources; }
 u8 *lc_strike_targets(void) { return PLAY->targets; }
 u8 *lc_strike_flags(void) { return PLAY->flags; }
+void lc_strike_share_first_impact(const u8 *targets,u32 mask) {
+    int i;
+    /* Preview submissions and auxiliary visuals do not own this result list. */
+    if(!mask || !PLAY->enabled || PLAY->stream!=*(u32 *)0x801ce8c0 || targets[1]==255)return;
+    for(i=0;i<=STRIKE_LIMIT && targets[i]==PLAY->targets[i];i++)
+        if(targets[i]==255) { PLAY->sharedImpactTargets=mask; return; }
+}
 /* Preview submission has no battle command stream, but uses the same driver. */
 void lc_strike_visual_list(u8 *targets) {
     u32 at=SW(lc_strike_state,4112)&3;
@@ -229,7 +238,7 @@ static void lc_flush_after(int isolated) {
     n=PLAY->afterCount;PLAY->afterCount=0;
     for(i=0;i<n;i++)lc_deliver_after(PLAY->after[i],isolated);
 }
-void lc_attack_visual_impact(int id,int kind) {
+static void lc_apply_visual_impact(int id,int kind) {
     u8 *actor;
     int at,end,resultKind,amount,hp;
     unsigned short originalHP;
@@ -284,4 +293,21 @@ void lc_attack_visual_impact(int id,int kind) {
         }
     } while(1);
     *(unsigned short *)(actor+0x20)=originalHP;
+}
+void lc_attack_visual_impact(int id,int kind) {
+    int i,target;
+    u32 share=0;
+    if(PLAY->enabled && PLAY->stream==*(u32 *)0x801ce8c0 && id==PLAY->targets[0]) {
+        share=PLAY->sharedImpactTargets;
+        PLAY->sharedImpactTargets=0;
+    }
+    lc_apply_visual_impact(id,kind);
+    if(!share)return;
+    /* Deliver selected victims outside the artwork's coverage at its anchor's
+     * genuine impact, keeping the original reaction writer. */
+    for(i=1;i<STRIKE_LIMIT && PLAY->targets[i]!=255;i++) {
+        target=PLAY->targets[i];
+        if(target<20 && (share&(1U<<target)) && PLAY->next[target]<PLAY->count[target])
+            lc_apply_visual_impact(target,10);
+    }
 }

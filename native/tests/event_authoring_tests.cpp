@@ -9,6 +9,8 @@
 #include "engine/new_campaign.h"
 #include "engine/squad_members.h"
 #include "engine/capacity_placement.h"
+#include "engine/mission_runtime.h"
+#include "engine/mission_tables.h"
 #include "engine/event_flow.h"
 #include "engine/event_script.h"
 #include "engine/entry_conditions.h"
@@ -17,6 +19,7 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QLineF>
 #include <QComboBox>
 #include <QCheckBox>
 #include <QInputDialog>
@@ -158,12 +161,108 @@ class EventAuthoringTests:public QObject {
      reopened.loadCampaignMap();for(int id=1;id<=40;++id)QCOMPARE(reopened.campaignMap()->position(id),p.campaignMap()->position(id));
      QCOMPARE(reopened.campaignMap()->roadBytes(),p.campaignMap()->roadBytes());QCOMPARE(reopened.campaignMap()->backgroundBytes(),p.campaignMap()->backgroundBytes());
      QCOMPARE(reopened.sceneEvents()->json(),p.sceneEvents()->json());QCOMPARE(SceneEvents::readRow(rom,1),events.program(1));
+     // The native world dispatcher calls the VM at tableBase + selectedOffset,
+     // including when no event is assigned to the location.
+     for(const auto [row,count]:{qMakePair(0,54),qMakePair(70,53)}) {
+       const auto routing=SceneEvents::readRow(rom,row);
+       QCOMPARE(routing,reopened.sceneEvents()->program(row));
+       QCOMPARE(u16(routing,count*2),65535);
+       for(int location=row==0?1:0;location<count;++location) {
+         if(row==0&&location==6)continue; // Authored arrival branch.
+         const int entry=u16(routing,location*2);
+         QVERIFY(entry>=2*(count+1)&&entry+2<=routing.size());
+         QCOMPARE(u16(routing,entry),0x2f00);
+       }
+     }
+     const EventContexts contexts(rom,*reopened.sceneEvents());
+     QVERIFY(contexts.location(6).phases[2].isEmpty());
+     QVERIFY(contexts.location(7).phases[0].isEmpty());
+     // Director 1078 uses the native directory key immediate and indexes
+     // 32 + battlefield key, including the upper end of the custom range.
+     constexpr int resourceBase=0x594280, retailTitleDirectory=0x1e24f10;
+     const auto &image=rom.bytes();
+     const auto titleDirectory=resourceBase+int((u32(image,0x289404)&65535)<<16 |
+                                                (u32(image,0x289408)&65535));
+     QVERIFY(titleDirectory>=0x2800000);
+     QCOMPARE(u32(image,titleDirectory),quint32(4*(32+MissionTables::keyCount)));
+     QCOMPARE(image.mid(titleDirectory+4,94*4),p.rom().bytes().mid(retailTitleDirectory+4,94*4));
+     const auto blank=resourceBase+int(u32(image,titleDirectory+4+94*4));
+     QVERIFY(blank>=0x2800000&&blank<titleDirectory);
+     for(int i=94;i<32+MissionTables::keyCount;++i)
+       QCOMPARE(u32(image,titleDirectory+4+i*4),quint32(blank-resourceBase));
+     QCOMPARE(decodeLzss(image.mid(blank+8,u32(image,blank)-4),u32(image,blank+4)),
+              QByteArray::fromHex("3634020100080016")+QByteArray(8*22+512,0));
      QCOMPARE(rebuild(reopened,tools,work.path()).image,result.image);
      auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,result.image);
      const auto dir=QFileInfo(out).dir().filePath(QTest::currentDataTag());QVERIFY(QDir().mkpath(dir));exportRom(p,result,QDir(dir).filePath(QFileInfo(out).fileName()));
      const auto capacity=CapacityPlacement::read(rom);
      QFile fixture(QDir(dir).filePath("campaign-fixture.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
      fixture.write(QJsonDocument(QJsonObject{{"settings",NewCampaign::settings(*p.sceneEvents())},{"mission",mission},{"capacity",capacity?double(capacity->base):0},{"arrival",QString::fromLatin1(events.program(0).toHex())},{"program",QString::fromLatin1(events.program(1).toHex())},{"army0",QString::fromLatin1(NewCampaign::armyMemory(p,NewCampaign::armyBytes(config,0)).toHex())},{"army1",QString::fromLatin1(NewCampaign::armyMemory(p,NewCampaign::armyBytes(config,1)).toHex())}}).toJson());
+   }catch(const std::exception &e){QFAIL(e.what());}
+ }
+ void normalCampaignProbe_data(){QTest::addColumn<QString>("mode");QTest::newRow("world-only")<<QString("world");QTest::newRow("retail-map")<<QString("retail");QTest::newRow("progression")<<QString("blank");QTest::newRow("progression-map")<<QString("mapOnly");}
+ void normalCampaignProbe(){
+   QFETCH(QString,mode);
+   const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"),out=qEnvironmentVariable("LORDLY_CAMPAIGN_OUTPUT");
+   if(path.isEmpty()||tools.isEmpty()||out.isEmpty())QSKIP("Private ROM, compiler and owned output required");
+   try {
+     auto p=Project::fromRom(Rom::open(path));auto config=NewCampaign::defaults(p,6);config["goth"]=1234;config["chaos"]=37;
+     QJsonObject details;
+     if(mode=="blank"||mode=="mapOnly") {
+       p.loadCampaignMap();auto map=*p.campaignMap();
+       int removedRoad=0,removedDestination=0;QSet<int> neighbors{6};
+       for(int road=1;road<=map.totalRoads();++road) {
+         const auto [a,b]=map.road(road);const int other=a==6?b:b==6?a:0;
+         if(other){neighbors.insert(other);removedRoad=road;removedDestination=other;}
+       }
+       QVERIFY(removedRoad);map.removeRoad(removedRoad);
+       int nextLocation=1;
+       while(nextLocation<=CampaignMap::nodeCount&&(map.position(nextLocation).isNull()||neighbors.contains(nextLocation)))++nextLocation;
+       QVERIFY(nextLocation<=CampaignMap::nodeCount);
+       const int addedRoad=map.addRoad(6,nextLocation);p.setCampaignMap(map.json());
+       config["locations"]=QJsonArray{6,removedDestination};NewCampaign::initialize(p,config);
+       const int firstKey=p.availableScenarioBattlefields().first();
+       // Keep the native deployment and objective capture but shorten the walk
+       // between the home and enemy headquarters in this unseeded fixture.
+       p.loadWorld();p.loadMapEdits();auto edits=*p.mapEdits();const auto &source=edits.source(1);
+       const auto home=source.map.points[0];const auto sites=p.world()->scenario(1).sites;
+       int objective=-1;
+       for(int i=0;i<p.world()->siteCount(1);++i)
+         if(u8(p.world()->town(u16(sites,1+i*4)),24)==255){objective=i;break;}
+       QVERIFY(objective>=0&&edits.canMoveSite(1,objective));
+       const QLineF toOriginalObjective(home,source.map.points[objective]);
+       QVERIFY(toOriginalObjective.length()>3);
+       const auto destination=toOriginalObjective.pointAt(3/toOriginalObjective.length());
+       edits.moveSite(1,objective,destination);p.setMapEdits(edits.json());
+       p.createScenarioBattlefield(firstKey,1,mode,"Capture the crossing");
+       const int nextKey=p.availableScenarioBattlefields().first();p.createScenarioBattlefield(nextKey,2,"mapOnly","Beyond the crossing");
+       auto events=*p.sceneEvents();const auto &scenes=*p.scenePrograms();
+       const int first=events.createMission(6,firstKey,"Capture the crossing",-1,-1,scenes);
+       const int firstFlag=events.customFlags().last().toObject()["id"].toInt();
+       const int next=events.createMission(nextLocation,nextKey,"Beyond the crossing",-1,-1,scenes,firstFlag);
+       events.unlockNodeAfter(first,nextLocation,true);
+       const int townFlag=events.createFlag("Reached enemy headquarters");
+       auto trees=events.flagEdits()[QString::number(first)].toObject()["trees"].toArray();
+       const int target=mode=="blank"?2:objective+1;
+       const QJsonObject townVisit{{"type","if"},
+           {"condition",QJsonObject{{"type","flag"},{"flag",townFlag},{"value",0}}},
+           {"then",QJsonArray{QJsonObject{{"type","flag"},{"flag",townFlag},{"value",1}},QJsonObject{{"type","goth"},{"amount",321}}}},
+           {"else",QJsonArray{}}};
+       trees.append(QJsonObject{{"id","audit-town"},{"name","Arrive at enemy headquarters"},{"group",1},{"target",target},
+           {"nodes",QJsonArray{townVisit}}});
+       events.setTrees(first,trees,scenes);p.setSceneEvents(events.json());
+       details={{"first",first},{"firstKey",firstKey},{"firstFlag",firstFlag},{"next",next},{"nextKey",nextKey},
+                {"townFlag",townFlag},{"target",target},{"nextLocation",nextLocation},{"addedRoad",addedRoad},{"removedRoad",removedRoad},
+                {"removedDestination",removedDestination},{"homeX",home.x()},{"homeZ",home.y()},
+                {"targetX",destination.x()},{"targetZ",destination.y()}};
+     } else {
+       NewCampaign::initialize(p,config);
+       if(mode=="retail"){p.setScenarios(Scenarios::load(p.rom()).json());auto events=*p.sceneEvents();events.createMission(6,1,"Native battlefield probe",-1,-1,*p.scenePrograms());p.setSceneEvents(events.json());}
+     }
+     QTemporaryDir build;const auto result=rebuild(p,tools,build.path());
+     const auto dir=QFileInfo(out).dir().filePath(QTest::currentDataTag());QVERIFY(QDir().mkpath(dir));
+     exportRom(p,result,QDir(dir).filePath(QFileInfo(out).fileName()));p.saveFolder(QDir(dir).filePath("project"));
+     if(!details.isEmpty()){QFile fixture(QDir(dir).filePath("progression.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));fixture.write(QJsonDocument(details).toJson());}
    }catch(const std::exception &e){QFAIL(e.what());}
  }
  void firstScenarioFromEmptyStoryline(){
@@ -269,6 +368,30 @@ class EventAuthoringTests:public QObject {
        QFile fixture(QDir(folder).filePath("mission-fixture.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
        fixture.write(QJsonDocument(QJsonObject{{"event",row},{"battlefield",10},{"location",location},{"completionFlag",256},{"townFlag",flag},{"closingRequest",3},{"objective",2},{"mode","blank"}}).toJson());
      }
+     // Reuse the authored event with an existing map, then detach its original
+     // independent battlefield. Only the shared-map completion hook survives.
+     auto sharedEvents=*reopened.sceneEvents();
+     auto sharedTrees=sharedEvents.flagEdits()[QString::number(row)].toObject()["trees"].toArray();
+     auto opening=sharedTrees[0].toObject();auto steps=opening["nodes"].toArray();
+     auto prepare=steps[0].toObject();prepare["battlefield"]=1;steps.replace(0,prepare);
+     opening["nodes"]=steps;sharedTrees.replace(0,opening);
+     sharedEvents.setTrees(row,sharedTrees,*reopened.scenePrograms());reopened.setSceneEvents(sharedEvents.json());
+     auto detached=reopened.manifest();detached["scenarioBattlefields"]=QJsonArray{};
+     reopened.applyManifest(detached);
+     QTemporaryDir detachWork;QVERIFY(detachWork.isValid());
+     const auto sharedBuild=rebuild(reopened,toolchain,detachWork.path());
+     const auto sharedRom=Rom::fromBytes(sharedBuild.image);
+     auto sharedProject=Project::fromRom(sharedRom);sharedProject.loadSceneEvents();
+     QVERIFY(sharedProject.scenarioBattlefields().isEmpty());
+     QCOMPARE(sharedProject.sceneEvents()->program(row),sharedEvents.program(row));
+     for(int at:missionBriefingCalls) QCOMPARE(u32(sharedBuild.image,at),u32(rom.bytes(),at));
+     int predicate=-1;
+     for(int at=0x1390f0;at<0x139c10;at+=4)
+       if(u32(rom.bytes(),at)==0x0c079534U){QCOMPARE(predicate,-1);predicate=at;}
+     QVERIFY(predicate>=0);QCOMPARE(u32(sharedBuild.image,predicate),u32(rom.bytes(),predicate));
+     QVERIFY(sharedBuild.image.mid(missionExitDispatch,16)!=missionExitDispatchCode());
+     QCOMPARE(canonicalMissionImage(sharedRom).mid(missionExitDispatch,16),missionExitDispatchCode());
+     QCOMPARE(rebuild(sharedProject,toolchain,detachWork.path()).image,sharedBuild.image);
    }catch(const std::exception &e){QFAIL(e.what());}
  }
  void initTestCase(){QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");qApp->setFont(QFont("Segoe UI",10));applyEditorTheme(*qApp);}

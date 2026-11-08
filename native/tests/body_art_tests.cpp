@@ -1,4 +1,5 @@
 #include "engine/actor_art.h"
+#include "engine/project.h"
 #include "engine/actor_pose.h"
 #include "engine/class_data.h"
 #include "engine/scene_actors.h"
@@ -78,6 +79,47 @@ class BodyArtTests : public QObject {
         for (int value = 0; value < 65536; ++value)
             QCOMPARE(lordly_warm_rgba16(quint16(value)), u16(warm, value * 2));
         qInfo() << checked << "original body image layers and all RGBA16 warm-tone inputs agree";
+    }
+    void bodyImagesClassContexts() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        QTemporaryDir work;
+        const auto options=work.filePath("contexts.json");
+        atomicWrite(options,QByteArrayLiteral("{\"classContexts\":true,\"warm\":false}"));
+        const auto rows=fixture("body-images-mips.cjs",path,{options})["rows"].toArray();
+        QVERIFY(rows.size()>1000);
+        const auto rom=Rom::open(path);
+        QMap<int,ActorArt> arts;
+        int layers=0;
+        for(const auto &value:rows) {
+            const auto row=value.toObject();
+            const int identity=row["source"].toInt(),current=row["owner"].toInt(),flags=row["flags"].toInt();
+            const int key=(identity*256+current)*4+flags;
+            if(!arts.contains(key))arts.insert(key,ActorArt::loadBody(rom,identity,current,flags>>1,flags&1));
+            const auto &art=arts[key];
+            QCOMPARE(art.defaultAppearance(rom).equipment,row["defaultEquipment"].toInt());
+            const BodyAppearance appearance{quint16(row["item"].toInt()),quint8(3)};
+            const auto selected=art.bodyLayers(rom,row["token"].toInt(),appearance);
+            const auto frame=art.bodyFrame(rom,row["token"].toInt(),appearance,row["sepia"].toInt());
+            const auto expected=row["layers"].toArray();
+            QCOMPARE(selected.size(),expected.size());QCOMPARE(frame.size(),expected.size());
+            for(int i=0;i<expected.size();++i) {
+                const auto e=expected[i].toObject();
+                const auto record=QByteArray::fromHex(e["record"].toString().toLatin1());
+                const auto &actual=selected[i];
+                QCOMPARE(actual.metadata.art,int(u32(record,0)));
+                QCOMPARE(actual.metadata.origin,QPoint(qint32(u32(record,4)),qint32(u32(record,8))));
+                QCOMPARE(actual.metadata.width,int(u32(record,12)));QCOMPARE(actual.metadata.height,int(u32(record,16)));
+                QCOMPARE(actual.metadata.flags,u32(record,20));
+                QCOMPARE(actual.metadata.scaleX/1024.f,std::bit_cast<float>(u32(record,24)));
+                QCOMPARE(actual.metadata.scaleY/1024.f,std::bit_cast<float>(u32(record,28)));
+                QCOMPARE(actual.paletteOffset,e["paletteOffset"].toInt());
+                QCOMPARE(art.artKeys()[actual.metadata.art],quint32(e["key"].toInteger()));
+                QCOMPARE(frame[i].pixels.child,e["child"].toInt());
+                ++layers;
+            }
+        }
+        qInfo()<<rows.size()<<"changed/current-class image contexts and"<<layers<<"native layer selections agree";
     }
     void equipmentRenderingAndRollback() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -36,6 +36,7 @@ class ArmyArtwork {
     }
     void setRoute(const ClassData &, int classId, int lane, int model);
     int isolateClass(const ClassData &, int classId);
+    void restoreClass(const ClassData &, int classId, int facing);
     void restoreRoute(int classId) {
         routes_.remove(classId);
     }

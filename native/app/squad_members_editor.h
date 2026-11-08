@@ -33,6 +33,6 @@ class SquadMembersEditor : public QWidget {
     QVector<QComboBox *> classes_, equipment_;
     QVector<QSpinBox *> levels_;
     QVector<int> positions_;
-    QStringList classLabels_;
+    QVector<QPair<int, QString>> classChoices_;
 };
 }

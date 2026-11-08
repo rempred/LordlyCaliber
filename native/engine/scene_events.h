@@ -51,6 +51,7 @@ class SceneEvents {
     static constexpr int firstCustomFlag = 256, customFlagCapacity = 512;
     QJsonArray customFlags() const;
     bool hasCustomFlags() const;
+    bool hasMissionCompletion() const;
     int createFlag(const QString &name);
     void renameFlag(int id, const QString &name);
     void removeFlag(int id);

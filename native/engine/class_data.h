@@ -84,6 +84,10 @@ class ClassData {
     // Menu class for a newly created character using this class's default.
     // Existing characters can have a different current class.
     int defaultPromotionClass(int id) const;
+    int initialCurrentClass(int identity) const;
+    int defaultEquipment(int identity, int current, int slot) const;
+    int attack(int identity, int current, int row) const;
+    int attackCount(int identity, int current, int row) const;
     int unitSize(int primary, int secondary) const;
     int carryingCapacity(int primary, int secondary) const;
     int movementType(int primary, int secondary) const;
@@ -92,6 +96,9 @@ class ClassData {
     ClassDataImage build(quint32 ramBase, quint32 ramEnd = 0x80400000U) const;
 
   private:
+    // Resident equipment and attack getters share this exact pair test.
+    // Portraits, model selection and growth have their own contracts.
+    const QByteArray &linkedRecord(int identity, int current) const;
     static void validate(const ClassAsset &asset);
     PersonalNames personalNames_;
     QByteArray prefix_;

@@ -37,6 +37,7 @@ class AnimationSequences {
     void validate(const AnimationRoutes &, int classCount) const;
     bool requiresMarkerRuntime() const;
     bool requiresWideStates() const;
+    bool requiresBodyHeightRuntime() const;
     bool sourceRequiresWideStates() const;
     bool modified() const {
         return json() != original_;

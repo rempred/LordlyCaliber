@@ -792,6 +792,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
     }
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
+    if (p.rom().bytes().mid(AnimationSequences::descriptorOffset, 8) == "LC05ASEQ")
+        p.loadAnimationRoutes();
+    const bool wideIdleHeight = poseHeightRuntimeAddress(p.rom(), priorClassPlacement) ||
+        (p.animationSequences() && p.animationSequences()->requiresBodyHeightRuntime());
     const auto priorShopPlacement = ShopPlacement::read(p.rom());
     const auto priorCustom = CustomPlacement::read(p.rom());
     if (priorCustom)
@@ -878,7 +882,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     quint32 missionTableAddress = 0;
     std::optional<MissionRuntimeBuild> missionRuntime;
     const bool customMissionVictory = !p.scenarioBattlefields().isEmpty();
-    const bool relocateClasses = !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
+    const bool needsMissionRuntime = customMissionVictory || (p.sceneEvents() && p.sceneEvents()->hasMissionCompletion());
+    const bool relocateClasses = wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
@@ -1100,13 +1105,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 return bytes;
             };
         }
-        if (customMissionVictory) {
+        if (needsMissionRuntime) {
             const auto priorBuilder = residentBuilder;
             residentBuilder = [&, priorBuilder](quint32 address, quint32 capacity) {
                 missionRuntime = buildMissionRuntime(p, compiler, directory, address, capacity);
                 auto bytes = missionRuntime->bytes;
                 if (bytes.isEmpty() || bytes.size() % 16 || quint32(bytes.size()) > capacity)
-                    throw Error("The mission victory helper exceeds resident storage");
+                    throw Error("The authored mission runtime exceeds resident storage");
                 if (priorBuilder) bytes += priorBuilder(address + quint32(bytes.size()), capacity - quint32(bytes.size()));
                 return bytes;
             };
@@ -1133,7 +1138,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             data, compiler, directory, offset,
             customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1146,7 +1151,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes=buildClassRuntime(data,compiler,directory,offset,
                 customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1159,7 +1164,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes = buildClassRuntime(data, compiler, directory, offset,
                 customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
@@ -1174,6 +1179,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                : std::nullopt;
         result.image =
             linkClassRuntime(Rom::fromBytes(result.image), classes, menus ? &*menus : nullptr);
+        if (classes.bodyHeight) {
+            installPoseHeightRuntime(result.image, p.rom(), classes.bodyHeight, compiler, directory);
+            result.report << "Compiled body-height lookup for wide idle frames";
+        }
         if (custom) {
             result.image = installCustomEncounters(Rom::fromBytes(result.image),
                                                    p.encounters()->customSquads(), *custom,
@@ -1368,7 +1377,6 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                         .arg(overrides.entries().size()));
         }
     }
-    if(p.rom().bytes().mid(AnimationSequences::descriptorOffset,8)=="LC05ASEQ")p.loadAnimationRoutes();
     auto exportAnimationRoutes=p.animationRoutes();
     if(p.animationSequences()&&(p.animationSequences()->modified()||!p.animationSequences()->groups().isEmpty())) {
         p.loadAnimationRoutes();
@@ -1515,13 +1523,15 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                          : "Restored the native event dispatcher after removing custom conditions");
     }
     if(campaignBridge||priorCampaign)linkNewCampaignRuntime(result.image,campaignBridge,p.rom());
-    if (customMissionVictory && !missionRuntime)
-        throw Error("The mission victory helper was not allocated");
+    if (needsMissionRuntime && !missionRuntime)
+        throw Error("The authored mission runtime was not allocated");
     result.image = linkMissionRuntime(Rom::fromBytes(result.image), p,
                                       missionRuntime.value_or(MissionRuntimeBuild{}), compiler, directory);
     if (customMissionVictory) {
         result.report << "Compiled native victory checks for independently created scenarios";
     }
+    if (needsMissionRuntime)
+        result.report << "Linked authored mission victory returns to the world map";
     if (!battlefieldModels.isEmpty()) {
         if (!battlefieldModelAddress) throw Error("Independent battlefield model table was not allocated");
         BattlefieldClone::linkRuntime(result.image, battlefieldModelAddress);

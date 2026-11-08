@@ -90,7 +90,22 @@ bool hasExpandedMissionRows(const QJsonObject &flags) {
             return true;
     return false;
 }
+bool hasMissionCompletionStep(const QJsonArray &nodes) {
+    for (const auto value : nodes) {
+        const auto node = value.toObject();
+        if (node["type"] == "completeMission" || hasMissionCompletionStep(node["then"].toArray()) ||
+            hasMissionCompletionStep(node["else"].toArray()))
+            return true;
+    }
+    return false;
+}
 } // namespace
+bool SceneEvents::hasMissionCompletion() const {
+    for (const auto edit : flags_)
+        for (const auto tree : edit.toObject()["trees"].toArray())
+            if (hasMissionCompletionStep(tree.toObject()["nodes"].toArray())) return true;
+    return false;
+}
 const QMap<QString, SceneEventSite> &SceneEvents::sites() {
     static const QMap<QString, SceneEventSite> result = [] {
         QMap<QString, SceneEventSite> rows;
@@ -299,12 +314,19 @@ QByteArray SceneEvents::flagRow(const QByteArray &retail, int row, const QJsonOb
     QByteArray base=retail;
     if(replacement.toBool()) {
         base=row==0?QByteArray(110,0):row==70?QByteArray(108,0):QByteArray::fromHex("000c000c000c000c000c000cffff");
-        if(row==70)put16(base,106,65535);
-        if(row==0) {
-            // Selector0 is the real New Game entry, not a physical location.
-            // Keep only its flag99 guard; all retail location/chapter paths go.
-            put16(base,0,110);put16(base,108,65535);
-            base+=QByteArray::fromHex("69636061ac0101036800880012012f00");
+        if(row==0||row==70) {
+            const int endOfTable=base.size()-2;
+            if(row==0) {
+                // Selector 0 starts New Game when flag 99 is clear.
+                base+=QByteArray::fromHex("69636061ac010103680088001201");
+            }
+            const int noEvent=base.size();
+            base+=QByteArray::fromHex("2f00");
+            // Native direct dispatch executes base + offset even for zero.
+            // Empty arrival and investigation routes must point to a return.
+            for(int at=0;at<endOfTable;at+=2)put16(base,at,noEvent);
+            put16(base,endOfTable,65535);
+            if(row==0)put16(base,0,endOfTable+2);
         }
     }
     const auto mission=edits.take("missionName");

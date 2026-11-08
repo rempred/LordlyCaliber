@@ -1,10 +1,12 @@
 'use strict';
 // Instruction-level battle pipeline. Native command insertion, ordering, seek,
 // result consumption and HP/status playback execute from the exported ROM.
-// The fixture supplies actors/scores and finite pose/effect contact schedules;
-// it does not emulate the renderer, audio, a whole console or battle AI.
+// Both modes supply actors and scores. Queue stress uses synthetic schedules.
+// Native playback instead runs the ROM's pose, movement and effect machines.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {FloatMips}=require('./float-mips.cjs');
+const {BattleBodyFixture}=require('./battle-body-fixture.cjs');
+const {BattleEffectFixture}=require('./battle-effect-fixture.cjs');
 function symbols(directory,name) {
  const b=fs.readFileSync(path.join(directory,name+'.elf')),out={};
  const at=b.readUInt32BE(32),width=b.readUInt16BE(46),count=b.readUInt16BE(48);
@@ -16,17 +18,40 @@ function symbols(directory,name) {
  return out;
 }
 class AttackPlaybackMachine {
- constructor(file) {
+ constructor(file,{nativePoses=false,nativeEffects=nativePoses}={}) {
   const rom=fs.readFileSync(file);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
-  this.rom=rom;this.e={};
+  this.rom=rom;this.e={};this.nativePoses=nativePoses;this.nativeEffects=nativeEffects;
   for(const name of ['attack_strikes','attack_runtime','attack_playback','attack_generic','attack_combined','attack_pedra'])
    Object.assign(this.e,symbols(path.dirname(file),name));
   const m=this.m=new FloatMips();
-  const execute=m.exec.bind(m);m.exec=(pc,next)=>{try{return execute(pc,next);}catch(error){error.message+=` at PC 0x${pc.toString(16)}`;throw error;}};
+  const execute=m.exec.bind(m);m.exec=(pc,next)=>{
+   if(nativeEffects&&this.phase==='playback'){
+    if(this.contactReturn?.pc===pc){
+     if(m.r8(this.tail+0x824)===this.contactReturn.pending)this.ignoredContacts++;
+     this.contactReturn=null;
+    }
+    if(pc===0x8020b0e4)this.visualSubmission(m);
+    if(pc===this.config.cuePC && m.get('a0')===this.config.cueState)
+     this.trace.push({event:'artwork-cue',wall:this.wall});
+    if(pc===0x801c893c){
+     this.trace.push({event:'impact',id:m.get('a0')|0,kind:m.get('a1')|0,wall:this.wall});
+     this.contactReturn={pc:m.get('ra'),pending:m.r8(this.tail+0x824)};
+    }
+   }
+   try{return execute(pc,next);}catch(error){error.message+=` at PC 0x${pc.toString(16)}, caller 0x${m.get('ra').toString(16)}`;throw error;}
+  };
   m.load(0x80070000,rom.subarray(0x400,0x2f000));
+  if(nativePoses){
+   m.load(0x800ae890,rom.subarray(0x3ec90,0x3ef00));
+   // Resident cosine, sine and atan constants used by the movement paths.
+   m.load(0x800aec70,rom.subarray(0x3f070,0x3f140));
+   m.load(0x800aa750,rom.subarray(0x3ab50,0x3ab54));
+  }
   m.load(0x8016af80,rom.subarray(0x40e80,0x66e10));
-  m.load(0x801bdfa0,rom.subarray(0x201430,0x212590));
-  m.load(0x801cf2c0,rom.subarray(0x212590,0x23a900));
+  m.load(0x801ad5a0,rom.subarray(0x1f0a30,0x213b10));
+  // The continuation starts after descriptor10's data/BSS. Loading an earlier
+  // ROM slice with this delta overwrote the pose duration jump table.
+  m.load(0x801d0840,rom.subarray(0x213b10,0x24bca0));
   const cp=0x5dc80,base=rom.readUInt32BE(cp+24),start=rom.readUInt32BE(cp+12),end=rom.readUInt32BE(cp+48);
   m.load(base,rom.subarray(start,start+end-base));
   if(rom.readUInt32BE(0x27a0004)===23) {
@@ -37,7 +62,10 @@ class AttackPlaybackMachine {
   this.records=rom.readUInt32BE(0x27c5300+28);this.settings=rom.readUInt32BE(0x27c5300+32);
   this.stack=0x807ff000;this.scratch=0x80710000;this.trace=[];
   this.phase='setup';this.wall=0;this.impacts=[];this.presentations=[];
-  this.installServices();this.initial=Uint8Array.from(m.ram);
+  this.installServices();
+  if(nativePoses)this.body=new BattleBodyFixture(m,rom);
+  if(nativeEffects)this.effects=new BattleEffectFixture(m,rom);
+  this.initial=Uint8Array.from(m.ram);
  }
  actor(id){return this.owner+0x1c4+id*0xf8;}
  get owner(){return this.m.r32(0x801ce8bc);}
@@ -63,7 +91,7 @@ class AttackPlaybackMachine {
   m.trap(0x801f46dc,c=>c.set('v0',this.config.immune?0:1));
   m.trap(0x8009c7cc,c=>c.set('v0',this.config.random||0));
   m.trap(0x80092a60,c=>c.set('v0',this.config.random||0));
-  constant(0x801c8b54); // Combat presentation mode.
+  if(!this.nativePoses)constant(0x801c8b54); // Fast combat for synthetic queue stress.
   constant(0x801f312c);constant(0x801f4828);constant(0x801eff40);
   m.trap(0x801f32ec,c=>c.set('v0',this.config.hit===false?0:100));
   m.trap(0x801f6068,c=>{ // Native evaluator input boundary: stable scores/chances.
@@ -71,15 +99,19 @@ class AttackPlaybackMachine {
   });
   // Finite artwork metadata and child movement are controlled presentation
   // services. Their duration is varied independently from effect contact time.
-  m.trap(0x801df2ac,c=>{if(c.get('a2')){c.w32(c.get('a2'),10);c.w32(c.get('a2')+4,-1);}c.set('v0',this.config.poseTicks||20);});
-  constant(0x801df224);
-  named('lc_original_anchor',c=>c.set('v0',13));
-  named('lc_original_ranged_anchor',c=>c.set('v0',13));
-  for(const pc of [0x22222c,0x2223e0,0x237810,0x237890,0x22a4e0])constant(pc+0x7ffbcd30);
+  if(!this.nativePoses){
+   m.trap(0x801df2ac,c=>{if(c.get('a2')){c.w32(c.get('a2'),10);c.w32(c.get('a2')+4,-1);}c.set('v0',this.config.poseTicks||20);});
+   constant(0x801df224);
+  }
+  named('lc_original_anchor',c=>c.set('v0',this.id(c.get('a0'))<9?13:4));
+  named('lc_original_ranged_anchor',c=>c.set('v0',this.id(c.get('a0'))<9?13:4));
+  if(!this.nativePoses)for(const pc of [0x22222c,0x2223e0])constant(pc+0x7ffbcd30);
+  for(const pc of [0x237810,0x237890,0x22a4e0])constant(pc+0x7ffbcd30);
   m.trap(0x237750+0x7ffbcd30,c=>c.set('v0',this.config.power??60));
   m.trap(0x2361ec+0x7ffbcd30,c=>c.set('v0',this.config.hit===false?0:100));
-  constant(0x22a964+0x7ffbcd30);constant(0x801ad9d4);
-  for(const pc of [0x801ae4ec,0x22257c+0x7ffbcd30])m.trap(pc,c=>{
+  if(!this.nativePoses)constant(0x22a964+0x7ffbcd30);
+  if(!this.nativePoses)constant(0x801ad9d4);
+  if(!this.nativePoses)for(const pc of [0x801ae4ec,0x22257c+0x7ffbcd30])m.trap(pc,c=>{
    if(c.get('a2')){c.w32(c.get('a2'),10);c.w32(c.get('a2')+4,-1);}c.set('v0',this.config.poseTicks||20);
   });
   constant(0x8016e230,159);
@@ -89,44 +121,66 @@ class AttackPlaybackMachine {
   for(const pc of [0x801ca384,0x801c8ed4])constant(pc);
   constant(0x801f0cc4,13);constant(0x801f55ac,13);
   m.trap(0x801f6504,c=>{c.w8(c.get('a2'),1);c.set('v0',36);});
-  constant(0x801be034,159);constant(0x8020b150,2);constant(0x801be308,40);
+  constant(0x801be034,159);constant(0x8020b150,2);
+  if(!this.nativePoses)constant(0x801be308,40);
   m.trap(0x801ca3e0,c=>{const a=c.get('a0');c.load(a,new Uint8Array(248));c.w32(a+0x40,0x100);c.w16(a+0x20,300);c.w16(a+0x22,500);});
   constant(0x801d9efc);
-  for(const pc of [0x801ad974,0x801ad914,0x801adb00,0x801adbc0,0x801da720,0x801da9d4,0x801db23c,0x801db6cc,0x801d8e70,0x801cfa04])constant(pc);
-  for(const name of ['func_001F0E64','func_001F0E04','func_001F0F90','func_001F1050','func_0021E50C','func_0021E99C','func_0020FA04','func_001F2BC0','func_00208DC8','func_0021AE6C','func_00048294','func_0004813C','func_000466f4','lc_strike_round_mode','func_0020BF7C'])named(name,c=>c.set('v0',0));
+  if(!this.nativePoses)for(const pc of [0x801ad974,0x801ad914,0x801adb00,0x801adbc0,0x801da720,0x801da9d4,0x801db23c,0x801db6cc,0x801d8e70,0x801cfa04])constant(pc);
+  if(!this.nativePoses)for(const name of ['func_001F0E64','func_001F0E04','func_001F0F90','func_001F1050','func_0021E50C','func_0021E99C','func_0020FA04','func_0020BF7C'])named(name,c=>c.set('v0',0));
+  for(const name of ['func_001F2BC0','func_00208DC8','func_0021AE6C','func_00048294','func_0004813C','func_000466f4','lc_strike_round_mode'])named(name,c=>c.set('v0',0));
   named('func_002267A8',c=>this.presentations.push({actor:this.id(c.get('a0')),kind:c.get('a1'),amount:c.get('a2'),wall:this.wall}));
-  named('func_0025FC94',c=>{
-   const list=at=>{const ids=[];for(let i=0;i<20;i++){const id=c.r8(at+i);if(id===255)return ids;ids.push(id);}throw Error('unterminated effect list');};
-   const slot=c.get('a0'),sources=list(c.get('a1')),targets=list(c.get('a2'));
-   this.trace.push({event:'visual',slot,sources,targets,wall:this.wall});
-   const delay=this.visuals++?20:(this.config.impactDelay||30),gap=this.config.impactGap||3;
-   targets.filter(id=>id<20).forEach((id,i)=>this.impacts.push({at:this.wall+delay+i*gap,id}));
-   if([97,102,107].includes(slot))this.impacts.push({at:this.wall+delay+targets.length*gap,id:sources[0]});
-   this.visualEnd=this.wall+delay+(targets.length+1)*gap+2;
-  });
+  if(!this.nativeEffects)named('func_0025FC94',c=>this.visualSubmission(c));
   // Keep source-first copy and destination-first move semantics explicit.
   named('memcpy',c=>{const a=c.get('a0'),b=c.get('a1'),n=c.get('a2');c.load(b,c.ram.slice(c.phys(a),c.phys(a)+n));c.set('v0',b);});
   m.trap(0x801cd01c,c=>{const a=c.get('a0'),b=c.get('a1'),n=c.get('a2');c.load(a,c.ram.slice(c.phys(b),c.phys(b)+n));c.set('v0',a);});
  }
+ visualSubmission(m) {
+  const list=at=>{const ids=[];for(let i=0;i<20;i++){const id=m.r8(at+i);if(id===255)return ids;ids.push(id);}throw Error('unterminated effect list');};
+  const slot=m.get('a0'),sources=list(m.get('a1')),targets=list(m.get('a2'));
+  this.trace.push({event:'visual',slot,sources,targets,wall:this.wall});
+  if(this.nativeEffects)return;
+  const delay=this.visuals++?20:(this.config.impactDelay||30),gap=this.config.impactGap||3;
+  targets.filter(id=>id<20).forEach((id,i)=>this.impacts.push({at:this.wall+delay+i*gap,id}));
+  if([97,102,107].includes(slot))this.impacts.push({at:this.wall+delay+targets.length*gap,id:sources[0]});
+  this.visualEnd=this.wall+delay+(targets.length+1)*gap+2;
+ }
  reset(config={}) {
   this.config={power:60,hp:200,maxHP:500,sourceHP:200,pattern:2,side:1,effect:1,status:0,after:0,afterPercent:25,count:6,impactDelay:30,...config};
   const c=this.config,m=this.m;m.ram.set(this.initial);m.r.fill(0);m.fp.fill(0);m.set('sp',this.stack);
+  this.source=c.enemy?13:4;
+  this.target=c.enemy?4:13;
+  this.action=c.action??159;
   m.w32(0x801ce8bc,0x80740000);m.w32(0x801ce8c0,0x807457e0);m.w32(0x801ce8c4,1);
   if(c.shifted) {
    m.w32(this.tail+0x814,0x7f0);m.set('s3',0x20);m.set('s0',0);m.set('s1',0);
    m.call(0x80440040,0x801d9a88,200000);
    assert.equal(this.stream,0x80450000,'real High Attack layout transition');m.w32(this.tail+0x814,0);
   }
-  this.wall=0;this.trace=[];this.impacts=[];this.presentations=[];this.visualEnd=0;this.visuals=0;this.ignoredContacts=0;this.maxInstructions=0;this.phase='setup';
+  this.wall=0;this.trace=[];this.impacts=[];this.presentations=[];this.poses=[];this.visualEnd=0;this.visuals=0;this.ignoredContacts=0;this.contactReturn=null;this.maxInstructions=0;this.phase='setup';
+  this.body?.reset(this.call.bind(this));
+  this.effects?.reset();
+  if(this.nativePoses)m.w8(0x800e9c12,1);
   for(let i=0;i<18;i++) {
    const a=this.actor(i),own=i<9,cell=i%9,row=Math.floor(cell/3),col=cell%3,child=0x80720000+i*0x200;
    m.w32(a,child);m.w32(a+12,child+0x100);m.w32(child+64,a);m.w32(child+0x140,a);
-   m.w16(a+0x20,i===4?c.sourceHP:c.hp);m.w16(a+0x22,c.maxHP);
-   m.w32(a+0x40,(own?0x100:0)|(c.dead?.includes(i)?1:0)|(c.flags||0));
-   m.w32(a+0x48,2);m.w32(a+0x4c,!own&&c.undead?45:2);m.w32(a+0x54,own?col:2-col);m.w32(a+0x58,own?2-row:6+row);
-   m.w32(a+0x68,13);m.w32(a+0x70,1);m.w32(a+0x74,1);m.w32(a+0x78,3);m.w32(a+0x7c,159);
+   m.w16(a+0x20,i===this.source?c.sourceHP:c.hp);m.w16(a+0x22,c.maxHP);
+   const flags=(own?(this.nativePoses?0x500:0x100):0)|(c.dead?.includes(i)?1:0)|(c.flags||0);
+   const identity=(i===this.source?c.identity:c.targetIdentity)??2;
+   const current=(i===this.source?c.current:c.targetCurrent)??(!own&&c.undead?45:identity);
+   m.w32(a+0x40,flags);
+   m.w32(a+0x48,identity);m.w32(a+0x4c,current);m.w32(a+0x54,own?col:2-col);m.w32(a+0x58,own?2-row:6+row);
+   m.w32(a+0x68,own?13:4);m.w32(a+0x70,1);m.w32(a+0x74,1);m.w32(a+0x78,3);m.w32(a+0x7c,this.action);
+   if(this.nativePoses){
+    const x=(own?-2-row:2+row)*38,z=(own?col-1:1-col)*38;
+    m.w32(a+0x5c,x);m.w32(a+0x64,z);m.w8(a+0xa5,1);
+    for(const part of [child,child+0x100]){
+     m.w16(part+0x1c,x);m.w16(part+0x20,z);m.w16(part+0x28,x);m.w16(part+0x2c,z);
+    }
+    this.body.register(this.call.bind(this),i,a,identity,current,flags);
+   }
   }
-  this.configureAttack(159,c);
+  if(this.nativePoses)this.call(0x801c3f3c,[5,0]); // Native shared status artwork, func_002073CC.
+  if(!c.retail)this.configureAttack(this.action,c);
   if(c.route==='pedra')m.load(this.actor(0),new Uint8Array(248));
   m.w8(0x801971f0+12,100);
   // Unused end padding and a stack boundary must never become spill storage.
@@ -139,39 +193,41 @@ class AttackPlaybackMachine {
   m.load(r+4,Uint8Array.from([physical?0:3,0,1,c.effect,0,1,255,0,0,0,0,0]));
   m.load(b,Uint8Array.from([donor,donor,c.pattern,c.side,0,0,0,100,c.status,c.condition??1,c.chance??100,c.after,c.afterBasis||0,c.shared||0,0,0]));
   m.w16(b+14,c.afterPercent);
-  m.w16(b+4,c.mask||257);m.w8(b+21,c.visual||101);m.w8(b+22,c.count);
+  m.w16(b+4,c.mask||257);if(!c.exportedVisual)m.w8(b+21,c.visual??101);m.w8(b+22,c.count);
  }
  generate() {
   this.phase='calculation';const m=this.m;
   this.before=Array.from({length:18},(_,i)=>m.ram.slice(m.phys(this.actor(i)),m.phys(this.actor(i))+0xf8));
   m.w8(this.tail+0x818,1);m.w32(this.scratch,0);
   if(this.config.route==='combined') {
-   m.w32(this.scratch+64,this.actor(4));m.w32(this.scratch+68,this.actor(5));m.w32(this.scratch+72,0);
+   m.w32(this.scratch+64,this.actor(this.source));m.w32(this.scratch+68,this.actor(this.source+1));m.w32(this.scratch+72,0);
    this.call('lc_attack_combined',[this.scratch+64,this.scratch]);
   } else if(this.config.route==='pedra') {
    m.load(this.scratch+64,Uint8Array.from([0,this.config.visual||101,159]));
    this.call('lc_attack_pedra',[this.scratch+64,this.scratch]);
-  } else this.call('lc_attack_'+(this.config.route||'generic'),[this.actor(4),this.scratch]);
+  } else this.call('lc_attack_'+(this.config.route||'generic'),[this.actor(this.source),this.scratch]);
   // Construct another real action in the same native stream. It must survive
   // insertion/rescheduling by the first action's later impact callbacks.
-  this.followSource=Array.from({length:18},(_,i)=>i).find(i=>i!==4 && m.r16(this.actor(i)+32)>0 && !(m.r32(this.actor(i)+64)&1));
+  this.followSource=Array.from({length:18},(_,i)=>i).find(i=>i!==this.source && m.r16(this.actor(i)+32)>0 && !(m.r32(this.actor(i)+64)&1));
   if(this.followSource!==undefined && !this.config.single) {
-   this.configureAttack(160,{...this.config,effect:2,pattern:9,side:3,status:0,after:0,visual:101});
+   this.configureAttack(160,{...this.config,effect:2,pattern:9,side:3,status:0,after:0,visual:this.nativeEffects?32:101,exportedVisual:false});
    m.w32(this.actor(this.followSource)+0x7c,160);
    this.call('lc_attack_generic',[this.actor(this.followSource),this.scratch]);
   }
   this.expected=Array.from({length:18},(_,i)=>({hp:m.r16(this.actor(i)+32),flags:m.r32(this.actor(i)+64)}));
   this.commands=this.readCommands();
-  // A terminal sentinel beyond the finite controlled presentation schedule;
-  // avoid inventing an early round-ending command inside a still-running pose.
-  const time=this.commands.reduce((n,x)=>n+x.delay,0)+1024;
+  // Native rounds end at max(actor ready times, action barrier) + 20
+  // (func_00232D7C). Queue stress retains its synthetic padding.
+  const time=this.nativePoses?Math.max(m.r32(this.tail+0x828),m.r32(this.scratch),
+   ...Array.from({length:18},(_,i)=>m.r32(this.actor(i)+0x94)))+20:
+   this.commands.reduce((n,x)=>n+x.delay,0)+1024;
   this.call(0x801d98f4,[0x41,time,0,0,0,0,0,0,0]);
   this.generated=Buffer.from(m.ram.slice(m.phys(this.stream+16),m.phys(this.stream+16)+m.r32(this.tail+0x814)));
   for(let i=0;i<18;i++)m.load(this.actor(i),this.before[i]);
   m.w32(this.stream+4,0);m.w32(this.stream+8,0);m.w32(this.tail+0x810,0);m.w8(this.tail+0x823,0);
   // Opaque sprite children are absent in playback; native commands still apply
   // actor HP, flags and states, while child drawing/movement is not emulated.
-  for(let i=0;i<18;i++){m.w32(this.actor(i),0);m.w32(this.actor(i)+12,0);}
+  if(!this.nativePoses)for(let i=0;i<18;i++){m.w32(this.actor(i),0);m.w32(this.actor(i)+12,0);}
   return this.commands;
  }
  readCommands() {
@@ -189,18 +245,35 @@ class AttackPlaybackMachine {
   for(this.wall=0;this.wall<limit;this.wall++) {
    const cursor=m.r32(this.tail+0x810);
    if(this.wall<20||this.trace.at(-1)?.cursor!==cursor)this.trace.push({wall:this.wall,cursor,clock:m.r32(this.stream+4),total:m.r32(this.stream+8),pending:m.r8(this.tail+0x824)});
-   this.call('lc_attack_playback');
+   this.call(this.nativePoses?0x801de300:'lc_attack_playback');
+   if(this.effects)this.effects.advance(this.call.bind(this));
    for(const hit of this.impacts.filter(x=>x.at===this.wall)) {
     this.trace.push({event:'impact',id:hit.id,wall:this.wall});
     const pending=m.r8(this.tail+0x824);this.call('lc_attack_visual_impact',[hit.id,10]);
     if(m.r8(this.tail+0x824)===pending)this.ignoredContacts++;
    }
    if(this.visualEnd&&this.wall>=this.visualEnd)m.w8(this.tail+0x822,0);
-   // Completion of the controlled sprite pose, independent of the command clock.
-   for(let i=0;i<18;i++)if(m.r32(this.actor(i)+0x74)>1)m.w32(this.actor(i)+0x74,1);
+   for(let i=0;i<18;i++){
+    const actor=this.actor(i),child=m.r32(actor);
+    if(this.nativePoses&&child){
+     if(i===this.source||i===this.target)this.poses.push({wall:this.wall,id:i,state:m.r32(actor+0x74),pose:m.r16(child+0x48),
+      frame:m.r16(child+0x4a),x:m.r16(child+0x1c)<<16>>16,z:m.r16(child+0x20)<<16>>16});
+    }else if(!this.nativePoses&&m.r32(actor+0x74)>1)m.w32(actor+0x74,1);
+   }
    if(!m.r32(0x801ce8c4)) {
+    const roundTicks=this.wall+1;
     this.readCommands();
     for(const at of this.guards)for(let j=0;j<32;j++)assert.equal(m.r8(at+j),0xa5,'playback scratch/stack guard');
+    if(this.effects){
+     assert.equal(m.r8(this.tail+0x822),0,'native visual barrier still active at completion');
+     // The battle scene keeps updating trailing artwork after the round flag
+     // clears. Bound that tail separately from the attack command queue.
+     while(m.r32(0x80220d88) && this.wall+1-roundTicks<60){
+      this.wall++;
+      this.effects.advance(this.call.bind(this));
+     }
+     assert.equal(m.r32(0x80220d88),0,'native effect task still active after the round tail');
+    }
     for(let i=0;i<18;i++) {
      assert.equal(m.r16(this.actor(i)+32),this.expected[i].hp,`actor ${i} playback HP differs from calculation`);
      assert.equal(m.r32(this.actor(i)+64)&0x1f,this.expected[i].flags&0x1f,`actor ${i} playback status differs from calculation`);
@@ -209,7 +282,7 @@ class AttackPlaybackMachine {
     // Retail counts visual targets even for immune/no-op outcomes with no
     // result packet. Such contacts are intentionally ignored by its consumer.
     assert(m.r8(this.tail+0x824)<=this.ignoredContacts,'unaccounted pending impacts at completion');
-    return {ticks:this.wall+1,commands:this.commands.length,maxInstructions:this.maxInstructions,presentations:this.presentations};
+    return {ticks:roundTicks,effectTail:this.wall+1-roundTicks,commands:this.commands.length,maxInstructions:this.maxInstructions,presentations:this.presentations};
    }
   }
   throw Error(`playback did not complete within ${limit} ticks`);
@@ -217,7 +290,7 @@ class AttackPlaybackMachine {
 }
 module.exports={AttackPlaybackMachine};
 if(require.main===module) {
- const h=new AttackPlaybackMachine(process.argv[2]);
+ const h=new AttackPlaybackMachine(process.argv[2],{nativePoses:process.env.LORDLY_NATIVE_POSES==='1'});
  try {h.reset(process.argv[3]?JSON.parse(process.argv[3]):{});console.log(h.generate());console.log(h.playback());}
  catch(error){console.error(error);console.error(JSON.stringify(h.trace.slice(-20)));process.exitCode=1;}
 }

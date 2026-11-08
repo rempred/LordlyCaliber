@@ -35,13 +35,20 @@ EventLocationContext EventContexts::location(int id) const {
     EventLocationContext result; result.location = id;
     const auto &arrival = routes_.scripts[0];
     const int entry = u16(arrival, id * 2);
-    if (entry) result.phases[0].append({0, entry, "Arrival"});
+    // Empty New Campaign routes have a native return instruction so the
+    // dispatcher never runs the pointer table as code.
+    const auto hasEvent = [&](int row, const QByteArray &program, int offset) {
+        return offset && (!events_.flagEdits()[QString::number(row)].toObject()["replace"].toBool() ||
+                          u16(program, offset) != 0x2f00);
+    };
+    if (hasEvent(0, arrival, entry)) result.phases[0].append({0, entry, "Arrival"});
     for (const auto &[routingRow, phase] : {qMakePair(0, 1), qMakePair(70, 2)})
         for (int row : destinations(id, routingRow))
             result.phases[phase].append({row, -1, events_.missionName(row).isEmpty()?programName(row):events_.missionName(row)});
     const auto &investigation = routes_.scripts[70];
     const int investigationEntry = u16(investigation, id * 2);
-    if (investigationEntry) result.phases[2].append({70, investigationEntry, "Entry conditions"});
+    if (hasEvent(70, investigation, investigationEntry))
+        result.phases[2].append({70, investigationEntry, "Entry conditions"});
     locations_[id] = result;
     return result;
 }

@@ -155,8 +155,7 @@ void CombatAnimationEditor::setEditingEnabled(bool enabled) {
     findChild<QPushButton *>("sequenceAnimationTools")->setEnabled(enabled);
 }
 int CombatAnimationEditor::owner() const {
-    const int id = classId(), copy = u8(project_->record(Table::Classes, id).bytes, 69);
-    return copy ? copy : id;
+    return project_->bodyAnimationData()->classes().initialCurrentClass(classId());
 }
 int CombatAnimationEditor::flags() const {
     // Retail func_0020DB10 sets both actor bits 10/8 for the enemy-facing

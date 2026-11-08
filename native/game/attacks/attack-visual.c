@@ -16,6 +16,7 @@ void lc_effect_start(void *);
 int lc_effect_push(void *);
 void lc_effect_pop(int);
 void lc_strike_visual_list(u8 *);
+void lc_strike_share_first_impact(const u8 *, u32);
 #define W(p, n) (*(u32 *)((u8 *)(p) + (n)))
 #define H(p, n) (*(u16 *)((u8 *)(p) + (n)))
 #define F(p, n) (*(float *)((u8 *)(p) + (n)))
@@ -111,8 +112,30 @@ typedef struct {
     u8 *pixels;
     void *drawing;
     u32 *commands;
-    int frame, hold, delay, strike;
+    int frame, hold, delay, strike, donor;
 } VisualState;
+
+/* The retail decorative scripts begin drawing without an impact command. */
+static int native_without_contact(int effect) { return effect >= 93 && effect <= 96; }
+static void frame_impacts(const u8 *targets,int strike) {
+    int i;
+    for (i = 0; i < (strike ? 1 : 20) && targets[i] != 255; i++) {
+        if (targets[i] < 20)
+            ((void (*)(int,int))0x801c893c)(targets[i],10);
+    }
+}
+/* func_00279810 stores two native bytes, then waits for its projectile child.
+ * Its first resume is the arrival cue even though it never calls the battle. */
+typedef struct {
+    u8 native[4];
+    const u8 *targets;
+    int strike;
+} ProjectileCueState;
+static void projectile_cue(int state,void *data) {
+    ProjectileCueState *cue=(ProjectileCueState *)data;
+    if(state==0x1001) frame_impacts(cue->targets,cue->strike);
+    ((VisualCallback)0x80225080)(state,data);
+}
 
 static int unpack(const u8 *in, int length, u8 *out, int size) {
     int at = 0, used = 0, b, n, d, j, value;
@@ -209,8 +232,14 @@ static void visual_task(int state, void *data) {
         s->commands = 0;
         s->frame = 0;
         s->hold = 0;
-        s->delay = H(s->config, 18);
+        s->delay = s->config ? H(s->config, 18) : 0;
+        s->donor = s->config ? H(s->config, 14) : pending_donor;
         s->strike = pending_repeat;
+        /* Ordinary spell results are queued one battle tick after submission.
+         * First-frame impacts must wait until they are available. */
+        if (!s->strike && !s->delay &&
+            ((s->config && H(s->config, 12)) || (s->extra && native_without_contact(s->donor))))
+            s->delay = 1;
         lc_effect_bind_current(s->config);
         ((void (*)(int))0x8020dc80)(4096);
         return;
@@ -225,9 +254,11 @@ static void visual_task(int state, void *data) {
         s->delay--;
         return;
     }
-    if (H(s->config, 12) == 0) {
-        lc_effect_start(s->config);
-        index = H(s->config, 14);
+    if (!s->config || H(s->config, 12) == 0) {
+        const u8 *firstFrameTargets = s->extra && native_without_contact(s->donor) ? s->targets : 0;
+        int strike = s->strike;
+        if (s->config) lc_effect_start(s->config);
+        index = s->donor;
         table = (u32 *)0x8021fcc0;
         original = (VisualCallback)table[index];
         task = (u8 *)GLOBAL(0x80220fe8);
@@ -238,7 +269,14 @@ static void visual_task(int state, void *data) {
             *(u16 *)0x80220f74 = (u16)index;
         } else {
             *(u16 *)0x80220f70 = (u16)index;
-            *(u16 *)0x8020a2d0 = (u16)index;
+            GLOBAL(0x8020a2d0) = index;
+        }
+        if (firstFrameTargets && index == 94) {
+            ProjectileCueState *cue=(ProjectileCueState *)data;
+            cue->targets=firstFrameTargets;
+            cue->strike=strike;
+            firstFrameTargets=0;
+            original=projectile_cue;
         }
         W(task, 4) = (u32)original;
         for (i = 0; i < 4; i++) {
@@ -249,6 +287,8 @@ static void visual_task(int state, void *data) {
         original(256, data);
         if (H(task, 8) >= 256)
             original(H(task, 8), data);
+        if (firstFrameTargets)
+            frame_impacts(firstFrameTargets,strike);
         return;
     }
     if (!s->drawing) {
@@ -285,10 +325,10 @@ static void visual_task(int state, void *data) {
             finish(s);
             return;
         }
-        /* Imported sequences have no retail impact script. Their first visible
-         * frame is the impact, after the authored delay, once per strike. */
-        if (s->strike && s->targets[0] < 20)
-            ((void (*)(int,int))0x801c893c)(s->targets[0],10);
+        /* Imported sequences use their first visible frame as the impact.
+         * Repeated playback passes a single victim. Ordinary playback can
+         * present the same frame over several victims simultaneously. */
+        frame_impacts(s->targets,s->strike);
     } else if (!s->hold) {
         s->frame++;
         if (s->frame >= H(s->config, 28)) {
@@ -345,9 +385,10 @@ static void repeat_visual(int state,void *data) {
         GLOBAL(0x8020a2d0)=s->donor;
     }
     callback=(VisualCallback)((u32 *)0x8021fcc0)[s->donor];
-    if(s->config) {
+    if(s->config || native_without_contact(s->donor)) {
         pending_config=s->config; pending_source=s->source;
         pending_targets=s->target; pending_extra=s->flag;
+        pending_donor=s->donor;
         pending_repeat=1;
         callback=visual_task;
     }
@@ -361,8 +402,40 @@ static int native_strikes(int effect) {
            (effect>=21 && effect<=23) || (effect>=29 && effect<=31) ||
            (effect>=36 && effect<=38) || (effect>=44 && effect<=46);
 }
+static int native_first_victim_only(int effect) {
+    /* These normal-combat scripts only deliver a primary contact to the first
+     * victim, even when the battle supplies multiple occupied targets. A
+     * separate caster return (for example Life Drain) is not a victim hit. */
+    switch(effect) {
+    case 0: case 4: case 8: case 16: case 20: case 24: case 28:
+    case 39: case 43: case 51: case 58: case 65: case 72: case 79: case 86:
+    case 97: case 98: case 99: case 102: case 103: case 104:
+    case 106: case 108: case 110: case 111:
+    case 125: case 126: case 127: case 128: case 129: case 130: case 131: case 132:
+        return 1;
+    }
+    return 0;
+}
+static u32 native_covered_targets(int effect,int anchor) {
+    float positions[4][3];
+    u32 covered=1U<<anchor;
+    int mode,i,actor;
+    if(native_first_victim_only(effect))return covered;
+    if(effect!=42 && effect!=68 && effect!=80)return 0xfffff;
+    /* The fixed footprints in func_00250C24, func_00253D18 and
+     * func_002550A4 use these same world-grid queries. Effect80 visits only
+     * mode0, while the other two visit both sets of offsets. */
+    for(mode=0;mode<(effect==80?1:2);mode++) {
+        ((void (*)(u8,float *,int))0x801f79bc)(anchor,positions[0],mode);
+        for(i=0;i<4;i++) {
+            actor=((s16 (*)(float *))0x801f7738)(positions[i]);
+            if(actor>=0 && actor<20)covered|=1U<<actor;
+        }
+    }
+    return covered;
+}
 void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
-    int i, donor, ringIndex, owner, repeated;
+    int i, donor, ringIndex, owner, repeated, imported;
     u8 *config = 0, *ring;
     u32 saved;
     u32 *table = (u32 *)0x8021fcc0;
@@ -373,13 +446,16 @@ void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
                 break;
             }
     }
+    imported=config && H(config,12);
+    donor=config?H(config,14):effect;
     repeated=extra && targets[0]!=255 && (extra[0]&128);
+    if(!repeated && extra && targets[0]<20 && targets[1]!=255 && *(u8 *)0x800e9c12==1 && !imported)
+        lc_strike_share_first_impact(targets,0xfffff & ~native_covered_targets(donor,targets[0]));
     if(repeated) {
         extra[0]&=127;
         lc_strike_visual_list(targets);
-        donor=config?H(config,14):effect;
-        if((config && H(config,12)) || !native_strikes(donor) || *(u8 *)0x800e9c12!=1) {
-            if(config && H(config,12))donor=135;
+        if(imported || !native_strikes(donor) || *(u8 *)0x800e9c12!=1) {
+            if(imported)donor=135;
             if(*(u8 *)0x800e9c12!=1)donor=135;
             pending_config=config; pending_source=source;
             pending_targets=targets; pending_extra=extra; pending_donor=donor;
@@ -394,15 +470,16 @@ void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
             return;
         }
     }
-    if (!config || *(u8 *)0x800e9c12 != 1) {
-        lc_original_visual_submit(config ? H(config, 14) : effect, source, targets, extra);
+    if ((!config && !(extra && native_without_contact(donor))) || *(u8 *)0x800e9c12 != 1) {
+        lc_original_visual_submit(donor, source, targets, extra);
         return;
     }
-    donor = H(config, 12) ? 135 : H(config, 14);
+    if (imported) donor = 135;
     pending_config = config;
     pending_source = source;
     pending_targets = targets;
     pending_extra = extra;
+    pending_donor = donor;
     ringIndex = GLOBAL(0x80220db0);
     saved = table[donor];
     table[donor] = (u32)visual_task;

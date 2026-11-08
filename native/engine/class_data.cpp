@@ -354,6 +354,36 @@ int ClassData::defaultPromotionClass(int id) const {
     // creation default rather than an existing character's saved current ID.
     return entry.namedAlias && link == current ? entry.namedAlias : current;
 }
+int ClassData::initialCurrentClass(int identity) const {
+    if(identity<0 || identity>=entries_.size()) throw Error("Choose an available identity class");
+    const int link=u8(entries_[identity].record,69);
+    // Class zero is the Soldier-group placeholder, not an ordinary recruit.
+    const int current=identity && link ? link : identity;
+    if(current>=entries_.size()) throw Error("Default current class is unavailable");
+    return current;
+}
+const QByteArray &ClassData::linkedRecord(int identity,int current) const {
+    if(identity<0 || current<0 || identity>=entries_.size() || current>=entries_.size())
+        throw Error("Character lookup refers to an unavailable class");
+    return entries_[u8(entries_[identity].record,69)==current ? identity : current].record;
+}
+int ClassData::defaultEquipment(int identity,int current,int slot) const {
+    if(slot<0 || slot>3) throw Error("Choose an equipment slot");
+    // Accepted 43E88 / 43EDC / 43F30 / 43F84, full-record offsets 46..52.
+    return u16(linkedRecord(identity,current),46+2*slot);
+}
+int ClassData::attack(int identity,int current,int row) const {
+    if(row<0 || row>2) throw Error("Choose front, middle or rear");
+    const int value=u8(linkedRecord(identity,current),55+2*row);
+    // Accepted 44130: FF inherits once from the stored current class.
+    return value==255 ? u8(entries_[current].record,55+2*row) : value;
+}
+int ClassData::attackCount(int identity,int current,int row) const {
+    if(row<0 || row>2) throw Error("Choose front, middle or rear");
+    const int value=u8(linkedRecord(identity,current),56+2*row);
+    // Accepted 44238; count inheritance is independent of action inheritance.
+    return value==255 ? u8(entries_[current].record,56+2*row) : value;
+}
 int ClassData::unitSize(int primary, int secondary) const {
     if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
         throw Error("Character size refers to an unavailable class");

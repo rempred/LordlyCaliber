@@ -643,6 +643,21 @@ class AttackDataTests : public QObject {
             auto project=Project::fromRom(source());project.loadAttacks();project.loadTools();
             auto attacks=*project.attacks();QCOMPARE(attacks.duplicate(55,"Playback fixture"),159);
             QCOMPARE(attacks.duplicate(55,"Following action"),160);
+            const int copied=attacks.duplicate(55,"Copied effect playback");
+            QCOMPARE(copied,161);
+            auto edited=attacks.entry(copied);
+            edited.visual.nativeEffect=101;
+            edited.visual.hue=120;
+            attacks.set(copied,edited);
+            const int imported=attacks.duplicate(55,"Imported effect playback");
+            QCOMPARE(imported,162);
+            auto animated=attacks.entry(imported);
+            QImage pixels(8,8,QImage::Format_RGBA8888);
+            pixels.fill(Qt::red);
+            animated.visual.frames=SpriteAsset::fromImage("Impact",pixels);
+            animated.visual.frames->frames[0].ticks=4;
+            animated.visual.delay=0;
+            attacks.set(imported,animated);
             project.setAttacks(attacks.json());
             auto options=project.tools()->json();options["highAttackStreamSplit"]=true;project.setTools(options);
             QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).absoluteDir().filePath("Test ROMs/native-playback-XXXXXX"));
@@ -655,6 +670,10 @@ class AttackDataTests : public QObject {
             QCOMPARE(reopened.attacks()->json(),attacks.json());
             QProcess runner;runner.start("node",{QFINDTESTDATA("attack-playback-mips.cjs"),candidate});
             QVERIFY(runner.waitForFinished(120000));
+            qInfo().noquote()<<runner.readAllStandardOutput();
+            QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+            runner.start("node",{QFINDTESTDATA("battle-native-playback-mips.cjs"),candidate});
+            QVERIFY(runner.waitForFinished(180000));
             qInfo().noquote()<<runner.readAllStandardOutput();
             QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
         } catch(const std::exception &e) {QFAIL(e.what());}

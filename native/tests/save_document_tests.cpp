@@ -7,6 +7,7 @@
 #include "game/army/soldier_reserve.h"
 #include "game/army/leader.h"
 #include "game/army/character.h"
+#include "rebuild/compiler.h"
 #include <array>
 #include <QFile>
 #include <QJsonDocument>
@@ -18,6 +19,63 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioSeederCustomClassEquipment() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 toolchain required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            const int weapon = project.appendItem(1, "Test Sword");
+            const int armor = project.appendItem(179, "Test Armor");
+            const int identity = project.appendClass(5, "Test Fighter");
+            auto record = project.record(Table::Classes, identity).bytes;
+            put8(record, 69, 5);
+            put16(record, 46, weapon);
+            put16(record, 48, armor);
+            project.replaceBytes(Table::Classes, identity, record);
+            QDir output(QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir());
+            QVERIFY(output.cd("../../../Test ROMs"));
+            QTemporaryDir romOutput(output.filePath("class-seeder-XXXXXX")), work;
+            QVERIFY(romOutput.isValid() && work.isValid());
+            const auto destination = romOutput.filePath(QFileInfo(path).fileName());
+            exportRom(project, rebuild(project, tools, work.path()), destination);
+            const auto rom = Rom::open(destination);
+            const ScenarioSeeder seeder(rom);
+            QVERIFY(!seeder.choices().isEmpty());
+            auto donor = SaveDocument::open(rom, seeder.defaultArmyBytes());
+            donor.selectSlot(0);
+            const int id = donor.freeCharacterSlot();
+            const auto classes = ClassData::load(rom);
+            donor.setClassCount(int(classes.entries().size()));
+            donor.apply(donor.planCreateCharacter(identity, "Test", classes, 7), true);
+            const auto owned = [](const SaveDocument &doc, int item) {
+                int result = 0;
+                const auto &ram = doc.memory();
+                for (int i = 0; i < 278; ++i) {
+                    const int at = 0x196b00 + i * 4;
+                    if (u16(ram, at) == item)
+                        result += u8(ram, at + 3);
+                }
+                return result;
+            };
+            auto linked = SaveDocument::open(rom, seeder.seed(0, &donor));
+            linked.selectSlot(0);
+            QCOMPARE(linked.value(SaveTable::Characters, id, "class").toInt(), identity);
+            QCOMPARE(linked.value(SaveTable::Characters, id, "secondaryClass").toInt(), 5);
+            QCOMPARE(linked.value(SaveTable::Characters, id, "weapon").toInt(), 0);
+            QCOMPARE(linked.value(SaveTable::Characters, id, "body").toInt(), 0);
+            QCOMPARE(owned(linked, weapon), 1);
+            QCOMPARE(owned(linked, armor), 1);
+            donor.apply(donor.planCharacterClassEdit(id, "secondaryClass", 6, classes), true);
+            auto changed = SaveDocument::open(rom, seeder.seed(0, &donor));
+            changed.selectSlot(0);
+            QCOMPARE(changed.value(SaveTable::Characters, id, "class").toInt(), identity);
+            QCOMPARE(changed.value(SaveTable::Characters, id, "secondaryClass").toInt(), 6);
+            QCOMPARE(owned(changed, weapon), 0);
+            QCOMPARE(owned(changed, armor), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void authoredMissionSeederCustomFlags() {
         const auto path = qEnvironmentVariable("LORDLY_CUSTOM_MISSION_ROM");
         if (path.isEmpty()) QSKIP("Exported authored mission ROM required");

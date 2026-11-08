@@ -4,12 +4,104 @@
 #include "engine/combat_artwork.h"
 #include "engine/scene_actors.h"
 #include "engine/sprite_object.h"
+#include "rebuild/compiler.h"
+#include "rebuild/pose_runtime.h"
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
 class AnimationDescriptorTests : public QObject {
     Q_OBJECT
   private slots:
+    void wideIdleHeightExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAnimationRoutes();
+            auto sequences = *project.animationSequences();
+            sequences.create(2, 0, *project.animationRoutes());
+            auto wide = *sequences.find(2, 0);
+            auto frame = wide.frame(0).first(18);
+            put16(frame, 0, 1);
+            put16(frame, 6, quint16(-73));
+            while (wide.frameCount() <= 300) wide.appendFrame(frame);
+            auto poses = wide.poses();
+            poses.setProgram(0, PoseBank::encodeProgram({{0, {}}, {21, QByteArray::fromHex("2c0104")}}));
+            wide.setPoses(poses);
+            sequences.setDescriptor(2, 0, wide);
+
+            sequences.create(5, 0, *project.animationRoutes());
+            auto noFrame = *sequences.find(5, 0);
+            poses = noFrame.poses();
+            poses.setProgram(0, PoseBank::encodeProgram({{3, QByteArray(1, 4)}}));
+            noFrame.setPoses(poses);
+            sequences.setDescriptor(5, 0, noFrame);
+            QVERIFY(sequences.requiresBodyHeightRuntime());
+            project.setAnimationSequences(sequences.json());
+
+            QTemporaryDir work;
+            QVERIFY(work.isValid());
+            const auto built = rebuild(project, tools, work.path());
+            QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-wide-idle-height-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            const auto candidate = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            const auto exported = Rom::open(candidate);
+            const auto placed = ClassPlacement::read(exported);
+            QVERIFY(placed);
+            const auto heightEntry = poseHeightRuntimeAddress(exported, placed);
+            QVERIFY(heightEntry);
+            QCOMPARE(exported.bytes().mid(0x20d598, 188), rom.bytes().mid(0x20d598, 188));
+
+            const auto fixturePath = work.filePath("wide-idle.json");
+            QFile fixture(fixturePath);
+            QVERIFY(fixture.open(QIODevice::WriteOnly));
+            const auto cases = QJsonArray{QJsonArray{2, 2, 0}, QJsonArray{5, 5, 0}, QJsonArray{257, 257, 0}};
+            fixture.write(QJsonDocument(QJsonObject{
+                {"key", qint64(AnimationRoutes::resourceKey(exported))}, {"contexts", cases},
+                {"classAddress", qint64(placed->layout.indexBase)}, {"classOffset", qint64(placed->dataRomOffset)},
+                {"classSize", qint64(placed->layout.end - placed->layout.indexBase)}}).toJson());
+            fixture.close();
+            const auto output = work.filePath("heights.json");
+            QProcess node;
+            node.start("node", {QFINDTESTDATA("body-height-mips.cjs"), candidate, output, fixturePath});
+            QVERIFY(node.waitForFinished(30000));
+            QVERIFY2(node.exitCode() == 0, node.readAllStandardError().constData());
+            QFile heights(output);
+            QVERIFY(heights.open(QIODevice::ReadOnly));
+            const auto actual = QJsonDocument::fromJson(heights.readAll()).array();
+            const auto expected = QJsonArray{QJsonArray{2, 2, 0, 73}, QJsonArray{5, 5, 0, 0}, QJsonArray{257, 257, 0, 38}};
+            QCOMPARE(actual, expected);
+            QCOMPARE(rebuild(Project::fromRom(exported), tools, work.path()).image, built.image);
+
+            // Even a modified helper inside a correctly checksummed class allocation
+            // must be authenticated before export replaces it.
+            auto corrupt = exported.bytes();
+            const auto at = placed->dataRomOffset + heightEntry - placed->layout.indexBase;
+            put32(corrupt, at, u32(corrupt, at) ^ 1);
+            const auto classData = corrupt.mid(placed->dataRomOffset, placed->layout.end - placed->layout.indexBase);
+            const auto initializer = corrupt.mid(ClassPlacement::codeRomOffset, placed->codeBytes);
+            corrupt.replace(ClassPlacement::descriptorRomOffset, ClassPlacement::descriptorSize,
+                            placed->descriptor(classData, initializer));
+            const auto foreign = Project::fromRom(Rom::fromBytes(corrupt));
+            QString reason;
+            try {
+                rebuild(foreign, tools, work.path());
+            } catch (const Error &e) {
+                reason = QString::fromUtf8(e.what());
+            }
+            QVERIFY2(reason.contains("differs from its compiled C owner"), qPrintable(reason));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void appendedSpriteResources() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

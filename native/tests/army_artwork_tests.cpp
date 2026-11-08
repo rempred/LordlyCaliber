@@ -109,6 +109,112 @@ class ArmyArtworkTests : public QObject {
         qInfo().noquote()<<"Inherited artwork candidate:"<<candidate;
         } catch(const Error &e) { QFAIL(e.what()); }
     }
+    void linkedArmyAtlasIsolation() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadArmyArtwork();
+            const int linked = project.appendClass(5, "Cross-atlas identity");
+            auto record = project.record(Table::Classes, linked).bytes;
+            put8(record, 69, 118);
+            project.replaceBytes(Table::Classes, linked, record);
+
+            // US Rev 0's model and atlas routines select ordinary model 16
+            // for (5,118) and (15,15), and special model 16 for (118,118).
+            // The appended identity copies class 5's size and ordinary bit.
+            const auto classes = project.classData();
+            auto army = *project.armyArtwork();
+            QCOMPARE(ArmyArtwork::characterRoute(classes, linked).lane, 0);
+            QCOMPARE(ArmyArtwork::characterRoute(classes, linked).model, 16);
+            QCOMPARE(ArmyArtwork::modelClass(classes, linked), 118);
+            const auto original = army;
+            const auto reserved = original.indices(2, 16);
+            army.setIndices(2, 56, reserved); // Intentionally authored, with no class assigned yet.
+            const int isolated = army.isolateClass(classes, linked);
+            QCOMPARE(isolated, 57);
+            for (int atlas = 0; atlas < 4; ++atlas)
+                QCOMPARE(army.indices(atlas, isolated), original.indices(atlas, 16));
+            auto painted = original.indices(0, 16);
+            painted[0] = char((u8(painted, 0) + 1) % 256);
+            army.setIndices(0, isolated, painted);
+            project.setArmyArtwork(army.json());
+
+            const auto verify = [&](const Project &candidate) {
+                const auto data = candidate.classData();
+                const auto &art = *candidate.armyArtwork();
+                const auto edited = ArmyArtwork::characterRoute(data, linked);
+                const auto other = ArmyArtwork::characterRoute(data, 15);
+                const auto owner = ArmyArtwork::characterRoute(data, 118);
+                QCOMPARE(edited.lane, 0);
+                QCOMPARE(edited.model, isolated);
+                QCOMPARE(other.lane, 0);
+                QCOMPARE(other.model, 16);
+                QCOMPARE(owner.lane, 1);
+                QCOMPARE(owner.model, isolated);
+                QCOMPARE(art.indices(0, isolated), painted);
+                QCOMPARE(art.indices(2, 56), reserved);
+                for (int atlas = 0; atlas < 4; ++atlas) {
+                    for (int palette = 0; palette < 2; ++palette) {
+                        QCOMPARE(art.palette(atlas, palette), original.palette(atlas, palette));
+                        QCOMPARE(art.words(atlas, 16, palette), original.words(atlas, 16, palette));
+                        if (atlas)
+                            QCOMPARE(art.words(atlas, isolated, palette), original.words(atlas, 16, palette));
+                    }
+                }
+            };
+            verify(project);
+            QTemporaryDir work;
+            QVERIFY(work.isValid());
+            project.saveFolder(work.filePath("project"));
+            auto loaded = Project::fromRom(rom);
+            loaded.applyManifest(Project::readProject(work.filePath("project")));
+            verify(loaded);
+            const auto result = rebuild(loaded, tools, work.path());
+            QTemporaryDir candidate(QFileInfo(path).dir().filePath("Test ROMs/native-army-atlas-isolation-XXXXXX"));
+            QVERIFY(candidate.isValid());
+            const auto exported = candidate.filePath(QFileInfo(path).fileName());
+            exportRom(loaded, result, exported);
+            auto reopened = Project::fromRom(Rom::open(exported));
+            reopened.loadArmyArtwork();
+            verify(reopened);
+            auto checksum = result.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, result.image);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, result.image);
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
+    void classRestorePreservesSharedPlane() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty()) QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadArmyArtwork();
+            const int copy = project.appendClass(5, "Knight with original sprite");
+            const auto classes = project.classData();
+            auto army = *project.armyArtwork();
+            const auto route = ArmyArtwork::characterRoute(classes, 5);
+            QCOMPARE(route.lane, 0);
+            QCOMPARE(route.model, 6);
+            QCOMPARE(ArmyArtwork::characterRoute(classes, copy).model, route.model);
+            const auto originalFront = army.indices(0, route.model);
+            const auto originalBack = army.indices(1, route.model);
+            auto shared = originalFront;
+            shared[0] = char((u8(shared, 0) + 1) % 256);
+            army.setIndices(0, route.model, shared);
+            army.restoreClass(classes, copy, 0);
+            project.setArmyArtwork(army.json());
+            const auto restoredClasses = project.classData();
+            const int restored = ArmyArtwork::characterRoute(restoredClasses, copy).model;
+            QVERIFY(restored != route.model);
+            QCOMPARE(ArmyArtwork::characterRoute(restoredClasses, 5).model, route.model);
+            QCOMPARE(army.indices(0, route.model), shared);
+            QCOMPARE(army.indices(0, restored), originalFront);
+            QCOMPARE(army.indices(1, restored), originalBack);
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void changedClassSizeNeedsValidModels() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

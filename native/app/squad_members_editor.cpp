@@ -117,15 +117,17 @@ void SquadMembersEditor::setMembers(const QVector<CustomMember> &values) {
     loading_ = true;
     count_->setValue(int(values.size()));
     shownCount_ = count_->value();
-    QStringList labels;
-    for (int id = minimumClass_; id < project_->records(Table::Classes).size(); ++id) if (!project_->contentDeleted("classes",id))
-        labels << QString("%1 · %2").arg(id).arg(QString(project_->record(Table::Classes,id).name).replace('\n',' '));
+    QVector<QPair<int, QString>> choices;
+    for (const auto &record : project_->records(Table::Classes))
+        if (record.id >= minimumClass_ && !project_->contentDeleted("classes", record.id))
+            choices << qMakePair(record.id, QString("%1 · %2").arg(record.id).arg(record.name.simplified()));
     for (int i = 0; i < 5; ++i) {
         const auto m = i < values.size() ? values[i] : CustomMember{5, 0, 8-i*2, {0, 0}};
         auto box = classes_[i];
-        if (classLabels_ != labels) {
+        if (classChoices_ != choices) {
             box->clear();
-            for (int row = 0; row < labels.size(); ++row) box->addItem(labels[row], minimumClass_ + row);
+            for (const auto &[id, label] : choices)
+                box->addItem(label, id);
         }
         if (box->findData(m.classId) < 0) box->addItem(QString("Original class %1").arg(m.classId),m.classId);
         box->setCurrentIndex(box->findData(m.classId));
@@ -134,7 +136,7 @@ void SquadMembersEditor::setMembers(const QVector<CustomMember> &values) {
         positions_[i] = m.cell;
         equipmentChoices(i, m.equipment);
     }
-    classLabels_ = labels;
+    classChoices_ = choices;
     table_->setCurrentCell(0, 0);
     loading_ = false;
     preview();

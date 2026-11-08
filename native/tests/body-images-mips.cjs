@@ -30,18 +30,22 @@ for(const p of [0x801c15e0,0x801c0f50])m.trap(p,c=>{
 });
 const call=(p,args)=>{m.set('sp',sp);args.forEach((v,i)=>i<4?m.set('a'+i,v):m.w32(sp+16+(i-4)*4,v));m.call(p,0x80000100,500000);assert.equal(m.get('sp'),sp);return m.get('v0');};
 const rows=[],prepared=[];let replacements=0;
-for(const source of fixture.sources||Array.from({length:164},(_,i)=>i+1))for(let flags=0;flags<4;flags++) {
+for(const source of fixture.sources||Array.from({length:164},(_,i)=>i+1))
+for(const owner of fixture.classContexts ? [...new Set([rom[0x5db14+source*72+69]||source,5])] : [source])
+for(let flags=0;flags<4;flags++) {
  const a=flags>>1,b=flags&1;
- const items=fixture.items||([2,32,57,63,81,123,164].includes(source)?Array.from({length:278},(_,i)=>i):[0,1,20]);
+ const carried=fixture.classContexts ? [0x43e88,0x43edc,0x43f30,0x43f84].map(p=>call(p+0x8012a100,[source,owner])) : [];
+ const defaultEquipment=fixture.classContexts ? call(0x8016fa34,carried) : undefined;
+ const items=fixture.classContexts ? [...new Set([defaultEquipment,1,20])] : fixture.items||([2,32,57,63,81,123,164].includes(source)?Array.from({length:278},(_,i)=>i):[0,1,20]);
  for(const item of items) {
   heap=0x80310000;resourceKeys=new Map();m.load(pool-16,Buffer.alloc(20*176+32,0));m.w8(0x80193c12,3);
   if(fixture.prepare){
-   const p=0x80270010;[source,source,b,a,item].forEach((v,i)=>m.w32(p+i*4,v));
+   const p=0x80270010;[source,owner,b,a,item].forEach((v,i)=>m.w32(p+i*4,v));
    call(0x801c41c8,[p,p+4,p+8,p+12,p+16,1]);
    prepared.push([source,flags,item,m.r32(p+16)]);
    heap=0x80310000;resourceKeys=new Map();m.load(pool-16,Buffer.alloc(20*176+32,0));
   }
-  assert.equal(call(0x801c27f8,[pool,source,source,a,b,item]),pool);
+  assert.equal(call(0x801c27f8,[pool,source,owner,a,b,item]),pool);
   const metadata=m.r32(pool+0x48),frameCount=m.r32(pool+0x50),baseHeap=heap;
   const tokens=new Set([0]);for(const off of [0xa8,0xac]){const token=m.r16(pool+off);if(token!==65535){tokens.add(token);replacements++;}}
   // Keep the all-item cross-product bounded; all routes still cover substitutions.
@@ -50,17 +54,17 @@ for(const source of fixture.sources||Array.from({length:164},(_,i)=>i+1))for(let
    assert(token<frameCount);const layers=[];
    for(let layer=0;layer<16;layer++) {
     m.load(request-16,Buffer.alloc(36+32,0xa7));
-    if(!call(0x801c1ff4,[source,source,a,b,token,layer,request]))break;
+    if(!call(0x801c1ff4,[source,owner,a,b,token,layer,request]))break;
     const record=read(request,36),art=record.readUInt32BE(0);
     // Force cold-load paths so expected child/palette selection is observable.
     const count=m.r32(pool+0x18);for(const offset of [0x38,0x3c,0x40])m.load(m.r32(pool+offset),Buffer.alloc(count*4));
     m.w8(0x801cef00,2|sepia);heap=baseHeap;conversion=undefined;
-    assert.equal(call(0x801c2eb0,[source,source,request,b,a,item,0]),0x80270000);assert(conversion);
+    assert.equal(call(0x801c2eb0,[source,owner,request,b,a,item,0]),0x80270000);assert(conversion);
     const desc=m.r32(pool+8);assert.equal(conversion.key,m.r32(desc+16+art*4));
     assert(read(request-16,16).equals(Buffer.alloc(16,0xa7)));assert(read(request+36,16).equals(Buffer.alloc(16,0xa7)));
     layers.push({record:record.toString('hex'),...conversion});
    }
-   rows.push({source,flags,item,token,sepia,layers});
+   rows.push({source,owner,defaultEquipment,flags,item,token,sepia,layers});
   }
  }
 }

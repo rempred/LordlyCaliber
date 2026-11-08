@@ -101,8 +101,7 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     action("Copy to Art Library", "armyCopyToLibrary", [this] { copyToLibrary(); });
     restoreSprite_ = action("Restore loaded sprite", "armyRestore", [this] {
         auto next = *project_->armyArtwork();
-        const int owner = class_ < 0 ? -1 : ArmyArtwork::modelClass(project_->classData(), class_);
-        if (owner >= 0 && next.routes().contains(owner)) next.restoreRoute(owner);
+        if (class_ >= 0) next.restoreClass(project_->classData(), class_, atlas_ % 2);
         else next.restore(atlas_, model_);
         if (next.json() != project_->armyArtwork()->json())
             undo_->push(new ArmyCommand(project_, "Restore Army sprite", next.json()));
@@ -358,8 +357,6 @@ ArmyEditor::~ArmyEditor() {
 void ArmyEditor::guarded(const std::function<void()> &action) {
     try {
         action();
-        notice_->setText(class_ >= 0 ? "Changes affect only the selected class. Both fixed palettes use these pixel indices."
-                                    : "Advanced shared-model editing affects every listed class. Both palettes use these pixel indices.");
     } catch (const std::exception &e) {
         refresh();
         notice_->setText(QString::fromUtf8(e.what()));

@@ -40,6 +40,7 @@ CompiledModule buildNewCampaignRuntime(const NewCampaignInput &input,const Compi
     config+="}\n#define LC_START "+QByteArray::number(input.settings["location"].toInt())+
         "\n#define LC_GOTH "+QByteArray::number(input.settings["goth"].toInt())+
         "U\n#define LC_CHAOS "+QByteArray::number(input.settings["chaos"].toInt())+
+        "\n#define LC_PLAYER_ROSTER "+QByteArray::number(relocate(0x80193bc0))+"U"+
         "\n#define LC_CUSTOM_FLAGS "+QByteArray::number(customFlags)+"U\n";
     const int x=qBound(0,input.location.x()-128,256),y=qBound(0,input.location.y()-96,124);
     config+="#define LC_SCROLL_X "+QByteArray::number(x)+"\n#define LC_SCROLL_Y "+QByteArray::number(y)+
@@ -50,6 +51,7 @@ CompiledModule buildNewCampaignRuntime(const NewCampaignInput &input,const Compi
 typedef unsigned char u8;
 typedef unsigned int u32;
 extern const u8 *const lc_starting_armies[16];
+extern void lc_expand_saved_name(const u8 *packed,u8 *name);
 struct Span {u32 address,size,offset;};
 static const struct Span spans[]=LC_SPANS;
 static const u8 locations[40]=LC_LOCATIONS;
@@ -64,6 +66,17 @@ void lc_campaign_action(unsigned short *registers,u32 operation) {
         for(n=0;n<sizeof(spans)/sizeof(spans[0]);++n) {
             to=(u8 *)spans[n].address;
             for(i=0;i<spans[n].size;++i)to[i]=army[spans[n].offset+i];
+        }
+        /* The army stores names in the battery save format. Use the native
+           save loader's expansion before exposing the roster to live menus. */
+        for(n=1;n<100;++n) {
+            u8 packed[14];
+            to=(u8 *)LC_PLAYER_ROSTER+n*56;
+            if(!to[17])continue;
+            for(i=0;i<13;++i)packed[i]=to[i];
+            packed[13]=255;
+            for(i=0;i<17;++i)to[i]=0;
+            lc_expand_saved_name(packed,to);
         }
     } else if(operation==1U) {
         clear(0x80193686U,32); /* persistent retail story flags */
@@ -88,7 +101,8 @@ void lc_campaign_action(unsigned short *registers,u32 operation) {
 }
 )C";
     result=compiler.compileModule(source,directory,"new_campaign",address+data.size(),
-        {{"new_campaign_config.h",config}},{{"lc_starting_armies",address}},true);
+        {{"new_campaign_config.h",config}},{{"lc_starting_armies",address},
+            {"lc_expand_saved_name",0x8017aaf4}},true);
     result.address=address;result.bytes.prepend(data);
     while(result.bytes.size()%16)result.bytes.append(char(0));
     result.bytes+=marker;

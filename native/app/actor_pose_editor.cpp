@@ -695,11 +695,7 @@ int ActorPoseEditor::currentClass() const {
     const int selected = owners_->currentData().toInt();
     if (selected >= 0) return selected;
     const int identity = banks_->currentData().toInt();
-    const auto &entries = bodyAnimations_->classes().entries();
-    if (identity < 0 || identity >= entries.size()) throw Error("Choose an available identity class");
-    const int link = u8(entries[identity].record, 69);
-    // Creation's one-step current-class assignment; Soldier groups use zero.
-    return identity && link ? link : identity;
+    return bodyAnimations_->classes().initialCurrentClass(identity);
 }
 void ActorPoseEditor::loadBank() {
     stop();

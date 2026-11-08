@@ -123,12 +123,9 @@ SaveDocument ScenarioSeeder::withArmy(SaveDocument base, const SaveDocument &don
                 continue;
             if (std::max(primary, secondary) >= classes.entries().size())
                 throw Error("Army references a class absent from the selected ROM");
-            // ClassData includes the 12-byte record prefix; the standalone
-            // seeder's 0x5DB20 table address starts after that prefix.
-            int cls = u8(classes.entries()[primary].record, 69) == secondary ? primary : secondary;
             for (int offset = 0; offset < 4; ++offset)
                 for (int item : {int(u16(ram, at + 42 + offset * 2)),
-                                 int(u16(classes.entries()[cls].record, 46 + offset * 2))})
+                                 classes.defaultEquipment(primary, secondary, offset)})
                     if (item)
                         ++result[0][item];
         }
@@ -160,19 +157,32 @@ SaveDocument ScenarioSeeder::withArmy(SaveDocument base, const SaveDocument &don
             items << i;
         auto ordered = items.values();
         std::sort(ordered.begin(), ordered.end());
+        QVector<QPair<int, int>> missing;
         for (int item : ordered) {
             int at = indexes.value(item, -1), owned = at < 0 ? 0 : u8(memory, at + 3);
             int needed = std::max(0, owned - old[lane].value(item)) + next[lane].value(item);
             if (needed > 127)
                 throw Error("The army requires more item copies than the save can hold");
-            if (at < 0) {
-                if (!needed)
-                    continue;
-                if (available.isEmpty())
-                    throw Error("No inventory space for army equipment");
-                at = available.takeFirst();
-                put16(memory, at, quint16(item));
+            if (at >= 0)
+                put8(memory, at + 3, quint8(needed));
+            else if (needed)
+                missing << qMakePair(item, needed);
+        }
+        // The test inventory may already have nearly every retail item.
+        // Give the incoming army's equipped and standard items priority over
+        // spare stock when they cannot all fit in the 278 inventory rows.
+        if (!lane)
+            for (int i = count - 1; i >= 0 && available.size() < missing.size(); --i) {
+                const int at = table + i * 4, item = u16(memory, at);
+                if (item && !next[lane].contains(item))
+                    available << at;
             }
+        if (available.size() < missing.size())
+            throw Error("No inventory space for army equipment");
+        for (int i = 0; i < missing.size(); ++i) {
+            const auto [item, needed] = missing[i];
+            const int at = available[i];
+            put16(memory, at, quint16(item));
             put8(memory, at + 3, quint8(needed));
         }
     }
@@ -211,7 +221,7 @@ ScenarioSeeder::ScenarioSeeder(Rom rom) : rom_(std::move(rom)), routing_(rom_) {
             int at = indexes.value(item, -1), owned = at < 0 ? 0 : u8(memory, at + 3);
             if (at < 0) {
                 if (free.isEmpty())
-                    throw Error("No space for default inventory");
+                    continue; // Stock only as many spare items as the inventory can hold.
                 at = free.takeFirst();
                 put16(memory, at, quint16(item));
             }

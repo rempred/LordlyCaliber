@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/attack_visual.h"
+#include "engine/body_animation_data.h"
 #include "engine/effect_machine.h"
 #include "engine/effect_raster.h"
 #include <memory>
@@ -16,8 +17,12 @@ class EffectPlayer {
     };
     struct Impact { int tick, target, kind; };
     struct Scene {
-        int sourceClass = 2, targetClass = 2, sourceHeight = 38, targetHeight = 38, attack = 55,
+        int sourceClass = 2, targetClass = 2, sourceHeight = 0, targetHeight = 0, attack = 55,
             targetCount = 5, strikeCount = 0; // 0 preserves native group playback.
+        // Zero height uses the game's idle-art bounds; positive values are
+        // explicit fixture overrides. Current-class defaults match creation.
+        int sourceCurrentClass = -1, targetCurrentClass = -1;
+        BodyAnimationData::Pointer bodyAnimations;
         bool allies = false;
         bool enemyCaster = true; // Native actor slots 0–8 have opponent flag 0x100.
     };

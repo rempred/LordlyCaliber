@@ -26,6 +26,10 @@ for(const answer of [0,1,2,255])for(const fill of [0,0xa5,255]){
  m.w8(0x8019ee43,answer);m.w32(0x80196aa4,0x12345678);
  assert.equal(execute(m,entry),0x11);
  let offset=0;const expected=Buffer.from(answer===1?fixture.army1:fixture.army0,'hex');
+ // The preset's battery representation is independent of the live roster.
+ // Both paths must publish the exact text to the native name buffer.
+ expected.fill(0,56,56+17);
+ expected.write(answer===1?'Choice Two':'Magnus',56,'ascii');
  for(const [at,n]of spans){assert.deepEqual(read(m,at,n),expected.subarray(offset,offset+n),'starting army span '+at.toString(16));offset+=n;}
  const flags=Buffer.alloc(32);flags[99>>3]=1<<(99&7);assert.deepEqual(read(m,0x80193686,32),flags);
  assert.equal(m.r32(0x80196a6c),1234);assert.equal(m.r8(0x801936a9),37);
@@ -63,4 +67,4 @@ for(let id=1;id<=roadCount;id++)for(const left of [0,1])for(const right of [0,1]
  state(a,left);state(b,right);m.load(0x80196a81,Buffer.alloc(5,255));m.set('a0',id);m.call(0x8019e9d0);
  assert.equal(m.get('v0'),left&&right?1:0,'road follows visibility, not retail story flags');roads++;
 }
-console.log(`PASS: 12 exported New Game/answer cases, 3 existing-army protection cases, 4 New Game/mission routing cases and ${roads} road-access cases. Scene rendering and full gameplay not exercised.`);
+console.log(`PASS: 12 exported New Game/answer cases with live names, 3 existing-army protection cases, 4 New Game/mission routing cases and ${roads} road-access cases. Scene rendering and full gameplay not exercised.`);

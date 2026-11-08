@@ -172,26 +172,128 @@ for (const request of [3, 27]) {
     nativeCases++;
 }
 const authoredAt = rom.indexOf('LC08MSSN', 0x2800000);
+const resident = rom.subarray(residentAddress - 0x8012a100,
+                             residentAddress - 0x8012a100 + residentSize);
+const marker = resident.indexOf('LCMISN02');
+assert(marker >= 0, 'the authored mission mode helper must be installed');
+const exit = resident.readUInt32BE(marker + 28);
+assert(exit >= residentAddress && exit < residentAddress + marker && !(exit & 3));
+assert.equal(rom.readUInt32BE(0xec6fc), 0x0c000000 | ((exit >>> 2) & 0x3ffffff));
+assert.equal(rom.subarray(0xec700, 0xec70c).toString('hex'), '000000001440002500000000');
+
+// Execute the outer native field release, including its original result switch
+// and boot request store. The previous VM-only check did not reach this owner.
+const release = machine();
+release.load(0x8019ee50, rom.subarray(0xebbb0, 0xf9ff0));
+for (const target of [0x80089a10, 0x80221cb8, 0x8007485c, 0x80079618])
+    release.trap(target, () => {});
+const suspendCall = rom.readUInt32BE(0xec740);
+assert.equal(suspendCall >>> 26, 3);
+const suspendTarget = (0x80000000 | ((suspendCall & 0x3ffffff) << 2)) >>> 0;
+let suspendResult = 0xfffd;
+if (suspendTarget !== 0x8007485c)
+    release.trap(suspendTarget, () => release.set('v0', suspendResult));
+function checkRelease(key, result, mode, victory, event, scene, vmMode, parentMode, expectedMode) {
+    const frame = 0x80710000, parent = frame + 8;
+    release.w32(0x800c4bbc, frame);
+    release.w32(frame, parentMode === null ? 0 : parent);
+    release.w16(frame + 4, 3);
+    release.w16(parent + 4, parentMode ?? 0);
+    release.w16(0x800e810e, mode);
+    release.w32(0x801ab84c, result >>> 0);
+    release.w8(0x8018f481, key);
+    release.w32(0x801f0de0, 0); // Native field cleanup already reset the phase.
+    release.w16(0x801e7d62, victory);
+    release.w8(0x801936a8, event);
+    release.w16(0x8018f1a0, scene);
+    release.w16(0x8018f1a2, vmMode);
+    release.w16(0x800c4c26, 0xffff);
+    release.set('sp', SP);
+    release.call(0x8019f974, 0x80000100, 10000);
+    assert.equal(release.r16(0x800c4c26), expectedMode);
+    assert.equal(release.get('sp'), SP);
+    nativeCases++;
+}
+const originalModes = [0xfffe, 0xfffd, 0xfffe, 0xfffd, 0xfffe, 1, 6, 2, 0x8002, 0x15, 0xfffe];
+for (const key of [1, 65, 66, expected.battlefield]) {
+    for (const mode of [0, 3]) {
+        for (let result = -4; result <= 6; ++result) {
+            const native = !mode || ([65, 66].includes(key) && result === -3)
+                ? 0xfffe : originalModes[result + 4];
+            checkRelease(key, result, mode, 0, expected.event, 0, 0xfffe, null, native);
+        }
+    }
+}
+for (const key of [1, expected.battlefield]) {
+    checkRelease(key, -2, 3, 0x301, 0, 0, 0x8005, null, 0x8005);
+    checkRelease(key, -2, 3, 0x302, 0, 0, 0x8005, null, 0x8005);
+    checkRelease(key, -2, 3, 0x302, 0, 0, 0x8005, 5, 0xfffe);
+    checkRelease(key, -2, 3, 0x302, 0, 0, 0x8005, 2, 0x8005);
+    checkRelease(key, -2, 3, 0x401, 0, 0, 0x8005, null, 0xfffe);
+    checkRelease(key, -2, 3, 0x302, expected.event, 0, 0x8005, null, 0xfffe);
+    checkRelease(key, -2, 3, 0x302, 0, 1078, 0x8005, null, 0xfffe);
+    checkRelease(key, -2, 3, 0x302, 0, 0, 0xfffe, null, 0xfffe);
+    checkRelease(key, 4, 3, 0x302, expected.event, 1078, 0x8005, null, 0x8002);
+}
+if (suspendTarget !== 0x8007485c) {
+    suspendResult = 0xfffe;
+    checkRelease(expected.battlefield, -1, 3, 0, expected.event, 0, 0xfffe, null, 0xfffe);
+}
 if (authoredAt >= 0) {
     const packedSize = rom.readUInt32BE(authoredAt + 20);
     const authored = JSON.parse(zlib.inflateSync(rom.subarray(authoredAt + 68,
                                         authoredAt + 64 + packedSize)).toString());
-    const resident = rom.subarray(residentAddress - 0x8012a100,
-                                 residentAddress - 0x8012a100 + residentSize);
-    const marker = resident.indexOf('LCMISN01');
-    assert(marker >= 0, 'capture victory helper must be installed');
     const entry = resident.readUInt32BE(marker + 8);
+    const briefing = resident.readUInt32BE(marker + 24);
+    const briefingCall = 0x0c000000 | ((briefing >>> 2) & 0x3ffffff);
+    assert(briefing >= residentAddress && briefing < residentAddress + marker && !(briefing & 3));
+    for (const at of [0x175c20, 0x175e5c]) {
+        assert.equal(rom.readUInt32BE(at), briefingCall, 'camera and site panel use the same authored fallback');
+        assert.equal(rom.readUInt32BE(at + 4), 0);
+    }
     let calls = 0;
     for (let at = 0x1390f0; at < 0x139c10; at += 4)
         calls += rom.readUInt32BE(at) === (0x0c000000 | ((entry >>> 2) & 0x3ffffff));
     assert.equal(calls, 1, 'native settlement must call the compiled capture predicate');
     const m = machine();
+    // Run the original opposing-squad site lookup and its coordinate reader.
+    // Terrain height contributes only Y, which the site match ignores.
+    m.load(0x801dc4ec, rom.subarray(0x130c2c, 0x130d78));
+    m.load(0x801da340, rom.subarray(0x12ea80, 0x12ebb8));
+    m.load(0x801ee8c0, rom.subarray(0x143000, 0x143008));
+    m.trap(0x801a63fc, c => c.setSingle(0, 0));
+    const points = 0x80710000, opposing = 0x801f2700;
+    m.w32(0x800e7a90, points);
+    m.w8(0x800e7ac5, 0);
+    m.w32(0x801f0d28, opposing);
+    function checkBriefing(key, siteCount, occupied, x, z, expectedSite) {
+        m.w8(0x8018f481, key);
+        m.w32(0x801f1070, siteCount);
+        for (let site = 0; site < siteCount; ++site) {
+            m.writeFloat(points + 28 + site * 8, site * 5);
+            m.writeFloat(points + 32 + site * 8, site * 7);
+        }
+        m.w32(opposing, occupied ? 0x10 : 0);
+        m.writeFloat(opposing + 8, x);
+        m.writeFloat(opposing + 16, z);
+        m.set('sp', SP);
+        m.call(briefing, 0x80000100, 10000);
+        assert.equal(m.r[2] | 0, expectedSite, `briefing site for key ${key}, occupied ${occupied}, (${x}, ${z})`);
+        assert.equal(m.r8(0x8018f481), key);
+        nativeCases++;
+    }
     m.load(0x801e54d0, rom.subarray(0x139c10, 0x139c88));
     const pointerAt = ((rom.readUInt32BE(0x139c28) & 65535) * 65536 +
                        (rom.readInt16BE(0x139c2e))) >>> 0;
     m.w32(pointerAt, 0x801f2700);
     m.w32(pointerAt + 4, 0x801f27c0);
     for (const row of authored) {
+    const fallback = Math.max(0, row.snapshot.units.objective - 1);
+    const count = Math.max(2, fallback + 1);
+    const nativeSite = fallback === 0 ? 1 : 0;
+    checkBriefing(row.key, count, false, 0, 0, fallback);
+    checkBriefing(row.key, count, true, 100, 100, fallback);
+    checkBriefing(row.key, count, true, nativeSite * 5, nativeSite * 7, nativeSite);
     m.w8(0x8018f481, row.key);
     if (row.mode === 'exact') {
         for (const [first, second] of [[0, 0], [0x10, 0], [0, 0x10], [0x10, 0x10]]) {
@@ -230,6 +332,8 @@ if (authoredAt >= 0) {
     assert.equal(m.r[2] >>> 0, 0, 'invalid/unloaded objective cannot complete a mission');
     }
     const ordinary = authored.some(row => row.key === 1) ? 2 : 1;
+    checkBriefing(ordinary, 2, true, 5, 7, 1);
+    checkBriefing(ordinary, 2, true, 100, 100, -1);
     m.w8(0x8018f481, ordinary);
     m.w32(pointerAt, 0x801f2700);
     for (const [flags, result] of [[0x10, 0], [0, 1]]) {
@@ -240,4 +344,4 @@ if (authoredAt >= 0) {
     }
 }
 console.log(`PASS ${nativeCases} exported native mission cases: row${expected.event} scheduler dispatch, opening scene, battlefield selection, start request, completion flag, cleared map state and return destination with unrelated custom flags preserved.`);
-console.log('Scene completion is simulated between native VM instructions. Capture-victory predicate and native fallback are tested when a blank/mapOnly fixture is supplied. Full result timing has a separate mission-return-mips probe; rendering and complete console gameplay remain outside this test.');
+console.log('Scene completion is simulated between native VM instructions. Authored victory and briefing site fallbacks are checked with custom battlefield fixtures. Full result timing has a separate mission-return-mips probe; rendering and complete console gameplay remain outside this test.');

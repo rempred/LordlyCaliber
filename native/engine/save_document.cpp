@@ -1177,8 +1177,7 @@ QString SaveDocument::randomCharacterName(const Rom &rom, const ClassData &class
     QByteArray table,record(56,0);
     for(const auto &entry:classes.entries())table+=entry.record;
     put8(record,17,classId);
-    const int link=u8(classes.entries()[classId].record,69);
-    put8(record,18,link?link:classId);
+    put8(record,18,classes.initialCurrentClass(classId));
     const auto random=[](void *context)->uint32_t {
         auto &state=*static_cast<quint32 *>(context);state=state*1664525U+1013904223U;return state>>1;
     };
@@ -1213,10 +1212,9 @@ SaveChange SaveDocument::planCreateCharacter(int classId, const QString &name,
         throw Error("Choose a class present in the current ROM project");
     if (level < 1 || level > 99 || (level > 1 && !items))
         throw Error("Choose a level from 1 to 99; growth requires the current project's items");
-    const int secondary = u8(classes.entries()[classId].record, 69);
     QByteArray record(stride, 0), table, equipment;
     record[17] = char(classId);
-    record[18] = char(secondary ? secondary : classId);
+    record[18] = char(classes.initialCurrentClass(classId));
     record[52] = char(id);
     for (const auto &entry : classes.entries())
         table += entry.record;

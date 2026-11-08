@@ -4,6 +4,9 @@
 #include <QFile>
 namespace lordly {
 namespace {
+constexpr int heightOffset = 0x20d590, heightSize = 196;
+constexpr auto heightOriginal = "38270a9b760cbe658a0af98d94d8dff3fec5fb70baf3260f766f696defd91baa";
+constexpr auto heightOriginalTail = "675a225a66eee4a191a31886c68d3166a97cb3dd7e42f62dd3107f4499449816";
 QByteArray source(const QString &name, const QString &extension = ".c") {
     QFile file(":/game/art/" + name + extension);
     if (!file.open(QIODevice::ReadOnly))
@@ -18,6 +21,59 @@ QByteArray fit(const CompiledModule &module, const char *symbol, int size) {
     return module.fitOwner(size);
 }
 } // namespace
+quint32 poseHeightRuntimeAddress(const Rom &rom, const std::optional<ClassPlacement> &placement) {
+    if (!placement) return 0;
+    const auto function = rom.bytes().mid(heightOffset, heightSize);
+    if (u32(function, 0) >> 26 != 2 || u32(function, 4) ||
+        sha256(function.sliced(8)) != heightOriginalTail) return 0;
+    const quint32 address = 0x80000000U | ((u32(function, 0) & 0x03ffffffU) << 2);
+    const auto &layout = placement->layout;
+    if (address % 16 || address < layout.discovery + 32 + poseHeightHeaderSize || address >= layout.end)
+        return 0;
+    const auto at = placement->dataRomOffset + address - layout.indexBase - poseHeightHeaderSize;
+    const auto header = rom.bytes().mid(at, poseHeightHeaderSize);
+    if (!header.startsWith("LCHGHT01") || u32(header, 8) != address || !u32(header, 12) ||
+        u32(header, 12) % 16 || quint64(address) + u32(header, 12) > layout.end)
+        return 0;
+    return address;
+}
+QByteArray buildPoseHeightRuntime(quint32 address, const Compiler &compiler, const QString &directory) {
+    const auto module = compiler.compileModule(source("body-height"), directory, "body_height", address, {},
+                                               {{"lc_body_handle", 0x801be138},
+                                                {"lc_pose_records", 0x801c1a50},
+                                                {"lc_pose_widths", 0x801ceee0},
+                                                {"lc_frame_bounds", 0x801c1ee8}});
+    if (module.entries.value("lc_body_height") != address || module.bytes.isEmpty())
+        throw Error("The compiled body-height function has an invalid entry");
+    QByteArray header(poseHeightHeaderSize, 0);
+    header.replace(0, 8, "LCHGHT01");
+    put32(header, 8, address);
+    const auto size = (module.bytes.size() + 15) & ~qsizetype(15);
+    put32(header, 12, quint32(size));
+    return header + module.fitOwner(size);
+}
+void installPoseHeightRuntime(QByteArray &image, const Rom &original, quint32 address,
+                              const Compiler &compiler, const QString &directory) {
+    const auto function = original.bytes().mid(heightOffset, heightSize);
+    if (image.mid(heightOffset, heightSize) != function)
+        throw Error("Another export owner changed the ROM body-height function");
+    if (sha256(function) != heightOriginal) {
+        const auto prior = ClassPlacement::read(original);
+        const quint32 previous = poseHeightRuntimeAddress(original, prior);
+        if (!previous) throw Error("The ROM body-height function has an unknown owner");
+        const auto expected = buildPoseHeightRuntime(previous, compiler, directory);
+        const auto at = prior->dataRomOffset + previous - prior->layout.indexBase - poseHeightHeaderSize;
+        if (original.bytes().mid(at, expected.size()) != expected)
+            throw Error("The prior ROM body-height helper differs from its compiled C owner");
+    }
+    if (address < 0x80000000U || address >= 0x80400000U || address % 16)
+        throw Error("The compiled body-height function has an invalid game address");
+    put32(image, heightOffset, 0x08000000U | ((address >> 2) & 0x03ffffffU));
+    put32(image, heightOffset + 4, 0);
+    const auto placed = Rom::fromBytes(image);
+    if (poseHeightRuntimeAddress(placed, ClassPlacement::read(placed)) != address)
+        throw Error("The body-height jump does not reach its linked class allocation");
+}
 QByteArray rebuildPoseRuntime(const Rom &target, const Rom &original, const QByteArray &mappings,
                               bool wide, bool bodyPolicies, const Compiler &compiler,
                               const QString &directory) {

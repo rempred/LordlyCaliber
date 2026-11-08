@@ -3,12 +3,14 @@
 #include "rebuild/attack_runtime.h"
 #include "rebuild/capacity_runtime.h"
 #include "rebuild/leader_affinity.h"
+#include "rebuild/pose_runtime.h"
 #include "engine/class_text.h"
 #include "engine/art_resource_links.h"
 #include "engine/promotion.h"
 #include "engine/shop_runtime.h"
 #include "engine/weapon_types.h"
 #include "engine/mission_tables.h"
+#include "engine/mission_runtime.h"
 #include "rebuild/promotion_runtime.h"
 #include <QFile>
 #include <QJsonArray>
@@ -23,7 +25,8 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const std::function<QByteArray(quint32, quint32)> &residentBuilder,
                   const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
                   const LeaderAffinity *affinity, bool customStoryFlags, const ConsumableTreeInput *consumableTrees,
-                  const QByteArray &missionTables, const NewCampaignInput *campaign) {
+                  const QByteArray &missionTables, const NewCampaignInput *campaign,
+                  bool wideIdleHeight) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -133,6 +136,14 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.bytes+=module.bytes;result.campaignBridge=module.entries.value("lc_campaign_bridge");
         result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
         if(result.data.layout.end>0x80400000U)throw Error("Starting armies exceed permanent game storage");
+    }
+    if (wideIdleHeight) {
+        while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
+        result.bodyHeight = result.data.layout.indexBase + quint32(result.data.bytes.size()) + poseHeightHeaderSize;
+        result.data.bytes += buildPoseHeightRuntime(result.bodyHeight, compiler, directory);
+        result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
+        if (result.data.layout.end > 0x80400000U)
+            throw Error("Wide idle-frame height support exceeds permanent class storage");
     }
     if (customStoryFlags) {
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
@@ -406,6 +417,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     if (!build.affinityOwner.isEmpty() && !LeaderAffinity::load(rom).unavailable().isEmpty())
         throw Error("Cannot replace unrecognized combat-affinity code");
     auto image = rom.bytes();
+    // Remove the authenticated field-exit call before reclaiming its code.
+    image.replace(missionExitDispatch, 16, canonicalMissionExitCode(image));
     image.replace(PersonalNames::ownerOffset, PersonalNames::ownerSize, build.personalNamesCode);
     if (prior && prior->residentBytes)
         image.replace(prior->residentAddress - ClassPlacement::residentDelta, prior->residentBytes,

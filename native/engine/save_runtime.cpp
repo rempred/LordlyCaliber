@@ -1,4 +1,5 @@
 #include "engine/save_runtime.h"
+#include "engine/mission_runtime.h"
 #include "engine/promotion.h"
 #include <QFile>
 #include <QJsonArray>
@@ -26,9 +27,12 @@ quint32 saveRuntimeOwnerChecksum(const QByteArray &rom, quint32 version) {
     QByteArray data;
     for (const auto value : ranges) {
         const auto row = value.toObject();
-        const auto bytes = rom.mid(row["start"].toInt(), row["size"].toInt());
-        if (bytes.size() != row["size"].toInt())
+        const int start = row["start"].toInt(), size = row["size"].toInt();
+        auto bytes = rom.mid(start, size);
+        if (bytes.size() != size)
             throw Error("Truncated save runtime owner");
+        if (start <= missionExitDispatch && missionExitDispatch + 16 <= start + size)
+            bytes.replace(missionExitDispatch - start, 16, canonicalMissionExitCode(rom));
         data += bytes;
     }
     return crc32(data);

@@ -17,6 +17,7 @@ ClassSetup::ClassSetup(Project *project, std::function<void(const EditLocation &
         body->setSizeConstraint(QLayout::SetMinimumSize);
         box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
         summary = new QLabel; summary->setWordWrap(true); summary->setTextFormat(Qt::PlainText);
+        summary->setObjectName("classSetup" + group + "Summary");
         summary->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum); body->addWidget(summary);
         auto edit = new QPushButton("Edit " + title.toLower());
         edit->setObjectName("classSetup" + group); body->addWidget(edit);
@@ -52,24 +53,28 @@ void ClassSetup::selectClass(int id) {
     if (id < 0 || id >= project_->records(Table::Classes).size()) { title_->setText("Select a class to review its setup."); return; }
     title_->setText(QString("<b>%1 · %2</b>").arg(id).arg(project_->record(Table::Classes, id).name.simplified().toHtmlEscaped()));
     QStringList stats, equipment, actions, needs;
+    const auto classes=project_->classData();
+    int current;
+    try { current=classes.initialCurrentClass(id); }
+    catch(const Error &e) {
+        stats_->clear();equipment_->clear();actions_->clear();family_->clear();portrait_->clear();
+        checklist_->setText(QString::fromUtf8(e.what()));return;
+    }
     int activeActions = 0, equipped = 0;
     for (int n = 0; n < fields(Table::Classes).size(); ++n) {
         const auto &f = fields(Table::Classes)[n];
         const auto value = project_->value(Table::Classes, id, n);
         if (f.group == "Stats") stats << f.label + ": " + QString::number(value);
         if (f.key.startsWith("equipment")) {
-            const auto name = project_->catalog()[f.choices].toObject()[QString::number(value)].toString(QString::number(value));
-            equipment << f.label + ": " + (value ? name : "None"); equipped += value != 0;
+            const int item=classes.defaultEquipment(id,current,(f.offset-46)/2);
+            const auto name = project_->catalog()[f.choices].toObject()[QString::number(item)].toString(QString::number(item));
+            equipment << f.label + ": " + (item ? name : "None"); equipped += item != 0;
         }
         if (f.key.startsWith("attack") && !f.key.startsWith("attackCount")) {
-            int action = value;
-            if (action == 255) {
-                const int owner = u8(project_->record(Table::Classes, id).bytes, 69);
-                if (owner > 0 && owner < project_->records(Table::Classes).size()) action = project_->value(Table::Classes, owner, n);
-            }
-            const int count = project_->value(Table::Classes, id, n + 1);
+            const int row=(f.offset-55)/2;
+            const int action=classes.attack(id,current,row), count=classes.attackCount(id,current,row);
             const auto name = project_->catalog()[f.choices].toObject()[QString::number(action)].toString(QString("Action %1").arg(action));
-            actions << QString("%1: %2 × %3%4").arg(f.label, action ? name : "None").arg(count).arg(value == 255 ? " (inherited)" : "");
+            actions << QString("%1: %2 × %3%4").arg(f.label, action ? name : "None").arg(count).arg(value == 255 || project_->value(Table::Classes,id,n+1)==255 ? " (inherited)" : "");
             activeActions += action != 0 && count != 0;
         }
     }

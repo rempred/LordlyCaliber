@@ -1,6 +1,7 @@
 #include "engine/pose_bank.h"
 #include "game/art/animation_readers.h"
 #include <QMap>
+#include <algorithm>
 #include <array>
 namespace lordly {
 namespace {
@@ -8,6 +9,40 @@ constexpr std::array<uint8_t, 23> widths{1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
                                      1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4, 3};
 bool frame(const PoseRecord &r) {
     return r.opcode == 1 || r.opcode == 21;
+}
+bool delays(const PoseRecord &record) {
+    return !record.opcode || ((frame(record) || record.opcode == 3) &&
+                              u8(record.operands, record.operands.size() - 1) > 0);
+}
+struct PoseStep {
+    int state, record;
+};
+struct PoseFlow {
+    QVector<PoseStep> steps;
+    qsizetype loopStart = -1;
+};
+PoseFlow traceFlow(const PoseBank &bank, int state) {
+    QMap<quint64, qsizetype> seen;
+    PoseFlow result;
+    int index = 0;
+    for (;;) {
+        const auto &records = bank.effective(state).records;
+        if (index >= records.size()) return result; // Native implicit END yields.
+        const quint64 key = (quint64(state) << 32) | quint32(index);
+        const auto visited = seen.constFind(key);
+        if (visited != seen.cend()) {
+            result.loopStart = *visited;
+            return result;
+        }
+        seen.insert(key, result.steps.size());
+        result.steps.append({state, index});
+        const auto &record = records[index];
+        if (record.opcode == 4) index = u8(record.operands, 0);
+        else if (record.opcode == 5 || record.opcode == 22) {
+            state = u8(record.operands, 0) + (record.opcode == 22 ? 256 * u8(record.operands, 1) : 0);
+            index = 0;
+        } else ++index;
+    }
 }
 PoseRecord frameRecord(int token, int ticks) {
     if (token < 0 || token > 65535 || ticks < 0 || ticks > 255)
@@ -133,27 +168,13 @@ int PoseBank::appendProgram(const QByteArray &source) {
 void PoseBank::validateProgress(int state) const {
     // Control flow is deterministic. Follow the authored entry, including what
     // executes after a delay; untouched unreachable instructions remain intact.
-    QMap<quint64, int> seen;
-    int current = state, index = 0, delays = 0;
-    for (;;) {
-        const auto &records = effective(current).records;
-        if (index >= records.size()) return; // Native implicit END yields.
-        const quint64 node = (quint64(current) << 32) | quint32(index);
-        if (seen.contains(node)) {
-            if (seen[node] == delays) throw Error("This edit creates a pose loop with no delay");
-            return;
-        }
-        seen[node] = delays;
-        const auto &record = records[index];
-        if (!record.opcode || ((record.opcode == 1 || record.opcode == 21 || record.opcode == 3) &&
-                              u8(record.operands, record.operands.size()-1) > 0)) ++delays;
-        if (record.opcode == 4) index = u8(record.operands,0);
-        else if (record.opcode == 5 || record.opcode == 22) {
-            current = u8(record.operands, 0) + (record.opcode == 22 ? 256 * u8(record.operands, 1) : 0);
-            index = 0;
-        }
-        else ++index;
+    const auto flow = traceFlow(*this, state);
+    if (flow.loopStart < 0) return;
+    for (qsizetype i = flow.loopStart; i < flow.steps.size(); ++i) {
+        const auto &step = flow.steps[i];
+        if (delays(effective(step.state).records[step.record])) return;
     }
+    throw Error("This edit creates a pose loop with no delay");
 }
 void PoseBank::setFrame(int state, int index, int token, int ticks) {
     auto records = effective(state).records;
@@ -214,27 +235,76 @@ void PoseBank::replaceFrames(int state, const QVector<QPair<int, int>> &frames) 
     if (frames.isEmpty())
         throw Error("A replacement sequence needs at least one frame");
     const auto before = effective(state).records;
-    int last = -1;
+    QVector<int> frameSlots;
     for (int i = 0; i < before.size(); ++i)
-        if (frame(before[i])) last = i;
-    if (last < 0)
+        if (frame(before[i])) frameSlots.append(i);
+    if (frameSlots.isEmpty())
         throw Error("Choose a pose containing frame instructions");
+
+    QVector<int> destinations;
+    QVector<bool> replacementDelays(before.size(), false);
+    int finalTimedFrame = -1;
+    for (int i = 0; i < frames.size(); ++i) {
+        const int slot = frameSlots[std::min(i, int(frameSlots.size()) - 1)];
+        destinations.append(slot);
+        if (frames[i].second > 0) {
+            replacementDelays[slot] = true;
+            finalTimedFrame = i;
+        }
+    }
+    QVector<bool> setupFrames(before.size(), false);
+    const auto flow = traceFlow(*this, state);
+    if (finalTimedFrame >= 0 && flow.loopStart >= 0) {
+        QVector<int> cycleSlots, setupSlots;
+        bool timedPrelude = false;
+        bool cycleStillDelays = false;
+        for (qsizetype i = 0; i < flow.steps.size(); ++i) {
+            const auto &step = flow.steps[i];
+            const auto &record = effective(step.state).records[step.record];
+            if (i < flow.loopStart) {
+                if (step.state == state && frame(record)) {
+                    timedPrelude |= delays(record);
+                    setupSlots.append(step.record);
+                }
+                continue;
+            }
+            if (step.state == state && frame(record)) {
+                cycleSlots.append(step.record);
+                cycleStillDelays |= replacementDelays[step.record];
+            } else {
+                cycleStillDelays |= delays(record);
+            }
+        }
+        if (!cycleSlots.isEmpty() && !timedPrelude) {
+            // A zero-tick setup frame selects initial artwork before the loop.
+            // All imported timing belongs to the loop in native execution order.
+            for (int i = 0; i < destinations.size(); ++i)
+                destinations[i] = cycleSlots[std::min(i, int(cycleSlots.size()) - 1)];
+            if (before.size() - frameSlots.size() + frames.size() + setupSlots.size() <= 255)
+                for (int slot : setupSlots) setupFrames[slot] = true;
+        } else if (!cycleSlots.isEmpty() && !cycleStillDelays && frames.size() < frameSlots.size()) {
+            // Preserve a timed prelude, but move the needed suffix into the loop
+            // if shortening would leave it without any delay.
+            const int lastCycleFrame = *std::max_element(cycleSlots.cbegin(), cycleSlots.cend());
+            const int suffix = int(std::lower_bound(destinations.cbegin(), destinations.cend(),
+                                                    lastCycleFrame) - destinations.cbegin());
+            for (int i = std::min(suffix, finalTimedFrame); i < destinations.size(); ++i)
+                destinations[i] = lastCycleFrame;
+        }
+    }
+
+    QVector<QVector<int>> framesAt(before.size());
+    for (int i = 0; i < destinations.size(); ++i) framesAt[destinations[i]].append(i);
     QVector<PoseRecord> records;
     QVector<int> mapping(before.size());
-    int next = 0;
     for (int i = 0; i < before.size(); ++i) {
         mapping[i] = int(records.size());
         if (!frame(before[i])) records << before[i];
-        else if (next < frames.size()) {
-            const auto [token, ticks] = frames[next++];
+        else if (setupFrames[i]) records << frameRecord(frames.first().first, 0);
+        for (int replacement : framesAt[i]) {
+            const auto [token, ticks] = frames[replacement];
             records << frameRecord(token, ticks);
         }
-        // Additional frames belong before the controls following the last frame.
-        if (i == last)
-            while (next < frames.size()) {
-                const auto [token, ticks] = frames[next++];
-                records << frameRecord(token, ticks);
-            }
     }
     remapJumps(records, mapping, int(before.size()));
     setProgram(state, encodeProgram(records));

@@ -593,6 +593,7 @@ void AttackEffectEditor::render() {
     }
     auto watcher = new QFutureWatcher<EffectClip>(this);
     const auto rom = project_->rom();
+    const auto bodyAnimations = project_->bodyAnimationData();
     const auto visual = visual_;
     const bool enemyPreview = enemyPreview_;
     const int inherited = std::max(0, inherited_), classId = classId_;
@@ -623,8 +624,9 @@ void AttackEffectEditor::render() {
         showFrame();
     });
     watcher->setFuture(
-        QtConcurrent::run([rom, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes] {
+        QtConcurrent::run([rom, bodyAnimations, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes] {
             EffectPlayer::Scene scene;
+            scene.bodyAnimations = bodyAnimations;
             scene.sourceClass = classId;
             scene.enemyCaster = enemyPreview;
             scene.allies = allies;

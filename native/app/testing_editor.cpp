@@ -651,7 +651,10 @@ void TestingEditor::chooseArmy() {
             slot = validSlots[labels.indexOf(selected)];
         }
         doc.selectSlot(slot);
-        seeder_->seed(0, &doc);
+        // The current project may contain classes and items added after this
+        // ROM was built. launchPrepared validates the army after rebuilding.
+        if (sourceMode_->currentIndex() == 1 || currentProjectReady())
+            seeder_->seed(0, &doc);
         armyPath_ = path;
         armySlot_ = slot;
         QSettings settings;
@@ -666,7 +669,8 @@ void TestingEditor::setDefaultArmy(const QByteArray &bytes) {
     checkRom();
     auto doc = SaveDocument::open(seeder_->rom(), bytes);
     doc.selectSlot(0);
-    seeder_->seed(0, &doc);
+    if (sourceMode_->currentIndex() == 1 || currentProjectReady())
+        seeder_->seed(0, &doc);
     const auto path = defaultArmyPath();
     if (!QDir().mkpath(QFileInfo(path).absolutePath()))
         throw Error("Cannot create default army settings folder");

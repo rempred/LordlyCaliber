@@ -51,6 +51,7 @@ static int index(void *p,u32 base,int stride,int skip) {
 int lc_effect_push(void *p) {
     int id,old=active;
     active=0;
+    if(!p) return old; /* A retail effect has no custom resource namespace. */
     for(id=1;id<255;id++) if(config(id)==p) { active=id; break; }
     return old;
 }

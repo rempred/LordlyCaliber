@@ -1821,6 +1821,19 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(model->index(1, column).data(Qt::EditRole).toInt(), 0xa3);
         QCOMPARE(model->index(2, column).data(Qt::EditRole).toInt(), previous);
     }
+    void classSetupInheritedCounts() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));
+        const int id=project.appendClass(5,"Inherited Knight");
+        auto base=project.record(Table::Classes,5).bytes;put8(base,56,3);project.replaceBytes(Table::Classes,5,base);
+        auto record=project.record(Table::Classes,id).bytes;
+        put8(record,69,5);put8(record,55,255);put8(record,56,255);project.replaceBytes(Table::Classes,id,record);
+        ClassSetup setup(&project,[](const EditLocation &){});setup.selectClass(id);
+        auto text=setup.findChild<QLabel *>("classSetupAttacksSummary");QVERIFY(text);
+        QVERIFY(text->text().contains("× 3 (inherited)"));QVERIFY(!text->text().contains("× 255"));
+        put8(base,56,4);project.replaceBytes(Table::Classes,5,base);setup.selectClass(id);
+        QVERIFY(text->text().contains("× 4 (inherited)"));
+    }
     void classSetupAndTestingHandoff() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
@@ -2222,6 +2235,27 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(assigned, full);
         QVERIFY(!merged);
         QVERIFY(!started);
+
+        // A tester army may use a class added to the current project since
+        // the loaded ROM was built. Only Existing ROM should reject it here.
+        auto edited = Project::fromRom(rom);
+        const int newClass = edited.appendClass(5, "Test Fighter");
+        donor.setClassCount(newClass + 1);
+        donor.apply(donor.planCreateCharacter(newClass, "Test", edited.classData(), 7), true);
+        const auto pendingArmy = donor.serialize();
+        const auto defaultArmy = reopened.defaultArmyPath();
+        const auto removeArmy = qScopeGuard([&] { QFile::remove(defaultArmy); });
+        auto sourceMode = reopened.findChild<QComboBox *>("testingSourceMode");
+        QVERIFY(sourceMode);
+        sourceMode->setCurrentIndex(1);
+        QVERIFY_THROWS_EXCEPTION(Error, reopened.setDefaultArmy(pendingArmy));
+        QVERIFY(!QFileInfo::exists(defaultArmy));
+        sourceMode->setCurrentIndex(0);
+        reopened.setDefaultArmy(pendingArmy);
+        QFile stored(defaultArmy);
+        QVERIFY(stored.open(QIODevice::ReadOnly));
+        QCOMPARE(stored.readAll(), pendingArmy);
+        QCOMPARE(calls, 5);
     }
     void testingBuildAndSeed() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -5041,6 +5075,55 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editor.findChild<QPushButton *>("armyRestore")->click();
         QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[added]),source);
         QCOMPARE(project.armyArtwork()->indices(0,source),front);
+    }
+    void mixedArtworkRoundTrip() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        try {
+            auto p=Project::fromRom(Rom::open(path));const int copy=p.appendClass(5,"Independent Knight");
+            QUndoStack undo;ArmyEditor army(&p,&undo,[]{});army.show();army.selectClass(copy);
+            const int originalModel=ArmyArtwork::classModel(p.classData().entries()[5]);
+            const auto originalPixels=p.armyArtwork()->indices(0,originalModel);
+            army.findChild<QSpinBox *>("armyInk")->setValue((u8(originalPixels,0)+1)%256);
+            QTest::mouseClick(army.findChild<SpriteCanvas *>("armyCanvas"),Qt::LeftButton,Qt::NoModifier,QPoint(2,2));
+            const int privateModel=ArmyArtwork::classModel(p.classData().entries()[copy]);QVERIFY(privateModel!=originalModel);
+            // Ordinary identities follow current-class artwork. Changing the
+            // link must not destroy their independent model when switched back.
+            const auto ownRecord=p.record(Table::Classes,copy).bytes;auto linked=ownRecord;put8(linked,69,5);p.replaceBytes(Table::Classes,copy,linked);
+            QCOMPARE(ArmyArtwork::characterRoute(p.classData(),copy).model,originalModel);
+            p.replaceBytes(Table::Classes,copy,ownRecord);QCOMPARE(ArmyArtwork::characterRoute(p.classData(),copy).model,privateModel);
+            PortraitEditor portrait(&p,&undo,[]{});portrait.selectPortrait(copy,0);
+            const auto originalPortrait=p.avatarArtwork()->words(p.classData(),5,0);
+            QImage replacement(40,48,QImage::Format_RGBA8888);replacement.fill(QColor(16,96,192));portrait.assignImage(replacement);
+            const auto privatePortrait=p.avatarArtwork()->words(p.classData(),copy,0);QVERIFY(privatePortrait!=originalPortrait);
+            const auto beforeUndo=p.manifest();undo.undo();QCOMPARE(p.avatarArtwork()->words(p.classData(),copy,0),originalPortrait);
+            undo.redo();QCOMPARE(p.manifest(),beforeUndo);
+            portrait.findChild<QPushButton *>("portraitRestore")->click();QCOMPARE(p.avatarArtwork()->words(p.classData(),copy,0),originalPortrait);
+            undo.undo();QCOMPARE(p.avatarArtwork()->words(p.classData(),copy,0),privatePortrait);
+            p.loadAnimationRoutes();auto sequences=*p.animationSequences();sequences.create(copy,0,*p.animationRoutes());
+            auto descriptor=*sequences.find(copy,0);auto frame=descriptor.frame(0);put16(frame,6,quint16(qint16(u16(frame,6))-7));
+            const int frameId=descriptor.appendFrame(frame);auto poses=descriptor.poses();poses.setFrame(0,0,frameId,4);descriptor.setPoses(poses);
+            sequences.setDescriptor(copy,0,descriptor);p.setAnimationSequences(sequences.json());
+            const int second=p.appendClass(copy,"Second independent Knight");
+            auto changed=*p.animationSequences();auto secondDescriptor=*changed.find(second,0);auto secondPoses=secondDescriptor.poses();
+            secondPoses.setFrame(0,0,frameId,9);secondDescriptor.setPoses(secondPoses);changed.setDescriptor(second,0,secondDescriptor);p.setAnimationSequences(changed.json());
+            QCOMPARE(p.animationSequences()->find(copy,0)->poses().programs()[0].source,descriptor.poses().programs()[0].source);
+            p.loadAttacks();auto attacks=*p.attacks();const int spell=attacks.duplicate(55,"Independent effect");auto effect=attacks.entry(spell);
+            effect.visual.nativeEffect=8;effect.visual.hue=120;effect.visual.sizePercent=125;attacks.set(spell,effect);p.setAttacks(attacks.json());
+            QCOMPARE(p.attacks()->entry(55).visual,AttackData::load(p.rom()).entry(55).visual);
+            QTemporaryDir work;p.saveFolder(work.filePath("project"));auto loaded=Project::fromRom(p.rom());loaded.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(loaded.manifest(),p.manifest());const auto result=rebuild(loaded,tools,work.path());auto exported=Rom::fromBytes(result.image);
+            auto reopened=Project::fromRom(exported);reopened.loadArmyArtwork();reopened.loadAvatarArtwork();reopened.loadAnimationRoutes();reopened.loadAttacks();
+            QCOMPARE(reopened.armyArtwork()->indices(0,originalModel),originalPixels);
+            QCOMPARE(reopened.armyArtwork()->indices(0,privateModel),p.armyArtwork()->indices(0,privateModel));
+            QCOMPARE(reopened.avatarArtwork()->words(reopened.classData(),5,0),originalPortrait);
+            QCOMPARE(reopened.avatarArtwork()->words(reopened.classData(),copy,0),privatePortrait);
+            QCOMPARE(ActorArt::loadBody(exported,copy,copy,0,0).poseRecord(0,0).operands,ActorArt::loadBody(p.rom(),copy,copy,0,0,p.bodyAnimationData()).poseRecord(0,0).operands);
+            QCOMPARE(ActorArt::loadBody(exported,second,second,0,0).poseRecord(0,0).operands,ActorArt::loadBody(p.rom(),second,second,0,0,p.bodyAnimationData()).poseRecord(0,0).operands);
+            QCOMPARE(reopened.attacks()->entry(spell).visual,effect.visual);
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,result.image);
+            auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,result.image);
+        } catch(const std::exception &e){QFAIL(e.what());}
     }
     void indexedPixelTools() {
         SpriteCanvas canvas;canvas.setZoom(8);canvas.setGrid(false);canvas.show();
@@ -12210,7 +12293,8 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
     }
     void scenarioSquadEditing() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
-        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();QCOMPARE(project.appendClass(5,"Scenario fighter"),165);
+        auto project=Project::fromRom(Rom::open(path));project.loadScenarios();QCOMPARE(project.appendClass(5,"Deleted fighter"),165);
+        QCOMPARE(project.appendClass(5,"Scenario fighter"),166);project.deleteCustomContent("classes",165);
         QUndoStack undo;ScenarioEditor editor(&project,&undo,[]{});editor.resize(1100,800);editor.show();
         auto list=editor.findChild<QListWidget *>("scenarioList");auto pages=editor.findChild<QStackedWidget *>("scenarioPages");
         auto squads=editor.findChild<QListWidget *>("scenarioSquads");auto base=editor.findChild<QSpinBox *>("scenarioBase");
@@ -12226,16 +12310,19 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(project.scenarios()->scenario(10).layout.baseLevel(),originalBase+1);undo.undo();QCOMPARE(project.scenarios()->json(),original);
         editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
             dialog->findChild<QSpinBox *>("scenarioMemberCount")->setValue(1);
-            auto cls=dialog->findChild<QComboBox *>("scenarioClass_0");cls->setCurrentIndex(cls->findData(165));
+            auto cls=dialog->findChild<QComboBox *>("scenarioClass_0");
+            QVERIFY(cls->findData(165)<0);QVERIFY(cls->findData(166)>=0);
+            QVERIFY(cls->itemText(cls->findData(166)).startsWith(QString::fromUtf8("166 · Scenario fighter")));
+            cls->setCurrentIndex(cls->findData(166));
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();QVERIFY(!dialog->isVisible());
         });
-        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads[0])[0].classId,165);
+        QCOMPARE(squadMembers(project.scenarios()->scenario(10).squads[0])[0].classId,166);
         const auto authored=project.scenarios()->json();squads->setCurrentRow(1);squads->setCurrentRow(0);QCOMPARE(project.scenarios()->json(),authored);
         undo.undo();QCOMPARE(project.scenarios()->json(),original);undo.redo();QCOMPARE(project.scenarios()->json(),authored);
         editScenarioMembers(editor,"scenario",[&](QDialog *dialog){
             dialog->findChild<QSpinBox *>("scenarioLevel_0")->setValue(127);
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
-            QVERIFY(dialog->isVisible());QVERIFY(dialog->findChild<QLabel *>("scenarioMemberError")->text().contains("level 1â€“99"));
+            QVERIFY(dialog->isVisible());QVERIFY(dialog->findChild<QLabel *>("scenarioMemberError")->text().contains(QStringLiteral("level 1\u201399")));
             QCOMPARE(project.scenarios()->json(),authored);
         });
         editScenarioMembers(editor,"scenario",[&](QDialog *dialog){

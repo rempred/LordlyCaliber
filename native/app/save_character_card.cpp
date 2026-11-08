@@ -114,7 +114,8 @@ void SaveCharacterCard::refresh() {
     for (int slot=0;slot<keys.size();++slot) {
         auto box=gear_[keys[slot]]; box->clear();
         const int value=doc.value(SaveTable::Characters,id_,keys[slot]).toInt();
-        const int defaultId=effective>=0 && effective<classes.entries().size() ? u16(classes.entries()[effective].record,46+slot*2) : 0;
+        const int defaultId=primary>=0 && primary<classes.entries().size() && secondary>=0 && secondary<classes.entries().size()
+            ? classes.defaultEquipment(primary,secondary,slot) : 0;
         const auto &items=project->records(Table::Items);
         const bool known=defaultId>0 && defaultId<items.size();
         box->addItem(known ? "Class default · "+items[defaultId].name.simplified() : "Class default",0);

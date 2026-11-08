@@ -1,12 +1,71 @@
 #include "engine/effect_player.h"
 #include "engine/effect_raster.h"
 #include "engine/accepted_effect_code.h"
+#include "engine/actor_art.h"
+#include "engine/project.h"
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
 class EffectRasterTests : public QObject {
     Q_OBJECT
   private slots:
+    void nativeActorHeights() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if(path.isEmpty())QSKIP("Private ROM required");
+        try {
+            const auto rom=Rom::open(path);const auto data=BodyAnimationData::load(rom);
+            QTemporaryDir work;const auto output=work.filePath("heights.json");
+            QProcess original;original.start("node",{QFINDTESTDATA("body-height-mips.cjs"),path,output});
+            QVERIFY(original.waitForFinished(60000));
+            QVERIFY2(original.exitCode()==0,original.readAllStandardError().constData());
+            QFile f(output);QVERIFY(f.open(QIODevice::ReadOnly));
+            const auto rows=QJsonDocument::fromJson(f.readAll()).array();QVERIFY(rows.size()>1000);
+            for(const auto &value:rows){
+                const auto row=value.toArray();const int flags=row[2].toInt();
+                const auto art=ActorArt::loadBody(rom,row[0].toInt(),row[1].toInt(),flags>>1,flags&1,data);
+                QCOMPARE(art.combatHeight(),row[3].toInt());
+            }
+            qInfo().noquote()<<original.readAllStandardOutput();
+            const auto base=ActorArt::loadBody(rom,5,5,0,0,data);
+            auto descriptor=AnimationDescriptor::load(rom,base.descriptorKey());
+            const auto idle=base.poseRecord(0,0);
+            QVERIFY(idle.opcode==1);
+            const int originalToken=u8(idle.operands,0);
+            const auto frame=descriptor.frame(originalToken);
+            while(descriptor.frameCount()<=300)descriptor.appendFrame(frame);
+            auto poses=descriptor.poses();poses.setFrame(0,0,300,4);descriptor.setPoses(poses);
+            QCOMPARE(base.withDescriptor(descriptor).combatHeight(),base.combatHeight());
+            // Exercise native effect callers with differently sized actors on
+            // both sides, rather than passing an actor slot as a pointer.
+            for(bool enemy:{false,true}) {
+                EffectPlayer::Scene scene;scene.sourceClass=118;scene.targetClass=69;scene.enemyCaster=enemy;
+                EffectPlayer automatic(rom), explicitBounds(rom);automatic.start(8,scene);
+                scene.sourceHeight=ActorArt::loadBody(rom,118,data->classes().initialCurrentClass(118),enemy,enemy,data).combatHeight();
+                scene.targetHeight=ActorArt::loadBody(rom,69,data->classes().initialCurrentClass(69),!enemy,!enemy,data).combatHeight();
+                QVERIFY(scene.sourceHeight!=scene.targetHeight);explicitBounds.start(8,scene);
+                while(automatic.advance()) {
+                    QVERIFY(explicitBounds.advance());
+                    if(automatic.tick()%8==0)QCOMPARE(automatic.draw({160,120},.375).image,explicitBounds.draw({160,120},.375).image);
+                }
+                QVERIFY(!explicitBounds.advance());
+                const auto actor=0x740000+0x1c4+(enemy?0:9)*0xf8;
+                QCOMPARE(u32(automatic.memory(),actor+0x4c),quint32(data->classes().initialCurrentClass(118)));
+                QCOMPARE(u32(automatic.memory(),actor+0x40),enemy?0x500U:0U);
+            }
+            auto project=Project::fromRom(rom);const int custom=project.appendClass(118,"Copied identity");
+            EffectPlayer::Scene authored;authored.sourceClass=custom;authored.bodyAnimations=project.bodyAnimationData();
+            EffectPlayer preview(rom);preview.start(8,authored);while(preview.advance()){};
+            QCOMPARE(u32(preview.memory(),0x740000+0x1c4+0x48),quint32(custom));
+            QCOMPARE(u32(preview.memory(),0x740000+0x1c4+0x4c),quint32(project.classData().initialCurrentClass(custom)));
+            authored.allies=true;authored.targetClass=69;preview.start(32,authored);
+            QCOMPARE(u32(preview.memory(),0x740000+0x1c4+0xf8+0x48),69U);
+            while(preview.advance()){};
+        } catch(const std::exception &e){QFAIL(e.what());}
+    }
     void nativeMotion_data() {
         QTest::addColumn<int>("easing");
         QTest::addColumn<QPoint>("halfway");

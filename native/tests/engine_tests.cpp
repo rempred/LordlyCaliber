@@ -4599,6 +4599,31 @@ class EngineTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void classConsumerLookups() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));
+        const int custom=project.appendClass(146,"Independent identity");
+        auto record=project.record(Table::Classes,custom).bytes;
+        put8(record,69,5);put8(record,55,255);put8(record,56,255);
+        put8(record,57,4);put8(record,58,255);put16(record,46,1);
+        project.replaceBytes(Table::Classes,custom,record);
+        const auto classes=project.classData();QByteArray bytes;QJsonArray cases;
+        for(const auto &entry:classes.entries())bytes+=entry.record;
+        for(int identity=0;identity<classes.entries().size();++identity)
+            for(int current=0;current<classes.entries().size();++current){
+                QJsonArray row{identity,current};
+                for(int slot=0;slot<4;++slot)row<<classes.defaultEquipment(identity,current,slot);
+                for(int rank=0;rank<3;++rank)row<<classes.attack(identity,current,rank);
+                for(int rank=0;rank<3;++rank)row<<classes.attackCount(identity,current,rank);
+                cases<<row;
+            }
+        QCOMPARE(classes.initialCurrentClass(custom),5);
+        QTemporaryDir work;QFile file(work.filePath("consumers.json"));QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(QJsonDocument(QJsonObject{{"rom",path},{"classes",QString::fromLatin1(bytes.toHex())},{"cases",cases}}).toJson(QJsonDocument::Compact));file.close();
+        QProcess reference;reference.start("node",{QFINDTESTDATA("class-consumers-mips.cjs"),file.fileName()});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        qInfo().noquote()<<reference.readAllStandardOutput();
+    }
     void classNameProjectExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -316,41 +316,79 @@ int ArmyArtwork::isolateClass(const ClassData &classes, int id) {
     // An inherited model is owned by the game's resolved class. Writing the
     // identity's unused selector would make the editor disagree with the ROM.
     id = modelClass(classes, id);
-    const auto &asset = classes.entries()[id];
-    const int lane = classLane(asset), model = classModel(asset), front = lane * 2;
-    const auto usedByAnotherOwner = [&](int candidate) {
-        for (int other = 0; other < classes.entries().size(); ++other) {
-            if (modelClass(classes, other) == id) continue;
-            const auto route = characterRoute(classes, other);
-            const auto &raw = classes.entries()[other];
-            if ((route.lane == lane && route.model == candidate) ||
-                (classLane(raw) == lane && classModel(raw) == candidate)) return true;
+    const auto &entries = classes.entries();
+    const auto &asset = entries[id];
+    const int lane = classLane(asset), model = classModel(asset);
+    // The game selects an atlas and a model separately. The owner supplies the
+    // model to every identity/current-class pair that resolves through it.
+    QVector<int> lanes(entries.size(), 0);
+    for (int identity = 0; identity < entries.size(); ++identity) {
+        lanes[identity] |= 1 << classLane(entries[identity]);
+        for (int current = 0; current < entries.size(); ++current) {
+            const int owner = modelClass(classes, identity, current);
+            lanes[owner] |= 1 << characterRoute(classes, identity, current).lane;
         }
+    }
+    const auto usedByAnotherOwner = [&](int candidate) {
+        for (int other = 0; other < entries.size(); ++other)
+            if (other != id && (lanes[other] & lanes[id]) && classModel(entries[other]) == candidate)
+                return true;
         return false;
     };
-    // Inheritors remain attached to this owner. They must not cause a fresh
-    // allocation on every brush stroke after the owner has been isolated.
-    const bool otherOwner = usedByAnotherOwner(model);
-    if (!otherOwner && (consumers(classes, front, model).size() <= 1 ||
-                       privateModels_.contains(lane * 64 + model))) return model;
-    // Only allocate beyond loaded planes; preserve unused original artwork and
-    // authored unassigned slots. A model assignment owns both facings.
-    for (int copy = std::max(sourceCount(front), sourceCount(front + 1)); copy < 64; ++copy) {
-        if (((modified(front, copy) || modified(front + 1, copy)) && !privateModels_.contains(lane * 64 + copy)) ||
-            usedByAnotherOwner(copy)) continue;
+    if (!usedByAnotherOwner(model)) return model;
+
+    QVector<int> atlases;
+    int firstUnused = 0;
+    for (int atlas = 0; atlas < int(specs().size()); ++atlas) {
+        if (!(lanes[id] & (1 << (atlas / 2)))) continue;
+        atlases.append(atlas);
+        firstUnused = std::max(firstUnused, sourceCount(atlas));
+    }
+    // A single selector change must preserve both facings in each reachable
+    // atlas, including unselected facings and alternate palette appearances.
+    for (int copy = firstUnused; copy < 64; ++copy) {
+        if (usedByAnotherOwner(copy) ||
+            std::any_of(atlases.cbegin(), atlases.cend(), [&](int atlas) {
+                return modified(atlas, copy) && !privateModels_.contains(atlas / 2 * 64 + copy);
+            })) continue;
         auto next = *this;
-        for (int side = 0; side < 2; ++side) {
-            auto pixels = indices(front + side, model);
-            const auto &spec = specs()[front + side];
+        for (const int atlas : atlases) {
+            auto pixels = indices(atlas, model);
+            const auto &spec = specs()[atlas];
             if (pixels.isEmpty()) pixels = QByteArray(spec.width * spec.height, char(spec.transparent.first()));
-            next.setIndices(front + side, copy, pixels);
+            next.setIndices(atlas, copy, pixels);
+            next.privateModels_.insert(atlas / 2 * 64 + copy);
         }
         next.setRoute(classes, id, lane, copy);
-        next.privateModels_.insert(lane * 64 + copy);
         *this = std::move(next);
         return copy;
     }
-    throw Error("This Army group has no free model slots. No shared artwork was changed.");
+    throw Error("No free model slot is available across the Army atlases this class uses.");
+}
+void ArmyArtwork::restoreClass(const ClassData &classes, int id, int facing) {
+    if (facing < 0 || facing > 1) throw Error("Army facing is outside its pair");
+    const auto route = characterRoute(classes, id);
+    const int owner = modelClass(classes, id);
+    if (routes_.contains(owner)) {
+        restoreRoute(owner);
+        return;
+    }
+    const int atlas = route.lane * 2 + facing;
+    if (!modified(atlas, route.model)) return;
+
+    auto next = *this;
+    const int destination = next.isolateClass(classes, id);
+    if (destination == route.model) {
+        next.restore(atlas, destination);
+    } else {
+        const auto &spec = specs()[atlas];
+        const int size = spec.width * spec.height;
+        const auto pixels = route.model < sourceCount(atlas)
+                                ? packs_[atlas].source.mid(1024 + route.model * size, size)
+                                : QByteArray(size, char(spec.transparent.first()));
+        next.setIndices(atlas, destination, pixels);
+    }
+    *this = std::move(next);
 }
 void ArmyArtwork::applyRoutes(ClassData &classes) const {
     for (auto it = routes_.cbegin(); it != routes_.cend(); ++it) {

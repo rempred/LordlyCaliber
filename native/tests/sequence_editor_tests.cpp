@@ -1633,6 +1633,73 @@ class SequenceEditorTests : public QObject {
             qInfo().noquote() << "Guided combat candidate:" << output;
         } catch (const Error &e) { QFAIL(e.what()); }
     }
+    void shortKnightIdleImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.setContext(5, 0, 0);
+            const auto before = project.animationSequences()->json();
+            const auto retail = ActorArt::loadBody(project.rom(), 5, 5, 0, 0);
+            QCOMPARE(retail.poses()[0].source, QByteArray::fromHex("0601000001000e01011001020801010a0401"));
+
+            auto asset = SpriteAsset::blank("One frame for Knight", {3, 2});
+            asset.frames[0].ticks = 4;
+            asset.frames[0].layers[0].image.fill(Qt::red);
+            const auto import = [&] {
+                QTimer::singleShot(0, [] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    QVERIFY(dialog);
+                    QCOMPARE(dialog->objectName(), "sequenceBatchPreparation");
+                    dialog->findChild<QDialogButtonBox *>("sequenceBatchButtons")
+                        ->button(QDialogButtonBox::Ok)->click();
+                });
+                editor.importSequence(asset);
+            };
+            const auto verify = [&](Project &candidate, int count) {
+                const auto art = ActorArt::loadBody(candidate.rom(), 5, 5, 0, 0,
+                                                    candidate.bodyAnimationData());
+                const auto &records = art.poses()[0].records;
+                QCOMPARE(records.size(), count + 2);
+                QCOMPARE(records[0].operands.right(1), QByteArray(1, 0));
+                QCOMPARE(records[0].operands.chopped(1), records[1].operands.chopped(1));
+                QCOMPARE(records.last().opcode, 4);
+                QCOMPARE(records.last().operands, QByteArray(1, 1));
+                const auto played = PosePlaybackSource{candidate.rom(), art, 0}.capture();
+                QVERIFY(played);
+                QCOMPARE(played->frames.size(), count);
+                for (int i = 0; i < count; ++i) {
+                    QCOMPARE(played->frames[i].ticks, i ? 3 : 2);
+                    QCOMPARE(played->composite(i).pixelColor(1, 1), QColor(i ? Qt::blue : Qt::red));
+                }
+                QCOMPARE(played->provenance["stoppedAt"].toString(), QString("cycle"));
+            };
+            import();
+            QCOMPARE(undo.count(), 1);
+            verify(project, 1);
+            undo.undo();
+            QCOMPARE(project.animationSequences()->json(), before);
+            undo.redo();
+            verify(project, 1);
+
+            auto second = asset.frames.first();
+            second.id = SpriteLibrary::newId();
+            second.ticks = 6;
+            second.layers[0].id = SpriteLibrary::newId();
+            second.layers[0].image.fill(Qt::blue);
+            asset.frames.append(second);
+            import();
+            QCOMPARE(undo.count(), 2);
+            verify(project, 2);
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(project.manifest());
+            verify(reopened, 2);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void completeSequenceReplacement() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");

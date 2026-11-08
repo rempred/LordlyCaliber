@@ -6,6 +6,7 @@
 #include "game/director/actor_body.h"
 #include "game/director/actor_state.h"
 #include <iterator>
+#include <algorithm>
 namespace lordly {
 namespace {
 QByteArray resource(const Rom &rom, quint32 key, bool compressed) {
@@ -179,6 +180,21 @@ PoseRecord ActorArt::poseRecord(int state, int cursor) const {
         throw Error("Actor pose pointer is past its resource");
     const auto &records = poses_[state].records;
     return cursor < 0 || cursor >= records.size() ? PoseRecord{} : records[cursor];
+}
+int ActorArt::combatHeight() const {
+    if(!body_) throw Error("Combat height requires body artwork");
+    // Accepted 20D590 scans idle pose 0 for its first frame. 205378 takes
+    // the minimum authored layer origin, including transparent margins.
+    // This is not the rendered image's opaque-pixel bounding box.
+    for(int index=0;index<256;++index) {
+        const auto record=poseRecord(0,index);
+        if(record.opcode!=1 && !(wideBodyMarkers_ && record.opcode==21)) continue;
+        const int token=u8(record.operands,0)+(record.opcode==21 ? 256*u8(record.operands,1) : 0);
+        int top=1000; // Retail D_801D03A0 initial lower bound.
+        for(const auto &layer:layers(token)) top=std::min(top,layer.origin.y());
+        return -top;
+    }
+    return 0; // Exported wide-pose lookup also stops if no idle frame exists.
 }
 QVector<ActorLayer> ActorArt::layers(int token) const {
     if (token < 0 || token > 65535)

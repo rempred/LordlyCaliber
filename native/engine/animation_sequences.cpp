@@ -1,6 +1,7 @@
 #include "engine/animation_sequences.h"
 #include "engine/body_markers.h"
 #include <QJsonArray>
+#include <algorithm>
 namespace lordly {
 namespace {
 int groupId(int classId, int flags) {
@@ -317,6 +318,17 @@ bool wideStates(const QMap<int, AnimationSequences::Group> &groups) {
 }
 bool AnimationSequences::requiresWideStates() const { return wideStates(groups_); }
 bool AnimationSequences::sourceRequiresWideStates() const { return wideStates(loaded_); }
+bool AnimationSequences::requiresBodyHeightRuntime() const {
+    for (const auto &group : groups_) {
+        const auto bank = group.descriptor.poses();
+        const auto &idle = bank.effective(0).records;
+        const auto frame = std::find_if(idle.cbegin(), idle.cend(), [](const auto &record) {
+            return record.opcode == 1 || record.opcode == 21;
+        });
+        if (frame == idle.cend() || frame->opcode == 21) return true;
+    }
+    return false;
+}
 bool AnimationSequences::requiresMarkerRuntime() const {
     for (const auto &group : groups_) {
         const auto bank = group.descriptor.poses();

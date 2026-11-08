@@ -78,6 +78,7 @@ class ActorArt {
     PoseRecord poseRecord(int state, int cursor) const;
     QVector<ActorPoseSelection> selections() const;
     QVector<ActorLayer> layers(int token) const;
+    int combatHeight() const;
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant, int sepia = 0,
                                    const QVector<quint8> &perLayer = {},
                                    const QMap<int, QByteArray> &artwork = {}) const;

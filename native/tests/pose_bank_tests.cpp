@@ -3,6 +3,7 @@
 #include "engine/pose_bank.h"
 #include "game/director/actor_pose.h"
 #include <QtTest>
+#include <algorithm>
 using namespace lordly;
 namespace {
 QByteArray bank(const QVector<QByteArray> &programs) {
@@ -81,6 +82,46 @@ class PoseBankTests : public QObject {
         QVERIFY_THROWS_EXCEPTION(Error, poses.setProgram(256, QByteArray::fromHex("01160001")));
         QVERIFY_THROWS_EXCEPTION(Error, poses.setProgram(256, QByteArray::fromHex("01160080")));
         QCOMPARE(poses.encoded(), safe);
+    }
+    void shortReplacementsRetainLoopTiming() {
+        // Zero-tick setup, movement, timed frames separated by movement, and a
+        // loop that skips setup. Keep controls and every imported frame in order.
+        const QVector<PoseRecord> original{
+            {1, QByteArray::fromHex("0100")}, {12, QByteArray::fromHex("010000")},
+            {1, QByteArray::fromHex("0204")}, {12, QByteArray::fromHex("ff0000")},
+            {1, QByteArray::fromHex("0304")}, {4, QByteArray::fromHex("02")}};
+        for (int count : {1, 2, 6}) {
+            auto poses = PoseBank::parse(bank({PoseBank::encodeProgram(original)}));
+            QVector<QPair<int, int>> replacements;
+            QVector<int> cycle;
+            for (int i = 0; i < count; ++i) {
+                replacements.append({300 + i, 4});
+                cycle << 300 + i << 300 + i;
+            }
+            poses.replaceFrames(0, replacements);
+            const auto &records = poses.effective(0).records;
+            QCOMPARE(records[0].operands, QByteArray::fromHex("2c0100"));
+            QCOMPARE(records[1].operands, original[1].operands);
+            QCOMPARE(records.last().operands, QByteArray::fromHex("02"));
+            const auto movement = std::find_if(records.cbegin() + 2, records.cend(),
+                                                [](const PoseRecord &record) { return record.opcode == 12; });
+            QVERIFY(movement != records.cend());
+            QCOMPARE(movement->operands, original[3].operands);
+            QCOMPARE(frames(poses, 0, 2 * int(cycle.size())), cycle + cycle);
+        }
+
+        // A timed prelude with a jump back to an interleaved control still
+        // needs a delay inside that cycle after shortening to a single frame.
+        auto prelude = original;
+        prelude[0].operands[1] = 4;
+        prelude.last().operands[0] = 3;
+        auto poses = PoseBank::parse(bank({PoseBank::encodeProgram(prelude)}));
+        poses.replaceFrames(0, {{400, 4}});
+        const auto &records = poses.effective(0).records;
+        QCOMPARE(records[0].operands, original[1].operands);
+        QCOMPARE(records[1].operands, original[3].operands);
+        QCOMPARE(records.last().operands, QByteArray::fromHex("01"));
+        QCOMPARE(frames(poses, 0, 8), QVector<int>(8, 400));
     }
     void frameEditingAndAliases() {
         const auto original = QByteArray::fromHex("040c010000010a040114020401");

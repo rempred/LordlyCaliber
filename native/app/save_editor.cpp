@@ -670,8 +670,7 @@ int SaveEditor::promptAddCharacter(bool formSquad) {
     const auto classes = project_->classData();
     for (const auto &record : project_->records(Table::Classes)) if (!project_->contentDeleted("classes",record.id)) {
         if (!record.id) continue;
-        const int secondary = u8(classes.entries()[record.id].record, 69);
-        if (formSquad && !classes.commandType(record.id, secondary ? secondary : record.id)) continue;
+        if (formSquad && !classes.commandType(record.id, classes.initialCurrentClass(record.id))) continue;
         choices->addItem(QString("%1 · %2").arg(record.id).arg(record.name.simplified()), record.id);
     }
     choices->setCurrentIndex(std::max(0, choices->findData(5)));
