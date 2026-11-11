@@ -55,6 +55,32 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     machine_ = std::make_unique<EffectMachine>();
     auto &m = *machine_;
     impacts_.clear();
+    audio_.clear();
+    pendingAudioCue_ = -1;
+    // Observe native cue translation and dispatch, without replacing either
+    // routine or fabricating queue acceptance, voice lengths or audio output.
+    // Observe past the entry trampoline: muted requests never reach this point.
+    m.observe(0x801f9e04, [this] { pendingAudioCue_ = int(machine_->registers[6]); });
+    m.observe(0x801c5940, [this] {
+        if (audio_.size() >= 4096) throw Error("Effect sound trace exceeds its cue budget");
+        audio_.append({tick_, pendingAudioCue_, int(machine_->registers[5]),
+                       int(machine_->registers[4]), pendingAudioCue_ >= 0});
+        pendingAudioCue_ = -1;
+    });
+    // The visual sandbox records imported playback requests, just as it records
+    // retail dispatch. Synthesis is auditioned separately by native libmus.
+    for (quint32 address : {0x80081db4u,0x80081f7cu,0x8008202cu}) m.service(address,[]{});
+    m.service(0x80083b24,[this] {
+        auto &m=*machine_;auto bank=m.registers[4]-128;
+        const auto length=m.word(bank+0x44);
+        if(length>128000 || length%2 || bank<0x80430000 || quint64(bank)+256+length>0x80500000)
+            throw Error("Imported sound lies outside its preview allocation");
+        AudioCue c{tick_,-1,-2};c.pcm.resize(length);
+        for(quint32 i=0;i<length;i+=2){c.pcm[i]=char(m.byte(bank+256+i+1));c.pcm[i+1]=char(m.byte(bank+256+i));}
+        c.label="Imported sound";
+        for(const auto &s:visual_.audio.sounds)if(s.pcm==c.pcm){c.label=s.name;break;}
+        audio_.append(c);pendingAudioCue_=-1;
+    });
     // The preview has no battle result consumer. Observe the native contact
     // notification, preserving the script's target and exact playback tick.
     m.service(0x801c893c, [this] {
@@ -293,9 +319,22 @@ void EffectPlayer::append(int effect) {
 void EffectPlayer::startVisual(const AttackVisual &visual, int inherited, const Scene &scene) {
     visual.validate();
     validateEffectArtwork(Rom::fromBytes(rom_), visual);
-    if (visual.nativeEdited() || scene.strikeCount) {
+    if (visual.nativeEdited() || scene.strikeCount || visual.audio.enabled) {
         start(-1, scene);
-        installEffectPreviewRuntime(*machine_, visual, inherited);
+        installEffectPreviewRuntime(*machine_, visual, inherited, [this, visual](quint32 submit) {
+            machine_->service(submit,[this,visual] {
+                auto &m=*machine_;const auto config=0x80430000u;
+                const auto audio=config+m.word(config+16);
+                for(int i=0;i<visual.audio.sounds.size();++i) {
+                    const auto pointer=audio+m.word(audio+32+i*16+8);
+                    if(pointer!=m.registers[4])continue;
+                    AudioCue cue{tick_,-1,-2};cue.source=visual.audio.sounds[i].json();
+                    cue.variant=m.registers[5]?1:0;cue.label=visual.audio.sounds[i].name;
+                    audio_.append(cue);pendingAudioCue_=-1;return;
+                }
+                throw Error("Private sound source is outside its owning attack");
+            });
+        });
         machine_->registers[4] = 136;
         machine_->registers[5] = 0x80720000;
         machine_->registers[6] = 0x80720014;
@@ -342,7 +381,7 @@ void EffectPlayer::loadFrame() {
     hold_ = visual_.frames->frames[frame_].ticks;
 }
 bool EffectPlayer::running() const {
-    return machine_ && (delay_ > 0 || (visual_.frames ? frame_ < visual_.frames->frames.size()
+    return machine_ && (machine_->word(0x80427004) || delay_ > 0 || (visual_.frames ? frame_ < visual_.frames->frames.size()
                                                       : machine_->word(0x80220d88) != 0));
 }
 bool EffectPlayer::advance() {

@@ -1,5 +1,11 @@
 # Third-party components
 
+Attack sound preview links Dietrich Epp's VADPCM decoder under MPL-2.0,
+revision `d2facb736fc57cdd01deafa65d37c76669526ac3` from
+https://github.com/rasky/vadpcm . The exact decoder sources, headers and license
+are included in `dependency-sources/vadpcm/`. Game samples are read locally
+from the user's ROM. Windows audio output uses the system WaveOut API.
+
 This portable build uses dynamically linked Qt 6.12.0 Core, Gui, Widgets,
 Concurrent, Qml, Network and SVG libraries. Qml supplies the JavaScript engine
 used only for importing legacy scene documents; the desktop UI uses Widgets. The open-source Qt libraries are provided under

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/attack_visual.h"
+#include "engine/audio_cues.h"
 #include "engine/body_animation_data.h"
 #include "engine/effect_machine.h"
 #include "engine/effect_raster.h"
@@ -44,6 +45,7 @@ class EffectPlayer {
     static int retailEffect(int attack);
     const QVector<Resource> &resources() const { return resources_; }
     const QVector<Impact> &impacts() const { return impacts_; }
+    const QVector<AudioCue> &audioCues() const { return audio_; }
 
   private:
     QByteArray rom_;
@@ -59,6 +61,8 @@ class EffectPlayer {
     QMap<quint32, quint32> allocations_;
     QVector<Resource> resources_;
     QVector<Impact> impacts_;
+    QVector<AudioCue> audio_;
+    int pendingAudioCue_ = -1;
     void loadFrame();
 };
 } // namespace lordly

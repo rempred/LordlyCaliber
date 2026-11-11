@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/sprite_library.h"
+#include "engine/attack_audio.h"
 #include <optional>
 namespace lordly {
 struct EffectArtwork {
@@ -9,6 +10,7 @@ struct EffectArtwork {
     bool operator==(const EffectArtwork &) const = default;
 };
 struct AttackVisual {
+    AttackAudio audio;
     int nativeEffect = -1, delay = 0;
     std::optional<SpriteAsset> frames;
     int hue = 0, color = -1, sizePercent = 100, offsetX = 0, offsetY = 0;
@@ -19,12 +21,12 @@ struct AttackVisual {
     }
     bool operator==(const AttackVisual &) const = default;
     bool modified() const {
-        return nativeEffect != -1 || delay || frames.has_value() || nativeEdited();
+        return nativeEffect != -1 || delay || frames.has_value() || nativeEdited() || audio.enabled;
     }
     void validate() const;
     QJsonObject json() const;
     static AttackVisual fromJson(const QJsonObject &);
-    QByteArray build(int inheritedEffect) const;
+    QByteArray build(int inheritedEffect, quint32 romOffset = 0) const;
     static AttackVisual read(const QByteArray &);
     bool fullColorFrames() const { return frames && frames->provenance["effectRgba32"].toBool(); }
     int framePlacement() const {

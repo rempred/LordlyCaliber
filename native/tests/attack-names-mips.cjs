@@ -24,12 +24,15 @@ m.trap(0x2267a8+0x7ffbcd30,c=>{assert.equal(c.get('a1'),14);logged=c.get('a2');}
 m.trap(0x1f2bc0+0x7ffbcb70,c=>{displayed=text(c.get('a0'));});
 m.trap(0x21c970+0x7ffbcd30,c=>c.set('v0',32));
 const rows=[];
-for(let id=159;id<h.readUInt32BE(36);id++) {
+// Include a renamed/replaced retail Gaze as well as independent new attacks.
+// The retail name token comes from the actual exported forward reader.
+for(const id of [25,...Array.from({length:Math.max(0,h.readUInt32BE(36)-159)},(_,i)=>159+i)]) {
  if(m.r8(records+id*16+4)<2)continue;
  // The copied spell produces a direct-name token while its effect program
  // remains its retail animation. Test the same command bytes as that producer.
+ const token=id>=159?id:call(0x801bdfbc,[id]);
  m.w32(stream+4,0);m.w32(stream+0x810,0);m.w8(stream+0x32,255);
- m.load(stream+0x10,Buffer.from([11,8,0,0,0,0,id,0,0,0]));
+ m.load(stream+0x10,Buffer.from([11,8,0,0,0,0,token,0,0,0]));
  displayed='';logged=-1;
  call(0x21ebbc+0x7ffbcd30);
  const expected=text(m.r32(records+id*16));

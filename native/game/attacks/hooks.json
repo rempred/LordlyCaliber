@@ -466,6 +466,116 @@
       "size": 632,
       "sha256": "bc786e9ff2b10f1319acf06ea5d6dce1f70ad2836b5f25e3dbf768d543491987",
       "ownerParts": []
+    },
+    {
+      "rom": 2419132,
+      "address": 2149555708,
+      "entry": "lc_attack_edit_sound",
+      "original": "lc_original_edit_sound",
+      "words": [
+        666763232,
+        2947612692
+      ]
+    },
+    {
+      "rom": 2133448,
+      "address": 2149341496,
+      "entry": "lc_attack_edit_sound_request",
+      "original": "lc_original_edit_sound_request",
+      "words": [
+        666763240,
+        1006796815
+      ]
+    },
+    {
+      "rom": 2499664,
+      "address": 2149636256,
+      "entry": "lc_attack_edit_audio_init",
+      "original": "lc_original_edit_audio_init",
+      "words": [
+        666763224,
+        604110872
+      ]
+    },
+    {
+      "rom": 2499976,
+      "address": 2149636568,
+      "entry": "lc_attack_edit_audio_free",
+      "original": "lc_original_edit_audio_free",
+      "words": [
+        1006927906,
+        2357464796
+      ]
+    },
+    {
+      "rom": 2042816,
+      "address": 2149250864,
+      "entry": "lc_caption_setup",
+      "original": "lc_original_caption_setup",
+      "words": [
+        1006796815,
+        2420284431
+      ]
+    },
+    {
+      "rom": 2041436,
+      "address": 2149249484,
+      "entry": "lc_caption_draw",
+      "original": "lc_original_caption_draw",
+      "words": [
+        666763168,
+        2947940432
+      ]
+    },
+    {
+      "rom": 2034724,
+      "address": 2149242772,
+      "entry": "lc_caption_image",
+      "original": "lc_original_caption_image",
+      "words": [
+        666763216,
+        2947874852
+      ]
+    },
+    {
+      "rom": 279408,
+      "address": 2148983920,
+      "entry": "lc_caption_element",
+      "original": "lc_original_caption_element",
+      "words": [
+        666763240,
+        813957375
+      ]
+    },
+    {
+      "rom": 75436,
+      "address": 2148016812,
+      "entry": "lc_attack_edit_sound_frame",
+      "original": "lc_original_edit_sound_frame",
+      "words": [
+        1006862347,
+        2355304516
+      ]
+    },
+    {
+      "rom": 77544,
+      "address": 2148018920,
+      "entry": "lc_attack_edit_sound_flush",
+      "original": "lc_original_edit_sound_flush",
+      "words": [
+        666763232,
+        2947612692
+      ]
+    },
+    {
+      "rom": 76188,
+      "address": 2148017564,
+      "entry": "lc_attack_edit_sound_decode",
+      "original": "lc_original_edit_sound_decode",
+      "words": [
+        666763224,
+        2947547152
+      ]
     }
   ],
   "symbols": {

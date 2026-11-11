@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/movement_types.h"
 #include "engine/animation_overrides.h"
 #include "engine/animation_routes.h"
 #include "engine/animation_sequences.h"
@@ -226,6 +227,10 @@ class Project {
     int createClass(const QString &name);
     int appendItem(int templateId, const QString &name);
     int createItem(const QString &name);
+    const MovementTypes &movementTypes() const { return movementTypes_; }
+    void setMovementTypes(const QJsonObject &);
+    int createMovementType(const QString &name, int copyFrom);
+    void deleteMovementType(int id);
     const WeaponTypes &weaponTypes() const { return weaponTypes_; }
     void setWeaponTypes(const QJsonObject &names);
     int createWeaponType(const QString &name);
@@ -312,6 +317,7 @@ class Project {
     std::optional<ItemData> originalItems_;
     std::optional<AttackData> attacks_;
     WeaponTypes weaponTypes_;
+    MovementTypes movementTypes_;
     QVector<ItemAsset> addedItems_;
     QMap<int, QByteArray> itemNames_;
     int appendItemAsset(const ItemAsset &, const QByteArray &description);

@@ -15,6 +15,7 @@ struct EffectClip {
     int ticks = 0;
     QString error;
     QMap<quint32, EffectArtwork> artwork;
+    QVector<AudioCue> audio;
 };
 QMap<int, QString> effectNames(const Rom &);
 QImage effectChecker(const QImage &);

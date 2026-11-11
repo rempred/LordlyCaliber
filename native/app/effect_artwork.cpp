@@ -160,6 +160,9 @@ EffectClip renderEffectClip(const Rom &rom, const AttackVisual &visual, int inhe
             }
             ++clip.ticks;
         }
+        clip.audio = player.audioCues();
+        for(auto &cue:clip.audio)if(!cue.pcm.isEmpty())
+            for(const auto &sound:visual.audio.sounds)if(sound.pcm==cue.pcm){cue.label=sound.name;break;}
         for (const auto &r : player.resources()) {
             if (r.size.isEmpty() || r.size.width() > 256 || r.size.height() > 4096 ||
                 (r.type != 4 && r.type != 7 && r.type != 8)) continue;

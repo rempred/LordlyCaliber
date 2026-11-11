@@ -149,6 +149,19 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         }
     });
     watchContentChanges(undo_, this, [this] { refresh(); });
+    requirementsForm_ = form;
+    requirementRoute_ = new QComboBox;
+    requirementRoute_->setObjectName("promotionRequirementRoute");
+    form->addRow("Requirements for", requirementRoute_);
+    requirementHint_ = new QLabel;
+    requirementHint_->setObjectName("promotionRequirementHint");
+    requirementHint_->setWordWrap(true);
+    form->addRow(requirementHint_);
+    connect(requirementRoute_, &QComboBox::currentIndexChanged, this, [this] {
+        if (refreshing_ || requirementRoute_->currentIndex() < 0) return;
+        selectedRoute_ = requirementRoute_->currentData().toInt();
+        refresh();
+    });
     const QStringList labels = {"Strength", "Vitality",  "Intelligence",      "Mentality",
                                 "Agility",  "Dexterity", "Alignment minimum", "Alignment maximum"};
     for (int n = 0; n < labels.size(); ++n) {
@@ -161,7 +174,10 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         gates_ << spin;
         form->addRow(labels[n], spin);
         connect(spin, &QSpinBox::valueChanged, this, [this, n](int v) {
-            edit("Edit promotion requirement", [=, this](Promotion &p) { p.setGate(id_, n, v); });
+            edit("Edit class requirement", [=, this](Promotion &p) {
+                if (selectedRoute_ < 0) p.setGate(id_, n, v);
+                else p.automatic.set(selectedRoute_, n, v);
+            });
         });
     }
     mask_ = new QComboBox;
@@ -212,15 +228,6 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
         edit("Assign class family",
              [this](Promotion &p) { p.assign(id_, families_->currentData().toInt()); });
     });
-    auto automatic = new QLabel(
-        "Automatic changes are separate from families. Angel Knight / Zombie creation uses a "
-        "dedicated scenario-end function and per-class death-eligibility flags. Fallen non-leader "
-        "women may become Angel Knights (INT 60, MEN 61, DEX 57, Alignment 50–100, spare gear and "
-        "a Luck roll); eligible fallen characters may become Zombies unless protected by Mastaba's "
-        "Barrier. Zombie → Skeleton and Skeleton → Ghost use attack-conversion rules. Linking a "
-        "family does not enable these automatic routes.");
-    automatic->setWordWrap(true);
-    layout->addWidget(automatic);
     layout->addSpacing(18);
     auto heading = new QLabel("Create a family");
     layout->addWidget(heading);
@@ -303,12 +310,13 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     refresh();
 }
 void PromotionEditor::selectClass(int id) {
-    if (id != id_) ownEntry_ = false;
+    if (id != id_) { ownEntry_ = false; selectedRoute_ = -2; }
     id_ = id;
     refresh();
 }
 void PromotionEditor::showOwnEntry() {
     ownEntry_ = true;
+    selectedRoute_ = -2;
     refresh();
 }
 void PromotionEditor::refresh() {
@@ -341,6 +349,8 @@ void PromotionEditor::refresh() {
     mask_->clear();
     equipmentSets_->setChecked(false);
     links_->clear();
+    requirementRoute_->clear();
+    requirementHint_->clear();
     for (auto spin : gates_)
         spin->setValue(0);
     if (available) {
@@ -353,10 +363,46 @@ void PromotionEditor::refresh() {
         }
         families_->setCurrentIndex(-1);
         if (hasSource) {
+            for (const auto &route : p.automatic.routes(sourceId_)) {
+                const QString from = route.source > 0 && route.source < project_->records(Table::Classes).size()
+                    ? QString("From %1 · %2").arg(project_->record(Table::Classes, route.source).name.simplified(), route.label)
+                    : route.label;
+                requirementRoute_->addItem(from, route.id);
+            }
+            // The male/female Zombie rows have the same retail display name.
+            // Distinguish any repeated labels without assigning new semantics.
+            for (int a = 0; a < requirementRoute_->count(); ++a)
+                for (int b = a + 1; b < requirementRoute_->count(); ++b)
+                    if (requirementRoute_->itemText(a) == requirementRoute_->itemText(b)) {
+                        const auto routes = p.automatic.routes(sourceId_);
+                        requirementRoute_->setItemText(a, requirementRoute_->itemText(a) + QString(" · class %1").arg(routes[a].source));
+                        requirementRoute_->setItemText(b, requirementRoute_->itemText(b) + QString(" · class %1").arg(routes[b].source));
+                    }
+            requirementRoute_->addItem("Manual class change", -1);
+            if (requirementRoute_->findData(selectedRoute_) < 0)
+                selectedRoute_ = requirementRoute_->itemData(0).toInt();
+            requirementRoute_->setCurrentIndex(requirementRoute_->findData(selectedRoute_));
+            requirementRoute_->setEnabled(requirementRoute_->count() > 1);
             families_->setCurrentIndex(
                 families_->findData(p.families["assignments"].toArray()[sourceId_].toInt()));
-            for (int n = 0; n < gates_.size(); ++n)
-                gates_[n]->setValue(u8(p.gates, sourceId_ * 8 + n));
+            for (int n = 0; n < gates_.size(); ++n) {
+                const bool supported = selectedRoute_ < 0 || p.automatic.supports(selectedRoute_, n);
+                requirementsForm_->setRowVisible(gates_[n], supported);
+                gates_[n]->setEnabled(editable && supported);
+                if (supported) gates_[n]->setValue(selectedRoute_ < 0
+                    ? u8(p.gates, sourceId_ * 8 + n) : p.automatic.value(selectedRoute_, n));
+            }
+            requirementHint_->setText(selectedRoute_ < 0
+                ? "Used when changing class from the menu. Automatic transformations have separate requirements."
+                : selectedRoute_ < 16
+                    ? "Uses battle stats after combat. Source class, element, equipment and other evolution conditions still apply."
+                : selectedRoute_ < AutomaticPromotion::angelRoute
+                    ? "Uses base Strength and Vitality. The triggering attack, equipment and normal-battle checks still apply."
+                : selectedRoute_ == 22
+                    ? "No minimum stats are checked. Eligible fallen characters use the game's Zombie chance and Mastaba's Barrier protection."
+                : p.automatic.supports(selectedRoute_, 2)
+                    ? "Uses base stats of an eligible fallen woman after a mission. Spare equipment and the Luck roll still apply."
+                    : "This ROM's Angel Knight requirement code is not recognized; it is preserved unchanged.");
             const int mask=u8(p.masks,sourceId_);
             mask_->clear();
             for (int value : {0,1,2,3,4,8,16,32,64,128}) mask_->addItem(compatibilityName(value),value);
@@ -366,6 +412,8 @@ void PromotionEditor::refresh() {
             equipmentSets_->setChecked((u8(p.flags, sourceId_) & 0x80) != 0);
         }
     }
+    if (hasSource && selectedRoute_ >= 0)
+        notice_->setText("Class requirements for the selected transformation.");
     const int family = families_->currentData().toInt();
     if (redirected) {
         const auto name = project_->record(Table::Classes, sourceId_).name.simplified();

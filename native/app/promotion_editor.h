@@ -10,6 +10,7 @@ class QLineEdit;
 class QCheckBox;
 class QListWidget;
 class QPushButton;
+class QFormLayout;
 namespace lordly {
 class PromotionEditor : public QWidget {
     Q_OBJECT
@@ -34,6 +35,10 @@ class PromotionEditor : public QWidget {
     QPushButton *goToSource_;
     bool refreshing_ = false, ownEntry_ = false;
     QVector<QSpinBox *> gates_;
+    QFormLayout *requirementsForm_;
+    QComboBox *requirementRoute_;
+    QLabel *requirementHint_;
+    int selectedRoute_ = -2;
     QComboBox *mask_;
     QCheckBox *equipmentSets_;
     QComboBox *families_, *rules_, *familyIcon_;

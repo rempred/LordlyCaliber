@@ -16,6 +16,7 @@ class EffectMachine {
     std::array<quint32, 32> registers{}, floating{};
     void mount(quint32 address, const QByteArray &bytes, bool executable = false);
     void service(quint32 address, std::function<void()> callback);
+    void observe(quint32 address, std::function<void()> callback);
     quint8 byte(quint32) const;
     quint16 half(quint32) const;
     quint32 word(quint32) const;
@@ -39,6 +40,7 @@ class EffectMachine {
     bool condition_ = false;
     QVector<std::pair<quint32, quint32>> executable_;
     QHash<quint32, std::function<void()>> services_;
+    QHash<quint32, std::function<void()>> observers_;
     std::pair<quint32, quint32> step(quint32 pc, quint32 next);
 };
 } // namespace lordly

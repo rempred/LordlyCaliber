@@ -1,4 +1,7 @@
 #include "app/actor_pose_editor.h"
+#include "app/audio_cue_view.h"
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <type_traits>
 #include "engine/sprite_sources.h"
 #include "engine/actor_materials.h"
@@ -310,6 +313,23 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     controls->addWidget(play_);
     controls->addWidget(next);
     controls->addWidget(loop_);
+    sounds_ = new QPushButton("Sound cues…");sounds_->setObjectName("actorSoundCues");
+    controls->addWidget(sounds_);
+    connect(sounds_,&QPushButton::clicked,this,[this] {
+        if(!art_||!art_->isBody())return;
+        try {
+            const auto trace=tracePoseAudio(rom_,*art_,poses_->currentData().toInt(),variant_->value());
+            QDialog dialog(this);dialog.setWindowTitle("Class animation sound cues");dialog.resize(780,420);
+            auto layout=new QVBoxLayout(&dialog);
+            auto cues=new AudioCueView([this](int tick){seek(tick+1);},&dialog);
+            cues->setRom(rom_);
+            cues->setCues(trace.cues,banks_->currentText()+" · "+poses_->currentText(),false,trace.boundary);
+            layout->addWidget(cues);
+            auto context=new QLabel("Spatial cues require the linked actor and equipment before they can be auditioned. Times here belong to this class animation, not the complete battle sequence.");context->setWordWrap(true);layout->addWidget(context);
+            auto close=new QDialogButtonBox(QDialogButtonBox::Close);layout->addWidget(close);
+            connect(close,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);dialog.exec();
+        } catch(const Error &error) {status_->setText(QString::fromUtf8(error.what()));}
+    });
     auto stepLabel = new QLabel("Step");
     controls->addWidget(stepLabel);
     controls->addWidget(position_);
@@ -734,6 +754,7 @@ void ActorPoseEditor::loadBank() {
     resolveAction();
 }
 void ActorPoseEditor::restart() {
+    sounds_->setVisible(art_ && art_->isBody());
     stop();
     playbackFinished_ = false;playbackSteps_.clear();
     selectedFrame_.reset();

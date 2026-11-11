@@ -37,14 +37,22 @@ class ValueEditor : public QWidget {
                 choice_->addItem(it.value(), it.key());
             layout->addWidget(choice_, 1);
             connect(choice_, &QComboBox::currentIndexChanged, this, [this] {
-                if (choice_->currentIndex() >= 0)
+                if (choice_->currentIndex() >= 0) {
+                    if (choice_->currentData().toInt() == -1 && create_) {
+                        syncChoice(spin_->value()); create_(); return;
+                    }
                     spin_->setValue(choice_->currentData().toInt());
+                }
             });
         }
         connect(spin_, &QSpinBox::valueChanged, this, [this, edited](int value) {
             syncChoice(value);
             edited(value);
         });
+    }
+    void setCreateChoice(const QString &label, std::function<void()> create) {
+        create_=std::move(create);createLabel_=label;
+        if(choice_){QSignalBlocker block(choice_);choice_->addItem(label,-1);}
     }
     void setValue(int value) {
         QSignalBlocker block(spin_);
@@ -68,6 +76,7 @@ class ValueEditor : public QWidget {
         }
         for (auto it = sorted.begin(); it != sorted.end(); ++it)
             choice_->addItem(it.value(), it.key());
+        if (create_) choice_->addItem(createLabel_,-1);
         syncChoice(spin_->value());
     }
 
@@ -85,6 +94,8 @@ class ValueEditor : public QWidget {
     }
     QSpinBox *spin_;
     QComboBox *choice_ = nullptr;
+    std::function<void()> create_;
+    QString createLabel_;
     QString choiceKey_;
     bool sameClassDefault_ = false;
     QJsonObject labels_;

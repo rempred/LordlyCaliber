@@ -2,6 +2,7 @@
 #include "engine/actor_art.h"
 #include "game/director/actor_pose.h"
 #include <optional>
+#include <functional>
 namespace lordly {
 struct PoseAudioRequest {
     int context = 0;
@@ -54,6 +55,9 @@ class ActorPosePlayer {
         linkedAudioContext_.reset();
     }
     void setLinkedAudioContext(LinkedPoseAudioContext context);
+    void setAudioObserver(std::function<void(int opcode, int key, int request)> observer) {
+        audioObserver_ = std::move(observer);
+    }
 
   private:
     static int registered(void *, const LordlyActorPose *);
@@ -67,6 +71,7 @@ class ActorPosePlayer {
     QVector<PoseAudioRequest> audio_;
     QVector<LinkedPoseAudioRequest> linkedAudio_;
     std::optional<LinkedPoseAudioContext> linkedAudioContext_;
+    std::function<void(int, int, int)> audioObserver_;
     QString error_;
     bool linkedObjectAbsent_ = false;
 };

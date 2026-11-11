@@ -6,6 +6,7 @@
 #include <cmath>
 namespace lordly {
 void AttackVisual::validate() const {
+    audio.validate();
     if (nativeEffect < -1 || nativeEffect > 132 || delay < 0 || delay > 300)
         throw Error("Choose a retail effect and a delay between 0 and 300 ticks");
     if (hue < -180 || hue > 180 || color < -1 || color > 0xffffff ||
@@ -57,6 +58,7 @@ void AttackVisual::validate() const {
 QJsonObject AttackVisual::json() const {
     validate();
     QJsonObject result{{"nativeEffect", nativeEffect}, {"delay", delay}};
+    if (audio.enabled) result["audio"] = audio.json();
     if (frames)
         result["frames"] = frames->assetFile();
     if (nativeEdited()) {
@@ -79,6 +81,7 @@ QJsonObject AttackVisual::json() const {
 }
 AttackVisual AttackVisual::fromJson(const QJsonObject &o) {
     AttackVisual result;
+    if(o.contains("audio")) result.audio=AttackAudio::fromJson(o["audio"].toObject());
     auto integer = [&](const char *key, int fallback) {
         if (!o.contains(key))
             return fallback;
@@ -163,8 +166,16 @@ QByteArray AttackVisual::gameImage(const QImage &source, bool rgba32) {
         }
     return data;
 }
-QByteArray AttackVisual::build(int inherited) const {
+QByteArray AttackVisual::build(int inherited, quint32 romOffset) const {
     validate();
+    if(audio.enabled) {
+        auto base=*this; base.audio={};
+        auto visual=base.build(inherited);
+        QByteArray b(32,0); b.replace(0,8,"LCFX0003");
+        put32(b,12,32); put32(b,16,32+visual.size());
+        b+=visual; b+=audio.build(romOffset+b.size());
+        put32(b,8,b.size()); return b;
+    }
     if (inherited < 0 || inherited > 132)
         throw Error("Invalid inherited attack effect");
     const bool native = nativeEdited();
@@ -248,6 +259,24 @@ QByteArray AttackVisual::build(int inherited) const {
     return bytes;
 }
 AttackVisual AttackVisual::read(const QByteArray &bytes) {
+    if(bytes.startsWith("LCFX0003")) {
+        if(bytes.size()<96 || u32(bytes,8)!=quint32(bytes.size()) || u32(bytes,12)!=32)
+            throw Error("Invalid attack audio wrapper");
+        auto at=u32(bytes,16);
+        if(at<64 || at>quint32(bytes.size()-32) || bytes.mid(at,8)!="LCAUDIO1" ||
+           u32(bytes,40)!=at-32 || u32(bytes,at+24)!=quint32(bytes.size())-at)
+            throw Error("Attack audio lies outside its allocation");
+        auto result=read(bytes.mid(32,at-32));
+        auto meta=u32(bytes,at+16), size=u32(bytes,at+20);
+        if(meta<32+u32(bytes,at+8)*16 || size<4 || quint64(at)+meta+size>quint64(bytes.size()) ||
+           u32(bytes,at+meta)>16*1024*1024) throw Error("Invalid editable sound metadata");
+        auto document=QJsonDocument::fromJson(qUncompress(bytes.mid(at+meta,size)));
+        if(!document.isObject())throw Error("Invalid editable sound document");
+        result.audio=AttackAudio::fromJson(document.object());
+        if(!result.audio.enabled || result.audio.build(u32(bytes,at+12))!=bytes.mid(at))
+            throw Error("Sound playback data disagrees with its editable settings");
+        return result;
+    }
     const bool native = bytes.startsWith("LCFX0002");
     if (bytes.size() < (native ? 96 : 32) || (!native && !bytes.startsWith("LCFX0001")) ||
         u32(bytes, 8) != quint32(bytes.size()) || u16(bytes, 12) > 1 || u16(bytes, 14) > 132)

@@ -1,4 +1,6 @@
+#include "app/attack_caption_editor.h"
 #include "app/main_window.h"
+#include "app/movement_types_editor.h"
 #include "app/rom_build_dialog.h"
 #include "app/table_transfer.h"
 #include "engine/weapon_status.h"
@@ -356,6 +358,14 @@ void MainWindow::installProject(Project project) {
         icons->addTab(new CategoryIconEditor(project_.get(), undo_, [this] { updateStatus(); }),
                       "Class category icons");
         artwork->addTab(icons, "UI and Icons");
+        auto captions=new AttackCaptionEditor(project_.get(),undo_,[this]{updateStatus();});
+        artwork->addTab(captions,"Attack names");
+        if(auto attacks=workspaces_->findChild<AttackEditor *>()) {
+            connect(attacks,&AttackEditor::editCaption,this,[this,artwork,captions](int id){
+                workspaces_->setCurrentWidget(artwork);artwork->setCurrentWidget(captions);captions->selectAttack(id);
+            });
+            connect(captions,&AttackCaptionEditor::openAttack,this,[this,attacks](int id){workspaces_->setCurrentWidget(attacks);attacks->selectAttack(id);});
+        }
         artwork->addTab(new PortraitEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Portraits");
         artwork->addTab(new ArmyEditor(project_.get(), undo_, [this] { updateStatus(); }),
@@ -918,6 +928,15 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             if (*selected >= 0)
                 model->setData(model->index(*selected, n + 2), value, Qt::EditRole);
         });
+        if (table==Table::Classes && f.key=="moveType" && !project_->rom().revision()) {
+            editor->setObjectName("classMovementType");
+            editor->setCreateChoice("New movement type…", [this,model,selected,page] {
+                if (*selected<0) return;
+                const int copyFrom=u8(project_->record(Table::Classes,*selected).bytes,44);
+                if (auto request=requestMovementType(page,*project_,copyFrom))
+                    model->createMovementType(request->name,request->copyFrom,request->baseSpeed,*selected);
+            });
+        }
         editor->setEnabled(false);
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);

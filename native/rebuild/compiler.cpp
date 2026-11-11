@@ -15,6 +15,7 @@
 #include "rebuild/body_selection.h"
 #include "rebuild/pose_runtime.h"
 #include "rebuild/body_visual_policy.h"
+#include "engine/body_visual_policy.h"
 #include "engine/class_text.h"
 #include "engine/location_text.h"
 #include "engine/scenario_battlefields.h"
@@ -390,7 +391,7 @@ CompiledModule Compiler::compileModule(const QByteArray &source, const QString &
         }
     }
     if (result.entries.isEmpty())
-        throw Error("Compiled module has no exported functions");
+        throw Error("Compiled module has no exported functions: " + name);
     // A relocated module owns its constants as well as its functions. fitOwner
     // must never truncate a jump table merely because the final function ends.
     if (inlineReadOnlyData) result.functionExtent = quint32(result.bytes.size());
@@ -792,7 +793,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
     }
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
-    if (p.rom().bytes().mid(AnimationSequences::descriptorOffset, 8) == "LC05ASEQ")
+    if (p.rom().bytes().mid(AnimationSequences::descriptorOffset, 8) == "LC05ASEQ" ||
+        p.rom().bytes().mid(BodyVisualPolicyImage::descriptorOffset, 8) == "LC05VPOL")
         p.loadAnimationRoutes();
     const bool wideIdleHeight = poseHeightRuntimeAddress(p.rom(), priorClassPlacement) ||
         (p.animationSequences() && p.animationSequences()->requiresBodyHeightRuntime());
@@ -883,7 +885,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     std::optional<MissionRuntimeBuild> missionRuntime;
     const bool customMissionVictory = !p.scenarioBattlefields().isEmpty();
     const bool needsMissionRuntime = customMissionVictory || (p.sceneEvents() && p.sceneEvents()->hasMissionCompletion());
-    const bool relocateClasses = wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
+    std::optional<MovementPlacement> movementPlacement;
+    std::optional<MovementInput> movementInput;
+    if(!p.rom().revision() && p.movementTypes().requiresRuntime()) movementInput=MovementInput{p.movementTypes(),p.rom(),expandedArmies,{}};
+    const bool relocateClasses = movementInput.has_value() || wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
@@ -1027,6 +1032,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if(itemTrees)itemTreeInput=ConsumableTreeInput{*p.consumableEffects(),Rom::fromBytes(result.image)};
     if (!expandedClasses)
         rebuildPromotion(p, compiler, directory, result);
+    if (p.promotion() && p.promotion()->automatic.modified()) {
+        result.image = p.promotion()->automatic.rebuild(result.image);
+        result.report << "Updated class requirements in the game's evolution, attack-transformation and mission-end consumers";
+    }
     if (relocateClasses) {
         auto classData = p.classData();
         if (avatarEdits) {
@@ -1138,7 +1147,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             data, compiler, directory, offset,
             customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1151,7 +1160,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes=buildClassRuntime(data,compiler,directory,offset,
                 customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1164,10 +1173,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes = buildClassRuntime(data, compiler, directory, offset,
                 customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
+        movementPlacement=classes.movement;
         missionTableAddress = classes.missionTableAddress;
         campaignBridge=classes.campaignBridge;
         classes.removeResident = (priorCustom.has_value() && !customSquads) ||
@@ -1432,7 +1442,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = rebuildBodyVisualPolicy(Rom::fromBytes(result.image), p.rom(),
             *exportAnimationRoutes, compiler, directory);
         if (result.image != beforeVisual)
-            result.report << "Compiled per-class equipment artwork policies within the original readers";
+            result.report << "Compiled complete body/equipment C owners within their original allocations";
     }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();
@@ -1544,10 +1554,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
         result.image=writeDeletedContent(result.image,p.deletedContent());
+    if(movementPlacement){installMovementRuntime(result.image,*movementPlacement);result.report << "Compiled movement types, terrain costs, speeds and squad priorities";}
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");
     Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (!p.rom().revision() && reopened.movementTypes().json()!=p.movementTypes().json()) throw Error("Exported movement types differ from the project");
     if (reopened.scenarioBattlefields() != p.scenarioBattlefields())
         throw Error("Exported custom battlefield snapshots differ from the project");
     if (!p.rom().revision()) {

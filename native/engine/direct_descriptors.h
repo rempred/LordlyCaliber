@@ -11,6 +11,7 @@ class DirectDescriptors {
     static constexpr quint32 resourceBase = 0x594280, retailKey = 0x3b6cd0;
     static constexpr int descriptorOffset = 0x27c4d00, descriptorSize = 96;
     static const std::array<QPair<int, int>, 12> &sites();
+    static QVector<QPair<int, int>> sites(const Rom &);
     static DirectDescriptors load(const Rom &);
     static quint32 resourceKey(const Rom &);
     static QByteArray directory(const Rom &);

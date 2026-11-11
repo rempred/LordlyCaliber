@@ -1,0 +1,743 @@
+{
+  "generator": "native/tools/generate-body-policy-c.cjs",
+  "query": {
+    "start": 2128432,
+    "size": 60,
+    "address": 2149336480,
+    "source": "art/body-policy-query.c",
+    "sourceSha256": "d5a9c0e0c02f7756fcc0652ba971745e948c4a45f085c646017eebfc8f7dac79",
+    "sha256": "2eb1512a8af81f39c7439b046918875d14d723eae70b4b11b51a0120a96e055e",
+    "padToOwner": true,
+    "headers": [],
+    "symbols": {
+      "lc_class_handles": 2149385872,
+      "lc_policy_back": 2149336540
+    },
+    "tables": []
+  },
+  "settingsOffset": 2128492,
+  "directoryOffset": 2121960,
+  "originals": [
+    {
+      "id": "00205C88",
+      "start": 2120840,
+      "size": 1124,
+      "address": 2149328888,
+      "source": "accepted/library/src/lib/func_00205C88.c",
+      "sourceSha256": "341b819486d390f8ea8dd5d668e3037852f65cc1dae7027c19cdc9a7fd1612c2",
+      "sha256": "e19428f37be11fef7fc305b8c00656a123a2ee8fc29ce141faf0de09e572ba95",
+      "padToOwner": true,
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_8009DAF4": 2148129524,
+        "func_80071C04": 2147949572,
+        "func_8009DBB8": 2148129720,
+        "func_00001330": 2147946288,
+        "func_000016C4": 2147947204,
+        "func_0002E138": 2148130104,
+        "func_0002E348": 2148130632,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00023780": 2148086656,
+        "func_00023460": 2148085856
+      },
+      "tables": [
+        {
+          "start": 2177088,
+          "address": 2149385136,
+          "offset": 0,
+          "size": 56,
+          "sha256": "e6ae1ef90dcff0c186a4b4537a3a730ca6b08746cb4405b2e17c009918c88a8c"
+        }
+      ]
+    },
+    {
+      "id": "00206340",
+      "start": 2122560,
+      "size": 1352,
+      "address": 2149330608,
+      "source": "accepted/library/src/lib/func_00206340.c",
+      "sourceSha256": "78fbcf62a00579de02964e44da0dd302c23d3712b11eb295c37f42d6df203c2c",
+      "sha256": "6753b83ff5572518870614acf12801a678ad7e32a1b982d237d5db606969f9ef",
+      "padToOwner": true,
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_pose_record.h",
+          "source": "accepted/library/include/game/combat_pose_record.h",
+          "sha256": "3ecff3eea02a4a2ab76e7e489b00ecdb2ffa2511382e95cd936f376509457815"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_pose_record.h",
+          "source": "accepted/library/include/game/combat_pose_record.h",
+          "sha256": "3ecff3eea02a4a2ab76e7e489b00ecdb2ffa2511382e95cd936f376509457815"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "D_801CEF00": 2149379840,
+        "func_002015C8": 2149310776,
+        "D_801D0728": 2149386024,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_0002E348": 2148130632,
+        "func_00204A70": 2149324256,
+        "func_000454E0": 2148988384,
+        "func_0002E138": 2148130104,
+        "func_002043E0": 2149322576,
+        "func_000016C4": 2147947204
+      },
+      "tables": [
+        {
+          "start": 2177144,
+          "address": 2149385192,
+          "offset": 0,
+          "size": 56,
+          "sha256": "098a050a37bab78b5eeeb874ed47fd19e6bee1fd4059e134448f7d2a1034b381"
+        }
+      ]
+    },
+    {
+      "id": "00207658",
+      "start": 2127448,
+      "size": 1048,
+      "address": 2149335496,
+      "source": "accepted/library/src/lib/func_00207658.c",
+      "sourceSha256": "5388fdc19aa3603c3cc92920cda461be4a13db97c51be284c4bdb850909dc5d7",
+      "sha256": "9ee0cd8ae020a0bd45351f069b10b8d4535ba3edfe2d389eaf02758f64dd2b95",
+      "padToOwner": true,
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_0020161C": 2149310860,
+        "D_801D0728": 2149386024,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00205C88": 2149328888
+      },
+      "tables": [
+        {
+          "start": 2177256,
+          "address": 2149385304,
+          "offset": 0,
+          "size": 168,
+          "sha256": "b59678dce24877e4406ae7848ae2183901a353d750a9b7f6876832b40fa60494"
+        }
+      ]
+    },
+    {
+      "id": "002AB810",
+      "start": 2799632,
+      "size": 812,
+      "address": 2149826736,
+      "source": "accepted/library/src/lib/func_002AB810.c",
+      "sourceSha256": "0a9b3ae271ac1b0214469301bacef8a8e68a95f9abcd53724fe890d603a0fb3e",
+      "sha256": "a7f63418950ee849795e64ef0347e01efc79301b8e3e9da77c1d0c82cc69be31",
+      "padToOwner": true,
+      "headers": [],
+      "symbols": {
+        "func_0020C104": 2149354612,
+        "func_0020C120": 2149354640,
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "func_00023780": 2148086656,
+        "D_801CE8FC": 2149378300,
+        "D_8022F2CC": 2149774028,
+        "func_0002CD70": 2148125040,
+        "func_001FF7EC": 2149303132
+      },
+      "tables": []
+    },
+    {
+      "id": "002AAC60",
+      "start": 2796640,
+      "size": 1176,
+      "address": 2149823744,
+      "source": "accepted/library/src/lib/func_002AAC60.c",
+      "sourceSha256": "b01e631850262bcaab85e46efd08261007426690e624457d35ef55ae583e1cc3",
+      "sha256": "efa5492bfa568946dc485cd49e96fd6bfb58911d9a7e5fc5e3fe37fdbcd29fdf",
+      "padToOwner": true,
+      "headers": [],
+      "symbols": {
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "D_801CEAB0": 2149378736,
+        "func_0002E138": 2148130104,
+        "resource_free": 2147947204,
+        "D_8022A980": 2149755264,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C120": 2149354640,
+        "func_002A9364": 2149817348,
+        "func_002A0A68": 2149782072,
+        "func_0002CD70": 2148125040,
+        "D_8022AC80": 2149756032,
+        "func_002AD574": 2149834260,
+        "func_002AB810": 2149826736,
+        "func_00201670": 2149310944,
+        "func_002A0B14": 2149782244
+      },
+      "tables": []
+    },
+    {
+      "id": "002ABB3C",
+      "start": 2800444,
+      "size": 1064,
+      "address": 2149827548,
+      "source": "accepted/library/src/lib/func_002ABB3C.c",
+      "sourceSha256": "322b3c5f92045c69d153b33c671e6bcccd51b9923de3109b70c2926c0c6daa8d",
+      "sha256": "c929df3aaf03d0de0969c4ec5acbbcbb3307e6c35fab22597f40097cfe1b4604",
+      "padToOwner": true,
+      "headers": [],
+      "symbols": {
+        "D_8022AC80": 2149756032,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C0E8": 2149354584,
+        "func_00045e5c": 2148990812,
+        "func_002AD574": 2149834260,
+        "func_0002CD70": 2148125040,
+        "func_002AB810": 2149826736,
+        "D_8022A994": 2149755284,
+        "func_0020C32C": 2149355164,
+        "D_8022A974": 2149755252,
+        "func_002A9364": 2149817348,
+        "func_0029E70C": 2149773020,
+        "func_002AB574": 2149826068
+      },
+      "tables": []
+    }
+  ],
+  "owners": [
+    {
+      "id": "00205C88",
+      "variant": "retail-narrow",
+      "start": 2120840,
+      "size": 1120,
+      "address": 2149328888,
+      "source": "art/body-policy-00205C88-retail-narrow.c",
+      "sourceSha256": "f29e87718d30840f491edc0499f2c87aed557de954213c45ed1b58a98703a1f3",
+      "sha256": "9ff2c688adbf3b513dfb0595826b7d2fdc195786be8171d27160af01f42e18a9",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00205C88.c",
+        "sourceSha256": "341b819486d390f8ea8dd5d668e3037852f65cc1dae7027c19cdc9a7fd1612c2",
+        "size": 1124,
+        "sha256": "e19428f37be11fef7fc305b8c00656a123a2ee8fc29ce141faf0de09e572ba95"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_8009DAF4": 2148129524,
+        "func_80071C04": 2147949572,
+        "func_8009DBB8": 2148129720,
+        "func_00001330": 2147946288,
+        "func_000016C4": 2147947204,
+        "func_0002E138": 2148130104,
+        "func_0002E348": 2148130632,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00023780": 2148086656,
+        "func_00023460": 2148085856,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": [
+        {
+          "start": 2177088,
+          "address": 2149385136,
+          "offset": 0,
+          "size": 56,
+          "sha256": "2ccbafa51a71b7e85575090c01f99bd20cdcd8a59d07023766aebb817cb98fe7"
+        }
+      ]
+    },
+    {
+      "id": "00205C88",
+      "variant": "retail-wide",
+      "start": 2120840,
+      "size": 1120,
+      "address": 2149328888,
+      "source": "art/body-policy-00205C88-retail-wide.c",
+      "sourceSha256": "e11be1698bbd8aa7dc6a02645b93b8111986d115547eb0867e02543c004f1e3e",
+      "sha256": "728ae6f71e91d363d01868138f6940e1f554c2dbd7038ed79572805a24c9f72c",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00205C88.c",
+        "sourceSha256": "341b819486d390f8ea8dd5d668e3037852f65cc1dae7027c19cdc9a7fd1612c2",
+        "size": 1124,
+        "sha256": "e19428f37be11fef7fc305b8c00656a123a2ee8fc29ce141faf0de09e572ba95"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_8009DAF4": 2148129524,
+        "func_80071C04": 2147949572,
+        "func_8009DBB8": 2148129720,
+        "func_00001330": 2147946288,
+        "func_000016C4": 2147947204,
+        "func_0002E138": 2148130104,
+        "func_0002E348": 2148130632,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00023780": 2148086656,
+        "func_00023460": 2148085856,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": [
+        {
+          "start": 2177088,
+          "address": 2149385136,
+          "offset": 0,
+          "size": 56,
+          "sha256": "2ccbafa51a71b7e85575090c01f99bd20cdcd8a59d07023766aebb817cb98fe7"
+        }
+      ]
+    },
+    {
+      "id": "00205C88",
+      "variant": "policy-narrow",
+      "start": 2120840,
+      "size": 1120,
+      "address": 2149328888,
+      "source": "art/body-policy-00205C88-policy-narrow.c",
+      "sourceSha256": "12ec0a6d62a137f9ff86ff1ab7372d6ea15b4c451dbc5690edbcd77f31fa2503",
+      "sha256": "bf04c0f0a5bc2394dbff85b1d101a9f887990891863147f2b0b5e60eb235a130",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00205C88.c",
+        "sourceSha256": "341b819486d390f8ea8dd5d668e3037852f65cc1dae7027c19cdc9a7fd1612c2",
+        "size": 1124,
+        "sha256": "e19428f37be11fef7fc305b8c00656a123a2ee8fc29ce141faf0de09e572ba95"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_8009DAF4": 2148129524,
+        "func_80071C04": 2147949572,
+        "func_8009DBB8": 2148129720,
+        "func_00001330": 2147946288,
+        "func_000016C4": 2147947204,
+        "func_0002E138": 2148130104,
+        "func_0002E348": 2148130632,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00023780": 2148086656,
+        "func_00023460": 2148085856,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "00205C88",
+      "variant": "policy-wide",
+      "start": 2120840,
+      "size": 1120,
+      "address": 2149328888,
+      "source": "art/body-policy-00205C88-policy-wide.c",
+      "sourceSha256": "52bef2635bf8a11f01e9f2af7e1ebe5a33b0edab46d47acddc7ee9c288b1f265",
+      "sha256": "4c10dfd62520a1ff6c849ed55bbfba580504c4e87c97c8db5985741bc9f60e91",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00205C88.c",
+        "sourceSha256": "341b819486d390f8ea8dd5d668e3037852f65cc1dae7027c19cdc9a7fd1612c2",
+        "size": 1124,
+        "sha256": "e19428f37be11fef7fc305b8c00656a123a2ee8fc29ce141faf0de09e572ba95"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_8009DAF4": 2148129524,
+        "func_80071C04": 2147949572,
+        "func_8009DBB8": 2148129720,
+        "func_00001330": 2147946288,
+        "func_000016C4": 2147947204,
+        "func_0002E138": 2148130104,
+        "func_0002E348": 2148130632,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00023780": 2148086656,
+        "func_00023460": 2148085856,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "00206340",
+      "variant": "policy",
+      "start": 2122560,
+      "size": 1352,
+      "address": 2149330608,
+      "source": "art/body-policy-00206340-policy.c",
+      "sourceSha256": "25cb53bb059946fdc3e0a1a36501555b03300042750f796c41c317d0007ff805",
+      "sha256": "a4b2632b52f6b078d25c39e9c93eb93f52c68ae850b6438e1ccf07268f0b5f2d",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00206340.c",
+        "sourceSha256": "78fbcf62a00579de02964e44da0dd302c23d3712b11eb295c37f42d6df203c2c",
+        "size": 1352,
+        "sha256": "6753b83ff5572518870614acf12801a678ad7e32a1b982d237d5db606969f9ef"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_pose_record.h",
+          "source": "accepted/library/include/game/combat_pose_record.h",
+          "sha256": "3ecff3eea02a4a2ab76e7e489b00ecdb2ffa2511382e95cd936f376509457815"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_pose_record.h",
+          "source": "accepted/library/include/game/combat_pose_record.h",
+          "sha256": "3ecff3eea02a4a2ab76e7e489b00ecdb2ffa2511382e95cd936f376509457815"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "D_801CEF00": 2149379840,
+        "func_002015C8": 2149310776,
+        "D_801D0728": 2149386024,
+        "func_0020161C": 2149310860,
+        "func_0020156C": 2149310684,
+        "func_0002E348": 2148130632,
+        "func_00204A70": 2149324256,
+        "func_000454E0": 2148988384,
+        "func_0002E138": 2148130104,
+        "func_002043E0": 2149322576,
+        "func_000016C4": 2147947204,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "00207658",
+      "variant": "policy",
+      "start": 2127448,
+      "size": 984,
+      "address": 2149335496,
+      "source": "art/body-policy-00207658-policy.c",
+      "sourceSha256": "cfc6c8a153907b5394ea682d2d2b880334c042826c3350cf332576c48f8e858c",
+      "sha256": "3075131733e7b3bf67a71ce7aded7cca696cfdf2ea497a149c1f7b87f45cdc9f",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_00207658.c",
+        "sourceSha256": "5388fdc19aa3603c3cc92920cda461be4a13db97c51be284c4bdb850909dc5d7",
+        "size": 1048,
+        "sha256": "9ee0cd8ae020a0bd45351f069b10b8d4535ba3edfe2d389eaf02758f64dd2b95"
+      },
+      "headers": [
+        {
+          "name": "game/combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "game/combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        },
+        {
+          "name": "combat_pose_pool.h",
+          "source": "accepted/library/include/game/combat_pose_pool.h",
+          "sha256": "a7f8f0a2d927f54eb1e49a9bbd771e43ca9a58435baca9d6c6f5530c0fce35a1"
+        },
+        {
+          "name": "combat_types.h",
+          "source": "accepted/library/include/game/combat_types.h",
+          "sha256": "dd2b627c22f084db4f668d27e8de3c3f3d8fdfc352f690034fe3e1a5655959d6"
+        }
+      ],
+      "symbols": {
+        "func_002015C8": 2149310776,
+        "func_0020161C": 2149310860,
+        "D_801D0728": 2149386024,
+        "func_0020156C": 2149310684,
+        "func_000454E0": 2148988384,
+        "func_00205C88": 2149328888,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "002AB810",
+      "variant": "policy",
+      "start": 2799632,
+      "size": 812,
+      "address": 2149826736,
+      "source": "art/body-policy-002AB810-policy.c",
+      "sourceSha256": "1ec566dab4754033d5450323200110243822dc53af3e1373940584c3def3c6ad",
+      "sha256": "f6be442f14104f83c3546cb358c19c845430d92272f5830b0a2dfd04c38d5f38",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_002AB810.c",
+        "sourceSha256": "0a9b3ae271ac1b0214469301bacef8a8e68a95f9abcd53724fe890d603a0fb3e",
+        "size": 812,
+        "sha256": "a7f63418950ee849795e64ef0347e01efc79301b8e3e9da77c1d0c82cc69be31"
+      },
+      "headers": [],
+      "symbols": {
+        "func_0020C104": 2149354612,
+        "func_0020C120": 2149354640,
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "func_00023780": 2148086656,
+        "D_801CE8FC": 2149378300,
+        "D_8022F2CC": 2149774028,
+        "func_0002CD70": 2148125040,
+        "func_001FF7EC": 2149303132,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "002AAC60",
+      "variant": "policy",
+      "start": 2796640,
+      "size": 1176,
+      "address": 2149823744,
+      "source": "art/body-policy-002AAC60-policy.c",
+      "sourceSha256": "cd42d51c132acfcd04cfeb9ed15c4f2b9e6602a57edc0257c2c0d19a75db0508",
+      "sha256": "c039e745f1d30efbab71c899c1c8e784c8a8e60b4390bdf9bbbb8d16a93451c5",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_002AAC60.c",
+        "sourceSha256": "b01e631850262bcaab85e46efd08261007426690e624457d35ef55ae583e1cc3",
+        "size": 1176,
+        "sha256": "efa5492bfa568946dc485cd49e96fd6bfb58911d9a7e5fc5e3fe37fdbcd29fdf"
+      },
+      "headers": [],
+      "symbols": {
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "D_801CEAB0": 2149378736,
+        "func_0002E138": 2148130104,
+        "resource_free": 2147947204,
+        "D_8022A980": 2149755264,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C120": 2149354640,
+        "func_002A9364": 2149817348,
+        "func_002A0A68": 2149782072,
+        "func_0002CD70": 2148125040,
+        "D_8022AC80": 2149756032,
+        "func_002AD574": 2149834260,
+        "func_002AB810": 2149826736,
+        "func_00201670": 2149310944,
+        "func_002A0B14": 2149782244,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    },
+    {
+      "id": "002ABB3C",
+      "variant": "policy",
+      "start": 2800444,
+      "size": 1064,
+      "address": 2149827548,
+      "source": "art/body-policy-002ABB3C-policy.c",
+      "sourceSha256": "ba1fb3ffa19a94433e9f09eb58e722846f90a50595c88876ddeaf7101dcf0cfd",
+      "sha256": "3fff97fd106a34f84ceba3fddf478a7c385cb0fb252ce3afc6dd2f589b4bd84e",
+      "padToOwner": true,
+      "original": {
+        "source": "accepted/library/src/lib/func_002ABB3C.c",
+        "sourceSha256": "322b3c5f92045c69d153b33c671e6bcccd51b9923de3109b70c2926c0c6daa8d",
+        "size": 1064,
+        "sha256": "c929df3aaf03d0de0969c4ec5acbbcbb3307e6c35fab22597f40097cfe1b4604"
+      },
+      "headers": [],
+      "symbols": {
+        "D_8022AC80": 2149756032,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C0E8": 2149354584,
+        "func_00045e5c": 2148990812,
+        "func_002AD574": 2149834260,
+        "func_0002CD70": 2148125040,
+        "func_002AB810": 2149826736,
+        "D_8022A994": 2149755284,
+        "func_0020C32C": 2149355164,
+        "D_8022A974": 2149755252,
+        "func_002A9364": 2149817348,
+        "func_0029E70C": 2149773020,
+        "func_002AB574": 2149826068,
+        "lc_visual_policy": 2149336480,
+        "lc_body_directory_key": 2149330008
+      },
+      "tables": []
+    }
+  ]
+}

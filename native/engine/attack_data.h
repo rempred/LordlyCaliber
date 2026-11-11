@@ -22,6 +22,7 @@ struct AttackPlacement {
 };
 struct Attack {
     QByteArray data, name; // Twelve D bytes, and encoded game text without its terminator.
+    QByteArray caption; // Optional independent 90x15 battle-name pixels (indices 0..3).
     int nameGroup = 0, behavior = 0, animation = 0;
     bool dynamicName = false;
     // Zero retains the retail targeting; custom masks address nine formation cells.
@@ -43,7 +44,7 @@ class AttackData {
     static constexpr quint32 retailBase = 0x8018aa7c, retailOffset = 0x6097c;
     static AttackData loadRetail(const Rom &);
     static AttackData load(const Rom &);
-    QByteArray build(quint32 address) const;
+    QByteArray build(quint32 address, quint32 romOffset = 0) const;
     static constexpr quint32 recordOffset = 64, settingsOffset = recordOffset + 256 * 16;
     static constexpr quint32 scratchOffset = settingsOffset + 256 * 32;
     static constexpr quint32 namesOffset = scratchOffset + 128;
@@ -53,6 +54,9 @@ class AttackData {
     const Attack &entry(int id) const;
     void set(int id, const Attack &);
     void rename(int id, const QString &, bool shared);
+    QByteArray captionPixels(int id) const;
+    QByteArray generateCaption(const QByteArray &name) const;
+    void restoreCaption(int id);
     int duplicate(int source, const QString &name);
     int create(const QString &name);
     QVector<int> sharingName(int id) const;
@@ -74,5 +78,8 @@ class AttackData {
     static void validate(const Attack &);
     int nextNameGroup() const;
     QVector<Attack> entries_, original_;
+    QVector<QByteArray> nativeCaptions_, nativeNames_;
+    QByteArray captionFont_, captionWidths_;
+    QMap<char, QByteArray> battleGlyphs_; // Native foreground columns, 15 pixels high.
 };
 } // namespace lordly

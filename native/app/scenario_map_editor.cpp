@@ -1699,7 +1699,7 @@ void ScenarioMapEditor::updateRoutePreview(int squad) {
                 const auto &map=maps_[key_];const auto world=map.placement(command->x,command->z);
                 if(world)canvas_->destination=QPointF((world->x()-map.bounds.left())*256/map.bounds.width(),(world->y()-map.bounds.top())*256/map.bounds.height());
             }
-            const auto preview=RoutePreview::squad(project_->rom(),scenarios,project_->classData(),*project_->mapEdits(),key_,squad);
+            const auto preview=RoutePreview::squad(project_->rom(),scenarios,project_->classData(),*project_->mapEdits(),key_,squad,&project_->movementTypes());
             canvas_->route=preview.points;canvas_->routeReached=preview.reachable;
             routePreview_->setText((draft?"Pending order preview — not applied\n":"")+preview.message+"\n"+preview.detail);
             routePreview_->setToolTip("Gold line: planned terrain route. Dashed lines: order connections.");

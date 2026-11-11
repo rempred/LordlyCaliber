@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "51174C7C86B20D82B20106F28DC0D79E6DDD0837FD4C86AEC46D34CB8303F162",
-  "revision": "0b972a783252620b587cc623f16551444dd9f7d1",
+  "fingerprint": "5894EA0E55DBDB41BA76517755F5E8110AC032C4DD35E6313BEB49DD6BE14086",
+  "revision": "0d419be9254fd64b52e4586c2732f85e38673afb",
   "counts": {
-    "owners": 1611,
-    "functions": 1657,
-    "producerSources": 1480,
-    "sourceAndHeaderFiles": 1521
+    "owners": 1613,
+    "functions": 1659,
+    "producerSources": 1482,
+    "sourceAndHeaderFiles": 1523
   },
   "sources": [
     {
@@ -43906,6 +43906,51 @@
       ]
     },
     {
+      "name": "func_002AAC60",
+      "source": "game/accepted/library/src/lib/func_002AAC60.c",
+      "sourcePath": "src/lib/func_002AAC60.c",
+      "sourceSha256": "B01E631850262BCAAB85E46EFD08261007426690E624457D35EF55AE583E1CC3",
+      "headers": [],
+      "address": 2149823744,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "D_801CEAB0": 2149378736,
+        "func_0002E138": 2148130104,
+        "resource_free": 2147947204,
+        "D_8022A980": 2149755264,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C120": 2149354640,
+        "func_002A9364": 2149817348,
+        "func_002A0A68": 2149782072,
+        "func_0002CD70": 2148125040,
+        "D_8022AC80": 2149756032,
+        "func_002AD574": 2149834260,
+        "func_002AB810": 2149826736,
+        "func_00201670": 2149310944,
+        "func_002A0B14": 2149782244
+      },
+      "sections": {
+        ".text": 2149823744
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2796640,
+          "address": 2149823744,
+          "size": 1176,
+          "sha256": "EFA5492BFA568946DC485CD49E96FD6BFB58911D9A7E5FC5E3FE37FDBCD29FDF",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AAC60"
+      ]
+    },
+    {
       "name": "func_002AB4FC",
       "source": "game/accepted/library/src/lib/func_002AB4FC.c",
       "sourcePath": "src/lib/func_002AB4FC.c",
@@ -43957,6 +44002,43 @@
       ],
       "targets": [
         "func_002AB558"
+      ]
+    },
+    {
+      "name": "func_002AB810",
+      "source": "game/accepted/library/src/lib/func_002AB810.c",
+      "sourcePath": "src/lib/func_002AB810.c",
+      "sourceSha256": "0A9B3AE271AC1B0214469301BACEF8A8E68A95F9ABCD53724FE890D603A0FB3E",
+      "headers": [],
+      "address": 2149826736,
+      "bindings": {
+        "func_0020C104": 2149354612,
+        "func_0020C120": 2149354640,
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "func_00023780": 2148086656,
+        "D_801CE8FC": 2149378300,
+        "D_8022F2CC": 2149774028,
+        "func_0002CD70": 2148125040,
+        "func_001FF7EC": 2149303132
+      },
+      "sections": {
+        ".text": 2149826736
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2799632,
+          "address": 2149826736,
+          "size": 812,
+          "sha256": "A7F63418950EE849795E64EF0347E01EFC79301B8E3E9DA77C1D0C82CC69BE31",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AB810"
       ]
     },
     {

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/resource.h"
+#include "engine/automatic_promotion.h"
 #include <QJsonObject>
 #include <QSet>
 
@@ -18,6 +19,7 @@ class Promotion {
     QByteArray gates, masks, flags;
     QJsonObject originalFamilies;
     QByteArray originalGates, originalMasks, originalFlags;
+    AutomaticPromotion automatic;
     Resource retailResource;
     bool expanded = false;
     bool directGates = false;

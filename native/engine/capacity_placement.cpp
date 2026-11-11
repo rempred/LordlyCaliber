@@ -1,4 +1,5 @@
 #include "engine/capacity_placement.h"
+#include "engine/movement_runtime.h"
 #include "engine/promotion.h"
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -6,6 +7,7 @@
 
 namespace lordly {
 std::optional<CapacityPlacement> CapacityPlacement::read(const Rom &rom) {
+    if (const auto movement=MovementPlacement::read(rom)) return read(Rom::fromBytes(movement->canonical(rom)));
     const auto &bytes=rom.bytes();qsizetype search=0x2800000;
     std::optional<CapacityPlacement> found;
     while((search=bytes.indexOf("LC07CAPA",search))>=0) {
@@ -52,6 +54,7 @@ std::optional<CapacityPlacement> CapacityPlacement::read(const Rom &rom) {
     return found;
 }
 Rom CapacityPlacement::canonical(const Rom &rom) const {
+    if (const auto movement=MovementPlacement::read(rom)) return canonical(Rom::fromBytes(movement->canonical(rom)));
     auto bytes=rom.bytes();
     for(const auto &patch:patches) {
         if(bytes.mid(patch.site,patch.after.size())!=patch.after)

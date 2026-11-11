@@ -97,7 +97,7 @@ QByteArray rebuildPoseRuntime(const Rom &target, const Rom &original, const QByt
           {PoseRuntimeImage::descriptorOffset, PoseRuntimeImage::descriptorSize}})
         if (target.bytes().mid(offset, size) != original.bytes().mid(offset, size))
             throw Error("Another export owner changed pose execution code or data");
-    if (header.startsWith("LC05POSE") && before * 8 == mappings.size() &&
+    if (header.startsWith("LC05POSE") && (!bodyPolicies || u32(header, 8) == 3) && before * 8 == mappings.size() &&
         u32(header, 16) == quint32(wide) && u32(header, 24) == quint32(bodyPolicies) &&
         header.mid(32, 32) == QByteArray::fromHex(sha256(mappings)))
         return target.bytes();
@@ -148,7 +148,7 @@ QByteArray rebuildPoseRuntime(const Rom &target, const Rom &original, const QByt
     image.replace(PoseRuntimeImage::widthsOffset, widths.size(), compiledWidths);
     QByteArray next(PoseRuntimeImage::descriptorSize, 0);
     next.replace(0, 8, "LC05POSE");
-    put32(next, 8, bodyPolicies ? 2 : 1);
+    put32(next, 8, bodyPolicies ? 3 : 1);
     put32(next, 12, quint32(mappings.size() / 8));
     put32(next, 16, quint32(wide));
     put32(next, 20, query);

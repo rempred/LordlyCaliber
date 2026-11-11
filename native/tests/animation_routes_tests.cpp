@@ -54,10 +54,10 @@ class AnimationRoutesTests : public QObject {
             auto reopened = Project::fromRom(Rom::open(output)); preview(reopened);
             QCOMPARE(reopened.bodyAnimationData()->routes().visualPolicies(), project.animationRoutes()->visualPolicies());
             QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
-            for (const auto &block : BodyVisualPolicyImage::blocks()) {
-                QCOMPARE(built.image.mid(block.offset - 4, 4), rom.bytes().mid(block.offset - 4, 4));
-                QCOMPARE(built.image.mid(block.offset + block.size, 4), rom.bytes().mid(block.offset + block.size, 4));
-                auto corrupt = built.image; corrupt[block.offset] ^= 1;
+            for (const auto &block : BodyVisualPolicyImage::owners(false)) {
+                QCOMPARE(built.image.mid(block["start"].toInt() - 4, 4), rom.bytes().mid(block["start"].toInt() - 4, 4));
+                QCOMPARE(built.image.mid(block["start"].toInt() + block["size"].toInt(), 4), rom.bytes().mid(block["start"].toInt() + block["size"].toInt(), 4));
+                auto corrupt = built.image; corrupt[block["start"].toInt()] ^= 1;
                 auto bad = Project::fromRom(Rom::fromBytes(corrupt));
                 QVERIFY_THROWS_EXCEPTION(Error, bad.loadAnimationRoutes());
             }
@@ -84,7 +84,7 @@ class AnimationRoutesTests : public QObject {
                     throw Error("Unexpected fixture source class");
                 };
                 for (int i = 0; i < rows.size(); ++i) {
-                    auto row = rows[i].toObject(); row["source"] = normalized(row["source"]); rows[i] = row;
+                    auto row = rows[i].toObject(); row["source"] = normalized(row["source"]); row["owner"] = normalized(row["owner"]); rows[i] = row;
                 }
                 for (int i = 0; i < prepared.size(); ++i) {
                     auto row = prepared[i].toArray(); row[0] = normalized(row[0]); prepared[i] = row;

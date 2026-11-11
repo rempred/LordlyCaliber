@@ -1,5 +1,42 @@
 # Native export source audit
 
+## Body/equipment C intake and migration — 2026-11-09
+
+Accepted snapshot `5894EA0E` adds pure-C `002AB810` and `002AAC60`. Both now
+participate in the compiled ROM baseline: 1482 producers, 1659 functions and
+1698 exact code/table blocks. No older imported source or header changed.
+
+Complete accepted-derived C replaces the body/equipment fragments in `00205C88`,
+`00206340`, `00207658`, `002AAC60`, `002AB810` and `002ABB3C`. Private artwork,
+equipment suppression, body construction, linked/special bodies, fixed poses and
+wide frame markers retain their existing behavior. Code, helper and parameters
+fit the original allocations; no new runtime allocation is required.
+
+The equipment allocator also consumes the relocatable descriptor directory.
+Its C reads a data word at z64 ROM `0x2060E8` (runtime `0x801C2C58`); directory
+relocation updates this data instead of the former two instruction operands.
+The C policy query occupies z64 `0x207A30` (runtime `0x801C45A0`), with the
+private-mapping back-offset at z64 `0x207A6C`. `LC05VPOL` version 3 authenticates
+complete functions, tables and parameters. `LC05POSE` version 3 uses the new C
+query ABI. Versions 1–2 remain readable and upgrade during export, including CLI
+exports that have not opened the artwork editor. Legacy ownership checks also
+verify code outside the old fragments and account for relocated directories.
+
+Checks execute full exported functions against original ROM instructions;
+cover all 256 equipment class IDs, 137 real pose banks, short/wide marker banks,
+private/linked poses, body-policy inheritance, project persistence, allocation
+bounds, corruption rejection, and exact second exports. Three genuine previous
+exports also upgrade and re-export identically. An unedited ROM remains byte
+identical. The public CTest suite has no failures (four private-ROM targets skip
+without a ROM); focused private-ROM tests run separately. Resource allocation,
+transfer, terrain and audio services are controlled in instruction tests; this
+is not a new full-emulator playthrough.
+
+The source-selection census now reports zero larger C-covered instruction
+adapters and zero whole-owner gaps. The 33 extension hooks and mixed groups
+below remain deferred. The old body/equipment assembly is retained only for
+legacy recognition and regression fixtures, not selected by the native writer.
+
 ## Consumable C intake and migration — 2026-11-04
 
 Decomp snapshot `51174C7C` adds seven accepted pure-C producers: `00040FF4`,

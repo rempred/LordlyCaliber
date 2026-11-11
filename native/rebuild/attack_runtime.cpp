@@ -63,6 +63,18 @@ QByteArray hooks(const Rom &rom, const AttackPlacement &placement, bool remove) 
     }
     return bytes;
 }
+QByteArray captionSearch(QByteArray bytes, bool install) {
+    // Native name-to-ID scan: all allocated byte-sized action IDs, not only
+    // retail 1..158. The full 256-record table has bounded sentinel entries.
+    for(quint32 ram : {0x801af22cu,0x801af234u,0x801af240u}) {
+        const auto at=ram-0x7ffbcb70u;
+        const quint32 original=0x2bc2009f, expanded=0x2bc200ff;
+        if(u32(bytes,at)!=(install?original:expanded))
+            throw Error("Battle caption lookup has unrecognized instructions; preserved");
+        put32(bytes,at,install?expanded:original);
+    }
+    return bytes;
+}
 QByteArray references(const Rom &rom, quint32 before, quint32 after) {
     QFile file(":/game/attacks/relocations.json");
     if (!file.open(QIODevice::ReadOnly))
@@ -104,7 +116,7 @@ QByteArray references(const Rom &rom, quint32 before, quint32 after) {
 QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
                                 const Compiler &compiler, const QString &directory,
                                 const std::function<quint32(quint32)> &relocateNative) {
-    auto bytes = attacks.build(p.address);
+    auto bytes = attacks.build(p.address,p.romOffset);
     p.code = p.address + quint32(bytes.size());
     const auto config = QJsonDocument::fromJson(resource("hooks.json")).object();
     const auto sites = config["hooks"].toArray();
@@ -118,8 +130,13 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     symbols["lc_attack_records"] = p.records;
     symbols["D_8018AA80"] = p.records + 4;
     symbols["lc_attack_scratch"] = p.address + AttackData::scratchOffset;
+    symbols["lc_caption_data"] = p.address;
+    symbols["lc_caption_state"] = p.address + quint32(bytes.size());
+    bytes += QByteArray(24,0);
     symbols["lc_effect_state"] = p.address + quint32(bytes.size());
     bytes += QByteArray(8208, 0);
+    symbols["lc_audio_state"] = p.address + quint32(bytes.size());
+    bytes += QByteArray(9248, 0);
     symbols["lc_strike_state"] = p.address + quint32(bytes.size());
     bytes += QByteArray(4160, 0);
     const auto groupEntriesOffset = bytes.size();
@@ -143,7 +160,7 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
     bytes += QByteArray((sites.size() * 24 + 15) & ~15, 0);
     QMap<QString, quint32> entries;
     for (const auto &name :
-         {QString("attack-strikes"), QString("attack-runtime"), QString("effect-edits"), QString("attack-visual"),
+         {QString("attack-caption"), QString("attack-strikes"), QString("attack-runtime"), QString("attack-audio"), QString("effect-edits"), QString("attack-visual"),
           QString("attack-strike-driver"), QString("attack-playback"), QString("attack-generic"),
           QString("attack-select"), QString("attack-combined"), QString("attack-pedra"),
           QString("attack-group-melee"), QString("attack-group-ranged"), QString("attack-group-alternate")}) {
@@ -151,7 +168,8 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
         unit.replace('-', '_');
         const auto module = compiler.compileModule(
             (name == "attack-visual" ? resource("effect-image-draw.c") + "\n" :
-             name == "effect-edits" ? resource("effect-colors.c") + "\n" : QByteArray{}) +
+             name == "effect-edits" ? resource("effect-colors.c") + "\n" :
+             name == "attack-audio" ? resource("sound-parts.c") + "\n" : QByteArray{}) +
                 resource(name + ".c"),
             directory, unit, p.address + quint32(bytes.size()),
             {{"battle-state.h", resource("battle-state.h")}}, symbols, true);
@@ -198,7 +216,7 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
 QByteArray removeAttackReferences(const Rom &rom) {
     const auto placement = AttackPlacement::read(rom);
     return placement
-               ? references(Rom::fromBytes(effectTargets(hooks(rom, *placement, true), false)),
+               ? references(Rom::fromBytes(effectTargets(placement->hookCount>=51?captionSearch(hooks(rom,*placement,true),false):hooks(rom,*placement,true), false)),
                             placement->records, AttackData::retailBase)
                : rom.bytes();
 }
@@ -250,9 +268,9 @@ QByteArray installAttackReferences(const Rom &rom, const AttackPlacement &placem
                 QString("Cannot replace unrecognized attack code at ROM %1; its code was preserved")
                     .arg(at, 0, 16));
     }
-    return effectTargets(
+    return captionSearch(effectTargets(
         hooks(Rom::fromBytes(references(rom, AttackData::retailBase, placement.records)), placement,
               false),
-        true);
+        true),true);
 }
 } // namespace lordly

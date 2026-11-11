@@ -1,4 +1,5 @@
 #include "engine/direct_descriptors.h"
+#include "engine/body_visual_policy.h"
 namespace lordly {
 namespace {
 quint32 keyWords(quint32 high, quint32 low) {
@@ -44,14 +45,24 @@ const std::array<QPair<int, int>, 12> &DirectDescriptors::sites() {
                                                         {0x207464, 0x20746c}}};
     return value;
 }
+QVector<QPair<int, int>> DirectDescriptors::sites(const Rom &rom) {
+    const bool c = BodyVisualPolicyImage::usesCDirectory(rom);
+    QVector<QPair<int, int>> result;
+    for (const auto &site : sites())
+        if (!c || site.first < 0x205c88 || site.first >= 0x2060ec) result << site;
+    return result;
+}
 quint32 DirectDescriptors::resourceKey(const Rom &rom) {
     quint32 key = 0;
-    for (const auto &[hi, lo] : sites()) {
+    for (const auto &[hi, lo] : sites(rom)) {
         const auto next = keyWords(u32(rom.bytes(), hi), u32(rom.bytes(), lo));
         if (key && next != key)
             throw Error("Direct-descriptor resource users disagree");
         key = next;
     }
+    if (BodyVisualPolicyImage::usesCDirectory(rom) &&
+        u32(rom.bytes(), BodyVisualPolicyImage::directoryOffset) != key)
+        throw Error("C equipment allocator and direct-descriptor users disagree");
     return key;
 }
 QByteArray DirectDescriptors::directory(const Rom &rom) {
@@ -71,10 +82,12 @@ DirectDescriptors DirectDescriptors::load(const Rom &rom) {
     for (quint32 pos = 0; pos < size; pos += 4)
         result.keys_ << u32(rom.bytes(), at + 4 + pos);
     references(rom.bytes(), result.keys_);
-    for (const auto &[hi, lo] : sites()) {
+    for (const auto &[hi, lo] : sites(rom)) {
         result.words_[hi] = u32(rom.bytes(), hi);
         result.words_[lo] = u32(rom.bytes(), lo);
     }
+    if (BodyVisualPolicyImage::usesCDirectory(rom))
+        result.words_[BodyVisualPolicyImage::directoryOffset] = key;
     const auto &d = result.descriptor_;
     if (d.left(8) != "LC05DRTE") {
         if (key != retailKey)
@@ -171,10 +184,12 @@ QByteArray DirectDescriptors::rebuild(const Rom &rom, const QByteArray &compiled
         image += QByteArray(offset + payload.size() - image.size(), char(-1));
     image.replace(offset, payload.size(), payload);
     const auto key = offset - resourceBase;
-    for (const auto &[hi, lo] : sites()) {
+    for (const auto &[hi, lo] : sites(rom)) {
         put32(image, hi, (u32(image, hi) & 0xffff0000U) | (key >> 16));
         put32(image, lo, (u32(image, lo) & 0xffff0000U) | (key & 65535));
     }
+    if (BodyVisualPolicyImage::usesCDirectory(rom))
+        put32(image, BodyVisualPolicyImage::directoryOffset, key);
     QByteArray d(descriptorSize, 0);
     d.replace(0, 8, "LC05DRTE");
     put32(d, 8, 1);

@@ -1,4 +1,9 @@
 #include "app/attack_effect_editor.h"
+#include "app/audio_cue_view.h"
+#include "app/attack_audio_editor.h"
+#include "app/sound_output.h"
+#include "engine/sound_preview.h"
+#include <QtEndian>
 #include <QCheckBox>
 #include "app/effect_artwork.h"
 #include "app/effect_composer.h"
@@ -57,7 +62,8 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     : QDialog(parent), project_(p), attack_(attack), classId_(classId) {
     setObjectName("attackEffectEditor");
     setWindowTitle("Edit attack effect");
-    resize(1050, 760);
+    resize(1100, 850);
+    setMinimumSize(1050, 850);
     const auto &a = p->attacks()->entry(attack);
     visual_ = a.visual;
     history_ << visual_;
@@ -91,7 +97,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         if(existing)model=EffectComposition::fromAsset(*visual_.frames);
         EffectComposer dialog(project_,model,this);
         if(!existing && visual_.frames)dialog.addPiece(*visual_.frames);
-        if(dialog.exec()==QDialog::Accepted){AttackVisual v;v.delay=visual_.delay;v.frames=dialog.asset();record(v);}
+        if(dialog.exec()==QDialog::Accepted){AttackVisual v;v.delay=visual_.delay;v.audio=visual_.audio;v.frames=dialog.asset();record(v);}
     });});
     auto restore = new QPushButton("Restore original effect");
     restore->setObjectName("restoreAttackEffect");
@@ -112,14 +118,21 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
          "× 256 pixels, and 30 seconds; the export also checks available game memory.",
          root);
     auto split = new QSplitter;
+    split->setChildrenCollapsible(false);
     root->addWidget(split, 1);
     auto left = new QWidget;
+    left->setMinimumWidth(450);
     auto scene = new QVBoxLayout(left);
+    scene->setContentsMargins(0, 0, 0, 0);
+    // Keep playback and sound editing in the dialog's minimum-size calculation.
+    // Only the lists themselves should scroll, never these controls.
     split->addWidget(left);
+    scene->setSizeConstraint(QLayout::SetMinimumSize);
     preview_ = new QLabel;
     preview_->setObjectName("attackEffectPreview");
     preview_->setAlignment(Qt::AlignCenter);
-    preview_->setMinimumSize(400, 300);
+    preview_->setMinimumSize(400, 220);
+    preview_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     preview_->setStyleSheet("background:#242932;color:#f5e8cc;");
     scene->addWidget(preview_, 1);
     auto playback = new QHBoxLayout;
@@ -134,15 +147,28 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     playback->addWidget(play_);
     playback->addWidget(step_);
     playback->addWidget(loop_);
+    soundOutput_ = new SoundOutput(this);
+    soundEnabled_ = new QCheckBox("Sound");
+    soundEnabled_->setObjectName("effectSoundEnabled");
+    soundEnabled_->setChecked(true);
+    playback->addWidget(soundEnabled_);
+    connect(soundEnabled_, &QCheckBox::toggled, this, [this] {
+        const bool resume = playing_ || playRequested_;
+        pausePlayback();
+        if (resume) startPlayback();
+    });
+    connect(this, &QDialog::finished, this, [this] { pausePlayback(); });
     playback->addStretch();
-    playback->addWidget(new QLabel("View"));
+    auto exportRow = new QHBoxLayout;
+    scene->addLayout(exportRow);
+    exportRow->addWidget(new QLabel("View"));
     auto sides = new QButtonGroup(this);
     for (int side = 0; side < 2; ++side) {
         auto button = new QPushButton(side ? "Enemy" : "Player");
         button->setObjectName(side ? "effectPreviewEnemy" : "effectPreviewPlayer");
         button->setCheckable(true);
         sides->addButton(button, side);
-        playback->addWidget(button);
+        exportRow->addWidget(button);
         button->setChecked(!side);
     }
     connect(sides, &QButtonGroup::idClicked, this, [this](int side) {
@@ -151,40 +177,50 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
         render();
     });
     connect(play_, &QPushButton::clicked, this, [this] {
-        if (playing_)
-            pausedMs_ += clock_.elapsed();
-        else {
-            if (pausedMs_ * 30 / 1000 >= clipTicks_ - 1) pausedMs_ = 0;
-            clock_.restart();
-        }
-        playing_ = !playing_;
-        play_->setText(playing_ ? "Pause" : "Play");
+        if (playing_ || playRequested_) pausePlayback();
+        else startPlayback();
         showFrame();
     });
 
     connect(step_, &QPushButton::clicked, this, [this] {
         if (clipTicks_ <= 0) return;
         const int next = loop_->isChecked() ? (currentTick() + 1) % clipTicks_ : qMin(currentTick() + 1, clipTicks_ - 1);
+        pausePlayback();
         pausedMs_ = (qint64(next) * 1000 + 29) / 30;
+        restartOnPlay_ = next == clipTicks_ - 1;
         playing_ = false;
         play_->setText("Play");
         showFrame();
     });
-    auto exportRow = new QHBoxLayout;
-    scene->addLayout(exportRow);
     framePosition_ = new QLabel;
     framePosition_->setObjectName("effectFramePosition");
     exportRow->addWidget(framePosition_, 1);
     exportFrame_ = new QPushButton("Export…");
     exportFrame_->setObjectName("effectExportFrame");
     exportRow->addWidget(exportFrame_);
+    auto audioGroup = new QGroupBox("Sound cues");
+    auto audioLayout = new QVBoxLayout(audioGroup);
+    audio_ = new AudioCueView([this](int tick) {
+        pausePlayback();
+        restartOnPlay_ = false;
+        pausedMs_ = (qint64(tick) * 1000 + 29) / 30;
+        playing_ = false;play_->setText("Play");showFrame();
+    });
+    audioLayout->addWidget(audio_);scene->addWidget(audioGroup);
+    audio_->setRom(project_->rom());
+    audio_->auditionStarted = [this] { pausePlayback(); };
+    auto editSounds=new QPushButton("Edit sounds / timing…");editSounds->setObjectName("editAttackSounds");
+    audioLayout->addWidget(editSounds);
+    connect(editSounds,&QPushButton::clicked,this,[this]{
+        pausePlayback();
+        AttackAudioEditor dialog(project_,attack_,visual_,this);
+        if(dialog.exec()==QDialog::Accepted){auto v=visual_;v.audio=dialog.audio();record(v);}
+    });
     auto exports = new QMenu(exportFrame_);
     exportFrame_->setMenu(exports);
     exports->addAction("Current frame · PNG…", this, [this] {
         if (playing_) {
-            pausedMs_ += clock_.elapsed();
-            playing_ = false;
-            play_->setText("Play");
+            pausePlayback();
         }
         showFrame();
         guarded([this] {
@@ -210,8 +246,8 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
             });
         });
     }
-    note("Neutral five-unit squads and a preview background. Character motion and sound are "
-         "omitted. Desktop filtering and blending approximate the game.",
+    note("Play previews the effect and its sounds together. Character motion sounds are separate. "
+         "Desktop rendering and audio filtering approximate the game.",
          scene);
     auto right = new QWidget;
     auto options = new QVBoxLayout(right);
@@ -476,6 +512,7 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     render();
 }
 AttackEffectEditor::~AttackEffectEditor() {
+    soundOutput_->stop();
     if (canceled_)
         canceled_->store(true);
 }
@@ -572,6 +609,9 @@ void AttackEffectEditor::refresh() {
     redo_->setEnabled(historyIndex_ + 1 < history_.size());
 }
 void AttackEffectEditor::render() {
+    pausePlayback();
+    restartOnPlay_ = false;
+    soundTrack_.clear(); soundCues_.clear(); soundReady_ = false; soundPreparing_ = false;
     if (canceled_)
         canceled_->store(true);
     canceled_ = std::make_shared<std::atomic_bool>(false);
@@ -580,6 +620,7 @@ void AttackEffectEditor::render() {
     clip_.clear();
     holds_.clear();
     clipTicks_ = 0;
+    audio_->setMessage("Preparing effect sound cues…");
     play_->setEnabled(false); step_->setEnabled(false); exportFrame_->setEnabled(false);
     framePosition_->clear();
     pausedMs_ = 0;
@@ -587,6 +628,7 @@ void AttackEffectEditor::render() {
     play_->setText("Play");
     preview_->setText("Preparing effect preview…");
     if (inherited_ < 0 && visual_.nativeEffect < 0 && !visual_.frames) {
+        audio_->setMessage("No separate visual effect. Use Preview class motion for this attack's animation sounds.");
         preview_->setText(
             "This attack uses its class animation.\nChoose Replace effect to add a visual effect.");
         return;
@@ -607,6 +649,7 @@ void AttackEffectEditor::render() {
         if (generation != generation_)
             return;
         if (!result.error.isEmpty()) {
+            audio_->setMessage("Sound trace unavailable: " + result.error);
             preview_->setText(result.error);
             notice_->setText(
                 "The preview could not finish. Your existing effect is preserved until Apply.");
@@ -615,16 +658,18 @@ void AttackEffectEditor::render() {
         clip_ = result.images;
         holds_ = result.holds;
         clipTicks_ = result.ticks;
+        const int effect = visual_.nativeEffect < 0 ? inherited_ : visual_.nativeEffect;
+        audio_->setCues(result.audio, effectNames(project_->rom()).value(effect,"Imported effect"),true);
+        soundCues_ = result.audio;
         play_->setEnabled(clipTicks_ > 0); step_->setEnabled(clipTicks_ > 0); exportFrame_->setEnabled(clipTicks_ > 0);
         sourceArtwork_ = result.artwork;
         refreshArtwork();
-        playing_ = true;
-        play_->setText("Pause");
-        clock_.restart();
+        playing_ = false;
+        play_->setText("Play");
         showFrame();
     });
     watcher->setFuture(
-        QtConcurrent::run([rom, bodyAnimations, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes] {
+        QtConcurrent::run([rom, bodyAnimations, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes, attack] {
             EffectPlayer::Scene scene;
             scene.bodyAnimations = bodyAnimations;
             scene.sourceClass = classId;
@@ -632,13 +677,72 @@ void AttackEffectEditor::render() {
             scene.allies = allies;
             scene.targetCount = targetCount;
             scene.strikeCount = strikes;
+            scene.attack = attack.animation;
             return renderEffectClip(rom, visual, inherited, scene, cancel);
         }));
 }
 int AttackEffectEditor::currentTick() const {
     if (clipTicks_ <= 0) return 0;
-    const auto tick = (pausedMs_ + (playing_ ? clock_.elapsed() : 0)) * 30 / 1000;
-    return loop_->isChecked() ? int(tick % clipTicks_) : int(qMin<qint64>(tick, clipTicks_ - 1));
+    return int(qMin<qint64>(playbackPosition() * 30 / 1000, clipTicks_ - 1));
+}
+qint64 AttackEffectEditor::playbackPosition() const {
+    return playing_ ? soundPlaying_ ? soundOffsetMs_ + soundOutput_->positionMs()
+                                   : pausedMs_ + clock_.elapsed() : pausedMs_;
+}
+qint64 AttackEffectEditor::playbackDuration() const {
+    const qint64 visual = qint64(clipTicks_) * 1000 / 30;
+    return soundEnabled_->isChecked() ? qMax(visual, qint64(soundTrack_.size() / 128)) : visual;
+}
+void AttackEffectEditor::pausePlayback() {
+    pausedMs_ = playbackPosition();
+    playing_ = playRequested_ = soundPlaying_ = false;
+    soundOutput_->stop();
+    play_->setText("Play");
+}
+void AttackEffectEditor::startPlayback() {
+    if (clipTicks_ <= 0) return;
+    if (restartOnPlay_) { pausedMs_ = 0; restartOnPlay_ = false; }
+    audio_->stopAudition();
+    playRequested_ = true;
+    if (soundEnabled_->isChecked() && !soundCues_.isEmpty() && !soundReady_) {
+        play_->setText("Cancel loading");
+        if (soundPreparing_) return;
+        soundPreparing_ = true;
+        notice_->setText("Preparing synchronized sound…");
+        struct Result { SoundPreview sound; QString error; };
+        auto watcher = new QFutureWatcher<Result>(this);
+        const int generation = generation_;
+        connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, generation] {
+            const auto result = watcher->result(); watcher->deleteLater();
+            if (generation != generation_) return;
+            soundPreparing_ = false; soundReady_ = true;
+            soundTrack_ = result.sound.pcm;
+            notice_->setText(!result.error.isEmpty() ? "Sound preview unavailable: " + result.error
+                : result.sound.unresolved ? "Some linked sounds need a battle actor and cannot be previewed here."
+                : result.sound.limited ? "Looping sounds are limited to 15 seconds in this preview." : QString());
+            if (playRequested_) startPlayback();
+        });
+        watcher->setFuture(QtConcurrent::run([rom = project_->rom(), cues = soundCues_, ticks = clipTicks_, cancel = canceled_] {
+            Result result;
+            try { result.sound = renderSoundTimeline(rom, cues, ticks, cancel); }
+            catch (const std::exception &e) { result.error = QString::fromUtf8(e.what()); }
+            return result;
+        }));
+        return;
+    }
+    if (pausedMs_ >= playbackDuration() - 1) pausedMs_ = 0;
+    soundPlaying_ = false;
+    if (soundEnabled_->isChecked() && !soundTrack_.isEmpty()) {
+        const auto offset = qBound<qint64>(0, pausedMs_ * 32 * 4, soundTrack_.size());
+        auto pcm = soundTrack_.mid(offset);
+        for (qsizetype i = 0; i < pcm.size(); i += 2)
+            qToLittleEndian<qint16>(qFromLittleEndian<qint16>(pcm.constData() + i) * audio_->previewVolume() / 100,
+                                   pcm.data() + i);
+        if (!pcm.isEmpty()) try {
+            soundOutput_->play(std::move(pcm)); soundPlaying_ = true; soundOffsetMs_ = pausedMs_;
+        } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    }
+    playing_ = true; playRequested_ = false; clock_.restart(); play_->setText("Pause");
 }
 SpriteAsset AttackEffectEditor::renderedSequence() const {
     return effectSequence(clip_, holds_, "Rendered attack effect");
@@ -658,11 +762,11 @@ QImage AttackEffectEditor::renderedFrame() const {
     return clip_[index];
 }
 void AttackEffectEditor::showFrame() {
-    if (playing_ && !loop_->isChecked() && clipTicks_ > 0 &&
-        (pausedMs_ + clock_.elapsed()) * 30 / 1000 >= clipTicks_) {
-        pausedMs_ = (qint64(clipTicks_) * 1000 + 29) / 30;
-        playing_ = false; play_->setText("Play");
+    if (playing_ && playbackPosition() >= playbackDuration()) {
+        pausePlayback();
+        if (loop_->isChecked()) { pausedMs_ = 0; startPlayback(); }
     }
+    audio_->setTick(currentTick());
     const auto image = renderedFrame();
     if (image.isNull()) return;
     framePosition_->setText(QString("Frame %1 / %2 · 30 fps").arg(currentTick() + 1).arg(clipTicks_));
@@ -707,6 +811,7 @@ void AttackEffectEditor::chooseRom() {
     if (dialog.exec() == QDialog::Accepted && list->currentItem()) {
         AttackVisual v;
         v.delay = visual_.delay;
+    v.audio = visual_.audio;
         v.nativeEffect = list->currentItem()->data(Qt::UserRole).toInt();
         record(v);
     }
@@ -892,6 +997,7 @@ void AttackEffectEditor::chooseAttack() {
 void AttackEffectEditor::importLibrary(const QString &id) {
     AttackVisual v;
     v.delay = visual_.delay;
+    v.audio = visual_.audio;
     v.frames = project_->sprites().asset(id);
     v.frames->id = SpriteLibrary::newId();
     v.validate();
@@ -900,6 +1006,7 @@ void AttackEffectEditor::importLibrary(const QString &id) {
 void AttackEffectEditor::importFiles(const QStringList &paths) {
     AttackVisual v;
     v.delay = visual_.delay;
+    v.audio = visual_.audio;
     v.frames = importAnimationFiles(paths);
     v.validate();
     record(v);

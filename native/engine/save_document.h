@@ -100,6 +100,8 @@ class SaveDocument {
     void apply(const SaveChange &, bool forward);
     QByteArray serialize() const;
     void setClassCount(int);
+    void setMovementPriority(const QByteArray &priority) { movementOrder_=priority; }
+    void setMovementRules(const Project &);
     void validateClassEdits(int classCount) const;
     void validateEquipmentEdits(int itemCount) const;
     void validateUnitSupplyEdits(const Project &) const;
@@ -124,6 +126,10 @@ class SaveDocument {
     int address(SaveTable, int row) const;
     Format format_ = Format::Ram;
     QByteArray original_, data_, originalData_, ram_, blob_;
+    QByteArray movementRecords_;
+    bool derivedMovement_ = false;
+    void restoreMovementCache(QByteArray &) const;
+    bool movementCacheAddress(int address) const;
     QByteArray monthLengths_, movementOrder_;
     QVector<Cell> codec_;
     int classCount_ = 165, slot_ = -1, chunkSize_ = 0x20000;

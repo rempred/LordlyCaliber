@@ -284,7 +284,7 @@ void TransformPreview::draw() {
         setProperty("channelRecord", record);
         auto real = [&](int at) { return std::bit_cast<float>(u32(record, at)); };
         status_->setText(
-            QString("Tick %1 Â· %2\nPosition %3, %4, %5 Â· rotation %6, %7 Â· scale %8\n%9%10%11")
+            QString("Tick %1 · %2\nPosition %3, %4, %5 · rotation %6, %7 · scale %8\n%9%10%11")
                 .arg(tick_)
                 .arg(state_->done()
                          ? "Sequence complete"

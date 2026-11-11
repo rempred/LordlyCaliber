@@ -16,9 +16,9 @@ int PoseRuntimeImage::count(const Rom &rom) {
                    ? 0
                    : -1;
     if (header.size() != descriptorSize || !header.startsWith("LC05POSE") || u32(header, 8) < 1 ||
-        u32(header, 8) > 2 || u32(header, 12) > 256 || u32(header, 16) > 1 ||
+        u32(header, 8) > 3 || u32(header, 12) > 256 || u32(header, 16) > 1 ||
         u32(header, 20) < readerAddress || u32(header, 20) >= readerAddress + readerSize ||
-        u32(header, 20) % 4 || u32(header, 24) > (u32(header, 8) == 2 ? 1U : 0U) ||
+        u32(header, 20) % 4 || u32(header, 24) > (u32(header, 8) >= 2 ? 1U : 0U) ||
         u32(header, 28) || u8(widths, 22) != (u32(header, 16) ? 3 : 0) ||
         header.mid(64, 32) != QByteArray::fromHex(sha256(pose)) ||
         header.mid(96, 32) != QByteArray::fromHex(sha256(reader)) ||

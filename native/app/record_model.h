@@ -23,6 +23,7 @@ class RecordModel : public QAbstractTableModel {
     int createClass(const QString &name);
     int appendItem(int source, const QString &name);
     int createWeaponType(const QString &name, int item = -1);
+    int createMovementType(const QString &name, int copyFrom, int speed, int classId);
     int createItem(const QString &name);
     void applyProject(const Project &project);
     void setPersonalName(int classId, int nameId, const QString &newName = {});

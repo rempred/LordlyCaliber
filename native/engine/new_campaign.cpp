@@ -25,6 +25,7 @@ QByteArray NewCampaign::armyBytes(const QJsonObject &settings,int id) {
 QByteArray NewCampaign::armyMemory(const Project &project,const QByteArray &bytes) {
     auto save=SaveDocument::open(project.runtimeRom(),bytes,project.records(Table::Classes).size());
     save.selectSlot(0);
+    save.setMovementRules(project);
     save.apply(save.planArmyRefresh(project),true);
     const auto &memory=save.memory();
     if(save.units().isEmpty())throw Error("A starting army needs at least one squad");

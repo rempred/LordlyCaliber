@@ -3,5 +3,6 @@
 #include "engine/effect_machine.h"
 namespace lordly {
 // Mount the same visual modules exported to the game, in preview-owned RAM.
-void installEffectPreviewRuntime(EffectMachine &, const AttackVisual &, int inherited);
+void installEffectPreviewRuntime(EffectMachine &, const AttackVisual &, int inherited,
+                                const std::function<void(quint32)> &soundSubmit = {});
 }

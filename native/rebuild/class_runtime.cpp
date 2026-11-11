@@ -12,6 +12,7 @@
 #include "engine/mission_tables.h"
 #include "engine/mission_runtime.h"
 #include "rebuild/promotion_runtime.h"
+#include "engine/automatic_promotion_owner.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -26,7 +27,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
                   const LeaderAffinity *affinity, bool customStoryFlags, const ConsumableTreeInput *consumableTrees,
                   const QByteArray &missionTables, const NewCampaignInput *campaign,
-                  bool wideIdleHeight) {
+                  bool wideIdleHeight, const MovementInput *movement) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -144,6 +145,24 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         result.data.layout.end = result.data.layout.indexBase + quint32(result.data.bytes.size());
         if (result.data.layout.end > 0x80400000U)
             throw Error("Wide idle-frame height support exceeds permanent class storage");
+    }
+    if (movement) {
+        while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+        auto input=*movement; input.classCount=result.data.layout.count; if(capacity){input.bindings=capacity->symbols;for(auto i=capacity->entries.begin();i!=capacity->entries.end();++i)input.bindings[i.key()]=i.value();}
+        result.movement=buildMovementRuntime(input,result.data.layout.end,dataRomOffset+result.data.bytes.size(),compiler,directory,[&](quint32 a){
+            if (result.missionTableAddress) {
+                const auto world=MissionTables::worldAddress(result.missionTableAddress);
+                if(a>=0x8018f5a0 && a<0x8018f80d)return result.missionTableAddress+a-0x8018f5a0;
+                if(a>=0x801e7e10 && a<0x801e8134)return world+a-0x801e7e10;
+                if(a>=0x801e8134 && a<0x801e8240)return world+MissionTables::keyCount*12+a-0x801e8134;
+                if(a>=0x801e8240 && a<0x801e8564)return world+MissionTables::keyCount*16+a-0x801e8240;
+            }
+            if (capacity) return capacity->relocated(a,result.data.layout);
+            if(a>=0x80187bcc && a<0x8018aa70)return result.data.layout.indexBase+a-0x80187bcc;
+            return a;
+        });
+        result.data.bytes+=result.movement->data;result.data.layout.end=result.data.layout.indexBase+result.data.bytes.size();
     }
     if (customStoryFlags) {
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
@@ -373,7 +392,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         if (shopPlacement)
             canonical = shopPlacement->canonicalReferences(canonical, start);
         validateArtOwnerLinks(rom,start,size);
-        const auto hash = QString::fromLatin1(sha256(canonicalArtOwner(canonical,start)));
+        const auto hash = QString::fromLatin1(sha256(canonicalAutomaticRequirementOwner(
+            canonicalArtOwner(canonical,start), start)));
         bool recognized = hash == owner["retailSha256"].toString();
         for (const auto &v : shopConsumerOwners()) {
             const auto variant = v.toObject();

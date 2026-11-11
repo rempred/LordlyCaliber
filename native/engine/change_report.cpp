@@ -253,6 +253,12 @@ ChangeReport Project::changeReport(const Project *reference) const {
         settings(lines, before, weaponTypes_.names(), "Weapon type");
         add("Items and equipment", "Named weapon types", lines, {"items"});
     }
+    if (!rom_.revision()) {
+        QStringList lines;
+        settings(lines, reference ? reference->movementTypes_.json() : MovementTypes::load(rom_).json(),
+                 movementTypes_.json(), "Movement types");
+        add("Movement", "Types, speeds and terrain costs", lines, {"tools"});
+    }
     auto locationNames = campaignMap_;
     for (const auto &bank : texts_) {
         for (int id = 0; id < bank.entries.size(); ++id) {
@@ -301,6 +307,8 @@ ChangeReport Project::changeReport(const Project *reference) const {
         };
         const QStringList gates{
             "STR", "VIT", "INT", "MEN", "AGI", "DEX", "Minimum alignment", "Maximum alignment"};
+        const auto originalAutomatic = reference ? reference->promotion_->automatic
+                                                 : AutomaticPromotion::load(rom_);
         for (int id = 1; id < p.classCount(); ++id) {
             QStringList lines;
             const bool added = id >= a.size();
@@ -311,6 +319,13 @@ ChangeReport Project::changeReport(const Project *reference) const {
                         gates[f], added ? "Not present" : number(u8(p.originalGates, id * 8 + f)),
                         number(after));
             }
+            for (const auto &route : p.automatic.routes(id))
+                for (int f = 0; f < 8; ++f)
+                    if (p.automatic.supports(route.id, f) && originalAutomatic.supports(route.id, f) &&
+                        p.automatic.value(route.id, f) != originalAutomatic.value(route.id, f))
+                        lines << transition(route.label + " · " + gates[f],
+                                            number(originalAutomatic.value(route.id, f)),
+                                            number(p.automatic.value(route.id, f)));
             if (added || a[id] != b[id])
                 lines << transition(
                     "Family", added ? "Not present" : familyName(p.originalFamilies, a[id].toInt()),

@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/movement_runtime.h"
 #include "engine/new_campaign.h"
 #include "engine/deleted_content.h"
 #include "engine/effect_resources.h"
@@ -25,7 +26,7 @@
 
 namespace lordly {
 bool Project::expandedArmies() const {
-    if(runtimeRom_)return true;
+    if(runtimeRom_ && CapacityPlacement::read(*runtimeRom_))return true;
     if(scenarios_)for(const auto &scenario:scenarios_->entries()) {
         int members=0;
         for(int i=0;i<scenario.squads.size();++i) {
@@ -171,8 +172,15 @@ const QVector<Field> &fields(Table table) {
 Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     rom.requireSupported();
     Project p;
-    if(const auto capacity=CapacityPlacement::read(rom)) {
-        p.runtimeRom_=rom;
+    if (!rom.revision()) {
+        p.movementTypes_ = MovementTypes::load(rom);
+        if (const auto movement = MovementPlacement::read(rom)) {
+            if (!p.runtimeRom_) p.runtimeRom_ = rom;
+            rom = Rom::fromBytes(movement->canonical(rom));
+        }
+    }
+    if (const auto capacity=CapacityPlacement::read(rom)) {
+        if (!p.runtimeRom_) p.runtimeRom_=rom;
         rom=capacity->canonical(rom);
     }
     p.rom_ = std::move(rom);
@@ -181,6 +189,7 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         p.originalScenarioBattlefields_ = p.scenarioBattlefields_;
     }
     p.catalog_ = catalog;
+    if (!p.rom_.revision()) p.catalog_["MOVEMENT_TYPES"] = p.movementTypes_.labels();
     p.catalog_["CLASS_LABELS"] = catalog.contains("CLASS_LABELS")
                                      ? catalog["CLASS_LABELS"] : catalog["CLASS_NAMES"];
     const auto classPlacement = ClassPlacement::read(p.rom_);
@@ -348,6 +357,7 @@ int Project::changedRecords() const {
     int count =
         int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size()) + int(personalNames_.has_value()) + int(replacedClassAssets_.size()) + (deletedContent_!=readDeletedContent(rom_));
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names()) ++count;
+    if (!rom_.revision() && movementTypes_.modified()) ++count;
     if (attacks_ && attacks_->modified()) ++count;
     if (nameTables_ && nameTables_->modified()) ++count;
     for (const auto &[table, records] : tables_)
@@ -698,6 +708,7 @@ ClassData Project::classData() const {
     }
     if (army_)
         army_->applyRoutes(result);
+    result.setMovementPriority(movementTypes_.priorityBytes());
     return result;
 }
 int Project::classDescriptionIndex(int classId) {
@@ -1275,6 +1286,8 @@ QJsonObject Project::manifest() const {
     result["records"] = edits;
     if (attacks_ && attacks_->modified()) result["attacks"] = attacks_->json();
     else result.remove("attacks");
+    if (!rom_.revision() && movementTypes_.modified()) result["movementTypes"] = movementTypes_.json();
+    else result.remove("movementTypes");
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names())
         result["weaponTypes"] = weaponTypes_.names();
     else result.remove("weaponTypes");
@@ -1506,6 +1519,10 @@ void Project::applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy
     if (object.contains("attacks")) {
         if (!object["attacks"].isObject()) throw Error("Attacks must be an object");
         candidate.setAttacks(object["attacks"].toObject());
+    }
+    if (object.contains("movementTypes")) {
+        if (!object["movementTypes"].isObject()) throw Error("Movement types must be an object");
+        candidate.setMovementTypes(object["movementTypes"].toObject());
     }
     if (object.contains("weaponTypes")) {
         if (!object["weaponTypes"].isObject()) throw Error("Weapon types must be an object");

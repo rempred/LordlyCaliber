@@ -1,4 +1,9 @@
 #include "engine/save_document.h"
+#include "engine/movement_types.h"
+#include "engine/movement_runtime.h"
+extern "C" {
+#include "game/movement/save-cache.h"
+}
 #include "engine/capacity_placement.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
@@ -103,11 +108,31 @@ void SaveDocument::readCodec(const Rom &rom) {
     // The same boot-loaded resident region holds the increment routine's table
     // at live 80187000. Month indexes are 1..15, not the old browser's 1..12.
     // Resident movement-type aggregation ROM40F88 reads seven priority bytes.
-    movementOrder_ = rom.bytes().mid(0x5cebc, 7);
+    movementOrder_ = MovementTypes::load(rom).priorityBytes();
+    derivedMovement_=MovementPlacement::read(rom).has_value();
+    if(derivedMovement_){const auto classes=ClassData::load(rom);for(const auto &entry:classes.entries())movementRecords_+=entry.record;}
     monthLengths_ = rom.bytes().mid(0x5cf00, 15);
     for (auto day : monthLengths_)
         if (quint8(day) < 1 || quint8(day) > 30)
             throw Error("Unrecognized calendar month length");
+}
+void SaveDocument::setMovementRules(const Project &project) {
+    movementOrder_=project.movementTypes().priorityBytes();
+    derivedMovement_=project.movementTypes().requiresRuntime();
+    movementRecords_.clear();
+    if(derivedMovement_){const auto classes=project.classData();for(const auto &entry:classes.entries())movementRecords_+=entry.record;}
+    if(!ram_.isEmpty())restoreMovementCache(ram_);
+}
+bool SaveDocument::movementCacheAddress(int at) const {
+    return derivedMovement_ && ((at>=sourceBase_+24 && at<sourceBase_+30*25 && (at-sourceBase_)%25==24) ||
+        (at>=0x1969b8+9 && at<0x1969b8+10*11 && (at-0x1969b8)%11==9));
+}
+void SaveDocument::restoreMovementCache(QByteArray &ram) const {
+    if(!derivedMovement_||movementRecords_.isEmpty()||ram.size()<0x200000)return;
+    lc_refresh_movement_cache(reinterpret_cast<unsigned char*>(ram.data()+sourceBase_),
+        reinterpret_cast<unsigned char*>(ram.data()+0x1969b8),reinterpret_cast<const unsigned char*>(ram.constData()+0x193bc0),
+        reinterpret_cast<const unsigned char*>(movementRecords_.constData()),unsigned(movementRecords_.size()/72),
+        reinterpret_cast<const unsigned char*>(movementOrder_.constData()),unsigned(movementOrder_.size()));
 }
 int SaveDocument::daysInMonth(unsigned year, unsigned month) const {
     if (month < 1 || month > 15)
@@ -120,6 +145,7 @@ SaveDocument SaveDocument::newArmy(const Project &project) {
     SaveDocument result;
     const auto capacity=CapacityPlacement::read(project.rom());
     result.readCodec(capacity?capacity->canonical(project.rom()):project.rom());
+    result.setMovementRules(project);
     result.data_=QByteArray(LC_SAVE_IMAGE_BYTES,0);
     result.format_=Format::Battery;result.slot_=0;
     result.classCount_=project.records(Table::Classes).size();
@@ -150,6 +176,7 @@ SaveDocument SaveDocument::newArmy(const Project &project) {
     }
     lc_save_record_seal(reinterpret_cast<unsigned char *>(result.data_.data()+16),LC_SAVE_NORMAL_BYTES,0,0);
     result=open(project.rom(),result.data_,result.classCount_);
+    result.setMovementRules(project);
     result.apply(result.planCreateUnit(1,5,classes),true);
     return result;
 }
@@ -161,6 +188,16 @@ SaveDocument SaveDocument::open(const Rom &rom, const QByteArray &bytes, int cla
     result.classCount_ = classCount;
     const auto capacity=CapacityPlacement::read(rom);
     result.readCodec(capacity?capacity->canonical(rom):rom);
+    // Capacity canonicalization also unwraps movement hooks. Recover the authored
+    // rules from the complete input before decoding its three-bit saved caches.
+    if (capacity && MovementPlacement::read(rom)) {
+        result.movementOrder_ = MovementTypes::load(rom).priorityBytes();
+        result.derivedMovement_ = true;
+        result.movementRecords_.clear();
+        const auto classes = ClassData::load(rom);
+        for (const auto &entry : classes.entries())
+            result.movementRecords_ += entry.record;
+    }
     if (bytes.size() == 0x8000 || bytes.size() == 0x10000) {
         result.format_ = Format::Battery;
         result.data_ = bytes;
@@ -370,6 +407,7 @@ SaveChange SaveDocument::planArmyRefresh(const Project &project) const {
         return difference(data_, 0, int(data_.size()));
     const auto classes = project.classData(), priorClasses = ClassData::load(project.rom());
     auto candidate = *this, original = *this;
+    candidate.setMovementRules(project);
     original.data_ = originalData_;
     const auto available = [](const ClassData &rules, QPair<int, int> pair) {
         return pair.first >= 0 && pair.second >= 0 && pair.first < rules.entries().size() &&
@@ -447,6 +485,7 @@ QByteArray SaveDocument::decode(int slot) const {
             value |= ~((1U << cell.bits) - 1);
         writeNumber(ram, cell.address, cell.bytes, value);
     }
+    restoreMovementCache(ram);
     return ram;
 }
 bool SaveDocument::validSlot(int slot) const {
@@ -708,7 +747,7 @@ SaveChange SaveDocument::planBytes(int at, const QByteArray &replacement) const 
                 continue;
             const quint32 v = number(edited, cell.address, cell.bytes);
             const auto max = cell.bits == 32 ? 0xffffffffU : (1U << cell.bits) - 1;
-            if (!cell.sign && v > max)
+            if (!cell.sign && v > max && !movementCacheAddress(cell.address))
                 throw Error("Value exceeds its packed-save field width");
             for (int i = std::max(at, cell.address);
                  i < std::min(at + width, cell.address + cell.bytes); ++i)
@@ -996,7 +1035,7 @@ SaveChange SaveDocument::planLegionMembers(const SaveLegion &legion) const {
         put8(record, 2 + i, quint8(legion.units[i]));
         const int id = legion.units[i];
         const int type = id == 255 ? 0 : u8(ram_, sourceBase_ + id * 25 + 24);
-        if (type > 7)
+        if (type && !movementOrder_.contains(char(type)))
             throw Error("A legion squad has an unsupported movement type");
         types << type;
         count += id != 255;

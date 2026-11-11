@@ -414,8 +414,9 @@ int ClassData::commandType(int primary, int secondary) const {
     return u8(entries_[selected].record, commandTypeOffset);
 }
 int ClassData::unitMovementType(const QVector<QPair<int, int>> &members,
-                                const QByteArray &priority) const {
-    if (members.size() > 5 || priority.size() != 7)
+                                const QByteArray &sourcePriority) const {
+    const auto &priority=movementPriority_.isEmpty()?sourcePriority:movementPriority_;
+    if (members.size() > 5 || priority.size() < 7 || priority.size() > 254)
         throw Error("Unit movement requires up to five members and the ROM priority table");
     QVector<int> types(5, 0);
     for (int i = 0; i < members.size(); ++i)

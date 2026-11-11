@@ -17,6 +17,7 @@ class AttackEditor : public QWidget {
     AttackEditor(Project *, QUndoStack *, std::function<void()>, QWidget *parent = nullptr);
     void selectAttack(int);
   signals:
+    void editCaption(int attackId);
     void editAnimation(int classId, int attackId);
 
   private:

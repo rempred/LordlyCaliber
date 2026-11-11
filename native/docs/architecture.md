@@ -1,5 +1,22 @@
 # Native Lordly Caliber
 
+## Movement types (November 10)
+
+`MovementTypes` owns stable IDs, terrain rows, base speeds, behavior kinds and
+mixed-squad priority. `game/movement` contains generated adaptations of accepted
+C; `tools/generate-movement-c.cjs` authenticates the inputs. Runtime data and C
+append to the permanent class allocation. The descriptor at z64 ROM `0x27c5700`
+records checksums and reversible hooks. Unwrapping restores the exact earlier
+class payload and checksum before capacity canonicalization.
+
+Army aggregation uses the identity/current-class anchor lookup and Soldier
+character zero. Map aggregation retains its current-class and story rules.
+Combat callers of the movement getter receive the original physical kind.
+Normal save load reconstructs the three-bit squad/Legion movement caches from
+members; SaveDocument and starting-army preparation use the same policy.
+Instruction tests cover the exported game code with controlled terrain/height
+and unrelated save fixups; they do not establish full-console playback.
+
 ## New Campaign (November 6)
 
 SceneEvents version 9 stores campaign settings and named army presets in row 1.
@@ -7476,3 +7493,121 @@ unchanged distant straight segments. UI campaignRepeatedRoadDragging passed 30
 mouse gestures and Undo/Redo of the whole series. Existing road controls, overlap
 drawing, description UI and road export/reopen/instruction tests passed. Logs:
 build/Release/pending-20261103/road-freeze-{before,engine,ui}.txt.
+
+## Attack sound cue inspection and audition, 2026-11-10
+
+EffectMachine entry observers preserve native execution while EffectPlayer records
+cue-adapter RAM801F9DFC (ROM24E9BC) and dispatch RAM801C5938 (ROM208DC8), including
+request order and the effect's actual tick. A request is not proof that the game's
+queue accepts it. ActorPosePlayer uses an ordered callback for controls17–20;
+tracePoseAudio stops at the first repeated pose state or its explicit budget.
+Alternate linked18/20 requests retain the unresolved key rather than pretending
+to share the effect adapter's lookup. Effect and body clocks remain separate.
+
+SoundPreview executes original resident libmus code, not a replacement bytecode
+parser. Sample-bank relocation, component spawning, note deadlines, envelope,
+pitch and pan controls run against isolated8MiB memory. Sound bank4E3140 contains
+740 public roots/1798 components. Original loader ROM3F1B0 (RAM800E9C20,
+boot DMA at ROM2394) binds it to PtrTablesV2 bank423FF0 and WaveTables429CD0;
+ROM3FAF8 consumes a one-based *channel target* and subtracts one. This is not
+the numbering of battle requests: ROM208DC8 → ROM3FB94 → ROM3FEB4 queues the
+zero-based request unchanged, and ROM404AC passes it directly to MusStartEffect.
+SoundPreview follows that queue path (including ROM401B4 priority selection),
+with a shared libmus pool for the complete effect timeline. Boot22B4
+requests32000Hz; libmus updates60Hz, independent of the30Hz effect clock.
+Explicit host sinks receive native voice start/stop/volume/pitch/pan changes.
+The unmodified MPL2 VADPCM decoder at third_party/vadpcm decodes samples;
+portable packages include its exact source/license. The host mixer interpolates
+samples and ramps volume, with fixed headroom, approximate pan law and no reverb.
+It is a dry audition, not RSP/DAC-exact rendering. A900tick cap handles loops.
+Other game sounds/music are absent; the effect's own requests share native queue
+and voice state. Isolated part audition runs the same queue with one request.
+
+AudioCueView asynchronously renders the displayed requests, cancels stale work,
+and applies local preview gain. SoundOutput owns a Windows WaveOut PCM buffer;
+stop, selection change and destruction reset/unprepare/close it. Playback does
+not change the system volume. Linked cues without a resolved request disable
+Play. AttackEffectEditor now supplies the chosen attack's native animation ID to
+its scene instead of the generic preview default55.
+
+Optional part capture starts a separate PCM stream at each native synthesizer
+voice-start callback. Its sample-ROM address, voice slot and 60 Hz start tick
+come from the original libmus execution; later pitch/pan/envelope changes remain
+in that part. These streams omit leading silence for isolated audition. Full
+sound PCM is unchanged; recombination tolerates only per-stream integer rounding.
+Both audio tables show expanded full-sound rows with indented part rows. Selection
+directly controls audition; there is no separate part dropdown. Full effect
+times and relative part offsets distinguish repeated triggers from overlapping
+sample parts. Selection alone does not change project audio data. Parent rows
+replace full sounds; child rows replace/import/mute/retime only that part. The
+donor picker expands every sound and its parts, with selection-based audition.
+
+Part authoring stores optional per-part overrides in AttackSound. Each carries
+the original component/note identity, both position variants and a copied source.
+Timing uses the native 60 Hz audio clock; full-effect triggers remain 30 Hz.
+LCSND001 sources execute through private carrier banks and isolated note banks.
+Carrier notes keep their original sequencing; replaced voice starts use a private
+looping silent raw16 wave so subsequent volume ramps still advance. Isolated
+native notes restore channel state captured before the per-channel update at
+RAM8008236C, retaining original samples, pitch and envelopes. Copied sources have
+private RNG state. The original FX bank and sample bank remain intact. Imported
+parts use the existing PCM format. Project/archive and ROM metadata retain edits.
+Frame/voice/decode hooks are generated from the pinned original ROM and appended
+to the existing hook directory. Preview and exported game compile the same C.
+Native instruction tests inspect actual carrier output, not only the logical
+part list displayed by the editor. Full-console acoustic comparison remains
+outside this check; the preview still omits N64 reverb.
+
+Correction to the initial audition implementation: using the channel-target
+minus-one rule for a battle request selected a neighboring sound. Original
+queue traces now establish Gaze opening303/304 = five parts, impact305/306 =
+three parts. The earlier four/five counts were observations of the wrong roots.
+
+Validation: audio_cues_tests compares original Gaze105/Petrify118 trigger times
+on both sides with independent FloatMips, plus delay17, repeats, imported silent
+frames, body-cue order/loop boundaries and actual Qt dialog navigation. Audible
+rendering checks Gaze303–306/Petrify280–281 and looping request11 against original
+sequencer completion/voice starts. A separately implemented recurrence checks
+all133 effect-bank sample PCM hashes. Windows playback is exercised at zero gain
+through the real dialog; this verifies output submission/stop, not acoustic
+fidelity. Bank-wide740-request and existing effect/pose regressions are recorded
+in the current parent audio task note. Full original-console audio comparison
+has not been performed. No export format or game audio resource is edited.
+
+## Attack-effect audio editing (2026-11-10)
+
+Extends the preceding read-only cue inspection. AttackVisual.audio stores a
+validated independent cue list. LCFX0003 wraps the unchanged LCFX0001/2 visual
+with LCAUDIO1 rows, imported sample banks and bounded editable metadata. ROM
+addresses are calculated at final placement and verified during reopen; no
+retail audio bank is overwritten. Native-cue anchors preserve side/target timing
+and original queue context. Custom sound entry hooks suppress only the owning
+effect's original cues; artwork namespaces remain conditional on artwork edits.
+
+A separate bounded queue advances on the existing final effect draw clock and
+clears on native task-pool initialization/free. Native tasks cannot implement
+these delays reliably because retail choreography can pause task groups.
+Imported raw16 uses the accepted audio_load_0001d220.c path. Sample byte order is
+converted from WAV little endian to game big endian; original libmus sequences
+the voice. The bank base-note byte0 plus note48 gives unity pitch. The native
+sample DMA reads the clip from its verified ROM allocation. The preview executes
+original libmus for both VADPCM and raw16, retaining its documented dry-mix limit.
+
+Checks and exact boundaries: parent docs/Plans/task-logs/attack-audio-editing-20261110.md.
+
+## Attack-name caption artwork (November 10)
+
+AttackData allocation version7 adds a256-entry image pointer table at header+20.
+Only authored captions allocate images; each is a native90×15 CI4 image with a
+48-byte row. Project entries store1350 bounded indices0..3. Empty models retain
+the older serialization. Loaded retail artwork and ROM font resources supply
+previews/generation without changing the original compressed sheet.
+
+Maintained attack-caption.c wraps native setup, frame drawing, image selection
+and element lookup. Queued action identity is retained per caption window/side,
+including recycled window addresses and same-named independent attacks. The
+retail name scan is extended to the already allocated255-action range; three
+exact guarded operands restore when removing the allocation (hook prefix51+).
+Native borders, lifetime and tint handling remain. Setup bounds its text copy to
+63 bytes plus terminator; the complete name is retained in its generated image.
+Caption textures and code use the existing checked permanent attack allocation.

@@ -22,7 +22,7 @@ m.load(table-mapping.length,mapping);
 // Supply a declared policy table for this isolated interpreter/query fixture.
 // Constructor/export checks separately execute the actual exported table.
 const policies=Buffer.alloc(512);for(let i=0;i<256;i++)policies.writeUInt16BE(511+([135,136,161,165].includes(i)?1024:0),i*2);
-if(bodyPolicies){m.load(0x801c4218,candidate.subarray(0x2076a8,0x20772c));m.load(table-mapping.length-512,policies);}
+if(bodyPolicies){m.load(0x801c41c8,candidate.subarray(0x207658,0x207a70));m.load(table-mapping.length-512,policies);}
 m.trap(0x801be138,c=>c.set('v0',1));m.trap(0x801c2ce4,c=>c.set('v0',program));
 const rows=Array.from({length:258},(_,i)=>Buffer.from([1,1,i&255,2]));
 rows[100]=Buffer.from([2,1,9,4,5,100]);rows[256]=Buffer.from([2,1,42,2,22,0,1]);rows[257]=Buffer.from([2,22,0,1,0]);

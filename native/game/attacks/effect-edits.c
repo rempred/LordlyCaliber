@@ -38,10 +38,12 @@ void *lc_original_edit_screen_callback(u32,int);
 void lc_original_edit_scene_draw(void);
 void lc_original_edit_screen_draw(int);
 u32 lc_effect_color(u32,int,int,u32);
+u8 *lc_audio_base(u8 *);
+void lc_audio_tick(void);
 static u8 *config(int id) {
     u8 *p;
     if (id < 1 || id > 254) return 0;
-    p = (u8 *)W(lc_attack_settings + id * 32,24);
+    p = lc_audio_base((u8 *)W(lc_attack_settings + id * 32,24));
     return p && W(p,0)==0x4c434658 && W(p,4)==0x30303032 ? p : 0;
 }
 static int index(void *p,u32 base,int stride,int skip) {
@@ -52,7 +54,10 @@ int lc_effect_push(void *p) {
     int id,old=active;
     active=0;
     if(!p) return old; /* A retail effect has no custom resource namespace. */
-    for(id=1;id<255;id++) if(config(id)==p) { active=id; break; }
+    for(id=1;id<255;id++) {
+        u8 *raw=(u8 *)W(lc_attack_settings+id*32,24);
+        if(config(id)==p || (raw && W(raw,4)==0x30303033 && lc_audio_base(raw)==p)) { active=id; break; }
+    }
     return old;
 }
 void lc_effect_pop(int old) { active=old; }
@@ -104,10 +109,10 @@ void *lc_attack_edit_graphic(u32 callback) {
     }
     return p;
 }
-static int named(int id) { return active && id>0 && id<65536 ? (active<<16)|id : id; }
+static int named(int id) { return config(active) && id>0 && id<65536 ? (active<<16)|id : id; }
 void *lc_attack_edit_cache_alloc(void) {
     void *p=lc_original_edit_cache_alloc(); int at=index(p,G(0x80220ca8),20,0);
-    if(at>=0) cache_id(at)=active;
+    if(at>=0) cache_id(at)=config(active)?active:0;
     return p;
 }
 void *lc_attack_edit_cache(int type,int id,int extra) {
@@ -292,4 +297,5 @@ void lc_attack_edit_screen_draw(int layer) {
         p=config(i);
         if(p && H(p,20) && W(p,52) && W(p,48)<600) W(p,48)++;
     }
+    if(layer==1)lc_audio_tick();
 }

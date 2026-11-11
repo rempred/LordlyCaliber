@@ -124,6 +124,7 @@ Promotion Promotion::load(const Rom &rom) {
     if (rom.revision() != 0)
         throw Error("Promotion source owners currently support US Rev 0");
     Promotion p;
+    p.automatic = AutomaticPromotion::load(rom);
     p.retailResource = Resource::load(rom, 0x23cdece, 384);
     p.gates = p.retailResource.decoded;
     if (p.gates.size() != 648)
@@ -438,7 +439,8 @@ void Promotion::applyExpandedData(const QByteArray &bytes, int count) {
     candidate.apply({{"families", catalog},
                      {"gates", QString::fromLatin1(bytes.first(count * 8).toHex())},
                      {"masks", QString::fromLatin1(bytes.mid(count * 12, count).toHex())},
-                     {"flags", QString::fromLatin1(bytes.mid(count * 13, count).toHex())}});
+                     {"flags", QString::fromLatin1(bytes.mid(count * 13, count).toHex())},
+                     {"automatic", automatic.json()}});
     if (candidate.buildExpandedData().bytes.first(catalogOffset) != bytes.first(catalogOffset))
         throw Error("Expanded promotion catalog and runtime family words disagree");
     *this = std::move(candidate);
@@ -447,7 +449,8 @@ QJsonObject Promotion::json() const {
     return {{"families", families},
             {"gates", QString::fromLatin1(gates.toHex())},
             {"masks", QString::fromLatin1(masks.toHex())},
-            {"flags", QString::fromLatin1(flags.toHex())}};
+            {"flags", QString::fromLatin1(flags.toHex())},
+            {"automatic", automatic.json()}};
 }
 void Promotion::apply(const QJsonObject &value) {
     auto f = validateFamilies(value["families"].toObject());
@@ -459,13 +462,18 @@ void Promotion::apply(const QJsonObject &value) {
     if (g.size() != count * 8 || m.size() != count ||
         value["gates"].toString().toLatin1().toLower() != g.toHex() ||
         value["masks"].toString().toLatin1().toLower() != m.toHex() ||
-        value.size() != (value.contains("flags") ? 4 : 3) || bits.size() != count ||
+        value.size() != (value.contains("flags") ? 4 : 3) + int(value.contains("automatic")) || bits.size() != count ||
         (value.contains("flags") &&
          value["flags"].toString().toLatin1().toLower() != bits.toHex()) ||
         std::any_of(bits.begin(), bits.end(), [](char v) { return quint8(v) & 15; }) ||
         g.first(8) != originalGates.first(8) || m.first(1) != originalMasks.first(1) ||
         bits.first(1) != originalFlags.first(1))
         throw Error("Invalid saved promotion data");
+    auto nextAutomatic = automatic;
+    if (value.contains("automatic") && !value["automatic"].isObject())
+        throw Error("Invalid automatic class-change settings");
+    nextAutomatic.apply(value["automatic"].toObject());
+    automatic = nextAutomatic;
     families = f;
     gates = g;
     masks = m;
@@ -473,7 +481,7 @@ void Promotion::apply(const QJsonObject &value) {
 }
 bool Promotion::modified() const {
     return families != originalFamilies || gates != originalGates || masks != originalMasks ||
-           flags != originalFlags;
+           flags != originalFlags || automatic.modified();
 }
 QByteArray Promotion::decodedFamilies() const {
     if (classCount() != 81)

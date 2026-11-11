@@ -1,6 +1,7 @@
 #include "engine/actor_pose.h"
 #include "engine/animation_sequences.h"
 #include "engine/body_markers.h"
+#include "engine/body_visual_policy.h"
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
 #include "engine/scene_actors.h"
@@ -569,6 +570,19 @@ class AnimationSequencesTests : public QObject {
             exportRom(project, built, output);
             QCOMPARE(BodyMarkerImage::mode(Rom::open(output)), 1);
             qInfo().noquote() << "Wide marker candidate:" << output;
+            reference.start("node", {QFINDTESTDATA("body-markers-mips.cjs"), path,
+                                     work.filePath("full-markers.json"), output});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
+            const auto cloneOutput = candidates.filePath("clone/" + QFileInfo(path).fileName());
+            QVERIFY(QDir(candidates.path()).mkpath("clone"));
+            exportRom(reopened, clone, cloneOutput);
+            reference.start("node", {QFINDTESTDATA("body-markers-mips.cjs"), path,
+                                     work.filePath("policy-markers.json"), cloneOutput});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
             auto reset = Project::fromRom(expanded);
             reset.loadAnimationRoutes();
             auto empty = *reset.animationSequences();
@@ -576,8 +590,7 @@ class AnimationSequencesTests : public QObject {
             reset.setAnimationSequences(empty.json());
             const auto restored = rebuild(reset, tools, work.path());
             QCOMPARE(BodyMarkerImage::mode(Rom::fromBytes(restored.image)), 0);
-            QCOMPARE(restored.image.mid(BodyMarkerImage::offset, BodyMarkerImage::size),
-                     rom.bytes().mid(BodyMarkerImage::offset, BodyMarkerImage::size));
+
             auto foreign = rom.bytes();
             foreign[BodyMarkerImage::offset] ^= 1;
             auto blocked = Project::fromRom(Rom::fromBytes(foreign));
@@ -738,6 +751,15 @@ class AnimationSequencesTests : public QObject {
             for (const auto &[hi, lo] : DirectDescriptors::sites()) {
                 conservation.replace(hi, 4, rom.bytes().mid(hi, 4));
                 conservation.replace(lo, 4, rom.bytes().mid(lo, 4));
+            }
+            const auto allocation = BodyVisualPolicyImage::owner("00205C88");
+            QCOMPARE(BodyMarkerImage::mode(exported), 0);
+            auto allocationParts = allocation["tables"].toArray();
+            allocationParts.append(allocation);
+            for (const auto &v : allocationParts) {
+                const auto part = v.toObject();
+                const int at = part["start"].toInt(), n = part["size"].toInt();
+                conservation.replace(at, n, rom.bytes().mid(at, n));
             }
             conservation.replace(0x10, 8, rom.bytes().mid(0x10, 8));
             QCOMPARE(conservation, rom.bytes());

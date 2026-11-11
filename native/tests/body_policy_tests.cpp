@@ -217,13 +217,17 @@ class BodyPolicyTests : public QObject {
             QCOMPARE(reopened.bodyAnimationData()->routes().visualPolicies(),
                      project.animationRoutes()->visualPolicies());
             QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
-            for (const auto &block : BodyVisualPolicyImage::constructionBlocks()) {
-                QCOMPARE(built.image.mid(block.offset - 4, 4),
-                         rom.bytes().mid(block.offset - 4, 4));
-                QCOMPARE(built.image.mid(block.offset + block.size, 4),
-                         rom.bytes().mid(block.offset + block.size, 4));
+            for (const auto &block : BodyVisualPolicyImage::owners(true).sliced(3)) {
+                for (int at : {block["start"].toInt() - 4,
+                               block["start"].toInt() + block["size"].toInt()}) {
+                    bool owned = false;
+                    for (const auto &other : BodyVisualPolicyImage::owners(true))
+                        owned |= at >= other["start"].toInt() &&
+                                 at < other["start"].toInt() + other["size"].toInt();
+                    if (!owned) QCOMPARE(built.image.mid(at, 4), rom.bytes().mid(at, 4));
+                }
                 auto corrupt = built.image;
-                corrupt[block.offset] ^= 1;
+                corrupt[block["start"].toInt()] ^= 1;
                 auto bad = Project::fromRom(Rom::fromBytes(corrupt));
                 QVERIFY_THROWS_EXCEPTION(Error, bad.loadAnimationRoutes());
             }
@@ -323,13 +327,39 @@ class BodyPolicyTests : public QObject {
             QTemporaryDir work;
             auto legacy = rebuild(original, tools, work.path()).image;
             QCOMPARE(u32(legacy, AnimationRoutes::descriptorOffset + 8), 3U);
-            QCOMPARE(u32(legacy, BodyVisualPolicyImage::descriptorOffset + 8), 1U);
+            // Reconstruct the actual previous exporter using its retained sources,
+            // on top of retail complete owners, rather than forging a new header.
+            Compiler compiler(tools);
+            for (const auto &o : BodyVisualPolicyImage::owners(false)) {
+                const int at = o["start"].toInt(), n = o["size"].toInt();
+                legacy.replace(at, n, original.rom().bytes().mid(at, n));
+                for (const auto &v : o["tables"].toArray()) {
+                    const auto t = v.toObject();
+                    const int at = t["start"].toInt(), n = t["size"].toInt();
+                    legacy.replace(at, n, original.rom().bytes().mid(at, n));
+                }
+            }
+            for (const auto &b : BodyVisualPolicyImage::blocks()) {
+                QFile file(":/game/art/" + QString::fromLatin1(b.source) + ".s");
+                QVERIFY(file.open(QIODevice::ReadOnly));
+                const auto code = compiler.assembleOwner(".equ LC_POLICY_BACK,512\n" + file.readAll(),
+                    work.path(), "legacy_" + QString::fromLatin1(b.source),
+                    quint32(0x801bdb70 + b.offset - 0x201000), {{"lc_image_join", 0x801c2fc4}}, true);
+                QCOMPARE(code.size(), b.size);
+                legacy.replace(b.offset, b.size, code);
+            }
+            put32(legacy, BodyVisualPolicyImage::descriptorOffset + 8, 1);
+            legacy.replace(BodyVisualPolicyImage::descriptorOffset + 80, 16, QByteArray(16, 0));
             // Version-three exports before body policies used zero padding here.
             // Recreate that valid prior owner, retaining its actual 60-byte selector.
             legacy.replace(0x2076a8 + 60, 72, QByteArray(72, 0));
             legacy.replace(
                 BodyVisualPolicyImage::descriptorOffset + 48, 32,
                 QByteArray::fromHex(sha256(BodyVisualPolicyImage::code(Rom::fromBytes(legacy)))));
+            auto corrupt = legacy;
+            corrupt[0x206340] ^= 1; // Outside every old fragment: full-owner validation matters.
+            auto foreign = Project::fromRom(Rom::fromBytes(corrupt));
+            QVERIFY_THROWS_EXCEPTION(Error, foreign.loadAnimationRoutes());
             auto project = Project::fromRom(Rom::fromBytes(legacy));
             project.loadAnimationRoutes();
             QVERIFY(!project.animationRoutes()->hasBodyPolicies());
@@ -339,7 +369,7 @@ class BodyPolicyTests : public QObject {
             const int clone = project.appendClass(135, "Body policy");
             const auto built = rebuild(project, tools, work.path());
             QCOMPARE(u32(built.image, AnimationRoutes::descriptorOffset + 8), 4U);
-            QCOMPARE(u32(built.image, BodyVisualPolicyImage::descriptorOffset + 8), 2U);
+            QCOMPARE(u32(built.image, BodyVisualPolicyImage::descriptorOffset + 8), 3U);
             QCOMPARE(u32(built.image, PoseRuntimeImage::descriptorOffset + 24), 1U);
             QVERIFY(built.image.mid(0x2076a8 + 68, 44) != QByteArray(44, 0));
             QTemporaryDir candidates(

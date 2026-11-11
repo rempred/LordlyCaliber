@@ -108,18 +108,13 @@ function main(args) {
       owner.start === 0x19be40 ? 'game/shops/stock.c' :
         'game/' + game('shops/consumers.json').owners.find(c => c.start === owner.start).source);
 
-  // A complete-owner check alone misses assembly edits inside accepted C.
-  // Read the actual native block definitions so added artwork adapters enter
-  // the review automatically instead of inheriting a whole-file exemption.
-  const visual = fs.readFileSync(path.join(native, 'engine/body_visual_policy.cpp'), 'utf8');
-  for (const match of visual.matchAll(/\{(0x[0-9a-f]+),\s*(\d+),\s*"([a-z-]+)"\}/gi))
-    check(match[3], Number(match[1]), Number(match[2]), 'instruction-patch',
-      'rebuild/body_visual_policy.cpp', 'game/art/' + match[3] + '.s');
-  const marker = fs.readFileSync(path.join(native, 'engine/body_markers.h'), 'utf8')
-    .match(/offset\s*=\s*(0x[0-9a-f]+),\s*size\s*=\s*(\d+)/i);
-  if (!marker) throw Error('Equipment marker allocation needs audit support');
-  check('wide-frame equipment markers', Number(marker[1]), Number(marker[2]), 'instruction-patch',
-    'rebuild/body_markers.cpp', 'game/art/body-markers.s');
+  // Body/equipment policies and marker scanning now replace complete accepted
+  // owners. The retained assembly fragments are older-ROM test fixtures only.
+  const body = game('art/body-policy-c.json');
+  for (const owner of body.owners)
+    check('body/equipment ' + owner.id + ' ' + owner.variant, owner.start,
+      owner.original.size, 'adapted-c', 'rebuild/body_visual_policy.cpp; rebuild/body_markers.cpp',
+      'game/' + owner.source);
 
   for (const [header, name, startKey, sizeKey, consumer] of [
     ['persuasion', 'persuasion table lookup', 'ownerOffset', 'ownerSize', 'rebuild/persuasion.cpp'],
@@ -181,7 +176,10 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
   for (const name of ['tools/clock.s', 'tools/clock-retail.s']) whole.add(name);
   const unused = new Set(['consumables/effects.s', 'promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s',
     'shops/consumers.s', 'shops/selection-guard.s', 'tools/goth-retail.s', 'tools/goth-reward.s',
-    'tools/reserve-bootstrap.s', 'tools/chaos-hook.s']);
+    'tools/reserve-bootstrap.s', 'tools/chaos-hook.s',
+    'art/body-construction.s', 'art/body-entrance-skip.s', 'art/body-entrance-sticky.s',
+    'art/body-roster-sticky.s', 'art/body-markers.s', 'art/equipment-allocate.s',
+    'art/equipment-image-context.s', 'art/equipment-image-kind.s', 'art/equipment-image.s', 'art/equipment-register.s']);
   const assembly = files(path.join(native, 'game')).filter(file => file.endsWith('.s')).map(file => {
     const relative = path.relative(path.join(native, 'game'), file).replaceAll('\\', '/');
     return {file: 'game/' + relative, sha256: digest(fs.readFileSync(file)),
@@ -201,7 +199,6 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
     .map(m => ({address: Number(m[1]), expected: Number(m[2])}));
   if (highAttackReferences.length !== 546) throw Error('High Attack runtime reference census needs review');
   const deferredGroups = [
-    {name: 'Body/equipment visuals and wide markers', reason: 'The adapter includes three fragments without complete accepted C; markers share its constructor.'},
     {name: 'Expanded capacity', reason: 'Only 17 of 102 entry/return hooks have accepted C. Compiler-derived settlement data relocations are preserved separately.'},
     {name: 'High Attack and animation overrides', reason: 'High Attack also changes 546 runtime references in mixed C/assembly owners. Animation overrides share constructor 0021CBC4 and its fixed register/continuation contract.'},
     {name: 'Custom encounters', reason: 'Materialization, persuasion, retreat, recruit and result consumers still include unrecovered full functions.'}

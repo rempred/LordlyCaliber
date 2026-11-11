@@ -18,6 +18,7 @@ struct Runtime {
     QVector<CompiledModule> modules;
     QByteArray trampolines;
     QMap<quint32, quint32> hooks;
+    quint32 soundSubmit = 0;
 };
 Runtime buildRuntime() {
     auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -36,6 +37,7 @@ Runtime buildRuntime() {
     symbols["lc_effect_state"] = 0x80402000;
     symbols["lc_attack_scratch"] = 0x80404100;
     symbols["lc_strike_state"] = 0x80425000;
+    symbols["lc_audio_state"] = 0x80427000;
     const auto hooks = metadata["hooks"].toArray();
     for (const auto &value : hooks) {
         const auto h = value.toObject();
@@ -52,11 +54,12 @@ Runtime buildRuntime() {
         result.trampolines += code;
     }
     quint32 address = 0x80405000;
-    for (const auto &name : {QString("attack-strikes"), QString("effect-edits"),
+    for (const auto &name : {QString("attack-strikes"), QString("attack-audio"), QString("effect-edits"),
                              QString("attack-visual"), QString("attack-strike-driver")}) {
         auto unit = name;
         unit.replace('-', '_');
         const auto prefix = name == "effect-edits" ? source("effect-colors.c") :
+                            name == "attack-audio" ? source("sound-parts.c") :
                             name == "attack-visual" ? source("effect-image-draw.c") : QByteArray{};
         auto module = compiler.compileModule(prefix + "\n" + source(name + ".c"), output.path(), unit,
                                             address, {{"battle-state.h", source("battle-state.h")}}, symbols, true);
@@ -70,10 +73,12 @@ Runtime buildRuntime() {
         const auto target = symbols.value(h["entry"].toString());
         if (target) result.hooks[quint32(h["address"].toInteger())] = target;
     }
+    result.soundSubmit = symbols.value("lc_audio_submit");
     return result;
 }
 }
-void installEffectPreviewRuntime(EffectMachine &machine, const AttackVisual &visual, int inherited) {
+void installEffectPreviewRuntime(EffectMachine &machine, const AttackVisual &visual, int inherited,
+                                 const std::function<void(quint32)> &soundSubmit) {
     static QMutex mutex;
     static std::optional<Runtime> cached;
     QMutexLocker lock(&mutex);
@@ -88,8 +93,10 @@ void installEffectPreviewRuntime(EffectMachine &machine, const AttackVisual &vis
     if (config.size() > 0xd0000) throw Error("Effect preview artwork exceeds its allocation");
     machine.mount(0x80400000, QByteArray(0x4200, 0));
     machine.mount(0x80425000, QByteArray(4160, 0));
+    machine.mount(0x80427000, QByteArray(9248, 0));
     machine.mount(0x80430000, config);
     machine.byte(0x80400000 + 55 * 32 + 21, 136);
     machine.word(0x80400000 + 55 * 32 + 24, 0x80430000);
+    if (soundSubmit) soundSubmit(cached->soundSubmit);
 }
 }

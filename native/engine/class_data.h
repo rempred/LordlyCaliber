@@ -93,6 +93,7 @@ class ClassData {
     int movementType(int primary, int secondary) const;
     int commandType(int primary, int secondary) const;
     int unitMovementType(const QVector<QPair<int, int>> &members, const QByteArray &priority) const;
+    void setMovementPriority(const QByteArray &priority) { movementPriority_=priority; }
     ClassDataImage build(quint32 ramBase, quint32 ramEnd = 0x80400000U) const;
 
   private:
@@ -100,6 +101,7 @@ class ClassData {
     // Portraits, model selection and growth have their own contracts.
     const QByteArray &linkedRecord(int identity, int current) const;
     static void validate(const ClassAsset &asset);
+    QByteArray movementPriority_;
     PersonalNames personalNames_;
     QByteArray prefix_;
     QVector<ClassAsset> entries_;

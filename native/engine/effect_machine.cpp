@@ -22,6 +22,9 @@ void EffectMachine::mount(quint32 a, const QByteArray &data, bool executable) {
 void EffectMachine::service(quint32 a, std::function<void()> callback) {
     services_.insert(a, std::move(callback));
 }
+void EffectMachine::observe(quint32 a, std::function<void()> callback) {
+    observers_.insert(a, std::move(callback));
+}
 quint8 EffectMachine::byte(quint32 a) const {
     return quint8(memory.constData()[physical(a)]);
 }
@@ -82,6 +85,8 @@ void EffectMachine::call(quint32 entry, quint32 budget) {
         pc_ = pc;
         if (!budget--)
             throw Error(QString("Effect instruction limit at %1").arg(pc, 8, 16, QChar('0')));
+        if (auto observer = observers_.constFind(pc); observer != observers_.cend())
+            (*observer)();
         if (auto service = services_.constFind(pc); service != services_.cend()) {
             (*service)();
             pc = registers[31];

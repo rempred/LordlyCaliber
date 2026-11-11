@@ -13,6 +13,8 @@ float lc_original_visual_distance(float *);
 int lc_original_visual_projectile(int, void *);
 void lc_effect_bind_current(void *);
 void lc_effect_start(void *);
+u8 *lc_audio_base(u8 *);
+void lc_audio_start(u8 *,int);
 int lc_effect_push(void *);
 void lc_effect_pop(int);
 void lc_strike_visual_list(u8 *);
@@ -257,7 +259,7 @@ static void visual_task(int state, void *data) {
     if (!s->config || H(s->config, 12) == 0) {
         const u8 *firstFrameTargets = s->extra && native_without_contact(s->donor) ? s->targets : 0;
         int strike = s->strike;
-        if (s->config) lc_effect_start(s->config);
+        if (s->config) { lc_effect_start(s->config); lc_audio_start(s->config,s->source[0]); }
         index = s->donor;
         table = (u32 *)0x8021fcc0;
         original = (VisualCallback)table[index];
@@ -292,6 +294,7 @@ static void visual_task(int state, void *data) {
         return;
     }
     if (!s->drawing) {
+        lc_audio_start(s->config,s->source[0]);
         s->pixels = (u8 *)((void *(*)(int))0x80070f30)(
             8 + ((H(s->config, 20) + 3) & ~3) * ((H(s->config, 30) & 255) == 3 ? 4 : 2) *
                     H(s->config, 22));
@@ -442,7 +445,7 @@ void lc_attack_visual_submit(int effect, u8 *source, u8 *targets, u8 *extra) {
     if (effect >= 136 && effect <= 254) {
         for (i = 1; i < 255; i++)
             if (lc_attack_settings[i * 32 + 21] == effect) {
-                config = (u8 *)W(lc_attack_settings + i * 32, 24);
+                config = lc_audio_base((u8 *)W(lc_attack_settings + i * 32, 24));
                 break;
             }
     }

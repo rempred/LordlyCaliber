@@ -23,6 +23,7 @@ class AttackPlaybackMachine {
   this.rom=rom;this.e={};this.nativePoses=nativePoses;this.nativeEffects=nativeEffects;
   for(const name of ['attack_strikes','attack_runtime','attack_playback','attack_generic','attack_combined','attack_pedra'])
    Object.assign(this.e,symbols(path.dirname(file),name));
+  if(fs.existsSync(path.join(path.dirname(file),'attack_caption.elf')))Object.assign(this.e,symbols(path.dirname(file),'attack_caption'));
   const m=this.m=new FloatMips();
   const execute=m.exec.bind(m);m.exec=(pc,next)=>{
    if(nativeEffects&&this.phase==='playback'){
@@ -41,6 +42,12 @@ class AttackPlaybackMachine {
    try{return execute(pc,next);}catch(error){error.message+=` at PC 0x${pc.toString(16)}, caller 0x${m.get('ra').toString(16)}`;throw error;}
   };
   m.load(0x80070000,rom.subarray(0x400,0x2f000));
+  // The supported pose-selector hook wraps native command insertion. A ROM
+  // with overrides needs both its resident bootstrap and DMA-loaded module.
+  if(rom.toString('ascii',0x27b0000,0x27b0004)==='OBSO') {
+   m.load(0x800a4c00,rom.subarray(0x35000,0x35100));
+   m.load(0x80460000,rom.subarray(0x27b0000,0x27b0800));
+  }
   if(nativePoses){
    m.load(0x800ae890,rom.subarray(0x3ec90,0x3ef00));
    // Resident cosine, sine and atan constants used by the movement paths.

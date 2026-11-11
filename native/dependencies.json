@@ -1,5 +1,11 @@
 {
-  "checkedOn": "2026-10-04",
+  "checkedOn": "2026-11-10",
+  "vadpcm": {
+    "source": "https://github.com/rasky/vadpcm",
+    "revision": "d2facb736fc57cdd01deafa65d37c76669526ac3",
+    "license": "MPL-2.0",
+    "use": "Unmodified portable C11 decoder only; vendored sources distributed with packages. Sequencing executes original ROM instructions."
+  },
   "qt": {
     "version": "6.12.0",
     "modules": [

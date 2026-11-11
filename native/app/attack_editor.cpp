@@ -276,6 +276,9 @@ AttackEditor::AttackEditor(Project *p, QUndoStack *undo, std::function<void()> c
     renameButton->setObjectName("renameAttack");
     titleRow->addWidget(name_, 1);
     titleRow->addWidget(renameButton);
+    auto captionButton=new QPushButton("Edit battle name artwork…");captionButton->setObjectName("editAttackCaption");
+    titleRow->addWidget(captionButton);
+    connect(captionButton,&QPushButton::clicked,this,[this]{emit editCaption(selected());});
     right->addLayout(titleRow);
     shared_ = text({}, right);
     relationship_ = text({}, right);

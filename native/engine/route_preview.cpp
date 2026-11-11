@@ -18,7 +18,7 @@ int movement(const Scenario &s, const ClassData &classes, const QByteArray &prio
         if (m.classId < 1 || m.classId >= classes.entries().size())
             throw Error("Route preview needs valid squad classes");
         const int type = m.classId == 1 ? 2 : u8(classes.entries()[m.classId].record, 44);
-        if (type < 1 || type > 7) throw Error("A squad class has an unknown movement type");
+        if (type < 1 || !priority.contains(char(type))) throw Error("A squad class has an unknown movement type");
         types << type;
     }
     for (auto p : priority) if (types.contains(quint8(p))) return quint8(p);
@@ -37,7 +37,7 @@ int cell(QPointF p) {
 }
 RoutePreview RoutePreview::squad(const Rom &rom, const Scenarios &scenarios,
                                 const ClassData &classes, const MapEdits &maps,
-                                int key, int row) {
+                                int key, int row, const MovementTypes *authored) {
     RoutePreview out;
     out.detail = "Planned terrain route from the starting position. The game smooths turns between "
                  "these path cells; enemies, evasion, time of day and scripted events can change it.";
@@ -52,9 +52,8 @@ RoutePreview RoutePreview::squad(const Rom &rom, const Scenarios &scenarios,
         const auto &s = scenarios.scenario(key);
         const auto &deployments = s.layout.deployments;
         if (row < 0 || row >= deployments.size()) throw Error("Choose a squad");
-        const auto priority = rom.bytes().mid(0x5cebc, 7);
-        for (auto p : priority) if (quint8(p) < 1 || quint8(p) > 7)
-            throw Error("Unrecognized squad movement priorities");
+        const auto movementData=authored?*authored:MovementTypes::load(rom);
+        const auto priority = movementData.priorityBytes();
         int leader = row, end = row + 1;
         if (row && u8(deployments[row - 1], 16)) {
             const int group = u8(deployments[row - 1], 16);
@@ -68,8 +67,8 @@ RoutePreview RoutePreview::squad(const Rom &rom, const Scenarios &scenarios,
         if (leader != row || end != row + 1)
             out.detail.prepend(QString("Movement group: showing Squad %1's route; follower formation offsets vary. ")
                               .arg(u8(deployments[leader], 0) & 127));
-        if (out.movementType < 1 || out.movementType > 7) throw Error("Unknown squad movement type");
-        if (out.movementType == 7) { out.message = "This squad cannot move with its current setup."; return out; }
+        if (!movementData.entries().contains(out.movementType)) throw Error("Unknown squad movement type");
+        if (movementData.behavior(out.movementType) == 7) { out.message = "This squad cannot move with its current setup."; return out; }
         auto map = maps.source(key).map;
         map.points = maps.points(key);
         const auto start = map.placement(u8(deployments[leader], 3), u8(deployments[leader], 4));
@@ -79,7 +78,7 @@ RoutePreview RoutePreview::squad(const Rom &rom, const Scenarios &scenarios,
         // Descriptor 7: ROM101CE0..145210 -> RAM801AD5A0..801F0AD0.
         // ROM102DA0..DB4 copies ROM13FA58 (RAM801EB318) into BSS801F36D8.
         std::array<uint16_t,32> costs;
-        for (int i = 0; i < 32; ++i) costs[i] = u16(rom.bytes(), 0x13fa58 + out.movementType * 64 + i * 2);
+        for (int i = 0; i < 32; ++i) costs[i] = quint16(movementData.entries()[out.movementType].costs[i]);
         const auto transitions = rom.bytes().mid(0x13fc60, 1024);
         if (terrain.size() != 4096 || transitions.size() != 1024)
             throw Error("Movement terrain is unavailable");
@@ -132,7 +131,7 @@ RoutePreview RoutePreview::squad(const Rom &rom, const Scenarios &scenarios,
         out.message = out.reachable ? "Terrain route shown" : "No fixed destination in the starting orders.";
         if (!stop.isEmpty()) out.message += " · " + stop;
         const QStringList names{"None", "Sky", "Plain", "Forest", "Mountain", "Snow", "Marsh", "Immobile"};
-        out.message += " · " + names[out.movementType] + " movement";
+        out.message += " · " + movementData.entries()[out.movementType].name + " movement";
     } catch (const Error &e) {
         out.reachable = false; out.points.clear(); out.cells.clear();
         out.message = QString::fromUtf8(e.what());

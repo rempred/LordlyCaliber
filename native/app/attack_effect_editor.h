@@ -14,6 +14,8 @@ class QComboBox;
 class QFormLayout;
 class QCheckBox;
 namespace lordly {
+class AudioCueView;
+class SoundOutput;
 class AttackEffectEditor : public QDialog {
     Q_OBJECT
   public:
@@ -37,6 +39,10 @@ class AttackEffectEditor : public QDialog {
     void render();
     void showFrame();
     int currentTick() const;
+    qint64 playbackPosition() const;
+    qint64 playbackDuration() const;
+    void startPlayback();
+    void pausePlayback();
     void chooseRom();
     void chooseLibrary();
     void chooseAttack();
@@ -58,6 +64,14 @@ class AttackEffectEditor : public QDialog {
     bool refreshing_ = false, playing_ = false, enemyPreview_ = false;
     QLabel *preview_, *source_, *notice_, *comparison_;
     QLabel *framePosition_;
+    AudioCueView *audio_;
+    SoundOutput *soundOutput_;
+    QCheckBox *soundEnabled_;
+    QVector<AudioCue> soundCues_;
+    QByteArray soundTrack_;
+    bool soundReady_ = false, soundPreparing_ = false, playRequested_ = false, soundPlaying_ = false;
+    bool restartOnPlay_ = false;
+    qint64 soundOffsetMs_ = 0;
     QPushButton *step_, *exportFrame_, *compose_;
     QLabel *compositionHelp_;
     QListWidget *frames_;

@@ -215,6 +215,7 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
             if (pendingUnitEdits_)
                 throw Error("Apply or discard pending squad changes first");
             auto prepared = *document_;
+            prepared.setMovementRules(*project_);
             if (prepared.selectedSlot() != 0)
                 throw Error("Edit normal slot 1 for the default army");
             const auto changes = prepared.planArmyRefresh(*project_);
@@ -417,6 +418,7 @@ SaveEditor::~SaveEditor() {
 void SaveEditor::loadBytes(const QByteArray &bytes, const QString &sourcePath) {
     auto candidate =
         SaveDocument::open(project_->runtimeRom(), bytes, int(project_->records(Table::Classes).size()));
+    candidate.setMovementRules(*project_);
     pendingUnitEdits_ = false; // The caller has already handled replacing the loaded document.
     defaultArmySink_ = {};
     defaultArmy_->hide();
@@ -458,6 +460,7 @@ void SaveEditor::exportFile(const QString &path) {
                                                    Qt::CaseInsensitive) == 0)
         throw Error("Choose a different output file to preserve the loaded save");
     auto prepared = *document_;
+    prepared.setMovementRules(*project_);
     const auto refresh = prepared.planArmyRefresh(*project_);
     if (!refresh.spans.isEmpty())
         prepared.apply(refresh, true);
@@ -842,6 +845,7 @@ bool SaveEditor::addSoldierGroup(int toUnit, int cell) {
     }
 }
 bool SaveEditor::allowImmediateEdit() {
+    if(document_)document_->setMovementRules(*project_);
     if (!pendingUnitEdits_)
         return true;
     error_->setText("Apply or discard the pending squad changes first");

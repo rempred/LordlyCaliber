@@ -51,6 +51,8 @@ static QByteArray syntheticRom() {
     data.replace(0x20, 12, "OgreBattle64");
     data.replace(0x3b, 2, "NO");
     data[0x3e] = 'E';
+    // Project loading now reads the seven movement types' priority order.
+    data.replace(0x5cebc, 7, QByteArray::fromHex("07020603050401"));
     return data;
 }
 static Promotion syntheticPromotion() {
@@ -121,7 +123,7 @@ class EngineTests : public QObject {
             for (auto it=row.begin();it!=row.end();++it) inspect(it.value());
         };
         for (const auto *name : {"accepted/owners.json",
-                                "shops/consumers.json", "tools/goth-owner.json", "tools/chaos-call.json"}) {
+                                "shops/consumers.json", "tools/goth-owner.json", "tools/chaos-call.json", "art/body-policy-c.json"}) {
             QFile file(QString(":/game/")+name);QVERIFY2(file.open(QIODevice::ReadOnly),qPrintable(file.fileName()));
             QJsonParseError error;const auto doc=QJsonDocument::fromJson(file.readAll(),&error);
             QCOMPARE(error.error,QJsonParseError::NoError);inspect(doc.object());
@@ -464,7 +466,7 @@ class EngineTests : public QObject {
             QVERIFY(applyAcceptedRom(image).retainedRegions >= 2);
             QVERIFY(image == modified);
             auto project = Project::fromRom(rom);
-            project.loadAttacks(); project.loadScenarios(); project.loadTools();
+            project.loadAttacks(); project.loadScenarios(); project.loadTools(); project.loadAnimationRoutes();
             QCOMPARE(project.changedRecords(), 0);
             QTemporaryDir work;
             QVector<BuildProgress> progress;

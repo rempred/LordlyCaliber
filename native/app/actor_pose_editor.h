@@ -91,6 +91,7 @@ class ActorPoseEditor : public QWidget {
     QSpinBox *variant_, *position_, *speed_;
     QPushButton *play_;
     QPushButton *copyToLibrary_;
+    QPushButton *sounds_;
     std::function<void(SpriteAsset)> librarySink_;
     QLabel *status_, *selection_;
     QListWidget *layers_;

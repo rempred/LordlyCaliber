@@ -1,3 +1,24 @@
+**Classes → Movement type → New movement type…** creates and assigns a type by
+copying an existing type's terrain costs. **Tools → Movement Types** edits names,
+base speeds, ground/flying/immobile behavior, passability and terrain costs, and
+the priority used by mixed squads. Original types remain available; unused custom
+types can be deleted. The terrain table shows each resulting speed factor; larger
+costs reduce speed, while blocked terrain is a separate setting. These factors
+describe ordinary travel; group size and turning retain the game's rules.
+Up to 254 types are supported on US Rev 0. Changes support undo/redo, project
+files and ROM export/reopening. Save loading reconstructs custom movement IDs
+from squad members without changing the packed battery-save format.
+
+**Classes → Promotion → Requirements for** selects the game's actual class-change
+route. Automatic destinations open their transformation requirements by default:
+after-battle dragon/beast/Seraph evolution, Golem and undead attack transformations,
+and after-mission Angel Knight creation. Only stats tested by that route are shown.
+Zombie creation explains that it has no minimum-stat check. Manual class-change
+requirements remain separately selectable. Changes support undo/redo, project
+files and ROM export/reopening, including projects with additional classes.
+Older projects retain their saved manual gates; these are not silently copied
+into previously uneditable transformation requirements.
+
 **Campaign → New campaign** offers Keep world map, locations and roads and
 Keep scenario maps and towns, both checked by default. Unchecking the first
 starts an empty map with one starting location; unchecking the second starts
@@ -148,6 +169,18 @@ Chaos-counter call now compile complete C adaptations. Older exports remain
 readable and upgrade on export; expanded classes/items/armies and custom weapon
 categories retain their behavior. Mixed C/assembly feature groups remain
 deferred as recorded in the source audit.
+
+Attack/effect previews list sound requests by use, request ID and trigger time
+in ticks and seconds. Click a cue to seek the visual preview; **Play sound** and
+**Stop** audition a selected resolved cue with a separate preview-volume control.
+Class animation previews expose the same list through **Sound cues…**. Each
+list uses its own effect/pose clock; it is not a complete battle soundtrack.
+Names describe verified use (for example Gaze of Terror opening/impact), rather
+than claiming an auditioned waveform catalog. The sound preview reads samples
+and executes libmus sequencing from the opened ROM. Its dry mix uses approximate
+filtering/panning, omits N64 reverb and stops long/looping sounds at 15 seconds.
+Linked spatial cues still require their battle actor/equipment context and
+cannot be auditioned until resolved. No project or ROM audio bytes are changed.
 
 The **Attacks** workspace edits US Rev0 physical attacks, spells, healing and
 status abilities. Search by name, effect, element or ID; rename a shared name or
@@ -1511,3 +1544,45 @@ receive additional conditions or retain a chosen branch. Project persistence,
 undo/redo, export/reopen and native instruction checks cover the workflow.
 Town definitions remain shared. Special battlefield donors and full-console
 rendering verification limits are recorded in scenario-events.md.
+
+### Editable attack-effect audio (2026-11-10)
+
+Attacks → Preview / edit attack effect → Edit sounds / timing shows one list of
+the original or edited sounds. Import WAV adds a full sound or replaces the
+selected part. Copy from sound shows all donor sounds with their parts expanded;
+select a full sound or one part to copy into the destination selection. Replace
+keeps the destination's timing. Remove and Restore
+original are explicit actions. Delays are entered in seconds and rounded to the
+game's 1/30-second ticks; original-cue timing can also be retained.
+Sound groups can contain multiple sampled parts. Both tables show the parts
+under their full sound, with start times and durations. Select a row and use
+**Play selected**, or double-click it, to audition exactly that sound or part.
+Repeated triggers reuse a full sound; its parts may overlap. Each part can be
+replaced from a WAV or donor sound/part, muted, restored or retimed independently.
+Part start times are seconds after their full sound begins, rounded to the
+native 1/60-second audio clock. Other parts and donor attacks remain unchanged.
+Play runs the effect and its sound timeline together, with pause/resume, looping
+and a Sound checkbox. Audio decoding completes before playback begins, and audio
+output position drives the visual clock. Imported sounds require PCM
+WAV, 32 kHz mono signed16, up to two seconds each and256 KB per attack; these
+requirements appear beside Import WAV. Projects embed the clips. Exported ROMs
+use private libmus/raw16 banks without replacing shared retail sounds. Copied
+native parts retain their original samples, pitch and envelope sequencing.
+Original class-motion cues remain separate. Tools → Movement types shows base
+speeds in the overview and permits editing base speed and terrain costs.
+
+**Art and Animation → Attack names** edits the 90×15 battle-name artwork.
+Attacks → Edit battle name artwork opens the selected attack; Open attack returns.
+Pencil, eraser, fill, eyedropper, PNG import/export, Generate from attack name and
+Restore loaded artwork use project undo/redo. Imports require exactly90×15 pixels
+and reduce opaque colors to the three native shades plus transparency. Preview
+uses a sample green tint; combat uses the attack's native element palette.
+Renaming through Attacks or Names and Text generates lettering sampled from the
+opened ROM's original battle captions, with the matching outline and shadow.
+Symbols absent from those captions use the ROM font adapted to that height and
+outline. Generate from attack name refreshes labels made by earlier generators;
+existing independent artwork is otherwise preserved.
+Older project manifests with renamed attacks and no caption field
+also generate their missing captions on import. Independent attack captions save
+with the project and exported ROM. Spell arrays use their resolved spell's caption;
+physical attacks whose playback does not display a caption retain that behavior.

@@ -6,10 +6,13 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
+$buildRoot = Join-Path $sourceRoot 'build\Release'
+$packageVersion = (Get-Item -LiteralPath (Join-Path $buildRoot 'LordlyCaliber.exe')).VersionInfo.ProductVersion
+if ($packageVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Build an editor with valid Windows version information first.' }
 if (!$N64Tools) { $N64Tools = Join-Path $sourceRoot '.local\n64-toolchain' }
 if (!$Destination) {
     $Destination = if ($Live) { Join-Path $sourceRoot 'live' }
-                   else { Join-Path $sourceRoot ('dist\LordlyCaliber-0.5.61-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+                   else { Join-Path $sourceRoot ('dist\LordlyCaliber-' + $packageVersion + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
 if ((Test-Path -LiteralPath $Destination) -and !$Live) { throw 'Choose a fresh package directory.' }
@@ -19,7 +22,6 @@ if ($Live) {
         throw 'Save your work and close the live editor before updating it. No running editor was stopped.'
     }
 }
-$buildRoot = Join-Path $sourceRoot 'build\Release'
 foreach ($name in @('LordlyCaliber.exe', 'LordlyCaliber-cli.exe')) {
     if (!(Test-Path -LiteralPath (Join-Path $buildRoot $name))) { throw "Build $name first." }
 }
@@ -60,11 +62,14 @@ foreach ($pin in $pins.tools.PSObject.Properties) { Copy-Item -LiteralPath (Join
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'game') -Destination $Destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'licenses') -Destination $Destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path (Split-Path $sourceRoot) 'LICENSE') -Destination (Join-Path $Destination 'licenses\LordlyCaliber.txt')
-Copy-Item -LiteralPath (Join-Path $sourceRoot 'README.md') -Destination $Destination
+$readme = Get-Content -LiteralPath (Join-Path $sourceRoot 'README.md') -Raw
+$readme = $readme -replace '\A# Lordly Caliber[^\r\n]*', "# Lordly Caliber $packageVersion"
+[IO.File]::WriteAllText((Join-Path $Destination 'README.md'), $readme, [Text.UTF8Encoding]::new($false))
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'THIRD-PARTY.md') -Destination $Destination
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'VERIFY-BUILD.md') -Destination $Destination
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'dependencies.json') -Destination $Destination
 $sources = New-Item -ItemType Directory -Path (Join-Path $Destination 'dependency-sources') -Force
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'third_party/vadpcm') -Destination $sources -Recurse -Force
 foreach ($record in (Get-Content -LiteralPath (Join-Path $sourceRoot 'rebuild\dependency-sources.json') -Raw | ConvertFrom-Json)) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot ('.local\dependency-sources\' + $record.file)) -Destination $sources
 }

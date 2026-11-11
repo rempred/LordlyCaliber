@@ -73,6 +73,8 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
                 self.linkedAudio_ << LinkedPoseAudioRequest{
                     *self.linkedAudioContext_,
                     quint16(record->operands[0] * 256 + record->operands[1]), record->opcode};
+                if (self.audioObserver_) self.audioObserver_(record->opcode,
+                    record->operands[0] * 256 + record->operands[1], -1);
                 return 1;
             }
             throw Error("Alternate pose audio requires its linked actor state");
@@ -96,6 +98,7 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
         if (self.audio_.size() >= 4096)
             throw Error("Pose audio request budget exceeded");
         self.audio_ << PoseAudioRequest{record->opcode <= 18 ? 0 : 1, u16(self.rom_.bytes(), at)};
+        if (self.audioObserver_) self.audioObserver_(record->opcode, key, u16(self.rom_.bytes(), at));
         return 1;
     } catch (const Error &e) {
         self.error_ = QString::fromUtf8(e.what());

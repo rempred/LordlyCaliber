@@ -1,3 +1,4 @@
+#include "app/attack_caption_editor.h"
 #include "app/actor_pose_editor.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
@@ -6080,6 +6081,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         data.replace(0x20, 12, "OgreBattle64");
         data.replace(0x3b, 2, "NO");
         data[0x3e] = 'E';
+        data.replace(0x5cebc, 7, QByteArray::fromHex("07020603050401"));
         auto project = Project::fromRom(Rom::fromBytes(data));
         QUndoStack undo;
         RecordModel model(&project, Table::Classes, &undo);
@@ -13462,6 +13464,31 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         });
         stack->setIndex(0);
     }
+    void attackCaptionWorkflow() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        MainWindow window;window.resize(1250,850);window.loadRom(path);window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<AttackCaptionEditor *>(),30000);
+        auto attacks=window.findChild<AttackEditor *>();auto captions=window.findChild<AttackCaptionEditor *>();
+        QVERIFY(attacks);QVERIFY(captions);attacks->selectAttack(25);
+        QSignalSpy selected(attacks,&AttackEditor::editCaption);
+        attacks->findChild<QPushButton *>("editAttackCaption")->click();
+        QCOMPARE(selected.size(),1);QVERIFY(captions->isVisible());
+        auto list=captions->findChild<QListWidget *>("attackCaptionList");QCOMPARE(list->currentItem()->data(Qt::UserRole).toInt(),25);
+        auto canvas=captions->findChild<SpriteCanvas *>("attackCaptionCanvas");QVERIFY(canvas);
+        QSignalSpy stroke(canvas,&SpriteCanvas::indicesCommitted);
+        QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(20,20));QCOMPARE(stroke.size(),1);
+        QTemporaryDir out;const auto file=out.filePath("caption.png");captions->exportImage(file);QCOMPARE(QImage(file).size(),QSize(90,15));
+        QImage changed(90,15,QImage::Format_ARGB32);changed.fill(Qt::transparent);changed.setPixelColor(5,5,QColor("#ccffcc"));
+        captions->importImage(changed);captions->exportImage(file);QCOMPARE(QImage(file).pixelColor(5,5),QColor("#ccffcc"));
+        const auto imported=QImage(file);auto undo=window.findChild<QUndoStack *>();QVERIFY(undo);
+        undo->undo();captions->exportImage(file);QVERIFY(QImage(file)!=imported);
+        undo->redo();captions->exportImage(file);QCOMPARE(QImage(file),imported);
+        QVERIFY_THROWS_EXCEPTION(Error,captions->importImage(QImage(91,15,QImage::Format_ARGB32)));
+        captions->findChild<QPushButton *>("captionGenerate")->click();captions->exportImage(file);QVERIFY(QImage(file)!=changed);
+        window.grab().save(out.filePath("caption-workspace.png"));
+        const auto shot=qEnvironmentVariable("LORDLY_CAPTION_SCREENSHOT");if(!shot.isEmpty())window.grab().save(shot);
+        captions->findChild<QPushButton *>("captionOpenAttack")->click();QVERIFY(attacks->isVisible());
+    }
     void loadDesktopWorkspace() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -13846,6 +13873,13 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 QCOMPARE(classes.defaultPromotionClass(id), source);
                 const bool present = source > 0 && source < project.promotion()->classCount();
                 const bool redirected = present && source != id;
+                // This regression audits manual-menu aliases. Automatic
+                // requirement defaults are covered by automatic_promotion_tests.
+                if (present) {
+                    auto route = editor.findChild<QComboBox *>("promotionRequirementRoute");
+                    QVERIFY(route);
+                    route->setCurrentIndex(route->findData(-1));
+                }
                 QCOMPARE(details->isHidden(), !present);
                 QCOMPARE(jump->isHidden(), !redirected);
                 QCOMPARE(family->isEnabled(), present && !redirected);
@@ -13944,7 +13978,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
         auto category=editor.findChild<QComboBox *>("compatibilityMask");QVERIFY(category);
         auto family = editor.findChild<QComboBox *>("classFamily");
-        QCOMPARE(family->currentText(), QString("1 Â· Male"));
+        QCOMPARE(family->currentText(), QString("1 · Male"));
         editor.selectClass(38); // Lich uses both compatibility bits, but family None.
         QCOMPARE(category->currentData().toInt(), 3);
         QCOMPARE(family->currentData().toInt(), 0);

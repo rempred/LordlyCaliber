@@ -14,6 +14,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <QPainter>
 #include <algorithm>
 using namespace lordly;
 class AttackDataTests : public QObject {
@@ -22,6 +23,67 @@ class AttackDataTests : public QObject {
         return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
     }
   private slots:
+    void battleCaptionLettering() {
+        auto data=AttackData::load(source());
+        // Compare the generated t with the final letter of the retail Shoot image.
+        const auto generated=data.generateCaption("t");
+        QByteArray retail;
+        for(int id=1;id<AttackData::retailCount;++id)
+            if(AttackData::displayName(data.entry(id))=="Shoot")retail=data.captionPixels(id);
+        QVERIFY(!retail.isEmpty());
+        QVector<QByteArray> columns;
+        for(int x=0;x<90;++x) {
+            QByteArray column(15,0);bool ink=false;
+            for(int y=0;y<15;++y)if(quint8(generated[y*90+x])>1){column[y]=generated[y*90+x];ink=true;}
+            if(ink)columns.append(column);
+        }
+        QCOMPARE(columns.size(),3);
+        for(int x=0;x<3;++x)for(int y=0;y<15;++y)
+            QCOMPARE(quint8(columns[x][y]),quint8(retail[y*90+56+x])>1?quint8(retail[y*90+56+x]):quint8(0));
+        QVERIFY(std::count(generated.begin(),generated.end(),char(1))>30);
+        QImage comparison(720,360,QImage::Format_ARGB32);comparison.fill(QColor("#ecdcb8"));
+        QPainter painter(&comparison);int top=0;
+        for(const auto &text:{QByteArray("Pumpkin Smash"),QByteArray("test name"),QByteArray("Petrification")}) {
+            const auto pixels=data.generateCaption(text);QImage label(90,15,QImage::Format_ARGB32);label.fill(Qt::transparent);
+            const QRgb colors[]={0,qRgba(0,0,0,255),qRgba(104,136,104,255),qRgba(200,248,200,255)};
+            for(int y=0;y<15;++y)for(int x=0;x<90;++x)label.setPixel(x,y,colors[quint8(pixels[y*90+x])]);
+            painter.drawImage(QRect(0,top,720,120),label);top+=120;
+        }
+        painter.end();comparison.save(QFileInfo(QFINDTESTDATA("attack_data_tests.cpp")).dir().filePath("../build/caption-lettering.png"));
+    }
+    void battleCaptionArtwork() {
+        try {
+            auto project=Project::fromRom(source());project.loadAttacks();
+            auto data=*project.attacks();const auto loaded=data.captionPixels(25);
+            QCOMPARE(loaded.size(),1350);QVERIFY(!data.modified());
+            data.rename(25,"Petrification",false);
+            QVERIFY(data.captionPixels(25)!=loaded);
+            const auto generated=data.captionPixels(25);
+            const int first=data.duplicate(25,"Twin caption"),second=data.duplicate(25,"Twin caption");
+            auto edited=data.entry(first);edited.caption.fill(char(3));data.set(first,edited);
+            QVERIFY(data.captionPixels(first)!=data.captionPixels(second));
+            auto copy=AttackData::load(source());copy.apply(data.json());QCOMPARE(copy.json(),data.json());
+            auto bad=edited;bad.caption[0]=4;QVERIFY_THROWS_EXCEPTION(Error,copy.set(first,bad));
+            QCOMPARE(copy.json(),data.json());
+            // Missing artwork in an older project is regenerated from its saved name.
+            auto legacy=data.json();auto rows=legacy["entries"].toArray();auto gaze=rows[24].toObject();gaze.remove("caption");rows[24]=gaze;legacy["entries"]=rows;
+            copy.apply(legacy);QCOMPARE(copy.captionPixels(25),generated);
+            project.setAttacks(data.json());
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");if(tools.isEmpty())QSKIP("Private compiler required");
+            QTemporaryDir output(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).absoluteDir().filePath("Test ROMs/native-captions-XXXXXX"));
+            QVERIFY(output.isValid());output.setAutoRemove(false);
+            project.saveFolder(output.filePath("project"));
+            auto restored=Project::fromRom(source());restored.applyManifest(Project::readProject(output.filePath("project")));QCOMPARE(restored.attacks()->json(),data.json());
+            const auto built=rebuild(project,tools,output.path());
+            const auto candidate=output.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());exportRom(project,built,candidate);
+            auto reopened=Project::fromRom(Rom::open(candidate));reopened.loadAttacks();QCOMPARE(reopened.attacks()->json(),data.json());
+            QCOMPARE(rebuild(reopened,tools,output.path()).image,built.image);
+            auto checksum=built.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,built.image);
+            QProcess runner;runner.start("node",{QFINDTESTDATA("attack-caption-mips.cjs"),candidate});
+            QVERIFY(runner.waitForFinished(60000));qInfo().noquote()<<runner.readAllStandardOutput();QVERIFY2(runner.exitCode()==0,runner.readAllStandardError().constData());
+            qInfo().noquote()<<"Battle caption candidate:"<<candidate;
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void piecePlaybackSpeed() {
         EffectComposition model; model.size={8,8}; model.duration=12;
         EffectPiece p; p.id="sequence";p.name="Colours";p.duration=12;
@@ -615,11 +677,16 @@ class AttackDataTests : public QObject {
             auto data=*project.attacks();
             const auto report=qEnvironmentVariable("LORDLY_ATTACK_PROJECT");
             if(!report.isEmpty()) {
-                // The report can use another base ROM. Exercise only its exact
-                // attack definitions on the known test ROM; never rewrite it.
+                // Import through the editor's supported entry point so the
+                // report's classes, pose overrides and stream settings coexist.
+                // The supplied project and ROM remain untouched.
                 QFile file(report);QVERIFY(file.open(QIODevice::ReadOnly));
-                data.apply(QJsonDocument::fromJson(file.readAll()).object()["attacks"].toObject());
+                const auto manifest=QJsonDocument::fromJson(file.readAll()).object();
+                project.applyManifest(manifest,Project::SourcePolicy::ImportIntoCurrentRom);
+                data=*project.attacks();
             } else {
+                data.rename(25,"Petrify",false);
+                auto gaze=data.entry(25);gaze.visual.nativeEffect=118;data.set(25,gaze);
                 for(int donor : {87,88,89,90}) data.duplicate(donor,donor<89?"Exorcism":"Mass Exorcism");
             }
             project.setAttacks(data.json());
@@ -634,6 +701,9 @@ class AttackDataTests : public QObject {
             QVERIFY(runtime.waitForFinished(60000));QVERIFY2(runtime.exitCode()==0,runtime.readAllStandardError().constData());
             qInfo().noquote()<<runtime.readAllStandardOutput();
             qInfo().noquote()<<"Battle name candidate:"<<output.path();
+            runtime.start("node",{QFINDTESTDATA("attack-name-flow-mips.cjs"),candidate});
+            QVERIFY(runtime.waitForFinished(60000));QVERIFY2(runtime.exitCode()==0,runtime.readAllStandardError().constData());
+            qInfo().noquote()<<runtime.readAllStandardOutput();
         } catch(const std::exception &e) {QFAIL(e.what());}
     }
     void playbackPipeline() {

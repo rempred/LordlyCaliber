@@ -287,6 +287,14 @@ void RecordModel::applyProject(const Project &project) {
     emit replaced();
     emit edited();
 }
+int RecordModel::createMovementType(const QString &name, int copyFrom, int speed, int classId) {
+    try {
+        auto after=*project_; const int id=after.createMovementType(name,copyFrom);
+        auto types=after.movementTypes(); auto type=types.entries()[id]; type.baseSpeed=speed; types.set(id,type);after.setMovementTypes(types.json());
+        auto bytes=after.record(Table::Classes,classId).bytes;put8(bytes,44,quint8(id));after.replaceBytes(Table::Classes,classId,bytes);
+        undo_->push(new AddClass(this,*project_,std::move(after),"Create and assign movement type"));return id;
+    } catch (const Error &e) {emit editRejected(QString::fromUtf8(e.what()));return -1;}
+}
 int RecordModel::createWeaponType(const QString &name, int item) {
     try {
         if (table_ != Table::Items) throw Error("Weapon types belong to the Items workspace");
