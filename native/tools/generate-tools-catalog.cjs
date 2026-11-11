@@ -45,6 +45,7 @@ const cf={generatedBy:'native/tools/generate-tools-catalog.cjs',
  })};
 qualifySources('chaos',cf.sites);
 cf.sites.find(s=>s.name==='source-loader-bootstrap').payloadBytes=64;
+cf.sites.find(s=>s.name==='source-loader-cache-continuation').payloadBytes=160;
 cf.inputs.push('maintained native/game/tools/chaos-*.s; compiled with pinned native N64 assembler');
 fs.writeFileSync(path.join(root,'native/game/tools/chaos.json'),JSON.stringify(cf,null,2)+'\n');
 const displays={generatedBy:'native/tools/generate-tools-catalog.cjs',

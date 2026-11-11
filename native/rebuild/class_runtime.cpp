@@ -213,7 +213,9 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                             .toLatin1();
     result.code = compiler.compileModule(source.readAll(), directory, "class_runtime", 0x80187c14,
                                          {{"class_runtime_config.h", header}},
-                                         {{"lc_original_heap_init", 0x80070c60},
+                                         // This existing post-DMA call keeps the small resident
+                                         // loader's size unchanged, including expanded saves.
+                                         {{"lc_original_heap_init", result.attacks ? result.attacks->audioInstallEntry : 0x80070c60},
                                           {"lc_class_data_end", result.data.layout.end},
                                           {"lc_original_pool_add", 0x80070d20},
                                           {"lc_original_secondary_reset", 0x80070f14},

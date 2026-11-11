@@ -2258,6 +2258,64 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(stored.readAll(), pendingArmy);
         QCOMPARE(calls, 5);
     }
+    void reportedProjectBuildAndSeed() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"), report=qEnvironmentVariable("LORDLY_REPORT_PROJECT");
+        if(path.isEmpty()||report.isEmpty()||qEnvironmentVariableIsEmpty("LORDLY_N64_TOOLCHAIN"))
+            QSKIP("Private report project, ROM and compiler required");
+        QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/reported-ui-XXXXXX");
+        QVERIFY(output.isValid());output.setAutoRemove(false);
+        const auto candidate=output.filePath(QFileInfo(path).fileName());
+        auto imported=Project::fromRom(Rom::open(path));
+        imported.applyManifest(Project::readProject(report),Project::SourcePolicy::ImportIntoCurrentRom);
+        imported.saveFolder(output.filePath("imported-project"));
+        qInfo().noquote()<<"Imported report copy:"<<output.path();
+        const auto oldName=QCoreApplication::applicationName(),oldOrganization=QCoreApplication::organizationName();
+        QCoreApplication::setOrganizationName("LordlyCaliber-Tests");
+        QCoreApplication::setApplicationName("ReportedBuild-"+QUuid::createUuid().toString(QUuid::Id128));
+        const auto cleanup=qScopeGuard([&]{QSettings().clear();QCoreApplication::setApplicationName(oldName);QCoreApplication::setOrganizationName(oldOrganization);});
+        QFile inert(output.filePath("Project64.exe"));QVERIFY(inert.open(QIODevice::WriteOnly));inert.write("not executed");inert.close();
+        QSettings().setValue("testing/project64",inert.fileName());
+        QSettings().setValue("testing/buildPath/"+QString::fromLatin1(sha256(Rom::open(path).bytes()).left(16)),candidate);
+        MainWindow window;
+        QTimer prompts;prompts.setInterval(50);
+        connect(&prompts,&QTimer::timeout,&window,[&]{
+            for(auto dialog:window.findChildren<QMessageBox *>())if(dialog->isVisible()) {
+                if(auto button=dialog->findChild<QPushButton *>("importProjectIntoCurrentRom"))button->click();
+                else {qInfo().noquote()<<"Import/build message:"<<dialog->text();dialog->accept();}
+            }
+        });prompts.start();window.resize(1280,1000);window.show();window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<TestingEditor *>(),30000);
+        QTimer::singleShot(0,&window,[&]{
+            if(auto dialog=window.findChild<QMessageBox *>("projectSourceMismatch"))
+                if(auto button=dialog->findChild<QPushButton *>("importProjectIntoCurrentRom"))button->click();
+        });
+        QVERIFY(window.openProjectFile(report));
+        qInfo()<<"Opened report in MainWindow";
+        auto testing=window.findChild<TestingEditor *>();QVERIFY(testing);
+        window.findChild<QTabWidget *>()->setCurrentWidget(testing);
+        QTRY_VERIFY_WITH_TIMEOUT(testing->ready(),30000);
+        qInfo()<<"Testing ready";
+        bool launched=false;
+        testing->setLauncher([&](const Rom &rom,const QString &romPath,const QString &,const QByteArray &save,const QString &,bool,bool){
+            if(romPath!=candidate)return QString("Unexpected export path");
+            QFile seed(output.filePath("volmus.sra"));if(!seed.open(QIODevice::WriteOnly))return QString("Cannot save test seed");
+            seed.write(save);seed.close();
+            auto checked=rom.bytes();Rom::updateChecksum(checked);if(checked!=rom.bytes())return QString("Invalid checksum");
+            launched=true;return QString();
+        });
+        auto list=testing->findChild<QTreeWidget *>("seederMissions");QVERIFY(list);
+        testing->selectScenario(2);
+        auto selected=list->currentItem();QVERIFY(selected);QVERIFY(selected->text(0).contains("Volmus"));
+        qInfo().noquote()<<"Selected mission:"<<selected->text(0)<<selected->text(1);
+        auto button=qobject_cast<QPushButton *>(list->itemWidget(selected,2));QVERIFY(button);button->click();
+        QTRY_VERIFY_WITH_TIMEOUT(list->isEnabled(),240000);
+        const auto status=testing->findChild<QLabel *>("seederStatus");
+        QVERIFY2(launched,qPrintable(status->text()));
+        QProcess startup;startup.start("node",{QFINDTESTDATA("attack-audio-startup-mips.cjs"),candidate,path});
+        QVERIFY(startup.waitForFinished(60000));QVERIFY2(startup.exitCode()==0,startup.readAllStandardError().constData());
+        qInfo().noquote()<<startup.readAllStandardOutput();
+        qInfo().noquote()<<"Reported project UI build and Volmus save:"<<output.path();
+    }
     void testingBuildAndSeed() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

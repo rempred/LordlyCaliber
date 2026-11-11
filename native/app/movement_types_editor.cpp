@@ -5,6 +5,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,6 +20,22 @@
 #include <QVBoxLayout>
 namespace lordly {
 namespace {
+struct SwitchRule {const char *key,*label,*help;bool MovementRules::*member;};
+const SwitchRule switchRules[] = {
+    {"canMove","Can move","Allow squads with this movement type to travel.",&MovementRules::canMove},
+    {"mapFlight","Fly above the map","Use the game's flying height and map presentation. Terrain passability remains editable below.",&MovementRules::mapFlight},
+    {"crossRegions","Find supplies across ground-region barriers","Allow supply destinations across the mission's ground-region boundaries.",&MovementRules::crossRegions},
+    {"airborne","Airborne in battle","Use flying battle movement and the game's airborne attack checks. Does not create new sprite artwork.",&MovementRules::airborne},
+    {"forcedPlain","Use Plain terrain for forced retreats","Use the Plain type's terrain permissions during forced retreat movement, as original Sky and Immobile types do.",&MovementRules::forcedPlain}
+};
+struct RateRule {const char *key,*label,*help;int MovementRules::*member;};
+const RateRule rateRules[] = {
+    {"fatigue","Marching fatigue","Counter gain per movement update. Original ground 2; Sky 3. At the global cycle threshold, eligible members gain 1 fatigue. 0 disables this contribution.",&MovementRules::fatigue},
+    {"groupFatigue","Legion marching fatigue","Counter gain while moving in a Legion. Original value 2. Marching Baton halves the base gain, rounded down.",&MovementRules::groupFatigue},
+    {"nightFatigue","Extra nighttime fatigue","Additional counter gain from 18:00 to 05:59. Original value 1.",&MovementRules::nightFatigue},
+    {"recovery","Rest recovery","Counter reduction per eligible rest update. Original value 3; Healing Censer doubles it. Each completed cycle restores fatigue and HP using the game rules.",&MovementRules::recovery},
+    {"nightRecovery","Extra nighttime recovery","Additional rest counter reduction from 18:00 to 05:59. Original value 2.",&MovementRules::nightRecovery}
+};
 class MovementCommand final : public QUndoCommand {
   public:
     MovementCommand(Project *p, QString label, QJsonObject after)
@@ -36,6 +54,7 @@ class MovementCommand final : public QUndoCommand {
 };
 } // namespace
 std::optional<MovementCreation> requestMovementType(QWidget *parent, const Project &p, int source) {
+    Q_UNUSED(source);
     QDialog d(parent);
     d.setWindowTitle("New movement type");
     d.setObjectName("newMovementTypeDialog");
@@ -47,18 +66,20 @@ std::optional<MovementCreation> requestMovementType(QWidget *parent, const Proje
     name->setMaxLength(80);
     auto copy = new QComboBox;
     copy->setObjectName("newMovementCopy");
+    copy->addItem("Neutral settings",0);
     for (auto i = p.movementTypes().entries().begin(); i != p.movementTypes().entries().end(); ++i)
         copy->addItem(i->name, i.key());
-    copy->setCurrentIndex(qMax(0, copy->findData(source)));
+    copy->setCurrentIndex(0);
     auto speed = new QSpinBox;
     speed->setObjectName("newMovementSpeed");
     speed->setRange(1, 255);
-    speed->setValue(p.movementTypes().entries()[copy->currentData().toInt()].baseSpeed);
+    speed->setValue(35);
     form->addRow("Name", name);
-    form->addRow("Copy terrain costs from", copy);
+    form->addRow("Start with", copy);
     form->addRow("Base speed", speed);
     QObject::connect(copy, &QComboBox::activated, &d, [&] {
-        speed->setValue(p.movementTypes().entries()[copy->currentData().toInt()].baseSpeed);
+        const int id=copy->currentData().toInt();
+        speed->setValue(id?p.movementTypes().entries()[id].baseSpeed:35);
     });
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     v->addWidget(buttons);
@@ -109,14 +130,39 @@ MovementTypesEditor::MovementTypesEditor(Project *p, QUndoStack *u, std::functio
     speed_->setRange(1, 255);
     speed_->setKeyboardTracking(false);
     speed_->setToolTip("Base movement speed before the terrain-cost curve. Higher values move faster; the terrain table shows the resulting speed factors.");
-    behavior_ = new QComboBox;
-    behavior_->setObjectName("movementBehavior");
-    behavior_->addItem("Ground", 2);
-    behavior_->addItem("Flying", 1);
-    behavior_->addItem("Immobile", 7);
     form->addRow("Name", name_);
     form->addRow("Base speed", speed_);
-    form->addRow("Travel behavior", behavior_);
+    auto rulesBox=new QGroupBox("Movement rules");
+    auto rulesGrid=new QGridLayout(rulesBox);
+    int ruleIndex=0;
+    for (const auto &rule:switchRules) {
+        auto check=new QCheckBox(QString::fromUtf8(rule.label));
+        check->setObjectName("movementRule_"+QString::fromLatin1(rule.key));
+        check->setToolTip(QString::fromUtf8(rule.help));
+        switches_[rule.key]=check;
+        rulesGrid->addWidget(check,ruleIndex/2,ruleIndex%2);++ruleIndex;
+        connect(check,&QCheckBox::toggled,this,[this,rule](bool v){edit("Change movement rule",[=](MovementType &t){t.rules.*(rule.member)=v;});});
+    }
+    profile_=new QComboBox;profile_->setObjectName("movementFlightProfile");
+    profile_->addItems({"Class flight path (safe default for new fliers)","Angel Knight / Hawkman / Wyrm","Sphinx","Cockatrice","Griffin / Opinincus"});
+    profile_->setToolTip("Battle advance and retreat path. Unsupported class paths use the Angel Knight path instead of freezing the game.");
+    rulesGrid->addWidget(new QLabel("Battle flight path"),3,0);rulesGrid->addWidget(profile_,3,1);
+    connect(profile_,&QComboBox::activated,this,[this](int n){edit("Change battle flight path",[=](MovementType &t){t.rules.flightProfile=n;});});
+    r->addWidget(rulesBox);
+    auto rateBox=new QGroupBox("Fatigue and recovery");auto rateGrid=new QGridLayout(rateBox);
+    int rateIndex=0;
+    for (const auto &rule:rateRules) {
+        auto spin=new QSpinBox;spin->setRange(0,30);spin->setKeyboardTracking(false);
+        spin->setObjectName("movementRule_"+QString::fromLatin1(rule.key));spin->setToolTip(QString::fromUtf8(rule.help));
+        rates_[rule.key]=spin;
+        rateGrid->addWidget(new QLabel(QString::fromUtf8(rule.label)),rateIndex/2,(rateIndex%2)*2);
+        rateGrid->addWidget(spin,rateIndex/2,(rateIndex%2)*2+1);++rateIndex;
+        connect(spin,&QSpinBox::valueChanged,this,[this,rule](int v){edit("Change movement cycle rate",[=](MovementType &t){t.rules.*(rule.member)=v;});});
+    }
+    auto rateHelp=new QLabel("Rates are counter points per update. Higher fatigue values tire squads sooner; higher recovery values restore them sooner. Cycle lengths use Tools' global fatigue and recovery settings.");
+    rateHelp->setWordWrap(true);rateGrid->addWidget(rateHelp,3,0,1,4);
+    r->addWidget(rateBox);
+    formula_=new QLabel;formula_->setObjectName("movementFormula");formula_->setWordWrap(true);r->addWidget(formula_);
     terrain_ = new QTableWidget(32, 4);
     terrain_->setObjectName("movementTerrainCosts");
     terrain_->setHorizontalHeaderLabels({"Terrain", "Passable", "Cost", "Speed factor"});
@@ -156,10 +202,6 @@ MovementTypesEditor::MovementTypesEditor(Project *p, QUndoStack *u, std::functio
     });
     connect(speed_, &QSpinBox::valueChanged, this, [this](int n) {
         edit("Change movement speed", [=](MovementType &t) { t.baseSpeed = n; });
-    });
-    connect(behavior_, &QComboBox::activated, this, [this] {
-        edit("Change travel behavior",
-             [this](MovementType &t) { t.behavior = behavior_->currentData().toInt(); });
     });
     connect(add, &QPushButton::clicked, this, [this] {
         try {
@@ -243,10 +285,16 @@ void MovementTypesEditor::refresh() {
     if (!m.entries().contains(id))
         return;
     const auto &t = m.entries()[id];
-    QSignalBlocker a(name_), s(speed_), behavior(behavior_);
+    QSignalBlocker a(name_), s(speed_), profile(profile_);
     name_->setText(t.name);
     speed_->setValue(t.baseSpeed);
-    behavior_->setCurrentIndex(behavior_->findData(t.behavior == 1 ? 1 : t.behavior == 7 ? 7 : 2));
+    for(const auto &rule:switchRules){auto check=switches_[rule.key];QSignalBlocker block(check);check->setChecked(t.rules.*(rule.member));}
+    for(const auto &rule:rateRules){auto spin=rates_[rule.key];QSignalBlocker block(spin);spin->setValue(t.rules.*(rule.member));}
+    profile_->setCurrentIndex(t.rules.flightProfile);profile_->setEnabled(t.rules.airborne);
+    bool linear=true;for(int c=1;c<16;++c)linear &= m.curve()[c]==float(c);
+    formula_->setText(linear
+        ? QString("Ordinary speed factor = %1 − 2 × terrain cost. Cost 1 gives %2; cost 4 gives %3. For example, base 35/cost 4 gives 27; base 70/cost 8 gives 54 (double). Turning and Legion size also affect travel.").arg(t.baseSpeed).arg(qMax(1,t.baseSpeed-2)).arg(qMax(1,t.baseSpeed-8))
+        : QString("Ordinary speed factor = %1 − 2 × the ROM's terrain-cost curve. The table shows the result for this ROM. Turning and Legion size also affect travel.").arg(t.baseSpeed));
     for (int i = 0; i < 32; i++) {
         auto pass = static_cast<QCheckBox *>(terrain_->cellWidget(i, 1));
         auto cost = static_cast<QSpinBox *>(terrain_->cellWidget(i, 2));

@@ -8,6 +8,7 @@
 #include "engine/save_document.h"
 #include "rebuild/compiler.h"
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -65,6 +66,9 @@ class MovementTypesTests : public QObject {
             m.remove(id);
             QVERIFY(!m.modified());
             QVERIFY_THROWS_EXCEPTION(Error, m.remove(2));
+            const auto neutral=m.create("Neutral");
+            const auto &n=m.entries()[neutral];
+            QCOMPARE(n.rules,MovementRules{});QCOMPARE(n.costs[5],1);QCOMPARE(n.costs[0],65535);
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
@@ -87,6 +91,7 @@ class MovementTypesTests : public QObject {
             QTimer::singleShot(0, [&] {
                 auto d = qobject_cast<QDialog *>(QApplication::activeModalWidget());
                 QVERIFY(d);
+                QCOMPARE(d->findChild<QComboBox *>("newMovementCopy")->currentData().toInt(),0);
                 d->findChild<QLineEdit *>("newMovementName")->setText("Scout");
                 d->findChild<QSpinBox *>("newMovementSpeed")->setValue(60);
                 d->accept();
@@ -113,8 +118,17 @@ class MovementTypesTests : public QObject {
             editor.findChild<QSpinBox *>("movementCost5")->setValue(3);
             QCOMPARE(p.movementTypes().speed(8, 5), 54.);
             undo.undo();
-            QCOMPARE(p.movementTypes().speed(8, 5), 52.);
+            QCOMPARE(p.movementTypes().speed(8, 5), 58.);
             undo.redo();
+            editor.findChild<QSpinBox *>("movementRule_fatigue")->setValue(7);
+            QCOMPARE(p.movementTypes().entries()[8].rules.fatigue,7);
+            QVERIFY(!p.movementTypes().entries()[8].rules.mapFlight);
+            editor.findChild<QCheckBox *>("movementRule_mapFlight")->setChecked(true);
+            QVERIFY(p.movementTypes().entries()[8].rules.mapFlight);
+            QVERIFY(!p.movementTypes().entries()[8].rules.airborne);
+            undo.undo();QVERIFY(!p.movementTypes().entries()[8].rules.mapFlight);undo.redo();
+            editor.resize(1180,820);QApplication::processEvents();
+            QVERIFY(editor.grab().save(QString::fromUtf8(LORDLY_SOURCE_DIR)+"/build/movement-rules-ui.png"));
             QVERIFY_THROWS_EXCEPTION(Error, p.deleteMovementType(8));
             QTemporaryDir dir;
             p.saveArchive(dir.filePath("movement.lcproj"));
@@ -154,7 +168,7 @@ class MovementTypesTests : public QObject {
             auto movement = window.findChild<QWidget *>("movementTypesEditor");
             QVERIFY(movement);
             auto list = movement->findChild<QListWidget *>("movementTypesList");
-            QCOMPARE(list->findItems("Window Scout", Qt::MatchExactly).size(), 1);
+            QCOMPARE(list->findItems("Window Scout", Qt::MatchContains).size(), 1);
             auto undo = window.findChild<QUndoStack *>();
             QVERIFY(undo);
             undo->undo();
@@ -196,6 +210,15 @@ class MovementTypesTests : public QObject {
             types.set(fast, t);
             p.setMovementTypes(types.json());
             QCOMPARE(p.createMovementType("Custom immobile", 7), 11);
+            QCOMPARE(p.createMovementType("Independent rules",0),12);
+            types=p.movementTypes();t=types.entries()[12];
+            t.rules.mapFlight=true;t.rules.airborne=true;t.rules.flightProfile=3;
+            t.rules.fatigue=7;t.rules.groupFatigue=4;t.rules.nightFatigue=2;
+            t.rules.recovery=5;t.rules.nightRecovery=3;types.set(12,t);p.setMovementTypes(types.json());
+            for(const auto pair:{qMakePair(6,12),qMakePair(7,9)}) {
+                auto row=p.record(Table::Classes,pair.first).bytes;put8(row,44,pair.second);
+                p.replaceBytes(Table::Classes,pair.first,row);
+            }
             auto magnus = p.record(Table::Classes, 0x51).bytes;
             put8(magnus, 44, 8);
             p.replaceBytes(Table::Classes, 0x51, magnus);
@@ -225,9 +248,47 @@ class MovementTypesTests : public QObject {
             QVERIFY(probe.waitForFinished(120000));
             QVERIFY2(probe.exitCode() == 0,
                      (probe.readAllStandardOutput() + probe.readAllStandardError()).constData());
+            probe.start("node",{QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/movement-rules-mips.cjs",file,qEnvironmentVariable("LORDLY_TEST_ROM")});
+            QVERIFY(probe.waitForFinished(120000));
+            qInfo().noquote()<<probe.readAllStandardOutput();
+            QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
+            p.loadTools();auto settings=p.tools()->json();auto global=settings["gameRules"].toObject();
+            global["fatigueRate"]=200;global["recoveryRate"]=50;settings["gameRules"]=global;p.setTools(settings);
+            const auto combined=rebuild(p,tools,work.path());
+            auto combinedOpen=Project::fromRom(Rom::fromBytes(combined.image),catalog());combinedOpen.loadTools();
+            QCOMPARE(combinedOpen.tools()->gameRules().value("fatigueRate"),200);
+            QCOMPARE(combinedOpen.tools()->gameRules().value("recoveryRate"),50);
+            QCOMPARE(combinedOpen.movementTypes().json(),p.movementTypes().json());
+            QCOMPARE(rebuild(combinedOpen,tools,work.path()).image,combined.image);
+            QDir().mkpath(QDir(out).filePath("global-cycles"));
+            const auto combinedFile=QDir(out).filePath("global-cycles/Ogre Battle 64 - Person of Lordly Caliber (USA).z64");
+            atomicWrite(combinedFile,combined.image);
+            probe.start("node",{QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/movement-rules-mips.cjs",combinedFile,qEnvironmentVariable("LORDLY_TEST_ROM"),"global"});
+            QVERIFY(probe.waitForFinished(120000));qInfo().noquote()<<probe.readAllStandardOutput();
+            QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
+    }
+    void flightAssignmentWithoutTypeEdits() {
+        try {
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");if(tools.isEmpty())QSKIP("Local N64 compiler required");
+            for(bool added:{false,true}) {
+                auto p=Project::fromRom(rom(),catalog());int id=5;
+                if(added)id=p.appendClass(0x27,"New flier");
+                else {auto row=p.record(Table::Classes,5).bytes;put8(row,44,1);p.replaceBytes(Table::Classes,5,row);}
+                QVERIFY(!p.movementTypes().modified());
+                QTemporaryDir work;const auto built=rebuild(p,tools,work.path());
+                auto reopened=Project::fromRom(Rom::fromBytes(built.image),catalog());
+                QVERIFY(MovementPlacement::read(Rom::fromBytes(built.image)).has_value());
+                QCOMPARE(reopened.movementTypes().json(),p.movementTypes().json());
+                QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+                const auto out=QDir(qEnvironmentVariable("LORDLY_MOVEMENT_TEST_OUTPUT")).filePath(added?"added-flier":"assigned-flier");QDir().mkpath(out);
+                const auto file=QDir(out).filePath("Ogre Battle 64 - Person of Lordly Caliber (USA).z64");atomicWrite(file,built.image);
+                QProcess probe;probe.start("node",{QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/movement-rules-mips.cjs",file,qEnvironmentVariable("LORDLY_TEST_ROM"),"assignment",QString::number(id)});
+                QVERIFY(probe.waitForFinished(120000));qInfo().noquote()<<probe.readAllStandardOutput();QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
+            }
+        }catch(const std::exception &e){QFAIL(e.what());}
     }
     void expandedIntegration() {
         try {

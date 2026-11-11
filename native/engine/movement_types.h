@@ -4,10 +4,20 @@
 #include <QMap>
 #include <QVector>
 namespace lordly {
+struct MovementRules {
+    bool canMove = true, mapFlight = false, crossRegions = false, airborne = false,
+         forcedPlain = false;
+    int flightProfile = 0, fatigue = 2, groupFatigue = 2, nightFatigue = 1,
+        recovery = 3, nightRecovery = 2;
+    static MovementRules retail(int behavior);
+    QJsonObject json() const;
+    bool operator==(const MovementRules &) const = default;
+};
 struct MovementType {
     QString name;
     int baseSpeed = 35;
     int behavior = 2; // Existing ground, flying and immobile behavior, independent of costs.
+    MovementRules rules;
     QVector<int> costs;
 };
 class MovementTypes {
@@ -24,7 +34,7 @@ class MovementTypes {
     }
     QJsonObject labels() const;
     QByteArray priorityBytes() const;
-    int create(const QString &name, int copyFrom);
+    int create(const QString &name, int copyFrom = 0);
     void remove(int id);
     void set(int id, const MovementType &);
     void setPriority(const QVector<int> &);

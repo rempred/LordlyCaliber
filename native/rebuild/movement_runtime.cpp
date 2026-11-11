@@ -1,6 +1,7 @@
 #include "rebuild/movement_runtime.h"
 #include "engine/capacity_placement.h"
 #include "engine/class_data.h"
+#include "engine/game_rules.h"
 #include "engine/mission_tables.h"
 #include <QFile>
 #include <QJsonArray>
@@ -52,6 +53,19 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
     const auto priority = quint32(b.size());
     b += input.types.priorityBytes();
     align(b);
+    const auto rules = quint32(b.size());
+    b += QByteArray(256 * 16, 0);
+    for(int id=0;id<256;++id) {
+        put8(b,rules+id*16+6,2);put8(b,rules+id*16+7,2);put8(b,rules+id*16+8,1);
+        put8(b,rules+id*16+9,3);put8(b,rules+id*16+10,2);
+    }
+    for (auto i=input.types.entries().begin();i!=input.types.entries().end();++i) {
+        const auto &r=i->rules;
+        int n=0;
+        for (int v:{int(r.canMove),int(r.mapFlight),int(r.crossRegions),int(r.airborne),
+                    int(r.forcedPlain),r.flightProfile,r.fatigue,r.groupFatigue,r.nightFatigue,
+                    r.recovery,r.nightRecovery}) put8(b,rules+i.key()*16+n++,quint8(v));
+    }
     const auto curve = quint32(b.size());
     for (float v : input.types.curve()) {
         auto at = b.size();
@@ -80,6 +94,7 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
         "movement_policy", address + b.size(),
         {{"movement_config.h", config}, {"save-cache.h", read("game/movement/save-cache.h")}},
         {{"lc_movement_kinds", address + kinds},
+         {"lc_movement_rules", address + rules},
          {"lc_movement_speeds", address + speeds},
          {"lc_movement_priority", address + priority},
          {"lc_movement_sources", relocate(0x801971f0)},
@@ -143,6 +158,9 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
         bindings["lc_movement_refresh_saved"] = policy.entries.value("lc_movement_refresh_saved");
         bindings["lc_movement_kind"] = policy.entries.value("lc_movement_kind");
         bindings["lc_movement_factor"] = policy.entries.value("lc_movement_factor");
+        bindings["lc_movement_rule"] = policy.entries.value("lc_movement_rule");
+        bindings["lc_movement_profile_selector"] = policy.entries.value("lc_movement_profile_selector");
+        if(rawMovement)bindings["lc_movement_raw"]=rawMovement;
         // Capacity's maintained variant refers to its explicit expanded data.
         if (input.capacity) {
             bindings["lc_enemy_records"] = relocate(0x80195560);
@@ -196,6 +214,25 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
         b += code.bytes;
         align(b);
     }
+    // The original cycle owners are not accepted C. Authenticate their supported
+    // Tools variants before replacing them with the ROM-traced implementation.
+    const auto gameRules=GameRules::load(input.source);
+    for (const auto &name:{QString("fatigue"),QString("recovery")})
+        if(!gameRules.unavailable(name).isEmpty())throw Error("Unrecognized movement " + name + " owner: " + gameRules.unavailable(name));
+    auto cycles=compiler.compileModule(read("game/movement/cycles.c"),dir,"movement_cycles",address+b.size(),{},
+        {{"lc_movement_rule",policy.entries.value("lc_movement_rule")},
+         {"lc_cycle_sites",relocate(0x801951b0)},{"lc_cycle_groups",relocate(0x801969b8)},
+         {"lc_cycle_units",0x801f0cb0},{"lc_cycle_hour",0x801f0e0a},{"lc_cycle_pause",0x801f0de0},
+         {"lc_cycle_fatigue_period",0x801df2b2},{"lc_cycle_rest_period",0x801df16e},
+         {"lc_cycle_has_item",0x801dcd40},{"lc_cycle_town_rest",0x801dd244},
+         {"lc_cycle_group",0x801da228},{"lc_cycle_gain",0x801df34c},{"lc_cycle_recover",0x801df4a0}},true);
+    for (const auto start:{0x133700u,0x133944u}) {
+        const auto name=QString("func_%1").arg(start,8,16,QChar('0'));
+        const auto entry=cycles.entries.value(name);
+        if(entry<cycles.address || entry>=cycles.address+cycles.bytes.size())throw Error("Missing movement cycle entry");
+        hooks.append({start,entry});
+    }
+    b+=cycles.bytes;align(b);
     p.patches = b.size();
     p.patchCount = hooks.size() * 2;
     put32(b, 16, p.patches);

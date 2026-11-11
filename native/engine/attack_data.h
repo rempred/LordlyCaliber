@@ -14,6 +14,7 @@ struct AttackPlacement {
     quint32 records = 0, settings = 0, code = 0, codeSize = 0;
     quint32 spellIndexEntry = 0, amountEntry = 0, amountOriginal = 0;
     quint32 hooks = 0, hookCount = 0;
+    quint32 audioInstallEntry = 0;
     int count = 0;
     static std::optional<AttackPlacement> read(const Rom &);
     QByteArray descriptor(const QByteArray &) const;

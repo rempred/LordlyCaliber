@@ -58,6 +58,7 @@ std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
     p.amountOriginal = u32(h, 56);
     p.hooks = u32(h, 60);
     p.hookCount = u32(h, 64);
+    p.audioInstallEntry = u32(h, 68);
     if (p.romOffset < 0x2800000 || (p.romOffset & 15) || (p.address & 15) ||
         p.address < 0x80243db0 || quint64(p.address) + p.size > 0x80400000 ||
         quint64(p.romOffset) + p.size > quint64(rom.bytes().size()) ||
@@ -75,6 +76,8 @@ std::optional<AttackPlacement> AttackPlacement::read(const Rom &rom) {
     for (const auto entry : {p.spellIndexEntry, p.amountEntry, p.amountOriginal})
         if (p.codeSize && (entry < p.code || entry >= p.code + p.codeSize || entry % 4))
             throw Error("Attack entry lies outside its code allocation");
+    if(p.audioInstallEntry && (p.audioInstallEntry<p.code || p.audioInstallEntry>=p.code+p.codeSize || p.audioInstallEntry%4))
+        throw Error("Attack audio initializer lies outside its code allocation");
     return p;
 }
 QByteArray AttackPlacement::canonicalOwner(const Rom &rom, const QByteArray &owner, qsizetype start) const {
@@ -126,6 +129,7 @@ QByteArray AttackPlacement::descriptor(const QByteArray &data) const {
     put32(h, 56, amountOriginal);
     put32(h, 60, hooks);
     put32(h, 64, hookCount);
+    put32(h, 68, audioInstallEntry);
     put32(h, 92, crc32(h.first(92)));
     return h;
 }
@@ -438,11 +442,14 @@ QByteArray AttackData::generateCaption(const QByteArray &encoded) const {
                 if(value>1){fallback.scanLine(y)[x]=uchar(value);left=qMin(left,x);right=qMax(right,x);top=qMin(top,y);bottom=qMax(bottom,y);}
             }
             if(right>=left) {
-                const int height=std::isalnum(static_cast<unsigned char>(c))?11:bottom-top+1;
+                const bool lower=std::islower(static_cast<unsigned char>(c));
+                // The retail lowercase body spans rows 4..11, capitals 1..11.
+                // j is the missing dotted descender; its top and tail span 2..12.
+                const int height=lower?(c=='j'?11:8):std::isalnum(static_cast<unsigned char>(c))?11:bottom-top+1;
                 fallback=fallback.copy(left,top,right-left+1,bottom-top+1)
                     .scaled(qMin(8,right-left+1),height,Qt::IgnoreAspectRatio,Qt::FastTransformation);
                 glyph=QByteArray(fallback.width()*15,0);
-                const int y0=std::isalnum(static_cast<unsigned char>(c))?1:top;
+                const int y0=lower?(c=='j'?2:4):std::isalnum(static_cast<unsigned char>(c))?1:top;
                 for(int x=0;x<fallback.width();++x)for(int y=0;y<fallback.height() && y+y0<14;++y)
                     glyph[x*15+y+y0]=char(fallback.constScanLine(y)[x]);
             } else glyph=QByteArray(3*15,0);

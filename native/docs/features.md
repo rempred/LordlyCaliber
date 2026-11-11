@@ -1,10 +1,22 @@
-**Classes → Movement type → New movement type…** creates and assigns a type by
-copying an existing type's terrain costs. **Tools → Movement Types** edits names,
-base speeds, ground/flying/immobile behavior, passability and terrain costs, and
-the priority used by mixed squads. Original types remain available; unused custom
+**Classes → Movement type → New movement type…** creates and assigns a type with
+neutral settings; copying an existing type is an explicit option.
+**Tools → Movement Types** edits names, base speeds, independent movement rules,
+fatigue/recovery rates, passability, terrain costs and mixed-squad priority.
+Rules include movement permission, map flight height, supply-search region
+crossing, airborne battle behavior, battle flight path and forced-retreat costs.
+New types start with normal ground height, cost1 on ordinary terrain and standard
+fatigue/recovery. Original types remain available; unused custom
 types can be deleted. The terrain table shows each resulting speed factor; larger
 costs reduce speed, while blocked terrain is a separate setting. These factors
-describe ordinary travel; group size and turning retain the game's rules.
+describe ordinary travel: factor = base speed − 2 × terrain-curve value, and a
+straight update moves 3/256 × factor/100 map units. Original costs1–15 map directly
+to the curve. At cost4, base35 gives27 and base70 gives62 (about2.30×); raising
+both base to70 and cost to8 gives54 (2×). Group size and turning retain the game's
+rules. Fatigue and rest rates are counter points per eligible update; larger
+fatigue values tire squads sooner, larger rest values restore them sooner.
+Separate Legion and nighttime rates retain the native item modifiers and the
+global Tools cycle lengths. Airborne classes without a native flight path use
+the humanoid path, avoiding the native zero-point spline loop.
 Up to 254 types are supported on US Rev 0. Changes support undo/redo, project
 files and ROM export/reopening. Save loading reconstructs custom movement IDs
 from squad members without changing the packed battery-save format.

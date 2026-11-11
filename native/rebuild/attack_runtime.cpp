@@ -54,6 +54,18 @@ QByteArray hooks(const Rom &rom, const AttackPlacement &placement, bool remove) 
             u32(bytes, row + 8) != second || target < placement.code ||
             target >= placement.code + placement.codeSize || (target & 3))
             throw Error("Invalid attack hook entry");
+        // Libmus runs before the class/attack allocation is loaded. Its hooks
+        // are installed into resident RAM by the class boot initializer.
+        const auto deferred=u32(bytes,row+20);
+        const bool earlyAudio=s["entry"].toString()=="lc_attack_edit_sound_frame" ||
+            s["entry"].toString()=="lc_attack_edit_sound_decode" || s["entry"].toString()=="lc_attack_edit_sound_flush";
+        if(deferred>1 || (deferred && (!earlyAudio || !placement.audioInstallEntry)))
+            throw Error("Invalid deferred attack hook");
+        if(deferred) {
+            if(u32(bytes,at)!=first || u32(bytes,at+4)!=second)
+                throw Error("Deferred audio hook contains unrecognized ROM code");
+            continue;
+        }
         if (u32(bytes, at) != (remove ? jump(target) : first) ||
             u32(bytes, at + 4) != (remove ? 0 : second))
             throw Error(
@@ -180,6 +192,23 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
             symbols[it.key()] = it.value();
         }
     }
+    // Publish the three resident audio callbacks only after this allocation's
+    // DMA has completed. Interrupt masking prevents a half-written callback;
+    // native cache services also invalidate Project64's compiled blocks.
+    QByteArray startup="typedef unsigned int u32;\nu32 disable_interrupts(void);\nvoid restore_interrupts(u32);\nvoid writeback(void *,int);\nvoid invalidate(void *,int);\nvoid original_heap_init(u32,u32);\nvoid lc_attack_initialize_heap(u32 start,u32 size){u32 mask=disable_interrupts();\n";
+    for(const auto &value:sites) {
+        const auto site=value.toObject();const auto name=site["entry"].toString();
+        if(name!="lc_attack_edit_sound_frame" && name!="lc_attack_edit_sound_decode" && name!="lc_attack_edit_sound_flush")continue;
+        const auto address=quint32(site["address"].toInteger());
+        startup+=QString("{volatile u32 *p=(volatile u32 *)%1U;p[0]=%2U;p[1]=0;writeback((void *)p,8);invalidate((void *)p,8);}\n")
+            .arg(address).arg(jump(entries.value(name))).toLatin1();
+    }
+    startup+="restore_interrupts(mask);original_heap_init(start,size);}\n";
+    const auto installer=compiler.compileModule(startup,directory,"attack_audio_install",p.address+quint32(bytes.size()),{},
+        {{"disable_interrupts",0x800996d0},{"restore_interrupts",0x80099740},{"writeback",0x80090140},{"invalidate",0x800900c0},{"original_heap_init",0x80070c60}},true);
+    p.audioInstallEntry=installer.entries.value("lc_attack_initialize_heap");
+    if(!p.audioInstallEntry)throw Error("Missing attack audio initializer");
+    bytes+=installer.bytes;bytes+=QByteArray((16-bytes.size()%16)%16,0);
     int groupIndex = 0;
     for (const auto &entry : {"lc_group_melee", "lc_group_ranged", "lc_group_alternate"}) {
         const auto address = entries.value(entry);
@@ -198,6 +227,9 @@ QByteArray compileAttackRuntime(const AttackData &attacks, AttackPlacement &p,
         put32(bytes, at + 8, quint32(words[1].toInteger()));
         put32(bytes, at + 12, target);
         put32(bytes, at + 16, symbols.value(site["original"].toString()));
+        const auto name=site["entry"].toString();
+        if(name=="lc_attack_edit_sound_frame" || name=="lc_attack_edit_sound_decode" || name=="lc_attack_edit_sound_flush")
+            put32(bytes,at+20,1);
     }
     p.amountEntry = entries.value("lc_attack_amount");
     p.spellIndexEntry = entries.value("lc_attack_spell_index");

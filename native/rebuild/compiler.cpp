@@ -887,7 +887,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool needsMissionRuntime = customMissionVictory || (p.sceneEvents() && p.sceneEvents()->hasMissionCompletion());
     std::optional<MovementPlacement> movementPlacement;
     std::optional<MovementInput> movementInput;
-    if(!p.rom().revision() && p.movementTypes().requiresRuntime()) movementInput=MovementInput{p.movementTypes(),p.rom(),expandedArmies,{}};
+    bool movementAssignmentsChanged=false;
+    if(!p.rom().revision()) for(const auto &r:p.records(Table::Classes))
+        if((r.original.size()>44 && u8(r.original,44)!=u8(r.bytes,44)) ||
+           (r.romOffset<0 && p.movementTypes().entries().value(u8(r.bytes,44)).rules.airborne)) movementAssignmentsChanged=true;
+    if(!p.rom().revision() && (p.movementTypes().requiresRuntime() || movementAssignmentsChanged)) movementInput=MovementInput{p.movementTypes(),p.rom(),expandedArmies,{}};
     const bool relocateClasses = movementInput.has_value() || wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||

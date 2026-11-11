@@ -8,11 +8,13 @@ class QListWidget;
 class QLineEdit;
 class QSpinBox;
 class QComboBox;
+class QCheckBox;
+class QLabel;
 class QTableWidget;
 namespace lordly {
 struct MovementCreation {
     QString name;
-    int copyFrom = 2, baseSpeed = 35;
+    int copyFrom = 0, baseSpeed = 35;
 };
 std::optional<MovementCreation> requestMovementType(QWidget *, const Project &, int copyFrom = 2);
 class MovementTypesEditor : public QWidget {
@@ -30,7 +32,10 @@ class MovementTypesEditor : public QWidget {
     QListWidget *list_;
     QLineEdit *name_;
     QSpinBox *speed_;
-    QComboBox *behavior_;
+    QComboBox *profile_;
+    QMap<QString,QCheckBox *> switches_;
+    QMap<QString,QSpinBox *> rates_;
+    QLabel *formula_;
     QTableWidget *terrain_;
 };
 } // namespace lordly

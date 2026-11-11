@@ -4,7 +4,7 @@
     {
       "name": "func_00043ad8",
       "source": "game/movement/func_00043ad8.c",
-      "sha256": "e3001bcbfc52621987bc5bbd100b57dcb0dd5e23db0397c5f21faf17818b6956",
+      "sha256": "80d0c4dbb5f53a87f2edb213a35b8736e24138df5a370e926087488cae6451dc",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00043ad8.c",
       "originalSha256": "29A821E63E8AD1E28CE877BB4C04C56EBA0DE33EC60776FFE59E97BD071FCC31",
@@ -22,7 +22,7 @@
     {
       "name": "func_000bd154",
       "source": "game/movement/func_000bd154.c",
-      "sha256": "88d1660ef92eccb3bb9380b479b92e36b9d27d8ee2a06992c328134d97613278",
+      "sha256": "9470e19df8f328014c8fb93dd6f57a1e03b9bc260768f811edc785b05f4ea0f9",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_000bd154.c",
       "originalSha256": "158B7DC2CADD5ACA86BD004742E68B872730D9CF1944C24BBD8CC798819C74BF",
@@ -44,7 +44,7 @@
     {
       "name": "func_00042dc4",
       "source": "game/movement/func_00042dc4.c",
-      "sha256": "0996f77172aac1e1cb7dd6a938e1dfe961c429b6bf47da8eedd5847f42c786c0",
+      "sha256": "31b361f9d5040c32cb24ce31f9865579770daaa5024730f22786507577a50238",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00042dc4.c",
       "originalSha256": "3F17290B65661456E6BA70175C2589B99FF811C9A06D203BAE475C5BCD990C8C",
@@ -74,7 +74,7 @@
     {
       "name": "func_00040f88",
       "source": "game/movement/func_00040f88.c",
-      "sha256": "1c67628df1c8b53705abd3adf70301bcce103ca4fa636dee10026cec03c0b14d",
+      "sha256": "2eabc460a5d8417ca101e3860bb7085f3d9829d0311c5c9175e950ed18ada176",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00040f88.c",
       "originalSha256": "5BE68FFEA5197367F3D47222BAD609C9D4FA2345EC17D4495BFE8F24D5EBDDD7",
@@ -94,7 +94,7 @@
     {
       "name": "func_00101DDC",
       "source": "game/movement/func_00101DDC.c",
-      "sha256": "0f6999337de948a576e4c90a320f7ee22fc6788a2f69b7339550d2532aef5365",
+      "sha256": "6577c5c6bd348d8cd521f2612daadcfcaacc6ff6c3797e156271029878be1dee",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00101ddc.c",
       "originalSha256": "28D2D305936189114BD67FA16863D84EF044AB8631DB91CE1978AE743474488D",
@@ -281,7 +281,7 @@
     {
       "name": "func_00105CC0",
       "source": "game/movement/func_00105CC0.c",
-      "sha256": "95bb4f3607761411cc99a1714bb3c6d805d21a77c9ba74822172f3155dfaa725",
+      "sha256": "17c83dc3fa678afe58572b0dd757365e59f8780390de8355746f8acd56e93071",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00105CC0.c",
       "originalSha256": "7AF42FE16E0C3C103912C91BEEAA89E0FF2E56617912365B29EA4AC87CA4D62C",
@@ -374,7 +374,7 @@
     {
       "name": "func_00106CE0",
       "source": "game/movement/func_00106CE0.c",
-      "sha256": "4c578834fcd9ee3ef6719159157bdac3b5eb0600f6e039442d31fff6229544fa",
+      "sha256": "03404fa0eccfd6056d2f194129b97ed7af87281344311c8172a85e6ca7cf092f",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/squad_pursuit_producer.c",
       "originalSha256": "FB31FCABF23DB690EDF2C3A7B956D5DDF5E83ACFF42FD77B1D22FDA28E24B72B",
@@ -458,7 +458,7 @@
     {
       "name": "func_00121F38",
       "source": "game/movement/func_00121F38.c",
-      "sha256": "5a9cb964cee98a9c31bacea2dcd12cf7a16a39f8c6672f1bb0b537f23fea0a16",
+      "sha256": "77c1311a1461185a47aa87f954fae25e4c57526080f79997e22c9695b9876a2c",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00121F38.c",
       "originalSha256": "A404831AFF9006C3C9467DC3ED74D621B357B313889E18CA7C1B21CEAE4D14AE",
@@ -489,7 +489,7 @@
     {
       "name": "func_00124520",
       "source": "game/movement/func_00124520.c",
-      "sha256": "ab8e77d3455f68bed59c0471a97aebd221fd12b14d80d8e4e0361ffaae8f2294",
+      "sha256": "4d8326c82a518fdd953989905b53875b5a3506fd2e45e51cd39d2813e89e8d67",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/squad_supply_end.c",
       "originalSha256": "ABAA4C2256B7E71769F20DC0770F69813C51D33BEAAA02E96114E2CB5F41CD86",
@@ -540,7 +540,7 @@
     {
       "name": "func_00125460",
       "source": "game/movement/func_00125460.c",
-      "sha256": "e9abe879cef8225dfdd81f3fdc6313c1e539ee6ce81a60654ad74e37eb0688c2",
+      "sha256": "3da692743666287418cc0ebc0680f52c9084930bdcf5b0b85d14330e602526bf",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/movement_125460_125f84.c",
       "originalSha256": "BDB7E616AEC19A47974ACD712C0470982DADCF648369FCE0534103CEE7ECCD73",
@@ -606,7 +606,7 @@
     {
       "name": "func_00126D24",
       "source": "game/movement/func_00126D24.c",
-      "sha256": "9db2bce53c932e319dd4fce4f15ff4730d83fe513ac81e118a7f4c6df1dbdcee",
+      "sha256": "8b508b2cc8a7a02bba2f10a8641b8072f52052415cca301b54d7f146e7f9bae1",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00126D24.c",
       "originalSha256": "08074EE47971E3B358FEAF9FB43D08BF6CE84B319C9CE3ED2F630F292AC64381",
@@ -643,7 +643,7 @@
     {
       "name": "func_00127D30",
       "source": "game/movement/func_00127D30.c",
-      "sha256": "d26763bcb15fbe23812120c60f5d1ce92da10b98881081c01f1d1d2be735e98c",
+      "sha256": "9aa2f84a8c0b88c0dd04cae8f63fec88f87899a1c730fb15bb81181d672d6395",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00127D30.c",
       "originalSha256": "9C8EB0A76BC655A2EF53A9B50704E3683DAA7BBAEF07B996E3E2A6E68052A0D4",
@@ -665,7 +665,7 @@
     {
       "name": "func_001284C4",
       "source": "game/movement/func_001284C4.c",
-      "sha256": "51b9090e2ebe541bb5549c6e572b671f193888729715bfd7351c22826b3eaead",
+      "sha256": "2f70d6e635cccbb6af4ffd3e91ddae0723ce8832e9f069ad1449aab57a97902a",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_001284C4.c",
       "originalSha256": "D574FF6421D0033F9BA5A4CDF3BD5C8E5BB411E995B28C6EB83D559B59B2A0BE",
@@ -695,7 +695,7 @@
     {
       "name": "func_0012B440",
       "source": "game/movement/func_0012B440.c",
-      "sha256": "4997d372e157b929c474df63b288d31758c72e2ab460d4dd86979e3cc0030a97",
+      "sha256": "6cca631b2e37ebb235293e983a5daaa2001afeb4739a24398d932a058975a730",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_0012B440.c",
       "originalSha256": "9446EE4055CBAA801869E7A882218645FB9DF2EE17A77AE1231CED243E7C6C91",
@@ -728,7 +728,7 @@
     {
       "name": "func_0012C788",
       "source": "game/movement/func_0012C788.c",
-      "sha256": "1c74852702df115cdddcb6df24b4d11a46013db9e750bd984ca2d4de001ba022",
+      "sha256": "684729e5cb40a12425573abd81dde4c9e7858c23d0380b515bf643f66c5a180d",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_0012C788.c",
       "originalSha256": "CBF152ACE69D3EADF96766BAA8B7FB5B19995629D630F40907F59C2CE3E979F7",
@@ -763,7 +763,7 @@
     {
       "name": "func_0012D170",
       "source": "game/movement/func_0012D170.c",
-      "sha256": "ab3bc9fe8eaace531e0e3110fd8125a3db9e25074227f85b620ce51ae12c3d1a",
+      "sha256": "48d4f47b0a1f9645c6d587c5ccf9dccf4e4df161a867070f11b939073aefee46",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_0012D170.c",
       "originalSha256": "4F48F13074ABFCE35531D2806EEBBF1086DB8C6E86F9BB0DB691A8E53591B40A",
@@ -801,7 +801,7 @@
     {
       "name": "func_0012D6FC",
       "source": "game/movement/func_0012D6FC.c",
-      "sha256": "0b9af135badc2d906cf460a4470b8fb960a4f5c5380212a37aab69bf47003f40",
+      "sha256": "76818cef2df99e07cfbffc2db277d845f49d104b1e2047e4af9bb380099c359d",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_0012D6FC.c",
       "originalSha256": "E961C5B38E460DEDE4B3334C75BDB7198DC02DF6436934551B08776917085B31",
@@ -834,7 +834,7 @@
     {
       "name": "func_00146094",
       "source": "game/movement/func_00146094.c",
-      "sha256": "c43c3f57f4f5349c90884bc7209385127dd998db539616e6edabf3bb718e9d29",
+      "sha256": "8a8b220d5917c259e3a6103db6db7d52ab49c67da021c59d2ac822347965e9d9",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_00146094.c",
       "originalSha256": "82A9D46A9DD6A720C250AFDE081DB2BB9B47B5E3EB3558F07B6E885CD5C4B3A8",
@@ -852,7 +852,7 @@
     {
       "name": "func_001960A8",
       "source": "game/movement/func_001960A8.c",
-      "sha256": "d62abc19d88e35f2cbc4f5803c4bd0e2b45e3b5586c38114cf7c9dd0ffa44eae",
+      "sha256": "8201b56749310a4128f87c10823bea17785fe26b9c1203fb717eab84f0be3f41",
       "capacity": false,
       "originalSource": "game/accepted/library/src/lib/func_001960A8.c",
       "originalSha256": "A2D89BEF7270925833B72EB30924B4C1B17D72B547F2F3CE4BF766C63680BF4C",
@@ -1010,7 +1010,7 @@
     {
       "name": "func_001960A8",
       "source": "game/movement/func_001960A8-capacity.c",
-      "sha256": "2d3b6aa474258a75d2d9bb101629e5b67c6d8c2517481f0ea626c2dc7dd05e65",
+      "sha256": "06cd8658fa51b88f601ea6c340c7374a6437dd57bb3e13063db8006cd0d5ae6e",
       "capacity": true,
       "originalSource": "game/accepted/library/src/lib/func_001960A8.c",
       "originalSha256": "A2D89BEF7270925833B72EB30924B4C1B17D72B547F2F3CE4BF766C63680BF4C",
@@ -1162,6 +1162,96 @@
           "size": 5776,
           "address": 2149669912,
           "sha256": "9c56d2edc784bce4b789a3a5fe3a0226c10f9ec60cdd90dd27a2a41c834f46f6"
+        }
+      ]
+    },
+    {
+      "name": "func_0021D7F0",
+      "source": "game/movement/func_0021D7F0.c",
+      "sha256": "ca9add9de5ec042bdb66c0a3d914f6a0ced6525cd8e807769f35d041d623dbe5",
+      "capacity": false,
+      "originalSource": "game/accepted/library/src/battle/func_0021D7F0.c",
+      "originalSha256": "9BC34FE92D49C38FB41AFACE2E4D6E759FA3343EA3ACAD93AA736976DC73DA8B",
+      "bindings": {
+        "func_00201670": 2149310944,
+        "func_0002d3e0": 2148126688,
+        "cos": 2148125424,
+        "sin": 2148125088,
+        "func_00043ad8": 2148981720,
+        "func_00222190": 2149445312,
+        "D_801CE8BC": 2149378236,
+        "resource_free": 2147947204,
+        "resource_alloc": 2147946288,
+        "memset_00023780": 2148086656,
+        "D_801E5CC0": 2149473472,
+        "memcpy": 2148085856,
+        "D_801E5CD4": 2149473492,
+        "D_801E5CE8": 2149473512,
+        "D_801E5D04": 2149473540,
+        "D_801E5D20": 2149473568,
+        "D_801E5D3C": 2149473596,
+        "D_801E5D58": 2149473624,
+        "D_801E5D64": 2149473636,
+        "func_0026C9CC": 2149678620
+      },
+      "headers": [
+        {
+          "path": "include/game/effect_math_e04.h",
+          "file": "game/accepted/library/include/game/effect_math_e04.h",
+          "sha256": "3ED8AB74F4DE59C371E1998512E89AA8E85748203AB7F517D7B33C32763677EB"
+        }
+      ],
+      "parts": [
+        {
+          "start": 2217968,
+          "size": 1204,
+          "address": 2149426464,
+          "sha256": "bcd38dc792b9d24734048fc9e3120c2edc4e8111da86b02414a1d9e0bb243928"
+        }
+      ]
+    },
+    {
+      "name": "func_0021E50C",
+      "source": "game/movement/func_0021E50C.c",
+      "sha256": "2ecbb2eac5814e0940c3be8e86beb15fa0734114258b58351e2d755419c42fa7",
+      "capacity": false,
+      "originalSource": "game/accepted/library/src/battle/func_0021E50C.c",
+      "originalSha256": "0BCDBAF071699A89ED2A6DDE66D83897C88C309E0BBDFACECB0BC96EA413293A",
+      "bindings": {
+        "func_002016F4": 2149311076,
+        "func_0002d3e0": 2148126688,
+        "cos": 2148125424,
+        "sin": 2148125088,
+        "func_00043ad8": 2148981720,
+        "func_00222344": 2149445748,
+        "D_801CE8BC": 2149378236,
+        "resource_free": 2147947204,
+        "resource_alloc": 2147946288,
+        "memset_00023780": 2148086656,
+        "D_801E5D70": 2149473648,
+        "memcpy": 2148085856,
+        "D_801E5D84": 2149473668,
+        "D_801E5D98": 2149473688,
+        "D_801E5DA8": 2149473704,
+        "D_801E5DB8": 2149473720,
+        "D_801E5DD4": 2149473748,
+        "D_801E5DF0": 2149473776,
+        "D_801E5E00": 2149473792,
+        "func_0026C9CC": 2149678620
+      },
+      "headers": [
+        {
+          "path": "include/game/effect_math_e04.h",
+          "file": "game/accepted/library/include/game/effect_math_e04.h",
+          "sha256": "3ED8AB74F4DE59C371E1998512E89AA8E85748203AB7F517D7B33C32763677EB"
+        }
+      ],
+      "parts": [
+        {
+          "start": 2221324,
+          "size": 1168,
+          "address": 2149429820,
+          "sha256": "65535e7efe6ddde9a71dea1262c59ef820f5df7505e5b3bfcb5722ded0c1b018"
         }
       ]
     }

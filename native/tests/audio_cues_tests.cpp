@@ -392,6 +392,9 @@ class AudioCuesTests : public QObject {
             auto checksum=result.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,result.image);
             QCOMPARE(reopened.attacks()->json(),data.json());
             QCOMPARE(rebuild(reopened,tools,temp.path()).image,result.image);
+            QProcess startup;startup.start("node",{QFINDTESTDATA("attack-audio-startup-mips.cjs"),file,qEnvironmentVariable("LORDLY_TEST_ROM")});
+            QVERIFY(startup.waitForFinished(60000));QVERIFY2(startup.exitCode()==0,startup.readAllStandardError().constData());
+            qInfo().noquote()<<startup.readAllStandardOutput();
             const auto placement=AttackPlacement::read(exported);QVERIFY(placement);
             auto entry=placement->romOffset+AttackData::settingsOffset+25*32;
             auto wrapper=placement->romOffset+u32(exported.bytes(),entry+24)-placement->address;

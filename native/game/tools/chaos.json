@@ -24,12 +24,15 @@
       "rom": 198540,
       "ram": 2148139916,
       "size": 192,
-      "payloadBytes": 124,
+      "payloadBytes": 160,
       "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
-      "normalizedSha256": "dece46b4fe35372cda624801ad3b98413ffefc122ffd8c76145a25e634248c55",
+      "normalizedSha256": "36589031d3a20edfb9541fd02a3baa6bf1c58be55ff931410aa951fc90522635",
       "legacyRom": 198540,
       "legacyBytes": 192,
-      "legacySha256": "71b20c805fbf77c37d48014bf289f3c15b4248161d62dd9b35a7848d55e39c7e"
+      "legacySha256": "71b20c805fbf77c37d48014bf289f3c15b4248161d62dd9b35a7848d55e39c7e",
+      "previousNativeSha256": [
+        "dece46b4fe35372cda624801ad3b98413ffefc122ffd8c76145a25e634248c55"
+      ]
     },
     {
       "name": "source-loader-bootstrap",

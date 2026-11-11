@@ -5,6 +5,20 @@
 #include <bit>
 #include <cmath>
 namespace lordly {
+MovementRules MovementRules::retail(int behavior) {
+    MovementRules r;
+    r.canMove = behavior != 7;
+    r.mapFlight = r.crossRegions = r.airborne = behavior == 1;
+    r.forcedPlain = behavior == 1 || behavior == 7;
+    r.fatigue = behavior == 1 ? 3 : 2;
+    return r;
+}
+QJsonObject MovementRules::json() const {
+    return {{"canMove",canMove},{"mapFlight",mapFlight},{"crossRegions",crossRegions},
+            {"airborne",airborne},{"forcedPlain",forcedPlain},{"flightProfile",flightProfile},
+            {"fatigue",fatigue},{"groupFatigue",groupFatigue},{"nightFatigue",nightFatigue},
+            {"recovery",recovery},{"nightRecovery",nightRecovery}};
+}
 MovementTypes MovementTypes::load(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision())
@@ -20,6 +34,7 @@ MovementTypes MovementTypes::load(const Rom &rom) {
             MovementType t;
             t.name = names[id];
             t.behavior = id;
+            t.rules = MovementRules::retail(id);
             for (int terrain = 0; terrain < terrainCount; ++terrain)
                 t.costs << u16(rom.bytes(), 0x13fa58 + id * 64 + terrain * 2);
             m.entries_[id] = t;
@@ -58,6 +73,11 @@ void MovementTypes::validate() const {
         for (int cost : t.costs)
             if (cost < 0 || cost > 65535)
                 throw Error("Terrain cost exceeds its stored range");
+        const auto &r = t.rules;
+        if (r.flightProfile < 0 || r.flightProfile > 4)
+            throw Error("Unknown battle flight path");
+        for (int rate : {r.fatigue,r.groupFatigue,r.nightFatigue,r.recovery,r.nightRecovery})
+            if (rate < 0 || rate > 30) throw Error("Movement cycle rates must be between 0 and 30");
     }
 }
 QJsonObject MovementTypes::json() const {
@@ -71,6 +91,11 @@ QJsonObject MovementTypes::json() const {
                                                       {"baseSpeed", i->baseSpeed},
                                                       {"behavior", i->behavior},
                                                       {"costs", costs}};
+        // Preserve the existing representation for unedited retail/older projects.
+        if (i->rules != MovementRules::retail(i->behavior)) {
+            auto row=types[QString::number(i.key())].toObject();
+            row["rules"]=i->rules.json(); types[QString::number(i.key())]=row;
+        }
     }
     for (int id : priority_)
         priority.append(id);
@@ -99,6 +124,19 @@ MovementTypes MovementTypes::fromJson(const QJsonObject &j) {
         t.name = o["name"].toString();
         t.baseSpeed = integer(o["baseSpeed"]);
         t.behavior = integer(o["behavior"]);
+        t.rules = MovementRules::retail(t.behavior);
+        if (o.contains("rules")) {
+            if (!o["rules"].isObject()) throw Error("Invalid movement rules");
+            const auto r=o["rules"].toObject();
+            auto flag=[&](const char *key) {if(!r[key].isBool())throw Error("Invalid movement rule switch");return r[key].toBool();};
+            t.rules.canMove=flag("canMove");t.rules.mapFlight=flag("mapFlight");
+            t.rules.crossRegions=flag("crossRegions");t.rules.airborne=flag("airborne");
+            t.rules.forcedPlain=flag("forcedPlain");
+            t.rules.flightProfile=integer(r["flightProfile"]);
+            t.rules.fatigue=integer(r["fatigue"]);t.rules.groupFatigue=integer(r["groupFatigue"]);
+            t.rules.nightFatigue=integer(r["nightFatigue"]);t.rules.recovery=integer(r["recovery"]);
+            t.rules.nightRecovery=integer(r["nightRecovery"]);
+        }
         if (!o["costs"].isArray())
             throw Error("Missing movement terrain costs");
         for (const auto c : o["costs"].toArray())
@@ -134,18 +172,21 @@ QByteArray MovementTypes::priorityBytes() const {
     return out;
 }
 int MovementTypes::create(const QString &name, int copyFrom) {
-    if (!entries_.contains(copyFrom))
+    if (copyFrom && !entries_.contains(copyFrom))
         throw Error("Choose a movement type to copy");
     int id = 8;
     while (entries_.contains(id))
         ++id;
     if (id > maximumId)
         throw Error("The movement type table is full");
-    auto t = entries_[copyFrom];
+    MovementType t;
+    if (copyFrom) t=entries_[copyFrom];
+    else {t.costs=QVector<int>(terrainCount,1);t.costs[0]=65535;}
     t.name = name.trimmed();
     auto next = *this;
     next.entries_[id] = t;
-    next.priority_.insert(next.priority_.indexOf(copyFrom) + 1, id);
+    if (copyFrom) next.priority_.insert(next.priority_.indexOf(copyFrom) + 1, id);
+    else next.priority_.append(id);
     next.validate();
     *this = std::move(next);
     return id;
@@ -171,14 +212,15 @@ void MovementTypes::setPriority(const QVector<int> &p) {
     *this = std::move(next);
 }
 int MovementTypes::behavior(int id) const {
-    return entries_.contains(id) ? entries_[id].behavior : 7;
+    if (!entries_.contains(id) || !entries_[id].rules.canMove) return 7;
+    return entries_[id].rules.airborne ? 1 : 2;
 }
 double MovementTypes::speed(int id, int terrain) const {
     if (!entries_.contains(id) || terrain < 0 || terrain >= 32)
         throw Error("Unknown movement type or terrain");
     const auto &t = entries_[id];
     int c = t.costs[terrain];
-    if (c == 65535 || t.behavior == 7)
+    if (c == 65535 || !t.rules.canMove)
         return 0;
     return qMax(1., double(t.baseSpeed) - 2. * (c > 0 && c < 16 ? curve_[c] : 2.f));
 }

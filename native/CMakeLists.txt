@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.4)
-project(LordlyCaliber VERSION 0.5.63 LANGUAGES C CXX)
+project(LordlyCaliber VERSION 0.5.65 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -661,7 +661,7 @@ qt_add_resources(lordly_engine campaign_sources PREFIX "/" BASE . FILES game/cam
 target_sources(lordly_ui PRIVATE app/custom_content.cpp)
 
 file(GLOB movement_c_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/movement/*")
-qt_add_resources(lordly_engine movement_sources PREFIX "/" BASE . FILES ${movement_c_sources} game/accepted/library/include/common/types.h game/scenarios/enemy-capacity.h)
+qt_add_resources(lordly_engine movement_sources PREFIX "/" BASE . FILES ${movement_c_sources} game/accepted/library/include/common/types.h game/accepted/library/include/game/effect_math_e04.h game/scenarios/enemy-capacity.h)
 
 if(BUILD_TESTING)
   qt_add_executable(movement_types_tests tests/movement_types_tests.cpp)

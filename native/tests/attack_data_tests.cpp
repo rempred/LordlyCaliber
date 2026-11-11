@@ -41,9 +41,14 @@ class AttackDataTests : public QObject {
         for(int x=0;x<3;++x)for(int y=0;y<15;++y)
             QCOMPARE(quint8(columns[x][y]),quint8(retail[y*90+56+x])>1?quint8(retail[y*90+56+x]):quint8(0));
         QVERIFY(std::count(generated.begin(),generated.end(),char(1))>30);
-        QImage comparison(720,360,QImage::Format_ARGB32);comparison.fill(QColor("#ecdcb8"));
+        auto inkRows=[](const QByteArray &pixels){int top=15,bottom=-1;for(int y=0;y<15;++y)for(int x=0;x<90;++x)if(quint8(pixels[y*90+x])>1){top=qMin(top,y);bottom=qMax(bottom,y);}return qMakePair(top,bottom);};
+        // Lowercase height comes from the existing retail n artwork, not the generator.
+        QCOMPARE(inkRows(data.generateCaption("x")),inkRows(data.generateCaption("n")));
+        QCOMPARE(inkRows(data.generateCaption("X")),inkRows(data.generateCaption("A")));
+        QVERIFY(data.generateCaption("x")!=data.generateCaption("X"));
+        QImage comparison(720,480,QImage::Format_ARGB32);comparison.fill(QColor("#ecdcb8"));
         QPainter painter(&comparison);int top=0;
-        for(const auto &text:{QByteArray("Pumpkin Smash"),QByteArray("test name"),QByteArray("Petrification")}) {
+        for(const auto &text:{QByteArray("Pumpkin Smash"),QByteArray("test name"),QByteArray("Petrification"),QByteArray("xXtestXx")}) {
             const auto pixels=data.generateCaption(text);QImage label(90,15,QImage::Format_ARGB32);label.fill(Qt::transparent);
             const QRgb colors[]={0,qRgba(0,0,0,255),qRgba(104,136,104,255),qRgba(200,248,200,255)};
             for(int y=0;y<15;++y)for(int x=0;x<90;++x)label.setPixel(x,y,colors[quint8(pixels[y*90+x])]);

@@ -260,3 +260,21 @@ changed or unsupported upstream acceptance returns an error, never a clean resul
 This is a static audit of the named export catalogs and source paths, not an
 emulator test or an automatic proof that a proposed C adaptation preserves game
 semantics. Re-run after changing these selectors, their catalogs or Decomp intake.
+
+### Resident audio startup
+
+Libmus callbacks at z64 ROM126AC,1299C and12EE8 run before the permanent class and
+attack allocation is loaded. Their ROM entries must remain native. Attack hook
+rows with word+20=1 are installed in RAM by the post-DMA heap initializer; the
+bounded initializer address is stored at attack descriptor+68. Old exports have
+zero in both fields and migrate through the existing authenticated hook removal.
+The initializer masks interrupts, writes each two-word entry and synchronizes
+data/instruction caches, then calls the original heap initializer. Reusing that
+existing call keeps expanded-save loaders within their resident code allocation.
+Later heap resets retain the attack allocation and safely repeat installation.
+
+Startup verification must begin before that allocation exists. Mounting all
+extension code in a battle/audio fixture cannot test this ordering. The
+attack-audio-startup-mips regression executes the class boot entry and native cache
+routines; actual Project64 recompiler cold boot covers the thread-timing failure
+that originally exposed this defect.
