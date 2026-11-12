@@ -576,6 +576,16 @@
         666763224,
         2947547152
       ]
+    },
+    {
+      "rom": 2260580,
+      "address": 2149469076,
+      "entry": "lc_caption_log_draw",
+      "original": "lc_original_caption_log_draw",
+      "words": [
+        666763224,
+        8394785
+      ]
     }
   ],
   "symbols": {

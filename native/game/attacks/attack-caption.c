@@ -9,6 +9,7 @@ extern void *D_801CE8BC;
 extern void lc_original_caption_setup(const char *, int);
 extern void lc_original_caption_draw(void *);
 extern void *lc_original_caption_image(int);
+extern void lc_original_caption_log_draw(void *, int, int);
 extern void func_001F2BC0(const char *, int);
 extern const char *func_00044340(int);
 static int equal(const char *a, const char *b) {
@@ -58,6 +59,14 @@ void lc_caption_draw(void *node) {
                           : (u32)node == lc_caption_state[4] ? lc_caption_state[5]
                                                              : 0;
     lc_original_caption_draw(node);
+    lc_caption_state[1] = previous;
+}
+/* The animations-off action log has its own frame owner. Its entry already
+ * stores the actual action ID; it never creates an animated caption window. */
+void lc_caption_log_draw(void *entry, int x, int y) {
+    u32 previous = lc_caption_state[1];
+    lc_caption_state[1] = *((u8 *)entry + 0x27) + 1;
+    lc_original_caption_log_draw(entry, x, y);
     lc_caption_state[1] = previous;
 }
 void *lc_caption_image(int slot) {

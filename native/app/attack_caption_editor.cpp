@@ -216,7 +216,7 @@ void AttackCaptionEditor::showCaption() {
                                  "are reduced to the three native shades.")
                              .arg(a.caption.isEmpty() ? "Loaded artwork" : "Independent artwork"));
     if (u8(a.data,0)<2)
-        info_->setText(info_->text()+" This attack's physical playback does not display a name caption.");
+        info_->setText(info_->text()+" With battle animations enabled, this physical attack does not display a name caption. Its artwork appears in the action log when animations are disabled.");
 }
 void AttackCaptionEditor::importImage(const QImage &image) {
     if (image.isNull() || image.size() != QSize(90, 15))

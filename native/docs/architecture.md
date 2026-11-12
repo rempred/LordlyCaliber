@@ -7611,3 +7611,9 @@ exact guarded operands restore when removing the allocation (hook prefix51+).
 Native borders, lifetime and tint handling remain. Setup bounds its text copy to
 63 bytes plus terminator; the complete name is retained in its generated image.
 Caption textures and code use the existing checked permanent attack allocation.
+The animations-off action log has a separate native frame owner at US Rev 0
+z64 ROM0x227E64 (battle RAM0x801E4B94). Its entry byte+0x27 holds the actual
+attack ID. A wrapper establishes that identity around the original frame call
+and restores the prior context afterward, so both image and element lookups
+select the same authored attack as the animated caption. The new hook is
+appended to the directory to preserve earlier exported hook prefixes.

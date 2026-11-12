@@ -62,6 +62,7 @@ class AttackDataTests : public QObject {
             auto data=*project.attacks();const auto loaded=data.captionPixels(25);
             QCOMPARE(loaded.size(),1350);QVERIFY(!data.modified());
             data.rename(25,"Petrification",false);
+            data.rename(15,"Slam",false);
             QVERIFY(data.captionPixels(25)!=loaded);
             const auto generated=data.captionPixels(25);
             const int first=data.duplicate(25,"Twin caption"),second=data.duplicate(25,"Twin caption");

@@ -21,7 +21,7 @@ m.trap(0x801b5cac,c=>drawn.push(c.get('a0')));
 let selectedElements=[];
 const execute=m.exec.bind(m);m.exec=(pc,next)=>{if(pc===h.e.lc_original_caption_element)selectedElements.push(m.get('a0'));return execute(pc,next);};
 let fallback=[];m.trap(h.e.lc_original_caption_image,c=>{fallback.push(c.get('a0'));c.set('v0',border);});
-const count=m.r32(base+12),ids=[25,...Array.from({length:count-159},(_,i)=>159+i)];
+const count=m.r32(base+12),ids=[15,25,...Array.from({length:count-159},(_,i)=>159+i)];
 let n=0;
 for(const side of [0,1])for(const id of ids) {
  const expected=m.r32(table+id*4);if(!expected)continue;
@@ -30,11 +30,13 @@ for(const side of [0,1])for(const id of ids) {
  assert.equal(m.r16(drawn[0]+4),90);assert.equal(m.r16(drawn[0]+6),15);n++;
 }
 // Keep both side labels alive and interleave drawing, including identical names.
+if(count>160) {
 h.call('lc_attack_caption_name',[159,0]);const left=windows.at(-1);
 h.call('lc_attack_caption_name',[160,1]);const right=windows.at(-1);
 for(const [node,id] of [[left,159],[right,160],[left,159]]) {drawn=[];selectedElements=[];h.call(0x801af1cc,[node]);assert.equal(drawn[0],m.r32(table+id*4));assert.equal(selectedElements.at(-1),id);}
 assert.notEqual(m.r32(table+159*4),m.r32(table+160*4));
 reuse=right;h.call('lc_attack_caption_name',[159,0]);drawn=[];h.call(0x801af1cc,[right]);assert.equal(drawn[0],m.r32(table+159*4),'recycled opposite-side window');
+}
 // Unedited attacks retain the native art lookup; captions are not globally replaced.
 h.call('lc_attack_caption_name',[55,1]);fallback=[];h.call(0x801af1cc,[windows.at(-1)]);assert.equal(fallback.length,1);
 // A permitted long name must not overwrite the adjacent side's native buffer.
@@ -42,10 +44,24 @@ const long=0x80530000;m.load(long,Buffer.from('A'.repeat(120)+'\0'));
 m.w32(h.records+25*16,long);m.w8(h.owner+0x5704,0x42);
 h.call('lc_attack_caption_name',[25,1]);assert.equal(m.r8(h.owner+0x5704),0x42);
 drawn=[];h.call(0x801af1cc,[windows.at(-1)]);assert.equal(drawn[0],m.r32(table+25*4));
+// Animations-off action entries bypass the animated caption window. Execute
+// the separate original log frame, including its palette/index/image lookups.
+const logEntry=0x80540000;
+for(const side of [0,1])for(const id of [...ids,55]) {
+ m.w32(0x800e9ba0,0x80500000);m.w32(logEntry+12,h.actor(side?13:4));
+ m.w8(logEntry+0x27,id);m.w8(logEntry+0x2c,255);
+ drawn=[];fallback=[];selectedElements=[];
+ h.call(0x801e4b94,[logEntry,180,100]);
+ const expected=m.r32(table+id*4);
+ if(expected)assert.equal(drawn.at(-1),expected,`animations-off artwork for attack ${id}, side ${side}`);
+ else assert.equal(fallback.length,1,'unedited log artwork retains native lookup');
+ assert.equal(selectedElements.at(-1),id,'log palette uses its queued attack');
+ n++;
+}
 // The shared element getter must retain the native five-argument ABI outside
 // caption drawing, including the halfword equipment argument on the stack.
 let forwarded;
 m.trap(h.e.lc_original_caption_element,c=>{forwarded=[c.get('a0'),c.get('a1'),c.get('a2'),c.get('a3'),c.r16(c.get('sp')+18)];c.set('v0',0x5a);});
 assert.equal(h.call(0x8016e470,[57,0x1234,0x5678,0x9abc,0xdef0]),0x5a);
 assert.deepEqual(forwarded,[57,0x1234,0x5678,0x9abc,0xdef0]);
-console.log(`PASS ${n} native caption frame selections, independent same-name art, both sides, and native-art fallback`);
+console.log(`PASS ${n} animated/log frame selections, independent same-name art, both sides, and native-art fallback`);

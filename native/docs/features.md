@@ -1596,5 +1596,7 @@ outline. Generate from attack name refreshes labels made by earlier generators;
 existing independent artwork is otherwise preserved.
 Older project manifests with renamed attacks and no caption field
 also generate their missing captions on import. Independent attack captions save
-with the project and exported ROM. Spell arrays use their resolved spell's caption;
-physical attacks whose playback does not display a caption retain that behavior.
+with the project and exported ROM. Both animated battle captions and the action
+log shown with animations disabled use the edited artwork. Spell arrays use
+their resolved spell's caption. Physical attacks show their artwork in the
+action log; their animated playback keeps the original absence of a caption.

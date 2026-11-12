@@ -13522,6 +13522,49 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         });
         stack->setIndex(0);
     }
+    void attackCaptionRenameAndExport() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"),tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if(path.isEmpty()||tools.isEmpty())QSKIP("Private ROM and compiler required");
+        auto project=Project::fromRom(Rom::open(path));project.loadAttacks();
+        QUndoStack undo;AttackEditor attacks(&project,&undo,[]{});
+        AttackCaptionEditor captions(&project,&undo,[]{});
+        auto rename=[&](int id,const QString &name){
+            attacks.selectAttack(id);
+            QTimer::singleShot(0,&attacks,[&]{
+                auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                QVERIFY(dialog);auto edit=dialog->findChild<QLineEdit *>();QVERIFY(edit);
+                edit->setText(name);dialog->accept();
+            });
+            attacks.findChild<QPushButton *>("renameAttack")->click();
+            QCOMPARE(AttackData::displayName(project.attacks()->entry(id)),name);
+        };
+        rename(15,"Slam");rename(25,"Petrify");
+        QTemporaryDir out(QFileInfo(path).absoluteDir().filePath("Test ROMs/caption-modes-XXXXXX"));
+        QVERIFY(out.isValid());out.setAutoRemove(false);
+        const auto png=out.filePath("petrify.png");
+        captions.selectAttack(38);captions.exportImage(png);const QImage donor(png);
+        const auto donorPixels=project.attacks()->captionPixels(38);
+        captions.selectAttack(25);captions.importImage(donor);
+        QCOMPARE(project.attacks()->captionPixels(25),donorPixels);
+        undo.undo();QVERIFY(project.attacks()->captionPixels(25)!=donorPixels);
+        undo.redo();QCOMPARE(project.attacks()->captionPixels(25),donorPixels);
+        captions.selectAttack(15);captions.selectAttack(25);
+        captions.exportImage(out.filePath("imported.png"));QCOMPARE(QImage(out.filePath("imported.png")),donor);
+        project.saveFolder(out.filePath("project"));
+        auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(Project::readProject(out.filePath("project")));
+        QCOMPARE(reopened.attacks()->json(),project.attacks()->json());
+        const auto built=rebuild(reopened,tools,out.path());
+        const auto candidate=out.filePath(QFileInfo(path).fileName());exportRom(reopened,built,candidate);
+        auto romProject=Project::fromRom(Rom::open(candidate));romProject.loadAttacks();
+        QCOMPARE(romProject.attacks()->captionPixels(25),donorPixels);
+        QCOMPARE(romProject.attacks()->captionPixels(15),project.attacks()->captionPixels(15));
+        QCOMPARE(rebuild(romProject,tools,out.path()).image,built.image);
+        auto checksum=built.image;Rom::updateChecksum(checksum);QCOMPARE(checksum,built.image);
+        QProcess probe;probe.start("node",{QFINDTESTDATA("attack-caption-mips.cjs"),candidate});
+        QVERIFY(probe.waitForFinished(60000));qInfo().noquote()<<probe.readAllStandardOutput();
+        QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
+        qInfo().noquote()<<"Caption report candidate:"<<candidate;
+    }
     void attackCaptionWorkflow() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         MainWindow window;window.resize(1250,850);window.loadRom(path);window.show();
