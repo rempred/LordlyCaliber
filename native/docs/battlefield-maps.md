@@ -207,11 +207,12 @@ remain unmapped: site 8 on keys 31/32 and site 1 on internal keys 63/64.
   boundary; previews, review,
   Undo, project reopening and ROM export all use the same edit component.
 
-## Playable boundary
+## Cursor boundary and terrain edge
 
-The Boundary checkbox displays a gold outline. Edit boundary exposes draggable
-corners and four numeric edges; Apply, Undo/Redo, Restore and project reopening
-use the same edit. Edges range from 1 to 254, with a minimum span of eight cells.
+The **Cursor boundary** checkbox is enabled by default. Gold dashes show the
+cursor limits; the blue outline shows the actual nonzero fine-terrain edge.
+In Select / move, drag the gold corner handles to resize. Undo/Redo, Restore
+and project reopening use the same edit. Edges range from 1 to 254, with a minimum span of eight cells.
 The world-coordinate sampling rectangle is unchanged, so objects do not rescale.
 
 The per-runtime-key byte rectangle is at z64 ROM `0x13C874 + key*4`, ordered
@@ -219,10 +220,23 @@ left/top/right/bottom. Scenario-loader ROM `0x103244` onward converts it through
 the world-coordinate rectangle into RAM `0x801F0DB8..0x801F0DC4`; ROM `0x113168`
 onward clamps the cursor with those limits. These are scenario-overlay addresses,
 not early-boot mappings. Export writes the rectangle for every shared-map alias,
-clips movement grids outside it, and fills newly opened zero cells from their
+clips fine movement grids outside a two-cell safety margin, and fills newly opened zero cells from their
 painted or visible terrain (plain when no native material is identified).
 Fine/coarse and alternate movement grids update together. The bounds resource's
 first four floats remain intact: their separate consumer is not qualified.
+
+US Rev 0 Volmus key 2 has cursor cells 38..217 across terrain cells 36..219.
+Edited maps retain that two-cell margin. A coarse pathfinding cell intersecting
+the cursor rectangle cannot become void merely because most of its fine cells
+lie outside the edited map. Fixed fortress walls keep their existing rules.
+
+Retail outdoor cursor control normally clamps a flat-plane projection, while
+movement orders use the terrain ray. A cut across a hill can therefore admit an
+order outside the edited rectangle. Edited map keys now use the original ground
+ray, height sampler and screen projection for the two cursor-control queries and
+final order query (z64 ROM calls 0x1130C0, 0x1134B0 and 0x1038AC). This independent
+compiled module is inside the bounded class allocation, with its own checksum
+and original/patched call records. Unedited keys retain the original queries.
 
 Key 39, Fort Romulus, bypasses the normal rectangle at ROM `0x10323C`; its outline
 and resize controls are unavailable rather than showing an inapplicable rectangle.

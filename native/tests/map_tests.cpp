@@ -1593,7 +1593,7 @@ class MapTests : public QObject {
             const QRectF expanded(QPointF(2, 2), QPointF(253, 253));
             edit.setBoundary(1, expanded);
             QCOMPARE(u8(edit.fineTerrain(1), cell), quint8(type));
-            QCOMPARE(u8(edit.fineTerrain(1), 128), quint8(0));
+            QVERIFY(u8(edit.fineTerrain(1), 128) > 0); // retail two-cell cursor margin
             auto copy = MapEdits::load(rom);
             copy.apply(edit.json());
             QCOMPARE(copy.json(), edit.json());
@@ -1648,6 +1648,35 @@ class MapTests : public QObject {
         } catch (const Error &e) {
             QFAIL(e.what());
         }
+    }
+    void battlefieldBoundarySafetyMargin() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto edit = MapEdits::load(Rom::open(path));
+        // Independently measured retail Volmus: cursor38..217, terrain36..219.
+        QCOMPARE(edit.boundary(2), QRectF(QPointF(38,2),QPointF(217,253)));
+        const auto &source = edit.source(2);
+        QCOMPARE(u8(source.terrain[0].data,128*256+35),quint8(0));
+        QVERIFY(u8(source.terrain[0].data,128*256+36)>0);
+        QVERIFY(u8(source.terrain[0].data,128*256+219)>0);
+        QCOMPARE(u8(source.terrain[0].data,128*256+220),quint8(0));
+        // All coarse-grid alignments, especially a one-cell corner overlap.
+        for (int alignment=0;alignment<4;++alignment) {
+            const QRectF boundary(QPointF(47+alignment,51+alignment),QPointF(180+alignment,210+alignment));
+            edit.setBoundary(2,boundary);
+            const auto fine=edit.fineTerrain(2),coarse=edit.movementTerrain(2);
+            for (int y=0;y<256;++y) for (int x=0;x<256;++x) {
+                if (boundary.contains(QPointF(x,y))) {
+                    QVERIFY(u8(fine,y*256+x)>0);
+                    QVERIFY(u8(coarse,(y/4)*64+x/4)>0);
+                }
+                if (!boundary.adjusted(-2,-2,2,2).contains(QPointF(x,y)))
+                    QCOMPARE(u8(fine,y*256+x),quint8(0));
+            }
+        }
+        edit.restore(2);
+        QCOMPARE(edit.fineTerrain(2),source.terrain[0].data);
+        QCOMPARE(edit.movementTerrain(2),source.terrain[1].data);
     }
     void battlefieldBrushProfiles() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

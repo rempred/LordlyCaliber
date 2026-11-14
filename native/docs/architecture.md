@@ -7554,6 +7554,11 @@ private RNG state. The original FX bank and sample bank remain intact. Imported
 parts use the existing PCM format. Project/archive and ROM metadata retain edits.
 Frame/voice/decode hooks are generated from the pinned original ROM and appended
 to the existing hook directory. Preview and exported game compile the same C.
+The frame callback returns the native microsecond delay to the synthesizer;
+its private part counter is not a return value. Live playback uses the scheduler
+at US Rev0 z64 ROM0x18C40 (RAM0x80088840), which consumes the callback result at
+RAM0x800888CC. Regression checks execute that original scheduler and time
+conversion with idle/active voices; a fixed preview cadence cannot check this ABI.
 Native instruction tests inspect actual carrier output, not only the logical
 part list displayed by the editor. Full-console acoustic comparison remains
 outside this check; the preview still omits N64 reverb.

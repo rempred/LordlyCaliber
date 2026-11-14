@@ -1,3 +1,4 @@
+#include "engine/cursor_boundary.h"
 #include "engine/project.h"
 #include "engine/movement_runtime.h"
 #include "engine/new_campaign.h"
@@ -173,6 +174,10 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     rom.requireSupported();
     Project p;
     if (!rom.revision()) {
+        if (const auto cursor = CursorBoundary::read(rom)) {
+            p.runtimeRom_ = rom;
+            rom = Rom::fromBytes(cursor->canonical(rom));
+        }
         p.movementTypes_ = MovementTypes::load(rom);
         if (const auto movement = MovementPlacement::read(rom)) {
             if (!p.runtimeRom_) p.runtimeRom_ = rom;

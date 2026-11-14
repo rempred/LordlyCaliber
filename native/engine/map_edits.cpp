@@ -421,7 +421,10 @@ QByteArray MapEdits::fineTerrain(int key) const {
             out[i] = char(fieldPaintTerrain(painted));
         if (c.boundary) {
             const QPointF p(i % 256, i / 256);
-            if (!c.boundary->contains(p))
+            // Retail Volmus keeps two fine terrain cells beyond its cursor
+            // limits (38..217 versus terrain 36..219). Keep that safety margin
+            // when resizing too; the cursor rectangle is not a terrain mask.
+            if (!c.boundary->adjusted(-2, -2, 2, 2).contains(p))
                 out[i] = 0;
             else if (!old) {
                 const int visual = u8(s.visualTerrain, i);
@@ -467,6 +470,12 @@ QByteArray MapEdits::movementTerrain(int key) const {
             // ordinary terrain. Only wholly excluded coarse cells become void.
             if (u8(s.terrain[1].data, y * 64 + x) >= 15 && votes[0] != 16)
                 continue;
+            // A cursor-reachable corner may occupy only part of a coarse cell.
+            // Void must not win that cell's vote and strand an otherwise valid
+            // destination (the movement consumer uses this 64x64 grid).
+            if (c.boundary && x * 4 <= c.boundary->right() && x * 4 + 3 >= c.boundary->left() &&
+                y * 4 <= c.boundary->bottom() && y * 4 + 3 >= c.boundary->top())
+                votes[0] = 0;
             int best = 0;
             for (int t = 1; t < 32; ++t)
                 if (votes[t] > votes[best])
@@ -634,7 +643,7 @@ QVector<FieldPlan> MapEdits::plan() const {
         for (int n = 2; n < terrain.size(); ++n)
             if (terrain[n].data.size() == 65536)
                 for (int i = 0; i < 65536; ++i)
-                    if (e->boundary && !e->boundary->contains(QPointF(i % 256, i / 256)))
+                    if (e->boundary && !e->boundary->adjusted(-2, -2, 2, 2).contains(QPointF(i % 256, i / 256)))
                         terrain[n].data[i] = 0;
                     else if (e->boundary && !u8(s.terrain[n].data, i))
                         terrain[n].data[i] = terrain[0].data[i];

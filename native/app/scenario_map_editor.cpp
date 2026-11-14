@@ -127,6 +127,7 @@ class MapCanvas : public QWidget {
     QImage terrain;
     QRectF terrainBounds, boundary;
     bool showBoundary = true, editBoundary = false;
+    QImage terrainEdge;
     int boundaryCorner = -1;
     QRectF boundaryDrag;
     std::function<void(QRectF)> resizedBoundary;
@@ -197,11 +198,22 @@ class MapCanvas : public QWidget {
             outside.addRect(area);
             outside.addRect(outline);
             p.fillPath(outside, QColor(8, 14, 20, 32));
+            if (!terrainEdge.isNull() && boundaryCorner < 0)
+                p.drawImage(area, terrainEdge);
+            if (boundaryCorner >= 0) {
+                const auto buffer=edge.adjusted(-2,-2,2,2).intersected(QRectF(0,0,256,256));
+                p.setPen(QPen(QColor("#73c5db"),1.5));
+                p.setBrush(Qt::NoBrush);
+                p.drawRect(QRectF(toPixel(buffer.topLeft()),toPixel(buffer.bottomRight())));
+            }
             p.setPen(QPen(QColor("#ffcf67"), editBoundary ? 2.5 : 1.5, Qt::DashLine));
             p.setBrush(Qt::NoBrush);
             p.drawRect(outline);
-            p.drawText(outline.topLeft() + QPointF(6, 16), "Playable boundary");
+            p.drawText(outline.topLeft() + QPointF(6, 16), "Cursor boundary");
+            p.setPen(QColor("#73c5db"));
+            p.drawText(outline.topLeft() + QPointF(6, 33), "Terrain edge");
             if (editBoundary) {
+                p.setPen(QColor("#ffcf67"));
                 p.setBrush(QColor("#fff2a8"));
                 for (auto point : {outline.topLeft(), outline.topRight(), outline.bottomRight(),
                                    outline.bottomLeft()})
@@ -762,9 +774,9 @@ ScenarioMapEditor::ScenarioMapEditor(Project *project, QUndoStack *undo,
     cityLayout->addWidget(cityHelp, 1);
     layout->addWidget(cityTools_);
     cityTools_->hide();
-    auto boundaryToggle = new QCheckBox("Map border");
+    auto boundaryToggle = new QCheckBox("Cursor boundary");
     boundaryToggle->setObjectName("mapBoundary");
-    boundaryToggle->setToolTip("In Select / move, drag the gold corner handles to resize the game border.");
+    boundaryToggle->setToolTip("Gold: cursor limit. Blue: terrain edge. Drag the gold corner handles in Select / move; terrain keeps a two-cell safety margin.");
     boundaryToggle->setChecked(true);
     toolbar->addWidget(boundaryToggle);
     mapScope_ = new QLabel;
@@ -1311,6 +1323,7 @@ void ScenarioMapEditor::refresh(int key) {
     canvas_->terrain = {};
     canvas_->terrainBounds = {};
     canvas_->boundary = {};
+    canvas_->terrainEdge = {};
     canvas_->editBoundary = false;
     terrain_->setEnabled(false);
     paintTools_->setEnabled(false);
@@ -1367,6 +1380,15 @@ void ScenarioMapEditor::refresh(int key) {
             map.points = project_->mapEdits()->points(key);
             editable = true;
             canvas_->boundary = project_->mapEdits()->boundary(key);
+            const auto fine=project_->mapEdits()->fineTerrain(key);
+            canvas_->terrainEdge=QImage(256,256,QImage::Format_ARGB32);
+            canvas_->terrainEdge.fill(Qt::transparent);
+            for(int y=0;y<256;++y)for(int x=0;x<256;++x) {
+                if(!u8(fine,y*256+x))continue;
+                if(!x || x==255 || !y || y==255 || !u8(fine,y*256+x-1) ||
+                   !u8(fine,y*256+x+1) || !u8(fine,(y-1)*256+x) || !u8(fine,(y+1)*256+x))
+                    canvas_->terrainEdge.setPixelColor(x,y,QColor("#73c5db"));
+            }
             canvas_->editBoundary = activeTool() == 0 && key != 39;
             QStringList keys;
             for (int k : project_->mapEdits()->sharedScenarios(key))

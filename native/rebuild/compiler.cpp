@@ -886,13 +886,28 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool customMissionVictory = !p.scenarioBattlefields().isEmpty();
     const bool needsMissionRuntime = customMissionVictory || (p.sceneEvents() && p.sceneEvents()->hasMissionCompletion());
     std::optional<MovementPlacement> movementPlacement;
+    std::optional<CursorBoundary> cursorBoundary;
     std::optional<MovementInput> movementInput;
+    QSet<int> cursorBoundaryKeys;
+    if (!p.rom().revision()) {
+        if (const auto installed = CursorBoundary::read(p.runtimeRom()))
+            cursorBoundaryKeys = installed->keys;
+        if (p.mapEdits()) {
+            const auto maps = p.mapEdits()->json()["maps"].toObject();
+            for (int key = 1; key < MissionTables::keyCount; ++key) {
+                if (key == 39 || !MissionTables::hasScenario(p.rom(), key)) continue;
+                const int model = u8(MissionTables::row(p.rom(), MissionTables::Scenario, key), 3);
+                if (maps[QString::number(model)].toObject().contains("boundary"))
+                    cursorBoundaryKeys.insert(key);
+            }
+        }
+    }
     bool movementAssignmentsChanged=false;
     if(!p.rom().revision()) for(const auto &r:p.records(Table::Classes))
         if((r.original.size()>44 && u8(r.original,44)!=u8(r.bytes,44)) ||
            (r.romOffset<0 && p.movementTypes().entries().value(u8(r.bytes,44)).rules.airborne)) movementAssignmentsChanged=true;
     if(!p.rom().revision() && (p.movementTypes().requiresRuntime() || movementAssignmentsChanged)) movementInput=MovementInput{p.movementTypes(),p.rom(),expandedArmies,{}};
-    const bool relocateClasses = movementInput.has_value() || wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
+    const bool relocateClasses = !cursorBoundaryKeys.isEmpty() || movementInput.has_value() || wideIdleHeight || !campaignStart.settings.isEmpty() || retailEventGates || !missionTables.isEmpty() || !battlefieldModels.isEmpty() || needsMissionRuntime || itemTrees || customStoryFlags || relocateAffinity || relocateItems || priorClassPlacement.has_value() ||
                                  p.classNamesModified() || p.personalNamesModified() ||
                                  (p.nameTables() && p.nameTables()->expandedRandom()) || expandedClasses || customSquads ||
                                  avatarEdits || armyRoutes || expandedArmies || relocateAttacks;
@@ -1151,7 +1166,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             data, compiler, directory, offset,
             customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1164,7 +1179,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes=buildClassRuntime(data,compiler,directory,offset,
                 customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1177,11 +1192,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes = buildClassRuntime(data, compiler, directory, offset,
                 customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
         movementPlacement=classes.movement;
+        cursorBoundary=classes.cursorBoundary;
         missionTableAddress = classes.missionTableAddress;
         campaignBridge=classes.campaignBridge;
         classes.removeResident = (priorCustom.has_value() && !customSquads) ||
@@ -1558,6 +1574,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
         result.image=writeDeletedContent(result.image,p.deletedContent());
+    if(cursorBoundary){cursorBoundary->install(result.image);result.report << "Compiled ground-projected cursor limits for edited battlefield boundaries";}
     if(movementPlacement){installMovementRuntime(result.image,*movementPlacement);result.report << "Compiled movement types, terrain costs, speeds and squad priorities";}
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");

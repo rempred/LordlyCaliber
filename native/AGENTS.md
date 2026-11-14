@@ -33,6 +33,17 @@ its inputs and expected results establish the claim. Report the invocation,
 outcome, and limitations after running it. No tests merely for implementation
 structure, formatting, or documentation.
 
+New or expanded features require a small behavior matrix defined before coding:
+representative inputs, relevant options/game paths, expected results, and what
+was actually observed. Put it in the existing task note or test recipe. Exercise
+the editor entry point and exported game's consumers where behavior depends on
+them. For attacks, include several renamed/new attacks, animation modes, damage
+or status results, labels, and completed playback. Use copied battery fixtures
+and cold boot for game tests. A helper pass, screenshot of a preview, skipped
+ROM test, or successful build does not substitute for an untested game path.
+Reuse passing cases when their relevant inputs have not changed. The parent
+guide is `docs/feature-testing.md`; keep ROM/save fixtures local.
+
 Preserve source ROMs and unknown data. Perform real-ROM export checks in a
 run-specific parent `Test ROMs/` directory under the source ROM filename. Game
 sources compile during user export. Keep compiled ROMs and game-code objects

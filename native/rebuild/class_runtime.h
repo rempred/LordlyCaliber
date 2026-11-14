@@ -6,6 +6,7 @@
 #include "rebuild/consumable_tree_runtime.h"
 #include "rebuild/new_campaign_runtime.h"
 #include "rebuild/movement_runtime.h"
+#include "rebuild/cursor_boundary.h"
 
 namespace lordly {
 struct PromotionRuntimeBuild;
@@ -21,6 +22,7 @@ struct ClassRuntimeBuild {
     std::optional<AttackPlacement> attacks;
     std::optional<ConsumableTreePlacement> consumableTrees;
     std::optional<MovementPlacement> movement;
+    std::optional<CursorBoundary> cursorBoundary;
     QByteArray resident, personalNamesCode, affinityOwner;
     bool removeResident = false;
     quint32 dataRomOffset = 0, missionTableAddress = 0, campaignBridge = 0, bodyHeight = 0;
@@ -39,7 +41,8 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const AttackData *attacks = nullptr, const LeaderAffinity *affinity = nullptr,
                   bool customStoryFlags = false, const ConsumableTreeInput *consumableTrees = nullptr,
                   const QByteArray &missionTables = {}, const NewCampaignInput *campaign = nullptr,
-                  bool wideIdleHeight = false, const MovementInput *movement = nullptr);
+                  bool wideIdleHeight = false, const MovementInput *movement = nullptr,
+                  const QSet<int> &cursorBoundaryKeys = {});
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

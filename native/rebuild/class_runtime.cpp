@@ -27,7 +27,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
                   const LeaderAffinity *affinity, bool customStoryFlags, const ConsumableTreeInput *consumableTrees,
                   const QByteArray &missionTables, const NewCampaignInput *campaign,
-                  bool wideIdleHeight, const MovementInput *movement) {
+                  bool wideIdleHeight, const MovementInput *movement, const QSet<int> &cursorBoundaryKeys) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -57,6 +57,13 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
             throw Error("Capacity storage overlaps class or item data");
         result.data.bytes+=QByteArray(capacity->base-result.data.layout.end,0)+capacity->storage;
         result.data.layout.end=result.data.layout.indexBase+quint32(result.data.bytes.size());
+    }
+    if (!cursorBoundaryKeys.isEmpty()) {
+        while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        result.cursorBoundary=buildCursorBoundary(cursorBoundaryKeys,
+            result.data.layout.indexBase+result.data.bytes.size(),compiler,directory);
+        result.data.bytes+=result.cursorBoundary->bytes;
+        result.data.layout.end=result.data.layout.indexBase+result.data.bytes.size();
     }
     if (customStoryFlags) {
         result.data.layout.customFlags = result.data.layout.end;

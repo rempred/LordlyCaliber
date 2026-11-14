@@ -11015,7 +11015,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QCOMPARE(objects->item(0)->icon().pixmap(32, 32).toImage(), leaderIcon);
             int treasureIconRow = -1;
             for (int row = 0; row < objects->count(); ++row)
-                if (objects->item(row)->text().startsWith("Treasure 1 Â·")) treasureIconRow = row;
+                if (objects->item(row)->text().startsWith("Treasure 1 ")) treasureIconRow = row;
             QVERIFY(treasureIconRow >= 0);
             QVERIFY(!objects->item(treasureIconRow)->icon().isNull());
             const auto treasureIcon = objects->item(treasureIconRow)->icon().pixmap(32, 32).toImage();
@@ -11117,7 +11117,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
                 const auto label = objects->item(i)->text();
                 if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
                     waypointItem = i;
-                if (label.startsWith("Treasure 1 Â·"))
+                if (label.startsWith("Treasure 1 "))
                     treasureItem = i;
                 if (label == townName)
                     siteItem = i;

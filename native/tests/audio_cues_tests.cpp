@@ -395,6 +395,9 @@ class AudioCuesTests : public QObject {
             QProcess startup;startup.start("node",{QFINDTESTDATA("attack-audio-startup-mips.cjs"),file,qEnvironmentVariable("LORDLY_TEST_ROM")});
             QVERIFY(startup.waitForFinished(60000));QVERIFY2(startup.exitCode()==0,startup.readAllStandardError().constData());
             qInfo().noquote()<<startup.readAllStandardOutput();
+            QProcess clock;clock.start("node",{QFINDTESTDATA("attack-audio-clock-mips.cjs"),file,qEnvironmentVariable("LORDLY_TEST_ROM")});
+            QVERIFY(clock.waitForFinished(60000));QVERIFY2(clock.exitCode()==0,clock.readAllStandardError().constData());
+            qInfo().noquote()<<clock.readAllStandardOutput();
             const auto placement=AttackPlacement::read(exported);QVERIFY(placement);
             auto entry=placement->romOffset+AttackData::settingsOffset+25*32;
             auto wrapper=placement->romOffset+u32(exported.bytes(),entry+24)-placement->address;

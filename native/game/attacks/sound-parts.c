@@ -7,7 +7,7 @@ extern sp_u8 lc_audio_state[];
 #define SPSTATE (lc_audio_state+4112)
 #define SPFX ((sp_u8 *)0x8010a760)
 #define SPSAMPLES ((sp_u8 *)0x80104710)
-void lc_original_edit_sound_frame(void);
+int lc_original_edit_sound_frame(void *);
 void lc_original_edit_sound_flush(void *,int);
 void lc_original_edit_sound_decode(void *,int);
 static sp_u32 *sp_seed(sp_u32 handle) {
@@ -83,8 +83,8 @@ void lc_attack_edit_sound_decode(void *arg,int voice) {
         lc_original_edit_sound_decode(arg,voice);*seed=*(sp_u32 *)0x800b1824;*(sp_u32 *)0x800b1824=old;
     } else lc_original_edit_sound_decode(arg,voice);
 }
-void lc_attack_edit_sound_frame(void) {
-    sp_u32 i=0,j;sp_u8 *q,*b;int side;
+int lc_attack_edit_sound_frame(void *client) {
+    sp_u32 i=0,j;sp_u8 *q,*b;int side,interval;
     while(i<SPW(SPSTATE,4)) {
         q=SPSTATE+16+i*16;
         if(SPW(q,4)>SPW(SPSTATE,0)){++i;continue;}
@@ -97,7 +97,10 @@ void lc_attack_edit_sound_frame(void) {
         }
         sp_start(b,side);
     }
-    lc_original_edit_sound_frame();++SPW(SPSTATE,0);
+    /* alAudioFrame consumes this return as microseconds until the next update.
+       Our private tick counter must never replace the native scheduler delay. */
+    interval=lc_original_edit_sound_frame(client);++SPW(SPSTATE,0);
+    return interval;
 }
 void lc_attack_edit_sound_flush(void *arg,int voice) {
     sp_u8 *c=(sp_u8 *)arg,*fx=(sp_u8 *)SPW(c,0x78),*b=fx?fx-64:0,*row;
