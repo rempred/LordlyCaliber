@@ -45,7 +45,7 @@ class PortraitEditor : public QWidget {
     QLineEdit *search_;
     QLabel *notice_, *title_;
     QTableWidget *palette_;
-    QPushButton *color_;
+    QPushButton *color_, *removeClass_;
     QColor paint_ = Qt::black;
 };
 } // namespace lordly

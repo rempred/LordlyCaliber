@@ -22,6 +22,8 @@ class SceneCommandEditor;
 class SceneActionEditor;
 class TransformPreview;
 class ScenePreview;
+class SceneTimeline;
+class SceneKeyPicker;
 class CutsceneEditor : public QWidget {
     Q_OBJECT
   public:
@@ -47,9 +49,14 @@ class CutsceneEditor : public QWidget {
     void applyBackgroundChoice(bool restore);
     bool invalidSceneInput() const;
     void refreshSceneInputState();
+    void createWorkspace(QTabWidget *);
+    void refreshEventRows();
+    void filterScenes();
+    void createSceneTrigger();
     Rom rom_;
     Project *project_ = nullptr;
     QUndoStack *undo_ = nullptr;
+    std::function<void()> changed_;
     std::optional<ScenePrograms> readOnlyPrograms_;
     QString sceneCatalogSignature_;
     QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
@@ -58,6 +65,10 @@ class CutsceneEditor : public QWidget {
     SceneActionEditor *actionEditor_ = nullptr;
     TransformPreview *transformPreview_ = nullptr;
     ScenePreview *scenePreview_ = nullptr;
+    SceneTimeline *timeline_ = nullptr;
+    SceneKeyPicker *keyPicker_ = nullptr;
+    QWidget *workspace_ = nullptr;
+    QComboBox *eventRows_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;
     SceneBackgrounds backgrounds_;

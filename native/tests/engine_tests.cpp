@@ -3967,9 +3967,18 @@ class EngineTests : public QObject {
                     project.setItemNameBytes(1, encodeItemName("Moth-eaten Clothing"));
                     QCOMPARE(project.appendItem(278, "Second blade"), 279);
                     QCOMPARE(project.createItem("Blank accessory"), 280);
+                    // Exercise the entire nine-bit equipment domain. 511 is
+                    // reserved; 0x200 starts the separate consumable domain.
+                    while (project.records(Table::Items).size() < ItemData::maximumCount)
+                        project.appendItem(1, QString("Equipment %1")
+                                                 .arg(project.records(Table::Items).size()));
+                    QVERIFY_THROWS_EXCEPTION(Error, project.appendItem(1, "Overflow"));
+                    auto boundaryStock = *project.shops();
+                    boundaryStock.setStock(1, {{510, 278, 277}, {1, 44}});
+                    project.setShops(boundaryStock.json());
                     QCOMPARE(project.appendClass(5, "Item wielder"), 165);
                     auto row = project.record(Table::Classes, 165).bytes;
-                    put16(row, 46, 280);
+                    put16(row, 46, 510);
                     project.replaceBytes(Table::Classes, 165, row);
                     auto encounters = *project.encounters();
                     CreatureReward reward; reward.outcomes = {0x8000 | 280, 0, 0};
@@ -3991,7 +4000,13 @@ class EngineTests : public QObject {
                 reopened.loadAnimationRoutes();
                 reopened.loadShops(); reopened.loadEncounters();
                 if (stage) QCOMPARE(reopened.encounters()->json(), project.encounters()->json());
-                QCOMPARE(reopened.records(Table::Items).size(), stage ? 281 : 279);
+                QCOMPARE(reopened.records(Table::Items).size(), stage ? 511 : 279);
+                // The equipment relocation must leave the adjacent retail
+                // consumable records and their name pointers intact.
+                QCOMPARE(result.image.mid(0x645cc, 45 * 12), source.bytes().mid(0x645cc, 45 * 12));
+                for (int id = 1; id <= 44; ++id)
+                    QCOMPARE(reopened.iconArtwork()->words(quint16(0x200 | id)),
+                             project.iconArtwork()->words(quint16(0x200 | id)));
                 for (int id = 0; id < project.records(Table::Items).size(); ++id) {
                     QCOMPARE(reopened.record(Table::Items, id).bytes.mid(4),
                              project.record(Table::Items, id).bytes.mid(4));
@@ -4005,7 +4020,7 @@ class EngineTests : public QObject {
                 QCOMPARE(reopened.shops()->json(), project.shops()->json());
                 const auto placed = ClassPlacement::read(reopened.rom());
                 QVERIFY(placed);
-                QCOMPARE(placed->layout.itemCount, stage ? 281 : 279);
+                QCOMPARE(placed->layout.itemCount, stage ? 511 : 279);
                 QVERIFY(placed->layout.end <= 0x80400000U);
                 QTemporaryDir output(
                     QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-items-XXXXXX"));
@@ -4020,11 +4035,19 @@ class EngineTests : public QObject {
                 }
                 atomicWrite(output.filePath("items.json"),
                             QJsonDocument(QJsonObject{{"rom", target},
+                                                      {"original", path},
                                                       {"records", records},
                                                       {"names", names},
                                                       {"shops", project.shops()->json()}})
                                 .toJson());
                 qInfo().noquote() << "New item candidate:" << output.path();
+                QProcess runtime;
+                runtime.setProcessChannelMode(QProcess::MergedChannels);
+                runtime.start("node", {QFINDTESTDATA("items-mips.cjs"), output.filePath("items.json")});
+                QVERIFY(runtime.waitForFinished(60000));
+                const auto runtimeLog = runtime.readAll();
+                QVERIFY2(runtime.exitCode() == 0, runtimeLog.constData());
+                qInfo().noquote() << runtimeLog;
                 project = std::move(reopened);
             }
             auto missing = Project::fromRom(source);

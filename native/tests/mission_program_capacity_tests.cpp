@@ -1,5 +1,6 @@
 #include "engine/scene_events.h"
 #include "engine/battlefield_clone.h"
+#include "engine/cursor_boundary.h"
 #include "engine/event_authoring.h"
 #include "engine/scenario_seeder.h"
 #include "engine/story_routes.h"
@@ -15,6 +16,67 @@ using namespace lordly;
 class MissionProgramCapacityTests final : public QObject {
     Q_OBJECT
   private slots:
+    void editedBoundaryOnHighMissionKeys() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 toolchain required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            const QSet<int> keys{69, 127, 128, 132};
+            for (int key : keys)
+                project.createScenarioBattlefield(key, key == 132 ? 1 : 2,
+                    key == 132 ? "exact" : "mapOnly", QString("Boundary test %1").arg(key));
+            project.loadMapEdits();
+            auto maps = *project.mapEdits();
+            const QRectF boundary(QPointF(60, 40), QPointF(195, 220));
+            for (int key : keys) maps.setBoundary(key, boundary);
+            project.setMapEdits(maps.json());
+            // Exercise the other whole-function owner which relocates mission
+            // setup, class lookup and terrain movement in the same export.
+            const int movement = project.createMovementType("Boundary scout", 2);
+            auto fighter = project.record(Table::Classes, 2).bytes;
+            put8(fighter, 44, movement);
+            project.replaceBytes(Table::Classes, 2, fighter);
+            project.loadSceneEvents();
+            auto events = *project.sceneEvents();
+            events.createMission(6, 132, "Boundary test 132", -1, -1, *project.scenePrograms());
+            project.setSceneEvents(events.json());
+            QTemporaryDir work;
+            QVERIFY(work.isValid());
+            const auto built = rebuild(project, tools, work.path());
+            const auto output = Rom::fromBytes(built.image);
+            const auto cursor = CursorBoundary::read(output);
+            QVERIFY(cursor.has_value());
+            QCOMPARE(cursor->keys, keys);
+            auto reopened = Project::fromRom(output);
+            reopened.loadMapEdits();
+            for (int key : keys) QCOMPARE(reopened.mapEdits()->boundary(key), boundary);
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum.mid(0x10, 8), built.image.mid(0x10, 8));
+            const auto outputPath = qEnvironmentVariable("LORDLY_CURSOR_CAPACITY_OUTPUT");
+            if (!outputPath.isEmpty()) atomicWrite(outputPath, rom.serialize(built.image));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void legacyCursorHeader() {
+        const auto path = qEnvironmentVariable("LORDLY_CURSOR_LEGACY_INPUT");
+        if (path.isEmpty()) QSKIP("Earlier owned cursor-patch ROM required");
+        const auto rom = Rom::open(path);
+        const auto cursor = CursorBoundary::read(rom);
+        QVERIFY(cursor.has_value());
+        QVERIFY(cursor->bytes.startsWith("LCCURS01"));
+        QVERIFY(!cursor->keys.isEmpty());
+        const auto canonical = cursor->canonical(rom);
+        QCOMPARE(u32(canonical, 0x1038ac), 0x0c06aa29U);
+        QCOMPARE(u32(canonical, 0x1130c0), 0x0c06ab84U);
+        QCOMPARE(u32(canonical, 0x1134b0), 0x0c06ab84U);
+        const auto opened = Project::fromRom(rom);
+        QVERIFY(!opened.records(Table::Classes).isEmpty());
+    }
     void exportAllBattlefieldsAndMissions() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

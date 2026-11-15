@@ -20,6 +20,22 @@ function claims(){
   for(const [name,row] of Object.entries(read(file)))add(file,name,row.offset,row.size);
  for(const file of ['encounters/custom-owners/catalog.json','classes/save-owners.json','shops/owners.json','scenarios/capacity/owners.json'])
   for(const row of read(file).owners)add(file,row.name||row.symbol||'',row.start,row.size);
+ // Movement replaces entire native owners, including maintained capacity
+ // variants. Recording only its entry jumps would miss discarded inner hooks.
+ const movementParts=new Set();
+ for(const owner of read('movement/owners.json').owners)for(const part of owner.parts){
+  const key=`${part.start}:${part.size}`;
+  if(!movementParts.has(key)){add('movement',owner.name,part.start,part.size);movementParts.add(key);}
+ }
+ for(const name of ['fatigue','recovery']){
+  const row=read('tools/game-rules.json')[name];
+  add('movement',name+' cycle',row.offset,row.size);
+ }
+ const cursorSource=fs.readFileSync(path.resolve(root,'../engine/cursor_boundary.cpp'),'utf8');
+ const cursorOffsets=cursorSource.match(/const quint32 offsets\[\]\{([^}]+)\}/);
+ if(!cursorOffsets)throw Error('Cursor boundary hook declarations changed');
+ for(const at of cursorOffsets[1].matchAll(/0x[\da-f]+/gi))
+  add('cursor-boundary','ground/control query',parseInt(at[0],16),4);
  for(const file of ['classes/relocations.json','items/relocations.json','attacks/relocations.json'])
   for(const row of read(file).owners){
    for(const ref of row.references)for(const key of ['high','low'])add(file,row.start.toString(16),row.start+ref[key],4);
@@ -126,6 +142,13 @@ function check(rows,policies){
  if(failures.length)throw Error('Unreviewed runtime sharing. Compose both behaviors and add a combination regression before accepting:\n'+failures.join('\n'));
  return found;
 }
+// Use actual exported patch records as well as catalogs. A passing overlap
+// scan is meaningless for an exporter whose writes were never collected.
+function checkClaimCoverage(writes,rows,group){
+ for(const write of writes)
+  if(!rows.some(row=>row.group===group&&row.start<=write.start&&row.end>=write.end))
+   throw Error(`Uncatalogued ${group} write at z64 0x${write.start.toString(16)}..0x${write.end.toString(16)}`);
+}
 function fixedStorage(){
  const rom=[],ram=[],engine=path.resolve(root,'../engine');
  for(const name of fs.readdirSync(engine).filter(n=>n.endsWith('.h'))){
@@ -171,7 +194,7 @@ function checkStorage(storage){
    throw Error(`${space} allocation collision: ${sorted[i-1].group} and ${sorted[i].group}`);
  }
 }
-module.exports={claims,overlaps,check,fixedStorage,checkStorage};
+module.exports={claims,overlaps,check,checkClaimCoverage,fixedStorage,checkStorage};
 if(require.main===module){
  const rows=claims(),policies=JSON.parse(fs.readFileSync(path.join(__dirname,'runtime-sharing.json'),'utf8'));
  const hits=check(rows,policies);

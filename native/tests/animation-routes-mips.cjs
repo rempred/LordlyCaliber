@@ -97,6 +97,38 @@ for (const spec of [
 cpu.load(input.classAddress, rom.subarray(input.classOffset,input.classOffset+input.classSize));
 cpu.load(0x801BE308, rom.subarray(0x201798,0x201838));
 const entries = input.entries.map(x=>({...x, selectors:Buffer.from(x.selectors,'hex')}));
+// Independent retail oracle. Read the native resource envelope directly, then
+// execute the original selector with original class records. Do not derive
+// expected routing from input.entries (which is produced by the editor).
+const original=fs.readFileSync(input.originalRom);
+if(original.readUInt32BE()===0x37804012)original.swap16();
+else if(original.readUInt32BE()===0x40123780)original.swap32();
+assert.equal(require('node:crypto').createHash('sha256').update(original).digest('hex'),
+ '571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+const nativeAt=0x594280+0x315736;
+const nativeData=original.subarray(nativeAt+4,nativeAt+4+original.readUInt32BE(nativeAt));
+const oracle=new Mips();
+oracle.load(0x8016af80,original.subarray(0x40e80,0x66e10));
+oracle.load(0x801be308,original.subarray(0x201798,0x201838));
+oracle.load(resident,nativeData);
+const nativeSelectors=nativeData.readUInt16BE(14);
+oracle.w32(0x801d0694,resident+nativeSelectors);
+function select(machine,source,owner,action,mode){
+ machine.set('sp',0x80060000);
+ for(const [i,value]of [source,owner,action,mode].entries())machine.set('a'+i,value);
+ machine.call(0x801be308);return machine.get('v0');
+}
+let retailCases=0;
+for(let source=1;source<165;source++)for(let owner=1;owner<165;owner++){
+ // A native FFFF row has no animation group. The game requires an available
+ // current-class group; testing an absent group would run off the table.
+ if(nativeData.readUInt16BE(nativeSelectors+owner*2)===0xffff)continue;
+ for(const action of [0,5,11,17,30,124,125,254])for(let mode=0;mode<3;mode++){
+  assert.equal(select(cpu,source,owner,action,mode),select(oracle,source,owner,action,mode),
+   `native parity: identity ${source}, current class ${owner}, action ${action}, mode ${mode}`);
+  retailCases++;
+ }
+}
 let cases=0;
 for (let source=1;source<entries.length;source++) {
   const owners = source < 165 ? [source] : [source,2,3,165];
@@ -114,4 +146,4 @@ for (let source=1;source<entries.length;source++) {
     }
   }
 }
-console.log(`All 4 resource loaders retained ${copySize} bytes with correct published pointers; ${cases} original-selector cases passed in 4 MiB model memory.`);
+console.log(`All 4 resource loaders retained ${copySize} bytes with correct published pointers; ${retailCases} original-ROM identity/current-class comparisons and ${cases} authored-model selector cases passed in 4 MiB model memory.`);

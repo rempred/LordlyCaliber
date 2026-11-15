@@ -5234,6 +5234,27 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("portrait-artwork-workspace.png"));
         }catch(const Error &e){QFAIL(e.what());}
     }
+    void portraitCustomClassDeletion() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+        const int id=project.appendClass(1,"Unused portrait class");
+        PortraitEditor editor(&project,&undo,[]{});editor.selectPortrait(id,0);
+        auto list=editor.findChild<QListWidget *>("portraitClasses");
+        auto remove=editor.findChild<QPushButton *>("portraitDeleteClass");
+        QVERIFY(remove->isEnabled());QCOMPARE(list->count(),166);
+        editor.findChild<QPushButton *>("portraitRestore")->click();
+        QVERIFY(!project.contentDeleted("classes",id));QCOMPARE(list->count(),166);
+        remove->click();QCoreApplication::processEvents();
+        QVERIFY(project.contentDeleted("classes",id));QCOMPARE(list->count(),165);
+        QVERIFY(!remove->isEnabled());
+        undo.undo();QCoreApplication::processEvents();QCOMPARE(list->count(),166);
+        editor.selectPortrait(id,0);QVERIFY(remove->isEnabled());
+        undo.redo();QCoreApplication::processEvents();QCOMPARE(list->count(),165);
+        QTemporaryDir work;project.saveFolder(work.filePath("project"));
+        auto loaded=Project::fromRom(project.rom());loaded.applyManifest(Project::readProject(work.filePath("project")));
+        QUndoStack otherUndo;PortraitEditor reopened(&loaded,&otherUndo,[]{});
+        QCOMPARE(reopened.findChild<QListWidget *>("portraitClasses")->count(),165);
+    }
     void iconArtworkEditing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
@@ -9744,7 +9765,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         researchedNameSearch->setText("Palatinus's four regions");
         int matches = 0;
         for (int i = 0; i < scenes->count(); ++i) if (!scenes->item(i)->isHidden()) {
-            QVERIFY(scenes->item(i)->text().contains("610"));++matches;
+            QVERIFY(scenes->item(i)->toolTip().contains("610"));++matches;
         }
         QCOMPARE(matches,1);researchedNameSearch->clear();
         QCOMPARE(assets->count(), 366);

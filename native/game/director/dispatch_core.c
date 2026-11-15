@@ -90,7 +90,14 @@ int lordly_director_dispatch(LordlyDirectorDispatch *s, const LordlyDirectorWord
             s->active = 0;
             return LORDLY_DIRECTOR_RELEASE;
         /* These recovered cases only consume words, without a service call. */
-        case 0x12: case 0x20: case 0x21: case 0x5c: case 0x8e:
+        case 0x8e:
+            if(((words[s->cursor+1]&0xffff0000U)==0x4c430000U ||
+                (words[s->cursor+1]&0xffff0000U)==0x4c500000U || (words[s->cursor+1]&0xffff0000U)==0x4c510000U ||
+                (words[s->cursor+1]&0xffff0000U)==0x4c4d0000U || (words[s->cursor+1]&0xffff0000U)==0x4c4e0000U ||
+                (words[s->cursor+1]&0xffff0000U)==0x4c540000U) &&
+               (!service||!service(context,command,words+s->cursor,def.words,&value)))return LORDLY_DIRECTOR_SERVICE;
+            break;
+        case 0x12: case 0x20: case 0x21: case 0x5c:
         case 0x80000002U: case 0x80000004U: case 0x80000007U:
             break;
         default:

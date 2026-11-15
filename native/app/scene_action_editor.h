@@ -23,6 +23,12 @@ class SceneActionEditor : public QWidget {
     void applyPosition(int command, SceneVector);
     void updateTimeline(SceneId, const QMap<int, int> &, int activeWord, int tick);
     void placeActorAtPlayhead(int slot, SceneVector);
+    void setPlacementMode(bool move, int duration, bool wait);
+    void addAtPlayhead(quint32 kind);
+    void addFromWorkspace(quint32 kind, int where);
+    void playObjectKey(bool sprite,int slot,int bank,int animation,int facing,const QByteArray &record,int variant=-1);
+    void addAsset(bool sprite, int bank, int animation, int facing, SceneVector position,int variant=0);
+    void placeSpriteAtPlayhead(int slot, SceneVector position);
     void reportExit(SceneId, int word, const QSet<int> &movingActors, bool fade, int panUpdates, bool paused);
   signals:
     void commandSelected(int command);
@@ -43,7 +49,7 @@ class SceneActionEditor : public QWidget {
     void changeStructure(Change);
     void insertAtPlayhead();
     void holdBeforeExit();
-    void changeDialogue(bool create, bool choice);
+    void changeDialogue(bool create, bool choice, bool atPlayhead = false);
     QComboBox *kind_, *position_;
     QPushButton *insert_, *remove_, *move_, *text_, *positionPick_;
     Project *project_;
@@ -63,5 +69,7 @@ class SceneActionEditor : public QWidget {
     int exitWord_ = -1, unfinishedPan_ = 0;
     QSet<int> unfinishedActors_;
     bool unfinishedFade_ = false;
+    bool moveTool_ = false, waitForMove_ = false;
+    int moveDuration_ = 30;
 };
 } // namespace lordly

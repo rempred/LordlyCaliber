@@ -152,6 +152,18 @@ int ActorArt::resolve(int animation, int facing, int option) const {
         throw Error("Actor state vocabulary selects an absent pose program");
     return state;
 }
+int ActorArt::variantCount(const Rom &rom, const QMap<int, QByteArray> &artwork) const {
+    const auto &edits = isolated_ ? privateArtwork_ : artwork;
+    int count = 1;
+    for (int index = 0; index < artKeys_.size(); ++index) {
+        const auto bytes = edits.contains(index) ? edits.value(index) : resource(rom, artKeys_[index], true);
+        if (u16(bytes, 0) != 0x3634)
+            count = std::max(count, int(SpriteObject::decode(bytes).children().size()));
+    }
+    // The native Actor and Sprite records store one byte; an absent child in a
+    // particular layer falls back to child zero through SpriteObject::frame.
+    return count;
+}
 QVector<ActorPoseSelection> ActorArt::selections() const {
     if (bank_ < 1 || (bank_ - 1) * 2 >= stateTable_.size())
         throw Error("Actor bank exceeds its state vocabulary");

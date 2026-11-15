@@ -313,6 +313,7 @@ class AnimationRoutesTests : public QObject {
             QVERIFY(fixture.open(QIODevice::WriteOnly));
             fixture.write(
                 QJsonDocument(QJsonObject{{"rom", candidate},
+                                          {"originalRom", path},
                                           {"resource", QString::fromLatin1(decoded.toHex())},
                                           {"key", double(AnimationRoutes::resourceKey(output))},
                                           {"classAddress", double(placement->layout.indexBase)},
@@ -325,7 +326,7 @@ class AnimationRoutesTests : public QObject {
             QProcess reference;
             reference.start("node",
                             {QFINDTESTDATA("animation-routes-mips.cjs"), fixture.fileName()});
-            QVERIFY(reference.waitForFinished(30000));
+            QVERIFY(reference.waitForFinished(120000));
             QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
             qInfo().noquote() << reference.readAllStandardOutput();
             auto reopened = Project::fromRom(output);

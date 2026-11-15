@@ -881,6 +881,7 @@ void CampaignEditor::openCutscene(int selector) {
             tabs_->setCurrentWidget(story_);
             story_->setCurrentIndex(3);
             auto search = findChild<QLineEdit *>("cutsceneScenesSearch");
+            if(auto filter=findChild<QComboBox *>("cutsceneEventRow"))filter->setCurrentIndex(0);
             if (search)
                 search->clear();
             auto scenes = findChild<QListWidget *>("cutsceneScenes");

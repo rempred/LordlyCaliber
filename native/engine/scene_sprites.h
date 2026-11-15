@@ -47,5 +47,7 @@ class SceneSprites {
     quint64 nextIdentity_ = 0;
     int nextPoseSlot_ = 0;
     Rotation rotation_;
+    struct Motion { quint64 identity=0; int fromX=0,fromY=0,toX=0,toY=0,duration=0,elapsed=0,lastX=0,lastY=0; };
+    std::array<Motion,30> motion_{};
 };
 } // namespace lordly

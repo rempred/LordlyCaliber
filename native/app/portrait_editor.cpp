@@ -1,4 +1,5 @@
 #include "app/content_refresh.h"
+#include "app/custom_content.h"
 #include "app/view_position.h"
 #include "app/portrait_editor.h"
 #include "app/art_image_assignment.h"
@@ -112,7 +113,11 @@ PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function
             next.restore(selected_, 1 - selector_);
         if (next.json() != project_->avatarArtwork()->json())
             undo_->push(new PortraitCommand(project_, "Restore portrait", next.json()));
+    })->setToolTip("Undo image edits for this class. This does not delete the class.");
+    removeClass_ = action("Delete custom class", "portraitDeleteClass", [this] {
+        if (selected_ >= 165) deleteCustomEntry(this, project_, undo_, "classes", selected_);
     });
+    removeClass_->setToolTip("Delete this added class and its portrait assignments. Classes still in use cannot be deleted. Undo restores it.");
     actions->addStretch();
     auto split = new QSplitter;
     outer->addWidget(split, 1);
@@ -315,9 +320,11 @@ void PortraitEditor::refresh() {
     refreshing_ = true;
     const auto classData = project_->classData();
     selected_ = std::clamp(selected_, 0, int(classData.entries().size()) - 1);
+    if (project_->contentDeleted("classes", selected_)) selected_ = 1;
     variant_->setCurrentIndex(selector_);
     classes_->clear();
     for (int id = 0; id < classData.entries().size(); ++id) {
+        if (project_->contentDeleted("classes", id)) continue;
         auto item = new QListWidgetItem(QString("%1 · %2%3")
                                             .arg(id)
                                             .arg(project_->record(Table::Classes, id).name.simplified())
@@ -351,6 +358,7 @@ void PortraitEditor::refresh() {
     refreshPortrait();
 }
 void PortraitEditor::refreshPortrait() {
+    removeClass_->setEnabled(selected_ >= 165 && !project_->contentDeleted("classes", selected_));
     const auto classData = project_->classData();
     const auto words = project_->avatarArtwork()->words(classData, selected_, selector_);
     auto asset = SpriteAsset::fromImage("Portrait", AvatarArtwork::render(words));

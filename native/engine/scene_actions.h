@@ -47,6 +47,9 @@ class SceneActions {
     static constexpr quint32 RotateSprite = 0x10063;
     static constexpr quint32 CreatePathSprite = 0x20063, OrientSprite = 0x30063;
     static constexpr quint32 Choice = 0x100bf;
+    static constexpr quint32 SetStoryFlag = 0x1008e, WaitStoryFlag = 0x1008f;
+    static constexpr quint32 PlaceSprite = 0x1008d, MoveSprite = 0x2008e, WaitSprite = 0x2008f;
+    static constexpr quint32 storyFlagTag = 0x4c430000U;
     static QVector<SceneChoice> choices(const DirectorProgram &);
     static QByteArray choiceText(const QString &first, const QString &second);
     static std::optional<QPair<QString, QString>> choiceOptions(const QByteArray &);

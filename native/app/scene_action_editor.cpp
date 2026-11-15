@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QInputDialog>
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -20,8 +21,16 @@
 #include <QSplitter>
 #include <QUndoStack>
 #include <QVBoxLayout>
+#include <cmath>
 namespace lordly {
 namespace {
+class SceneStoryCommand final : public QUndoCommand {
+  public:
+    SceneStoryCommand(Project *p,const QString &name,const ScenePrograms &scenes,const SceneEvents &events):QUndoCommand(name),p_(p),beforeScenes_(p->scenePrograms()->json()),beforeEvents_(p->sceneEvents()->json()),afterScenes_(scenes.json()),afterEvents_(events.json()){}
+    void undo()override{p_->setScenePrograms(beforeScenes_);p_->setSceneEvents(beforeEvents_);}
+    void redo()override{p_->setSceneEvents(afterEvents_);p_->setScenePrograms(afterScenes_);}
+  private: Project *p_;QJsonObject beforeScenes_,beforeEvents_,afterScenes_,afterEvents_;
+};
 class SceneTextCommand final : public QUndoCommand {
   public:
     SceneTextCommand(Project *project, const QString &label, const ScenePrograms &scenes,
@@ -345,20 +354,87 @@ void SceneActionEditor::placeActorAtPlayhead(int slot, SceneVector position) {
     try {
         const int tick = previewTick_;
         const auto program = project_->scenePrograms()->program(key_);
-        const int row = list_->currentRow();
-        if (row >= 0 && row < actions_.size()) {
-            const int at = actions_[row].command;
-            if (program.commands[at].opcode == 7 && program.commands[at].operands[0] == quint32(slot) && actions_[row].name == "Move Actor") {
-                applyPosition(at, position); emit previewUpdateRequested(tick); return;
-            }
+        auto edit = placeSceneActorAtTime(program, commandTimes_, tick, slot, position);
+        if(moveTool_){
+            edit.program.commands[edit.command].operands={quint32(slot),quint32(-1000),quint32(-1000),
+                quint32(qint32(std::round(position.x*1000))),quint32(qint32(std::round(position.z*1000))),quint32(moveDuration_),0};
+            edit.program=DirectorProgram::decode(edit.program.encode());
+            if(waitForMove_)edit.program=SceneActions::setCompletion(edit.program,edit.command,true);
         }
-        const auto edit = placeSceneActorAtTime(program, commandTimes_, tick, slot, position);
         auto next = *project_->scenePrograms(); next.replace(key_, edit.program.source);
         editing_ = true; pushSceneProgramChange(project_, undo_, "Place Actor at playhead", next); editing_ = false;
         refresh(edit.command); emit commandSelected(edit.command);
         if (changed_) changed_();
         emit previewUpdateRequested(tick);
     } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
+}
+void SceneActionEditor::setPlacementMode(bool move,int duration,bool wait){moveTool_=move;moveDuration_=duration;waitForMove_=wait;}
+void SceneActionEditor::addAtPlayhead(quint32 kind){
+    kind_->setCurrentIndex(kind_->findData(kind));
+    if(kind==0xbf||kind==SceneActions::Choice){changeDialogue(true,kind==SceneActions::Choice,true);return;}
+    insertAtPlayhead();
+}
+void SceneActionEditor::addFromWorkspace(quint32 kind,int where){
+    if(where==0){addAtPlayhead(kind);return;}
+    const int row=list_->currentRow();if(!key_||row<0||row>=actions_.size())return;
+    const auto &action=actions_[row];int at=where==1?action.command:action.command+action.commandCount;
+    if(where>=3){
+        const auto branches=SceneActions::choices(project_->scenePrograms()->program(key_));
+        const auto choice=std::find_if(branches.begin(),branches.end(),[&](const auto &c){return c.command==action.command||c.option(action.command);});
+        if(choice==branches.end()){notice_->setText("Select a choice or a step inside that choice first.");return;}
+        at=where==3?choice->firstEnd:choice->secondEnd;
+    }
+    const int index=position_->findData(at);if(index<0){notice_->setText("Select a complete step at an editable boundary.");return;}
+    position_->setCurrentIndex(index);kind_->setCurrentIndex(kind_->findData(kind));changeStructure(Change::Add);
+}
+void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,SceneVector position,int variant){
+    if(!key_||property("invalidEdits").toBool())return;
+    try{
+        const int tick=previewTick_;
+        auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,sprite?0x46:0x14);
+        auto &args=edit.program.commands[edit.command].operands;args[1]=bank;args[2]=animation;args[3]=facing;args[8]=variant;
+        args[4]=quint32(qint32(std::round(position.x*(sprite?1:1000))));
+        args[5]=quint32(qint32(std::round(position.y*(sprite?1:1000))));
+        if(!sprite)args[6]=quint32(qint32(std::round(position.z*1000)));
+        const bool sentinel=sprite&&args[4]==quint32(-1)&&args[5]==quint32(-1);
+        if(sentinel)args[4]=args[5]=0;
+        edit.program=DirectorProgram::decode(edit.program.encode());
+        // Native creation treats (-1,-1) as "reuse". Allocate normally first,
+        // then place explicitly so that exact screen position remains editable.
+        if(sentinel){const int slot=edit.program.commands[edit.command].operands[0];
+            edit.program=SceneActions::insert(edit.program,edit.command+1,SceneActions::PlaceSprite);
+            edit.program=SceneActions::edit(edit.program,edit.command+1,0,QString::number(slot));
+            edit.program=SceneActions::edit(edit.program,edit.command+1,1,"-1");
+            edit.program=SceneActions::edit(edit.program,edit.command+1,2,"-1");}
+        auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
+        editing_=true;pushSceneProgramChange(project_,undo_,sprite?"Place sprite":"Place Actor",next);editing_=false;
+        refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+}
+void SceneActionEditor::placeSpriteAtPlayhead(int slot,SceneVector position){
+    if(!key_||property("invalidEdits").toBool())return;
+    try{
+        const int tick=previewTick_;
+        auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,moveTool_?SceneActions::MoveSprite:SceneActions::PlaceSprite,moveDuration_);
+        edit.program=SceneActions::edit(edit.program,edit.command,0,QString::number(slot));
+        edit.program=SceneActions::edit(edit.program,edit.command,1,QString::number(qRound(position.x)));
+        edit.program=SceneActions::edit(edit.program,edit.command,2,QString::number(qRound(position.y)));
+        if(moveTool_&&waitForMove_){edit.program=SceneActions::insert(edit.program,edit.command+3,SceneActions::WaitSprite);edit.program=SceneActions::edit(edit.program,edit.command+3,0,QString::number(slot));}
+        auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
+        editing_=true;pushSceneProgramChange(project_,undo_,moveTool_?"Move sprite at playhead":"Place sprite at playhead",next);editing_=false;
+        refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+}
+void SceneActionEditor::playObjectKey(bool sprite,int slot,int bank,int animation,int facing,const QByteArray &record,int variant){
+    if(!key_||property("invalidEdits").toBool())return;
+    try{
+        if(slot<0||record.isEmpty())throw Error("Select an Actor or sprite in the scene first.");
+        const int tick=previewTick_;auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,sprite?0x46:3);
+        if(sprite)edit.program.commands[edit.command].operands={quint32(slot),quint32(bank),quint32(animation),quint32(facing),u32(record,0x24),0U-u32(record,0x28),u8(record,0x4a),u16(record,0x48),variant<0?u8(record,0x4c):quint32(variant)};
+        else edit.program.commands[edit.command].operands={quint32(slot),quint32(bank),quint32(animation),quint32(facing),quint32(-1000),quint32(-1000),0,quint32(variant)};
+        edit.program=DirectorProgram::decode(edit.program.encode());auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
+        editing_=true;pushSceneProgramChange(project_,undo_,"Play animation key",next);editing_=false;refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
 }
 void SceneActionEditor::holdBeforeExit() {
     if (!key_ || property("invalidEdits").toBool() || exitWord_ < 0) return;
@@ -418,6 +494,28 @@ void SceneActionEditor::showAction() {
             : f.scale == 1000
                 ? "Game units with up to three decimal places."
                 : QString("Whole numbers from %1 to %2.").arg(f.minimum).arg(f.maximum));
+        if((action.name=="Set story flag"||action.name=="Wait for story flag")&&f.name=="Flag"){
+            auto field=new QWidget;auto layout=new QHBoxLayout(field);layout->setContentsMargins(0,0,0,0);
+            input->setParent(field);input->hide();
+            auto combo=new QComboBox;combo->setObjectName("sceneStoryFlag");
+            const auto names=project_->sceneEvents()->flagChoices(property("eventRow").isValid()?property("eventRow").toInt():-1);
+            for(auto [id,label]:names.asKeyValueRange())combo->addItem(label,id);
+            combo->setCurrentIndex(combo->findData(f.text(word).toInt()));layout->addWidget(combo,1);
+            auto create=new QPushButton("Create flag…");create->setObjectName("sceneCreateFlag");layout->addWidget(create);fields_->addRow("Flag",field);
+            connect(combo,&QComboBox::currentIndexChanged,this,[this,combo,input]{if(combo->currentIndex()<0)return;input->setText(QString::number(combo->currentData().toInt()));publishFields();});
+            connect(create,&QPushButton::clicked,this,[this,command=action.command,i]{
+                bool ok=false;const auto name=QInputDialog::getText(this,"Create flag","Name",QLineEdit::Normal,{},&ok);if(!ok)return;
+                try{auto events=*project_->sceneEvents();const int flag=events.createFlag(name);auto scenes=*project_->scenePrograms();
+                    scenes.replace(key_,SceneActions::edit(scenes.program(key_),command,i,QString::number(flag)).source);
+                    editing_=true;undo_->push(new SceneStoryCommand(project_,"Create cutscene story flag",scenes,events));editing_=false;refresh(command);if(changed_)changed_();
+                }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+            });continue;
+        }
+        if((action.name=="Set story flag"||action.name=="Wait for story flag")&&f.name=="State"){
+            auto field=new QWidget;auto layout=new QHBoxLayout(field);layout->setContentsMargins(0,0,0,0);input->setParent(field);input->hide();
+            auto combo=new QComboBox;combo->setObjectName("sceneStoryFlagState");combo->addItem("OFF",0);combo->addItem("ON",1);if(f.maximum==2)combo->addItem("Toggle",2);combo->setCurrentIndex(combo->findData(f.text(word).toInt()));layout->addWidget(combo);fields_->addRow("State",field);
+            connect(combo,&QComboBox::currentIndexChanged,this,[this,combo,input]{input->setText(QString::number(combo->currentData().toInt()));publishFields();});continue;
+        }
         if (action.name == "Move Actor" && f.canonical(word)) {
             if (i == 1 || i == 2)
                 input->setToolTip(
@@ -907,7 +1005,7 @@ void SceneActionEditor::applyPosition(int command, SceneVector position) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
-void SceneActionEditor::changeDialogue(bool create, bool choice) {
+void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead) {
     if (!key_ || property("invalidEdits").toBool())
         return;
     try {
@@ -916,7 +1014,7 @@ void SceneActionEditor::changeDialogue(bool create, bool choice) {
         const int row = list_->currentRow();
         if (!create && (row < 0 || row >= actions_.size()))
             return;
-        const int at = create ? position_->currentData().toInt() : actions_[row].command;
+        int at = create ? position_->currentData().toInt() : actions_[row].command;
         int archive = 5, entry = -1;
         auto table = Dialogues::Table::Primary;
         QPair<QString, QString> options = choice
@@ -1029,7 +1127,8 @@ void SceneActionEditor::changeDialogue(bool create, bool choice) {
             entry = dialogues.appendEntry(table, archive, text);
             if (entry > 0x3fff)
                 throw Error("This dialogue archive has no remaining entry IDs.");
-            program = SceneActions::insert(program, at, choice ? SceneActions::Choice : 0xbf);
+            if(atPlayhead){auto edit=insertSceneActionAtTime(program,commandTimes_,previewTick_,choice?SceneActions::Choice:0xbf);program=edit.program;at=edit.command;}
+            else program = SceneActions::insert(program, at, choice ? SceneActions::Choice : 0xbf);
             program.commands[at].operands[2] = quint32(entry);
             program = DirectorProgram::decode(program.encode());
         } else {

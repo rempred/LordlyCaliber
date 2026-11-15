@@ -1,5 +1,72 @@
 # Native scene authoring
 
+## Scene timeline workspace (November 14)
+
+The default Cutscenes workspace has an event-row filter and named scene list on
+the left, the scene and independent key preview in the center, a bank/key grid
+on the right, and actor/sprite tracks below. The filter reads both original event
+launches and scene actions inside authored trees. New scenes switch to All until
+they have a launch. Add event trigger opens the existing event logic editor with
+the selected scene already assigned; its WHEN, target and IF conditions use the
+same event compiler as Storyline.
+
+Select an Actor or Sprite key, then click the scene to create it. Place drags
+change position at the playhead; Move drags add movement with an editable duration
+in native updates and an optional completion wait. Empty-space dragging pans the
+preview. The key grid auditions independently and supports replay and looping.
+Tiles show the number of distinct artwork frames reached by the native pose
+player, including linked states, and mark looping animations. This is an artwork
+count, not a duration in game updates. Context-dependent sequences whose count
+cannot be resolved say so explicitly. The scene view retains a 640x480 image;
+smaller workspaces scroll instead of compressing the canvas or overlaying controls.
+The Appearance selector exposes the sprite children stored in each bank, with
+thumbnails. Some banks intentionally have blank child zero; the picker initially
+selects a visible appearance and labels empty appearances/keys explicitly. The
+same chosen child reaches audition, placement and Play key on selected object.
+For example, the original Hugo assignment scene uses bank3 / appearance6 for
+Dio. Sprite preview opacity uses its native color bytes; Actor preview uses its
+separate material-opacity bytes. Neither mode treats the Sprite material controls
+as opacity.
+Play key on selected object changes its animation; changing a sprite key recreates
+that sprite at its current position and ends its previous authored movement.
+
+Timeline clips use observed native command times. Simultaneous commands occupy
+separate lanes. Pending commands are explicitly marked: their time has not been
+established through the current waits or choices. Click a reached clip to seek,
+double-click to edit its fields in Step details. Add step can insert at the
+playhead, before/after a step, or into either choice branch. The timeline is a
+projection of the native program, not a second saved script. Raw commands and
+inspectors remain available behind their toggle.
+
+Dialogue and two-option choices use the existing native dialogue compiler.
+Set story flag supports OFF/ON/toggle and named project flags, including creating
+one directly in Step details. Wait for story flag uses the same saved flag IDs.
+Choice branches can set different flags and contain their own scene actions.
+Project undo covers flag metadata and scene operands together.
+
+New flag commands and explicit sprite trajectories opt into a generated
+adaptation of accepted `func_00284288`. The generator authenticates the accepted
+source and original ROM owner; accepted sources are not edited. Tagged 8E/8F
+commands call the existing saved-flag services or the sprite trajectory helper.
+Untagged instructions preserve their original behavior. Sprite trajectories add
+position deltas after the original pose sweep and cancel when the slot is replaced
+or released or the scene exits. Exact (-1,-1) sprite placement allocates at zero
+then places explicitly, avoiding the native creation sentinel.
+
+The runtime and its motion records occupy bounded permanent class storage.
+`LCSCLOG1` owns the original dispatcher prologue, relocated-code checksum and pose
+sweep entry. Export authenticates existing hooks before replacing them and updates
+the ROM checksum. An unedited original ROM adds no hook and remains byte-identical.
+
+Verification lives in `scene_workspace_tests`, the existing scene-action and
+Director checks, and the parent task note. A copied battery-save run entered an
+authored Mulsuk scene through town arrival, observed movement and both saved flag
+writes, then returned to the map. That run required one observed liberation-dialog
+confirmation. Choice-branch authoring is separately checked through the Director
+and dialogue playback paths; both native game choice branches have not been
+observed in the emulator in this pass. Desktop scene drawing remains an editing
+preview, with approximations identified in its expanded context.
+
 The Commands page edits complete Director programs in the project. It supports
 operand changes, insertion, removal, restore and undo. Valid values enter the
 project immediately; invalid input blocks navigation and save/export. Signed
@@ -27,7 +94,8 @@ limit. Each member records its exact directory pointer words, including shared
 aliases. Parent event references are included if they share the same resource.
 Header/payload CRCs, nonoverlap and reference checks precede reuse. Unknown bytes
 after each original compressed stream survive. Growth around foreign data appends
-elsewhere and clears only the previous owned allocation. No runtime hook is added.
+elsewhere and clears only the previous owned allocation. Ordinary command edits
+add no runtime hook; the optional authored flag/sprite extensions are described above.
 
 The engine check preserves all 1,498 original programs, compares an operand edit
 against an exact expected byte change, checks insertion/removal/restore and invalid
@@ -63,7 +131,8 @@ event-selected cast still need their own launch data.
 
 In Scene playback, click a visible Actor to select its live slot and pause, or
 double-click to open its action. Selection follows the rendered layers, including
-transparent holes and foreground occlusion. Dragging pans. The outline shows the
+transparent holes and foreground occlusion. Dragging an object places or moves it;
+dragging empty space pans. The outline shows the
 selected projected extent; it is an editor overlay and is not part of the scene.
 Typed SceneId values distinguish native resource keys from authored UUIDs. No
 fabricated ROM key is assigned to a scene before it has an exported allocation.

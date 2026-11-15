@@ -77,6 +77,7 @@ class ActorArt {
     int resolve(int animation, int facing, int option = 0) const;
     PoseRecord poseRecord(int state, int cursor) const;
     QVector<ActorPoseSelection> selections() const;
+    int variantCount(const Rom &, const QMap<int, QByteArray> &artwork = {}) const;
     QVector<ActorLayer> layers(int token) const;
     int combatHeight() const;
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant, int sepia = 0,

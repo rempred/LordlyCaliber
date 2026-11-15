@@ -4,7 +4,7 @@
  * 1038AC), using the game's own height and projection functions.
  * Original maps and the separately scripted Fort Romulus retain their path. */
 typedef unsigned char u8;
-extern const u8 lc_cursor_boundary_keys[128];
+extern const u8 lc_cursor_boundary_keys[256];
 extern u8 lc_cursor_key;
 extern u8 lc_cursor_selector;
 extern float lc_cursor_bounds[4];
@@ -20,7 +20,7 @@ int lc_cursor_ground(int selector, void *camera, float x, float y, float *point)
     int result = lc_cursor_ray(selector, camera, x, y, point);
     float px = point[0], pz = point[2];
     float *screen;
-    if (lc_cursor_key >= 128 || !lc_cursor_boundary_keys[lc_cursor_key]) return result;
+    if (!lc_cursor_boundary_keys[lc_cursor_key]) return result;
     if (px < lc_cursor_bounds[0]) px = lc_cursor_bounds[0];
     if (px > lc_cursor_bounds[2]) px = lc_cursor_bounds[2];
     if (pz < lc_cursor_bounds[1]) pz = lc_cursor_bounds[1];
@@ -40,7 +40,7 @@ int lc_cursor_ground(int selector, void *camera, float x, float y, float *point)
  * eventual order, including when moving the camera at the screen boundary. */
 void lc_cursor_plane_checked(void *camera, float x, float y, float *point)
 {
-    if (lc_cursor_key < 128 && lc_cursor_boundary_keys[lc_cursor_key])
+    if (lc_cursor_boundary_keys[lc_cursor_key])
         lc_cursor_ground(lc_cursor_selector, camera, x, y, point);
     else
         lc_cursor_plane(camera, x, y, point);

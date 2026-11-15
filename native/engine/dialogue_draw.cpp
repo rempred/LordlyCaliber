@@ -93,9 +93,7 @@ DialogueTexture DialogueDrawing::portrait(int identity, bool variant) const {
     if (!avatars_)
         avatars_ = AvatarLibrary::load(rom_);
     const int id = identity & 255;
-    if (id >= classes_->entries().size())
-        throw Error("Dialogue portrait class is outside the current class table");
-    const auto token = u16(classes_->entries()[id].appearance, variant ? 2 : 0);
+    const auto token = classes_->dialoguePortraitToken(id, variant ? 1 : 0);
     DialogueTexture texture{40, 48, 40, 8, QByteArray(1920, 0), QVector<quint16>(80, 0)};
     if (!token)
         return texture;

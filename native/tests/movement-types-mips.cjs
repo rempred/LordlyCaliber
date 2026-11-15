@@ -11,6 +11,11 @@ for(const r of [candidate,original])if(r.readUInt32BE(0)===0x37804012)r.swap16()
 const movementHeader=candidate.subarray(0x27c5700,0x27c5740);
 assert.equal(movementHeader.subarray(0,8).toString(),'LCMOVE01');
 const movementOffset=movementHeader.readUInt32BE(12),movementRam=movementHeader.readUInt32BE(16),data=candidate.subarray(movementOffset,movementOffset+movementHeader.readUInt32BE(20));
+const ownership=require('../tools/runtime-ownership.cjs');
+const writes=Array.from({length:data.readUInt32BE(20)},(_,i)=>{
+ const start=data.readUInt32BE(data.readUInt32BE(16)+i*12);return{start,end:start+4};
+});
+ownership.checkClaimCoverage(writes,ownership.claims(),'movement');
 const model=JSON.parse(data.subarray(data.readUInt32BE(8),data.readUInt32BE(8)+data.readUInt32BE(12)));
 assert.equal(model.types['8'].name,'Scout');assert.equal(model.types['8'].baseSpeed,60);
 const unit=0x80600000,grid=0x80610000,record=0x80620000;

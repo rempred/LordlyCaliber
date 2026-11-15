@@ -21,6 +21,7 @@ class ActorInstance {
     void setDrawing(const ActorMatrices &);
     void setDrawing(const ActorWorldMatrices &);
     void setUniformScale(float value);
+    void setYawOffset(float degrees);
     void addHeight(float step);
     void setSecondaryHeight(float value, bool addBase);
     void resetHeight(qint32 value);

@@ -20,7 +20,18 @@ class CursorMips extends FloatMips {
 }
 const word=rom.readUInt32BE(0x1038ac);assert.equal(word>>>26,3,'native caller uses JAL');
 const entry=(0x80000000|((word&0x3ffffff)<<2))>>>0;
-const offset=rom.indexOf(Buffer.from('LCCURS01')),address=entry-192,size=rom.readUInt32BE(offset+12);
+let offset=rom.indexOf(Buffer.from('LCCURS02'));
+if(offset<0)offset=rom.indexOf(Buffer.from('LCCURS01'));
+assert(offset>0,'cursor allocation present');
+const headerSize=rom.readUInt32BE(offset+24)===2?320:192;
+const address=entry-headerSize,size=rom.readUInt32BE(offset+12);
+const keys=Array.from({length:headerSize-64},(_,i)=>i).filter(i=>rom[offset+64+i]);
+assert(keys.length>0);
+const ownership=require('../tools/runtime-ownership.cjs');
+ownership.checkClaimCoverage([0,1,2].map(i=>{
+ const start=rom.readUInt32BE(offset+28+i*12);return{start,end:start+4};
+}),ownership.claims(),'cursor-boundary');
+const passthrough=[2,39,133,255].filter(i=>!keys.includes(i));
 assert(offset>0&&offset+size<=rom.length&&address+size<=0x80400000);
 assert.equal(rom.readUInt32BE(offset+8),entry);
 assert.equal(rom.readUInt32BE(0x1038b0),0x24140001,'original delay slot retained');
@@ -36,7 +47,8 @@ function query(target,x,y){
  m.call(target);return {result:m.get('v0'),point:vec(0x803e0040)};
 }
 let cases=0,corrected=0,unchanged=0,failures=0;
-for(const angle of [0,Math.PI/4,Math.PI/2,3*Math.PI/4,Math.PI,5*Math.PI/4,3*Math.PI/2,7*Math.PI/4]){
+for(const key of keys)for(const angle of [0,Math.PI/4,Math.PI/2,3*Math.PI/4,Math.PI,5*Math.PI/4,3*Math.PI/2,7*Math.PI/4]){
+ m.w8(0x8018f481,key);
  m.writeFloat(camera+20,look[0]+radius*Math.sin(angle));m.writeFloat(camera+28,look[2]+radius*Math.cos(angle));
  for(const x of [40,80,120,160,200,240,280])for(const y of [30,60,90,120,150,180,210]){
   const original=query(0x801aa8a4,x,y);
@@ -54,11 +66,13 @@ for(const angle of [0,Math.PI/4,Math.PI/2,3*Math.PI/4,Math.PI,5*Math.PI/4,3*Math
    if(!projected.result||Math.hypot(projected.point[0]-actual.point[0],projected.point[2]-actual.point[2])>.002)failures++;
    corrected++;
   }
-  m.w8(0x8018f481,2); // untouched Volmus must retain its exact query result
-  m.writeFloat(cursor+8,x);m.writeFloat(cursor+12,y);
-  assert.deepEqual(query(entry,x,y),original);assert.equal(m.readFloat(cursor+8),x);assert.equal(m.readFloat(cursor+12),y);
-  m.w8(0x8018f481,1);cases++;
+  for(const unedited of passthrough){
+   m.w8(0x8018f481,unedited);
+   m.writeFloat(cursor+8,x);m.writeFloat(cursor+12,y);
+   assert.deepEqual(query(entry,x,y),original);assert.equal(m.readFloat(cursor+8),x);assert.equal(m.readFloat(cursor+12),y);
+  }
+  m.w8(0x8018f481,key);cases++;
  }
 }
 assert(corrected>0&&unchanged>0);assert.equal(failures,0,'corrected ground and visible cursor agree');
-console.log(`PASS ${cases} original-ROM projection cases at 8 headings; ${corrected} corrected, ${unchanged} unchanged, unedited-map pass-through exact.`);
+console.log(`PASS ${cases} original-ROM projection cases at 8 headings for keys ${keys}; ${corrected} corrected, ${unchanged} unchanged, unedited-map pass-through exact.`);

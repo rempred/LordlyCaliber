@@ -23,11 +23,29 @@ for(let identity=0;identity<165;++identity)for(let current=0;current<165;++curre
 }
 const image=0x80340000,out=0x80350000,portraits=[];
 m.trap(0x8007938c,c=>{assert.equal(c.get('a0'),0x1dfb6ea);member=c.get('a1');c.set('v0',image);});
-for(let identity=0;identity<165;++identity)for(let variant=0;variant<2;++variant){
+for(let identity=0;identity<186;++identity)for(let variant=0;variant<2;++variant){
  member=-1;m.w32(out,0);m.set('sp',0x803ffe00);m.set('a0',identity);m.set('a1',variant);m.set('a2',out);
  m.call(0x8016fcec);let token=0;
  if(m.get('v0')){assert.equal(m.get('v0'),image);const palette=(m.r32(out)-image-1920)/160;assert(Number.isInteger(palette));token=member*8+palette;}
  portraits.push([identity,variant,token]);
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({cards,portraits}));
+const candidatePortraits=[];
+if(process.argv[4]) {
+ const candidate=fs.readFileSync(process.argv[4]);if(candidate.readUInt32BE(0)===0x37804012)candidate.swap16();
+ m.load(0x8016af80,candidate.subarray(0x40e80,0x66e10));
+ assert.equal(candidate.subarray(0x5dc80,0x5dc88).toString(),'LC05CLAS');
+ const data=candidate.readUInt32BE(0x5dc80+12),size=candidate.readUInt32BE(0x5dc80+16),base=candidate.readUInt32BE(0x5dc80+24);
+ assert(data+size<=candidate.length);m.load(base,candidate.subarray(data,data+size));
+ // Only the image-cache allocation is substituted. Execute the exported resolver
+ // instructions and load the exported table; compare NPCs to original MIPS above.
+ m.trap(0x8007938c,c=>{member=c.get('a1');c.set('v0',image);});
+ for(const [identity,variant,originalToken] of portraits) {
+  member=-1;m.w32(out,0);m.set('sp',0x803ffe00);m.set('a0',identity);m.set('a1',variant);m.set('a2',out);
+  m.call(0x8016fcec);let token=0;
+  if(m.get('v0')){assert.equal(m.get('v0'),image);const palette=(m.r32(out)-image-1920)/160;assert(Number.isInteger(palette));token=member*8+palette;}
+  if(identity>=165)assert.equal(token,originalToken,`NPC ${identity}, variant ${variant}`);
+  candidatePortraits.push([identity,variant,token]);
+ }
+}
+fs.writeFileSync(process.argv[3],JSON.stringify({cards,portraits,candidatePortraits}));
 console.log(`${cards.length} Army identity selections; ${portraits.length} portrait slots.`);

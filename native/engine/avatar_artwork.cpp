@@ -45,6 +45,10 @@ QByteArray AvatarArtwork::words(const ClassData &data, int id, int selector) con
     const auto key = id * 2 + selector;
     return edits_.contains(key) ? edits_.value(key) : library_.words(token);
 }
+QByteArray AvatarArtwork::dialogueWords(const ClassData &data, int id, int selector) const {
+    const auto token = data.dialoguePortraitToken(id, selector);
+    return id < 165 ? words(data, id, selector) : library_.words(token);
+}
 QImage AvatarArtwork::render(const QByteArray &words) {
     QImage image(40, 48, QImage::Format_RGBA8888);
     image.fill(Qt::transparent);

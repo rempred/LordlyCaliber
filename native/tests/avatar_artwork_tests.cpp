@@ -12,6 +12,41 @@ using namespace lordly;
 class AvatarArtworkTests : public QObject {
     Q_OBJECT
   private slots:
+    void reportedNpcPortraits() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto input=qEnvironmentVariable("LORDLY_PORTRAIT_PROJECT");
+            const auto output=qEnvironmentVariable("LORDLY_PORTRAIT_OUTPUT");
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(path.isEmpty() || input.isEmpty() || output.isEmpty() || tools.isEmpty())
+                QSKIP("Private report project, ROM, compiler and run-specific output required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);
+            const auto manifest=Project::readProject(input);
+            project.applyManifest(manifest,Project::SourcePolicy::ImportIntoCurrentRom);
+            QDir().mkpath(output);QTemporaryDir work;
+            project.saveFolder(QDir(output).filePath("project"));
+            auto reloaded=Project::fromRom(rom);
+            reloaded.applyManifest(Project::readProject(QDir(output).filePath("project")));
+            QCOMPARE(reloaded.manifest(),project.manifest());
+            const auto built=rebuild(project,tools,work.path());
+            const auto candidate=QDir(output).filePath(QFileInfo(path).fileName());
+            exportRom(project,built,candidate);
+            const auto exported=Rom::open(candidate);
+            auto crc=built.image;Rom::updateChecksum(crc);QCOMPARE(crc,built.image);
+            const auto classes=ClassData::load(exported);
+            const auto originalLibrary=AvatarLibrary::load(rom), library=AvatarLibrary::load(exported);
+            for(int id=165;id<186;++id)for(int variant=0;variant<2;++variant) {
+                const auto originalToken=u16(rom.bytes(),0x64be0+id*6+variant*2);
+                QCOMPARE(classes.dialoguePortraitToken(id,variant),originalToken);
+                QCOMPARE(library.words(originalToken),originalLibrary.words(originalToken));
+            }
+            QProcess node;node.start("node",{QFINDTESTDATA("portrait-selection-mips.cjs"),path,
+                QDir(output).filePath("npc-routing.json"),candidate});
+            QVERIFY(node.waitForFinished(30000));QVERIFY2(node.exitCode()==0,node.readAllStandardError().constData());
+            auto untouched=Project::fromRom(rom);QCOMPARE(rebuild(untouched,tools,work.path()).image,rom.bytes());
+            qInfo().noquote()<<"Reported project candidate:"<<candidate;
+        }catch(const std::exception &e){QFAIL(e.what());}
+    }
     void selectionAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
         if(path.isEmpty()) QSKIP("Private ROM required");
@@ -26,10 +61,10 @@ class AvatarArtworkTests : public QObject {
         QFile results(work.filePath("portraits.json")); QVERIFY(results.open(QIODevice::ReadOnly));
         const auto data=QJsonDocument::fromJson(results.readAll()).object();
         QCOMPARE(data["cards"].toArray().size(),165*165);
-        const auto portraits=data["portraits"].toArray(); QCOMPARE(portraits.size(),330);
+        const auto portraits=data["portraits"].toArray(); QCOMPARE(portraits.size(),372);
         for(const auto &v:portraits) {
             const auto row=v.toArray();
-            QCOMPARE(artwork.words(classes,row[0].toInt(),row[1].toInt()),library.words(quint16(row[2].toInt())));
+            QCOMPARE(artwork.dialogueWords(classes,row[0].toInt(),row[1].toInt()),library.words(quint16(row[2].toInt())));
         }
     }
     void imageMappingAndLivePreview() {
@@ -71,7 +106,7 @@ class AvatarArtworkTests : public QObject {
             project.setAvatarArtwork(edit.json());
             DialogueDrawing drawing(rom);
             drawing.setPortraitProvider([&](int id, bool variant) {
-                return project.avatarArtwork()->words(project.classData(), id, variant ? 1 : 0);
+                return project.avatarArtwork()->dialogueWords(project.classData(), id, variant ? 1 : 0);
             });
             auto decoded = [](const DialogueTexture &texture) {
                 QByteArray words(3840, 0);
@@ -84,7 +119,9 @@ class AvatarArtworkTests : public QObject {
             project.setAvatarArtwork(edit.json());
             QCOMPARE(decoded(drawing.portrait(1, false)), original);
             QCOMPARE(project.appendClass(1, "Preview portrait"), 165);
-            QCOMPARE(decoded(drawing.portrait(165, false)), original);
+            QCOMPARE(decoded(drawing.portrait(165, false)),
+                     AvatarLibrary::load(rom).words(u16(rom.bytes(), 0x64be0 + 165 * 6)));
+            QCOMPARE(project.avatarArtwork()->words(project.classData(), 165, 0), original);
         } catch (const Error &e) {
             QFAIL(e.what());
         }
@@ -131,6 +168,11 @@ class AvatarArtworkTests : public QObject {
             const auto reopenedRom = Rom::open(candidate);
             const auto actual = AvatarLibrary::load(reopenedRom);
             const auto actualClasses = ClassData::load(reopenedRom);
+            QProcess npcReference;
+            npcReference.start("node", {QFINDTESTDATA("portrait-selection-mips.cjs"), path,
+                work.filePath("npc-routing.json"), candidate});
+            QVERIFY(npcReference.waitForFinished(30000));
+            QVERIFY2(npcReference.exitCode() == 0, npcReference.readAllStandardError().constData());
             QCOMPARE(actual.members().size(), 144);
             QVERIFY(actual.placement());
             for (int id = 0; id < classes.entries().size(); ++id) {
@@ -316,9 +358,11 @@ class AvatarArtworkTests : public QObject {
             QCOMPARE(project.appendClass(1, "Portrait test"), 165);
             const auto built = rebuild(project, tools, work.path());
             DialogueDrawing added(Rom::fromBytes(built.image));
-            QCOMPARE(added.portrait(165, false).indices, drawing.portrait(1, false).indices);
-            QCOMPARE(added.portrait(165, false).palette, drawing.portrait(1, false).palette);
-            QVERIFY_THROWS_EXCEPTION(Error, added.portrait(166, false));
+            for (int id = 165; id < 186; ++id)
+                for (bool variant : {false, true}) {
+                    QCOMPARE(added.portrait(id, variant).indices, drawing.portrait(id, variant).indices);
+                    QCOMPARE(added.portrait(id, variant).palette, drawing.portrait(id, variant).palette);
+                }
         } catch (const Error &e) {
             QFAIL(e.what());
         }

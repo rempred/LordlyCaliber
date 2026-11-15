@@ -7,6 +7,7 @@ class AvatarArtwork {
   public:
     static AvatarArtwork load(const Rom &);
     QByteArray words(const ClassData &, int classId, int selector) const;
+    QByteArray dialogueWords(const ClassData &, int portraitId, int selector) const;
     QImage image(const ClassData &, int classId, int selector) const;
     void setWords(const ClassData &, int classId, int selector, const QByteArray &);
     void restore(int classId, int selector);

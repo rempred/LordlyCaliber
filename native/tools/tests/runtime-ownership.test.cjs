@@ -1,8 +1,21 @@
 'use strict';
 const assert=require('node:assert/strict'),test=require('node:test'),fs=require('node:fs'),path=require('node:path');
-const {claims,overlaps,check,fixedStorage,checkStorage}=require('../runtime-ownership.cjs');
+const {claims,overlaps,check,checkClaimCoverage,fixedStorage,checkStorage}=require('../runtime-ownership.cjs');
 const policies=JSON.parse(fs.readFileSync(path.join(__dirname,'../runtime-sharing.json'),'utf8'));
 test('catalogued independent exporters have explicit sharing contracts',()=>check(claims(),policies));
+test('movement replacements and cursor callers expose competing inner hooks',()=>{
+ const rows=claims();
+ for(const start of [0x43ad8,0x101ddc,0x124520,0x133700,0x133944,0x1960a8]){
+  const owner=rows.find(row=>row.group==='movement'&&row.start===start);
+  assert(owner&&owner.end>start+8,'whole native owner must be claimed');
+  assert.throws(()=>check([owner,{group:'new-inner-hook',name:'test',start:start+12,end:start+16}],{}),/Unreviewed/);
+ }
+ for(const start of [0x1038ac,0x1130c0,0x1134b0])
+  assert(rows.some(row=>row.group==='cursor-boundary'&&row.start===start&&row.end===start+4));
+ const actualWrites=[{start:0x1038ac,end:0x1038b0}];
+ checkClaimCoverage(actualWrites,rows,'cursor-boundary');
+ assert.throws(()=>checkClaimCoverage(actualWrites,rows.filter(row=>row.group!=='cursor-boundary'),'cursor-boundary'),/Uncatalogued/);
+});
 test('native fixed ROM storage and extension modules cannot overlap',()=>{
  const storage=fixedStorage();checkStorage(storage);
  assert(storage.rom.length>=31&&storage.ram.length>=6,'all current fixed storage families collected');

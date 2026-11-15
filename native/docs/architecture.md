@@ -1,5 +1,9 @@
 # Native Lordly Caliber
 
+Start with [architecture layers and export contracts](export-contracts.md) for
+the current ownership model, test expectations and known integration limits.
+The sections below retain feature-specific implementation history.
+
 ## Movement types (November 10)
 
 `MovementTypes` owns stable IDs, terrain rows, base speeds, behavior kinds and

@@ -25,7 +25,7 @@ struct ClassRuntimeBuild {
     std::optional<CursorBoundary> cursorBoundary;
     QByteArray resident, personalNamesCode, affinityOwner;
     bool removeResident = false;
-    quint32 dataRomOffset = 0, missionTableAddress = 0, campaignBridge = 0, bodyHeight = 0;
+    quint32 dataRomOffset = 0, missionTableAddress = 0, campaignBridge = 0, bodyHeight = 0, sceneLogic = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
     static constexpr quint32 directoryAddress = 0x80187e00;
     static constexpr int directoryCapacity = 10;
@@ -42,7 +42,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   bool customStoryFlags = false, const ConsumableTreeInput *consumableTrees = nullptr,
                   const QByteArray &missionTables = {}, const NewCampaignInput *campaign = nullptr,
                   bool wideIdleHeight = false, const MovementInput *movement = nullptr,
-                  const QSet<int> &cursorBoundaryKeys = {});
+                  const QSet<int> &cursorBoundaryKeys = {}, bool sceneLogic = false);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

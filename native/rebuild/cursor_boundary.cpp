@@ -1,13 +1,15 @@
 #include "rebuild/cursor_boundary.h"
+#include "engine/mission_tables.h"
 #include <QFile>
 namespace lordly {
 CursorBoundary buildCursorBoundary(const QSet<int> &keys, quint32 address, const Compiler &compiler, const QString &dir) {
     CursorBoundary p;
     p.address=address;p.keys=keys;p.bytes=QByteArray(CursorBoundary::headerSize,0);
-    p.bytes.replace(0,8,"LCCURS01");
-    put32(p.bytes,8,address+CursorBoundary::headerSize);put32(p.bytes,24,1);
+    static_assert(MissionTables::keyCount <= CursorBoundary::keySlots);
+    p.bytes.replace(0,8,"LCCURS02");
+    put32(p.bytes,8,address+CursorBoundary::headerSize);put32(p.bytes,24,2);
     for (int key:keys) {
-        if (key<=0 || key>=128 || key==39) throw Error("Invalid edited battlefield cursor key");
+        if (key<=0 || key>=MissionTables::keyCount || key==39) throw Error("Invalid edited battlefield cursor key");
         put8(p.bytes,64+key,1);
     }
     QFile source(":/game/movement/cursor-boundary.c");

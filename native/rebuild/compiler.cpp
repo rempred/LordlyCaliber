@@ -2,6 +2,7 @@
 #include "rebuild/encounter_owners.h"
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/scene_logic.h"
 #include "rebuild/new_campaign_runtime.h"
 #include "engine/deleted_content.h"
 #include "rebuild/goth_runtime.h"
@@ -870,7 +871,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     quint32 campaignBridge=0;
     const bool retailEventGates = p.sceneEvents() && RetailEventGate::needsRuntime(p.sceneEvents()->flagEdits());
     quint32 eventGateBridge = 0;
-    const bool customStoryFlags = (p.sceneEvents() && p.sceneEvents()->hasCustomFlags()) ||
+    const bool priorSceneLogic=hasSceneLogicRuntime(p.rom());
+    if(priorSceneLogic){p.loadScenePrograms();p.loadSceneEvents();}
+    const bool sceneLogic=needsSceneLogic(p);
+    quint32 sceneLogicEntry=0;
+    const bool customStoryFlags = sceneLogic || (p.sceneEvents() && p.sceneEvents()->hasCustomFlags()) ||
         (priorClassPlacement && priorClassPlacement->layout.customFlags);
     const bool itemTrees = p.consumableEffects() && (p.consumableEffects()->hasTrees() || p.consumableEffects()->hasVisuals());
     // An imported project can remove scenario metadata while the opened ROM
@@ -1166,7 +1171,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             data, compiler, directory, offset,
             customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
             residentBuilder, itemData ? &*itemData : nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
+            relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys, sceneLogic);
         // Codec/adapters can grow independently of the class records. Once the
         // complete linked size is known, move a growing non-tail allocation as
         // a whole and relink its ROM loader and optional encounter library.
@@ -1179,7 +1184,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes=buildClassRuntime(data,compiler,directory,offset,
                 customStoryFlags || expandedClasses || priorClassPlacement->saves.installed(),residentBuilder,
                 itemData?&*itemData:nullptr,capacityRuntime?&*capacityRuntime:nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys, sceneLogic);
         }
         // The save codec/adapters also grow a newly appended class allocation.
         // Reserve the squad library after the complete linked data, not just
@@ -1192,7 +1197,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             classes = buildClassRuntime(data, compiler, directory, offset,
                 customStoryFlags || expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
                 residentBuilder, itemData ? &*itemData : nullptr, capacityRuntime ? &*capacityRuntime : nullptr,
-                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys);
+                relocateAttacks ? &*p.attacks() : nullptr, relocateAffinity ? &affinity : nullptr, customStoryFlags, itemTreeInput ? &*itemTreeInput : nullptr, missionTables, &campaignStart, wideIdleHeight, movementInput ? &*movementInput : nullptr, cursorBoundaryKeys, sceneLogic);
         }
         if(custom && custom->indexRomOffset >= offset && quint64(offset)+classes.data.bytes.size()>custom->indexRomOffset)
             throw Error("Expanded army data overlaps the custom encounter library");
@@ -1200,6 +1205,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         cursorBoundary=classes.cursorBoundary;
         missionTableAddress = classes.missionTableAddress;
         campaignBridge=classes.campaignBridge;
+        sceneLogicEntry=classes.sceneLogic;
         classes.removeResident = (priorCustom.has_value() && !customSquads) ||
                                  (priorEventGates && !retailEventGates);
         const auto menus = expandedClasses
@@ -1576,6 +1582,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=writeDeletedContent(result.image,p.deletedContent());
     if(cursorBoundary){cursorBoundary->install(result.image);result.report << "Compiled ground-projected cursor limits for edited battlefield boundaries";}
     if(movementPlacement){installMovementRuntime(result.image,*movementPlacement);result.report << "Compiled movement types, terrain costs, speeds and squad priorities";}
+    if(sceneLogicEntry||priorSceneLogic){installSceneLogicRuntime(result.image,p.rom(),sceneLogicEntry);result.report << "Linked cutscene choices to saved story flags";}
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");
     Rom::updateChecksum(result.image);

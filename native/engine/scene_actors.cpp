@@ -298,6 +298,18 @@ void SceneActors::bindRow(int destination, int ordinal) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x22) {
+        // ROM 2A1610: only the middle float reaches Actor +12C. The other
+        // converted payloads are unused. Full-word -1 alone selects all slots.
+        if (args.size() != 4) throw Error("Actor yaw command requires four operands");
+        const bool all = args[0] == 0xffffffffU;
+        const int first = all ? 0 : qint16(args[0]), end = all ? 28 : qint16(args[0] + 1U);
+        if (first >= end) return true;
+        checkSlot(first); checkSlot(end - 1);
+        for (int slot = first; slot < end; ++slot)
+            if (actors_[slot]) actors_[slot]->setYawOffset(coordinate(args[2]));
+        return true;
+    }
     if (opcode == 0x9d) {
         if (args.size() != 2)
             throw Error("Actor height reset requires two operands");

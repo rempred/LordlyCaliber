@@ -31,6 +31,19 @@ QJsonObject classRelocationCatalog() {
         for (auto value : catalog["owners"].toArray()) {
             auto row = value.toObject();
             const int start = row["start"].toInt();
+            // The cached resolver has one caller: dialogue texture loader EAD04.
+            // Its byte IDs include NPCs 165–185, independently of added classes.
+            // Keep the generated address inventory factual; classify the consumer here.
+            if (start == 0x45bec) {
+                auto refs = row["references"].toArray();
+                for (int i = 0; i < refs.size(); ++i) {
+                    auto ref = refs[i].toObject();
+                    if (ref["group"] == "appearances") ref["group"] = "dialogueAppearances";
+                    refs[i] = ref;
+                }
+                row["references"] = refs;
+                bases["dialogueAppearances"] = double(0x8018ece0U);
+            }
             if (owners.contains(start)) {
                 auto prior = owners[start];
                 if (prior["size"] != row["size"] || prior["retailSha256"] != row["retailSha256"])
@@ -291,6 +304,7 @@ static QByteArray transformReferences(const ClassPlacement &placement, const QBy
     const QMap<QString, quint32> current = {
         {"classes", placement.layout.indexBase},
         {"appearances", placement.layout.appearances},
+        {"dialogueAppearances", placement.layout.dialogueAppearances()},
         {"directory", placement.directory},
         {"items", placement.layout.items ? placement.layout.items : 0x8018c400U}};
     auto result = bytes;
@@ -436,6 +450,8 @@ ClassData ClassData::loadRetail(const Rom &rom) {
     // belong to preceding native data, not an extra class. Retain them exactly.
     result.personalNames_ = PersonalNames::retail(rom);
     result.prefix_ = rom.bytes().mid(0x5dacc, recordSize);
+    result.dialogueTail_ = rom.bytes().mid(0x64be0 + retailCount * appearanceSize,
+                                         (256 - retailCount) * appearanceSize);
     if (result.prefix_.size() != recordSize)
         throw Error("Truncated class table prefix");
     for (int id = 0; id < retailCount; ++id) {
@@ -465,6 +481,11 @@ ClassData ClassData::load(const Rom &rom) {
     const auto bytes = rom.bytes().mid(placement->dataRomOffset, l.end - l.indexBase);
     ClassData result;
     result.prefix_ = bytes.first(72);
+    result.dialogueTail_ = l.dialogueAppearances() == l.appearances
+        ? rom.bytes().mid(0x64be0 + retailCount * appearanceSize,
+                          (256 - retailCount) * appearanceSize)
+        : bytes.mid(l.dialogueAppearances() - l.indexBase + retailCount * appearanceSize,
+                    (256 - retailCount) * appearanceSize);
     const auto namesOffset = l.names - l.indexBase;
     if (bytes.mid(namesOffset, 8) == "LCNAMES1") {
         const auto size = u32(bytes, namesOffset + 8);
@@ -515,8 +536,15 @@ void ClassData::set(int id, const ClassAsset &asset) {
     validate(asset);
     entries_[id] = asset;
 }
+quint16 ClassData::dialoguePortraitToken(int identity, int selector) const {
+    if (identity < 0 || identity > 255 || selector < 0 || selector > 1)
+        throw Error("Dialogue portrait is outside the native byte selector range");
+    return identity < retailCount ? u16(entries_[identity].appearance, selector * 2)
+        : u16(dialogueTail_, (identity - retailCount) * appearanceSize + selector * 2);
+}
 ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
-    if (entries_.size() < retailCount || entries_.size() > 256 || prefix_.size() != recordSize)
+    if (entries_.size() < retailCount || entries_.size() > 256 || prefix_.size() != recordSize ||
+        dialogueTail_.size() != (256 - retailCount) * appearanceSize)
         throw Error("Invalid class table");
     if ((ramBase & 15) || ramBase < 0x80000000U || ramEnd > 0x80400000U || ramBase >= ramEnd)
         throw Error("Class data needs an aligned allocation within 4 MB RDRAM");
@@ -536,6 +564,7 @@ ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
     allocate(recordSize, 16);
     layout.records = allocate(entries_.size() * recordSize, 4);
     layout.appearances = allocate(entries_.size() * appearanceSize, 16);
+    const auto dialogueAppearances = allocate(256 * appearanceSize, 16);
     layout.aliases = allocate(entries_.size(), 16);
     layout.names = allocate(0, 16);
     const auto personal = personalNames_.build(layout.names);
@@ -556,6 +585,8 @@ ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
     result.bytes = QByteArray(layout.end - ramBase, char(0));
     result.bytes.replace(0, prefix_.size(), prefix_);
     result.bytes.replace(layout.names - ramBase, personal.size(), personal);
+    result.bytes.replace(dialogueAppearances - ramBase + retailCount * appearanceSize,
+                         dialogueTail_.size(), dialogueTail_);
     for (int id = 0; id < entries_.size(); ++id) {
         const auto &entry = entries_[id];
         auto record = entry.record;
@@ -563,6 +594,9 @@ ClassDataImage ClassData::build(quint32 ramBase, quint32 ramEnd) const {
         result.bytes.replace(layout.records - ramBase + id * recordSize, recordSize, record);
         result.bytes.replace(layout.appearances - ramBase + id * appearanceSize, appearanceSize,
                              entry.appearance);
+        if (id < retailCount)
+            result.bytes.replace(dialogueAppearances - ramBase + id * appearanceSize,
+                                 appearanceSize, entry.appearance);
         put8(result.bytes, layout.aliases - ramBase + id, entry.namedAlias);
     }
     for (auto it = pointers.begin(); it != pointers.end(); ++it)

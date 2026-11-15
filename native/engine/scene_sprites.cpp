@@ -79,6 +79,21 @@ SpritePosePlayer SceneSprites::create(const QVector<quint32> &args) const {
 }
 bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &value,
                            const PreparedRotation &rotationSource) {
+    if(opcode==0x8f&&args.size()==3&&(args[2]&0xffff0000U)==0x4c4d0000U){
+        const int slot=args[2]&0xffff;checkSlot(slot);
+        value=sprites_[slot]&&motion_[slot].identity==identities_[slot]&&motion_[slot].duration>0;return true;
+    }
+    if(opcode==0x8e&&args.size()==2){
+        const auto kind=args[0]&0xffff0000U;
+        if(kind!=0x4c500000U&&kind!=0x4c510000U&&kind!=0x4c4d0000U&&kind!=0x4c4e0000U&&kind!=0x4c540000U)return false;
+        const int slot=args[0]&0xffff;checkSlot(slot);if(!sprites_[slot])throw Error("Place or move requires an existing sprite");
+        auto &m=motion_[slot];auto record=sprites_[slot]->record();
+        if(kind==0x4c500000U||kind==0x4c510000U){m={};put32(record,kind==0x4c500000U?0x24:0x28,kind==0x4c500000U?args[1]:0U-args[1]);sprites_[slot]=SpritePosePlayer(rom_,sprites_[slot]->art(),record);}
+        else if(kind==0x4c4d0000U){m={};m.identity=identities_[slot];m.toX=qint32(args[1]);}
+        else if(kind==0x4c4e0000U){m.toY=qint32(0U-args[1]);}
+        else {if(args[1]<1||args[1]>1800)throw Error("Sprite movement duration must be 1–1800 updates");m.fromX=m.lastX=qint32(u32(record,0x24));m.fromY=m.lastY=qint32(u32(record,0x28));m.duration=args[1];m.elapsed=0;}
+        return true;
+    }
     int width;
     switch (opcode) {
     case 0x46:
@@ -178,6 +193,12 @@ bool SceneSprites::advancePoses(int instructionBudget) {
             throw Error(sprite->error());
     }
     nextPoseSlot_ = 0;
+    for(int slot=0;slot<30;++slot){
+        auto &m=motion_[slot];if(!sprites_[slot]||m.identity!=identities_[slot]||m.duration<=0)continue;
+        ++m.elapsed;const int x=m.fromX+(m.toX-m.fromX)*m.elapsed/m.duration,y=m.fromY+(m.toY-m.fromY)*m.elapsed/m.duration;
+        auto r=sprites_[slot]->record();put32(r,0x24,u32(r,0x24)+quint32(x-m.lastX));put32(r,0x28,u32(r,0x28)+quint32(y-m.lastY));
+        sprites_[slot]=SpritePosePlayer(rom_,sprites_[slot]->art(),r);m.lastX=x;m.lastY=y;if(m.elapsed>=m.duration)m.duration=0;
+    }
     return true;
 }
 QVector<SceneSpriteDraw> SceneSprites::draws(qint32 renderPass, quint8 special) const {

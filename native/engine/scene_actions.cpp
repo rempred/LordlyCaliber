@@ -60,6 +60,28 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
                          qint64 maximum = 2147483647LL, int offset = 0) {
             action.fields << SceneActionField{name, offset, operand, scale, minimum, maximum};
         };
+        const quint32 tag=c.opcode==0x8e?c.operands[0]&0xffff0000U:0;
+        if((tag==0x4c500000U||tag==0x4c4d0000U)&&i+1<commands.size()&&commands[i+1].opcode==0x8e&&
+            commands[i+1].operands[0]==c.operands[0]+0x10000U){
+            const bool moving=tag==0x4c4d0000U;
+            if(moving&&(i+2>=commands.size()||commands[i+2].opcode!=0x8e||commands[i+2].operands[0]!=(0x4c540000U|(c.operands[0]&0xffff))))continue;
+            action.name=moving?"Move sprite":"Place sprite";action.commandCount=moving?3:2;
+            field("Sprite slot",0,1,0,29);action.fields.last().bias=tag;
+            field("X",1,1,-32767,32767);field("Y",1,1,-32767,32767,1);
+            if(moving)field("Duration (updates)",1,1,1,1800,2);
+            result<<action;i+=action.commandCount-1;continue;
+        }
+        if(c.opcode==0x8e && (c.operands[0]&0xffff0000U)==storyFlagTag && c.operands[1]<=2){
+            action.name="Set story flag";field("Flag",0,1,0,767);action.fields.last().bias=storyFlagTag;
+            field("State",1,1,0,2);result<<action;continue;
+        }
+        if(i+3<commands.size()&&c.opcode==0&&commands[i+1].opcode==0x80000002&&commands[i+2].opcode==0x80000000&&
+           commands[i+3].opcode==0x8f&&QSet<quint32>{storyFlagTag,0x4c4d0000U}.contains(commands[i+3].operands[2]&0xffff0000U)){
+            const bool flag=(commands[i+3].operands[2]&0xffff0000U)==storyFlagTag;
+            action.name=flag?"Wait for story flag":"Wait for sprite movement";action.commandCount=4;action.timing=SceneActionTiming::Completion;
+            field(flag?"Flag":"Sprite slot",2,1,0,flag?767:29,3);action.fields.last().bias=flag?storyFlagTag:0x4c4d0000U;
+            if(flag)field("State",1,1,0,1,3);result<<action;i+=3;continue;
+        }
         if (action_detail::completeImageTransitionWait(program, i)) {
             action.name = "Wait for image transition";
             action.commandCount = 4;
@@ -301,7 +323,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Portrait side", 7, 1, 0, 1);
             field("Mirror portrait", 8, 1, 0, 1);
             field("Pointer edge", 9, 1, 0, 1);
-            field("Portrait class (-1 uses Actor, 0 hides)", 10, 1, -1, 255);
+            field("Portrait ID (-1 uses Actor, 0 hides)", 10, 1, -1, 255);
             field("Portrait variant", 11, 1, 0, 1);
             field("Placement (0 follows Actor, 1 fixed)", 12, 1, 0, 1);
             break;
@@ -447,6 +469,8 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
             result.commands[action.command + f.commandOffset].operands[f.operand] = replacement;
             for (const auto &[offset, operand] : f.mirrors)
                 result.commands[action.command + offset].operands[operand] = replacement;
+            if(field==0&&(action.name=="Place sprite"||action.name=="Move sprite"))
+                for(int i=1;i<action.commandCount;++i){auto &slot=result.commands[action.command+i].operands[0];slot=(slot&0xffff0000U)|(replacement&0xffff);}
             if (action.name == "Place Actor") {
                 auto &args = result.commands[action.command].operands;
                 args[1] = args[3] == quint32(-1000) && args[4] == quint32(-1000) ? quint32(-999) : args[3];

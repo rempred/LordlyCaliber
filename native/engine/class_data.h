@@ -25,6 +25,12 @@ struct ClassDataLayout {
     int count = 0;
     quint32 items = 0;
     int itemCount = 0;
+    // New allocations reserve a byte-indexed dialogue table before aliases.
+    // Older exports used the class table for both consumers.
+    quint32 dialogueAppearances() const {
+        const quint32 start = (appearances + count * 6 + 15U) & ~15U;
+        return aliases >= start + 256 * 6 ? start : appearances;
+    }
 };
 struct ClassDataImage {
     ClassDataLayout layout;
@@ -81,6 +87,7 @@ class ClassData {
     void setPersonalNames(const PersonalNames &names) { personalNames_ = names; }
     int append(int templateId, const QByteArray &encodedName);
     void set(int id, const ClassAsset &asset);
+    quint16 dialoguePortraitToken(int identity, int selector) const;
     // Menu class for a newly created character using this class's default.
     // Existing characters can have a different current class.
     int defaultPromotionClass(int id) const;
@@ -104,6 +111,7 @@ class ClassData {
     QByteArray movementPriority_;
     PersonalNames personalNames_;
     QByteArray prefix_;
+    QByteArray dialogueTail_;
     QVector<ClassAsset> entries_;
 };
 } // namespace lordly

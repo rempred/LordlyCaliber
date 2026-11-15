@@ -40,9 +40,23 @@ for (const id of [1, 277, ...Array.from({length:fixture.records.length-278}, (_,
   assert.equal(m.get('a1'), rom.readUInt32BE(0x237431c)-0x594280);
 }
 const last = fixture.records.length-1, payload = 0x80350000, descriptor = 0x80187444;
+let consumableChecks=0;
+if(fixture.original) {
+  const original=fs.readFileSync(fixture.original);
+  if(original.readUInt32BE(0)===0x37804012)original.swap16();
+  for(let id=1;id<=44;++id) {
+    // Same numeric IDs, different native table and getter family. Original
+    // consumable bytes, not equipment metadata, supply the expected values.
+    m.set('a0',id);m.call(0x8016f500);
+    assert.equal(m.get('v0'),original[0x645cc+id*12+4]);
+    m.set('a0',id);m.call(0x8016f4e0);
+    assert.equal(m.get('v0'),original.readUInt32BE(0x645cc+id*12));
+    consumableChecks+=2;
+  }
+}
 m.w16(0x80196b00,last); m.w8(0x80196b03,12); m.w16(0x80193bf8+42,last);
 m.set('a0',payload); m.set('a1',descriptor); m.call(0x80074494,0x80000100,5000000);
 m.w16(0x80196b00,0); m.w16(0x80193bf8+42,0);
 m.set('a0',payload); m.set('a1',descriptor); m.call(0x800742f4,0x80000100,5000000);
 assert.equal(m.r16(0x80196b00),last); assert.equal(m.r8(0x80196b03),12); assert.equal(m.r16(0x80193bf8+42),last);
-console.log(JSON.stringify({getters, loader:'PASS', descriptionRouting:'PASS', originalSaveRoundTrip:'PASS', ramBytes:0x400000}));
+console.log(JSON.stringify({getters,consumableChecks,lastEquipment:last,loader:'PASS',descriptionRouting:'PASS',originalSaveRoundTrip:'PASS',ramBytes:0x400000}));

@@ -1,5 +1,6 @@
 #include "engine/cursor_boundary.h"
 #include "engine/class_data.h"
+#include "engine/mission_tables.h"
 #include "engine/promotion.h"
 namespace lordly {
 std::optional<CursorBoundary> CursorBoundary::read(const Rom &rom) {
@@ -9,22 +10,35 @@ std::optional<CursorBoundary> CursorBoundary::read(const Rom &rom) {
     const auto placement = ClassPlacement::read(rom);
     if (!placement) return {};
     const auto entry = 0x80000000U | ((call & 0x3ffffffU) << 2);
-    if (entry < placement->layout.indexBase + headerSize || entry >= placement->layout.end) return {};
-    const auto offset = placement->dataRomOffset + entry - placement->layout.indexBase - headerSize;
-    const auto header = image.mid(offset, headerSize);
-    if (!header.startsWith("LCCURS01")) return {};
+    if (entry < placement->layout.indexBase || entry >= placement->layout.end) return {};
+    int storedHeaderSize = 0;
+    quint32 offset = 0;
+    QByteArray header;
+    // v1 used 128 key slots. Retain read/canonicalization support so existing
+    // patched inputs can be rebuilt into the full unsigned-key layout.
+    for (int candidate : {headerSize, 192}) {
+        if (entry < placement->layout.indexBase + candidate) continue;
+        offset = placement->dataRomOffset + entry - placement->layout.indexBase - candidate;
+        header = image.mid(offset, candidate);
+        if (header.startsWith(candidate == headerSize ? "LCCURS02" : "LCCURS01")) {
+            storedHeaderSize = candidate;
+            break;
+        }
+    }
+    if (!storedHeaderSize) return {};
     const auto size = u32(header, 12);
-    if (u32(header,8) != entry || u32(header,24) != 1 || size < headerSize || size % 16 ||
-        quint64(entry) - headerSize + size > placement->layout.end)
+    if (u32(header,8) != entry || u32(header,24) != (storedHeaderSize == headerSize ? 2U : 1U) ||
+        size < quint32(storedHeaderSize) || size % 16 ||
+        quint64(entry) - storedHeaderSize + size > placement->layout.end)
         throw Error("Invalid battlefield cursor allocation");
     CursorBoundary p;
-    p.address = entry - headerSize;
+    p.address = entry - storedHeaderSize;
     p.bytes = image.mid(offset,size);
     auto check = p.bytes;
     put32(check,16,0);
     if (crc32(check) != u32(p.bytes,16)) throw Error("Battlefield cursor checksum failed");
-    for (int key=0;key<128;++key) {
-        if (u8(header,64+key)>1 || ((key==0 || key==39) && u8(header,64+key)))
+    for (int key=0;key<storedHeaderSize-64;++key) {
+        if (u8(header,64+key)>1 || ((key==0 || key==39 || key>=MissionTables::keyCount) && u8(header,64+key)))
             throw Error("Invalid battlefield cursor map key");
         if (u8(header,64+key)) p.keys.insert(key);
     }

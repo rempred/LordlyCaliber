@@ -4,7 +4,9 @@
 #include <optional>
 namespace lordly {
 struct CursorBoundary {
-    static constexpr int headerSize = 192;
+    // The game's scenario key is an unsigned byte. Keep a slot for every value,
+    // including the added missions above 127; validate authored keys separately.
+    static constexpr int keySlots = 256, headerSize = 64 + keySlots;
     QByteArray bytes;
     QSet<int> keys;
     quint32 address = 0;

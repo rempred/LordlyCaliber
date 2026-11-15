@@ -135,11 +135,32 @@ for(let t=0;t<256;++t) {
 console.log(JSON.stringify({categories:256,equipmentRestrictions:'PASS',shopSortCases:20,
   combatAttackScores:scores,damage:'PASS',categoryNames:'PASS',limit:'Headless routines; no rendered battle or emulator playthrough.'}));
 if(fixture.help) {
+  // The retail bank also contains consumable categories and movement help.
+  // Weapon types may reuse those numeric rows only in their PRIVATE resource.
+  // Compare the other native dispatch paths with the original ROM, rather than
+  // deriving their expected destination from the expanded weapon implementation.
+  const sharedAt=0x2377c5a,sharedSize=original.readUInt32BE(sharedAt)+4;
+  assert.deepEqual(built.subarray(sharedAt,sharedAt+sharedSize),
+                   original.subarray(sharedAt,sharedAt+sharedSize),
+                   'original shared help resource is preserved');
+  function dispatch(c,entry,value,address,word=false) {
+    if(word)c.w32(address,value);else c.w16(address,value);
+    c.set('s1',actor);c.call(entry,0x80180544);
+    return [c.get('a1'),c.get('a2')];
+  }
+  for(let id=1;id<=44;++id)
+    assert.deepEqual(dispatch(m,0x80180428,id,0x801939de),
+                     dispatch(retail,0x80180428,id,0x801939de),
+                     `consumable ${id} retains its original help bank and row`);
+  for(let row=0;row<117;++row)
+    assert.deepEqual(dispatch(m,0x801804cc,row,0x801939e4,true),
+                     dispatch(retail,0x801804cc,row,0x801939e4,true),
+                     `shared help row ${row} retains its original bank`);
   m.load(0x803b0000,Buffer.from(fixture.help,'base64'));
   const helpKey=fixture.metadataRom+built.readUInt32BE(fixture.metadataRom+20)-0x594280;
   m.trap(0x8009dd38,c=>{assert.equal(c.get('a0'),helpKey);c.set('v0',0x803b0000);});
   m.trap(0x800712c4,()=>{});
-  for(const t of [6,26,254].filter(t=>fixture.categories[t])) {
+  for(const t of Object.keys(fixture.categories).map(Number)) {
     m.w8(itemsBase+16+fixture.first*32,t);m.w16(0x801939de,fixture.first);m.set('s1',actor);
     m.call(0x80180490,0x80180544);
     assert.equal(m.get('a1'),helpKey);assert.equal(m.get('a2'),76+t);
@@ -148,5 +169,5 @@ if(fixture.help) {
     const text=Buffer.from(m.ram.subarray(m.phys(actor),m.phys(m.get('v0'))));
     assert(text.includes(Buffer.from(fixture.categories[t])));
   }
-  console.log('PASS actual category-help routing and text-row selection, including highest category');
+  console.log('PASS every authored weapon-help row; all 44 consumable readers and 117 shared-help rows retain their original resource');
 }

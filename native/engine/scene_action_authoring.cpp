@@ -31,6 +31,8 @@ bool completeImageTransitionWait(const DirectorProgram &p, int index) {
 }
 int actionCompletion(const DirectorProgram &p, int index) {
     const auto &c = p.commands;
+    if(index>=0&&index+3<c.size()&&c[index].opcode==0&&c[index+1].opcode==0x80000002&&c[index+2].opcode==0x80000000&&
+       c[index+3].opcode==0x8f&&((c[index+3].operands[2]&0xffff0000U)==SceneActions::storyFlagTag || (c[index+3].operands[2]&0xffff0000U)==0x4c4d0000U))return 4;
     if (index < 0 || index + 4 >= c.size())
         return 0;
     if ((c[index].opcode == 7 || c[index].opcode == 0x1b) && c[index + 1].opcode == 0 &&
@@ -205,7 +207,8 @@ std::optional<quint32> ribbonReference(const DirectorCommand &c) {
 }
 } // namespace
 QMap<quint32, QString> SceneActions::kinds() {
-    return {{3, "Set Actor pose and position"},
+    return {{SetStoryFlag,"Set story flag"},{WaitStoryFlag,"Wait for story flag"},
+            {3, "Play Actor animation / set position"},
             {0x14, "Create Actor"},
             {0x2a, "Create class Actor"},
             {7, "Move Actor"},
@@ -223,6 +226,7 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x15, "Turn Actor"},
             {0x1c, "Room Actor channel"},
             {0x46, "Create scene sprite"},
+            {PlaceSprite, "Place sprite"}, {MoveSprite, "Move sprite"}, {WaitSprite, "Wait for sprite movement"},
             {0x76, "Pan and zoom image"},
             {0x50, "Image transition"},
             {0x54, "Wait for image transition"},
@@ -302,7 +306,17 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
     }
     auto result = p;
     QVector<DirectorCommand> added;
-    if (kind == 0x54) {
+    if(kind==SetStoryFlag){
+        added << command(0x8e,{storyFlagTag,1});
+    }else if(kind==PlaceSprite||kind==MoveSprite){
+        const quint32 tag=kind==PlaceSprite?0x4c500000U:0x4c4d0000U;
+        added<<command(0x8e,{tag,0})<<command(0x8e,{tag+0x10000U,0});
+        if(kind==MoveSprite)added<<command(0x8e,{0x4c540000U,quint32(qBound(1,ticks,1800))});
+    }else if(kind==WaitStoryFlag||kind==WaitSprite){
+        if(!point->canWait)throw Error(point->waitReason);
+        if(action_detail::counterStates(p)[before].arm>=0)throw Error("Place this trigger outside a timed wait.");
+        added << command(0) << command(0x80000002) << command(0x80000000) << command(0x8f,{0,kind==WaitStoryFlag?1U:0U,kind==WaitStoryFlag?storyFlagTag:0x4c4d0000U});
+    }else if (kind == 0x54) {
         if (!point->canWait)
             throw Error(point->waitReason);
         if (action_detail::counterStates(p)[before].arm >= 0)

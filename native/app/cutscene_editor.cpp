@@ -8,6 +8,8 @@
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
+#include "app/scene_timeline.h"
+#include "app/scene_key_picker.h"
 #include "app/scene_preview.h"
 #include "app/transform_preview.h"
 #include "engine/scene_import.h"
@@ -61,13 +63,8 @@ QPixmap pixmap(const RasterImage &r) {
 } // namespace
 CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project, QUndoStack *undo,
                                std::function<void()> changed)
-    : QWidget(parent), rom_(rom), project_(project), undo_(undo) {
+    : QWidget(parent), rom_(rom), project_(project), undo_(undo), changed_(changed) {
     auto layout = new QVBoxLayout(this);
-    auto note = new QLabel(
-        "Edit scene commands and dialogue, inspect background resources and actor poses. "
-        "Full-scene playback is being integrated.");
-    note->setWordWrap(true);
-    layout->addWidget(note);
     auto split = new QSplitter;
     layout->addWidget(split, 1);
     catalogTabs_ = new QTabWidget;
@@ -227,7 +224,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     if (project_) {
         scenePreview_->setPortraitProvider([project](int id, bool variant) {
             project->loadAvatarArtwork();
-            return project->avatarArtwork()->words(project->classData(), id, variant ? 1 : 0);
+            return project->avatarArtwork()->dialogueWords(project->classData(), id, variant ? 1 : 0);
         });
         actorInspector->setSpriteLibrary([project, undo, changed](SpriteAsset asset) {
             auto library = project->sprites();
@@ -288,6 +285,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                         previous = next;
                         const auto edits = artwork();
                         scenePreview_->setArtwork(edits);
+                        if(keyPicker_)keyPicker_->setArtwork(edits);
                         actorInspector->setArtwork(edits);
                     }
                 });
@@ -300,7 +298,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         project ? new DialogueInspector(project, undo, changed) : new DialogueInspector(rom_);
     pages->addTab(dialogue, "Dialogue");
     connect(pages, &QTabWidget::currentChanged, this, [this, pages] {
-        if (project_ && pages->currentWidget() == scenePreview_)
+        if (project_ && (pages->currentWidget() == scenePreview_ || pages->currentWidget() == workspace_))
             scenePreview_->setDialogues(project_->dialogues());
     });
     commands_->setToolTip(
@@ -336,8 +334,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                     if (next == previous)
                         return;
                     previous = next;
-                    if (!invalidSceneInput())
+                    if (!invalidSceneInput()) {
+                        refreshEventRows();
+                        filterScenes();
                         selectScene();
+                    }
                 });
     }
     if (project_) {
@@ -419,7 +420,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         connect(actionEditor_, &SceneActionEditor::choosePosition, this,
                 [this, pages](int command, int slot) {
                     if (invalidSceneInput()) return;
-                    pages->setCurrentWidget(scenePreview_);
+                    pages->setCurrentWidget(workspace_ ? workspace_ : scenePreview_);
                     scenePreview_->beginPositionPick(command, slot);
                 });
         connect(scenePreview_, &ScenePreview::positionPicked, this,
@@ -462,7 +463,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             selectImage(assets_->currentItem()->data(Qt::UserRole).toString());
     });
     connect(catalogTabs_, &QTabWidget::currentChanged, this, [this, pages](int tab) {
-        pages->setTabEnabled(1, tab == 0);
+        if(commandEditor_)pages->setTabEnabled(pages->indexOf(commandEditor_->parentWidget()), tab == 0);
         if (actionEditor_) pages->setTabEnabled(pages->indexOf(actionEditor_), tab == 0);
         mode_->setEnabled(tab == 0);
         requests_->setEnabled(tab == 0);
@@ -484,6 +485,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         item->setData(Qt::UserRole, asset.id);
         item->setToolTip(asset.container + " · resource " + hex(asset.key));
     }
+    createWorkspace(pages);
+    connect(findChild<QLineEdit *>("cutsceneScenesSearch"), &QLineEdit::textChanged, this, [this]{filterScenes();});
     struct Result {
         std::optional<ScenePrograms> value;
         QString error;
@@ -569,12 +572,9 @@ void CutsceneEditor::reloadScenes(SceneId preferred) {
             for (const auto row : resource.selectors)
                 selectors << QString::number(row);
             const auto name = programs().displayName(id);
-            auto item =
-                new QListWidgetItem(name + "\n" +
-                                        (id.authoredId.isEmpty() ? hex(resource.envelope + 4)
-                                                                 : QString("Authored scene")) +
-                                        " · selectors " + selectors.join(", "),
-                                    scenes_);
+            auto item = new QListWidgetItem(name, scenes_);
+            item->setToolTip((id.authoredId.isEmpty() ? hex(resource.envelope+4) : QString("Authored scene")) +
+                             " · selectors " + selectors.join(", "));
             item->setData(Qt::UserRole, id.nativeKey);
             item->setData(Qt::UserRole + 1, id.authoredId);
             item->setHidden(search && !item->text().contains(search->text(), Qt::CaseInsensitive));
@@ -591,6 +591,7 @@ void CutsceneEditor::reloadScenes(SceneId preferred) {
         }
     }
     scenes_->setCurrentRow(selected);
+    filterScenes();
     selectScene();
 }
 void CutsceneEditor::createScene(bool blank) {
@@ -644,6 +645,8 @@ void CutsceneEditor::createScene(bool blank) {
         const auto created = next.createScene(name->text(), source, blank);
         pushSceneProgramChange(project_, undo_, blank ? "Create scene" : "Duplicate scene", next);
         findChild<QLineEdit *>("cutsceneScenesSearch")->clear();
+        // A new scene has no event-row reference until it is assigned to a launch.
+        if(eventRows_)eventRows_->setCurrentIndex(0);
         reloadScenes(created);
         scenes_->scrollToItem(scenes_->currentItem());
     } catch (const std::exception &e) {
@@ -693,7 +696,7 @@ void CutsceneEditor::removeScene() {
 void CutsceneEditor::selectScene() {
     if (invalidSceneInput())
         return;
-    if (!directors_ || !scenes_->currentItem() || catalogTabs_->currentIndex() != 0)
+    if (!directors_ || !scenes_->currentItem() || scenes_->currentItem()->isHidden() || catalogTabs_->currentIndex() != 0)
         return;
     const auto key = selectedScene();
     transformPreview_->clear();
@@ -725,6 +728,7 @@ void CutsceneEditor::selectScene() {
         backgrounds_.modeEvidence =
             QString("Preview unavailable: %1").arg(QString::fromUtf8(e.what()));
     }
+    if(timeline_)timeline_->setProgram(key,scene.program);
     scenePreview_->selectScene(programs(), key, backgrounds_.mode,
                                project_ ? project_->dialogues() : std::optional<Dialogues>{},
                                project_ ? project_->sceneEvents() : std::optional<SceneEvents>{});

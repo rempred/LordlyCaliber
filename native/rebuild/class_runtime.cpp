@@ -1,5 +1,6 @@
 #include "engine/scenario_member_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/scene_logic.h"
 #include "rebuild/attack_runtime.h"
 #include "rebuild/capacity_runtime.h"
 #include "rebuild/leader_affinity.h"
@@ -27,7 +28,7 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
                   const ItemData *items, CapacityRuntimeBuild *capacity, const AttackData *attacks,
                   const LeaderAffinity *affinity, bool customStoryFlags, const ConsumableTreeInput *consumableTrees,
                   const QByteArray &missionTables, const NewCampaignInput *campaign,
-                  bool wideIdleHeight, const MovementInput *movement, const QSet<int> &cursorBoundaryKeys) {
+                  bool wideIdleHeight, const MovementInput *movement, const QSet<int> &cursorBoundaryKeys, bool sceneLogic) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (items) {
@@ -171,6 +172,15 @@ buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QStr
         });
         result.data.bytes+=result.movement->data;result.data.layout.end=result.data.layout.indexBase+result.data.bytes.size();
     }
+    if (sceneLogic) {
+        if(!result.saves)throw Error("Cutscene flags require the saved story-flag runtime");
+        while(result.data.bytes.size()%16)result.data.bytes.append(char(0));
+        const auto module=buildSceneLogicRuntime(compiler,directory,result.data.layout.indexBase+result.data.bytes.size(),
+            result.saves->code.entries.value("lc_event_story_flag_get"),result.saves->code.entries.value("lc_event_story_flag_set"));
+        result.sceneLogic=module.entries.value("func_00284288");result.data.bytes+=module.bytes;
+        result.data.layout.end=result.data.layout.indexBase+result.data.bytes.size();
+        if(result.data.layout.end>0x80400000U)throw Error("Cutscene story logic exceeds permanent game storage");
+    }
     if (customStoryFlags) {
         while (result.data.bytes.size() % 16) result.data.bytes.append(char(0));
         QByteArray metadata(32, 0);
@@ -299,12 +309,15 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     const QMap<QString, quint32> nextBases = {
         {"classes", build.data.layout.indexBase},
         {"appearances", build.data.layout.appearances},
+        {"dialogueAppearances", build.data.layout.dialogueAppearances()},
         {"directory", build.placement.directory},
         {"items", build.data.layout.items ? build.data.layout.items : 0x8018c400U}};
     const QMap<QString, quint32> previousBases = {
         {"classes", prior ? prior->layout.indexBase : quint32(original["classes"].toDouble())},
         {"appearances",
          prior ? prior->layout.appearances : quint32(original["appearances"].toDouble())},
+        {"dialogueAppearances", prior ? prior->layout.dialogueAppearances()
+                                     : quint32(original["dialogueAppearances"].toDouble())},
         {"directory", prior ? prior->directory : quint32(original["directory"].toDouble())},
         {"items", prior && prior->layout.items ? prior->layout.items : 0x8018c400U}};
     const QMap<QString, quint32> nextCalls = {

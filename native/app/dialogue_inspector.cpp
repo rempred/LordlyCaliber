@@ -95,7 +95,7 @@ DialogueInspector::DialogueInspector(Project *project, QUndoStack *undo,
     project_ = project;
     preview_->setPortraitProvider([project](int id,bool variant) {
         project->loadAvatarArtwork();
-        return project->avatarArtwork()->words(project->classData(),id,variant?1:0);
+        return project->avatarArtwork()->dialogueWords(project->classData(),id,variant?1:0);
     });
     undo_ = undo;
     changed_ = std::move(changed);

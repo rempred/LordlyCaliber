@@ -61,6 +61,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     });
     connect(clearInputs_, &QPushButton::clicked, this, &ScenePreview::clearPlaybackInputs);
     launchImageUi_ = new QWidget;
+    launchImageUi_->setObjectName("sceneLaunchImageSetup");
     auto launchRow = new QHBoxLayout(launchImageUi_);
     launchRow->setContentsMargins(0, 0, 0, 0);
     launchRow->addWidget(new QLabel("Launch image"));
@@ -72,6 +73,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     launchImageUi_->hide();
     layout->addWidget(launchImageUi_);
     launchContextUi_ = new QWidget;
+    launchContextUi_->setObjectName("sceneLaunchContextSetup");
     auto contextRow = new QHBoxLayout(launchContextUi_);
     contextRow->setContentsMargins(0, 0, 0, 0);
     contextRow->addWidget(new QLabel("Launch context"));
@@ -83,6 +85,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     layout->addWidget(launchContextUi_);
     launchContextUi_->hide();
     storyCastUi_ = new QWidget;
+    storyCastUi_->setObjectName("sceneCastSetup");
     auto castRow = new QGridLayout(storyCastUi_);
     castRow->setContentsMargins(0, 0, 0, 0);
     castRow->addWidget(new QLabel("Primary class"), 0, 0);
@@ -190,6 +193,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     storyCastUi_->hide();
     layout->addWidget(storyCastUi_);
     dialogueNamesUi_ = new QWidget;
+    dialogueNamesUi_->setObjectName("sceneNamesSetup");
     auto names = new QHBoxLayout(dialogueNamesUi_);
     names->setContentsMargins(0, 0, 0, 0);
     names->addWidget(new QLabel("Preview names"));
@@ -211,6 +215,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     dialogueNamesUi_->hide();
     layout->addWidget(dialogueNamesUi_);
     rewardUi_ = new QWidget;
+    rewardUi_->setObjectName("sceneRewardSetup");
     auto rewardRow = new QHBoxLayout(rewardUi_);
     rewardRow->setContentsMargins(0, 0, 0, 0);
     rewardRow->addWidget(new QLabel("Preview reward"));
@@ -312,7 +317,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     view_->setObjectName("sceneCanvas");
     view_->installEventFilter(this);
     view_->viewport()->installEventFilter(this);
-    view_->setToolTip("Click a visible Actor to select it; double-click to find its action. Drag to pan.");
+    view_->setToolTip("Click an Actor or sprite to select it; drag to place or move it. Double-click to find its action. Drag empty space to pan.");
     view_->setBackgroundBrush(QColor("#252931"));
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     layout->addWidget(view_, 1);
@@ -569,7 +574,58 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         current_->playback.imageControlsEnabled())
         step();
 }
+void ScenePreview::armAssetPlacement(bool sprite,int bank,int animation,int facing,int variant){
+    stop();cancelPositionPick();assetSprite_=sprite;assetBank_=bank;assetAnimation_=animation;assetFacing_=facing;assetVariant_=variant;
+    placementHelp_->setText(QString("Click in the scene to place %1 · bank %2 · key %3 · appearance %4. Escape cancels.").arg(sprite?"sprite":"Actor").arg(bank).arg(animation).arg(variant));
+    placementHelp_->show();cancelPlacement_->show();view_->setCursor(Qt::CrossCursor);
+}
+void ScenePreview::clearAssetPlacement(){assetBank_=-1;view_->unsetCursor();}
+QPointF ScenePreview::spriteScreenPosition(const Snapshot &s,int slot,SceneVector position)const{
+    const auto sprite=s.playback.sprites().sprite(slot);if(!sprite)throw Error("Select a visible sprite.");
+    const auto record=sprite->record();
+    const auto parent=mode_==0?s.playback.transforms().layerMatrix(u8(record,0x4a)):
+        SceneWorldDrawing::modelMatrix(s.playback.projection());
+    const auto camera=mode_==0?s.playback.cameras().actor():SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
+    SceneSpriteDraw draw;draw.slot=slot;draw.x=float(position.x);draw.y=float(-position.y);draw.scale=1;
+    return camera.projectPackedOrigin(SpriteMatrices::prepare(rom_,draw,parent).combined).screen;
+}
+SceneVector ScenePreview::spritePositionAt(const Snapshot &s,int slot,QPointF screen)const{
+    const auto record=s.playback.sprites().sprite(slot)->record();
+    SceneVector p{double(qint32(u32(record,0x24))),double(-qint32(u32(record,0x28))),0};
+    for(int i=0;i<12;++i){
+        const auto a=spriteScreenPosition(s,slot,p),error=screen-a;if(std::hypot(error.x(),error.y())<.1)return p;
+        const auto x=spriteScreenPosition(s,slot,p+SceneVector{1,0,0})-a,y=spriteScreenPosition(s,slot,p+SceneVector{0,1,0})-a;
+        const auto det=x.x()*y.y()-x.y()*y.x();if(std::abs(det)<1e-8)throw Error("This camera cannot resolve the sprite plane.");
+        p.x+=(error.x()*y.y()-error.y()*y.x())/det;p.y+=(x.x()*error.y()-x.y()*error.x())/det;
+        if(!std::isfinite(p.x)||!std::isfinite(p.y)||std::abs(p.x)>32767||std::abs(p.y)>32767)throw Error("Sprite position exceeds the scene range.");
+    }throw Error("The sprite position could not be resolved.");
+}
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if(assetBank_>=0){
+        if(event->type()==QEvent::KeyPress&&static_cast<QKeyEvent *>(event)->key()==Qt::Key_Escape){clearAssetPlacement();cancelPositionPick();return true;}
+        if(object==view_->viewport()&&(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease)){
+            if(event->type()==QEvent::MouseButtonPress)return true;
+            const auto mouse=static_cast<QMouseEvent *>(event);if(mouse->button()!=Qt::LeftButton)return true;
+            try{
+                if(!current_||preparing_)throw Error("Wait for the scene to be ready before placing an object.");
+                auto draft=*current_;const auto point=view_->mapToScene(mouse->position().toPoint());
+                if(!QRectF(0,0,320,240).contains(point))throw Error("Choose a point inside the scene.");
+                int slot=0,value=0;SceneVector position;
+                if(assetSprite_){
+                    while(slot<30&&draft.playback.sprites().sprite(slot))++slot;if(slot==30)throw Error("All sprite slots are occupied.");
+                    draft.playback.sprites().service(0x46,{quint32(slot),quint32(assetBank_),quint32(assetAnimation_),quint32(assetFacing_),0,0,0,100,quint32(assetVariant_)},value);
+                    position=spritePositionAt(draft,slot,point);
+                }else{
+                    while(slot<28&&draft.playback.actors().actor(slot))++slot;if(slot==28)throw Error("All Actor slots are occupied.");
+                    draft.playback.actors().service(0x14,{quint32(slot),quint32(assetBank_),quint32(assetAnimation_),quint32(assetFacing_),0,0,0,0,quint32(assetVariant_)},value);
+                    position=draft.playback.actors().positionAt(slot,point,draft.playback.cameras(),draft.playback.transforms(),draft.playback.lighting());
+                }
+                const int bank=assetBank_;clearAssetPlacement();
+                emit assetPlaced(assetSprite_,bank,assetAnimation_,assetFacing_,position,assetVariant_);
+            }catch(const std::exception &e){placementHelp_->setText(QString::fromUtf8(e.what()));}
+            return true;
+        }
+    }
     if (draggingActor_ >= 0) {
         if ((object == view_ || object == view_->viewport()) && event->type() == QEvent::KeyPress &&
             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
@@ -584,8 +640,8 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                                       QApplication::startDragDistance()) return true;
             try {
                 const auto &playback = current_->playback;
-                const auto position = playback.actors().positionAt(draggingActor_, dragOrigin_ + point - dragPress_,
-                    playback.cameras(), playback.transforms(), playback.lighting());
+                const auto position = draggingSprite_?spritePositionAt(*current_,draggingActor_,dragOrigin_+point-dragPress_):
+                    playback.actors().positionAt(draggingActor_, dragOrigin_ + point - dragPress_,playback.cameras(), playback.transforms(), playback.lighting());
                 if (!std::isfinite(position.x) || !std::isfinite(position.z) ||
                     std::abs(position.x) > 2147483. || std::abs(position.z) > 2147483.)
                     throw Error("Actor position exceeds game coordinates");
@@ -594,13 +650,15 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                 const auto z = quint32(qint32(std::round(position.z * 1000.)));
                 int value = 0;
                 const auto startX = x == quint32(-1000) && z == quint32(-1000) ? quint32(-999) : x;
-                draft.playback.actors().service(7, {quint32(draggingActor_), startX, z, x, z, 0, 0}, value);
+                if(draggingSprite_){auto record=draft.playback.sprites().sprite(draggingActor_)->record();put32(record,0x24,quint32(qint32(std::round(position.x))));put32(record,0x28,quint32(-qint32(std::round(position.y))));draft.playback.sprites().supplyRecord(draggingActor_,record);}
+                else draft.playback.actors().service(7, {quint32(draggingActor_), startX, z, x, z, 0, 0}, value);
                 render(draft, false);
                 dragPosition_ = position;
                 canvas_->clear(); selectionOutline_ = nullptr;
                 canvas_->addPixmap(QPixmap::fromImage(draft.playback.display().present(draft.frame)));
-                placementHelp_->setText(QString("Actor %1 · X %2 · Z %3. Release to place; Escape cancels.")
-                    .arg(draggingActor_).arg(position.x, 0, 'f', 3).arg(position.z, 0, 'f', 3));
+                placementHelp_->setText(QString("%1 %2 · X %3 · %4 %5. Release to place; Escape cancels.")
+                    .arg(draggingSprite_?"Sprite":"Actor").arg(draggingActor_).arg(position.x,0,'f',3)
+                    .arg(draggingSprite_?"Y":"Z").arg(draggingSprite_?position.y:position.z,0,'f',3));
             } catch (const std::exception &e) {
                 dragPosition_.reset();
                 placementHelp_->setText(QString::fromUtf8(e.what()));
@@ -609,10 +667,11 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
         }
         if (object == view_->viewport() && event->type() == QEvent::MouseButtonRelease) {
             const int slot = draggingActor_;
+            const bool sprite=draggingSprite_;
             const auto position = dragPosition_;
             cancelPositionPick();
             present();
-            if (position) emit actorPlacedAtPlayhead(slot, *position);
+            if (position) {if(sprite)emit spritePlacedAtPlayhead(slot,*position);else emit actorPlacedAtPlayhead(slot, *position);}
             return true;
         }
     }
@@ -657,12 +716,13 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                 current_->playback.director().selector() == selector_) {
                 const auto point = view_->mapToScene(*selectionPress_);
                 const auto target = objectAt({qFloor(point.x()), qFloor(point.y())});
-                if (target && target.kind == SceneObjectKind::Actor) {
+                if (target && (target.kind == SceneObjectKind::Actor || target.kind == SceneObjectKind::Sprite)) {
                     try {
                         const auto &playback = current_->playback;
-                        const auto &origin = playback.actors().actor(target.slot)->pose().actor().position;
-                        dragOrigin_ = playback.actors().projectPosition(target.slot, {origin.x, origin.y, origin.z},
-                            playback.cameras(), playback.transforms(), playback.lighting());
+                        draggingSprite_=target.kind==SceneObjectKind::Sprite;
+                        if(draggingSprite_){const auto r=playback.sprites().sprite(target.slot)->record();dragOrigin_=spriteScreenPosition(*current_,target.slot,{double(qint32(u32(r,0x24))),double(-qint32(u32(r,0x28))),0});}
+                        else {const auto &origin = playback.actors().actor(target.slot)->pose().actor().position;
+                            dragOrigin_ = playback.actors().projectPosition(target.slot, {origin.x, origin.y, origin.z},playback.cameras(), playback.transforms(), playback.lighting());}
                         stop();
                         selectedObject_ = target;
                         presentObjects();
@@ -1102,7 +1162,13 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         return true;
     }
     if (value && opcode == 0x8f && args.size() == 3) {
-        *value = 0; // ROM-only preview has no saved persistent story-flag bank.
+        const int flag=(args[2]&0xffff0000U)==0x4c430000U?int(args[2]&65535):int(qint16(args[2]+0xaa));
+        *value=next.storyFlags.value(flag,false);
+        return true;
+    }
+    if(opcode==0x8e&&args.size()==2&&(args[0]&0xffff0000U)==0x4c430000U){
+        const int flag=int(args[0]&65535);if(flag>=768||args[1]>2)throw Error("Invalid scene story-flag action");
+        next.storyFlags[flag]=args[1]==2?!next.storyFlags.value(flag,false):args[1]==1;
         return true;
     }
     // Declared isolated preview inputs. The gameplay owner is absent here.
@@ -1688,11 +1754,17 @@ void ScenePreview::setObjectNavigationEnabled(bool enabled) {
     presentSelectedObject();
 }
 void ScenePreview::cancelPositionPick() {
+    assetBank_ = -1;
     draggingActor_ = -1; dragPosition_.reset(); selectionPress_.reset();
     placementCommand_ = placementSlot_ = -1;
     placementHelp_->clear(); cancelPlacement_->hide();
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     view_->viewport()->unsetCursor();
+}
+QByteArray ScenePreview::selectedObjectRecord() const {
+    if(!current_||!selectedObject_)return {};
+    if(selectedObject_.kind==SceneObjectKind::Sprite){const auto sprite=current_->playback.sprites().sprite(selectedObject_.slot);return sprite?sprite->record():QByteArray{};}
+    const auto actor=current_->playback.actors().actor(selectedObject_.slot);return actor?actor->record():QByteArray{};
 }
 void ScenePreview::beginPositionPick(int command, int slot) {
     cancelPositionPick();

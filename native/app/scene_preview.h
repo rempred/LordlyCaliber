@@ -43,6 +43,10 @@ class ScenePreview : public QWidget {
     void setSaveProvider(std::function<const SaveDocument *()> provider);
     void setObjectNavigationEnabled(bool enabled);
     void beginPositionPick(int command, int slot);
+    void armAssetPlacement(bool sprite, int bank, int animation, int facing, int variant = 0);
+    void clearAssetPlacement();
+    SceneSelectionTarget selectedObject() const { return selectedObject_; }
+    QByteArray selectedObjectRecord() const;
     void seekToCommand(int word);
     void seekToUpdate(int tick);
     void reportExit();
@@ -59,6 +63,8 @@ class ScenePreview : public QWidget {
     void findSpriteAction(int selector, int slot);
     void positionPicked(int command, SceneVector position);
     void actorPlacedAtPlayhead(int slot, SceneVector position);
+    void spritePlacedAtPlayhead(int slot, SceneVector position);
+    void assetPlaced(bool sprite, int bank, int animation, int facing, SceneVector position, int variant);
     void timelineChanged(SceneId, const QMap<int, int> &commandTimes, int activeWord, int tick);
     void exitReached(SceneId, int word, const QSet<int> &actors, bool fade, int panUpdates, bool paused);
 
@@ -95,6 +101,7 @@ class ScenePreview : public QWidget {
         bool unfinishedFade = false, pausedMovement = false;
         bool automaticInputLastUpdate = false, automaticChoiceMoved = false;
         int automaticChoices = 0;
+        QMap<int,bool> storyFlags;
     };
     void restart();
     void seek(int tick);
@@ -170,6 +177,10 @@ class ScenePreview : public QWidget {
     int draggingActor_ = -1;
     QPointF dragPress_, dragOrigin_;
     std::optional<SceneVector> dragPosition_;
+    bool assetSprite_ = false, draggingSprite_ = false;
+    int assetBank_ = -1, assetAnimation_ = 0, assetFacing_ = 0, assetVariant_ = 0;
+    QPointF spriteScreenPosition(const Snapshot &, int slot, SceneVector) const;
+    SceneVector spritePositionAt(const Snapshot &, int slot, QPointF) const;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;

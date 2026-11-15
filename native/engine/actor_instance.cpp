@@ -137,6 +137,10 @@ void ActorInstance::setUniformScale(float value) {
     for (int i = 0; i < 3; ++i)
         put32(record_, 0x104 + i * 4, std::bit_cast<quint32>(value));
 }
+void ActorInstance::setYawOffset(float degrees) {
+    if (!std::isfinite(degrees)) throw Error("Actor yaw must be finite");
+    put32(record_, 0x12c, std::bit_cast<quint32>(degrees));
+}
 void ActorInstance::addHeight(float step) {
     const float base = pose_.actor().position.y + step;
     const bool secondary = !(u8(record_, 0x145) & 4);
