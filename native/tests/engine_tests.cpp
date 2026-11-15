@@ -4762,17 +4762,25 @@ class EngineTests : public QObject {
                 bytes[0x64be0 + id * 6 + field] = char(id + field);
         }
         bytes[0xdbe18 + 90] = 24;
+        // Distinct sentinels for the dialogue-only ID range: adding class165
+        // must not replace the original six-byte appearance for NPC165.
+        for (int id = 165; id < 256; ++id)
+            for (int field = 0; field < 6; ++field)
+                bytes[0x64be0 + id * 6 + field] = char((id * 7 + field * 3) ^ 0x5a);
         auto classes = ClassData::loadRetail(Rom::fromBytes(bytes));
         QCOMPARE(classes.entries().size(), 165);
         const auto retail = classes.build(0x80243db0);
         QCOMPARE(retail.layout.records, quint32(0x80243df8));
         QCOMPARE(retail.layout.appearances, quint32(0x80246c60));
-        QCOMPARE(retail.layout.aliases, quint32(0x80247040));
-        QCOMPARE(retail.layout.names, quint32(0x802470f0));
+        QCOMPARE(retail.layout.dialogueAppearances(), quint32(0x80247040));
+        // Dialogue's byte-sized IDs require a separate 256-by-six-byte bank.
+        constexpr quint32 dialogueBytes = 256 * 6;
+        QCOMPARE(retail.layout.aliases, quint32(0x80247040) + dialogueBytes);
+        QCOMPARE(retail.layout.names, quint32(0x802470f0) + dialogueBytes);
         // The shared Hero string and 256 personal-name assignments occupy
         // 0x450 bytes before the independent class-label strings.
-        QCOMPARE(retail.layout.discovery, quint32(0x80247550));
-        QCOMPARE(retail.layout.end, quint32(0x80247570));
+        QCOMPARE(retail.layout.discovery, quint32(0x80247550) + dialogueBytes);
+        QCOMPARE(retail.layout.end, quint32(0x80247570) + dialogueBytes);
         const auto names = PersonalNames::read(
             retail.bytes.mid(retail.layout.names-retail.layout.indexBase,0x450),retail.layout.names);
         QCOMPARE(names.names(), QVector<QByteArray>{"Hero"});
@@ -4789,6 +4797,8 @@ class EngineTests : public QObject {
         QCOMPARE(built.bytes.first(72), bytes.mid(0x5dacc, 72));
         QCOMPARE(built.bytes.mid(layout.discovery - layout.indexBase, 32), QByteArray(32, 0));
         QVERIFY(layout.end <= 0x80400000);
+        QCOMPARE(built.bytes.mid(layout.dialogueAppearances() - layout.indexBase, dialogueBytes),
+                 bytes.mid(0x64be0, dialogueBytes));
         for (int id = 0; id < 256; ++id) {
             auto source = id < 165 ? id : id == 165 ? 90 : 5;
             const auto record = 72 + id * 72;

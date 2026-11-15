@@ -66,7 +66,7 @@ class SceneWorkspaceTests : public QObject {
         banks->setCurrentIndex(banks->findData(7));for(int i=0;i<grid->count();++i)if(grid->item(i)->data(Qt::UserRole+1).toInt()==401){grid->setCurrentRow(i);grid->scrollToItem(grid->item(i),QAbstractItemView::PositionAtTop);break;}
         QTest::qWait(100);QVERIFY(host.grab().save("scene-key-bank7.png"));
     }
-    void initTestCase(){QVERIFY2(!qEnvironmentVariable("LORDLY_TEST_ROM").isEmpty(),"Pinned private ROM required");QFontDatabase::addApplicationFont(QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts/segoeui.ttf"));applyEditorTheme(*qApp);}
+    void initTestCase(){if(qEnvironmentVariable("LORDLY_TEST_ROM").isEmpty())QSKIP("Pinned private ROM required");QFontDatabase::addApplicationFont(QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts/segoeui.ttf"));applyEditorTheme(*qApp);}
     void reportedPlaybackAndLayout(){
         auto project=Project::fromRom(rom());project.loadScenePrograms();project.loadSceneEvents();
         QUndoStack undo;CutsceneEditor editor(project.rom(),nullptr,&project,&undo);editor.resize(1280,850);editor.show();
