@@ -1,5 +1,7 @@
 #include "engine/scenario_member_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "engine/rom_writer.h"
+#include "rebuild/export_contracts.h"
 #include "rebuild/scene_logic.h"
 #include "rebuild/attack_runtime.h"
 #include "rebuild/capacity_runtime.h"
@@ -452,60 +454,65 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         throw Error("Expanded class allocation would overwrite unrelated ROM data");
     QByteArray priorNames;
     if (prior) {
-        const auto at = prior->dataRomOffset + prior->layout.names - prior->layout.indexBase;
-        if (rom.bytes().mid(at,8)=="LCNAMES1") priorNames=rom.bytes().mid(at,u32(rom.bytes(),at+8));
+        const auto namesAt = prior->dataRomOffset + prior->layout.names - prior->layout.indexBase;
+        if (rom.bytes().mid(namesAt,8)=="LCNAMES1") priorNames=rom.bytes().mid(namesAt,u32(rom.bytes(),namesAt+8));
     }
     PersonalNames::verifyOwner(rom, priorNames);
     if (!build.affinityOwner.isEmpty() && !LeaderAffinity::load(rom).unavailable().isEmpty())
         throw Error("Cannot replace unrecognized combat-affinity code");
-    auto image = rom.bytes();
+    RomWriter writer(rom.bytes());
+    writer.derived({{0x10,0x18}});
+    const auto &image=writer.bytes();
     // Remove the authenticated field-exit call before reclaiming its code.
-    image.replace(missionExitDispatch, 16, canonicalMissionExitCode(image));
-    image.replace(PersonalNames::ownerOffset, PersonalNames::ownerSize, build.personalNamesCode);
+    writer.write("mission-exit-reset",missionExitDispatch,canonicalMissionExitCode(image));
+    writer.write("personal-names",PersonalNames::ownerOffset,build.personalNamesCode);
     if (prior && prior->residentBytes)
-        image.replace(prior->residentAddress - ClassPlacement::residentDelta, prior->residentBytes,
+        writer.write("class-storage",prior->residentAddress - ClassPlacement::residentDelta,
                       QByteArray(prior->residentBytes, 0));
     if (prior)
-        image.replace(prior->dataRomOffset, prior->layout.end - prior->layout.indexBase,
+        writer.write("class-storage",prior->dataRomOffset,
                       QByteArray(prior->layout.end - prior->layout.indexBase, char(-1)));
     if (prior && at == prior->dataRomOffset && end < quint64(image.size()) &&
         quint64(prior->dataRomOffset) + prior->layout.end - prior->layout.indexBase ==
             quint64(image.size()))
-        image.resize(qsizetype(end));
+        writer.resize("class-storage",qsizetype(end));
     if (end > quint64(image.size()))
-        image.append(QByteArray(qsizetype(end) - image.size(), char(-1)));
-    for (auto it = patches.begin(); it != patches.end(); ++it)
-        put32(image, it.key(), it.value());
+        writer.resize("class-storage",qsizetype(end));
+    writer.edit("class-references",[&](QByteArray &candidate) {
+        for (auto it = patches.begin(); it != patches.end(); ++it)
+            put32(candidate, it.key(), it.value());
+    });
     auto paddedCode = build.code.bytes;
     paddedCode.append(QByteArray(ClassPlacement::codeCapacity - paddedCode.size(), 0));
-    image.replace(ClassPlacement::codeRomOffset, paddedCode.size(), paddedCode);
+    writer.write("class-storage",ClassPlacement::codeRomOffset,paddedCode);
     auto placement = build.placement;
-    if (build.saves)
-        placement.saves =
-            installSaveRuntime(image, *build.saves, prior ? prior->saves : SavePlacement{});
+    if (build.saves) writer.edit("save-runtime",[&](QByteArray &candidate) {
+        placement.saves=installSaveRuntime(candidate,*build.saves,prior ? prior->saves : SavePlacement{});
+    }, exportOwners("save-runtime"));
     if (!build.resident.isEmpty())
-        image.replace(placement.residentAddress - ClassPlacement::residentDelta,
-                      build.resident.size(), build.resident);
-    if (placement.descriptionEntry)
-        installClassDescriptionRouting(image, prior ? prior->descriptionEntry : 0,
-                                       placement.descriptionEntry);
+        writer.write("class-storage",placement.residentAddress - ClassPlacement::residentDelta,build.resident);
+    if (placement.descriptionEntry) writer.edit("class-descriptions",[&](QByteArray &candidate) {
+        installClassDescriptionRouting(candidate,prior ? prior->descriptionEntry : 0,placement.descriptionEntry);
+    });
     if (build.data.layout.customFlags) {
-        put32(image, ClassPlacement::flagGetterSlot, build.placement.customFlagsGetter);
-        put32(image, ClassPlacement::flagSetterSlot, build.placement.customFlagsSetter);
+        writer.edit("story-flags",[&](QByteArray &candidate) {
+            put32(candidate,ClassPlacement::flagGetterSlot,build.placement.customFlagsGetter);
+            put32(candidate,ClassPlacement::flagSetterSlot,build.placement.customFlagsSetter);
+        });
     }
     const auto descriptor = placement.descriptor(build.compiledData, build.code.bytes);
-    image.replace(ClassPlacement::descriptorRomOffset, descriptor.size(), descriptor);
-    image.replace(at, bytes, build.compiledData);
+    writer.write("class-storage",ClassPlacement::descriptorRomOffset,descriptor);
+    writer.write("class-storage",at,build.compiledData);
     if (!build.affinityOwner.isEmpty())
-        image.replace(LeaderAffinity::offset, LeaderAffinity::size, build.affinityOwner);
-    if(build.consumableTrees)image=installConsumableTrees(image,*build.consumableTrees);
+        writer.write("leader-affinity",LeaderAffinity::offset,build.affinityOwner);
+    if(build.consumableTrees)writer.apply("consumable-trees",installConsumableTrees(image,*build.consumableTrees),exportOwners("consumable-trees"));
     if (build.attacks) {
         const auto old = rom.bytes().mid(AttackPlacement::descriptorOffset, AttackPlacement::descriptorSize);
         if (!AttackPlacement::read(rom) && old != QByteArray(AttackPlacement::descriptorSize, char(-1)))
             throw Error("The attack descriptor area contains unrelated data");
         const auto &p = *build.attacks;
         const auto h = p.descriptor(build.compiledData.mid(p.address - build.data.layout.indexBase, p.size));
-        image.replace(AttackPlacement::descriptorOffset, h.size(), h);
+        writer.write("attack-metadata",AttackPlacement::descriptorOffset,h);
     }
     if (menus) {
         const auto resource = ExpandedPromotionResource::decode(menus->container);
@@ -518,7 +525,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             if (!menus->owners.contains(owner.start) ||
                 menus->owners[owner.start].size() != owner.size)
                 throw Error("Class menu build is missing a complete owner");
-            image.replace(owner.start, owner.size, menus->owners[owner.start]);
+            writer.allow("promotion-menus","class-references",{{owner.start,owner.start+owner.size}});
+            writer.write("promotion-menus",owner.start,menus->owners[owner.start]);
         }
         const auto slot = rom.bytes().mid(ExpandedPromotionResource::romOffset,
                                           ExpandedPromotionResource::slotSize);
@@ -527,13 +535,12 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             std::any_of(slot.begin(), slot.end(), [](char byte) { return quint8(byte) != 255; }))
             throw Error("Expanded promotion allocation is occupied");
         if (priorPromotion.directGates)
-            image.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
-        image.replace(ExpandedPromotionResource::romOffset, menus->container.size(),
-                      menus->container);
+            writer.write("promotion-menus",0x27b0800,QByteArray(1024,char(-1)));
+        writer.write("promotion-menus",ExpandedPromotionResource::romOffset,menus->container);
         resource.inventory.verify(Rom::fromBytes(image),
                                   ClassRuntimeInventory::dataBases(build.data.layout));
     }
-    Rom::updateChecksum(image);
+    writer.edit("checksum",Rom::updateChecksum);
     ClassData::load(Rom::fromBytes(image));
     if (menus)
         Promotion::load(Rom::fromBytes(image));

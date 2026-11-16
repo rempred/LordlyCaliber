@@ -1,5 +1,6 @@
 #include "engine/cursor_boundary.h"
 #include "engine/project.h"
+#include "engine/rom_writer.h"
 #include "engine/movement_runtime.h"
 #include "engine/new_campaign.h"
 #include "engine/deleted_content.h"
@@ -173,20 +174,32 @@ const QVector<Field> &fields(Table table) {
 Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     rom.requireSupported();
     Project p;
+    RomWriter restoration(rom.bytes());
+    restoration.derived({{0x10,0x18}});
     if (!rom.revision()) {
         if (const auto cursor = CursorBoundary::read(rom)) {
             p.runtimeRom_ = rom;
-            rom = Rom::fromBytes(cursor->canonical(rom));
+            restoration.apply("remove-cursor-runtime",cursor->canonical(rom));
+            rom = Rom::fromBytes(restoration.bytes());
         }
         p.movementTypes_ = MovementTypes::load(rom);
         if (const auto movement = MovementPlacement::read(rom)) {
             if (!p.runtimeRom_) p.runtimeRom_ = rom;
-            rom = Rom::fromBytes(movement->canonical(rom));
+            restoration.apply("remove-movement-runtime",movement->canonical(rom));
+            rom = Rom::fromBytes(restoration.bytes());
         }
     }
     if (const auto capacity=CapacityPlacement::read(rom)) {
         if (!p.runtimeRom_) p.runtimeRom_=rom;
-        rom=capacity->canonical(rom);
+        // Movement saved the capacity version of each shared instruction.
+        // Restore capacity only at its authenticated recorded patch spans.
+        RomWriter::Ranges shared;
+        for(const auto &patch:capacity->patches)
+            shared.append({patch.site,patch.site+patch.after.size()});
+        restoration.allow("remove-capacity-runtime","remove-movement-runtime",shared);
+        const auto canonical=capacity->canonical(rom);
+        restoration.apply("remove-capacity-runtime",canonical.bytes());
+        rom=Rom::fromBytes(restoration.bytes(),canonical.sourcePath());
     }
     p.rom_ = std::move(rom);
     if (!p.rom_.revision()) {

@@ -9,6 +9,15 @@
 #include "engine/icon_artwork.h"
 #include "engine/army_artwork.h"
 #include "engine/animation_routes.h"
+#include "engine/body_selection.h"
+#include "engine/pose_runtime.h"
+#include "engine/body_visual_policy.h"
+#include "engine/body_markers.h"
+#include "engine/personal_names.h"
+#include "engine/persuasion.h"
+#include "engine/promotion.h"
+#include "engine/consumable_effects.h"
+#include "engine/weapon_types.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -32,7 +41,10 @@ const QJsonObject &catalog() {
 const QMap<QString, QStringList> groups{
     {"class-runtime", {"classes/relocations.json", "items/relocations.json", "classes/save-owners.json",
         "classes/text-owners.json", "items/text-owners.json", "combat-affinity", "consumable-trees",
-        "custom-story-flags", "encounters/custom-owners/catalog.json"}},
+        "custom-story-flags"}},
+    {"custom-encounters", {"encounters/custom-owners/catalog.json"}},
+    {"save-runtime", {"classes/save-owners.json"}},
+    {"consumable-trees", {"consumable-trees"}},
     {"descriptions", {"classes/text-owners.json", "items/text-owners.json", "location-descriptions"}},
     {"experience", {"tools/experience.json"}},
     {"shops", {"shops/owners.json"}},
@@ -81,11 +93,56 @@ ExportPlan::Ranges exportOwners(const QString &step) {
         result.append({CreatureRewards::ownerOffset, CreatureRewards::ownerOffset + CreatureRewards::ownerSize});
     if (step == "encounters")
         result.append({EncounterRate::romOffset, EncounterRate::romOffset + EncounterRate::codeSize});
+    const auto owner = [&](qsizetype at, qsizetype size) { result.append({at, at+size}); };
+    const auto jsonOwner = [&](const QJsonObject &o) {
+        owner(o["start"].toInteger(), o["size"].toInt());
+        for(const auto &v:o["tables"].toArray()) {
+            const auto t=v.toObject(); owner(t["start"].toInteger(),t["size"].toInt());
+        }
+    };
+    if(step=="class-runtime") owner(PersonalNames::ownerOffset,PersonalNames::ownerSize);
+    if(step=="body-height") owner(0x20d590,196);
+    if(step=="body-selection") {
+        owner(BodySelectionImage::offset,BodySelectionImage::size);
+        owner(LeaderSelectionImage::offset,LeaderSelectionImage::size);
+    }
+    if(step=="pose-runtime") {
+        owner(PoseRuntimeImage::poseOffset,PoseRuntimeImage::poseSize);
+        owner(PoseRuntimeImage::readerOffset,PoseRuntimeImage::readerSize);
+        owner(PoseRuntimeImage::widthsOffset,PoseRuntimeImage::widthsSize);
+    }
+    if(step=="body-markers") jsonOwner(BodyVisualPolicyImage::owner("00205C88"));
+    if(step=="body-visual-policy") {
+        for(const auto &o:BodyVisualPolicyImage::owners(true)) jsonOwner(o);
+        jsonOwner(BodyVisualPolicyImage::catalog()["query"].toObject());
+    }
+    if(step=="promotion-menus") {
+        const auto c=promotionOwners();
+        for(const auto *key:{"owners","expandedOwners"})
+            for(const auto &v:c[key].toArray()) jsonOwner(v.toObject());
+    }
+    if(step=="consumable-effects") owner(ConsumableEffects::romOffset,ConsumableEffects::codeSize);
+    if(step=="persuasion") owner(Persuasion::ownerOffset,Persuasion::ownerSize);
+    if(step=="scene-logic") owner(0x284288,8000);
+    if(step=="weapon-status") {
+        QFile f(":/game/items/weapon-hit.json");
+        if(!f.open(QIODevice::ReadOnly)) throw Error("Missing weapon hit owner");
+        const auto o=QJsonDocument::fromJson(f.readAll()).object();
+        owner(o["romOffset"].toString().toUInt(nullptr,0),o["size"].toInt());
+    }
+    if(step=="weapon-types") {
+        // The four classification owners are the same ones authenticated by
+        // removeWeaponTypes/compiledOwners; their class references are rebound.
+        for(const auto &v:classRelocationCatalog()["owners"].toArray()) {
+            const auto o=v.toObject(); const auto at=o["start"].toInteger();
+            if(at==0x458f0||at==0x45934||at==0x19b1b0||at==0x19b800) jsonOwner(o);
+        }
+    }
     const auto names = groups.value(step);
     for (const auto &entry : catalog()["claims"].toArray()) {
-        const auto owner = entry.toObject();
-        if (names.contains(owner["group"].toString()))
-            result.append({qsizetype(owner["start"].toInteger()), qsizetype(owner["end"].toInteger())});
+        const auto claim = entry.toObject();
+        if (names.contains(claim["group"].toString()))
+            result.append({qsizetype(claim["start"].toInteger()), qsizetype(claim["end"].toInteger())});
     }
     return result;
 }
@@ -109,13 +166,13 @@ void configureExportComposition(ExportPlan &plan) {
     // Custom encounters rebuild the same reward/dispatcher owners using the
     // configured table addresses plus their newly linked custom-squad services.
     const ExportPlan::Ranges rewardOwner{{CreatureRewards::ownerOffset, CreatureRewards::ownerOffset + CreatureRewards::ownerSize}};
-    plan.compose("class-runtime", "custom-rewards", rewardOwner);
-    plan.compose("class-runtime", "encounters", rewardOwner);
+    plan.compose("custom-encounters", "custom-rewards", rewardOwner);
+    plan.compose("custom-encounters", "encounters", rewardOwner);
     // Movement composes only the original table-copy/storm block, preserving
     // configured rewards and artwork elsewhere in this shared setup owner.
-    for (const auto &earlier : {"class-runtime", "encounters", "custom-rewards"})
+    for (const auto &earlier : {"class-runtime", "custom-encounters", "encounters", "custom-rewards"})
         plan.compose("movement", earlier, {{0x102db0,0x102e34}});
-    plan.compose("class-runtime", "encounters", {{EncounterRate::romOffset, EncounterRate::romOffset + EncounterRate::codeSize}});
+    plan.compose("custom-encounters", "encounters", {{EncounterRate::romOffset, EncounterRate::romOffset + EncounterRate::codeSize}});
     ExportPlan::Ranges shopReferences;
     for (const auto &value : shopConsumerOwners()) {
         const auto owner = value.toObject();
@@ -142,7 +199,8 @@ void configureExportComposition(ExportPlan &plan) {
         if ((range.begin >= CreatureRewards::ownerOffset && range.end <= CreatureRewards::ownerOffset + CreatureRewards::ownerSize) ||
             (range.begin >= EncounterRate::romOffset && range.end <= EncounterRate::romOffset + EncounterRate::codeSize))
             rewardCapacity.append(range);
-    plan.compose("army-capacity", "class-runtime", rewardCapacity);
+    for(const auto *earlier:{"class-runtime","custom-encounters","custom-rewards","encounters"})
+        plan.compose("army-capacity",earlier,rewardCapacity);
     ExportPlan::Ranges iconSites, armySites, animationSites;
     const auto addSites = [](ExportPlan::Ranges &ranges, const auto &sites) {
         for (const auto &site : sites) {
@@ -155,7 +213,7 @@ void configureExportComposition(ExportPlan &plan) {
     addSites(animationSites, AnimationRoutes::sites());
     // Resource exporters change only qualified resource-key operands in these
     // earlier owners. Their existing loaders validate each instruction/target.
-    for (const auto &earlier : {"class-runtime", "encounters", "custom-rewards", "shops", "scenarios"}) {
+    for (const auto &earlier : {"class-runtime", "custom-encounters", "encounters", "custom-rewards", "shops", "scenarios"}) {
         plan.compose("item-icons", earlier, iconSites);
         plan.compose("army-artwork", earlier, armySites);
         plan.compose("animation-routes", earlier, animationSites);
@@ -164,17 +222,39 @@ void configureExportComposition(ExportPlan &plan) {
     // complete function or caller. Preserve that direction, never merely order.
     for (const auto &earlier : {"descriptions", "shops", "game-rules", "class-runtime"})
         composeCatalog(plan, "mission-tables", earlier);
-    for (const auto &earlier : {"class-runtime", "shops", "mission-tables", "game-rules"})
+    for (const auto &earlier : {"class-runtime", "custom-encounters", "shops", "mission-tables", "game-rules"})
         composeCatalog(plan, "army-capacity", earlier);
-    for (const auto &earlier : {"class-runtime", "army-capacity", "animation-overrides", "high-attack"})
+    for (const auto &earlier : {"class-runtime", "custom-encounters", "army-capacity", "animation-overrides", "high-attack"})
         composeCatalog(plan, "attack-references", earlier);
     for (const auto &earlier : {"class-runtime", "army-capacity", "mission-tables", "game-rules"})
         composeCatalog(plan, "movement", earlier);
     for (const auto &earlier : {"game-rules", "mission-tables", "army-capacity"})
         composeCatalog(plan, "mission-runtime", earlier);
+    // Marker-aware equipment construction is compiled into the later full C
+    // owner. Body policy reads the already materialized animation directory.
+    plan.compose("body-visual-policy", "body-markers", exportOwners("body-markers"));
+    const ExportPlan::Ranges bodyDirectory{{BodyVisualPolicyImage::directoryOffset,BodyVisualPolicyImage::directoryOffset+4}};
+    plan.compose("animation-sequences", "body-markers", bodyDirectory);
+    for(const auto *earlier:{"animation-sequences","animation-routes"})
+        plan.compose("body-visual-policy", earlier, bodyDirectory);
+    plan.compose("weapon-status", "game-rules", exportOwners("weapon-status"));
+    plan.compose("weapon-types", "class-runtime", exportOwners("weapon-types"));
+    plan.compose("weapon-types", "shops", exportOwners("weapon-types"));
+    // Category labels/help are pointer operands inside Army and shop owners.
+    // The type installer authenticates and replaces only these exact words.
+    for(const auto *earlier:{"class-runtime","shops"})
+        plan.compose("weapon-types",earlier,[](const QByteArray &image) {
+            ExportPlan::Ranges ranges;
+            for(const auto &word:weaponTypeTextWords(Rom::fromBytes(image)))
+                ranges.append({word.offset,word.offset+4});
+            return ranges;
+        });
+    plan.compose("class-runtime", "consumable-effects", exportOwners("consumable-effects"));
     composeCatalog(plan, "class-runtime", "descriptions");
     composeCatalog(plan, "class-runtime", "shops");
+    composeCatalog(plan, "custom-encounters", "class-runtime");
     composeCatalog(plan, "high-attack", "class-runtime");
+    composeCatalog(plan, "high-attack", "custom-encounters");
     composeCatalog(plan, "battlefield-loaders", "mission-tables");
 }
 }

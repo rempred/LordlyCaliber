@@ -27,7 +27,7 @@ target_sources(lordly_engine PRIVATE engine/effect_machine.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_player.cpp engine/effect_composition.cpp)
 target_sources(lordly_engine PRIVATE engine/accepted_effect_code.cpp)
 find_program(NODE_EXECUTABLE node REQUIRED)
-target_sources(lordly_engine PRIVATE rebuild/export_plan.cpp rebuild/export_contracts.cpp)
+target_sources(lordly_engine PRIVATE engine/rom_writer.cpp rebuild/export_plan.cpp rebuild/export_contracts.cpp)
 # Reuse the existing native ownership catalog; no second handwritten inventory.
 file(GLOB_RECURSE export_owner_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/*.json")
 file(GLOB export_owner_engine_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/engine/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/rebuild/*.cpp")

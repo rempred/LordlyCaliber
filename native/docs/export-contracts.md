@@ -32,10 +32,13 @@ Named steps declare prerequisites; missing, reversed or cyclic dependencies fail
 before builders run. Execution retains the established order, including lazy
 project loads and the resident-builder outputs consumed by later steps.
 
-Each step prepares an image privately. The plan compares its actual changed,
+`engine/rom_writer.*` owns the committed image and exposes only read access.
+Named writes or privately prepared replacements are checked before commit.
+Each plan step receives a private candidate. The writer compares its actual changed,
 appended and removed spans with the current owners before accepting the result.
-Complete-function claims from the existing catalog additionally protect untouched
-inner hooks when another part of their function changes. Unchanged steps do not
+An explicit bounded write claims its entire requested span, even when bytes agree.
+Complete-function claims from the existing catalogs and native declarations
+protect untouched inner hooks when another part of their function changes. Unchanged steps do not
 take ownership. A conflict names both steps and the z64 range; any failure restores
 the plan's input image. Rebuild must also pass its existing readback checks before
 `exportRom` can publish a file.
@@ -70,15 +73,39 @@ semantic error. Tests must identify and exercise both native consumers.
 - For a regression, retain a failing prior implementation or equivalent negative
   control when practical. Confirm the check distinguishes the defect.
 
+## Restoration and composite builders
+
+Project loading uses the same writer to normalize cursor, movement and capacity
+installations. Capacity may restore the exact patch spans recorded beneath
+movement; each remover still authenticates its input. Export separately names
+weapon-type, item-tree, attack-reference and custom-encounter removal. Cleanup
+writers are checked against one another, then release their ownership before
+new installation. A failure cannot publish an intermediate image.
+
+Class linking separately records storage, table references, names, save hooks,
+description routing, flags, affinity, item trees, attack metadata and promotion
+menus. The shared relocation map still rejects two different values for the same
+word. Body height, custom encounters, equipment markers, animation resources,
+body selection, pose execution and visual policy are separate export steps.
+
+Complete function claims also cover body/pose replacements, personal names,
+expanded promotion menus, consumable execution, persuasion, weapon classification,
+weapon status and the replaced cutscene dispatcher. Animation directory updates
+inside equipment construction have a four-byte handoff; the later visual-policy
+C preserves the marker-aware implementation. Custom encounter functions retain
+relocated class references, and later capacity/attack patches have their own
+bounded composition contracts.
+
 ## Current limits
 
-The plan starts after recognized older installations have been normalized; that
-preparation still uses the existing authenticated removal routines. Failure
-cannot publish their intermediate image. All registered domain writers have
-actual-byte checks, but complete-function claims cover catalogued owners, not
-every native function. Dynamic allocations and overlay lifetimes still use the
-existing domain allocators and validators. This is coordination of the existing
-builders, not a second compiler, allocation system or project format.
+Every registered export step and the class-linker subwriters use the controlled
+writer. Legacy domain helpers still prepare byte arrays internally; their final
+changes and declared full owners are checked at the boundary. This does not
+observe every intermediate assignment inside every helper. New compound
+features must use separately named writes or steps, rather than hiding multiple
+features behind one candidate. Dynamic allocations and overlay lifetimes retain
+the domain allocators and validators. Consumer semantics still need game tests;
+write ownership cannot prove that two valid IDs mean the same thing.
 
 For a new writer: add a named step and real prerequisites, declare any complete
 function it replaces, then add only the bounded handoffs its composition needs.

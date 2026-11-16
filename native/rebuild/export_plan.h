@@ -1,24 +1,20 @@
 #pragma once
-#include <QByteArray>
+#include "engine/rom_writer.h"
 #include <QStringList>
 #include <QVector>
 #include <functional>
 
 namespace lordly {
-// All ranges are half-open, normalized z64 ROM offsets, never RAM addresses.
-struct ExportRange {
-    qsizetype begin = 0, end = 0;
-};
-
 // Coordinates existing builders; it does not allocate resources or interpret IDs.
 // The image is private to rebuild(). A failed operation restores the entire plan's
 // input, and no file is written until rebuild's independent readback succeeds.
 class ExportPlan {
   public:
-    using Action = std::function<void()>;
+    using Action = std::function<void(QByteArray &candidate)>;
     using Ranges = QVector<ExportRange>;
     using RangeProvider = std::function<Ranges(const QByteArray &)>;
-    explicit ExportPlan(QByteArray &image) : image_(image) {}
+    explicit ExportPlan(QByteArray image) : original_(std::move(image)), image_(original_) {}
+    void restore(QString name, Action prepare);
     void add(QString name, QStringList prerequisites, Action prepare, Ranges owners = {});
     // Permission is directional, bounded and separate from execution order.
     void compose(const QString &later, const QString &earlier, Ranges ranges);
@@ -26,7 +22,8 @@ class ExportPlan {
     // Derived fields are recalculated by the finalizer, not feature-owned data.
     void derived(Ranges ranges);
     void validate() const;
-    void run();
+    QByteArray run();
+    const QByteArray &image() const { return image_; }
     int changedSteps() const { return changedSteps_; }
     static Ranges changedRanges(const QByteArray &before, const QByteArray &after);
   private:
@@ -35,13 +32,14 @@ class ExportPlan {
         QStringList prerequisites;
         Action prepare;
         Ranges owners;
+        bool restoration = false;
     };
     struct Composition { QString later, earlier; RangeProvider ranges; };
-    struct Claim { QString owner; Ranges ranges; };
-    QByteArray &image_;
+    QByteArray original_, image_;
     QVector<Step> steps_;
     QVector<Composition> compositions_;
     Ranges derived_;
     int changedSteps_ = 0;
+    bool building_ = false;
 };
 }

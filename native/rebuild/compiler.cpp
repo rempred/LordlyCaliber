@@ -468,7 +468,7 @@ QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &dire
     return readFile(binary);
 }
 static void rebuildPromotion(const Project &p, const Compiler &compiler, const QString &directory,
-                             BuildResult &result) {
+                             QByteArray &image, QStringList &report) {
     if (!p.promotion() || !p.promotion()->modified())
         return;
     const auto &promotion = *p.promotion();
@@ -490,10 +490,10 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             std::any_of(legacy.begin(), legacy.end(), [](char c) { return quint8(c) != 255; }))
             throw Error("Legacy promotion allocation needs migration before this export");
         if (promotion.directGates)
-            result.image.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
+            image.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
         auto compiled =
             compiler.compileData(promotion.decodedFamilies(), directory, "class_families");
-        result.image.replace(0x27d0000, 65536, promotion.familyContainer(compiled));
+        image.replace(0x27d0000, 65536, promotion.familyContainer(compiled));
         const auto owners = promotionOwners()["owners"].toArray();
         const auto classPlacement = ClassPlacement::read(p.rom());
         const QMap<int, QByteArray> replacements = {{0xc38c0, "bne $v1, $v0, .+32"},
@@ -620,17 +620,17 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                             owner["name"].toString());
             if (classPlacement)
                 built = classPlacement->placedReferences(built, start);
-            result.image.replace(start, size, built);
+            image.replace(start, size, built);
         }
-        result.report << QString("Compiled promotion data, menu, selection, discovery and "
+        report << QString("Compiled promotion data, menu, selection, discovery and "
                                  "class-row C; rebuilt %1 "
                                  "complete runtime owners within their original extents")
                              .arg(owners.size());
     } else if (promotion.gates != promotion.originalGates) {
         auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");
         auto container = promotion.retailResource.container(compiled);
-        result.image.replace(promotion.retailResource.romOffset, container.size(), container);
-        result.report << "Compiled promotion requirements into the retail resource";
+        image.replace(promotion.retailResource.romOffset, container.size(), container);
+        report << "Compiled promotion requirements into the retail resource";
     }
     if (promotion.masks != promotion.originalMasks || promotion.flags != promotion.originalFlags) {
         auto data = p.rom().bytes().mid(0xdbd2c, 162);
@@ -639,7 +639,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             data[i * 2] = char((quint8(data[i * 2]) & 15) | quint8(promotion.flags[i]));
         }
         auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
-        result.image.replace(0xdbd2c, compiled.size(), compiled);
+        image.replace(0xdbd2c, compiled.size(), compiled);
         if (!family) {
             const auto classPlacement = ClassPlacement::read(p.rom());
             for (const auto &value : promotionOwners()["owners"].toArray()) {
@@ -669,9 +669,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     throw Error("Compiled class-line reader differs from validated source");
                 if (classPlacement)
                     reader = classPlacement->placedReferences(reader, start);
-                result.image.replace(start, size, reader);
+                image.replace(start, size, reader);
             }
-            result.report << "Compiled class-line data and its affected C readers";
+            report << "Compiled class-line data and its affected C readers";
         }
     }
 }
@@ -725,13 +725,21 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         reporter.activity(text, completed, total);
     });
     compiler.authenticate();
-    result.image = removeWeaponTypes(p.rom(), compiler, directory);
+    ExportPlan exportPlan(p.rom().bytes());
+    exportPlan.restore("remove-weapon-types", [&](QByteArray &image) {
+        image=removeWeaponTypes(Rom::fromBytes(image),compiler,directory);
+    });
     const auto priorItemTrees=ConsumableTreePlacement::read(p.rom());
-    if(priorItemTrees){p.loadConsumableEffects();result.image=priorItemTrees->remove(Rom::fromBytes(result.image));}
+    if(priorItemTrees) p.loadConsumableEffects();
+    exportPlan.restore("remove-item-trees", [&](QByteArray &image) {
+        if(priorItemTrees) image=priorItemTrees->remove(Rom::fromBytes(image));
+    });
     const auto priorAttacks = AttackPlacement::read(p.rom());
     if (priorAttacks) p.loadAttacks();
     const bool relocateAttacks = p.attacks() && (p.attacks()->modified() || priorAttacks.has_value());
-    result.image = removeAttackReferences(Rom::fromBytes(result.image));
+    exportPlan.restore("remove-attack-references", [&](QByteArray &image) {
+        image=removeAttackReferences(Rom::fromBytes(image));
+    });
     const bool expandedArmies=p.expandedArmies();
     std::optional<CapacityRuntimeBuild> capacityRuntime;
     const auto deploymentRules=p.tools()?p.tools()->gameRules():GameRules::load(p.rom());
@@ -808,8 +816,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const bool customSquads = p.encounters() && (p.encounters()->customSquads().hasProfiles() || p.encounters()->slotsPerPool() > 10);
     if (customSquads)
         p.encounters()->customSquads().validateFormations(p.classData());
-    if (priorCustom)
-        result.image = removeCustomInstallation(Rom::fromBytes(result.image), *priorCustom, compiler, directory);
+    exportPlan.restore("remove-custom-encounters", [&](QByteArray &image) {
+        if(priorCustom) image=removeCustomInstallation(Rom::fromBytes(image),*priorCustom,compiler,directory);
+    });
     if (priorShopPlacement && priorShopPlacement->version < 4)
         p.loadShops();
     if (p.rom().revision() == 0 &&
@@ -925,9 +934,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     std::optional<ConsumableTreeInput> itemTreeInput;
     std::optional<AnimationRoutes> exportAnimationRoutes;
     auto runtimeClasses = p.classData();
-    ExportPlan exportPlan(result.image);
+
     exportPlan.derived({{0x10, 0x18}}); // CIC checksum is recalculated after all writers.
-    exportPlan.add("records", {}, [&] {
+    exportPlan.add("records", {}, [&](QByteArray &image) {
         reporter.stage(1, "Building classes, items and encounters");
         for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
             if ((table == Table::Classes && relocateClasses) ||
@@ -945,15 +954,15 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 data += r.bytes;
             auto compiled = compiler.compileData(data, directory, tableKey(table) + "_records");
             auto offset = records.front().romOffset;
-            if (offset < 0 || offset + compiled.size() > result.image.size())
+            if (offset < 0 || offset + compiled.size() > image.size())
                 throw Error("Built records exceed their ROM allocation");
-            result.image.replace(offset, compiled.size(), compiled);
+            image.replace(offset, compiled.size(), compiled);
             result.report << QString("Compiled %1 records from generated C (%2 bytes)")
                                  .arg(tableKey(table))
                                  .arg(compiled.size());
         }
     }, exportOwners("records"));
-    exportPlan.add("descriptions", {"records"}, [&] {
+    exportPlan.add("descriptions", {"records"}, [&](QByteArray &image) {
         for (const auto &bank : p.textBanks()) {
             if (!bank.modified())
                 continue;
@@ -962,28 +971,28 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if (bank.spec.id == "classes" && p.rom().revision() == 0 &&
                 (ClassTextPlacement::read(p.rom()) || bank.entries.size() != 225 ||
                  encodeLzss(compiled).size() > bank.resource.capacity)) {
-                result.image =
-                    linkClassText(Rom::fromBytes(result.image), compiled, int(bank.entries.size()));
+                image =
+                    linkClassText(Rom::fromBytes(image), compiled, int(bank.entries.size()));
             } else if (bank.spec.id == "items" && !p.rom().revision() &&
                        (ClassTextPlacement::read(p.rom(), true) || bank.entries.size() != 278 ||
                         encodeLzss(compiled).size() > bank.resource.capacity)) {
-                result.image = linkClassText(Rom::fromBytes(result.image), compiled,
+                image = linkClassText(Rom::fromBytes(image), compiled,
                                              int(bank.entries.size()), true);
             } else if (bank.spec.id == "locations" && !p.rom().revision() &&
                        (LocationTextPlacement::read(p.rom()) ||
                         encodeLzss(compiled).size() > bank.resource.capacity)) {
-                result.image = linkLocationText(Rom::fromBytes(result.image), compiled);
+                image = linkLocationText(Rom::fromBytes(image), compiled);
             } else {
                 auto container = bank.resource.container(compiled);
-                result.image.replace(bank.resource.romOffset, container.size(), container);
+                image.replace(bank.resource.romOffset, container.size(), container);
             }
             result.report << "Rebuilt " + bank.spec.label + " from edited C data";
         }
     }, exportOwners("descriptions"));
-    exportPlan.add("encounters", {"records"}, [&] {
+    exportPlan.add("encounters", {"records"}, [&](QByteArray &image) {
         if (p.encounters() && p.encounters()->modified()) {
             if (p.encounters()->rewards().modified()) {
-                result.image = rebuildCreatureRewards(Rom::fromBytes(result.image),
+                image = rebuildCreatureRewards(Rom::fromBytes(image),
                                                       p.encounters()->rewards(), compiler, directory);
                 result.report << "Compiled weighted creature rewards for every byte-sized class ID; "
                                  "selection stays inside its original function and stack frame";
@@ -993,15 +1002,15 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 const auto built = compiler.compileData(bytes, directory, name);
                 if (built != bytes)
                     throw Error("Compiled encounter table differs from project");
-                result.image.replace(offset, bytes.size(), built);
+                image.replace(offset, bytes.size(), built);
             };
             write(p.encounters()->retailPoolBytes(), Encounters::poolOffset, "encounter_pools");
             write(p.encounters()->rateBytes(), Encounters::rateOffset, "encounter_terrain_rates");
             write(p.encounters()->slotBytes(), Encounters::slotOffset, "encounter_terrain_slots");
             if (p.encounters()->scenarioRates().modified() ||
                 (p.encounters()->globalRate().modified() && ScenarioRates::placement(p.rom()))) {
-                result.image =
-                    rebuildScenarioRates(Rom::fromBytes(result.image), p.encounters()->scenarioRates(),
+                image =
+                    rebuildScenarioRates(Rom::fromBytes(image), p.encounters()->scenarioRates(),
                                          p.encounters()->globalRate(), compiler, directory);
                 result.report << "Rebuilt independent scenario rates and inherited global values "
                                  "inside the original dispatcher";
@@ -1011,8 +1020,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                                          directory, "encounter_dispatcher");
                 if (code.size() != EncounterRate::codeSize)
                     throw Error("Encounter dispatcher exceeds its original allocation");
-                result.image.replace(EncounterRate::romOffset, EncounterRate::codeSize, code);
-                if (EncounterRate::load(Rom::fromBytes(result.image)).json() != rate.json())
+                image.replace(EncounterRate::romOffset, EncounterRate::codeSize, code);
+                if (EncounterRate::load(Rom::fromBytes(image)).json() != rate.json())
                     throw Error("Compiled encounter rate differs from project");
                 result.report << "Rebuilt the encounter dispatcher with independent 32-bit pass counts "
                                  "in its original instruction space";
@@ -1021,14 +1030,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              "original allocations";
         }
     }, exportOwners("encounters"));
-    exportPlan.add("custom-rewards", {"encounters"}, [&] {
-        if (customSquads && !CreatureRewards::placement(Rom::fromBytes(result.image))) {
-            result.image = rebuildCreatureRewards(Rom::fromBytes(result.image),
+    exportPlan.add("custom-rewards", {"encounters"}, [&](QByteArray &image) {
+        if (customSquads && !CreatureRewards::placement(Rom::fromBytes(image))) {
+            image = rebuildCreatureRewards(Rom::fromBytes(image),
                                                   p.encounters()->rewards(), compiler, directory);
             result.report << "Rebuilt class reward rows alongside custom encounter rewards";
         }
     }, exportOwners("custom-rewards"));
-    exportPlan.add("experience", {}, [&] {
+    exportPlan.add("experience", {}, [&](QByteArray &image) {
         if (p.tools() && p.tools()->experienceModified()) {
             if (!ToolSettings::load(p.rom()).available())
                 throw Error("Experience source code changed outside its supported model");
@@ -1036,16 +1045,16 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             for (int i = 0; i < sites.size(); ++i) {
                 const auto site = sites[i].toObject();
                 const int offset = site["rom"].toInt(), size = site["size"].toInt();
-                if (result.image.mid(offset, size) != p.rom().bytes().mid(offset, size))
+                if (image.mid(offset, size) != p.rom().bytes().mid(offset, size))
                     throw Error("Another rebuild owner overlaps the experience setting");
                 const auto code = compiler.assembleOwner(
                     p.tools()->assemblyDefinitions(i) + readFile(":/game/tools/experience.s"),
                     directory, QString("experience_%1").arg(i), quint32(site["ram"].toInteger()),
                     {{"XP_RETAIL_WEIGHTED", 0x801d604c}}, true);
                 p.tools()->validateCompiled(i, code);
-                result.image.replace(offset, size, code);
+                image.replace(offset, size, code);
             }
-            const auto reopened = ToolSettings::load(Rom::fromBytes(result.image));
+            const auto reopened = ToolSettings::load(Rom::fromBytes(image));
             if (!reopened.available() || reopened.experiencePercent() != p.tools()->experiencePercent())
                 throw Error("Rebuilt experience setting failed readback");
             result.report << QString("Compiled experience size-weight scale at %1% in its original "
@@ -1053,38 +1062,38 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                  .arg(p.tools()->experiencePercent());
         }
     }, exportOwners("experience"));
-    exportPlan.add("consumable-effects", {"records"}, [&] {
+    exportPlan.add("consumable-effects", {"records"}, [&](QByteArray &image) {
         if (p.consumableEffects() && p.consumableEffects()->needsCBuild()) {
             const auto &effects = *p.consumableEffects();
             ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.
             const auto compiled = compiler.compileQualifiedOwner(ConsumableEffects::runtimeOwner(), directory, "consumable_effects");
             const auto built = effects.runtimeImage(compiled.code);
-            result.image.replace(ConsumableEffects::romOffset, ConsumableEffects::codeSize, built);
+            image.replace(ConsumableEffects::romOffset, ConsumableEffects::codeSize, built);
             result.report << "Compiled consumable effects from accepted-derived C with all ten authored models; retained the original resident allocation";
         }
     }, exportOwners("consumable-effects"));
-    exportPlan.add("shops", {"descriptions"}, [&] {
+    exportPlan.add("shops", {"descriptions"}, [&](QByteArray &image) {
         if (p.shops() &&
             (p.shops()->modified() || priorShopPlacement)) {
             // Recompile owned shop code even when stock is unchanged. Reopening an
             // older export must receive current runtime fixes without a dummy edit.
-            result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
+            image = rebuildShops(Rom::fromBytes(image), *p.shops(), compiler, directory);
             result.report << "Compiled shop stock, producer and halfword readers; retained original "
                              "RAM allocations";
         }
     }, exportOwners("shops"));
-    exportPlan.add("promotion", {"consumable-effects", "shops"}, [&] {
-        if(itemTrees)itemTreeInput=ConsumableTreeInput{*p.consumableEffects(),Rom::fromBytes(result.image)};
+    exportPlan.add("promotion", {"consumable-effects", "shops"}, [&](QByteArray &image) {
+        if(itemTrees)itemTreeInput=ConsumableTreeInput{*p.consumableEffects(),Rom::fromBytes(image)};
         if (!expandedClasses)
-            rebuildPromotion(p, compiler, directory, result);
+            rebuildPromotion(p, compiler, directory, image, result.report);
     }, exportOwners("promotion"));
-    exportPlan.add("automatic-promotion", {"promotion"}, [&] {
+    exportPlan.add("automatic-promotion", {"promotion"}, [&](QByteArray &image) {
         if (p.promotion() && p.promotion()->automatic.modified()) {
-            result.image = p.promotion()->automatic.rebuild(result.image);
+            image = p.promotion()->automatic.rebuild(image);
             result.report << "Updated class requirements in the game's evolution, attack-transformation and mission-end consumers";
         }
     }, exportOwners("automatic-promotion"));
-    exportPlan.add("portraits", {"descriptions"}, [&] {
+    exportPlan.add("portraits", {"descriptions"}, [&](QByteArray &image) {
         if (relocateClasses && avatarEdits) {
             auto &classData = runtimeClasses;
             if (avatarEdits) {
@@ -1092,8 +1101,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 for (auto it = bundles.begin(); it != bundles.end(); ++it)
                     it.value() = compiler.compileData(it.value(), directory,
                                                       QString("portrait_%1").arg(it.key()));
-                result.image =
-                    p.avatarArtwork()->rebuild(Rom::fromBytes(result.image), classData, bundles);
+                image =
+                    p.avatarArtwork()->rebuild(Rom::fromBytes(image), classData, bundles);
                 result.report << QString(
                                      "Compiled %1 independent portraits and rebuilt their directory "
                                      "and class selectors")
@@ -1101,11 +1110,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             }
         }
     }, exportOwners("portraits"));
-    exportPlan.add("class-runtime", {"portraits", "promotion", "automatic-promotion", "custom-rewards"}, [&] {
+    std::optional<CustomRuntimeBuild> custom;
+    quint32 bodyHeight = 0;
+    exportPlan.add("class-runtime", {"portraits", "promotion", "automatic-promotion", "custom-rewards"}, [&](QByteArray &image) {
         if (relocateClasses) {
             auto &classData = runtimeClasses;
             auto offset = priorClassPlacement ? priorClassPlacement->dataRomOffset
-                                              : quint32((result.image.size() + 15) & ~qsizetype(15));
+                                              : quint32((image.size() + 15) & ~qsizetype(15));
             const auto &data = classData;
             const auto classImage = data.build(0x80243db0);
             auto dataSize = classImage.bytes.size() +
@@ -1121,14 +1132,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 dataSize > priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
                 quint64(priorClassPlacement->dataRomOffset) + priorClassPlacement->layout.end -
                         priorClassPlacement->layout.indexBase !=
-                    quint64(result.image.size()))
-                offset = quint32((result.image.size() + 15) & ~qsizetype(15));
-            std::optional<CustomRuntimeBuild> custom;
+                    quint64(image.size()))
+                offset = quint32((image.size() + 15) & ~qsizetype(15));
             quint32 customIndex=0;
             std::function<QByteArray(quint32, quint32)> residentBuilder;
             if (customSquads) {
                 const auto classEnd = quint64(offset) + (expandedArmies?0x40000:dataSize);
-                const auto prospectiveEnd = qMax(quint64(result.image.size()), classEnd);
+                const auto prospectiveEnd = qMax(quint64(image.size()), classEnd);
                 auto index = quint32((prospectiveEnd + 15) & ~quint64(15));
                 const int poolSlots = p.encounters()->slotsPerPool();
                 const auto bytes = p.encounters()->customSquads().bytes(0x2800000, poolSlots).size() +
@@ -1138,8 +1148,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     const bool separate = quint64(before) + bytes <= offset || before >= classEnd;
                     const bool append = before >= prospectiveEnd;
                     const bool reuse = bytes <= priorCustom->dataSize &&
-                                       quint64(before) + bytes <= quint64(result.image.size()) &&
-                                       result.image.mid(before, bytes) == QByteArray(bytes, char(-1));
+                                       quint64(before) + bytes <= quint64(image.size()) &&
+                                       image.mid(before, bytes) == QByteArray(bytes, char(-1));
                     if (separate && (append || reuse))
                         index = before;
                 }
@@ -1207,8 +1217,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             // a whole and relink its ROM loader and optional encounter library.
             if(priorClassPlacement && offset==priorClassPlacement->dataRomOffset &&
                classes.data.bytes.size()>priorClassPlacement->layout.end-priorClassPlacement->layout.indexBase &&
-               quint64(offset)+priorClassPlacement->layout.end-priorClassPlacement->layout.indexBase!=quint64(result.image.size())) {
-                offset=quint32((result.image.size()+15)&~qsizetype(15));
+               quint64(offset)+priorClassPlacement->layout.end-priorClassPlacement->layout.indexBase!=quint64(image.size())) {
+                offset=quint32((image.size()+15)&~qsizetype(15));
                 customIndex=quint32((quint64(offset)+std::max<qsizetype>(classes.data.bytes.size(),expandedArmies?0x40000:0)+15)&~quint64(15));
                 if(capacityRuntime)capacityRuntime=prepareCapacityRuntime(capacityRuntime->base,p.rom());
                 classes=buildClassRuntime(data,compiler,directory,offset,
@@ -1221,7 +1231,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             // the initial record/name estimate used before compilation.
             if (custom && custom->indexRomOffset >= offset &&
                 custom->indexRomOffset < quint64(offset) + classes.data.bytes.size()) {
-                customIndex = quint32((qMax(quint64(result.image.size()),
+                customIndex = quint32((qMax(quint64(image.size()),
                     quint64(offset) + std::max<qsizetype>(classes.data.bytes.size(), expandedArmies ? 0x40000 : 0)) + 15) & ~quint64(15));
                 if (capacityRuntime) capacityRuntime = prepareCapacityRuntime(capacityRuntime->base, p.rom());
                 classes = buildClassRuntime(data, compiler, directory, offset,
@@ -1243,26 +1253,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                          p.rom(), classes.data.layout, *p.promotion(), compiler,
                                          directory, familyTabs))
                                    : std::nullopt;
-            result.image =
-                linkClassRuntime(Rom::fromBytes(result.image), classes, menus ? &*menus : nullptr);
-            if (classes.bodyHeight) {
-                installPoseHeightRuntime(result.image, p.rom(), classes.bodyHeight, compiler, directory);
-                result.report << "Compiled body-height lookup for wide idle frames";
-            }
-            if (custom) {
-                result.image = installCustomEncounters(Rom::fromBytes(result.image),
-                                                       p.encounters()->customSquads(), *custom,
-                                                       compiler, directory, priorCustom, p.encounters()->poolBytes(),
-                                                       p.encounters()->slotsPerPool());
-                result.report << QString(
-                                     "Compiled %1 custom squads and their battle behavior; %2 bytes "
-                                     "reserved in reclaimed resident storage within 4 MB RAM")
-                                     .arg(p.encounters()->customSquads().profiles().size())
-                                     .arg(custom->bytes.size());
-            } else if (priorCustom) {
-                result.report << "Removed custom squad callers and returned their resident allocation "
-                                 "to the heap";
-            }
+            image =
+                linkClassRuntime(Rom::fromBytes(image), classes, menus ? &*menus : nullptr);
+            bodyHeight = classes.bodyHeight;
             if (menus)
                 result.report
                     << QString(
@@ -1274,8 +1267,24 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                  .arg(classes.data.layout.count)
                                  .arg(classes.data.bytes.size());
         }
-    }, exportOwners("class-runtime") + (customSquads ? exportOwners("encounters") : ExportPlan::Ranges{}));
-    exportPlan.add("class-family", {"class-runtime"}, [&] {
+    }, exportOwners("class-runtime") + (expandedClasses ? exportOwners("promotion-menus") : ExportPlan::Ranges{}));
+    exportPlan.add("body-height", {"class-runtime"}, [&](QByteArray &image) {
+        if (bodyHeight) {
+            installPoseHeightRuntime(image, p.rom(), bodyHeight, compiler, directory);
+            result.report << "Compiled body-height lookup for wide idle frames";
+        }
+    }, exportOwners("body-height"));
+    exportPlan.add("custom-encounters", {"class-runtime"}, [&](QByteArray &image) {
+        if (custom) {
+            image = installCustomEncounters(Rom::fromBytes(image), p.encounters()->customSquads(),
+                *custom, compiler, directory, priorCustom, p.encounters()->poolBytes(), p.encounters()->slotsPerPool());
+            result.report << QString("Compiled %1 custom squads and their battle behavior; %2 bytes reserved in reclaimed resident storage within 4 MB RAM")
+                .arg(p.encounters()->customSquads().profiles().size()).arg(custom->bytes.size());
+        } else if (priorCustom) {
+            result.report << "Removed custom squad callers and returned their resident allocation to the heap";
+        }
+    }, exportOwners("custom-encounters"));
+    exportPlan.add("class-family", {"class-runtime"}, [&](QByteArray &image) {
         if (relocateItems)
             result.report << QString("Rebuilt %1 equipment records, names and their runtime references "
                                      "within 4 MB RAM")
@@ -1288,12 +1297,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if (function.size() != 0x30 || function != p.rom().bytes().mid(0xbbd50, 0x30))
                 throw Error("Source-built class-family getter differs from the loaded ROM; this "
                             "runtime needs its own source owner");
-            result.image.replace(0xbbd50, 0x30, function);
+            image.replace(0xbbd50, 0x30, function);
             result.report << "Compiled accepted class-family C at Army RAM 0x801CF2F0; verified its "
                              "complete 48-byte owner";
         }
     }, exportOwners("class-family"));
-    exportPlan.add("scenarios", {"class-runtime"}, [&] {
+    exportPlan.add("scenarios", {"custom-encounters", "body-height"}, [&](QByteArray &image) {
         reporter.stage(2, "Building scenarios and story");
         if (!p.scenarioBattlefields().isEmpty() || (p.scenarios() && p.scenarios()->modified()) || (p.training() && p.training()->modified())) {
             p.loadScenarios();
@@ -1303,25 +1312,25 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 p.training()->validate(p.classData(),int(p.records(Table::Items).size()));
                 trainingTable=p.training()->plan(plan.enemies);
             }
-            const auto resources = ScenarioResources::load(Rom::fromBytes(result.image));
+            const auto resources = ScenarioResources::load(Rom::fromBytes(image));
             // The user-authored library and each scenario compile during this export.
             if (plan.enemies != resources.enemyData())
                 plan.enemies = compiler.compileData(plan.enemies, directory, "scenario_squads");
             for (auto it = plan.esets.begin(); it != plan.esets.end(); ++it)
                 it.value() =
                     compiler.compileData(it.value(), directory, QString("scenario_%1").arg(it.key()));
-            result.image = resources.rebuild(Rom::fromBytes(result.image), plan.enemies, plan.esets);
+            image = resources.rebuild(Rom::fromBytes(image), plan.enemies, plan.esets);
             bool independent = false;
             for (const auto &row : p.scenarios()->entries())
                 for (const auto &squad : row.squads) independent |= independentSquad(squad);
             if (independent) {
-                result.image = rebuildScenarioMembers(Rom::fromBytes(result.image), compiler, directory);
+                image = rebuildScenarioMembers(Rom::fromBytes(image), compiler, directory);
                 result.report << "Compiled independent scenario members into the original constructor allocation";
             }
             if(!trainingTable.isEmpty()) {
-                if(result.image.mid(Training::tableOffset,Training::tableSize)!=p.rom().bytes().mid(Training::tableOffset,Training::tableSize))
+                if(image.mid(Training::tableOffset,Training::tableSize)!=p.rom().bytes().mid(Training::tableOffset,Training::tableSize))
                     throw Error("Another owner overlaps the training table");
-                result.image.replace(Training::tableOffset,Training::tableSize,compiler.compileData(trainingTable,directory,"training_opponents"));
+                image.replace(Training::tableOffset,Training::tableSize,compiler.compileData(trainingTable,directory,"training_opponents"));
                 bool independentTraining=false;
                 for(const auto &row:p.training()->entries()) independentTraining|=independentSquad(row.squad);
                 if(independentTraining) {
@@ -1331,12 +1340,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                         {"set_mode",0x8017223c},{"release_battle",0x801707f4}};
                     const auto code=compiler.compileModule(readFile(":/game/tools/training-constructor.c"),directory,
                         "training_constructor",0x801d0a8c,{},symbols).fitOwner(0xa5c);
-                    const auto original=result.image.mid(0x23a5ec,0xa5c);
+                    const auto original=image.mid(0x23a5ec,0xa5c);
                     if(original!=code && sha256(original)!=QByteArray("0c893885b08c8c8a42810d57327bd7c86fbaca2dbdd286c1599868903563721c"))
                         throw Error("Training constructor has an unknown modification");
-                    result.image.replace(0x23a5ec,0xa5c,code);
+                    image.replace(0x23a5ec,0xa5c,code);
                 }
-                if(Training::load(Rom::fromBytes(result.image)).json()!=p.training()->json())
+                if(Training::load(Rom::fromBytes(image)).json()!=p.training()->json())
                     throw Error("Training export failed readback");
                 result.report<<"Compiled training opponents and price factors; retained special story entries.";
             }
@@ -1346,14 +1355,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                  .arg(plan.enemies.size() / 35);
         }
     }, exportOwners("scenarios"));
-    exportPlan.add("towns", {"scenarios", "shops"}, [&] {
+    exportPlan.add("towns", {"scenarios", "shops"}, [&](QByteArray &image) {
         if (p.world() && p.world()->modified()) {
             p.loadShops();
             for (int id = 1; id <= ScenarioWorld::townCount; ++id)
                 if (u8(p.world()->town(id), 27) >= p.shops()->size())
                     throw Error(QString("Stronghold %1 references a missing shop").arg(id));
             auto plan = p.world()->plan();
-            const auto worldRom = Rom::fromBytes(result.image);
+            const auto worldRom = Rom::fromBytes(image);
             const auto resources = WorldResources::load(worldRom);
             if (plan.towns != resources.towns(worldRom))
                 plan.towns = compiler.compileData(plan.towns, directory, "scenario_towns");
@@ -1363,23 +1372,23 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             for (auto it = plan.sites.begin(); it != plan.sites.end(); ++it)
                 it.value() =
                     compiler.compileData(it.value(), directory, QString("sites_%1").arg(it.key()));
-            result.image = resources.rebuild(worldRom, plan.towns, plan.treasures, plan.sites);
+            image = resources.rebuild(worldRom, plan.towns, plan.treasures, plan.sites);
             result.report << QString("Rebuilt global sites, %1 treasure lists and %2 allegiance lists "
                                      "through original resource links")
                                  .arg(plan.treasures.size())
                                  .arg(plan.sites.size());
         }
     }, exportOwners("towns"));
-    exportPlan.add("maps", {"towns"}, [&] {
+    exportPlan.add("maps", {"towns"}, [&](QByteArray &image) {
         if(p.mapEdits() && p.mapEdits()->modified()){
-            result.image=p.mapEdits()->rebuild(Rom::fromBytes(result.image));
+            image=p.mapEdits()->rebuild(Rom::fromBytes(image));
             result.report << QString("Rebuilt %1 shared battlefield maps: geometry, terrain grids and site placements").arg(p.mapEdits()->changedMaps());
         }
     }, exportOwners("maps"));
-    exportPlan.add("events", {"class-runtime", "maps"}, [&] {
+    exportPlan.add("events", {"class-runtime", "maps"}, [&](QByteArray &image) {
         if (migrateSceneArena || (p.scenePrograms() && p.scenePrograms()->modified()) ||
             (p.sceneEvents() && p.sceneEvents()->modified())) {
-            p.scenePrograms()->validateReferences(Rom::fromBytes(result.image),
+            p.scenePrograms()->validateReferences(Rom::fromBytes(image),
                                                   p.dialogues() ? &*p.dialogues() : nullptr);
             auto plan = p.scenePrograms()->plan();
             for (auto it = plan.begin(); it != plan.end(); ++it)
@@ -1394,7 +1403,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             for (auto it = eventPlan.rows.begin(); it != eventPlan.rows.end(); ++it)
                 it.value() =
                     compiler.compileData(it.value(), directory, QString("event_%1").arg(it.key()));
-            result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored,
+            image = SceneProgramResources::rebuild(Rom::fromBytes(image), plan, authored,
                                                           &eventPlan);
             if (migrateSceneArena)
                 result.report << "Migrated imported scene ownership before installing High Attack; retained scene programs and event bindings";
@@ -1405,44 +1414,44 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                        .arg(plan.size());
         }
     }, exportOwners("events"));
-    exportPlan.add("dialogue", {"events"}, [&] {
+    exportPlan.add("dialogue", {"events"}, [&](QByteArray &image) {
         if (p.dialogues() && p.dialogues()->modified()) {
             auto plan = p.dialogues()->plan();
             for (auto it = plan.begin(); it != plan.end(); ++it)
                 it.value() =
                     compiler.compileData(it.value(), directory, QString("dialogue_%1").arg(it.key()));
-            result.image = DialogueResources::rebuild(Rom::fromBytes(result.image), plan);
+            image = DialogueResources::rebuild(Rom::fromBytes(image), plan);
             result.report
                 << QString("Compiled and rebuilt %1 dialogue archives through original resource links")
                        .arg(plan.size());
         }
     }, exportOwners("dialogue"));
-    exportPlan.add("category-icons", {"promotion", "class-runtime"}, [&] {
+    exportPlan.add("category-icons", {"promotion", "class-runtime"}, [&](QByteArray &image) {
         reporter.stage(3, "Building artwork and animations");
         if (p.categoryIcons() && (p.categoryIcons()->modified() || familyTabs)) {
             auto pack = p.categoryIcons()->decodedPack(p.promotion() ? &*p.promotion() : nullptr);
             pack = compiler.compileData(pack, directory, "class_category_icons");
-            result.image = p.categoryIcons()->rebuild(Rom::fromBytes(result.image), pack);
+            image = p.categoryIcons()->rebuild(Rom::fromBytes(image), pack);
             result.report << "Compiled class category icons and family tab assignments";
         }
     }, exportOwners("category-icons"));
-    exportPlan.add("item-icons", {"class-runtime", "scenarios"}, [&] {
+    exportPlan.add("item-icons", {"class-runtime", "scenarios"}, [&](QByteArray &image) {
         if(p.iconArtwork() && p.iconArtwork()->modified()) {
             auto packs=p.iconArtwork()->decodedPacks();
             for(int i=0;i<2;++i)packs[i]=compiler.compileData(packs[i],directory,QString("icon_pack_%1").arg(i));
-            result.image=p.iconArtwork()->rebuild(Rom::fromBytes(result.image),packs);
+            image=p.iconArtwork()->rebuild(Rom::fromBytes(image),packs);
             result.report << "Compiled and rebuilt both shared item-icon packs through their original resource loaders";
         }
     }, exportOwners("item-icons"));
-    exportPlan.add("army-artwork", {"class-runtime", "scenarios"}, [&] {
+    exportPlan.add("army-artwork", {"class-runtime", "scenarios"}, [&](QByteArray &image) {
         if(p.armyArtwork() && p.armyArtwork()->pixelsModified()) {
             auto packs=p.armyArtwork()->decodedPacks();
             for(int i=0;i<6;++i)packs[i]=compiler.compileData(packs[i],directory,QString("army_atlas_%1").arg(i));
-            result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
+            image=p.armyArtwork()->rebuild(Rom::fromBytes(image),packs);
             result.report << "Compiled all six Army/formation atlases and retained shared front/back resource operands";
         }
     }, exportOwners("army-artwork"));
-    exportPlan.add("animation-overrides", {"class-runtime"}, [&] {
+    exportPlan.add("animation-overrides", {"custom-encounters", "body-height"}, [&](QByteArray &image) {
         if (p.animationOverrides() && p.animationOverrides()->available() &&
             (p.animationOverrides()->modified() || !p.animationOverrides()->entries().isEmpty())) {
             const auto classes = p.classData();
@@ -1452,7 +1461,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 overrides.setEntries(overrides.entries(), p.rom(), classes, *p.animationRoutes());
             }
             if (overrides.needsRebuild(classes)) {
-                result.image = rebuildAnimationOverrides(Rom::fromBytes(result.image), overrides,
+                image = rebuildAnimationOverrides(Rom::fromBytes(image), overrides,
                                                          classes, compiler, directory);
                 result.report << (overrides.entries().isEmpty()
                                       ? "Removed animation overrides and restored source-built "
@@ -1464,23 +1473,28 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             }
         }
     }, exportOwners("animation-overrides"));
-    exportPlan.add("animation-sequences", {"animation-overrides"}, [&] {
+    exportPlan.add("body-markers", {"animation-overrides"}, [&](QByteArray &image) {
+        if(p.animationSequences()&&(p.animationSequences()->modified()||!p.animationSequences()->groups().isEmpty())) {
+            const auto &sequences=*p.animationSequences();
+            const auto beforeMarkers=image;
+            image=rebuildBodyMarkers(Rom::fromBytes(image),p.rom(),sequences.requiresMarkerRuntime(),compiler,directory);
+            if(image!=beforeMarkers)result.report<<(sequences.requiresMarkerRuntime()?"Compiled wide-frame equipment marker scans within the original code allocation":"Restored source-built original equipment marker scans");
+        }
+    }, exportOwners("body-markers"));
+    exportPlan.add("animation-sequences", {"body-markers"}, [&](QByteArray &image) {
         exportAnimationRoutes=p.animationRoutes();
         if(p.animationSequences()&&(p.animationSequences()->modified()||!p.animationSequences()->groups().isEmpty())) {
             p.loadAnimationRoutes();
             const auto &sequences=*p.animationSequences();
             p.validateAnimationAssignments();
             sequences.validate(*p.animationRoutes(),p.records(Table::Classes).size());
-            const auto beforeMarkers=result.image;
-            result.image=rebuildBodyMarkers(Rom::fromBytes(result.image),p.rom(),sequences.requiresMarkerRuntime(),compiler,directory);
-            if(result.image!=beforeMarkers)result.report<<(sequences.requiresMarkerRuntime()?"Compiled wide-frame equipment marker scans within the original code allocation":"Restored source-built original equipment marker scans");
-            const auto plan=sequences.plan(Rom::fromBytes(result.image));
+            const auto plan=sequences.plan(Rom::fromBytes(image));
             const auto compiled=plan.payload.isEmpty()?QByteArray{}:compiler.compileData(plan.payload,directory,"private_animation_resources");
-            result.image=sequences.materialize(Rom::fromBytes(result.image),plan,compiled);
+            image=sequences.materialize(Rom::fromBytes(image),plan,compiled);
             const auto root=compiler.compileData(plan.directory.decoded(),directory,"private_animation_directory");
-            result.image=plan.directory.rebuild(Rom::fromBytes(result.image),root);
+            image=plan.directory.rebuild(Rom::fromBytes(image),root);
             exportAnimationRoutes=sequences.exportRoutes(*p.animationRoutes(),plan);
-            const auto actual=AnimationSequences::load(Rom::fromBytes(result.image));
+            const auto actual=AnimationSequences::load(Rom::fromBytes(image));
             if(actual.groups().size()!=sequences.groups().size())throw Error("Private sequence count differs after export");
             for(auto it=sequences.groups().cbegin();it!=sequences.groups().cend();++it){
                 const auto *reopened=actual.find(it.key()/4,it.key()%4);
@@ -1492,7 +1506,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             result.report<<QString("Compiled %1 private class/body animation descriptors and isolated their controls and sprites").arg(sequences.groups().size());
         }
     }, exportOwners("animation-sequences"));
-    exportPlan.add("animation-routes", {"animation-sequences", "scenarios"}, [&] {
+    exportPlan.add("animation-routes", {"animation-sequences", "scenarios"}, [&](QByteArray &image) {
         if (exportAnimationRoutes && p.animationSequences())
             exportAnimationRoutes->setPrivatePoses(p.privatePoseMappings());
         if (exportAnimationRoutes && exportAnimationRoutes->modified()) {
@@ -1500,73 +1514,93 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                                        directory, "class_animation_routes");
             const auto copyLoads = compiler.assembleOwner(
                 readFile(":/game/art/animation-copy.s"), directory, "class_animation_copy", 0x80000000);
-            result.image =
-                exportAnimationRoutes->rebuild(Rom::fromBytes(result.image), compiled, copyLoads);
+            image =
+                exportAnimationRoutes->rebuild(Rom::fromBytes(image), compiled, copyLoads);
             result.report << QString("Compiled class-animation routes for %1 table rows and preserved "
                                      "the other compound-resource sections")
                                  .arg(exportAnimationRoutes->rowCount());
         }
     }, exportOwners("animation-routes"));
-    exportPlan.add("body-runtime", {"animation-routes"}, [&] {
+    exportPlan.add("body-selection", {"animation-routes"}, [&](QByteArray &image) {
         if (exportAnimationRoutes) {
-            const auto beforeSelection = result.image;
-            result.image = rebuildBodySelection(Rom::fromBytes(result.image), p.rom(),
+            const auto beforeSelection = image;
+            image = rebuildBodySelection(Rom::fromBytes(image), p.rom(),
                                                 exportAnimationRoutes->privatePoses(), compiler, directory);
-            if (result.image != beforeSelection)
+            if (image != beforeSelection)
                 result.report << "Compiled linked-body and leader selection from C within their original code allocations";
-            const auto beforePose = result.image;
-            result.image = rebuildPoseRuntime(Rom::fromBytes(result.image), p.rom(),
+        }
+    }, exportOwners("body-selection"));
+    exportPlan.add("pose-runtime", {"body-selection"}, [&](QByteArray &image) {
+        if (exportAnimationRoutes) {
+            const auto beforePose = image;
+            image = rebuildPoseRuntime(Rom::fromBytes(image), p.rom(),
                 exportAnimationRoutes->privatePoses(), p.animationSequences() && p.animationSequences()->requiresWideStates(),
                 exportAnimationRoutes->hasBodyPolicies(), compiler, directory);
-            if (result.image != beforePose)
+            if (image != beforePose)
                 result.report << "Compiled private-pose execution and class record lookup within their original allocations";
-            const auto beforeVisual = result.image;
-            result.image = rebuildBodyVisualPolicy(Rom::fromBytes(result.image), p.rom(),
+        }
+    }, exportOwners("pose-runtime"));
+    exportPlan.add("body-visual-policy", {"pose-runtime"}, [&](QByteArray &image) {
+        if (exportAnimationRoutes) {
+            const auto beforeVisual = image;
+            image = rebuildBodyVisualPolicy(Rom::fromBytes(image), p.rom(),
                 *exportAnimationRoutes, compiler, directory);
-            if (result.image != beforeVisual)
+            if (image != beforeVisual)
                 result.report << "Compiled complete body/equipment C owners within their original allocations";
         }
-    }, exportOwners("body-runtime"));
-    exportPlan.add("combat-artwork", {"body-runtime"}, [&] {
+    }, exportOwners("body-visual-policy"));
+    exportPlan.add("combat-artwork", {"body-visual-policy"}, [&](QByteArray &image) {
         if (p.combatArtwork() && p.combatArtwork()->modified()) {
             auto resources = p.combatArtwork()->decodedResources();
             int ordinal = 0;
             for (auto it = resources.begin(); it != resources.end(); ++it)
                 it.value() = compiler.compileData(it.value(), directory, QString("combat_art_%1").arg(ordinal++));
-            result.image = p.combatArtwork()->rebuild(Rom::fromBytes(result.image), resources);
+            image = p.combatArtwork()->rebuild(Rom::fromBytes(image), resources);
             result.report << QString("Compiled %1 combat artwork resources and preserved descriptor-local sharing").arg(resources.size());
         }
     }, exportOwners("combat-artwork"));
-    exportPlan.add("chaos-counter", {"class-runtime"}, [&] {
+    exportPlan.add("chaos-counter", {"class-runtime"}, [&](QByteArray &image) {
         reporter.stage(4, "Building attacks and game rules");
-        rebuildChaosCounter(p, compiler, directory, result);
+        BuildResult staged{image, {}};
+        rebuildChaosCounter(p, compiler, directory, staged);
+        image = std::move(staged.image);
+        result.report += staged.report;
     }, exportOwners("chaos-counter"));
-    exportPlan.add("display-tools", {"chaos-counter"}, [&] {
-        rebuildDisplayTools(p, compiler, directory, result);
+    exportPlan.add("display-tools", {"chaos-counter"}, [&](QByteArray &image) {
+        BuildResult staged{image, {}};
+        rebuildDisplayTools(p, compiler, directory, staged);
+        image = std::move(staged.image);
+        result.report += staged.report;
     }, exportOwners("display-tools"));
-    exportPlan.add("high-attack", {"events", "animation-overrides", "class-runtime"}, [&] {
-        rebuildHighAttack(p, compiler, directory, result);
+    exportPlan.add("high-attack", {"events", "animation-overrides", "class-runtime"}, [&](QByteArray &image) {
+        BuildResult staged{image, {}};
+        rebuildHighAttack(p, compiler, directory, staged);
+        image = std::move(staged.image);
+        result.report += staged.report;
     }, exportOwners("high-attack"));
-    exportPlan.add("persuasion", {"class-runtime"}, [&] {
+    exportPlan.add("persuasion", {"class-runtime"}, [&](QByteArray &image) {
         if (relocateAffinity)
             result.report << "Compiled combat-affinity groups and leader strengths into permanent storage";
         if (p.encounters() && p.encounters()->persuasion().modified()) {
-            if (result.image.mid(Persuasion::ownerOffset,Persuasion::ownerSize) !=
+            if (image.mid(Persuasion::ownerOffset,Persuasion::ownerSize) !=
                 p.rom().bytes().mid(Persuasion::ownerOffset,Persuasion::ownerSize))
                 throw Error("Another export owner overlaps persuasion affinity");
-            result.image = rebuildPersuasion(Rom::fromBytes(result.image), p.encounters()->persuasion(), compiler, directory);
+            image = rebuildPersuasion(Rom::fromBytes(image), p.encounters()->persuasion(), compiler, directory);
             result.report << "Compiled the persuasion starting-score table and preserved health, temperament and custom squad overrides";
         }
     }, exportOwners("persuasion"));
-    exportPlan.add("game-rules", {"class-runtime"}, [&] {
+    exportPlan.add("game-rules", {"class-runtime"}, [&](QByteArray &image) {
         const auto ruleBuilds = p.tools() ? p.tools()->gameRules().builds() : QVector<RuleBuild>{};
         if (!ruleBuilds.isEmpty()) {
             for (const auto &owner : ruleBuilds) {
                 if (owner.name == "goth") {
-                    rebuildGothRuntime(p, compiler, directory, result);
+                    BuildResult staged{image, {}};
+                    rebuildGothRuntime(p, compiler, directory, staged);
+                    image = std::move(staged.image);
+                    result.report += staged.report;
                     continue;
                 }
-                if (result.image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
+                if (image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
                     throw Error("Another rebuild owner overlaps the " + owner.name + " rule");
                 const auto bytes = owner.compiledRecovery ? compileStatusRecovery(owner, compiler, directory) : owner.data
                     ? compiler.compileData(owner.expected, directory, "rule_" + owner.name)
@@ -1574,10 +1608,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                              owner.address, owner.symbols, true);
                 if (bytes.size() != owner.size || (!owner.expected.isEmpty() && bytes != owner.expected))
                     throw Error("Compiled game rule exceeds or differs from its authored allocation: " + owner.name);
-                result.image.replace(owner.offset, owner.size, bytes);
+                image.replace(owner.offset, owner.size, bytes);
                 result.report << "Compiled " + owner.name + " rule within its original allocation";
             }
-            const auto reopenedRules = GameRules::load(Rom::fromBytes(result.image));
+            const auto reopenedRules = GameRules::load(Rom::fromBytes(image));
             if (reopenedRules.json() != p.tools()->gameRules().json())
                 throw Error("Rebuilt game rules differ from the project");
             for (const auto &rule : GameRules::definitions())
@@ -1586,74 +1620,80 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     throw Error("Rebuilt game rule failed authentication: " + rule.label);
         }
     }, exportOwners("game-rules"));
-    exportPlan.add("mission-tables", {"class-runtime", "shops", "game-rules", "maps"}, [&] {
+    exportPlan.add("mission-tables", {"class-runtime", "shops", "game-rules", "maps"}, [&](QByteArray &image) {
         if (!missionTables.isEmpty()) {
             if (!missionTableAddress) throw Error("Expanded mission tables were not allocated");
-            MissionTables::linkRuntime(result.image, missionTableAddress);
+            MissionTables::linkRuntime(image, missionTableAddress);
             result.report << "Linked expanded mission, battlefield and world resource tables";
         }
     }, exportOwners("mission-tables"));
-    exportPlan.add("army-capacity", {"mission-tables", "body-runtime", "scenarios", "shops"}, [&] {
+    exportPlan.add("army-capacity", {"mission-tables", "body-visual-policy", "scenarios", "shops"}, [&](QByteArray &image) {
         if(capacityRuntime) {
-            result.image=installCapacityRuntime(Rom::fromBytes(result.image),*capacityRuntime,
+            image=installCapacityRuntime(Rom::fromBytes(image),*capacityRuntime,
                                                CapacityPlacement::read(p.runtimeRom()));
             result.report<<"Compiled 30 enemy/allied squad slots and a separate temporary encounter slot; retained the 99-character player roster, all 30 organized player squads and 32 KB battery saves.";
         }
     }, exportOwners("army-capacity"));
-    exportPlan.add("weapon-status", {"army-capacity"}, [&] {
-        rebuildWeaponStatus(p, compiler, directory, result);
+    exportPlan.add("weapon-status", {"army-capacity", "game-rules"}, [&](QByteArray &image) {
+        BuildResult staged{image, {}};
+        rebuildWeaponStatus(p, compiler, directory, staged);
+        image = std::move(staged.image);
+        result.report += staged.report;
     }, exportOwners("weapon-status"));
-    exportPlan.add("weapon-types", {"army-capacity", "class-runtime", "shops"}, [&] {
-        rebuildWeaponTypes(p, compiler, directory, result);
+    exportPlan.add("weapon-types", {"army-capacity", "class-runtime", "shops"}, [&](QByteArray &image) {
+        BuildResult staged{image, {}};
+        rebuildWeaponTypes(p, compiler, directory, staged);
+        image = std::move(staged.image);
+        result.report += staged.report;
     }, exportOwners("weapon-types"));
-    exportPlan.add("attack-references", {"army-capacity", "high-attack", "body-runtime", "class-runtime"}, [&] {
+    exportPlan.add("attack-references", {"army-capacity", "high-attack", "body-visual-policy", "class-runtime"}, [&](QByteArray &image) {
         if (relocateAttacks) {
-            const auto placement = AttackPlacement::read(Rom::fromBytes(result.image));
+            const auto placement = AttackPlacement::read(Rom::fromBytes(image));
             if (!placement) throw Error("Missing compiled attack allocation");
-            result.image = installAttackReferences(Rom::fromBytes(result.image), *placement);
+            image = installAttackReferences(Rom::fromBytes(image), *placement);
             result.report << QString("Compiled %1 attack records and independent names into permanent storage")
                                  .arg(p.attacks()->entries().size() - 1);
         }
     }, exportOwners("attack-references"));
-    exportPlan.add("name-tables", {"class-runtime", "records"}, [&] {
+    exportPlan.add("name-tables", {"class-runtime", "records"}, [&](QByteArray &image) {
         reporter.stage(5, "Finishing world map and game code");
         if(p.nameTables() && p.nameTables()->modified()) {
             reporter.activity("Building name tables");
-            result.image=p.nameTables()->rebuild(result.image,[&](const QByteArray &bytes,const QString &name) {
+            image=p.nameTables()->rebuild(image,[&](const QByteArray &bytes,const QString &name) {
                 return compiler.compileData(bytes,directory,name);
             });
             result.report << "Compiled random-name lists and consumable names";
         }
     }, exportOwners("name-tables"));
-    exportPlan.add("accepted-baseline", {"attack-references", "name-tables"}, [&] {
+    exportPlan.add("accepted-baseline", {"attack-references", "name-tables"}, [&](QByteArray &image) {
         if (p.rom().revision() == 0) {
-            const auto coverage = applyAcceptedRom(result.image);
+            const auto coverage = applyAcceptedRom(image);
             result.report << QString("Applied the accepted C baseline: %1 code regions and %2 read-only regions; retained %3 modified regions")
                                  .arg(coverage.codeRegions).arg(coverage.dataRegions).arg(coverage.retainedRegions);
         }
     }, exportOwners("accepted-baseline"));
-    exportPlan.add("world-map", {"accepted-baseline"}, [&] {
+    exportPlan.add("world-map", {"accepted-baseline"}, [&](QByteArray &image) {
         if (p.campaignMap()) {
-            result.image = p.campaignMap()->rebuild(result.image);
+            image = p.campaignMap()->rebuild(image);
         }
     }, exportOwners("world-map"));
-    exportPlan.add("world-map-runtime", {"world-map", "events"}, [&] {
-        if(!p.rom().revision())result.image = rebuildCampaignRuntime(p,result.image,compiler,directory);
+    exportPlan.add("world-map-runtime", {"world-map", "events"}, [&](QByteArray &image) {
+        if(!p.rom().revision())image = rebuildCampaignRuntime(p,image,compiler,directory);
     }, exportOwners("world-map-runtime"));
-    exportPlan.add("event-gates", {"class-runtime", "world-map-runtime"}, [&] {
+    exportPlan.add("event-gates", {"class-runtime", "world-map-runtime"}, [&](QByteArray &image) {
         if (retailEventGates || priorEventGates) {
-            linkRetailEventGateRuntime(result.image, eventGateBridge, p.rom());
+            linkRetailEventGateRuntime(image, eventGateBridge, p.rom());
             result.report << (retailEventGates ? "Linked editable conditions into original event branches"
                                              : "Restored the native event dispatcher after removing custom conditions");
         }
     }, exportOwners("event-gates"));
-    exportPlan.add("campaign-start", {"class-runtime", "event-gates"}, [&] {
-        if(campaignBridge||priorCampaign)linkNewCampaignRuntime(result.image,campaignBridge,p.rom());
+    exportPlan.add("campaign-start", {"class-runtime", "event-gates"}, [&](QByteArray &image) {
+        if(campaignBridge||priorCampaign)linkNewCampaignRuntime(image,campaignBridge,p.rom());
     }, exportOwners("campaign-start"));
-    exportPlan.add("mission-runtime", {"army-capacity", "mission-tables", "game-rules", "campaign-start"}, [&] {
+    exportPlan.add("mission-runtime", {"army-capacity", "mission-tables", "game-rules", "campaign-start"}, [&](QByteArray &image) {
         if (needsMissionRuntime && !missionRuntime)
             throw Error("The authored mission runtime was not allocated");
-        result.image = linkMissionRuntime(Rom::fromBytes(result.image), p,
+        image = linkMissionRuntime(Rom::fromBytes(image), p,
                                           missionRuntime.value_or(MissionRuntimeBuild{}), compiler, directory);
         if (customMissionVictory) {
             result.report << "Compiled native victory checks for independently created scenarios";
@@ -1661,32 +1701,32 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         if (needsMissionRuntime)
             result.report << "Linked authored mission victory returns to the world map";
     }, exportOwners("mission-runtime"));
-    exportPlan.add("battlefield-loaders", {"class-runtime", "mission-tables", "mission-runtime"}, [&] {
+    exportPlan.add("battlefield-loaders", {"class-runtime", "mission-tables", "mission-runtime"}, [&](QByteArray &image) {
         if (!battlefieldModels.isEmpty()) {
             if (!battlefieldModelAddress) throw Error("Independent battlefield model table was not allocated");
-            BattlefieldClone::linkRuntime(result.image, battlefieldModelAddress);
+            BattlefieldClone::linkRuntime(image, battlefieldModelAddress);
             result.report << "Linked independent battlefield models to the native resource loaders";
         }
     }, exportOwners("battlefield-loaders"));
-    exportPlan.add("battlefield-metadata", {"battlefield-loaders", "maps"}, [&] {
+    exportPlan.add("battlefield-metadata", {"battlefield-loaders", "maps"}, [&](QByteArray &image) {
         if (!p.rom().revision()) {
-            result.image = writeScenarioBattlefields(Rom::fromBytes(result.image), p.scenarioBattlefields());
+            image = writeScenarioBattlefields(Rom::fromBytes(image), p.scenarioBattlefields());
             if (!p.scenarioBattlefields().isEmpty())
                 result.report << "Preserved independent battlefield snapshots and scenario identities";
         }
     }, exportOwners("battlefield-metadata"));
-    exportPlan.add("deleted-content", {"battlefield-metadata"}, [&] {
-        if (result.image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
-            result.image=writeDeletedContent(result.image,p.deletedContent());
+    exportPlan.add("deleted-content", {"battlefield-metadata"}, [&](QByteArray &image) {
+        if (image != p.rom().bytes() || p.deletedContent()!=readDeletedContent(p.rom()))
+            image=writeDeletedContent(image,p.deletedContent());
     }, exportOwners("deleted-content"));
-    exportPlan.add("cursor-boundaries", {"class-runtime", "battlefield-metadata"}, [&] {
-        if(cursorBoundary){cursorBoundary->install(result.image);result.report << "Compiled ground-projected cursor limits for edited battlefield boundaries";}
+    exportPlan.add("cursor-boundaries", {"class-runtime", "battlefield-metadata"}, [&](QByteArray &image) {
+        if(cursorBoundary){cursorBoundary->install(image);result.report << "Compiled ground-projected cursor limits for edited battlefield boundaries";}
     }, exportOwners("cursor-boundaries"));
-    exportPlan.add("movement", {"class-runtime", "army-capacity", "mission-tables", "game-rules", "cursor-boundaries"}, [&] {
-        if(movementPlacement){installMovementRuntime(result.image,*movementPlacement);result.report << "Compiled movement types, terrain costs, speeds and squad priorities";}
+    exportPlan.add("movement", {"class-runtime", "army-capacity", "mission-tables", "game-rules", "cursor-boundaries"}, [&](QByteArray &image) {
+        if(movementPlacement){installMovementRuntime(image,*movementPlacement);result.report << "Compiled movement types, terrain costs, speeds and squad priorities";}
     }, exportOwners("movement"));
-    exportPlan.add("scene-logic", {"class-runtime", "event-gates", "campaign-start"}, [&] {
-        if(sceneLogicEntry||priorSceneLogic){installSceneLogicRuntime(result.image,p.rom(),sceneLogicEntry);result.report << "Linked cutscene choices to saved story flags";}
+    exportPlan.add("scene-logic", {"class-runtime", "event-gates", "campaign-start"}, [&](QByteArray &image) {
+        if(sceneLogicEntry||priorSceneLogic){installSceneLogicRuntime(image,p.rom(),sceneLogicEntry);result.report << "Linked cutscene choices to saved story flags";}
     }, exportOwners("scene-logic"));
     configureExportComposition(exportPlan);
     exportPlan.compose("movement", "class-runtime", [&](const QByteArray &) {
@@ -1710,7 +1750,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         return ranges;
     });
-    exportPlan.run();
+    result.image = exportPlan.run();
     result.report << QString("Checked write ownership across %1 changed export steps").arg(exportPlan.changedSteps());
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");
