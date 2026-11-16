@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/project.h"
+#include "rebuild/compilation_cache.h"
 #include <functional>
 
 namespace lordly {
@@ -48,7 +49,8 @@ class Compiler {
                                  const QMap<QString, quint32> &symbols = {},
                                  bool inlineReadOnlyData = false) const;
     void authenticate() const;
-    // Freshly compile an authenticated original C owner at its exact game address.
+    // Compile authenticated original C at its exact game address; cached output
+    // must still pass the original owner checks.
     // Small, separately bounded mod hooks may then be applied by the caller.
     QByteArray compileAcceptedOwner(quint32 romStart, const QString &directory,
                                     const QString &name) const;
@@ -59,6 +61,8 @@ class Compiler {
                              const QString &name, quint32 address,
                              const QMap<QString, quint32> &symbols = {},
                              bool preserveInstructionPositions = false) const;
+    int reusedUnits() const { return cache_.hits(); }
+    int compiledUnits() const { return cache_.misses(); }
 
   private:
     QByteArray compileAtLayout(const QByteArray &source, const QString &directory,
@@ -69,6 +73,7 @@ class Compiler {
     void run(const QString &tool, const QStringList &args, const QString &directory) const;
     QString root_;
     std::function<void(const QString &, int, int)> activity_;
+    mutable CompilationCache cache_;
 };
 struct BuildResult {
     QByteArray image;

@@ -6,6 +6,11 @@ descriptions, save a project, and choose Build and export ROM. The source ROM
 is read-only. The included N64 toolchain compiles game sources and edited data
 during export; no Decomp checkout is required.
 
+Repeat exports reuse unchanged compiled C and data locally. The first export
+populates this disposable cache; subsequent exports compile changed units and
+run the normal ROM allocation, reference and checksum checks. The build report
+shows how many C units were reused.
+
 Building from source? Follow the
 [Windows build instructions](https://github.com/rempred/LordlyCaliber#build-from-source-windows-x64).
 The repository does not contain a `native/live/` folder. After compilation,

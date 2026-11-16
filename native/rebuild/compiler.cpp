@@ -68,7 +68,8 @@ static QByteArray readFile(const QString &path) {
 Compiler::Compiler(QString toolsRoot, std::function<void(const QString &, int, int)> activity)
     : root_(QDir(std::move(toolsRoot)).absolutePath()), activity_(std::move(activity)) {}
 void Compiler::authenticate() const {
-    auto pins = QJsonDocument::fromJson(readFile(":/rebuild/toolchain.json"))
+    const auto manifest = readFile(":/rebuild/toolchain.json");
+    auto pins = QJsonDocument::fromJson(manifest)
                     .object()
                     .value("tools")
                     .toObject();
@@ -79,6 +80,7 @@ void Compiler::authenticate() const {
         if (actual != it.value().toString())
             throw Error("Unrecognized N64 toolchain file: " + it.key());
     }
+    cache_.enable(manifest);
 }
 void Compiler::run(const QString &tool, const QStringList &args, const QString &directory) const {
     QProcess p;
@@ -184,19 +186,8 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
         "-quiet",     "-O2", "-meb",     "-mips3",        "-mgp32",       "-mfp32",
         "-G",         "0",   "-fno-PIC", "-mno-abicalls", "-fno-builtin", "-funsigned-char",
         preprocessed, "-o",  assembly};
-    run("cc1.exe", flags, directory);
-    step(2);
-    run("mips-kmc-elf-as.exe",
-        {"-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly},
-        directory);
-    step(3);
-    if (!fixedLayout.isEmpty()) {
-        auto bytes = readFile(object);
-        // The compiler emits 16-byte object alignment; original functions may
-        // start at any word. Change section alignment, never its instructions.
-        put32(bytes, elfSectionHeader(bytes, ".text") + 32, 4);
-        atomicWrite(object, bytes);
-    }
+    const QStringList assemble = {
+        "-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly};
     QByteArray bindings;
     for (auto it = symbols.begin(); it != symbols.end(); ++it) {
         if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(it.key()).hasMatch())
@@ -208,14 +199,64 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
     if (!tables.isEmpty())
         constants = QString(" .rodata 0x%1 : { *(.rodata) }")
                         .arg(tables.first().toObject()["address"].toInteger(), 0, 16).toLatin1();
-    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } %4 }\n")
+    const auto linkScript = bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } %4 }\n")
                                        .arg(section)
                                        .arg(address, 0, 16)
                                        .arg(inlineReadOnlyData ? "*(.rodata) *(.rdata) *(.lit4) *(.lit8)" : "")
                                        .arg(QString::fromLatin1(constants))
-                                       .toLatin1());
-    run("mips-kmc-elf-ld.exe", {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object},
-        directory);
+                                       .toLatin1();
+    atomicWrite(script, linkScript);
+    const QStringList link = {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object};
+    QStringList extract = {"-O", "binary"};
+    // GNU 2.6 predates --only-section.
+    for (const auto &other : {".text", ".data", ".bss", ".rdata", ".reginfo", ".pdr", ".mdebug",
+                              ".comment", ".lit4", ".lit8"})
+        if (section != QLatin1String(other))
+            extract << "--remove-section=" + QString::fromLatin1(other);
+    extract << elf << binary;
+    auto command = [&](QStringList args) {
+        for (auto &arg : args) arg.replace(dir.absolutePath(), "$BUILD");
+        return QJsonArray::fromStringList(args);
+    };
+    const auto recipe = QJsonDocument(QJsonObject{
+        {"name", name}, {"cc1", command(flags)}, {"as", command(assemble)},
+        {"ld", command(link)}, {"objcopy", command(extract)},
+        {"script", QString::fromLatin1(linkScript)}, {"fixedLayout", fixedLayout}
+    }).toJson(QJsonDocument::Compact);
+    const auto resolvedSource = readFile(preprocessed);
+    // Preprocessing always runs: header changes, external includes and __FILE__ /
+    // __TIME__ are resolved before reuse. Inline assembler file dependencies are
+    // not represented in that output, so such units compile normally.
+    const auto cacheKey = (resolvedSource.contains(".incbin") || resolvedSource.contains(".include"))
+        ? QByteArray{} : cache_.key(resolvedSource, recipe);
+    QStringList artifacts = {".compiler.s", ".o", ".elf"};
+    if (fixedLayout.isEmpty()) artifacts << ".bin";
+    const auto cached = cache_.load(cacheKey, artifacts);
+    const bool reused = !cached.isEmpty();
+    if (reused) {
+        for (auto it = cached.begin(); it != cached.end(); ++it)
+            atomicWrite(dir.absoluteFilePath(name + it.key()), it.value());
+        if (activity_) activity_("Reusing unchanged " + name, 4, fixedLayout.isEmpty() ? 5 : 4);
+    } else {
+        run("cc1.exe", flags, directory);
+        step(2);
+        run("mips-kmc-elf-as.exe", assemble, directory);
+        step(3);
+        if (!fixedLayout.isEmpty()) {
+            auto bytes = readFile(object);
+            // Original functions may begin at any word; keep their exact instructions.
+            put32(bytes, elfSectionHeader(bytes, ".text") + 32, 4);
+            atomicWrite(object, bytes);
+        }
+        run("mips-kmc-elf-ld.exe", link, directory);
+    }
+    const auto remember = [&] {
+        if (reused || cacheKey.isEmpty()) return;
+        QMap<QString, QByteArray> files;
+        for (const auto &suffix : artifacts)
+            files[suffix] = readFile(dir.absoluteFilePath(name + suffix));
+        cache_.store(cacheKey, files);
+    };
     if (!fixedLayout.isEmpty()) {
         const auto linked = readFile(elf);
         auto code = elfSectionBytes(linked, ".text");
@@ -247,18 +288,12 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
                 throw Error("Unexpected compiled C table extent");
         }
         step(4);
+        remember();
         return code.first(size);
     }
     step(4);
-    QStringList extract = {"-O", "binary"};
-    // GNU 2.6 predates --only-section. Remove its known ancillary sections,
-    // then verify the complete extracted owner against the expected result.
-    for (const auto &other : {".text", ".data", ".bss", ".rdata", ".reginfo", ".pdr", ".mdebug",
-                              ".comment", ".lit4", ".lit8"})
-        if (section != QLatin1String(other))
-            extract << "--remove-section=" + QString::fromLatin1(other);
-    extract << elf << binary;
-    run("mips-kmc-elf-objcopy.exe", extract, directory);
+    if (!reused) run("mips-kmc-elf-objcopy.exe", extract, directory);
+    remember();
     step(5);
     return readFile(binary);
 }
@@ -1867,6 +1902,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     }
     result.report << "Reopened every class, equipment and consumable record; CIC-6102 checksum "
                      "updated when required";
+    if (compiler.reusedUnits() || compiler.compiledUnits())
+        result.report << QString("Reused %1 unchanged C units; compiled %2 C units. ROM checks ran normally.")
+                             .arg(compiler.reusedUnits()).arg(compiler.compiledUnits());
     reporter.verified();
     return result;
 }

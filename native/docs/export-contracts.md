@@ -18,6 +18,33 @@ The engine is independent of Qt Widgets. GUI and CLI use the same project and
 rebuild path. Feature allocations have descriptors, sizes and checksums; many
 native owners also authenticate their original instructions before replacement.
 
+## Reusing compilation work
+
+`CompilationCache` stores successful C compilation artifacts after preprocessing.
+Each export still authenticates the bundled toolchain and original C inputs.
+The key includes the resolved source, actual compiler/assembler/linker/extraction
+arguments, link script (addresses and symbol bindings), qualified layout and
+toolchain manifest. Preprocessing runs every time, so included files and dynamic
+macros cannot silently become stale. Inline assembly with file dependencies
+compiles afresh. Assembly-only owners and resource compression remain uncached.
+Changes to artifact transformations not represented by that recipe must bump
+the cache format/version before old artifacts can be reused.
+
+Hits restore the assembly listing, object, linked ELF and extracted bytes into
+the current temporary build directory. Original-owner comparisons, module and
+relocation inspection, data comparisons, allocation/composition checks, checksum
+and final ROM reopening still run. No patched ROM image or project is cached.
+
+Storage is under the platform's generic cache directory in
+`LordlyCaliber/rom-compiler-v1`. Complete entries use atomic replacement and an
+integrity checksum; absent, partial or corrupt entries are misses. Unavailable
+storage falls back to normal compilation. Oldest entries are pruned to a 256 MiB
+budget at initialization and after each 16 MiB of writes; individual entries are
+limited to 64 MiB. Deleting the directory only causes recompilation.
+For diagnostics/tests, `LORDLY_COMPILER_CACHE_DIR` selects an isolated directory;
+`LORDLY_DISABLE_COMPILER_CACHE=1` forces fresh compilation. GUI and CLI share the
+same default cache and report reused/compiled C unit counts.
+
 ## Two different collision risks
 
 **Storage or code ownership:** allocations can overlap, or one whole-function
