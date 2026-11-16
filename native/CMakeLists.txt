@@ -27,6 +27,17 @@ target_sources(lordly_engine PRIVATE engine/effect_machine.cpp)
 target_sources(lordly_engine PRIVATE engine/effect_player.cpp engine/effect_composition.cpp)
 target_sources(lordly_engine PRIVATE engine/accepted_effect_code.cpp)
 find_program(NODE_EXECUTABLE node REQUIRED)
+target_sources(lordly_engine PRIVATE rebuild/export_plan.cpp rebuild/export_contracts.cpp)
+# Reuse the existing native ownership catalog; no second handwritten inventory.
+file(GLOB_RECURSE export_owner_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/*.json")
+file(GLOB export_owner_engine_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/engine/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/rebuild/*.cpp")
+set(export_owner_catalog "${CMAKE_CURRENT_BINARY_DIR}/export-owners.json")
+add_custom_command(OUTPUT "${export_owner_catalog}"
+  COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-ownership.cjs" --export "${export_owner_catalog}"
+  DEPENDS tools/runtime-ownership.cjs tools/runtime-sharing.json ${export_owner_inputs} ${export_owner_engine_inputs}
+  COMMENT "Preparing native export ownership catalog" VERBATIM)
+set_source_files_properties("${export_owner_catalog}" PROPERTIES GENERATED TRUE)
+qt_add_resources(lordly_engine export_owners PREFIX "/generated" BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES "${export_owner_catalog}")
 set(LORDLY_N64_TOOLS "${CMAKE_CURRENT_SOURCE_DIR}/.local/n64-toolchain" CACHE PATH "Authenticated N64 compiler directory")
 file(GLOB_RECURSE accepted_effect_inputs CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/game/accepted/library/*.c"
@@ -560,6 +571,9 @@ if(BUILD_TESTING)
   set_target_properties(image_tests PROPERTIES WIN32_EXECUTABLE FALSE)
   target_link_libraries(image_tests PRIVATE lordly_engine Qt6::Gui Qt6::Test)
   add_test(NAME native_images COMMAND image_tests -o image-test-report.txt,txt)
+  qt_add_executable(export_plan_tests tests/export_plan_tests.cpp)
+  target_link_libraries(export_plan_tests PRIVATE lordly_engine Qt6::Test)
+  add_test(NAME native_export_plan COMMAND export_plan_tests)
   qt_add_executable(engine_tests tests/engine_tests.cpp)
   set_target_properties(engine_tests PROPERTIES WIN32_EXECUTABLE FALSE)
   target_link_libraries(engine_tests PRIVATE lordly_engine Qt6::Test)

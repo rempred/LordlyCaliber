@@ -1376,48 +1376,8 @@
     ]
   },
   "mission-tables + movement": {
-    "reason": "class_runtime binds all four mission tables into the compiled movement owners, including scenario setup and treasure. High-key boundary export combines movement and independent battlefields; mission table loads and exported cursor consumers are checked separately.",
+    "reason": "Movement binds extended mission tables into its remaining whole-function owners. Scenario setup retains its separately linked native references; movement replaces only its table-copy/storm block.",
     "ranges": [
-      [
-        "101e4c",
-        "101e50"
-      ],
-      [
-        "101e54",
-        "101e58"
-      ],
-      [
-        "102e64",
-        "102e68"
-      ],
-      [
-        "102e6c",
-        "102e70"
-      ],
-      [
-        "102e84",
-        "102e88"
-      ],
-      [
-        "102e8c",
-        "102e90"
-      ],
-      [
-        "102ea4",
-        "102ea8"
-      ],
-      [
-        "102eac",
-        "102eb0"
-      ],
-      [
-        "102ec4",
-        "102ec8"
-      ],
-      [
-        "102ecc",
-        "102ed0"
-      ],
       [
         "196158",
         "19615c"
@@ -1431,90 +1391,6 @@
   "capacity-references + movement": {
     "reason": "Movement resolves original army addresses through CapacityPlacement and imports capacity symbols. Maintained capacity C variants are selected when present. movement_types_tests expandedIntegration verifies the combined export and save-load path.",
     "ranges": [
-      [
-        "101e78",
-        "101e80"
-      ],
-      [
-        "101e84",
-        "101e88"
-      ],
-      [
-        "101e8c",
-        "101e90"
-      ],
-      [
-        "1022dc",
-        "1022e0"
-      ],
-      [
-        "1022e4",
-        "1022e8"
-      ],
-      [
-        "10241c",
-        "102420"
-      ],
-      [
-        "102424",
-        "102428"
-      ],
-      [
-        "10242c",
-        "102430"
-      ],
-      [
-        "102434",
-        "102438"
-      ],
-      [
-        "102444",
-        "102448"
-      ],
-      [
-        "10244c",
-        "102450"
-      ],
-      [
-        "102618",
-        "102620"
-      ],
-      [
-        "102638",
-        "102640"
-      ],
-      [
-        "1028b4",
-        "1028b8"
-      ],
-      [
-        "1028bc",
-        "1028c0"
-      ],
-      [
-        "10298c",
-        "102990"
-      ],
-      [
-        "102994",
-        "102998"
-      ],
-      [
-        "1029e0",
-        "1029e4"
-      ],
-      [
-        "1029e8",
-        "1029ec"
-      ],
-      [
-        "102a4c",
-        "102a50"
-      ],
-      [
-        "102a54",
-        "102a58"
-      ],
       [
         "105d1c",
         "105d24"
@@ -1898,15 +1774,6 @@
       [
         "197288",
         "19728c"
-      ]
-    ]
-  },
-  "movement + scenarios/capacity-bounds.json": {
-    "reason": "The full scenario setup C owner uses the expanded capacity bindings and maintained array widths; its old instruction-bound patch is replaced by compiled movement C. Covered by movement_types_tests expandedIntegration.",
-    "ranges": [
-      [
-        "101eac",
-        "101eb0"
       ]
     ]
   },

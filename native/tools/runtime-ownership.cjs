@@ -24,9 +24,13 @@ function claims(){
  // variants. Recording only its entry jumps would miss discarded inner hooks.
  const movementParts=new Set();
  for(const owner of read('movement/owners.json').owners)for(const part of owner.parts){
+  if(owner.name.toLowerCase()==='func_00101ddc')continue;
   const key=`${part.start}:${part.size}`;
   if(!movementParts.has(key)){add('movement',owner.name,part.start,part.size);movementParts.add(key);}
  }
+ // Scenario setup also owns rewards/artwork. Movement replaces only its
+ // table-copy/storm block, including every skipped instruction.
+ add('movement','scenario movement setup',0x102db0,0x84);
  for(const name of ['fatigue','recovery']){
   const row=read('tools/game-rules.json')[name];
   add('movement',name+' cycle',row.offset,row.size);
@@ -198,6 +202,12 @@ module.exports={claims,overlaps,check,checkClaimCoverage,fixedStorage,checkStora
 if(require.main===module){
  const rows=claims(),policies=JSON.parse(fs.readFileSync(path.join(__dirname,'runtime-sharing.json'),'utf8'));
  const hits=check(rows,policies);
+ if(process.argv[2]==='--export'){
+  if(!process.argv[3])throw Error('Missing export catalog path');
+  checkStorage(fixedStorage());
+  fs.writeFileSync(process.argv[3],JSON.stringify({claims:rows,sharing:policies}));
+  process.exit(0);
+ }
  console.log(`${rows.length} catalogued ROM claims checked; ${hits.length} cross-feature intersections have explicit composition contracts.`);
  const storage=fixedStorage();checkStorage(storage);
  console.log(`${storage.rom.length} fixed ROM storage regions and ${storage.ram.length} extension RAM modules are disjoint.`);

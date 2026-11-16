@@ -119,6 +119,9 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
     for (const auto &value : catalog) {
         const auto o = value.toObject();
         const auto name = o["name"].toString();
+        // This shared setup function also contains encounter rewards and image
+        // resource loads. Its movement-only block is composed below instead.
+        if (name.compare("func_00101DDC", Qt::CaseInsensitive) == 0) continue;
         if (o["capacity"].toBool() != (input.capacity && variants.contains(name)))
             continue;
         const auto source = read(o["source"].toString());
@@ -233,8 +236,17 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
         hooks.append({start,entry});
     }
     b+=cycles.bytes;align(b);
+    const auto setup = compiler.compileModule(read("game/movement/setup.c"), dir,
+        "movement_setup", address + b.size(), {{"movement_config.h", config}},
+        {{"lc_movement_initial", address + initial}, {"lc_movement_working", address + working},
+         {"lc_movement_scenario", 0x8018f481}, {"lc_movement_copy", 0x80093060},
+         {"lc_movement_flag", 0x80186210}});
+    const auto setupEntry = setup.entries.value("lc_movement_setup");
+    if (setupEntry < setup.address || setupEntry >= setup.address + setup.bytes.size())
+        throw Error("Missing movement table initialization entry");
+    b += setup.bytes; align(b);
     p.patches = b.size();
-    p.patchCount = hooks.size() * 2;
+    p.patchCount = hooks.size() * 2 + 3;
     put32(b, 16, p.patches);
     put32(b, 20, p.patchCount);
     for (const auto &h : hooks)
@@ -245,6 +257,14 @@ MovementPlacement buildMovementRuntime(const MovementInput &input, quint32 addre
             put32(b, at + 4, u32(input.source.bytes(), h.start + i * 4));
             put32(b, at + 8, i ? 0 : 0x08000000U | ((h.target >> 2) & 0x3ffffff));
         }
+    // Preserve the copy call's original delay slot. The following branch skips
+    // only the native eight-row storm loop; its own delay slot must be NOP.
+    for (const auto &[site, word] : std::initializer_list<std::pair<quint32,quint32>>{
+             {0x102db0, 0x0c000000U | ((setupEntry >> 2) & 0x3ffffff)},
+             {0x102db8, 0x1000001eU}, {0x102dbc, 0U}}) {
+        const auto at = b.size(); b += QByteArray(12,0);
+        put32(b,at,site); put32(b,at+4,u32(input.source.bytes(),site)); put32(b,at+8,word);
+    }
     // Keep the pre-install directory too, so unwrapping restores the exact class
     // allocation checksummed by an earlier capacity exporter.
     put32(b, 56, b.size());
@@ -267,6 +287,16 @@ void installMovementRuntime(QByteArray &image, const MovementPlacement &built) {
         throw Error("Movement runtime needs its class allocation");
     if (image.mid(p.descriptorOffset, p.descriptorSize) != QByteArray(p.descriptorSize, char(-1)))
         throw Error("Movement descriptor overlaps unrelated data");
+    // Verify the entire skipped US Rev 0 block, including instructions which
+    // aren't rewritten. A competing inner hook must not be silently bypassed.
+    const auto setupOriginal = QByteArray::fromHex(
+        "0c024c18240602003c0380199063f4812402000d1462000e24020011"
+        "0c0618842404000e104000173403ffff240201c03c01801f00220821"
+        "a42337062442ffc004400010000000000806b9a8000000001462000c"
+        "000000000c0618842404000f104000083403ffff240201c03c01801f"
+        "00220821a42337062442ffc00441fffb00000000");
+    if (image.mid(0x102db0,0x84) != setupOriginal)
+        throw Error("Another export changed the movement table initialization block");
     p.originalDataCrc = u32(image, ClassPlacement::descriptorRomOffset + 52);
     p.originalClassHeaderCrc = u32(image, ClassPlacement::descriptorRomOffset + 124);
     // Other supported exporters can relocate the original entry operands or

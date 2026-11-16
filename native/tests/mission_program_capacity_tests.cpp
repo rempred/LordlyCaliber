@@ -57,7 +57,12 @@ class MissionProgramCapacityTests final : public QObject {
             Rom::updateChecksum(checksum);
             QCOMPARE(checksum.mid(0x10, 8), built.image.mid(0x10, 8));
             const auto outputPath = qEnvironmentVariable("LORDLY_CURSOR_CAPACITY_OUTPUT");
-            if (!outputPath.isEmpty()) atomicWrite(outputPath, rom.serialize(built.image));
+            if (!outputPath.isEmpty()) {
+                atomicWrite(outputPath, rom.serialize(built.image));
+                // Reuse exactly this authored project when comparing exporter
+                // versions; creating it again can assign different resource IDs.
+                project.saveFolder(outputPath + ".project");
+            }
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }

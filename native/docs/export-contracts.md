@@ -1,8 +1,8 @@
 # Native editor architecture and export contracts
 
-The editor has separate layers, but ROM feature composition still has manual
-boundaries. A valid allocation and a successful round trip do not establish that
-every game consumer received the right data.
+The editor has separate layers and one sequential export plan. A valid allocation
+and a successful round trip do not establish that every game consumer received
+the right data; those still require tests against the original game.
 
 ## Layers
 
@@ -26,6 +26,27 @@ checks catalogued spans and fixed storage. `tools/runtime-sharing.json` records
 the specific overlapping ranges whose behaviors are deliberately composed.
 Movement and cursor instruction tests also compare actual exported patch records
 against those claims, so missing catalog coverage fails.
+
+`rebuild/export_plan.*` coordinates the domain builders used by both GUI and CLI.
+Named steps declare prerequisites; missing, reversed or cyclic dependencies fail
+before builders run. Execution retains the established order, including lazy
+project loads and the resident-builder outputs consumed by later steps.
+
+Each step prepares an image privately. The plan compares its actual changed,
+appended and removed spans with the current owners before accepting the result.
+Complete-function claims from the existing catalog additionally protect untouched
+inner hooks when another part of their function changes. Unchanged steps do not
+take ownership. A conflict names both steps and the z64 range; any failure restores
+the plan's input image. Rebuild must also pass its existing readback checks before
+`exportRom` can publish a file.
+
+Intentional composition is directional: name the earlier step and exact permitted
+ranges, and declare the dependency. The later step takes ownership only of the
+spans it actually writes or replaces. `export_contracts.cpp` records the existing
+supported handoffs, reusing native catalogs and qualified relocation maps rather
+than another allocator. The symmetric static sharing inventory is not blanket
+permission. The final CIC checksum is a derived eight-byte header field; other
+metadata and resource checksums require their explicit writer contracts.
 
 **Shared meaning:** two consumers can interpret the same numeric ID differently
 while all addresses remain valid. Dialogue appearance IDs 165–185 are NPCs;
@@ -51,13 +72,31 @@ semantic error. Tests must identify and exercise both native consumers.
 
 ## Current limits
 
-`rebuild()` remains an ordered pipeline, with some dependencies expressed by call
-order and feature-specific symbol mapping. The ownership scan covers its listed
-families; it is not a complete inventory of every export write, dynamic allocation
-or overlay lifetime. Actual-patch coverage is currently enforced for movement and
-cursor modules, not every exporter. Full game-path observations remain necessary.
+The plan starts after recognized older installations have been normalized; that
+preparation still uses the existing authenticated removal routines. Failure
+cannot publish their intermediate image. All registered domain writers have
+actual-byte checks, but complete-function claims cover catalogued owners, not
+every native function. Dynamic allocations and overlay lifetimes still use the
+existing domain allocators and validators. This is coordination of the existing
+builders, not a second compiler, allocation system or project format.
 
-A future centralized patch plan should declare writes, complete replaced owners,
-consumer namespaces and composition dependencies before mutating the image.
-Until then, expanding the existing checks is useful only when their stated scope
-and independent game evidence remain explicit.
+For a new writer: add a named step and real prerequisites, declare any complete
+function it replaces, then add only the bounded handoffs its composition needs.
+Test a competing write and a supported combination. Keep class, dialogue, item
+and other consumer ID meanings separate in domain models; an address check cannot
+prove those meanings. Original-game consumer and game-path tests remain necessary.
+
+## Shared scenario setup
+
+Movement initialization now replaces only US Rev 0 z64 `102DB0..102E34` inside
+scenario setup `00101DDC`. The rest of that owner still executes its configured
+encounter rewards, resource loads and mission/capacity references. The bounded
+helper copies all movement rows and applies the original scenario-13/flag-14 and
+scenario-17/flag-15 storm restrictions. It uses the native source-first copy
+service. All skipped instructions are checked before installation; the branch
+back to native setup has a safe delay slot.
+
+`movement-setup-mips.cjs` compares this block with the original instructions.
+`movementPreservesSharedSetup` combines movement, weighted rewards and consumable
+artwork, checks preservation of the rest of the owner, and runs the native reward
+selector. The old whole-function movement replacement fails the entry check.

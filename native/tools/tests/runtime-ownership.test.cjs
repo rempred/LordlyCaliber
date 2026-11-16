@@ -5,11 +5,13 @@ const policies=JSON.parse(fs.readFileSync(path.join(__dirname,'../runtime-sharin
 test('catalogued independent exporters have explicit sharing contracts',()=>check(claims(),policies));
 test('movement replacements and cursor callers expose competing inner hooks',()=>{
  const rows=claims();
- for(const start of [0x43ad8,0x101ddc,0x124520,0x133700,0x133944,0x1960a8]){
+ for(const start of [0x43ad8,0x102db0,0x124520,0x133700,0x133944,0x1960a8]){
   const owner=rows.find(row=>row.group==='movement'&&row.start===start);
   assert(owner&&owner.end>start+8,'whole native owner must be claimed');
   assert.throws(()=>check([owner,{group:'new-inner-hook',name:'test',start:start+12,end:start+16}],{}),/Unreviewed/);
  }
+ assert(!rows.some(row=>row.group==='movement'&&row.start<=0x10245c&&row.end>0x10245c),
+  'movement must preserve encounter rewards in the shared scenario setup owner');
  for(const start of [0x1038ac,0x1130c0,0x1134b0])
   assert(rows.some(row=>row.group==='cursor-boundary'&&row.start===start&&row.end===start+4));
  const actualWrites=[{start:0x1038ac,end:0x1038b0}];

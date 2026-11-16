@@ -3,6 +3,7 @@
 #include "app/record_model.h"
 #include "app/value_editor.h"
 #include "engine/movement_runtime.h"
+#include "engine/icon_artwork.h"
 #include "engine/new_campaign.h"
 #include "engine/route_preview.h"
 #include "engine/save_document.h"
@@ -248,6 +249,11 @@ class MovementTypesTests : public QObject {
             QVERIFY(probe.waitForFinished(120000));
             QVERIFY2(probe.exitCode() == 0,
                      (probe.readAllStandardOutput() + probe.readAllStandardError()).constData());
+            probe.start("node", {QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/movement-setup-mips.cjs",
+                                 file, qEnvironmentVariable("LORDLY_TEST_ROM")});
+            QVERIFY(probe.waitForFinished(120000));
+            qInfo().noquote()<<probe.readAllStandardOutput();
+            QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
             probe.start("node",{QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/movement-rules-mips.cjs",file,qEnvironmentVariable("LORDLY_TEST_ROM")});
             QVERIFY(probe.waitForFinished(120000));
             qInfo().noquote()<<probe.readAllStandardOutput();
@@ -289,6 +295,47 @@ class MovementTypesTests : public QObject {
                 QVERIFY(probe.waitForFinished(120000));qInfo().noquote()<<probe.readAllStandardOutput();QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
             }
         }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void movementPreservesSharedSetup() {
+        try {
+            const auto tools=qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if(tools.isEmpty()) QSKIP("Local N64 compiler required");
+            const auto output=qEnvironmentVariable("LORDLY_MOVEMENT_TEST_OUTPUT");
+            QVERIFY2(!output.isEmpty(),"Run-specific parent test-ROM directory required");
+            auto p=Project::fromRom(rom(),catalog());
+            p.loadEncounters();auto encounters=*p.encounters();
+            encounters.setReward(45,CreatureReward{{0x8001,44,0},{7,2,1}});
+            p.setEncounters(encounters.json());
+            p.loadIconArtwork();auto art=*p.iconArtwork();auto pixels=art.words(0x201);
+            put16(pixels,0,art.palette(1).last());art.setWords(0x201,pixels);p.setIconArtwork(art.json());
+            QTemporaryDir work;
+            const auto baseline=rebuild(p,tools,work.path());
+            p.createMovementType("Scout",2);
+            const auto combined=rebuild(p,tools,work.path());
+            // Original setup must still reach its configured reward selector and
+            // image loads. Ignore only explicitly relocated image operands and
+            // the movement block; every other instruction must be preserved.
+            auto expected=baseline.image.mid(0x101ddc,4388),actual=combined.image.mid(0x101ddc,4388);
+            actual.replace(0x102db0-0x101ddc,0x84,expected.mid(0x102db0-0x101ddc,0x84));
+            for(const auto &spec:IconArtwork::specs())for(const auto &ref:spec.sites)
+                for(auto at:{ref.first,ref.second})if(at>=0x101ddc&&at+4<=0x102f00)
+                    actual.replace(at-0x101ddc,4,expected.mid(at-0x101ddc,4));
+            QCOMPARE(actual,expected);
+            auto opened=Project::fromRom(Rom::fromBytes(combined.image),catalog());
+            opened.loadEncounters();opened.loadIconArtwork();
+            QCOMPARE(opened.encounters()->rewards().row(45),encounters.rewards().row(45));
+            QCOMPARE(opened.iconArtwork()->words(0x201),pixels);
+            const auto out=QDir(output).filePath("shared-setup");
+            QDir().mkpath(out);
+            const auto file=QDir(out).filePath("Ogre Battle 64 - Person of Lordly Caliber (USA).z64");
+            atomicWrite(file,combined.image);
+            const auto fixture=QDir(out).filePath("rewards.json");
+            atomicWrite(fixture,QJsonDocument(QJsonObject{{"rom",file},{"sourceRom",qEnvironmentVariable("LORDLY_TEST_ROM")},
+                {"rewards",encounters.rewards().json()},{"dataOffset",double(*CreatureRewards::placement(opened.rom()))}}).toJson());
+            QProcess probe;probe.start("node",{QString::fromUtf8(LORDLY_SOURCE_DIR)+"/tests/creature-rewards-mips.cjs",fixture});
+            QVERIFY(probe.waitForFinished(120000));qInfo().noquote()<<probe.readAllStandardOutput();
+            QVERIFY2(probe.exitCode()==0,probe.readAllStandardError().constData());
+        } catch(const std::exception &e){QFAIL(e.what());}
     }
     void expandedIntegration() {
         try {
