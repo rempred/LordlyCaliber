@@ -78,14 +78,17 @@ for(const value of process.argv.includes('--chaos-only')?[]:[...Array(101).keys(
  }
  luckCases++;
 }
-for(const tailSize of [0x2f0,0x910])for(const [texture,palette] of [[0x801ff390,0x801fa450],[0x80320000,0x80340000]])for(const value of [0,1,9,10,50,99,100,255]) {
+// Native roster header captured in stable and flickering states. Vertex storage
+// can move independently of the task's command list.
+const headerQuad=Buffer.from('ffb8004400000000000006c0ffffffffffb800600000000000000000ffffffff008800600000000033c00000ffffffff008800440000000033c006c0ffffffff','hex');
+for(const header of [dl-23584,0x80292550,0x8029c180])for(const tailSize of [0x2f0,0x910])for(const [texture,palette] of [[0x801ff390,0x801fa450],[0x80320000,0x80340000]])for(const value of [0,1,9,10,50,99,100,255]) {
  const m=new Mips(),task=0x80300000,size=0x2400,insert=dl+size-tailSize;
  m.load(0x80420000,rom.subarray(0x27c1000,0x27c2000));
  const seed=Buffer.alloc(size);for(let i=0;i<size;i++)seed[i]=(i*7+19)&255;m.load(dl,seed);
  m.w32(0x80196af8,0x801f1550);m.w32(0x801f1554,texture);m.w32(0x801f1558,palette);
  m.w32(task+48,dl&0x1fffffff);m.w32(task+52,size);
  m.w32(insert,0xed064324);m.w32(insert+4,0x001b437c);
- m.w32(insert-2184,0x01004008);m.w32(insert-2180,dl-23584);
+ m.w32(insert-2184,0x01004008);m.w32(insert-2180,header);m.load(header,headerQuad);
  m.w8(0x801936a9,value);m.set('sp',sp);m.set('a0',task);m.set('a1',64);
  const before=bytes(m,dl,size);let submissions=0;
  m.trap(0x80090140,c=>{assert.equal(c.get('a0'),task);assert.equal(c.get('a1'),64);submissions++;});
@@ -100,6 +103,20 @@ for(const tailSize of [0x2f0,0x910])for(const [texture,palette] of [[0x801ff390,
  const params=[0x340,0x200,0x00e00200,0x01c00200,0x02a00200,0x03800200,0x04600200,0x05400200,0x06200200,0x07000200];
  for(const [i,offset] of [0x27c,0x2a4,0x2cc].entries())assert.equal(m.r32(insert+offset),params[Number(text[i])]);
  chaosCases++;
+}
+// Keep the protection against adding the counter over other Army sub-screens.
+for(const bad of ['opcode','unaligned','outside','shape','other-owner']) {
+ const m=new Mips(),task=0x80300000,size=0x2400,insert=dl+size-0x2f0,header=0x80370000;
+ m.load(0x80420000,rom.subarray(0x27c1000,0x27c2000));m.load(header,headerQuad);
+ m.w32(0x80196af8,bad==='other-owner'?0:0x801f1550);
+ m.w32(task+48,dl&0x1fffffff);m.w32(task+52,size);
+ m.w32(insert,0xed064324);m.w32(insert+4,0x001b437c);
+ m.w32(insert-2184,bad==='opcode'?0:0x01004008);
+ m.w32(insert-2180,bad==='unaligned'?header+4:bad==='outside'?0x80800000:header);
+ if(bad==='shape')m.w32(header+32,0x00880061);
+ const before=bytes(m,dl,size);m.set('sp',sp);m.set('a0',task);m.set('a1',64);
+ m.trap(0x80090140,()=>{});m.call(0x80420100,0x80093b84);
+ assert.equal(m.r32(task+52),size,bad);assert.deepEqual(bytes(m,dl,size),before,bad);
 }
 console.log(`PASS ${luckCases} LCK/native icon command comparisons and ${chaosCases} CF relocated-resource/tail cases. Native-size LCK label and separated digits below Lv; values, stack, original icon commands and task tails preserved.`);
 const pngArg=process.argv.indexOf('--png');

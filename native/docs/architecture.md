@@ -3752,6 +3752,18 @@ checkout or compiled game module is required by users. The historical assembler
 needs named linker symbols for absolute jumps; numeric operands produced zero
 jump targets and were caught by the compiled-owner comparison.
 
+Module version 6 identifies the native roster header through the actual G_VTX
+pointer and its four XY coordinates: (-72,68), (-72,96), (136,96), (136,68).
+The pointer must be aligned and the complete quad must fit in RDRAM. The former
+task-minus-0x5C20 check was invalid when the game allocated vertices separately
+from the command list; it rejected one alternating buffer during/after missions
+and made the counter flicker. Owner, task bounds, trailer and opcode guards
+remain in place. Regression inputs include the native quad and independently
+allocated pointers from supplied before/during/after-mission states. All five
+state replays rendered the counter consistently with version 6, including two
+states captured while entering the menu. These were controlled state replays
+that reloaded the module from the candidate ROM, not a new campaign playthrough.
+
 Qualified placements are ROM `23F7C` / RAM `80093B7C` (hook), ROM `3078C` /
 RAM `800A038C` (continuation), ROM `34E78` / RAM `800A4A78` (bootstrap), and
 ROM `27C1000..27C2000` / RAM `80420000..80421000` (module reservation).

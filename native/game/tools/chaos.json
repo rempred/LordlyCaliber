@@ -42,11 +42,12 @@
       "size": 136,
       "payloadBytes": 64,
       "retailSha256": "b707241545a346265aab1ffb32ff64b55bf8f8dc1b56a46ef33ce3d15db11d33",
-      "normalizedSha256": "537da8ec18e9fd6c6ef3e69c88f97795fc14d2cfad6acb453c7b1badaa3fe99c",
+      "normalizedSha256": "d90baa280cfd54bbc020e72cc22d03e4e023d312dde04a90c9d903063d9280d9",
       "legacyRom": 216696,
       "legacyBytes": 136,
       "legacySha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b",
       "previousNativeSha256": [
+        "537da8ec18e9fd6c6ef3e69c88f97795fc14d2cfad6acb453c7b1badaa3fe99c",
         "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b"
       ]
     },
@@ -58,12 +59,13 @@
       "size": 4096,
       "payloadBytes": 2560,
       "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
-      "normalizedSha256": "a4fdb6ff9a2cdd14f405abb326ff5c656de64186dcd80f3a067f3d4d6434d069",
+      "normalizedSha256": "caf2935f1ae4404b05f51e5e84b3625dfac65dd2604e23148912c85981d3fc7a",
       "legacyRom": 41484288,
       "legacyBytes": 2560,
       "legacySha256": "e2e78113be22bccfb57809fff874c7e5126064e96c83c6865e3f5bdab19f65cf",
       "previousNativeSha256": [
-        "3379f4b180d418525180d34210ae28914f15e6b0725a4db55b76d41a86d12a41"
+        "3379f4b180d418525180d34210ae28914f15e6b0725a4db55b76d41a86d12a41",
+        "a4fdb6ff9a2cdd14f405abb326ff5c656de64186dcd80f3a067f3d4d6434d069"
       ]
     }
   ]

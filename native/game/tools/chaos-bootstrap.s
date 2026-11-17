@@ -9,7 +9,7 @@
     bne $t1,$t2,reload
     nop
     lw $t1,0x4($t0)
-    addiu $t2,$zero,5
+    addiu $t2,$zero,6
     beq $t1,$t2,loaded
     nop
 reload:

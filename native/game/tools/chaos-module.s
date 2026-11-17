@@ -2,9 +2,52 @@
 # and Decomp e50fe500 tools/lordly_phase3_native_payload.py. Assembled at user export.
 # Army final-task insertion: guard owner, bounded task, trailer and roster marker.
 # Shift the original tail, insert the authored plate and substitute live CF digits.
-    .word 0x4f424346,0x00000005,0x00000100,0x00000398
+    .word 0x4f424346,0x00000006,0x00000100,0x00000398
     .word 0x000003c0,0x00000700,0x00000a00,0x00000298
     .word 0x00000028,0x00000340,0x00000248,0x00000030
+.org 0x40
+validate_roster_header:
+    # G_VTX owns its real vertex pointer. The game's command list can be
+    # relocated independently, so task-minus-0x5c20 is not an identity check.
+    # Validate the native roster header quad: (-72,68), (-72,96),
+    # (136,96), (136,68), as emitted before the War Funds tail.
+    addiu $v0,$zero,0
+    andi $t2,$t1,7
+    bne $t2,$zero,header_checked
+    nop
+    sll $t2,$t1,3
+    srl $t2,$t2,3
+    lui $t3,0x80
+    addiu $t3,$t3,-64
+    sltu $t3,$t3,$t2
+    bne $t3,$zero,header_checked
+    nop
+    lui $t3,0xa000
+    addu $t2,$t2,$t3
+    lw $t1,0($t2)
+    lui $t3,0xffb8
+    ori $t3,$t3,0x44
+    bne $t1,$t3,header_checked
+    nop
+    lw $t1,16($t2)
+    lui $t3,0xffb8
+    ori $t3,$t3,0x60
+    bne $t1,$t3,header_checked
+    nop
+    lw $t1,32($t2)
+    lui $t3,0x88
+    ori $t3,$t3,0x60
+    bne $t1,$t3,header_checked
+    nop
+    lw $t1,48($t2)
+    lui $t3,0x88
+    ori $t3,$t3,0x44
+    bne $t1,$t3,header_checked
+    nop
+    addiu $v0,$zero,1
+header_checked:
+    jr $ra
+    nop
 .org 0x100
     addiu $sp,$sp,-32
     sw $ra,0x0($sp)
@@ -34,10 +77,6 @@ relocatable_task_pointer:
     lui $t0,0xa000
     addu $t0,$t0,$t2
     sw $t0,0xc($sp)
-    lui $t3,0x8000
-    addu $t3,$t3,$t2
-    addiu $t3,$t3,-23584
-    sw $t3,0x1c($sp)
 target_task:
     lw $t1,0x34($a0)
     sltiu $t5,$t1,0x1198
@@ -92,8 +131,9 @@ tail_found:
     bne $t1,$t2,call_original
     nop
     lw $t1,-2180($t4)
-    lw $t3,0x1c($sp)
-    bne $t1,$t3,call_original
+    jal validate_roster_header
+    nop
+    beq $v0,$zero,call_original
     nop
     lw $t1,0x14($sp)
     addiu $t1,$t1,0x32f
