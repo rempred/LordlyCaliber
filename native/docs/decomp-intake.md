@@ -1,5 +1,28 @@
 # Using newly accepted Decomp C
 
+## November 17 actor placement and briefing
+
+The editor imports all 13 matching functions from Decomp `d66e1450`, verified
+CURRENT `25FDAD0F`. The ROM baseline compiles 1,495 producers into 1,712
+authenticated code and data blocks. Three existing callers have updated
+declarations. When these callers change, regenerate the body-policy adaptations
+with `node native/tools/generate-body-policy-c.cjs`, the story dispatcher with
+`node native/tools/generate-scene-logic.cjs <normalized-z64-ROM>`, and the
+command descriptions with `node native/tools/generate-director-grammar.cjs`.
+The body-policy adapters still emit the same instructions and tables as the
+previous editor.
+
+| Recovered source | What the editor can use |
+| --- | --- |
+| `2A98C4`, `29E218` | The scene preview now answers Director command 0x2B. It reads the body pose even for an ordinary actor. At the final frame followed by a jump and end, the actor stays busy until its timer drops below two. The ROM build includes the sequencer's exact 88-byte switch table. |
+| `2A9364`, `2AB0F8`, `2ACFD8`, `2AD224` | The initializer and placement callers confirm that linked children resolve inherited arguments from their own records. The editor retains the private-pose mapping used by expanded projects. |
+| `20D870`, `20C120`, `2AB574`, `2AD434`, `2AD574` | Art and owner come from separate character bytes. Paired-body classification uses the owner. Leader normalization and explicit member binding are different slot operations. The availability filter now covers one expanded-capacity hook. |
+| `2B88C8`, `2B867C` | Command 0xC2 selects the first eligible row with an occupied anchor. Each later component copies the preceding present actor **after** its immediate pose, shifts X by −8 and Z by +8, and uses the auxiliary slot selected once for the row. Native preview of the full command still needs an adapter for the invocation's allocation and preparation results. |
+
+Source matching establishes how the game handles those inputs. The briefing
+evidence does not identify a naturally observed invocation with those services
+ready. The [source-selection audit](source-selection-audit.md) records the export impact.
+
 ## November 1 complete matching library
 
 The current importer includes accepted `PURE_C` and `HYBRID_C`, preserving both

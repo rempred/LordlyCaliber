@@ -198,8 +198,11 @@ tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/
   const highAttackReferences = [...highAttackText.slice(highAttackText.indexOf('.org 0x940')).matchAll(/\.word (0x[0-9a-f]+),(0x[0-9a-f]+)/gi)]
     .map(m => ({address: Number(m[1]), expected: Number(m[2])}));
   if (highAttackReferences.length !== 546) throw Error('High Attack runtime reference census needs review');
+  const capacityHooks = checks.filter(row => row.selection === 'extension-hook' &&
+    row.consumer === 'rebuild/capacity_runtime.cpp');
+  const coveredCapacityHooks = capacityHooks.filter(row => row.alternatives.length);
   const deferredGroups = [
-    {name: 'Expanded capacity', reason: 'Only 17 of 102 entry/return hooks have accepted C. Compiler-derived settlement data relocations are preserved separately.'},
+    {name: 'Expanded capacity', reason: `${coveredCapacityHooks.length} of ${capacityHooks.length} entry/return hooks overlap accepted C. Compiler-derived settlement data relocations are preserved separately.`},
     {name: 'High Attack and animation overrides', reason: 'High Attack also changes 546 runtime references in mixed C/assembly owners. Animation overrides share constructor 0021CBC4 and its fixed register/continuation contract.'},
     {name: 'Custom encounters', reason: 'Materialization, persuasion, retreat, recruit and result consumers still include unrecovered full functions.'}
   ];

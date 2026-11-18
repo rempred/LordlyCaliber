@@ -123,13 +123,13 @@ void SceneActors::advancePresentation() {
         const auto row = next.bodyRow(u8(actor, 0x147));
         int pose = secondaryPose(row, actor);
         if (state == 1) {
-            if (!next.actors_[slot]->pose().bodyBusy()) {
+            if (!next.actors_[slot]->pose().bodyBusy(bodyData_)) {
                 next.presentationRecord_[slot] = 2;
                 next.returnToBodyPosition(slot);
             }
         } else if (state == 2 || state == 5) {
             if (state == 5) {
-                if (next.actors_[slot]->pose().bodyBusy())
+                if (next.actors_[slot]->pose().bodyBusy(bodyData_))
                     continue;
             } else {
                 if (next.motions_[slot].present && next.motions_[slot].remaining)

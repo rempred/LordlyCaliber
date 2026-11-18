@@ -124,10 +124,11 @@ int ActorPosePlayer::query() const {
         return ActorArt::load(rom_, actor_.bank).poseRecord(actor_.state, actor_.cursor).opcode;
     return art_.poseRecord(actor_.state, actor_.cursor).opcode;
 }
-bool ActorPosePlayer::bodyBusy() const {
+bool ActorPosePlayer::bodyBusy(BodyAnimationData::Pointer data) const {
+    // Accepted 002A98C4 always uses the body decoder, including on an ordinary actor.
     const auto art = art_.isBody() ? art_
                                    : ActorArt::loadBody(rom_, actor_.bank, actor_.owner,
-                                                        actor_.variant, actor_.flag_b);
+                                                        actor_.variant, actor_.flag_b, data);
     const auto opcode = [&](quint32 offset) {
         return art.poseRecord(actor_.state, qint32(quint32(actor_.cursor) + offset)).opcode;
     };

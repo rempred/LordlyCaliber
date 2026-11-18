@@ -56,7 +56,7 @@ extern s16 func_002A0A68(BodyActor *actor, f32 x, f32 z, f32 a, f32 b);
 extern void func_002A0B14(s32 slot, f32 startX, f32 startY, f32 targetX,
                          f32 targetY, s32 duration, s32 scaledDuration);
 extern s32 func_002A9364(s32 slot, s32 classId, s32 variant, s32 animation,
-                        s32 arg5, s32 arg6, s32 arg7, s32 arg8);
+                        s32 arg5, s32 arg6, u8 keep145, u8 keepUnit);
 extern s32 func_002AB810(s32 *slots, BodyUnit *unit, s32 index, s32 flip,
                          s32 classId, s32 variant, u8 seenLeader);
 

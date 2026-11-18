@@ -49,7 +49,7 @@ class ActorPosePlayer {
     }
     int query() const;
     // Alternate counted-program completion check, distinct from Director 0x0F.
-    bool bodyBusy() const;
+    bool bodyBusy(BodyAnimationData::Pointer data = {}) const;
     void setLinkedObjectKnownAbsent(bool absent) {
         linkedObjectAbsent_ = absent;
         linkedAudioContext_.reset();

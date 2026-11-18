@@ -15,7 +15,8 @@ extern u8 func_002AD574(char *unit);
 extern u8 func_00045e5c(u8 wanted, u8 classId);
 extern void func_0002CD70(volatile void *pointer, s32 value, s32 size);
 extern void func_002AB810(volatile s32 *slots, char *unit, s32 index, s32 flip, s32 classId, s32 variant, s32 seenLeader);
-extern void func_002A9364(s32 slot, s32 startX, s32 startY, s32 targetX, s32 targetY, s32 duration, s32 arg6, s32 arg7);
+extern s32 func_002A9364(s32 slot, s32 classId, s32 variant, s32 animation,
+                        s32 arg5, s32 arg6, u8 keep145, u8 keepUnit);
 extern void func_0029E70C(u8 *actor);
 extern void func_002AB574(void);
 

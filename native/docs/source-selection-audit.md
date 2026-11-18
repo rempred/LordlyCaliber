@@ -1,5 +1,16 @@
 # Native export source audit
 
+## Actor placement and briefing — 2026-11-17
+
+The [actor intake](decomp-intake.md#november-17-actor-placement-and-briefing)
+adds one accepted owner around an existing capacity extension. The 12-byte hook
+at z64 ROM `0x002AD648` is inside the 348-byte actor availability filter
+`func_002AD574`. The expanded game uses a relocated enemy-type lookup there.
+The capacity group now has 18 of 102 hook sites overlapping accepted C. Its other
+consumers and the alternate entry into this hook still matter to a migration.
+Across the catalog, 34 extension hooks overlap accepted C. There are zero
+whole-function assembly gaps and zero larger instruction patches inside matched C.
+
 ## Body/equipment C intake and migration — 2026-11-09
 
 Accepted snapshot `5894EA0E` adds pure-C `002AB810` and `002AAC60`. Both now

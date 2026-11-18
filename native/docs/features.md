@@ -1116,6 +1116,12 @@ Existing class-body actions now expose class-pair and pose fields with native re
 sentinels, preserved body flags, readable symbolic launch values, undo, persistence
 and compiled export/reopen. Generic body creation still requires its launch context.
 
+Mode-2 scene previews can branch on the body-pose cycle query (0x2B). Its first
+word selects both the comparison and the actor. The final frame of a looping
+pose counts as finished when its timer drops below two. The command editor
+also identifies the anchor actor slot and initial pose for mission-briefing
+command 0xC2. Playing that construction requires its launch and resource state.
+
 Live Actor inspection shows current class pairs/art banks and XYZ, retains selected
 slots across seeking, and navigates to the active script's Actor placement/action
 with incomplete-input protection. This is slot-based navigation, not branch provenance.

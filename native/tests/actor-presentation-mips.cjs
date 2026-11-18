@@ -37,6 +37,36 @@ function record(slot,source,member,identity,x,z){
  b.writeFloatBE(x,0x11c);b.writeFloatBE(7.5,0x120);b.writeFloatBE(z,0x124);return b;
 }
 const results=[];
+// Run the original cycle query and body decoder against the retail pose resource.
+// Select a real terminal loop by observing the same record on either side of its timer cutoff.
+function retailCycleQueries() {
+ const cases = [];
+ const seen = new Set();
+ m.w32(scene + 24, actors);
+ m.set('sp', sp);
+ for (let state = 0; state < 12 && seen.size < 3; ++state) {
+  for (let cursor = -1; cursor < 16 && seen.size < 3; ++cursor) {
+   const samples = [1, 2].map(delay => {
+    const input = record(0, 30, 0, 0, 0, 0);
+    input.writeInt16BE(state, 0x134);
+    input.writeInt32BE(cursor, 0xf0);
+    input.writeInt32BE(delay, 0xf4);
+    m.load(actors, input);
+    m.set('a0', 0);
+    m.call(0x8023a164);
+    return {record: input.toString('hex'), busy: m.get('v0')};
+   });
+   const signature = samples.map(s => s.busy).join(',');
+   if (!seen.has(signature)) {
+    seen.add(signature);
+    cases.push(...samples);
+   }
+  }
+ }
+ assert.deepEqual([...seen].sort(), ['0,0', '0,1', '1,1']);
+ return cases;
+}
+const cycleQueries = process.argv[4] ? [] : retailCycleQueries();
 function run(group,kind){
  const initial=[],rows=Array.from({length:28},()=>Buffer.alloc(248)),objs=[];
  // Four independent army rows exercise both side/subgroup flags. Paired bodies
@@ -137,7 +167,7 @@ for(const preset of [0,1,7,63])for(let kind=0;kind<5;kind++){
  }
  entrances.push({preset,kind,variant,overrideFlag,sideGroups,members,rows:rows.map(r=>r.toString('hex')),objects:objs,initial,states});
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds,entrances}));
+fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds,entrances,cycleQueries}));
 console.log(`Original presentation: ${results.length} sequences / ${results.length*80} snapshots, ${boundaries.length} boundary sequences, ${speeds.length} speed samples. Allocation/resource handles/terrain/audio controlled.`);
 
 console.log(`Original entrances: ${entrances.length} sequences / ${entrances.length*100} complete snapshots.`);

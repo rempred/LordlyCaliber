@@ -5412,8 +5412,9 @@ word scanning, signed comparisons, nesting and native result -1 are preserved;
 bounded host exhaustion is a separate error and leaves caller state intact.
 Hand-specified comparison, nested-bridge, operand-marker and malformed-input
 cases pass. This is not a whole-dispatcher execution or full scene playback
-claim. The original dispatcher is currently the structural grammar source;
-its service calls, render paths and timing still require PC adaptation.
+claim. The grammar generator now reads the dispatcher in the accepted source
+library and checks its hash against the ROM-owner manifest. Service calls,
+render paths and timing still require PC adaptation.
 
 The engine decodes native `64` image containers into RGBA bytes without Widgets
 or browser dependencies. RGBA5551, RGBA32, CI4, CI8, I4 and I8 preserve the game's

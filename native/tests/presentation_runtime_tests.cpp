@@ -1,4 +1,6 @@
 #include "engine/scene_actors.h"
+#include "engine/scene_playback.h"
+#include "engine/scene_programs.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -21,6 +23,40 @@ QByteArray motionBytes(const LordlyActorMotion &m) {
     put8(b, 14, m.pause);
     put8(b, 15, m.retained);
     return b;
+}
+void checkBodyCyclePlayback(const Rom &rom, const QJsonArray &cases) {
+    QCOMPARE(cases.size(), 6);
+    auto scenes = ScenePrograms::load(rom);
+    const SceneId id(scenes.original().selectors()[0]);
+    const quint32 words[] = {
+        0x56, 0x2b, 0, 1, 27, // If slot zero is busy. Slot 27 is deliberately empty.
+        0x48, 0, 77,          // Mark the branch by changing the actor's opacity.
+        0x80000002, 0, 0x80000000, 0x80000001, scenes.program(id).commands.last().operands.first()
+    };
+    QByteArray script(sizeof(words), 0);
+    for (size_t i = 0; i < std::size(words); ++i)
+        put32(script, i * 4, words[i]);
+    scenes.replace(id, script);
+    ScenePlaybackStart start;
+    start.alternate = 1; // Counter and Director only; preserve the supplied pose and timer.
+    const ScenePlayback initial(rom, scenes.runtimeDirectors(), 0, start,
+                                SceneCameras::freshModeTwo(rom));
+    for (const auto &entry : cases) {
+        const auto row = entry.toObject();
+        for (const bool bodyActor : {false, true}) {
+            auto record = bytes(row["record"]);
+            put8(record, 0x13d, bodyActor);
+            auto scene = initial;
+            scene.actors().supplyActor(0, record);
+            QVERIFY2(scene.advance() == ScenePlayback::Advanced, qPrintable(scene.reason()));
+            if (row["busy"].toInt())
+                put8(record, 0x13c, 77);
+            QCOMPARE(scene.actors().actor(0)->record(), record);
+        }
+    }
+    auto vacant = initial;
+    QCOMPARE(vacant.advance(), ScenePlayback::Suspended);
+    QVERIFY2(vacant.reason().contains("occupied actor slot"), qPrintable(vacant.reason()));
 }
 } // namespace
 class PresentationRuntimeTests : public QObject {
@@ -162,6 +198,7 @@ class PresentationRuntimeTests : public QObject {
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto data = QJsonDocument::fromJson(file.readAll()).object();
         const auto rom = Rom::open(path);
+        checkBodyCyclePlayback(rom, data["cycleQueries"].toArray());
         const auto results = data["results"].toArray();
         QCOMPARE(results.size(), 44);
         int caseIndex = 0;

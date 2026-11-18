@@ -2,21 +2,21 @@
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
   "evidenceSchemaVersion": 7,
-  "revision": "0d419be9254fd64b52e4586c2732f85e38673afb",
-  "verifiedAt": "2026-11-09T09:09:09.644Z",
+  "revision": "d66e14504e4a3c03d13df996ba42957b9111a48d",
+  "verifiedAt": "2026-11-18T01:00:20.026Z",
   "sourceClasses": [
     "PURE_C",
     "HYBRID_C"
   ],
-  "fingerprint": "5894EA0E55DBDB41BA76517755F5E8110AC032C4DD35E6313BEB49DD6BE14086",
-  "verificationSha256": "967C6ED8AEEBD7BEA8539F1893759881A196BBF346EE45E3AB88F65C64133D78",
-  "freshCompilationSha256": "01855AB01F43B3EC0CEAFE2C33FAE85D726D69D8E2FCDE5A84470950EBD4F105",
+  "fingerprint": "25FDAD0F2D4C068AD63FA63A5EDD21FD5E53BB20985B4F5432400FF32D7F500F",
+  "verificationSha256": "3A026EBF88C8D2F10764C0A7E9D5A145301AF5BB8020918F7E19FDA62D0B745F",
+  "freshCompilationSha256": "40DB567EE010F95700C890FF7F1E11076A4666B7881EF48F299E2E1DCB6B1A85",
   "purpose": "Complete accepted matching C and hybrid-C source library. ROM and preview manifests qualify active adoption; existing adaptations retain their own baselines.",
   "counts": {
-    "owners": 1613,
-    "functions": 1659,
-    "producerSources": 1482,
-    "sourceAndHeaderFiles": 1523
+    "owners": 1626,
+    "functions": 1672,
+    "producerSources": 1495,
+    "sourceAndHeaderFiles": 1536
   },
   "imports": [
     {
@@ -1796,8 +1796,8 @@
           ],
           "proof": {
             "path": "generated/c/func_0021EBBC.source-object-proof.json",
-            "bytes": 18791693,
-            "sha256": "7AEA476A7923D3D5E9D9382A3EC17684633822D7C320BE6EFEE3CE63C92718A6"
+            "bytes": 18797627,
+            "sha256": "A38ADAE07802EE4CE7166EE912B6578103A8D7AA62FC48DA6C64F3B3FC026598"
           },
           "textMode": "atomic-contiguous-owner-union",
           "physicalOwners": [
@@ -4177,7 +4177,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_indexed_record_copy_flag.source-object-proof.json",
             "bytes": 372547,
-            "sha256": "7A8A72FA909496D8F76A87A1A516B280B8B9FE1DE7539F6B34EF9AA2A82DAA85"
+            "sha256": "14C4B38927051E5BE83763C2B1BA61390214017AB2CDDB1AA73B71CE679FF1D9"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4197,7 +4197,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_large_record_copy_flag.source-object-proof.json",
             "bytes": 372533,
-            "sha256": "418D547C680B0260C1E72C12D188644A3A50ED008697EBD51A73A946890B8EE8"
+            "sha256": "4D91D3C349AE81C9CE84D3FC3207DFD4B996EEB308ABADA7849F670C6857FD5C"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4217,7 +4217,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_small_record_copy_flag.source-object-proof.json",
             "bytes": 372533,
-            "sha256": "77E0DC387A1C48DEFD282B271EC7497DC9CEFEB8F921485EA3AABD16BFA398C7"
+            "sha256": "849343233EC82E2F1FC93A396A57FADBEFF4C7CCA530D2C601CB17F4176B21ED"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4237,7 +4237,7 @@
           "proof": {
             "path": "generated/c/func_00005760.source-object-proof.json",
             "bytes": 367131,
-            "sha256": "E9D2A5ACF9E0C169C6A379B769F9DA3599DFA1ED14777185A84D832F93729084"
+            "sha256": "78F39425542D7C269B818111421A987524C8FBC62784F7C0FC911767B2FD41A1"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4257,7 +4257,7 @@
           "proof": {
             "path": "generated/c/func_0000581C.source-object-proof.json",
             "bytes": 377052,
-            "sha256": "231BC0650D1D09DD5FF350EB32054842A5DFDD019AEAA4BDCC3E95E78058A166"
+            "sha256": "1624C3C3BAC6B08E3089A65694D3D0270FEB09F58E0ACB0476619A794B2ABA60"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4277,7 +4277,7 @@
           "proof": {
             "path": "generated/c/func_00005978.source-object-proof.json",
             "bytes": 377052,
-            "sha256": "07BA39DB197327CC18992185F05A51C3699004F310A1B64411F5BFC645C15728"
+            "sha256": "345F2BBF7FE32B20FB63DEE71CBDF3A31B00AFFD92C4D419E14820AB92504570"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4297,7 +4297,7 @@
           "proof": {
             "path": "generated/c/func_00005A88.source-object-proof.json",
             "bytes": 377056,
-            "sha256": "D8A5B449195D5E377BBF00E4B802B39C642615A467DA222916B32B0DDDC6F83D"
+            "sha256": "81BBA012301680683363AB48FB9DCB777A60A86D1D7E34A9A5DC37E17CAC0A47"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4321,7 +4321,7 @@
           "proof": {
             "path": "generated/c/func_00005D9C.source-object-proof.json",
             "bytes": 370456,
-            "sha256": "05E75F8C6617500362451F0093972249E6BCE93C68F4126EAB44683DFD0FF4F1"
+            "sha256": "1775D823EC8755A965BDCF17862EB56C62C9D337B76F7A1D210948B2A66319B7"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -6889,7 +6889,7 @@
           "proof": {
             "path": "generated/c/func_0001c9f0.source-object-proof.json",
             "bytes": 1233942,
-            "sha256": "36478C0338E6C22CF5FD13471230382BEED6FDB1CDF671326CB81F0652D2840B"
+            "sha256": "1A3FF9F9EEE697C0757BC3EBCFEAFCAE15D5AEC7AA56067667E0F5B9B8454775"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6909,7 +6909,7 @@
           "proof": {
             "path": "generated/c/func_0001ca94.source-object-proof.json",
             "bytes": 1306676,
-            "sha256": "38D49367E8069F7BFC6BC43B0497AAF7DCCC6ABF6CE38278338010147452D67F"
+            "sha256": "718AF3C29CF53522FA51B3F8050E8AEED870D76AD27945AC9A85A621880CCA96"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6929,7 +6929,7 @@
           "proof": {
             "path": "generated/c/func_0001cf2c.source-object-proof.json",
             "bytes": 1240498,
-            "sha256": "C86F15ED85A1AC9563B7A039B0EF40026F4A52EBBB5FD8639BF21E747E9EC0E3"
+            "sha256": "BF84991F62AF0FFC425A4A0F86077267BED4CEA07B6837D0852C937A1BA73C92"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6949,7 +6949,7 @@
           "proof": {
             "path": "generated/c/func_0001cfe4.source-object-proof.json",
             "bytes": 1242111,
-            "sha256": "FA8031032E03C3CFEA6773E4998797F0F52105298AD874E8AD2A78F36C764D54"
+            "sha256": "B5AA1837FF9EB988945F97BBEBB357F57E5E0B561F508A6F66CD2B4040266E76"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6969,7 +6969,7 @@
           "proof": {
             "path": "generated/c/func_0001d094.source-object-proof.json",
             "bytes": 1240498,
-            "sha256": "EB0D0DE3AD2B95C5B81F7DCC118A71E775550939976F525EB239F7D4CB3064F8"
+            "sha256": "17E69BB836BA4E7F2F3B58DAAD42BA130164ED2497A4B7B0C00D75FA408A996D"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6989,7 +6989,7 @@
           "proof": {
             "path": "generated/c/func_0001d120.source-object-proof.json",
             "bytes": 1238874,
-            "sha256": "9C32DD9A3811ECE944B9133CB80E196451C669FE30A9DAA716437962BC924A91"
+            "sha256": "FD4109520D25A4F8CAF74FEED916771EEFAA3AF75FF8AF9CAC0F5A0E67E5E3E2"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7009,7 +7009,7 @@
           "proof": {
             "path": "generated/c/func_0001d17c.source-object-proof.json",
             "bytes": 1238868,
-            "sha256": "D41A66C2A420501A5ACAA048E29C69E16C08922D6371A8A9C88CC6DDF8070C1E"
+            "sha256": "AA160B9634189E64118A0DD2A325B1CA4139DAB085C96DEF80EDA2B1E15EC18A"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7029,7 +7029,7 @@
           "proof": {
             "path": "generated/c/func_0001d1d8.source-object-proof.json",
             "bytes": 1239404,
-            "sha256": "F8C138F1C31D68D8ABDB12CABBB0D7A7F84AA92802205B316C2715753D40C5B9"
+            "sha256": "74EB398FB4E09E1AC2950311E6752EA91028DCBB6B272324E85349CB1504B927"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7149,7 +7149,7 @@
           "proof": {
             "path": "generated/c/float_ldexp_d.source-object-proof.json",
             "bytes": 1277148,
-            "sha256": "C5036F69EBBCB154C83C84055198528B9D9511AA6F02643379031D9FAA7EB948"
+            "sha256": "D4FBB894552FE89B0AE44FF35D9AD3E463FE97953AE959D128A4A43EDB2976AD"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7169,7 +7169,7 @@
           "proof": {
             "path": "generated/c/func_0001de40.source-object-proof.json",
             "bytes": 1327333,
-            "sha256": "E12415ED065CB357A3444D8A7BFEEE0F940FA0864A1D4238ED407E0750EFD2A2"
+            "sha256": "1214E2291285D9E6F06307D2C2B009DA3B853E2A4653E102BE8F81B72BCE2CB0"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7189,7 +7189,7 @@
           "proof": {
             "path": "generated/c/func_0001e340.source-object-proof.json",
             "bytes": 1285101,
-            "sha256": "BC90E2B5DB7542FCC0593450B21BA93A72796C7EABA9B11B024442DF218915A1"
+            "sha256": "649E4A28557CFAE8FD5A260A404CE5EDDCC0BCCCDFC0A10F582D09676463F53E"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7209,7 +7209,7 @@
           "proof": {
             "path": "generated/c/func_0001e414.source-object-proof.json",
             "bytes": 1291710,
-            "sha256": "81B416489B24D14F9B1BDC1BFF752E25268B33F62F696C73E973BB3C08CD59A8"
+            "sha256": "B6AAED13D0975A68CCF48FCACE3DA6421E1B0491609824B4CEFC7408B478089D"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7229,7 +7229,7 @@
           "proof": {
             "path": "generated/c/func_0001e6e8.source-object-proof.json",
             "bytes": 1288623,
-            "sha256": "FC4A560B941C19DC7847E529F62E6690B4FC38FD7EBEE64A5B0A635C18213131"
+            "sha256": "F3966845F91D5FFCC3AB0B078D3796CA938C51F5B6D228278874490E274FEEE6"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7249,7 +7249,7 @@
           "proof": {
             "path": "generated/c/func_0001e7ec.source-object-proof.json",
             "bytes": 1316470,
-            "sha256": "D0B8BCC3E8A42A38AB15B004883C6C09CA402786BC2139C2B958F442EBAD88B8"
+            "sha256": "7075975EB3007C420EBBA6FE18F42C4EF1331F4D1EB60F3EB763952C5067BB7A"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7269,7 +7269,7 @@
           "proof": {
             "path": "generated/c/func_0001ea6c.source-object-proof.json",
             "bytes": 1279309,
-            "sha256": "2EAFC1B85650E23A6972BB2A22D9DFF9E820DFE0DC2FB58AA7EA109162D0C8B4"
+            "sha256": "73ACDECED8D7A81F44DCB8FF07D93FB31771223A2C98DD7C975D02077CCDB3CE"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7601,7 +7601,7 @@
           "proof": {
             "path": "generated/c/func_0001ec80.source-object-proof.json",
             "bytes": 434250,
-            "sha256": "87E60610C0B6AEA86DC43ABBC3AC67B2553324D86E149AD3DF7E6EF6BC82ABED"
+            "sha256": "54E8BAFA7003F627C256DD019FC7D9F6A8FEC99DF67522E3AD6EE25E62349F64"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7621,7 +7621,7 @@
           "proof": {
             "path": "generated/c/func_0001ee6c.source-object-proof.json",
             "bytes": 450798,
-            "sha256": "605A736EB844700911FE2E31F6B9CEBD3CA79BEC69DEDDF77E370BDAFC6131F1"
+            "sha256": "753957C5BA59C7D3F523ED33F848403D38CF56DD66590E0E42632C4B46386704"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7700,7 +7700,7 @@
           "proof": {
             "path": "generated/c/func_0001ef30.source-object-proof.json",
             "bytes": 888042,
-            "sha256": "AD7132A5376C452BF5FA5EEB2440996CD20F121C893A0A4962D6F61B1CEF10E5"
+            "sha256": "840C7C4404A6084CB7F34C7C68041A12D724030A6AA0B72FA5CFA4C8EB411740"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7720,7 +7720,7 @@
           "proof": {
             "path": "generated/c/func_0001f2a4.source-object-proof.json",
             "bytes": 875377,
-            "sha256": "A33EBA3C67246F395F99A1FD5BFC3B7EC3141B6B12B733A99463C261A11E3503"
+            "sha256": "20AE97C7A5D1CD01880E425C6872FE9C405AC2B6D0276FAD14B2F1D0F902A92E"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7740,7 +7740,7 @@
           "proof": {
             "path": "generated/c/func_0001f2b8.source-object-proof.json",
             "bytes": 911936,
-            "sha256": "29E70C502BFDBCDBCDFD4892CC3B70EEE459FFEC887E31F096CDDB0AB0F2010D"
+            "sha256": "A2E502AFD2A62C4921BB09DB7DE199D02903A7F31B2887726205E25AB84F5EF8"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7760,7 +7760,7 @@
           "proof": {
             "path": "generated/c/func_0001f4a8.source-object-proof.json",
             "bytes": 886695,
-            "sha256": "E4FEDCB31C78353121AAA3B705105AE7E497597777F1881C1551405837CBAC01"
+            "sha256": "6DA3BC2AAA45FF80F7190F28866B2FB727E0E8625078083BAE9EE486E0F6535C"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7780,7 +7780,7 @@
           "proof": {
             "path": "generated/c/func_0001f6c0.source-object-proof.json",
             "bytes": 880340,
-            "sha256": "85919F1F6FDA7B3CEEBFAC75742AB0F3E4ECDA1A1EDC06CE30528F5A5C4730D4"
+            "sha256": "2F85B1C340AFF1E185D99E24C75590A9CAADF831E8D9D48979BDCB3BC2A1669D"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7800,7 +7800,7 @@
           "proof": {
             "path": "generated/c/func_0001f830.source-object-proof.json",
             "bytes": 882007,
-            "sha256": "D59D9FAAE2DFF97271ED580D14D1EE7F6407921DC1F0D6BCD321C2AC7534F6E6"
+            "sha256": "9825609676BC6D8A8F7D67FBBC244C339355E1EF3CC8490BFFB73FA10BF6A977"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7820,7 +7820,7 @@
           "proof": {
             "path": "generated/c/func_0001f9a0.source-object-proof.json",
             "bytes": 878759,
-            "sha256": "1F6E30CAA2481D8527F3F1E0B4A9EF150F4E909EE3BF2152F51F8525E359CEB5"
+            "sha256": "861944B0356D125E7AECB7B9AE833BF02770471A6428F7A8FE17DDC73C1D60BB"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7840,7 +7840,7 @@
           "proof": {
             "path": "generated/c/func_0001fa3c.source-object-proof.json",
             "bytes": 885809,
-            "sha256": "FCA3DDF6932680125033B3F89803F1E3286D13E5C08FD37FE2822FB7F5B0A157"
+            "sha256": "8CD3F8980BDCB2A7D269864513BDFF0ECCD2E071161DA0ACBE342CB33797F37D"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -8186,7 +8186,7 @@
           "proof": {
             "path": "generated/c/func_0001fd20.source-object-proof.json",
             "bytes": 335805,
-            "sha256": "6A235DF1119592544AEE990164C8A7276EC60242555C65865322B82928BBC763"
+            "sha256": "19F121C7D04F79636EC1C21361B990E2F95DC11FFAE9C4DB58A374BC1FE86B7C"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8206,7 +8206,7 @@
           "proof": {
             "path": "generated/c/func_0001ffec.source-object-proof.json",
             "bytes": 311302,
-            "sha256": "7044F2FA172B107DBD5D6F9A8642079602F89A2D8A36BBD928585ED700FDF76E"
+            "sha256": "A8F8E073EFBAC6E39D0A6989ACE913639FAA59ACAAD411C86CCFAF4BFD8E06B7"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8226,7 +8226,7 @@
           "proof": {
             "path": "generated/c/func_0002019c.source-object-proof.json",
             "bytes": 303402,
-            "sha256": "FC83A192BFB60831571AA85E7FA8D8C322B587F843781117026011447797960D"
+            "sha256": "A790B35B09530DBF10F43055474024B92E8DE5413DFFC59EA9199F6388417809"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8246,7 +8246,7 @@
           "proof": {
             "path": "generated/c/func_000201c8.source-object-proof.json",
             "bytes": 303402,
-            "sha256": "141970613CCA3441CBEB38ABACDB43BE931D8EC88183E27C987C9572C213083E"
+            "sha256": "ACE72D0566C508F3EB6A156DD956414853BD92A09B4F3AA5680E9E2150C87B17"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8266,7 +8266,7 @@
           "proof": {
             "path": "generated/c/func_000201e0.source-object-proof.json",
             "bytes": 303341,
-            "sha256": "1B31802BCFF2403926199C4C7B8D60F56C74E4068F92B145C00ABA8C843BF5A6"
+            "sha256": "FBE9EE34FFF2BB886748CB0F359739BDAD486E6CE85F5DAC4E6EB2CD3C15F64D"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8286,7 +8286,7 @@
           "proof": {
             "path": "generated/c/func_00020234.source-object-proof.json",
             "bytes": 303341,
-            "sha256": "C8D2700CCE17D1FC134700ACF337F438C7B2D710D9995AF43DE41753107B5278"
+            "sha256": "B1CF9622E22C959909D17ED88AA6A900BCC2532DEB6DAE1992C8BC8DB55E4FC5"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8306,7 +8306,7 @@
           "proof": {
             "path": "generated/c/func_00020274.source-object-proof.json",
             "bytes": 306719,
-            "sha256": "380824925A8722BF55917D2730323A9CEBAFD7D282EABD5668891434E2F7023C"
+            "sha256": "3684C12250B27A605F3CD4E92ADB01DE542E49AFDBDB9AA1E31520870810951E"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8326,7 +8326,7 @@
           "proof": {
             "path": "generated/c/func_000202bc.source-object-proof.json",
             "bytes": 306719,
-            "sha256": "95D8CA3F1BA92239A714BC696BE7764650DF7AD88336F3F5E28B754125BEC61B"
+            "sha256": "3FCB59D5A643BFBEB8A7099CAA04CF6E8C5DA43AB99FD90F4048282046DE03B2"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8346,7 +8346,7 @@
           "proof": {
             "path": "generated/c/func_00020308.source-object-proof.json",
             "bytes": 300127,
-            "sha256": "229EC5071C91B2CCFB20F31936C6CD69C3798BDC0D825D9C23C96146435F5424"
+            "sha256": "5A5215202590028E0D2A8CD951E08B747BF23442379C7A9E23E96FDC5F1C9AFF"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -11973,7 +11973,7 @@
           "proof": {
             "path": "generated/c/func_0001c2b0.source-object-proof.json",
             "bytes": 262135,
-            "sha256": "71FCA95741CC494AE96A39A0A9DA43618322B7C68922467D26FA12CFD82F32B5"
+            "sha256": "86FC302F977C57C73E873526EE31D1C0AA65050D591171C9C5410AF1854F9107"
           },
           "textMode": "native-text-single-owner-readonly-fragment-projection",
           "physicalOwners": [
@@ -41833,6 +41833,57 @@
       }
     },
     {
+      "source": "src/lib/func_0020C120.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "BA3E2D713D7614316FF7F32D27B7BDFAC67A5084A40481C9BECD6FB7F1E056C3",
+      "file": "game/accepted/library/src/lib/func_0020C120.c",
+      "symbols": [
+        "func_0020C120"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0020C120",
+          "functions": [
+            "func_0020C120"
+          ],
+          "proof": {
+            "path": "generated/c/func_0020C120.source-object-proof.json",
+            "bytes": 11428,
+            "sha256": "C654CFD58245CF5910750C1E8309A152F1CDF15F0DA7D632AEA7B4E6C42FF7E7"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2146592,
+              "bytes": 68,
+              "sectionName": ".ob64.r3881",
+              "sha256": "14C41DEA3E926095AC19E15F24E45AD750E1814E23DBB62F90FB3D2DB0DBEDF5"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_0020C180.c",
       "sourceClass": "PURE_C",
       "sourceSha256": "685267C98FB2B3DF1F57B2E2B32958B7A35948E537811E2D4908A02F8E8D7BA7",
@@ -42343,6 +42394,57 @@
           "file": "game/accepted/library/include/game/combat_types.h"
         }
       ],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_0020D870.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "01056CF9D71CA00FA227EC9D9D87ABDABBE167F99F1050225498253AA2E087A8",
+      "file": "game/accepted/library/src/lib/func_0020D870.c",
+      "symbols": [
+        "func_0020D870"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0020D870",
+          "functions": [
+            "func_0020D870"
+          ],
+          "proof": {
+            "path": "generated/c/func_0020D870.source-object-proof.json",
+            "bytes": 16110,
+            "sha256": "49057D8302F9A0AC9C3701FB5576DE5AA341A6B9AB2A00ED8B3A804859F4E3BB"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2152560,
+              "bytes": 340,
+              "sectionName": ".ob64.r3919",
+              "sha256": "1DFC3AE7A488AC0BF22F7C4B64FE2AD7E774FA5C36D77C7F452FBA09A3EF740B"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
       "compiler": {
         "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
         "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
@@ -63257,7 +63359,7 @@
     {
       "source": "src/lib/func_00284288.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "439A9455661D6B6881BFBE8C8D6D573A95B44E759259BBF8C9765E8A8CC8130E",
+      "sourceSha256": "147E507C2AB4226F860747C6567B7518998965F87AA7D599814D4D477EC7952C",
       "file": "game/accepted/library/src/lib/func_00284288.c",
       "symbols": [
         "func_00284288"
@@ -63271,7 +63373,7 @@
           "proof": {
             "path": "generated/c/func_00284288.source-object-proof.json",
             "bytes": 548927,
-            "sha256": "4E340FF3FBBCC932320FB49F678EFE25638E31CCB43C223EA21E36CDA130CC48"
+            "sha256": "90E205604D1CC45D5E47E927D740B82240125962F3B51B4C7904399B71012D36"
           },
           "textMode": "section-assigned",
           "physicalOwners": [
@@ -63922,6 +64024,57 @@
       }
     },
     {
+      "source": "src/lib/func_0029E218.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "1FCDAA0EC221DFAE62E753FE2880A3F38BBCAFAA4810D466E6B0B992648E1116",
+      "file": "game/accepted/library/src/lib/func_0029E218.c",
+      "symbols": [
+        "func_0029E218"
+      ],
+      "owners": [
+        {
+          "symbol": "func_0029E218",
+          "functions": [
+            "func_0029E218"
+          ],
+          "proof": {
+            "path": "generated/c/func_0029E218.source-object-proof.json",
+            "bytes": 98598,
+            "sha256": "FC878A88CC3BA50D8F53A087BD3B79735ED377DED650EC77D5B9D7A1EA81011F"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2744856,
+              "bytes": 1268,
+              "sectionName": ".ob64.r5345",
+              "sha256": "C6D8A4A4028FDBC57A8A89823E33705B1382A5CA28D00F6B3705E461C975940C"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_002A053C.c",
       "sourceClass": "PURE_C",
       "sourceSha256": "BA15CEFB837E4961A2FDD7AA53D11C9208685DEDDD1A2284E5FFE01D1C102513",
@@ -64483,9 +64636,111 @@
       }
     },
     {
+      "source": "src/lib/func_002A9364.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "B84A32D9959AD1F20A68E94A937C712D973C58F85A30298384B4468657BF5F89",
+      "file": "game/accepted/library/src/lib/func_002A9364.c",
+      "symbols": [
+        "func_002A9364"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002A9364",
+          "functions": [
+            "func_002A9364"
+          ],
+          "proof": {
+            "path": "generated/c/func_002A9364.source-object-proof.json",
+            "bytes": 55734,
+            "sha256": "DA81DFC3E375E20FCCFA781D73002C5B6779A5F8D042975C50ECDDA1FDDFA7F6"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2790244,
+              "bytes": 1272,
+              "sectionName": ".ob64.r5466",
+              "sha256": "A3041F08DC09DF1B4AFC1A769AEDE3CD0D9E5644D56E903C99C06396813FB1D3"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002A98C4.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "EBA827FEBC5587DCC01D9B90A765DB8A71DCF1783B952145C53D31D9A666FB8F",
+      "file": "game/accepted/library/src/lib/func_002A98C4.c",
+      "symbols": [
+        "func_002A98C4"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002A98C4",
+          "functions": [
+            "func_002A98C4"
+          ],
+          "proof": {
+            "path": "generated/c/func_002A98C4.source-object-proof.json",
+            "bytes": 17346,
+            "sha256": "C870BCAD3098B2B402F56E685C86D542E5364DED9C752D7BD79EF915C32AECF1"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2791620,
+              "bytes": 268,
+              "sectionName": ".ob64.r5468",
+              "sha256": "B0DBF538C49886A8B021C1D2E081B70082633B15F95FF1CDE800402E2AB1DAD4"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_002AAC60.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "B01E631850262BCAAB85E46EFD08261007426690E624457D35EF55AE583E1CC3",
+      "sourceSha256": "9DF05037CB46AEE956E9825FDE729317DD393FECA795D5892F195CE1FDFE3020",
       "file": "game/accepted/library/src/lib/func_002AAC60.c",
       "symbols": [
         "func_002AAC60"
@@ -64499,7 +64754,7 @@
           "proof": {
             "path": "generated/c/func_002AAC60.source-object-proof.json",
             "bytes": 56976,
-            "sha256": "FAB1503EE5F86C100627F0C0BA8E7CB5C6739A3E9AE5257C1342F514D374F86C"
+            "sha256": "C5E35BC2C88FAD6E4D08B710C0175F11658CD39545A395901341D1F7EC86D14A"
           },
           "textMode": "section-assigned",
           "physicalOwners": [
@@ -64508,6 +64763,57 @@
               "bytes": 1176,
               "sectionName": ".ob64.r5477",
               "sha256": "EFA5492BFA568946DC485CD49E96FD6BFB58911D9A7E5FC5E3FE37FDBCD29FDF"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002AB0F8.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "545C9CDCD9FDECA29DB5F0BC12E2BB9FF3BABACB55E6E71E08676DD7E87807DE",
+      "file": "game/accepted/library/src/lib/func_002AB0F8.c",
+      "symbols": [
+        "func_002AB0F8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002AB0F8",
+          "functions": [
+            "func_002AB0F8"
+          ],
+          "proof": {
+            "path": "generated/c/func_002AB0F8.source-object-proof.json",
+            "bytes": 20762,
+            "sha256": "FFDC742E9446265BA733A41D744D266AE78D73F7FD51B9684A746BCE53ECDC1A"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2797816,
+              "bytes": 432,
+              "sectionName": ".ob64.r5478",
+              "sha256": "0BC14B750CB23ECCAAC510385A2BC9FD11E3D55DAA05952C443E92A9A4EB6DE9"
             }
           ]
         }
@@ -64636,6 +64942,57 @@
       }
     },
     {
+      "source": "src/lib/func_002AB574.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "2C33D20CEDCD9E24D891A2BF3AC4817C9174ACB6601DD9720D0429AFBBAF77A2",
+      "file": "game/accepted/library/src/lib/func_002AB574.c",
+      "symbols": [
+        "func_002AB574"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002AB574",
+          "functions": [
+            "func_002AB574"
+          ],
+          "proof": {
+            "path": "generated/c/func_002AB574.source-object-proof.json",
+            "bytes": 25495,
+            "sha256": "37BA8E04FE6F322468A693A9C5E8946CF0D89E64373A6F695070B740561B4DA6"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2798964,
+              "bytes": 328,
+              "sectionName": ".ob64.r5485",
+              "sha256": "EBE111B4F7D06A5BD5FB95B23252A1B379445CE4961847A11076A1B62B11D48C"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_002AB810.c",
       "sourceClass": "PURE_C",
       "sourceSha256": "0A9B3AE271AC1B0214469301BACEF8A8E68A95F9ABCD53724FE890D603A0FB3E",
@@ -64689,7 +65046,7 @@
     {
       "source": "src/lib/func_002ABB3C.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "322B3C5F92045C69D153B33C671E6BCCCD51B9923DE3109B70C2926C0C6DAA8D",
+      "sourceSha256": "C732BC71FB13D1E2CE3C206E288830284D5E77A38CB089B7455E0F5BD774ADAC",
       "file": "game/accepted/library/src/lib/func_002ABB3C.c",
       "symbols": [
         "func_002ABB3C"
@@ -64703,7 +65060,7 @@
           "proof": {
             "path": "generated/c/func_002ABB3C.source-object-proof.json",
             "bytes": 53527,
-            "sha256": "62887BC126C075B6A97424313AE1EAC6836581B96C26FAF21E3FAEB9B492520B"
+            "sha256": "8CB1B2B8F2E07E46B30A97FA5713740500AF11DF8F84145A303B01AFE11E0A88"
           },
           "textMode": "section-assigned",
           "physicalOwners": [
@@ -64891,6 +65248,108 @@
       }
     },
     {
+      "source": "src/lib/func_002ACFD8.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "79BBAA0F95A9E5AFAD39944E413467B000CC1FD9EBE2B9A3380B3B42BD209932",
+      "file": "game/accepted/library/src/lib/func_002ACFD8.c",
+      "symbols": [
+        "func_002ACFD8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002ACFD8",
+          "functions": [
+            "func_002ACFD8"
+          ],
+          "proof": {
+            "path": "generated/c/func_002ACFD8.source-object-proof.json",
+            "bytes": 31319,
+            "sha256": "EBCAF5AF7D5E37F516A4B213E51618385A61A3FA8BA73AE7105A4038B2227394"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2805720,
+              "bytes": 588,
+              "sectionName": ".ob64.r5498",
+              "sha256": "4C222760AA2995DECC599E842F38379D6F457BC9F2D5EA74319947513493F504"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002AD224.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "CA9F6DA6EF60F0978B631076EC24F9FAECFDF1BEB09E52C17417D2A082E1DA41",
+      "file": "game/accepted/library/src/lib/func_002AD224.c",
+      "symbols": [
+        "func_002AD224"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002AD224",
+          "functions": [
+            "func_002AD224"
+          ],
+          "proof": {
+            "path": "generated/c/func_002AD224.source-object-proof.json",
+            "bytes": 32430,
+            "sha256": "C7267D444B3458D3DD83049D04996F2CB2D42E574CD6087B9621D6160C5E9FAD"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2806308,
+              "bytes": 508,
+              "sectionName": ".ob64.r5499",
+              "sha256": "E34424AD25F862C9F98525170E3B1572C5FCC4BDC7F2EB28156BD853F4613AF3"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_002AD420.c",
       "sourceClass": "PURE_C",
       "sourceSha256": "732555C6D16431B290D6773E8E70E4F0CA7339E79A3486BC3B833615AA5614F7",
@@ -64916,6 +65375,108 @@
               "bytes": 20,
               "sectionName": ".ob64.r5500",
               "sha256": "38EBFEB9A69E222F8CD1AFDE923C5975C2124736D4CFA979AFBAB4E2641FA4A0"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002AD434.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "234401BBCFDED5499F38E284E574FC42A56613BDD31E2609040AE27A6A9C997C",
+      "file": "game/accepted/library/src/lib/func_002AD434.c",
+      "symbols": [
+        "func_002AD434"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002AD434",
+          "functions": [
+            "func_002AD434"
+          ],
+          "proof": {
+            "path": "generated/c/func_002AD434.source-object-proof.json",
+            "bytes": 24259,
+            "sha256": "D9B79B17E0ABD9848A63E43305305004C9E7733661C6CA2D944DB31AB92F1046"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2806836,
+              "bytes": 320,
+              "sectionName": ".ob64.r5501",
+              "sha256": "E5BF3626A216A3624BBC85F71C6B4AE758AEEF313FF970D94954E0A025DA9E4D"
+            }
+          ]
+        }
+      ],
+      "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002AD574.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "BFC56DFC93BD9048956A16317F2C2444177E556C39EF1C68FC97832CFD5304A0",
+      "file": "game/accepted/library/src/lib/func_002AD574.c",
+      "symbols": [
+        "func_002AD574"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002AD574",
+          "functions": [
+            "func_002AD574"
+          ],
+          "proof": {
+            "path": "generated/c/func_002AD574.source-object-proof.json",
+            "bytes": 44021,
+            "sha256": "836740443C4AB20B97EDDD23EAC83F071D7D73C116C0C11D1D06A6BEA35D6563"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2807156,
+              "bytes": 348,
+              "sectionName": ".ob64.r5502",
+              "sha256": "FF71ECE499634693D2F14FF035B54EE45F372D6650E706D445752D2C946F2129"
             }
           ]
         }
@@ -65227,6 +65788,122 @@
         }
       ],
       "dependencies": [],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002B867C.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "3C02B3A3121139D25066470537CB2EB2BCFF36909948F35A5A7E54EB1EEE48DB",
+      "file": "game/accepted/library/src/lib/func_002B867C.c",
+      "symbols": [
+        "func_002B867C"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002B867C",
+          "functions": [
+            "func_002B867C"
+          ],
+          "proof": {
+            "path": "generated/c/func_002B867C.source-object-proof.json",
+            "bytes": 26853,
+            "sha256": "86238983369D0E93FA6A36BB32F56C2B64EFBE2F8D8CFE2487A1A72BCD284AA8"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2852476,
+              "bytes": 588,
+              "sectionName": ".ob64.r5618",
+              "sha256": "0AF4252DB66CE4D6B148BFEC7FCB4A3928A38AE892F82CCBBCADD964A8A2BDBD"
+            }
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
+      "source": "src/lib/func_002B88C8.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "C3B5755FED02BB68C33736E93F5989F9E41866C5134F67BD73356813544E4688",
+      "file": "game/accepted/library/src/lib/func_002B88C8.c",
+      "symbols": [
+        "func_002B88C8"
+      ],
+      "owners": [
+        {
+          "symbol": "func_002B88C8",
+          "functions": [
+            "func_002B88C8"
+          ],
+          "proof": {
+            "path": "generated/c/func_002B88C8.source-object-proof.json",
+            "bytes": 20977,
+            "sha256": "F56B8F0A721FF223930B114473593B57FE8114C1B2C56B1B5CA31D95B43EEAD4"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 2853064,
+              "bytes": 240,
+              "sectionName": ".ob64.r5619",
+              "sha256": "E8F84FCE62F661D4F1810B311288CAD03BC2159ABFD764AC27CB3C18CA304251"
+            }
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        }
+      ],
       "compiler": {
         "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
         "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
@@ -70478,7 +71155,7 @@
           "proof": {
             "path": "generated/c/func_000240b0.source-object-proof.json",
             "bytes": 503275,
-            "sha256": "804469AB2EB2C020988613B83948812FA85DABCBFE9976A55CB6A9B8C5FA8FD6"
+            "sha256": "A81315272093A4540DBB20468261D783F1705BAE3740C28FD77B41AA08651833"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70498,7 +71175,7 @@
           "proof": {
             "path": "generated/c/func_000241f8.source-object-proof.json",
             "bytes": 482220,
-            "sha256": "29E99BD6CF78C7D5740160042F197BB82538FB8CF91CC81C96A60D15A299F5CE"
+            "sha256": "F020C1996D666D2A246F02CC10D253ECCC5C1A54744B5DF2412E41099883F06C"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70518,7 +71195,7 @@
           "proof": {
             "path": "generated/c/func_00024250.source-object-proof.json",
             "bytes": 485250,
-            "sha256": "3A649731C5318B14482969C7E9A9592A53097168843940F9391ABDAF7B88EF24"
+            "sha256": "D12F4E531EDF72838C5851EE46DB731BD50F9A0814B2E1B0D7387D8B9D5158B9"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70538,7 +71215,7 @@
           "proof": {
             "path": "generated/c/func_000242e0.source-object-proof.json",
             "bytes": 478795,
-            "sha256": "D849020E26179A1D6698BC6E5EF79423FF5351E9435BF65B28C979BD88E1B719"
+            "sha256": "A9BA39976DEBF72993B1E06656C1DC3163374FF189546ECCAA953779C0D18F12"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70558,7 +71235,7 @@
           "proof": {
             "path": "generated/c/func_000242e8.source-object-proof.json",
             "bytes": 496259,
-            "sha256": "40F0F59E3C67C002BA795B1B20FB5C61D160B25213DF0FBB75B654457386F0CF"
+            "sha256": "891DB90CAE23B60A48C3E9762A64ED0F553F918F94A7B404EF440BBC45ECD988"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70578,7 +71255,7 @@
           "proof": {
             "path": "generated/c/func_000243ec.source-object-proof.json",
             "bytes": 491536,
-            "sha256": "DDEA01E9C64B625BD2FE97824429476EE19E507973F57188E1EC5E1AA566495B"
+            "sha256": "DB110D03C1D5050AF3A44211618DE43148BA105AE0C84AABA5A3933584BEE3EE"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70598,7 +71275,7 @@
           "proof": {
             "path": "generated/c/func_000244ec.source-object-proof.json",
             "bytes": 486815,
-            "sha256": "DC31A66F5522F6623ADF2F367B66E7608DE1FF466FCD6D3E90A80DA159CC8812"
+            "sha256": "81E2C7FD2BC338F4598549B9F0E79C4074CC5E060F63BFECC6BA696E247C91E5"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70618,7 +71295,7 @@
           "proof": {
             "path": "generated/c/func_000245dc.source-object-proof.json",
             "bytes": 483591,
-            "sha256": "A824AE1A03C0128039378FC3AFFFCCF5187B03CAE8942BB9E3483AC34DD977EF"
+            "sha256": "08A95A52A127EB06C289969BF5952FC358FEB02A10D5AD943B56B3096FDFDCA0"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70638,7 +71315,7 @@
           "proof": {
             "path": "generated/c/func_0002466c.source-object-proof.json",
             "bytes": 483800,
-            "sha256": "CB95AAE817A30BCB36A67E0534E5467F5DDEB990FE40C4DB2F748B9274BAF5D0"
+            "sha256": "36512959CA023485A6B53091F53DD1FE9FC14C55CF1BC95ED4B2C1626CE8F2AE"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70659,7 +71336,7 @@
           "proof": {
             "path": "generated/c/func_000246C0.source-object-proof.json",
             "bytes": 492928,
-            "sha256": "85EF114CDCAAB3F099F54344791869921213F22BE6AC3B33F2D1C270CC3D6665"
+            "sha256": "B42539CFB97640011E4B7553468157A6C854B7E67509F6257A262E30C6413788"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70679,7 +71356,7 @@
           "proof": {
             "path": "generated/c/func_000247a4.source-object-proof.json",
             "bytes": 491973,
-            "sha256": "11C046DA62A0AB86D1DEF6CBA421ACF020479EBECDD415E7329A0C4572880BEF"
+            "sha256": "1A13BF57129A087673FCEDB05E98C054419BE4CA0166C3B146219A8ADF4DEAFE"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70699,7 +71376,7 @@
           "proof": {
             "path": "generated/c/func_00024874.source-object-proof.json",
             "bytes": 480463,
-            "sha256": "E57EB9E671DDEB13F3D6B047BB36B8C7B5850CC671A68075E3B684B92FC48744"
+            "sha256": "996884B4AC3B37CE12875D35B4BCCC1554DE018606A82A2F2AF176AD3AE01972"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -70719,7 +71396,7 @@
           "proof": {
             "path": "generated/c/func_000248ac.source-object-proof.json",
             "bytes": 503984,
-            "sha256": "4BB3DBC2215A262A47F7D24AD51F60A6C64A371D464E23C257D7D0C1516B8379"
+            "sha256": "730CCBED28F2B371018D2D400AB2273C2371BFFEBC09CB47EA22F0F53BC7F96E"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -71257,7 +71934,7 @@
           "proof": {
             "path": "generated/c/_Printf.source-object-proof.json",
             "bytes": 545827,
-            "sha256": "140DCC0025F9B4C818EA3BD8C92284BD574D6D7CEDEE19ECA01E864AF1DEE6CB"
+            "sha256": "D088102EA4B78364A1099A1DEF0FC1EEFA4D5A2C8EC3D70D0A607468B0155745"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -71277,7 +71954,7 @@
           "proof": {
             "path": "generated/c/func_0002a560.source-object-proof.json",
             "bytes": 601560,
-            "sha256": "3E8743884EFBD3A149940E8CE50E20BD26C2F14C1486AE5146ACF79B317389C1"
+            "sha256": "94F89368282F93023C6D4E01C7339C603BC2AE5B38F1E8081974F4CA964CA1F6"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [

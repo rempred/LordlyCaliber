@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "5894EA0E55DBDB41BA76517755F5E8110AC032C4DD35E6313BEB49DD6BE14086",
-  "revision": "0d419be9254fd64b52e4586c2732f85e38673afb",
+  "fingerprint": "25FDAD0F2D4C068AD63FA63A5EDD21FD5E53BB20985B4F5432400FF32D7F500F",
+  "revision": "d66e14504e4a3c03d13df996ba42957b9111a48d",
   "counts": {
-    "owners": 1613,
-    "functions": 1659,
-    "producerSources": 1482,
-    "sourceAndHeaderFiles": 1523
+    "owners": 1626,
+    "functions": 1672,
+    "producerSources": 1495,
+    "sourceAndHeaderFiles": 1536
   },
   "sources": [
     {
@@ -27382,6 +27382,33 @@
       ]
     },
     {
+      "name": "func_0020C120",
+      "source": "game/accepted/library/src/lib/func_0020C120.c",
+      "sourcePath": "src/lib/func_0020C120.c",
+      "sourceSha256": "BA3E2D713D7614316FF7F32D27B7BDFAC67A5084A40481C9BECD6FB7F1E056C3",
+      "headers": [],
+      "address": 2149354640,
+      "bindings": {},
+      "sections": {
+        ".text": 2149354640
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2146592,
+          "address": 2149354640,
+          "size": 68,
+          "sha256": "14C41DEA3E926095AC19E15F24E45AD750E1814E23DBB62F90FB3D2DB0DBEDF5",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0020C120"
+      ]
+    },
+    {
       "name": "func_0020C180",
       "source": "game/accepted/library/src/lib/func_0020C180.c",
       "sourcePath": "src/lib/func_0020C180.c",
@@ -27701,6 +27728,36 @@
       ],
       "targets": [
         "func_0020D590"
+      ]
+    },
+    {
+      "name": "func_0020D870",
+      "source": "game/accepted/library/src/lib/func_0020D870.c",
+      "sourcePath": "src/lib/func_0020D870.c",
+      "sourceSha256": "01056CF9D71CA00FA227EC9D9D87ABDABBE167F99F1050225498253AA2E087A8",
+      "headers": [],
+      "address": 2149360608,
+      "bindings": {
+        "D_80193BC0": 2149137344,
+        "func_00023780": 2148086656
+      },
+      "sections": {
+        ".text": 2149360608
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2152560,
+          "address": 2149360608,
+          "size": 340,
+          "sha256": "1DFC3AE7A488AC0BF22F7C4B64FE2AD7E774FA5C36D77C7F452FBA09A3EF740B",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0020D870"
       ]
     },
     {
@@ -43029,7 +43086,7 @@
       "name": "func_00284288",
       "source": "game/accepted/library/src/lib/func_00284288.c",
       "sourcePath": "src/lib/func_00284288.c",
-      "sourceSha256": "439A9455661D6B6881BFBE8C8D6D573A95B44E759259BBF8C9765E8A8CC8130E",
+      "sourceSha256": "147E507C2AB4226F860747C6567B7518998965F87AA7D599814D4D477EC7952C",
       "headers": [],
       "address": 2149745336,
       "bindings": {
@@ -43562,6 +43619,59 @@
       ]
     },
     {
+      "name": "func_0029E218",
+      "source": "game/accepted/library/src/lib/func_0029E218.c",
+      "sourcePath": "src/lib/func_0029E218.c",
+      "sourceSha256": "1FCDAA0EC221DFAE62E753FE2880A3F38BBCAFAA4810D466E6B0B992648E1116",
+      "headers": [],
+      "address": 2149771752,
+      "bindings": {
+        "D_801CF3F0": 2149381104,
+        "func_002a3198": 2149792104,
+        "func_00204F34": 2149325476,
+        "g_func_0015DF10_match": 2148446784,
+        "func_00208DC8": 2149341496,
+        "g_func_0015DF10_default": 2148446864,
+        "float_002a89b0": 2149814656,
+        "func_0029CD64": 2149766452,
+        "D_801CF3F4": 2149381108,
+        "D_801CF3F2": 2149381106,
+        "D_801CEF10": 2149379856,
+        "D_801CEF12": 2149379858,
+        "D_801CE8BC": 2149378236,
+        "func_0029DF5C": 2149771052,
+        "func_0002CD70": 2148125040
+      },
+      "sections": {
+        ".text": 2149771752,
+        ".rodata": 2149814864
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2744856,
+          "address": 2149771752,
+          "size": 1268,
+          "sha256": "C6D8A4A4028FDBC57A8A89823E33705B1382A5CA28D00F6B3705E461C975940C",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 2787968,
+          "address": 2149814864,
+          "size": 88,
+          "sha256": "2561F17D8ECEFD73EFA6649D27BF097333B6706CA9F7F9F192725EC34071EB4C",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_0029E218"
+      ]
+    },
+    {
       "name": "func_002A053C",
       "source": "game/accepted/library/src/lib/func_002A053C.c",
       "sourcePath": "src/lib/func_002A053C.c",
@@ -43906,10 +44016,82 @@
       ]
     },
     {
+      "name": "func_002A9364",
+      "source": "game/accepted/library/src/lib/func_002A9364.c",
+      "sourcePath": "src/lib/func_002A9364.c",
+      "sourceSha256": "B84A32D9959AD1F20A68E94A937C712D973C58F85A30298384B4468657BF5F89",
+      "headers": [],
+      "address": 2149817348,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_801CE8BC": 2149378236,
+        "func_0020C120": 2149354640,
+        "D_801CE8FC": 2149378300,
+        "D_8022F2CC": 2149774028,
+        "func_0002CD70": 2148125040,
+        "func_00023780": 2148086656,
+        "func_00043e88": 2148982664,
+        "func_00043edc": 2148982748,
+        "func_00043f30": 2148982832,
+        "func_00043f84": 2148982916,
+        "func_00045934": 2148989492,
+        "func_00207658": 2149335496,
+        "func_8022E9E8": 2149771752
+      },
+      "sections": {
+        ".text": 2149817348
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2790244,
+          "address": 2149817348,
+          "size": 1272,
+          "sha256": "A3041F08DC09DF1B4AFC1A769AEDE3CD0D9E5644D56E903C99C06396813FB1D3",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002A9364"
+      ]
+    },
+    {
+      "name": "func_002A98C4",
+      "source": "game/accepted/library/src/lib/func_002A98C4.c",
+      "sourcePath": "src/lib/func_002A98C4.c",
+      "sourceSha256": "EBA827FEBC5587DCC01D9B90A765DB8A71DCF1783B952145C53D31D9A666FB8F",
+      "headers": [],
+      "address": 2149818724,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "func_00204F34": 2149325476
+      },
+      "sections": {
+        ".text": 2149818724
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2791620,
+          "address": 2149818724,
+          "size": 268,
+          "sha256": "B0DBF538C49886A8B021C1D2E081B70082633B15F95FF1CDE800402E2AB1DAD4",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002A98C4"
+      ]
+    },
+    {
       "name": "func_002AAC60",
       "source": "game/accepted/library/src/lib/func_002AAC60.c",
       "sourcePath": "src/lib/func_002AAC60.c",
-      "sourceSha256": "B01E631850262BCAAB85E46EFD08261007426690E624457D35EF55AE583E1CC3",
+      "sourceSha256": "9DF05037CB46AEE956E9825FDE729317DD393FECA795D5892F195CE1FDFE3020",
       "headers": [],
       "address": 2149823744,
       "bindings": {
@@ -43948,6 +44130,40 @@
       ],
       "targets": [
         "func_002AAC60"
+      ]
+    },
+    {
+      "name": "func_002AB0F8",
+      "source": "game/accepted/library/src/lib/func_002AB0F8.c",
+      "sourcePath": "src/lib/func_002AB0F8.c",
+      "sourceSha256": "545C9CDCD9FDECA29DB5F0BC12E2BB9FF3BABACB55E6E71E08676DD7E87807DE",
+      "headers": [],
+      "address": 2149824920,
+      "bindings": {
+        "func_0020BFF8": 2149354344,
+        "func_00201670": 2149310944,
+        "func_002016F4": 2149311076,
+        "func_002A0B14": 2149782244,
+        "func_0020C120": 2149354640,
+        "func_002A9364": 2149817348
+      },
+      "sections": {
+        ".text": 2149824920
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2797816,
+          "address": 2149824920,
+          "size": 432,
+          "sha256": "0BC14B750CB23ECCAAC510385A2BC9FD11E3D55DAA05952C443E92A9A4EB6DE9",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AB0F8"
       ]
     },
     {
@@ -44005,6 +44221,39 @@
       ]
     },
     {
+      "name": "func_002AB574",
+      "source": "game/accepted/library/src/lib/func_002AB574.c",
+      "sourcePath": "src/lib/func_002AB574.c",
+      "sourceSha256": "2C33D20CEDCD9E24D891A2BF3AC4817C9174ACB6601DD9720D0429AFBBAF77A2",
+      "headers": [],
+      "address": 2149826068,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_801CE8BC": 2149378236,
+        "func_0020C120": 2149354640,
+        "func_0020C0E8": 2149354584,
+        "func_0020BFF8": 2149354344
+      },
+      "sections": {
+        ".text": 2149826068
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2798964,
+          "address": 2149826068,
+          "size": 328,
+          "sha256": "EBE111B4F7D06A5BD5FB95B23252A1B379445CE4961847A11076A1B62B11D48C",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AB574"
+      ]
+    },
+    {
       "name": "func_002AB810",
       "source": "game/accepted/library/src/lib/func_002AB810.c",
       "sourcePath": "src/lib/func_002AB810.c",
@@ -44045,7 +44294,7 @@
       "name": "func_002ABB3C",
       "source": "game/accepted/library/src/lib/func_002ABB3C.c",
       "sourcePath": "src/lib/func_002ABB3C.c",
-      "sourceSha256": "322B3C5F92045C69D153B33C671E6BCCCD51B9923DE3109B70C2926C0C6DAA8D",
+      "sourceSha256": "C732BC71FB13D1E2CE3C206E288830284D5E77A38CB089B7455E0F5BD774ADAC",
       "headers": [],
       "address": 2149827548,
       "bindings": {
@@ -44217,6 +44466,78 @@
       ]
     },
     {
+      "name": "func_002ACFD8",
+      "source": "game/accepted/library/src/lib/func_002ACFD8.c",
+      "sourcePath": "src/lib/func_002ACFD8.c",
+      "sourceSha256": "79BBAA0F95A9E5AFAD39944E413467B000CC1FD9EBE2B9A3380B3B42BD209932",
+      "headers": [],
+      "address": 2149832824,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C0E8": 2149354584,
+        "func_002A0A68": 2149782072,
+        "func_0020C120": 2149354640,
+        "func_002A9364": 2149817348
+      },
+      "sections": {
+        ".text": 2149832824
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2805720,
+          "address": 2149832824,
+          "size": 588,
+          "sha256": "4C222760AA2995DECC599E842F38379D6F457BC9F2D5EA74319947513493F504",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002ACFD8"
+      ]
+    },
+    {
+      "name": "func_002AD224",
+      "source": "game/accepted/library/src/lib/func_002AD224.c",
+      "sourcePath": "src/lib/func_002AD224.c",
+      "sourceSha256": "CA9F6DA6EF60F0978B631076EC24F9FAECFDF1BEB09E52C17417D2A082E1DA41",
+      "headers": [],
+      "address": 2149833412,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_801CE8BC": 2149378236,
+        "func_0020C120": 2149354640,
+        "func_002A98C4": 2149818724,
+        "func_002AB0F8": 2149824920,
+        "func_002A13C4": 2149784468,
+        "func_002A9364": 2149817348,
+        "resource_free": 2147947204
+      },
+      "sections": {
+        ".text": 2149833412
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2806308,
+          "address": 2149833412,
+          "size": 508,
+          "sha256": "E34424AD25F862C9F98525170E3B1572C5FCC4BDC7F2EB28156BD853F4613AF3",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AD224"
+      ]
+    },
+    {
       "name": "func_002AD420",
       "source": "game/accepted/library/src/lib/func_002AD420.c",
       "sourcePath": "src/lib/func_002AD420.c",
@@ -44241,6 +44562,79 @@
       ],
       "targets": [
         "func_002AD420"
+      ]
+    },
+    {
+      "name": "func_002AD434",
+      "source": "game/accepted/library/src/lib/func_002AD434.c",
+      "sourcePath": "src/lib/func_002AD434.c",
+      "sourceSha256": "234401BBCFDED5499F38E284E574FC42A56613BDD31E2609040AE27A6A9C997C",
+      "headers": [],
+      "address": 2149833940,
+      "bindings": {
+        "D_801976E8": 2149152488,
+        "D_801971F2": 2149151218,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "D_8022A974": 2149755252
+      },
+      "sections": {
+        ".text": 2149833940
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2806836,
+          "address": 2149833940,
+          "size": 320,
+          "sha256": "E5BF3626A216A3624BBC85F71C6B4AE758AEEF313FF970D94954E0A025DA9E4D",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AD434"
+      ]
+    },
+    {
+      "name": "func_002AD574",
+      "source": "game/accepted/library/src/lib/func_002AD574.c",
+      "sourcePath": "src/lib/func_002AD574.c",
+      "sourceSha256": "BFC56DFC93BD9048956A16317F2C2444177E556C39EF1C68FC97832CFD5304A0",
+      "headers": [],
+      "address": 2149834260,
+      "bindings": {
+        "D_8022A7F0": 2149754864,
+        "func_0020C014": 2149354372,
+        "D_801976DC": 2149152476,
+        "D_801976E8": 2149152488,
+        "D_80193BD8": 2149137368,
+        "D_80193BF3": 2149137395,
+        "D_80190EBC": 2149125820,
+        "D_80191010": 2149126160,
+        "D_80195578": 2149143928,
+        "D_80195593": 2149143955,
+        "D_8019532C": 2149143340,
+        "D_80195480": 2149143680
+      },
+      "sections": {
+        ".text": 2149834260
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2807156,
+          "address": 2149834260,
+          "size": 348,
+          "sha256": "FF71ECE499634693D2F14FF035B54EE45F372D6650E706D445752D2C946F2129",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AD574"
       ]
     },
     {
@@ -44421,6 +44815,86 @@
       ],
       "targets": [
         "func_002B5044"
+      ]
+    },
+    {
+      "name": "func_002B867C",
+      "source": "game/accepted/library/src/lib/func_002B867C.c",
+      "sourcePath": "src/lib/func_002B867C.c",
+      "sourceSha256": "3C02B3A3121139D25066470537CB2EB2BCFF36909948F35A5A7E54EB1EEE48DB",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        }
+      ],
+      "address": 2149857404,
+      "bindings": {
+        "func_0020C120": 2149354640,
+        "D_8022A974": 2149755252,
+        "resource_alloc": 2147946288,
+        "func_00023780": 2148086656,
+        "func_00045934": 2148989492,
+        "func_00207658": 2149335496,
+        "func_8022E9E8": 2149771752
+      },
+      "sections": {
+        ".text": 2149857404
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2852476,
+          "address": 2149857404,
+          "size": 588,
+          "sha256": "0AF4252DB66CE4D6B148BFEC7FCB4A3928A38AE892F82CCBBCADD964A8A2BDBD",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002B867C"
+      ]
+    },
+    {
+      "name": "func_002B88C8",
+      "source": "game/accepted/library/src/lib/func_002B88C8.c",
+      "sourcePath": "src/lib/func_002B88C8.c",
+      "sourceSha256": "C3B5755FED02BB68C33736E93F5989F9E41866C5134F67BD73356813544E4688",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        }
+      ],
+      "address": 2149857992,
+      "bindings": {
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "func_0020C0E8": 2149354584,
+        "D_8022A974": 2149755252,
+        "func_002B867C": 2149857404
+      },
+      "sections": {
+        ".text": 2149857992
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2853064,
+          "address": 2149857992,
+          "size": 240,
+          "sha256": "E8F84FCE62F661D4F1810B311288CAD03BC2159ABFD764AC27CB3C18CA304251",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002B88C8"
       ]
     },
     {

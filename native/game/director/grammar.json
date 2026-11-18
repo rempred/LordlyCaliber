@@ -1,8 +1,8 @@
 {
   "generator": "native/tools/generate-director-grammar.cjs",
-  "source": "native/game/director/func_00284288.c",
-  "sourceSha256": "0B1A4F7946CB7E58C530C94068E88CCA65000B2EF5B3E31EF902F32A60814EB7",
-  "sourceCommit": "8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8",
+  "source": "native/game/accepted/library/src/lib/func_00284288.c",
+  "sourceSha256": "147E507C2AB4226F860747C6567B7518998965F87AA7D599814D4D477EC7952C",
+  "sourceCommit": "d66e14504e4a3c03d13df996ba42957b9111a48d",
   "rows": [
     {
       "opcode": 0,
@@ -441,9 +441,9 @@
       "name": "actor_body_pose_cycle_query",
       "description": "In director mode 2, queries whether an Actor body-pose program remains inside its current cycle. The compare-mode word also selects the Actor.",
       "operands": [
-        "compare_mode",
+        "compare_mode_and_actor_slot",
         "target",
-        "producer_input"
+        "unused_word"
       ],
       "query": "Q4",
       "mode": 2
@@ -1750,10 +1750,10 @@
       "opcode": 194,
       "words": 3,
       "name": "mission_briefing_subordinate_actor_bootstrap",
-      "description": "Mission-briefing subordinate Actor bootstrap. It selects the first eligible persistent-character row, binds up to three animation objects, resolves pose resources, and starts their sequencers.",
+      "description": "The first eligible briefing row uses the occupied anchor. Each later component copies the preceding actor after its first pose. The two operands use their signed low 16 bits.",
       "operands": [
-        "operand_0",
-        "operand_1"
+        "anchor_actor_slot",
+        "initial_body_pose"
       ],
       "query": null,
       "mode": null

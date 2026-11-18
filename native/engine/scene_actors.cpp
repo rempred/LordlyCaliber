@@ -513,6 +513,18 @@ bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &val
                         qint32(args[3]), qint32(args[4]), 0, 0, presentation_});
         return true;
     }
+    if (opcode == 0x2b) {
+        if (args.size() != 3)
+            throw Error("Body pose cycle query requires three operands");
+        if (mode_ == 2) {
+            // The dispatcher uses the comparison word twice, including as the actor slot.
+            const auto &instance = actor(qint32(args[0]));
+            if (!instance)
+                throw Error("Body pose cycle query requires an occupied actor slot");
+            value = instance->pose().bodyBusy(bodyData_);
+        }
+        return true;
+    }
     if (opcode == 0x92 || opcode == 0x95) {
         if (args.size() != 2) throw Error("Actor roster binding is truncated");
         if (mode_ != 2) return true;

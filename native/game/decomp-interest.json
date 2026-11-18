@@ -199,8 +199,26 @@
       "symbols": ["func_0029E218"],
       "editorFiles": ["game/director/actor_pose.c", "engine/actor_pose.cpp"],
       "editorUse": "reconstructed",
-      "benefit": "Replace reconstructed pose dispatch with recovered control flow when matching C becomes available.",
+      "benefit": "Accepted 0029E218 supplies the retail ROM sequencer and its 22-entry switch table. The host sequencer and the expanded ROM sequencer implement private poses and wide state transfers.",
       "preserve": "Bounded/resumable preview execution, shared callbacks and private or wide-frame extensions."
+    },
+    {
+      "id": "actor-body-cycle", "priority": 1,
+      "behavior": "Director body-pose cycle query",
+      "symbols": ["func_002A98C4"],
+      "editorFiles": ["engine/scene_actors.cpp", "engine/actor_pose.cpp"],
+      "editorUse": "adapted",
+      "benefit": "Scene playback uses the first comparison operand as the actor slot and reads the current body-program cycle, including its final frame timer.",
+      "preserve": "Use the project's body animation data and keep the ordinary pose-token query separate."
+    },
+    {
+      "id": "briefing-actor-construction", "priority": 1,
+      "behavior": "First eligible briefing row, anchor and subordinate actors",
+      "symbols": ["func_002B88C8", "func_002B867C", "func_0020D870"],
+      "editorFiles": ["game/accepted/rom-owners.json", "engine/scene_playback_inputs.cpp"],
+      "editorUse": "imported",
+      "benefit": "The ROM baseline executes retail construction. Native briefing preview can use the independent art/owner inputs and post-pose clone order once it can consume launch allocation and preparation outcomes.",
+      "preserve": "Identify the occupied anchor, the first eligible row, component gaps and resource state for the invocation."
     },
     {
       "id": "actor-initialization", "priority": 1,
@@ -312,7 +330,7 @@
       "editorFiles": ["game/director/actor_body.c", "engine/actor_art.cpp"],
       "editorUse": "partial",
       "symbolUses": {"func_00045934": "adapted", "func_0020C120": "reconstructed"},
-      "benefit": "Equipment selection confirmed against accepted C 76b2ce11; linked body classification remains reconstructed.",
+      "benefit": "The accepted 0020C120 checks owner contexts 10, 25 and 123. The initializer separately checks that the row has a class and that the component is secondary.",
       "preserve": "Expanded item limits, host bounds and primary/secondary body distinction."
     },
     {
