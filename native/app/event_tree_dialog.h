@@ -9,6 +9,8 @@ std::optional<QJsonObject> editEventTrigger(Project *,int row,QJsonObject,QWidge
 std::optional<QJsonObject> editRetailCondition(Project *,int row,int group,QJsonObject,QWidget *,QJsonObject *flags);
 QString eventTreeSummary(const QJsonObject &,int row,const SceneEvents *flags=nullptr,const Project *project=nullptr);
 QString eventConditionSummary(const QJsonObject &,int row,const SceneEvents *flags=nullptr);
+QStringList eventAnswerBranches(Project &,const QJsonObject &previous,const QJsonObject &condition);
+QJsonArray eventQuestionSteps(int selector,int firstAnswer);
 QString eventTargetSummary(int row,int group,int target);
 QMap<int,QString> eventTargets(Project *,int row,int group);
 }

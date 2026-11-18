@@ -1,4 +1,6 @@
 #include "engine/event_flow.h"
+#include "engine/dialogues.h"
+#include "engine/scene_actions.h"
 #include "engine/event_authoring.h"
 #include "engine/campaign_map.h"
 #include "engine/event_helper_names.h"
@@ -399,7 +401,7 @@ void nameBooleanTest(const Expression &left,const Expression &right,StoryField &
         choices("Petrification","Not petrified","Petrified");
 }
 }
-QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,const ScenePrograms &scenes,int row,bool originalSceneText,bool structural,const CampaignMap *locations) {
+QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,const ScenePrograms &scenes,int row,bool originalSceneText,bool structural,const CampaignMap *locations,const Dialogues *dialogues) {
     const auto programName=[&](int id){const auto name=events.missionName(id);return name.isEmpty()?EventScript::rowName(id):name;};
     const bool replaced=events.flagEdits()[QString::number(row)].toObject()["replace"].toBool();
     const auto info=replaced?QJsonObject{}:catalog()["rows"].toObject()[QString::number(row)].toObject();
@@ -532,8 +534,11 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
                 action.target=at+6+qint8(u8(bytes,at+5))*2;action.otherwise=at+6;consume(3);
             } else if(owns(at,4)&&op==0x69&&arg==3&&u8(bytes,at+2)==0x6a&&word(at+4)==0x6391&&conditional(u8(bytes,at+6))&&(u8(bytes,at+6)&15)==11){
                 action.kind="condition";const int answer=u8(bytes,at+3);
+                action.answerScene=lastScene;
                 auto f=field(at+2,"value","Answer");f.kind="dialogue-answer";f.choices.clear();
-                if(lastScene>=0&&originalSceneText&&!scenes.modified()){
+                if(lastScene>=0 && dialogues)
+                    for(const auto &[value,text]:questionAnswers(lastScene,scenes,*dialogues))f.choices[value]=text;
+                if(f.choices.isEmpty()&&lastScene>=0&&originalSceneText&&!scenes.modified()){
                     QMap<int,QStringList> captions;
                     for(const auto &v:catalog()["answers"].toArray()){
                         const auto a=v.toArray();if(a[0].toInt()!=lastScene||a[1].toInt()!=3)continue;
@@ -913,6 +918,147 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
         if(a.ruleIndex<0)return a.entry<b.entry;
         return std::tie(a.group,a.ruleIndex)<std::tie(b.group,b.ruleIndex);
     });
+    return result;
+}
+namespace {
+// Follow this arm's actual successors. Stop at a further decision, call or
+// shared entry when there is no single sequence to describe.
+QStringList choiceEffects(const StoryEvent &event,const QByteArray &bytes,int pc,const QJsonObject &gates){
+    QMap<int,const StoryAction *> actions;
+    for(const auto &a:event.actions)if(!a.instructions.isEmpty())actions.insert(a.instructions.first(),&a);
+    QSet<int> visited;QStringList effects;
+    while(actions.contains(pc) && !visited.contains(pc) && effects.size()<12){
+        visited.insert(pc);
+        const auto &a=*actions.value(pc);
+        const int last=a.instructions.last();
+        // CF + immediate, compare against maximum, choose sum or maximum, then store CF.
+        if(pc+16<=bytes.size() && u16(bytes,pc)==0x60ff && u8(bytes,pc+2)==0x69 &&
+           u16(bytes,pc+4)==0x9011 && u8(bytes,pc+6)==0x69 && u16(bytes,pc+8)==0xc101 &&
+           u16(bytes,pc+10)==0x0101 && u8(bytes,pc+12)==0x68 && u8(bytes,pc+13)==u8(bytes,pc+7) &&
+           u16(bytes,pc+14)==0x70ff && !gates.contains(QString::number(pc+8))){
+            effects<<QString("Add %1 Chaos Frame, up to %2").arg(u8(bytes,pc+3)).arg(u8(bytes,pc+7));
+            pc+=16;continue;
+        }
+        if(a.otherwise>=0){effects<<"Next decision · "+a.title;return effects;}
+        if(a.target>=0 && (u8(bytes,last)==1 || u8(bytes,last)==2)){pc=a.target;continue;}
+        // Returning to world routing and issuing request 2 starts the already selected map.
+        if(pc+8<=bytes.size() && u32(bytes,pc)==0x680070e8 && u32(bytes,pc+4)==0x68021100){
+            effects<<"Start the selected battlefield";return effects;
+        }
+        effects<<a.title;
+        const int op=u8(bytes,last);
+        if(a.kind=="end" || a.kind=="program" || op==4 || op==0x11 || op==0x12 || op==0x2f)return effects;
+        if(a.advanced || a.target>=0){effects<<"Continue in the event logic";return effects;}
+        pc=last+2;
+    }
+    effects<<(visited.contains(pc)?"Return to an earlier step":"Continue in the event logic");
+    return effects;
+}
+}
+QVector<int> EventFlow::questionSelectors(const ScenePrograms &scenes){
+    QVector<int> ids;
+    for(const auto &key:catalog()["questions"].toObject().keys())ids<<key.toInt();
+    for(const auto &scene:scenes.authoredScenes())if(!ids.contains(scene.selector))ids<<scene.selector;
+    std::sort(ids.begin(),ids.end());
+    return ids;
+}
+namespace {
+struct QuestionSource {
+    int archive=-1, entry=-1;
+    QVector<QPair<int,QString>> answers;
+};
+QuestionSource verifiedQuestion(int selector,const ScenePrograms &scenes,const Dialogues &dialogues){
+    auto readText=[&](Dialogues::Table table,int archive,int entry){
+        try{return dialogues.entry(table,archive,entry);}
+        catch(const Error &){return QByteArray{};}
+    };
+    for(const auto &custom:scenes.authoredScenes())if(custom.selector==selector){
+        const auto &commands=custom.current.commands;
+        const auto choices=SceneActions::choices(custom.current);
+        if(choices.size()!=1 || commands.size()<4)return {};
+        const auto &c=choices.first();
+        // Accept a single editor-authored question that reaches the normal scene
+        // exit. Another window or control transfer could replace its answer.
+        auto flagsOnly=[&](int first,int last){
+            for(int i=first;i<last;++i){
+                const auto &cmd=commands[i];
+                if(cmd.opcode!=0x8e || cmd.operands.size()!=2 ||
+                   (cmd.operands[0]&0xffff0000)!=SceneActions::storyFlagTag)return false;
+            }
+            return true;
+        };
+        const int end=commands.size()-4;
+        if(c.end>end || commands[0].opcode!=0x80000006 || commands[end].opcode!=0x7d ||
+           commands[end+1].opcode!=0x80000002 || commands[end+2].opcode!=0x80000000 || commands[end+3].opcode!=0x80000001 ||
+           !flagsOnly(c.firstBegin,c.firstEnd) || !flagsOnly(c.secondBegin,c.secondEnd) || !flagsOnly(c.end,end))return {};
+        for(int i=1;i<c.command;++i)
+            if(commands[i].opcode!=0x36 && commands[i].opcode!=0x35 && !flagsOnly(i,i+1))return {};
+        const auto &operands=commands[c.command].operands;
+        const auto selectorWord=quint16(operands[2]);
+        if((selectorWord&0xc000)!=0 && (selectorWord&0xc000)!=0x8000)return {};
+        const auto table=selectorWord&0x8000?Dialogues::Table::Alternate:Dialogues::Table::Primary;
+        const int archive=quint16(operands[1]), index=selectorWord&0x3fff;
+        if(const auto labels=SceneActions::choiceOptions(readText(table,archive,index)))
+            return {int(Dialogues::identity(table,archive)),index,{{1,labels->first},{255,labels->second}}};
+        return {};
+    }
+    const auto source=catalog()["questions"].toObject().value(QString::number(selector)).toObject();
+    if(source.isEmpty())return {};
+    const auto key=scenes.original().selectors().value(selector);
+    if(!key || sha256(scenes.program(key).encode())!=source["sceneHash"].toString().toLatin1())return {};
+    const int archive=source["archive"].toInt(), index=source["entry"].toInt();
+    const auto text=readText(Dialogues::Table::Primary,archive,index);
+    if(sha256(text)!=source["textHash"].toString().toLatin1()){
+        if(const auto edited=SceneActions::choiceOptions(text))return {archive,index,{{1,edited->first},{255,edited->second}}};
+        return {};
+    }
+    QVector<QPair<int,QString>> result;
+    for(const auto &value:source["answers"].toArray()){
+        const auto pair=value.toArray();result.append({pair[0].toInt(),pair[1].toString()});
+    }
+    return {archive,index,result};
+}
+}
+QVector<QPair<int,QString>> EventFlow::questionAnswers(int selector,const ScenePrograms &scenes,const Dialogues &dialogues){
+    return verifiedQuestion(selector,scenes,dialogues).answers;
+}
+QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &flow,const QByteArray &bytes,
+    const ScenePrograms &scenes,const Dialogues &dialogues,const QJsonObject &gates){
+    QVector<PlayerDecision> result;
+    for(const auto &event:flow)for(const auto &action:event.actions){
+        if(action.answerScene<0 || action.instructions.isEmpty() || action.target<0 || action.otherwise<0)continue;
+        const int pc=action.instructions.last(), op=u8(bytes,pc);
+        if((op!=0xab && op!=0xbb) || gates.contains(QString::number(pc)))continue;
+        const auto source=verifiedQuestion(action.answerScene,scenes,dialogues);
+        const auto &answers=source.answers;
+        if(answers.size()!=2)continue;
+        const auto &fields=action.condition.fields;
+        const auto field=std::find_if(fields.cbegin(),fields.cend(),[](const StoryField &f){return f.kind=="dialogue-answer";});
+        if(field==fields.cend())continue;
+        PlayerDecision d;d.entry=event.entry;d.group=event.group;d.answerField=*field;d.selector=action.answerScene;
+        d.archive=source.archive;d.dialogue=source.entry;
+        for(int i=0;i<2;++i){
+            d.answers[i].value=answers[i].first;d.answers[i].text=answers[i].second;
+        }
+        if(field->value!=d.answers[0].value && field->value!=d.answers[1].value)continue;
+        for(const auto &a:event.actions){
+            if(&a==&action)break;
+            if(a.scene==action.answerScene){
+                d.scene=a.title.section(" · ",1);
+                d.commonEffects.clear();
+            }else if(!d.scene.isEmpty() && a.kind=="action"){
+                d.commonEffects<<a.title;
+            }
+        }
+        d.answerField.choices.clear();
+        for(auto &answer:d.answers){
+            d.answerField.choices[answer.value]=answer.text;
+            const bool taken=(answer.value==field->value)==(op==0xab);
+            answer.destination=taken?action.target:action.otherwise;
+            answer.effects=choiceEffects(event,bytes,answer.destination,gates);
+        }
+        result<<d;
+    }
     return result;
 }
 void EventFlow::set(SceneEvents &events,const ScenePrograms &scenes,int row,const StoryField &field,int value){

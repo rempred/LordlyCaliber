@@ -1,8 +1,10 @@
 #pragma once
 #include "engine/event_script.h"
 #include "engine/scene_events.h"
+#include <array>
 namespace lordly {
 class CampaignMap;
+class Dialogues;
 struct StoryField {
     QString label, key;
     int offset = -1, value = 0, minimum = 0, maximum = 255;
@@ -26,6 +28,19 @@ struct StoryAction {
     int target = -1, otherwise = -1, scene = -1;
     bool advanced = false;
     StoryCondition condition;
+    int answerScene = -1;
+};
+struct PlayerAnswer {
+    int value = -1, destination = -1;
+    QString text;
+    QStringList effects;
+};
+struct PlayerDecision {
+    int entry = -1, group = -1, archive = -1, dialogue = -1, selector = -1;
+    QString scene;
+    QStringList commonEffects;
+    StoryField answerField;
+    std::array<PlayerAnswer,2> answers;
 };
 struct StoryEvent {
     int entry = 0, group = -1;
@@ -42,7 +57,13 @@ class EventFlow {
   public:
     // Projection of current instructions, never a second saved event model.
     static QVector<StoryEvent> read(const Rom &, const SceneEvents &, const ScenePrograms &, int row,
-                                    bool originalSceneText = true,bool structural=true,const CampaignMap *locations=nullptr);
+                                    bool originalSceneText = true,bool structural=true,const CampaignMap *locations=nullptr,
+                                    const Dialogues *dialogues=nullptr);
     static void set(SceneEvents &, const ScenePrograms &, int row, const StoryField &, int value);
+    static QVector<PlayerDecision> playerDecisions(const QVector<StoryEvent> &, const QByteArray &program,
+        const ScenePrograms &, const Dialogues &, const QJsonObject &gates);
+    // The order here is the order shown in the dialogue, independent of the byte values.
+    static QVector<QPair<int,QString>> questionAnswers(int selector,const ScenePrograms &,const Dialogues &);
+    static QVector<int> questionSelectors(const ScenePrograms &);
 };
 }

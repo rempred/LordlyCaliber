@@ -5,6 +5,7 @@
 #include "engine/event_authoring.h"
 #include "engine/event_tree.h"
 #include <QComboBox>
+#include <QCheckBox>
 #include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -48,6 +49,8 @@ EventFlowEditor::EventFlowEditor(Project *p,QUndoStack *undo,std::function<void(
     auto split=new QSplitter;layout->addWidget(split,1);
     auto left=new QWidget;auto leftLayout=new QVBoxLayout(left);leftLayout->setContentsMargins(0,0,0,0);
     triggerFilter_=new QComboBox;triggerFilter_->setObjectName("storyTriggerFilter");triggerFilter_->setAccessibleName("Trigger");leftLayout->addWidget(triggerFilter_);
+    auto choices=new QPushButton("Player decisions…");choices->setObjectName("storyPlayerDecisions");leftLayout->addWidget(choices);
+    choices->hide();connect(choices,&QPushButton::clicked,this,&EventFlowEditor::showDecisions);
     search_=new QLineEdit;search_->setObjectName("storyEventSearch");search_->setPlaceholderText("Find a rule, place or character…");leftLayout->addWidget(search_);
     list_=new QListWidget;list_->setObjectName("storyEventList");list_->setWordWrap(true);list_->setTextElideMode(Qt::ElideNone);leftLayout->addWidget(list_,1);split->addWidget(left);
     auto add=new QPushButton("Add rule…");add->setObjectName("storyCreateEvent");add->setEnabled(false);leftLayout->addWidget(add);connect(add,&QPushButton::clicked,this,[this]{editTree();});
@@ -69,13 +72,21 @@ void EventFlowEditor::setRow(int row,int entryFilter) {
     entryFilter_=entryFilter;
     if(row_!=row)page_=0;row_=row;events_.clear();program_.clear();notice_->clear();const QSignalBlocker block(list_);list_->clear();
     findChild<QPushButton *>("storyCreateEvent")->setEnabled(EventAuthoring::supported(row));
+    decisions_.clear();findChild<QPushButton *>("storyPlayerDecisions")->hide();
     try {
         if(row>=0) {
             program_=project_->sceneEvents()->program(row);
-            const bool originalScenes=!project_->scenePrograms()->modified()&&(!project_->dialogues()||!project_->dialogues()->modified())&&
+            originalSceneText_=!project_->scenePrograms()->modified()&&(!project_->dialogues()||!project_->dialogues()->modified())&&
                 sha256(project_->runtimeRom().bytes())=="571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a";
             project_->loadCampaignMap();
-            events_=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row,originalScenes,true,&*project_->campaignMap());
+            project_->loadDialogues();
+            events_=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row,originalSceneText_,true,&*project_->campaignMap(),&*project_->dialogues());
+            if(std::any_of(events_.cbegin(),events_.cend(),[](const auto &e){
+                return std::any_of(e.actions.cbegin(),e.actions.cend(),[](const auto &a){return a.answerScene>=0;});})){
+                decisions_=EventFlow::playerDecisions(events_,program_,*project_->scenePrograms(),*project_->dialogues(),
+                    project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["gates"].toObject());
+                findChild<QPushButton *>("storyPlayerDecisions")->setVisible(!decisions_.isEmpty());
+            }
         }
         QMap<QString,int> authoredTargets;
         if(row>=0)for(const auto &v:project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["trees"].toArray()){
@@ -198,7 +209,7 @@ void EventFlowEditor::addField(QFormLayout *form,StoryField field){
     }else{
         auto combo=new QComboBox;combo->setObjectName(object);combo->setEditable(true);combo->setInsertPolicy(QComboBox::NoInsert);
         combo->setMinimumContentsLength(25);combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        const bool namedOnly=field.kind=="named-state"||field.key=="destination";
+        const bool namedOnly=field.kind=="named-state"||field.kind=="dialogue-answer"||field.key=="destination";
         for(auto i=field.choices.begin();i!=field.choices.end();++i)if(i.key()>=field.minimum&&i.key()<=field.maximum)combo->addItem(i.value()+(namedOnly?QString{}:QString(" [%1]").arg(i.key())),i.key());
         if(combo->findData(field.value)<0)combo->addItem(field.key=="destination"?field.choices.value(field.value,destination(field.value)):QString("Existing ID %1").arg(field.value),field.value);
         combo->setCurrentIndex(combo->findData(field.value));combo->lineEdit()->setCursorPosition(0);
@@ -306,7 +317,7 @@ void EventFlowEditor::showEvent(){
             if(!graph->steps.isEmpty())show(0,outline->invisibleRootItem());
             outline->expandAll();outline->setMinimumHeight(200);
             auto details=new QWidget;auto form=new QFormLayout(details);layout->addWidget(details);
-            const auto native=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row_,false,false);
+            const auto native=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row_,originalSceneText_,false,&*project_->campaignMap(),&*project_->dialogues());
             auto inspect=[this,form,graph=*graph,native,group=event.group](QTreeWidgetItem *item){
                 while(form->rowCount())form->removeRow(0);
                 if(!item||!item->data(0,Qt::UserRole).isValid())return;
@@ -360,6 +371,7 @@ void EventFlowEditor::showEvent(){
         };
         std::function<void(QTreeWidgetItem *,QJsonArray)> show=[&](QTreeWidgetItem *parent,QJsonArray nodes){
             bool reachable=true;
+            QJsonObject previous;
             for(const auto &value:nodes) {
                 const auto n=value.toObject();
                 const auto title=eventTreeSummary(n,row_,&*project_->sceneEvents(),project_);
@@ -367,12 +379,14 @@ void EventFlowEditor::showEvent(){
                 if(!reachable)continue;
                 if(n["type"]=="if"){
                     showCondition(item,n["condition"].toObject());
-                    show(new QTreeWidgetItem(item,{"THEN"}),n["then"].toArray());
-                    show(new QTreeWidgetItem(item,{"ELSE"}),n["else"].toArray());
+                    const auto labels=eventAnswerBranches(*project_,previous,n["condition"].toObject());
+                    show(new QTreeWidgetItem(item,{labels.value(0,"THEN")}),n["then"].toArray());
+                    show(new QTreeWidgetItem(item,{labels.value(1,"ELSE")}),n["else"].toArray());
                 }else if(n["type"]=="flag"){
                     preview->setItemWidget(item,1,eventFlagLinks(project_,row_,n["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);}));
                 }
                 reachable=EventAuthoring::fallsThrough({n});
+                previous=n;
             }
         };
         show(preview->invisibleRootItem(),tree["nodes"].toArray());preview->expandAll();
@@ -513,9 +527,113 @@ void EventFlowEditor::change(StoryField field,int value){
         }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
     });
 }
+void EventFlowEditor::showDecisions(){
+    if(decisions_.isEmpty())return;
+    QDialog dialog(this);dialog.setWindowTitle("Player decisions");dialog.resize(900,650);
+    auto layout=new QVBoxLayout(&dialog);auto form=new QFormLayout;layout->addLayout(form);
+    auto question=new QComboBox;question->setObjectName("decisionQuestion");form->addRow("Question",question);
+    auto variant=new QComboBox;variant->setObjectName("decisionVersion");form->addRow("Scene / rule",variant);
+    QMap<QString,QVector<int>> groups;
+    QString initialGroup;int initial=-1;
+    const int entry=list_->currentItem()?list_->currentItem()->data(Qt::UserRole).toInt():-1;
+    for(int i=0;i<decisions_.size();++i){
+        const auto &d=decisions_[i];
+        const auto key=QString("%1/%2/%3").arg(d.group).arg(d.archive).arg(d.dialogue);
+        if(!groups.contains(key))question->addItem(d.answers[0].text+" / "+d.answers[1].text,key);
+        groups[key]<<i;
+        if(d.entry==entry){initial=i;initialGroup=key;}
+    }
+    auto scope=new QComboBox;scope->setObjectName("decisionScope");form->addRow("Apply edit to",scope);
+    auto swap=new QCheckBox("Swap the outcomes of these answers");swap->setObjectName("decisionSwap");layout->addWidget(swap);
+    auto common=label({});common->setTextFormat(Qt::PlainText);common->setObjectName("decisionCommonEffects");layout->addWidget(common);
+    auto scroll=new QScrollArea;scroll->setWidgetResizable(true);layout->addWidget(scroll,1);
+    auto body=new QWidget;auto columns=new QHBoxLayout(body);scroll->setWidget(body);
+    std::array<QGroupBox *,2> cards;
+    std::array<QLabel *,2> descriptions;
+    int inspect=-1;bool create=false;
+    for(int i=0;i<2;++i){
+        cards[i]=new QGroupBox;auto col=new QVBoxLayout(cards[i]);descriptions[i]=label({});
+        descriptions[i]->setTextFormat(Qt::PlainText);descriptions[i]->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        descriptions[i]->setObjectName(QString("decisionEffects%1").arg(i));
+        col->addWidget(descriptions[i]);col->addStretch();
+        auto steps=new QPushButton("Edit outcome steps…");col->addWidget(steps);
+        connect(swap,&QCheckBox::toggled,steps,&QPushButton::setDisabled);
+        connect(steps,&QPushButton::clicked,&dialog,[&,i]{
+            inspect=decisions_[variant->currentData().toInt()].answers[i].destination;dialog.reject();});
+        columns->addWidget(cards[i],1);
+    }
+    auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);
+    auto save=buttons->button(QDialogButtonBox::Save);save->setEnabled(false);
+    auto newRule=buttons->addButton("Create rule using this question…",QDialogButtonBox::ActionRole);
+    newRule->setObjectName("createDecisionRule");
+    newRule->setVisible(EventAuthoring::supported(row_));
+    connect(swap,&QCheckBox::toggled,newRule,&QPushButton::setDisabled);
+    connect(newRule,&QPushButton::clicked,&dialog,[&]{create=true;dialog.reject();});
+    auto preview=[&]{
+        if(variant->currentIndex()<0)return;
+        const auto &d=decisions_[variant->currentData().toInt()];
+        common->setVisible(!d.commonEffects.isEmpty());
+        common->setText("Before either outcome\n"+d.commonEffects.join("\n"));
+        for(int i=0;i<2;++i){
+            cards[i]->setTitle(d.answers[i].text);
+            const auto &effects=d.answers[swap->isChecked()?1-i:i].effects;
+            descriptions[i]->setText(effects.join("\n\n"));
+        }
+    };
+    auto selectQuestion=[&]{
+        const auto members=groups.value(question->currentData().toString());
+        const QSignalBlocker block(variant);variant->clear();scope->clear();swap->setChecked(false);
+        QMap<QString,int> nameCounts;
+        for(int i:members)++nameCounts[decisions_[i].scene];
+        for(int i:members){
+            const auto &d=decisions_[i];
+            QString name=d.scene;
+            if(name.isEmpty() || nameCounts.value(name)>1){
+                const auto event=std::find_if(events_.cbegin(),events_.cend(),[&](const auto &e){return e.entry==d.entry;});
+                const auto rule=event!=events_.cend() && event->ruleIndex>=0?QString("Rule %1").arg(event->ruleIndex+1):QString("Rule at %1").arg(d.entry);
+                name=name.isEmpty()?rule:rule+" · "+name;
+            }
+            variant->addItem(name,i);
+        }
+        scope->addItem("This use only",false);
+        if(members.size()>1)scope->addItem(QString("All %1 uses of this question in this trigger").arg(members.size()),true);
+        if(members.contains(initial))variant->setCurrentIndex(variant->findData(initial));
+        preview();
+    };
+    connect(question,&QComboBox::currentIndexChanged,&dialog,selectQuestion);
+    connect(variant,&QComboBox::currentIndexChanged,&dialog,preview);
+    connect(swap,&QCheckBox::toggled,save,&QPushButton::setEnabled);
+    connect(swap,&QCheckBox::toggled,&dialog,preview);
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(!initialGroup.isEmpty())question->setCurrentIndex(question->findData(initialGroup));
+    selectQuestion();
+    if(dialog.exec()!=QDialog::Accepted){
+        if(inspect>=0)selectOffset(inspect);
+        if(create){
+            const auto &d=decisions_[variant->currentData().toInt()];
+            QJsonObject draft{{"name","New player decision"},{"group",d.group},{"relativeTo",d.entry},
+                {"nodes",eventQuestionSteps(d.selector,d.answers[0].value)}};
+            for(const auto &e:events_)if(e.entry==d.entry && e.group>=1 && e.group<=4 && !e.triggerFields.isEmpty())draft["target"]=e.triggerFields.first().value;
+            editTree({}, {},-1,draft);
+        }
+        return;
+    }
+    if(!swap->isChecked())return;
+    const auto members=scope->currentData().toBool()?groups.value(question->currentData().toString()):QVector<int>{variant->currentData().toInt()};
+    try{
+        auto next=*project_->sceneEvents();
+        for(int i:members){
+            const auto &d=decisions_[i];
+            const int newValue=d.answers[d.answerField.value==d.answers[0].value?1:0].value;
+            EventFlow::set(next,*project_->scenePrograms(),row_,d.answerField,newValue);
+        }
+        undo_->push(new EventEdit(project_,next.json()));changed_();
+    }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
+}
 void EventFlowEditor::editChartStep(int row,int offset,QWidget *owner){
     setRow(row);
-    const auto native=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row,false,false);
+    const auto native=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row,originalSceneText_,false,&*project_->campaignMap(),&*project_->dialogues());
     QDialog dialog(owner);dialog.setWindowTitle("Edit event step");dialog.setMinimumWidth(560);
     auto layout=new QFormLayout(&dialog);bool found=false;
     for(const auto &event:native){
@@ -543,9 +661,9 @@ void EventFlowEditor::editChartStep(int row,int offset,QWidget *owner){
         undo_->push(new EventEdit(project_,draft.json()));changed_();
     }
 }
-void EventFlowEditor::editTree(QString id,QVector<int> path,int offset){
-    try{QJsonObject draft;const auto trees=project_->sceneEvents()->flagEdits()[QString::number(row_)].toObject()["trees"].toArray();for(const auto &v:trees)if(v.toObject()["id"]==id)draft=v.toObject();
-        if(id.isEmpty()&&list_->currentRow()>=0&&list_->currentRow()<events_.size()){
+void EventFlowEditor::editTree(QString id,QVector<int> path,int offset,QJsonObject draft){
+    try{const auto trees=project_->sceneEvents()->flagEdits()[QString::number(row_)].toObject()["trees"].toArray();for(const auto &v:trees)if(v.toObject()["id"]==id)draft=v.toObject();
+        if(draft.isEmpty()&&id.isEmpty()&&list_->currentRow()>=0&&list_->currentRow()<events_.size()){
             const auto &selected=events_[list_->currentRow()];
             if(selected.ruleIndex>=0){
                 draft["group"]=selected.group;

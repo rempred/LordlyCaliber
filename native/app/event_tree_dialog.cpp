@@ -16,6 +16,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
@@ -170,6 +171,8 @@ class TreeDialog:public QDialog {
         connect(trigger,&QComboBox::currentIndexChanged,this,[refreshPlacement]{refreshPlacement({});});
         auto bar=new QHBoxLayout;outer->addLayout(bar);
         auto addIf=new QPushButton("Add IF / ELSE");addIf->setObjectName("eventTreeAddIf");bar->addWidget(addIf);
+        auto ask=new QPushButton("Ask a question…");ask->setObjectName("eventTreeAsk");bar->addWidget(ask);
+        connect(ask,&QPushButton::clicked,this,[this]{addQuestion();});
         auto addAction=new QPushButton("Add action…");addAction->setObjectName("eventTreeAddAction");bar->addWidget(addAction);
         auto addCondition=new QPushButton("Add condition");bar->addWidget(addCondition);
         auto remove=new QPushButton("Remove");remove->setObjectName("eventTreeRemove");bar->addWidget(remove);auto up=new QPushButton("Move up"),down=new QPushButton("Move down");bar->addWidget(up);bar->addWidget(down);
@@ -192,6 +195,13 @@ class TreeDialog:public QDialog {
         error=new QLabel;error->setWordWrap(true);outer->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);outer->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::reject);
         connect(buttons,&QDialogButtonBox::accepted,this,[this]{try{auto trees=project->sceneEvents()->flagEdits()[QString::number(row)].toObject()["trees"].toArray();const auto value=result();bool found=false;for(int i=0;i<trees.size();++i)if(trees[i].toObject()["id"]==value["id"]){trees[i]=value;found=true;}if(!found)trees<<value;auto events=flagState;events.setTrees(row,trees,*project->scenePrograms());accept();}catch(const std::exception &e){error->setText(QString::fromUtf8(e.what()));}});
         if(tree->topLevelItemCount())tree->setCurrentItem(tree->topLevelItem(0));else showFields();
+        auto refresh=new QTimer(this);refresh->setSingleShot(true);
+        auto schedule=[refresh]{refresh->start(0);};
+        connect(tree->model(),&QAbstractItemModel::rowsInserted,this,schedule);
+        connect(tree->model(),&QAbstractItemModel::rowsRemoved,this,schedule);
+        connect(tree->model(),&QAbstractItemModel::dataChanged,this,schedule);
+        connect(refresh,&QTimer::timeout,this,[this]{refreshAnswerLabels(tree->invisibleRootItem());});
+        refreshAnswerLabels(tree->invisibleRootItem());
     }
     QJsonObject result()const{auto out=original;if(out["id"].toString().isEmpty())out["id"]=QUuid::createUuid().toString(QUuid::WithoutBraces);out["name"]=name->text().trimmed();out["group"]=trigger->currentData().toInt();out["target"]=target->isEnabled()?target->currentData().toInt():-1;out["after"]=position->currentIndex()==1;if(relative->currentIndex()>0)out["relativeTo"]=QJsonValue::fromVariant(relative->currentData());else out.remove("relativeTo");out["nodes"]=nodes(tree->invisibleRootItem());return out;}
     QJsonArray nodes(QTreeWidgetItem *parent)const{QJsonArray out;for(int i=0;i<parent->childCount();++i)out<<serialize(parent->child(i));return out;}
@@ -201,7 +211,46 @@ class TreeDialog:public QDialog {
     void append(QTreeWidgetItem *parent,QJsonObject n,const QString &role){auto item=new QTreeWidgetItem(parent);item->setData(0,Qt::UserRole,n);item->setData(0,Qt::UserRole+1,role);title(item);
         const auto type=n["type"].toString();if(type=="if"){append(item,n["condition"].toObject(),"condition");for(const auto &key:{"then","else"}){auto branch=new QTreeWidgetItem(item,{QString(key).toUpper()});branch->setData(0,Qt::UserRole+1,"branch");for(const auto &v:n[key].toArray())append(branch,v.toObject(),"node");}}
         else if(type=="all"||type=="any")for(const auto &v:n["conditions"].toArray())append(item,v.toObject(),"condition");else if(type=="not")append(item,n["condition"].toObject(),"condition");}
+    void refreshAnswerLabels(QTreeWidgetItem *parent){
+        QJsonObject previous;
+        for(int i=0;i<parent->childCount();++i){
+            auto *item=parent->child(i);const auto node=item->data(0,Qt::UserRole).toJsonObject();
+            if(node["type"]=="if" && item->childCount()==3){
+                const auto labels=eventAnswerBranches(*project,previous,serialize(item->child(0)));
+                for(int side=0;side<2;++side){
+                    auto *branch=item->child(side+1);
+                    const auto title=labels.isEmpty()?(side?QString("ELSE"):QString("THEN")):labels[side];
+                    if(branch->text(0)!=title)branch->setText(0,title);
+                    refreshAnswerLabels(branch);
+                }
+            }
+            previous=node;
+        }
+    }
     void title(QTreeWidgetItem *item){const auto n=item->data(0,Qt::UserRole).toJsonObject();item->setText(0,item->data(0,Qt::UserRole+1)=="condition"?conditionText(n,row,&flagState):eventTreeSummary(n,row,&flagState,project));}
+    void addQuestion(){
+        project->loadDialogues();QDialog picker(this);picker.setWindowTitle("Choose a question");picker.resize(660,460);
+        auto layout=new QVBoxLayout(&picker);auto search=new QLineEdit;search->setPlaceholderText("Find a scene or answer…");layout->addWidget(search);
+        auto list=new QListWidget;list->setObjectName("eventQuestions");list->setWordWrap(true);layout->addWidget(list);
+        const auto names=scenes(project);
+        for(int selector:EventFlow::questionSelectors(*project->scenePrograms())){
+            const auto answers=EventFlow::questionAnswers(selector,*project->scenePrograms(),*project->dialogues());
+            if(answers.size()!=2)continue;
+            auto item=new QListWidgetItem(names.value(selector,QString::number(selector))+"\n"+answers[0].second+" / "+answers[1].second,list);
+            item->setData(Qt::UserRole,selector);item->setData(Qt::UserRole+1,answers[0].first);
+        }
+        auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);layout->addWidget(buttons);
+        list->setCurrentRow(0);buttons->button(QDialogButtonBox::Ok)->setEnabled(list->currentItem()!=nullptr);
+        connect(search,&QLineEdit::textChanged,&picker,[=](const QString &text){
+            int first=-1;for(int i=0;i<list->count();++i){auto item=list->item(i);item->setHidden(!item->text().contains(text,Qt::CaseInsensitive));if(!item->isHidden()&&first<0)first=i;}
+            list->setCurrentRow(first);buttons->button(QDialogButtonBox::Ok)->setEnabled(first>=0);
+        });
+        connect(list,&QListWidget::itemDoubleClicked,&picker,&QDialog::accept);
+        connect(buttons,&QDialogButtonBox::accepted,&picker,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&picker,&QDialog::reject);
+        if(picker.exec()!=QDialog::Accepted || !list->currentItem())return;
+        const auto item=list->currentItem();
+        for(const auto &step:eventQuestionSteps(item->data(Qt::UserRole).toInt(),item->data(Qt::UserRole+1).toInt()))addNode(step.toObject());
+    }
     void addNode(QJsonObject n){
         const auto campaign=NewCampaign::settings(flagState);
         if(n["type"]=="startingArmy"&&!campaign.isEmpty())n["army"]=campaign["army"];
@@ -337,6 +386,22 @@ QString eventTreeSummary(const QJsonObject &n,int row,const SceneEvents *flags,c
     return EventAuthoring::actions().value(type,"Unknown action · "+type);}
 QString eventConditionSummary(const QJsonObject &n,int row,const SceneEvents *flags){const auto type=n["type"].toString();if(type=="all"||type=="any"){QStringList children;for(const auto &v:n["conditions"].toArray())children<<"("+eventConditionSummary(v.toObject(),row,flags)+")";return children.join(type=="all"?" AND ":" OR ");}if(type=="not")return "NOT ("+eventConditionSummary(n["condition"].toObject(),row,flags)+")";return conditionText(n,row,flags);}
 QString eventTargetSummary(int row,int group,int target){return targets(row,group).value(target,QString("Target ID %1").arg(target));}
+QJsonArray eventQuestionSteps(int selector,int firstAnswer){
+    return {QJsonObject{{"type","scene"},{"scene",selector}},QJsonObject{{"type","if"},
+        {"condition",QJsonObject{{"type","answer"},{"value",firstAnswer},{"comparison",10}}},
+        {"then",QJsonArray{}},{"else",QJsonArray{}}}};
+}
+QStringList eventAnswerBranches(Project &project,const QJsonObject &previous,const QJsonObject &condition){
+    if(previous["type"]!="scene" || condition["type"]!="answer")return {};
+    const int relation=condition["comparison"].toInt(10);
+    if(relation!=10 && relation!=11)return {};
+    project.loadDialogues();
+    const auto answers=EventFlow::questionAnswers(previous["scene"].toInt(-1),*project.scenePrograms(),*project.dialogues());
+    const int value=condition["value"].toInt(255);
+    if(answers.size()!=2 || (answers[0].first!=value && answers[1].first!=value))return {};
+    const int yes=(answers[0].first==value)==(relation==10)?0:1;
+    return {answers[yes].second,answers[1-yes].second};
+}
 QMap<int,QString> eventTargets(Project *p,int row,int group){
     if(group==0||group==5)return {{-1,"Any"}};
     auto out=targets(row,group);auto keys=catalog()["rows"].toObject()[QString::number(row)].toObject()["scenarioKeys"].toArray();

@@ -3,6 +3,7 @@
 #include "app/scenario_flowchart.h"
 #include "engine/event_flag_links.h"
 #include "engine/event_authoring.h"
+#include "engine/scene_actions.h"
 #include <QGraphicsView>
 #include <QGraphicsItem>
 #include <QDialogButtonBox>
@@ -34,6 +35,113 @@ class EventFlowTests:public QObject {
     Q_OBJECT
     static const StoryEvent &entry(const QVector<StoryEvent> &events,int at){for(const auto &e:events)if(e.entry==at)return e;throw Error("Missing story event");}
   private slots:
+    void playerDecisionOutcomes(){
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("ROM required");
+        auto p=Project::fromRom(Rom::open(path));p.loadSceneEvents();p.loadDialogues();
+        const auto retail=p.sceneEvents()->program(22);
+        QUndoStack undo;ScenarioEventEditor editor(&p,&undo,[]{});editor.showAllRows();editor.show();editor.selectEventRow(22,190);
+        auto *open=editor.findChild<QPushButton *>("storyPlayerDecisions");QVERIFY(open && open->isVisible());
+        auto exercise=[&](bool all,bool save){
+            QTimer::singleShot(0,[&,all,save]{
+                auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+                QTimer::singleShot(5000,dialog,&QDialog::reject);
+                auto versions=dialog->findChild<QComboBox *>("decisionVersion");QCOMPARE(versions->count(),4);
+                auto before=dialog->findChild<QLabel *>("decisionEffects0"), after=dialog->findChild<QLabel *>("decisionEffects1");
+                for(int i=0;i<4;++i){
+                    versions->setCurrentIndex(i);QVERIFY(before->text().contains("Flag 19"));QVERIFY(!before->text().contains("Add 20 Chaos Frame"));
+                    QVERIFY(after->text().contains("Add 20 Chaos Frame, up to 100"));QVERIFY(after->text().contains("scenario 21"));
+                    QVERIFY(dialog->findChild<QLabel *>("decisionCommonEffects")->text().contains("Flag 119"));
+                }
+                versions->setCurrentIndex(0);auto scope=dialog->findChild<QComboBox *>("decisionScope");
+                QCOMPARE(scope->currentData().toBool(),false);scope->setCurrentIndex(scope->findData(all));
+                dialog->findChild<QCheckBox *>("decisionSwap")->setChecked(true);
+                QVERIFY(before->text().contains("Add 20 Chaos Frame"));QVERIFY(after->text().contains("Flag 19"));
+                auto buttons=dialog->findChild<QDialogButtonBox *>();buttons->button(save?QDialogButtonBox::Save:QDialogButtonBox::Cancel)->click();
+            });
+            open->click();
+        };
+        exercise(true,false);QCOMPARE(undo.count(),0);QCOMPARE(p.sceneEvents()->program(22),retail);
+        exercise(false,true);auto expected=retail;expected[187]=1;QCOMPARE(p.sceneEvents()->program(22),expected);
+        undo.undo();editor.selectEventRow(22,190);
+        exercise(true,true);for(int at:{187,327,467,563})expected[at]=1;
+        QCOMPARE(p.sceneEvents()->program(22),expected);QCOMPARE(undo.count(),1);
+        undo.undo();QCOMPARE(p.sceneEvents()->program(22),retail);
+        editor.selectEventRow(22,190);
+        QTimer::singleShot(0,[&]{
+            auto panel=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(panel);
+            panel->findChild<QComboBox *>("decisionVersion")->setCurrentIndex(0);
+            QTimer::singleShot(0,[&]{
+                auto draft=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(draft);
+                QTimer::singleShot(5000,draft,&QDialog::reject);
+                auto tree=draft->findChild<QTreeWidget *>("eventTreeSteps");QVERIFY(tree);QCOMPARE(tree->topLevelItemCount(),2);
+                auto branch=tree->topLevelItem(1);QCOMPARE(branch->child(1)->text(0),QString::fromUtf8("…follow orders."));
+                QCOMPARE(branch->child(2)->text(0),QString::fromUtf8("…make peace with them."));
+                tree->setCurrentItem(branch->child(1));draft->findChild<QPushButton *>("eventTreeAddIf")->click();
+                draft->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            panel->findChild<QPushButton *>("createDecisionRule")->click();
+        });
+        open->click();
+        const auto authored=p.sceneEvents()->flagEdits()["22"].toObject()["trees"].toArray();QCOMPARE(authored.size(),1);
+        const auto steps=authored.first().toObject()["nodes"].toArray();
+        QCOMPARE(steps[0].toObject()["scene"].toInt(),171);
+        QCOMPARE(steps[1].toObject()["then"].toArray().size(),1);QVERIFY(steps[1].toObject()["else"].toArray().isEmpty());
+        undo.undo();QCOMPARE(p.sceneEvents()->program(22),retail);
+        auto dialogue=*p.dialogues();dialogue.setEntry(Dialogues::Table::Primary,109,3,SceneActions::choiceText("Hold position","Negotiate"));
+        auto labels=EventFlow::questionAnswers(171,*p.scenePrograms(),dialogue);
+        QCOMPARE(labels.size(),2);QCOMPARE(labels[0].second,QString("Hold position"));QCOMPARE(labels[1].second,QString("Negotiate"));
+        p.setDialogues(dialogue.json());
+        const auto chart=scenarioChart(p,{{"Mission",{22,-1,{}}}});
+        bool renamed=false;
+        for(const auto &e:chart)for(const auto &s:e.steps)
+            if(s.instructions.contains(190) && s.title.contains("Negotiate"))renamed=true;
+        QVERIFY(renamed);
+        dialogue.setEntry(Dialogues::Table::Primary,109,3,Dialogues::spokenText("Magnus","A statement."));
+        QVERIFY(EventFlow::questionAnswers(171,*p.scenePrograms(),dialogue).isEmpty());
+    }
+    void askAuthoredQuestionInAnotherMission(){
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("ROM required");
+        auto p=Project::fromRom(Rom::open(path));p.loadSceneEvents();p.loadDialogues();
+        auto scenes=*p.scenePrograms();auto dialogue=*p.dialogues();
+        const auto scene=scenes.createScene("Parley",0x1fa8bf4-0x594284,true);
+        const int selector=scenes.resource(scene).selectors.first();
+        auto program=scenes.program(scene);
+        const int at=SceneActions::positions(program).last().command;
+        const int entry=dialogue.appendEntry(Dialogues::Table::Primary,5,SceneActions::choiceText("Offer a truce","Withdraw"));
+        program=SceneActions::insert(program,at,SceneActions::Choice);
+        program=SceneActions::edit(program,at,2,QString::number(entry));
+        scenes.replace(scene,program.source);p.setScenePrograms(scenes.json());p.setDialogues(dialogue.json());
+        auto answers=EventFlow::questionAnswers(selector,scenes,dialogue);
+        QCOMPARE(answers.size(),2);QCOMPARE(answers[0].second,QString("Offer a truce"));
+        // A second dialogue after the question can overwrite its return value.
+        scenes.replace(scene,SceneActions::insert(program,SceneActions::choices(program).first().end,0xbf).source);
+        QVERIFY(EventFlow::questionAnswers(selector,scenes,dialogue).isEmpty());
+        QUndoStack undo;ScenarioEventEditor editor(&p,&undo,[]{});editor.showAllRows();editor.show();editor.selectEventRow(9,0);
+        QTimer::singleShot(0,[&]{
+            auto rule=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(rule);
+            QTimer::singleShot(7000,rule,&QDialog::reject);
+            QTimer::singleShot(0,[&]{
+                auto picker=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(picker);
+                QTimer::singleShot(5000,picker,&QDialog::reject);
+                auto list=picker->findChild<QListWidget *>("eventQuestions");QVERIFY(list);
+                auto options=list->findItems("*Offer a truce*",Qt::MatchWildcard);QCOMPARE(options.size(),1);
+                list->setCurrentItem(options.first());picker->accept();
+            });
+            rule->findChild<QPushButton *>("eventTreeAsk")->click();
+            auto tree=rule->findChild<QTreeWidget *>("eventTreeSteps");QVERIFY(tree);
+            const int n=tree->topLevelItemCount();QVERIFY(n>=2);
+            auto branch=tree->topLevelItem(n-1);
+            QTRY_COMPARE(branch->child(1)->text(0),QString("Offer a truce"));
+            QCOMPARE(branch->child(2)->text(0),QString("Withdraw"));
+            tree->setCurrentItem(branch->child(2));rule->findChild<QPushButton *>("eventTreeAddIf")->click();
+            rule->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        editor.findChild<QPushButton *>("storyCreateEvent")->click();
+        const auto rules=p.sceneEvents()->flagEdits()["9"].toObject()["trees"].toArray();QCOMPARE(rules.size(),1);
+        const auto nodes=rules[0].toObject()["nodes"].toArray();QVERIFY(nodes.size()>=2);
+        QCOMPARE(nodes[nodes.size()-2].toObject()["scene"].toInt(),selector);
+        QVERIFY(nodes.last().toObject()["then"].toArray().isEmpty());QCOMPARE(nodes.last().toObject()["else"].toArray().size(),1);
+    }
     void standardClosingVisible(){
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         auto project=Project::fromRom(Rom::open(path));project.loadSceneEvents();

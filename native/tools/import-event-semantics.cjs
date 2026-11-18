@@ -128,12 +128,26 @@ for (const info of catalog.rows) {
 if (Object.keys(rows).length !== 113 || instructionCount !== 55471)
   throw Error('Unexpected corpus coverage');
 const opcodes = Object.fromEntries(Object.values(vm.opcodes).map(op => [op.opcode, op.name]));
+// A selector can contain several unrelated questions. Only index a single
+// verified two-answer source here. The editor checks both resources again.
+const questions = {};
+for (const scene of read('docs/event-semantics/scene-index.json').scenes) {
+  if (scene.choices?.length !== 1) continue;
+  const [q] = scene.choices;
+  const line = scene.dialogue.find(d => d.wordOffset === q.wordOffset);
+  if (!line?.rawText || q.familyBits !== 0 || q.unresolved?.length || q.answers.length !== 2 ||
+      q.answers.some(a => a.controlSlot !== 3 || !a.text) ||
+      q.answers[0].returnValue === q.answers[1].returnValue) continue;
+  questions[scene.selector] = {archive:q.archive, entry:q.entry, sceneHash:scene.sha256.toLowerCase(),
+    textHash:crypto.createHash('sha256').update(Buffer.from(line.rawText,'latin1')).digest('hex'),
+    answers:q.answers.map(a => [a.returnValue,a.text])};
+}
 const out = {format:'lordly-event-semantics', version:1,
   generator:'native/tools/import-event-semantics.cjs',
-  inputs:['docs/event-semantics/catalog.json', 'docs/event-semantics/rows/row-*.json',
+  inputs:['docs/event-semantics/catalog.json', 'docs/event-semantics/scene-index.json', 'docs/event-semantics/rows/row-*.json',
     'docs/event-semantics/object-index.json', 'docs/event-semantics/vm-semantics.json', 'tools/event-semantics/vm.cjs', 'tools/event-semantics/flag-picker-labels.json',
     'tools/event-semantics/register-closure-audit.cjs', 'docs/Plans/task-logs/event-request-closure-20261103.json'],
-  flags, opcodes, rows,
+  flags, opcodes, rows, questions,
   names:catalog.entries.filter(e => e.status === 'verified' && Number.isInteger(e.id))
     .map(e => [e.kind,e.scope,e.id,e.preferredName]),
   banks:vm.banks, properties:vm.properties, requests,

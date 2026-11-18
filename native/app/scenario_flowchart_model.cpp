@@ -219,6 +219,7 @@ void applyGates(ChartEvent &graph,const QJsonObject &gates,const SceneEvents &fl
 QVector<ChartEvent> scenarioChart(Project &project,const QVector<QPair<QString,EventProgramChoice>> &choices) {
     QVector<ChartEvent> result;
     project.loadCampaignMap();
+    project.loadDialogues();
     const auto &events=*project.sceneEvents();
     const bool original=!project.scenePrograms()->modified()&&(!project.dialogues()||!project.dialogues()->modified())&&
         sha256(project.runtimeRom().bytes())=="571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a";
@@ -228,7 +229,7 @@ QVector<ChartEvent> scenarioChart(Project &project,const QVector<QPair<QString,E
     for(const auto &[phase,choice]:choices) {
         if(seen.contains({choice.row,choice.entry}))continue;
         seen.insert({choice.row,choice.entry});
-        const auto flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),choice.row,original,false,&*project.campaignMap());
+        const auto flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),choice.row,original,false,&*project.campaignMap(),&*project.dialogues());
         const auto bytes=SceneEvents::flagRow(SceneEvents::retailRow(project.rom(),choice.row),choice.row,events.flagEdits(),false);
         QHash<int,QVector<ChartFlag>> uses;
         for(const auto &ref:EventFlagLinks::referencesInProgram(project.rom(),events,*project.scenePrograms(),choice.row)){

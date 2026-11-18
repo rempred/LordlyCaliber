@@ -17,6 +17,36 @@ Double-click a step to open its controls in the tree. For an authored event
 this selects the exact nested condition or action in the authoring dialog.
 Changing views, expanding events and inspecting flags are navigation only.
 
+## Edit a player decision
+
+In **Logic → Triggers and rules**, open **Player decisions…** in a program
+with a recognized two-answer decision. Each column starts with the actual
+answer the player sees and lists what the game does after that answer, in
+order. Actions above the columns happen on both paths. If a path reaches
+another condition or leaves the local logic, the column identifies that
+boundary. **Edit outcome steps…** opens the first step of that path.
+
+For Wentinus, choose the orders-or-peace question. **Scene / rule** previews
+the scene for Dio and Leia together, either one alone, or neither.
+**Swap the outcomes of these answers** previews the change before saving.
+The edit starts on the displayed version. Choose all four uses to change
+every cast version in one edit. One Undo restores
+the previous mapping. Swapping keeps the words in the choice window and
+changes which consequences each answer selects.
+
+To write your own decision, use **Add rule…**, choose the trigger, target
+and position, then **Ask a question…**. Search by scene or answer. Select
+an answer branch and use **Add action…** to define what happens there.
+**Create rule using this question…** in an existing decision starts a new
+rule with that question and two empty branches. Set any cast requirements
+your rule needs. To supply your own words, create a scene with a two-answer
+choice in Cutscenes, then select it in **Ask a question…**.
+
+The picker recognizes verified retail questions and simple authored
+single-question scenes. If the scene can replace the answer before it ends,
+or the event's comparison cannot be tied to one question, inspect the
+conditions and individual steps in the regular rule view.
+
 The location view provides Arrival, Mission and Area Investigation. Named
 mission variants come from current routing, including authored arrival rules;
 an explicit All event programs option retains access to shared/global scripts.

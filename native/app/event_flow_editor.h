@@ -18,7 +18,7 @@ class EventFlowEditor : public QWidget {
     void selectOffset(int);
     void editChartStep(int row,int offset,QWidget *owner);
     int selectedOffset() const;
-    void editTree(QString id = {},QVector<int> path = {},int offset=-1);
+    void editTree(QString id = {},QVector<int> path = {},int offset=-1,QJsonObject draft={});
     std::function<void(int)> rawInstructions;
     std::function<void(int)> editCutscene;
     std::function<void(int)> openEventProgram;
@@ -31,6 +31,7 @@ class EventFlowEditor : public QWidget {
     void change(StoryField,int);
     void editWhen();
     void editFlags();
+    void showDecisions();
     QString destination(int) const;
     Project *project_;
     QUndoStack *undo_;
@@ -40,6 +41,8 @@ class EventFlowEditor : public QWidget {
     int entryFilter_=-1, revealedEntry_=-1, focusOffset_=-1;
     QString selectedAuthoredId_;
     QVector<StoryEvent> events_;
+    QVector<PlayerDecision> decisions_;
+    bool originalSceneText_=false;
     QByteArray program_;
     SceneEvents *chartDraft_=nullptr;
     QListWidget *list_;
