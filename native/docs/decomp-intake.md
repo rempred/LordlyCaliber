@@ -26,9 +26,14 @@ Missing outcomes, a failed allocation or an unavailable pose stop the preview
 at that word. The displayed actors retain their state from before the command.
 In-game construction can leave partial writes on a failure.
 
-Source matching establishes how the game handles those inputs. The briefing
-evidence does not identify a naturally observed invocation with those services
-ready. The [source-selection audit](source-selection-audit.md) records the export impact.
+The [Zemio playback inputs](../tests/fixtures/zemio-briefing-inputs.json) reproduce
+one observed US Rev 0 visit. Select **Hugo repeats the Southern Reaches briefing**
+in Cutscenes, open **Scene playback**, expand **Raw / preview setup**, and choose
+**Import playback inputs…**. Magnus takes slot 5 in pose 13 at both briefing
+commands. Repeat and Yes return to the tactical explanation. End and Yes rebuild
+the room for Hugo's farewell. The regression check is
+`SceneWorkspaceTests::zemioBriefingVisit`. Each visiting unit has its own roster.
+The [source-selection audit](source-selection-audit.md) records the export impact.
 
 ## November 1 complete matching library
 

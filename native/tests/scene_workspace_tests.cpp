@@ -39,6 +39,104 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void zemioBriefingVisit() {
+        auto project = Project::fromRom(rom());
+        project.loadScenePrograms();
+        project.loadSceneEvents();
+        project.loadDialogues();
+        const auto key = project.scenePrograms()->original().selectors()[1493];
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+        editor.show();
+        auto catalog = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_VERIFY_WITH_TIMEOUT(catalog && catalog->count() > 1000, 10000);
+        for (int i = 0; i < catalog->count(); ++i)
+            if (catalog->item(i)->data(Qt::UserRole).toUInt() == key) {
+                catalog->setCurrentRow(i);
+                break;
+            }
+        auto playback = editor.findChild<ScenePreview *>();
+        QVERIFY(playback);
+        ScenePreview &preview = *playback;
+        for (auto pages : editor.findChildren<QTabWidget *>())
+            if (pages->indexOf(playback) >= 0) pages->setCurrentWidget(playback);
+        QVERIFY(preview.isVisible());
+        QCOMPARE(preview.playbackAssetId(), QString("rom-director:01FBDA40"));
+        QFile inputs(QFINDTESTDATA("fixtures/zemio-briefing-inputs.json"));
+        QVERIFY(inputs.open(QIODevice::ReadOnly));
+        preview.importPlaybackInputs(inputs.readAll());
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto down = preview.findChild<QPushButton *>("panelDown");
+        auto objects = preview.findChild<QComboBox *>("sceneLiveActors");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QVERIFY(step && confirm && down && objects && status);
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 15000);
+
+        // Project64 observed these three slots in both rooms immediately after 0xC2.
+        auto checkRoom = [&] {
+            QVector<int> slotsSeen;
+            for (int i = 0; i < objects->count(); ++i) {
+                if (objects->itemData(i, Qt::UserRole + 1).toInt() != int(SceneObjectKind::Actor))
+                    continue;
+                objects->setCurrentIndex(i);
+                const auto record = preview.selectedObjectRecord();
+                const int slot = objects->itemData(i).toInt();
+                slotsSeen << slot;
+                QCOMPARE(record.size(), 336);
+                if (slot == 5) {
+                    QCOMPARE(u32(record, 0xe8), 81u);
+                    QCOMPARE(u32(record, 0xec), 81u);
+                    QCOMPARE(u16(record, 0x138), 13);
+                    QCOMPARE(u8(record, 0x146), 0);
+                    QCOMPARE(u8(record, 0x147), 0); // visiting Magnus, roster row zero
+                    QCOMPARE(u8(record, 0x149), 0); // first component
+                } else {
+                    QCOMPARE(u32(record, 0xe8), slot == 0 ? 42u : 45u);
+                    QCOMPARE(u8(record, 0x147), 255);
+                }
+            }
+            QCOMPARE(slotsSeen, QVector<int>({0, 1, 5}));
+        };
+
+        // Advance ordinary dialogue, then operate the same two choice panels as the game.
+        auto advanceUntil = [&](auto reached, bool advanceDialogue = true) {
+            for (int n = 0; n < 3000 && !preview.property("sceneStopped").toBool(); ++n) {
+                if (reached()) return true;
+                if (advanceDialogue && n % 45 == 0 && confirm->isVisible() && confirm->isEnabled()) confirm->click();
+                else step->click();
+            }
+            return reached();
+        };
+        auto observed = [&](int word) { return preview.commandTimes().contains(word); };
+        auto choicePanel = [&] {
+            return observed(1098) && preview.activeWord() >= 1114 && preview.activeWord() <= 1141;
+        };
+        auto settlePanel = [&] { for (int i = 0; i < 40; ++i) step->click(); };
+        QVERIFY2(advanceUntil([&] { return observed(108); }), qPrintable(status->text()));
+        checkRoom();
+        QVERIFY2(advanceUntil([&] { return observed(1098); }), qPrintable(status->text()));
+        settlePanel();
+        confirm->click(); // Repeat, then Yes
+        QVERIFY2(advanceUntil([&] { return observed(1119); }, false), qPrintable(status->text()));
+        settlePanel();
+        confirm->click();
+        QVERIFY2(advanceUntil([&] { return preview.activeWord() >= 294 && preview.activeWord() < 400; }),
+                 qPrintable(status->text()));
+        QVERIFY(!observed(1305));
+        QVERIFY2(advanceUntil(choicePanel), qPrintable(status->text()));
+        settlePanel();
+        down->click(); // End, then Yes
+        step->click();
+        confirm->click();
+        QVERIFY2(advanceUntil([&] { return observed(1128); }, false), qPrintable(status->text()));
+        settlePanel();
+        confirm->click();
+        QVERIFY2(advanceUntil([&] { return observed(1305); }, false), qPrintable(status->text()));
+        checkRoom();
+        QVERIFY2(advanceUntil([&] { return preview.property("sceneStopped").toBool(); }), qPrintable(status->text()));
+        QVERIFY2(observed(1374) && status->text().contains("released", Qt::CaseInsensitive), qPrintable(status->text()));
+    }
     void briefingTimeline() {
         try {
             auto project = Project::fromRom(rom());
