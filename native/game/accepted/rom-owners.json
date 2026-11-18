@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "25FDAD0F2D4C068AD63FA63A5EDD21FD5E53BB20985B4F5432400FF32D7F500F",
-  "revision": "d66e14504e4a3c03d13df996ba42957b9111a48d",
+  "fingerprint": "8412D50E1A2CDD150C75409B585A92DBF5748C5F5FE16C9530EDCEFB15B7ECF3",
+  "revision": "098941a2731f2f786d15d79aeaf4f9ba6a67fed1",
   "counts": {
-    "owners": 1626,
-    "functions": 1672,
-    "producerSources": 1495,
-    "sourceAndHeaderFiles": 1536
+    "owners": 1672,
+    "functions": 1718,
+    "producerSources": 1541,
+    "sourceAndHeaderFiles": 1585
   },
   "sources": [
     {
@@ -42512,6 +42512,415 @@
       ]
     },
     {
+      "name": "func_00281BD8",
+      "source": "game/accepted/library/src/lib/func_00281BD8.c",
+      "sourcePath": "src/lib/func_00281BD8.c",
+      "sourceSha256": "99108F11EA34FA134CE69E0DAAEAF7067416B071579519DAF2999C696B0BE838",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149735432,
+      "bindings": {
+        "D_800E7A32": 2148432434,
+        "D_800E7A33": 2148432435,
+        "func_00281C78": 2149735592,
+        "D_800E7A44": 2148432452,
+        "func_00281CE4": 2149735700,
+        "D_800E7A48": 2148432456,
+        "func_00281ED0": 2149736192,
+        "D_800E7A4C": 2148432460,
+        "D_800E7A50": 2148432464,
+        "D_800E7A54": 2148432468,
+        "D_800E91D0": 2148438480,
+        "bzero": 2148086656,
+        "func_0028adf4": 2149772980,
+        "D_8022A99A": 2149755290
+      },
+      "sections": {
+        ".text": 2149735432
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2628568,
+          "address": 2149735432,
+          "size": 160,
+          "sha256": "19AACD34DDEAB19AE4A08CA8D7938D70C5E9B98AA2AD52424B03CF457AF2AC26",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281BD8"
+      ]
+    },
+    {
+      "name": "func_00281C78",
+      "source": "game/accepted/library/src/lib/func_00281C78.c",
+      "sourcePath": "src/lib/func_00281C78.c",
+      "sourceSha256": "5847B3F916086815FF8A1FE85B8E679BA3E63DC92C8A9F5C6352A4366341DB53",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149735592,
+      "bindings": {
+        "func_00283664": 2149742228,
+        "func_00284288": 2149745336,
+        "D_8022A998": 2149755288,
+        "D_800E7A32": 2148432434,
+        "func_00299740": 2149832704,
+        "func_0028B788": 2149775432,
+        "func_00290CF8": 2149797304
+      },
+      "sections": {
+        ".text": 2149735592
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2628728,
+          "address": 2149735592,
+          "size": 108,
+          "sha256": "846FF96D02CD6FE0FD6738EA3F3A29BA547CE890D5A39155613BA6A525407916",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281C78"
+      ]
+    },
+    {
+      "name": "func_00281CE4",
+      "source": "game/accepted/library/src/lib/func_00281CE4.c",
+      "sourcePath": "src/lib/func_00281CE4.c",
+      "sourceSha256": "622B66CAA5C173049AC91C9A5FC38576818077319F3124CB33C10A53968D6578",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149735700,
+      "bindings": {
+        "func_00042c30": 2148977968,
+        "D_800E9BA0": 2148440992,
+        "data_002867A0": 2149754832,
+        "gTitleCardDisplayListCursor": 2148440992,
+        "func_0028af64": 2149773348,
+        "func_002836BC": 2149742316,
+        "D_800E7A32": 2148432434,
+        "func_00290D50": 2149797392
+      },
+      "sections": {
+        ".text": 2149735700
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2628836,
+          "address": 2149735700,
+          "size": 492,
+          "sha256": "58282C21E0D6DBB40FFED90ED7AD1DCEBB5C65A1DBFAE250FB8AB79B68D3D508",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281CE4"
+      ]
+    },
+    {
+      "name": "func_00281ED0",
+      "source": "game/accepted/library/src/lib/func_00281ED0.c",
+      "sourcePath": "src/lib/func_00281ED0.c",
+      "sourceSha256": "18325AF8576D9048D9CB4C7E6A62DB2DC508C07210C16CED5D750C4DFAD61784",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149736192,
+      "bindings": {
+        "func_00019e10": 2148047376,
+        "func_0028b0e0": 2149773728,
+        "D_8018F1A4": 2149118372,
+        "D_800C4C26": 2148289574
+      },
+      "sections": {
+        ".text": 2149736192
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2629328,
+          "address": 2149736192,
+          "size": 64,
+          "sha256": "5A4E8C05A75622C9839F4FDE3C5006087770C1584627FD12FB9B4FDA7003D258",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281ED0"
+      ]
+    },
+    {
+      "name": "func_00281F10",
+      "source": "game/accepted/library/src/lib/func_00281F10.c",
+      "sourcePath": "src/lib/func_00281F10.c",
+      "sourceSha256": "35176AB597D9ED2CE6CC4AC87AFE5E63D840D842A5BD96DACC39C70A868ECE49",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149736256,
+      "bindings": {
+        "D_800E7A32": 2148432434,
+        "D_800E7A33": 2148432435,
+        "func_00281FA8": 2149736408,
+        "D_800E7A44": 2148432452,
+        "func_00282004": 2149736500,
+        "D_800E7A48": 2148432456,
+        "func_00282094": 2149736644,
+        "D_800E7A4C": 2148432460,
+        "D_800E7A50": 2148432464,
+        "D_800E7A54": 2148432468,
+        "D_800E91D0": 2148438480,
+        "bzero": 2148086656,
+        "func_0028A310": 2149770192
+      },
+      "sections": {
+        ".text": 2149736256
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2629392,
+          "address": 2149736256,
+          "size": 152,
+          "sha256": "6839A92470AA865721EE419EF88371391B56DDD1B71D7745FA086A9637B8CE8A",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281F10"
+      ]
+    },
+    {
+      "name": "func_00281FA8",
+      "source": "game/accepted/library/src/lib/func_00281FA8.c",
+      "sourcePath": "src/lib/func_00281FA8.c",
+      "sourceSha256": "29937C5789684FCA7AA79AE94853AC9DD93AF5196E605228C131B0310849875D",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149736408,
+      "bindings": {
+        "func_00283664": 2149742228,
+        "func_00284288": 2149745336,
+        "func_0028A678": 2149771064,
+        "D_8022A998": 2149755288,
+        "D_800E7A32": 2148432434
+      },
+      "sections": {
+        ".text": 2149736408
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2629544,
+          "address": 2149736408,
+          "size": 92,
+          "sha256": "2FFBC7413551256533206CDF7E9154C8D364F6F4B8BEF59F89A89497DCB92C9C",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00281FA8"
+      ]
+    },
+    {
+      "name": "func_00282004",
+      "source": "game/accepted/library/src/lib/func_00282004.c",
+      "sourcePath": "src/lib/func_00282004.c",
+      "sourceSha256": "903EF34FFB1F9D850AE2425740014BDB86120BF2A5DBE09194E57183476DC271",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149736500,
+      "bindings": {
+        "gTitleCardDisplayListCursor": 2148440992,
+        "data_002867A0": 2149754832,
+        "func_0028A534": 2149770740
+      },
+      "sections": {
+        ".text": 2149736500
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2629636,
+          "address": 2149736500,
+          "size": 144,
+          "sha256": "A331DFF6DAC9A5403FE9F39AA2F5F7A4827F9FD4C8B9D4A6BFE3D209915207F1",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00282004"
+      ]
+    },
+    {
+      "name": "func_00282094",
+      "source": "game/accepted/library/src/lib/func_00282094.c",
+      "sourcePath": "src/lib/func_00282094.c",
+      "sourceSha256": "966C703589013AFC553B71C8C108938FBB0A690B6C9A3E0E24EEF10DEB006711",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149736644,
+      "bindings": {
+        "func_00019e10": 2148047376,
+        "func_0028a6e4": 2149771172,
+        "func_0004eb90": 2149026960
+      },
+      "sections": {
+        ".text": 2149736644
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2629780,
+          "address": 2149736644,
+          "size": 44,
+          "sha256": "20466B293EC5E85900CDB3BDF6AC8866CA32E78DFE647D91D9C54D150ACE6B75",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00282094"
+      ]
+    },
+    {
       "name": "func_002827EC",
       "source": "game/accepted/library/src/lib/func_002827EC.c",
       "sourcePath": "src/lib/func_002827EC.c",
@@ -42763,6 +43172,47 @@
       ]
     },
     {
+      "name": "func_002836C8",
+      "source": "game/accepted/library/src/lib/func_002836C8.c",
+      "sourcePath": "src/lib/func_002836C8.c",
+      "sourceSha256": "374746214B6109362883A704E1DA60B1D846D4860F5F52BB99FB3F25352E28C8",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149742328,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_8018FDC0": 2149121472
+      },
+      "sections": {
+        ".text": 2149742328
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2635464,
+          "address": 2149742328,
+          "size": 120,
+          "sha256": "B22B3ACD2A42A8F766D7B09E2908AAC0C9239167B439C8DF65D61EE599E14FC3",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002836C8"
+      ]
+    },
+    {
       "name": "func_00283740",
       "source": "game/accepted/library/src/lib/func_00283740.c",
       "sourcePath": "src/lib/func_00283740.c",
@@ -42787,6 +43237,47 @@
       ],
       "targets": [
         "func_00283740"
+      ]
+    },
+    {
+      "name": "func_00283748",
+      "source": "game/accepted/library/src/lib/func_00283748.c",
+      "sourcePath": "src/lib/func_00283748.c",
+      "sourceSha256": "2A750998AD6F0342C8BFDA2856E952758C63C057B3B11EAD3B0127641513FEB9",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149742456,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "resource_free": 2147947204
+      },
+      "sections": {
+        ".text": 2149742456
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2635592,
+          "address": 2149742456,
+          "size": 192,
+          "sha256": "C78EF71BAD583B3EE684AC67C6C67A269DF347EFF3FB13C3234757C7380A1F41",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00283748"
       ]
     },
     {
@@ -43312,6 +43803,411 @@
       ]
     },
     {
+      "name": "func_002878F4",
+      "source": "game/accepted/library/src/lib/func_002878F4.c",
+      "sourcePath": "src/lib/func_002878F4.c",
+      "sourceSha256": "32C278FB66B4D38FF73269E3D83B579FF185E59106B17297FC578150C3480B78",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149759412,
+      "bindings": {
+        "func_0002dfb8": 2148129720,
+        "func_0002e138": 2148130104,
+        "D_8023E588": 2149836168,
+        "D_8023E584": 2149836164,
+        "D_8023E580": 2149836160,
+        "resource_free": 2147947204,
+        "func_0028ac88": 2149772616,
+        "func_00070F30": 2147946288,
+        "memcpy_aligned": 2148010392,
+        "D_8023E58C": 2149836172,
+        "D_8023E590": 2149836176
+      },
+      "sections": {
+        ".text": 2149759412
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2652404,
+          "address": 2149759412,
+          "size": 260,
+          "sha256": "445CD41E6DE238140FBFE5307D5E82CE71D2297A87C52232BE6010487853EC5D",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002878F4"
+      ]
+    },
+    {
+      "name": "func_002879F8",
+      "source": "game/accepted/library/src/lib/func_002879F8.c",
+      "sourcePath": "src/lib/func_002879F8.c",
+      "sourceSha256": "840580C850449A21A36AF4BFE75DF105321A26E69C5342F8132851172E3CE8A5",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149759672,
+      "bindings": {
+        "D_8023E580": 2149836160,
+        "resource_free": 2147947204,
+        "D_8023E588": 2149836168,
+        "D_8023E584": 2149836164
+      },
+      "sections": {
+        ".text": 2149759672
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2652664,
+          "address": 2149759672,
+          "size": 84,
+          "sha256": "85BDBF0370E7C35EB35D6DD129F8765FB3AEC8D7A1D026ABF4B6B9C2D03E01C3",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002879F8"
+      ]
+    },
+    {
+      "name": "func_00287A4C",
+      "source": "game/accepted/library/src/lib/func_00287A4C.c",
+      "sourcePath": "src/lib/func_00287A4C.c",
+      "sourceSha256": "A61E4C7AE8F21C297BCF693197B77F4CF5766F0C1B24803A80571B49703D3BBE",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149759756,
+      "bindings": {
+        "D_8023E58C": 2149836172,
+        "D_8023E590": 2149836176
+      },
+      "sections": {
+        ".text": 2149759756
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2652748,
+          "address": 2149759756,
+          "size": 88,
+          "sha256": "F22451D835079E3359934F8323460900FCE98C4A9F171EB6AF7CD1FE4033CF1D",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00287A4C"
+      ]
+    },
+    {
+      "name": "func_00287AA4",
+      "source": "game/accepted/library/src/lib/func_00287AA4.c",
+      "sourcePath": "src/lib/func_00287AA4.c",
+      "sourceSha256": "9466EBF8DA5D59FA662CC6EC5598BB8BA381D5B97E7EEBAAA10D094E455771D3",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149759844,
+      "bindings": {
+        "D_8023E580": 2149836160,
+        "D_8023E584": 2149836164,
+        "func_002908CC": 2149796236,
+        "D_800E9BA0": 2148440992,
+        "gTitleCardDisplayListCursor": 2148440992,
+        "D_8022AA40": 2149755456,
+        "D_8023E58C": 2149836172,
+        "func_00287FB8": 2149761144,
+        "D_8023E590": 2149836176,
+        "D_8023E588": 2149836168,
+        "func_0028752C": 2149758444
+      },
+      "sections": {
+        ".text": 2149759844
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2652836,
+          "address": 2149759844,
+          "size": 1300,
+          "sha256": "B8C525A189ADC2CA269CC10D127D1A4171D44AE073209834F62381B981D879E5",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00287AA4"
+      ]
+    },
+    {
+      "name": "func_002893E4",
+      "source": "game/accepted/library/src/lib/func_002893E4.c",
+      "sourcePath": "src/lib/func_002893E4.c",
+      "sourceSha256": "F73BBD4B585C97C32596CA7BA3AB92DFBCE8DB5DFDF450FE1079CFEFBF6CE38F",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149766308,
+      "bindings": {
+        "D_801936AB": 2149136043,
+        "func_0002dfb8": 2148129720,
+        "func_0002e138": 2148130104,
+        "D_8023E594": 2149836180,
+        "D_8023E598": 2149836184,
+        "D_8023E59C": 2149836188,
+        "D_8023DE10": 2149834256,
+        "D_8023DE14": 2149834260,
+        "resource_free": 2147947204
+      },
+      "sections": {
+        ".text": 2149766308
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2659300,
+          "address": 2149766308,
+          "size": 288,
+          "sha256": "4235E1453E6290E365BFDB3FE61FE8D43953347B690C01D32FDD62598FCBAF13",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002893E4"
+      ]
+    },
+    {
+      "name": "func_00289504",
+      "source": "game/accepted/library/src/lib/func_00289504.c",
+      "sourcePath": "src/lib/func_00289504.c",
+      "sourceSha256": "BC4F64DECA7AD5F046346F657A5D54CF4EDEED4E523E9E9DEF50104A01589C0F",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149766596,
+      "bindings": {
+        "D_8023DE14": 2149834260,
+        "resource_free": 2147947204,
+        "D_8023DE10": 2149834256,
+        "D_8023E594": 2149836180,
+        "D_8023E598": 2149836184,
+        "D_8023E59C": 2149836188
+      },
+      "sections": {
+        ".text": 2149766596
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2659588,
+          "address": 2149766596,
+          "size": 84,
+          "sha256": "16D664A7ACB079836BEF9CFBD7B19E54EBEFEB0B64A5A65A89D571C5010C3C9F",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289504"
+      ]
+    },
+    {
+      "name": "func_00289558",
+      "source": "game/accepted/library/src/lib/func_00289558.c",
+      "sourcePath": "src/lib/func_00289558.c",
+      "sourceSha256": "E16AC3F144693C56941340E58D048B097C278C3227275647ABB180412EC550B4",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149766680,
+      "bindings": {
+        "D_8023DE10": 2149834256,
+        "D_8023E598": 2149836184,
+        "D_8023DE14": 2149834260,
+        "gTitleCardDisplayListCursor": 2148440992,
+        "D_8022AA40": 2149755456,
+        "func_0028752C": 2149758444,
+        "D_8023E594": 2149836180
+      },
+      "sections": {
+        ".text": 2149766680
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2659672,
+          "address": 2149766680,
+          "size": 548,
+          "sha256": "8625DD4003B45D20684DFF1E5F17530151DADF8FAB1777B70F713FF543357879",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289558"
+      ]
+    },
+    {
+      "name": "func_00289780",
+      "source": "game/accepted/library/src/lib/func_00289780.c",
+      "sourcePath": "src/lib/func_00289780.c",
+      "sourceSha256": "F824DC09E9DC16B6936E3A2D3362CCEC91981695327DA6ACEDB1DB317123E1F6",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149767232,
+      "bindings": {
+        "gTitleCardDisplayListCursor": 2148440992,
+        "D_8023DE20": 2149834272,
+        "func_0028acdc": 2149772700
+      },
+      "sections": {
+        ".text": 2149767232
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2660224,
+          "address": 2149767232,
+          "size": 1412,
+          "sha256": "A519C5A5F2AC9753ADF3B953AED128ABBFF82DCDB69227FEBC31DED55189DA67",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289780"
+      ]
+    },
+    {
       "name": "func_00289D04",
       "source": "game/accepted/library/src/lib/func_00289D04.c",
       "sourcePath": "src/lib/func_00289D04.c",
@@ -43339,6 +44235,372 @@
       ]
     },
     {
+      "name": "func_00289D24",
+      "source": "game/accepted/library/src/lib/func_00289D24.c",
+      "sourcePath": "src/lib/func_00289D24.c",
+      "sourceSha256": "F999194CA6B2BA556994666C3F196E7CDA979462CE436A6E1E8B29E5AD3FC492",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149768676,
+      "bindings": {
+        "D_8023DE20": 2149834272,
+        "D_8018F1A0": 2149118368,
+        "func_0028ac88": 2149772616,
+        "bzero": 2148086656
+      },
+      "sections": {
+        ".text": 2149768676
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2661668,
+          "address": 2149768676,
+          "size": 356,
+          "sha256": "007187E03E102569D3CD0733F401E38FB60E3CC9CB52434CA7F4D7E400E35142",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289D24"
+      ]
+    },
+    {
+      "name": "func_00289E88",
+      "source": "game/accepted/library/src/lib/func_00289E88.c",
+      "sourcePath": "src/lib/func_00289E88.c",
+      "sourceSha256": "FBCCF9727F42F7B40517FD398A01FC2D07E6C54B783BF9B570D4145E18C5AAC7",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149769032,
+      "bindings": {
+        "D_8023DE20": 2149834272
+      },
+      "sections": {
+        ".text": 2149769032
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2662024,
+          "address": 2149769032,
+          "size": 68,
+          "sha256": "010B6F9A6D8895D72934BDC70D16BCD16BEA49DE5DDD66C2EE9AED5AD0EDB91E",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289E88"
+      ]
+    },
+    {
+      "name": "func_00289ECC",
+      "source": "game/accepted/library/src/lib/func_00289ECC.c",
+      "sourcePath": "src/lib/func_00289ECC.c",
+      "sourceSha256": "2DD690F145C771197AC5150858DEF68B967CEFD27A55DB0C2334A2B17B6EB259",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149769100,
+      "bindings": {
+        "D_8023DE20": 2149834272,
+        "func_0028ac88": 2149772616,
+        "func_80080998": 2148010392,
+        "func_0002CBCC": 2148124620
+      },
+      "sections": {
+        ".text": 2149769100
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2662092,
+          "address": 2149769100,
+          "size": 1092,
+          "sha256": "A2D08A18B1DB7709DCFF252294FE9DA06E9340EAD8F50868A590AFC1392CC153",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00289ECC"
+      ]
+    },
+    {
+      "name": "func_0028A310",
+      "source": "game/accepted/library/src/lib/func_0028A310.c",
+      "sourcePath": "src/lib/func_0028A310.c",
+      "sourceSha256": "7233E0D33F554E2D78FB27B624365F7DED69D8F64423D6CB0EBEFFEA677EF977",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149770192,
+      "bindings": {
+        "D_8018F1A0": 2149118368,
+        "func_00070F30": 2147946288,
+        "D_8022A974": 2149755252,
+        "bzero": 2148086656,
+        "D_8022A994": 2149755284,
+        "func_00283FA8": 2149744600,
+        "func_00284288": 2149745336,
+        "D_8022A990": 2149755280,
+        "D_8023DE20": 2149834272,
+        "func_002878F4": 2149759412,
+        "func_002893E4": 2149766308,
+        "func_0002dfb8": 2148129720,
+        "func_0002e138": 2148130104,
+        "resource_free": 2147947204
+      },
+      "sections": {
+        ".text": 2149770192,
+        ".rodata": 2149835104
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2663184,
+          "address": 2149770192,
+          "size": 548,
+          "sha256": "6F6B250C895E36E3364172D4C8003850937E9AB551272049BE38ED8DACFD5AEC",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 2728096,
+          "address": 2149835104,
+          "size": 24,
+          "sha256": "36CEA46BD454F12F14B8CCBDB01DC319BC8E38DC732D5AEEB982F9D31879B3F1",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_0028A310"
+      ]
+    },
+    {
+      "name": "func_0028A534",
+      "source": "game/accepted/library/src/lib/func_0028A534.c",
+      "sourcePath": "src/lib/func_0028A534.c",
+      "sourceSha256": "E46F950349E799B6E0DE9FD7AC48925210F97461D3C6B99F797652DB5707F6BE",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        },
+        {
+          "path": "include/game/combat_draw.h",
+          "file": "game/accepted/library/include/game/combat_draw.h",
+          "sha256": "DEA4C4DDDEA3D523C088558D41D15EDFCCC28C9467F48DA03E779F4F2F1A0B08"
+        }
+      ],
+      "address": 2149770740,
+      "bindings": {
+        "D_800E9BE0": 2148441056,
+        "D_800A81F0": 2148172272,
+        "D_800C4BE4": 2148289508,
+        "gTitleCardDisplayListCursor": 2148440992,
+        "D_8022AA40": 2149755456,
+        "D_800E79E0": 2148432352,
+        "D_8018F1A0": 2149118368,
+        "D_8022A996": 2149755286,
+        "D_801969B0": 2149149104,
+        "D_80197178": 2149151096,
+        "func_00289780": 2149767232,
+        "func_00287AA4": 2149759844,
+        "func_00289558": 2149766680
+      },
+      "sections": {
+        ".text": 2149770740
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2663732,
+          "address": 2149770740,
+          "size": 324,
+          "sha256": "41077C634008A628EA99325F2EDBD7D014448A62318B37462E29ECE3E5303011",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028A534"
+      ]
+    },
+    {
+      "name": "func_0028A678",
+      "source": "game/accepted/library/src/lib/func_0028A678.c",
+      "sourcePath": "src/lib/func_0028A678.c",
+      "sourceSha256": "58D96A4B0E936FB038519FFEF57B401F5752FF0C2CEEBC0B66C1EE5B7D67C0B9",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149771064,
+      "bindings": {
+        "D_8023DE20": 2149834272,
+        "func_00289ECC": 2149769100,
+        "D_8018F1A0": 2149118368,
+        "func_00287A4C": 2149759756
+      },
+      "sections": {
+        ".text": 2149771064
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2664056,
+          "address": 2149771064,
+          "size": 108,
+          "sha256": "55800481A8F604E77E1CCE29AD988832635A93DF4A831E5349A1F6A1107711F8",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028A678"
+      ]
+    },
+    {
+      "name": "func_0028a6e4",
+      "source": "game/accepted/library/src/lib/func_0028a6e4.c",
+      "sourcePath": "src/lib/func_0028a6e4.c",
+      "sourceSha256": "76061FA9720D2C530A760E0934338FFD22650F4FB2BA94B830BF592DF14D4E9F",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149771172,
+      "bindings": {
+        "D_8023DE20": 2149834272,
+        "resource_free": 2147947204,
+        "D_8018F1A0": 2149118368,
+        "func_002879F8": 2149759672,
+        "func_00289504": 2149766596,
+        "func_00284184": 2149745076,
+        "D_8022A974": 2149755252,
+        "func_0028364C": 2149742204
+      },
+      "sections": {
+        ".text": 2149771172
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2664164,
+          "address": 2149771172,
+          "size": 200,
+          "sha256": "65CC45C1EA80FA1BBFF27FE796A36C269FE9B9D1E084D8CBE9D763BE13A06BDB",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028a6e4"
+      ]
+    },
+    {
       "name": "func_0028a8b8",
       "source": "game/accepted/library/src/lib/func_0028a8b8.c",
       "sourcePath": "src/lib/func_0028a8b8.c",
@@ -43363,6 +44625,271 @@
       ],
       "targets": [
         "func_0028a8b8"
+      ]
+    },
+    {
+      "name": "func_0028ac88",
+      "source": "game/accepted/library/src/lib/func_0028ac88.c",
+      "sourcePath": "src/lib/func_0028ac88.c",
+      "sourceSha256": "25DDB5962CD7932AB6728A2454262466C22113B686EA1A0D8B07750369E69ED0",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149772616,
+      "bindings": {},
+      "sections": {
+        ".text": 2149772616
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2665608,
+          "address": 2149772616,
+          "size": 84,
+          "sha256": "42E405911178F2CD94AC6DD95FC1F7CBA695E6683608C95432352665653505BB",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028ac88"
+      ]
+    },
+    {
+      "name": "func_0028acdc",
+      "source": "game/accepted/library/src/lib/func_0028acdc.c",
+      "sourcePath": "src/lib/func_0028acdc.c",
+      "sourceSha256": "D6C73DBD9C62E354D6A028151020BEA5C9B35648DB0E29F4AF1B1322746D54E2",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        }
+      ],
+      "address": 2149772700,
+      "bindings": {},
+      "sections": {
+        ".text": 2149772700
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2665692,
+          "address": 2149772700,
+          "size": 80,
+          "sha256": "F7E013DE4AD3EA9CC907E2A6AFB73F20D99F0FF527F36E341D61D9FDE6C38155",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028acdc"
+      ]
+    },
+    {
+      "name": "func_0028adf4",
+      "source": "game/accepted/library/src/lib/func_0028adf4.c",
+      "sourcePath": "src/lib/func_0028adf4.c",
+      "sourceSha256": "EE65C4EB03961977EBD30EE2880C192D93EC4EEF732C0D389F47F1EC73DC6D74",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149772980,
+      "bindings": {
+        "D_8023E5D0": 2149836240,
+        "bzero": 2148086656,
+        "data_00299e50": 2149834512,
+        "func_00047ee0": 2148999136,
+        "func_0028aa4c": 2149772044,
+        "func_00070F30": 2147946288,
+        "D_8023DE34": 2149834292,
+        "func_0002dfb8": 2148129720,
+        "func_0002e138": 2148130104,
+        "resource_free": 2147947204,
+        "func_8016FBE0": 2148989920,
+        "func_00291130": 2149798384,
+        "D_800EB0B0": 2148446384,
+        "func_800EA6B0": 2148443824,
+        "D_8023DE38": 2149834296,
+        "D_8022A974": 2149755252,
+        "D_8022A994": 2149755284,
+        "func_00283FA8": 2149744600,
+        "D_8018F1A4": 2149118372,
+        "func_00286620": 2149754448,
+        "func_00284288": 2149745336,
+        "D_8022A990": 2149755280
+      },
+      "sections": {
+        ".text": 2149772980
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2665972,
+          "address": 2149772980,
+          "size": 368,
+          "sha256": "F7CD663ED4B9F2284BE85674ED22AD10424BA0053BE51C8D189AB8DDE9C2A254",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028adf4"
+      ]
+    },
+    {
+      "name": "func_0028af64",
+      "source": "game/accepted/library/src/lib/func_0028af64.c",
+      "sourcePath": "src/lib/func_0028af64.c",
+      "sourceSha256": "3DA96115E434E09A8CA39F7D6BED526733CE156B7F7F6DE59E039E66A59C6627",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        },
+        {
+          "path": "include/game/combat_draw.h",
+          "file": "game/accepted/library/include/game/combat_draw.h",
+          "sha256": "DEA4C4DDDEA3D523C088558D41D15EDFCCC28C9467F48DA03E779F4F2F1A0B08"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149773348,
+      "bindings": {
+        "D_800A81F0": 2148172272,
+        "D_800E9BE0": 2148441056,
+        "D_800E79E0": 2148432352,
+        "D_8022A996": 2149755286,
+        "D_800C4BE4": 2148289508,
+        "D_801969B0": 2149149104,
+        "func_00042c30": 2148977968,
+        "D_80197178": 2149151096,
+        "func_0028B504": 2149774788,
+        "func_0028B7A4": 2149775460,
+        "D_8023DE34": 2149834292,
+        "func_002908CC": 2149796236,
+        "func_00299AC8": 2149833608
+      },
+      "sections": {
+        ".text": 2149773348
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2666340,
+          "address": 2149773348,
+          "size": 292,
+          "sha256": "56A7338FAE5E3C0DA60A6A49DA22819C1135AF9098EA03904EF26F7F53318B94",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028af64"
+      ]
+    },
+    {
+      "name": "func_0028b0e0",
+      "source": "game/accepted/library/src/lib/func_0028b0e0.c",
+      "sourcePath": "src/lib/func_0028b0e0.c",
+      "sourceSha256": "D7C25F6E70008C9F79B3F8850C4D0220F65AF6E34F6AD6EA795B29E497164E60",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149773728,
+      "bindings": {
+        "func_00283748": 2149742456,
+        "func_00284184": 2149745076,
+        "func_0004ef58": 2149027928,
+        "func_0004ef18": 2149027864,
+        "resource_free": 2147947204,
+        "D_8022A974": 2149755252,
+        "D_8023DE34": 2149834292,
+        "func_80079618": 2147980824,
+        "func_00291104": 2149798340,
+        "func_0028364C": 2149742204,
+        "D_8018FC08": 2149121032,
+        "D_8018FC0C": 2149121036
+      },
+      "sections": {
+        ".text": 2149773728
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2666720,
+          "address": 2149773728,
+          "size": 196,
+          "sha256": "99A9F131C773B0A6BD83FC6B23306E77444E6E10F979B3E23073120E89DF5967",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0028b0e0"
       ]
     },
     {
@@ -43447,6 +44974,508 @@
       ]
     },
     {
+      "name": "func_00296518",
+      "source": "game/accepted/library/src/lib/func_00296518.c",
+      "sourcePath": "src/lib/func_00296518.c",
+      "sourceSha256": "C71A763F4A4F77875D2226FAD23738AC626FB9D82CD1A1055E930B2C6780D286",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149819864,
+      "bindings": {
+        "resource_alloc": 2147946288,
+        "bzero": 2148086656,
+        "func_002839E8": 2149743128,
+        "resource_free": 2147947204,
+        "func_80080998": 2148010392,
+        "bcopy": 2148085856
+      },
+      "sections": {
+        ".text": 2149819864
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2712856,
+          "address": 2149819864,
+          "size": 572,
+          "sha256": "520C84ADCF4951518F68485A81F59C80BE526CD4D3651A7BCBD6BEFDF439F9B0",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00296518"
+      ]
+    },
+    {
+      "name": "func_00296754",
+      "source": "game/accepted/library/src/lib/func_00296754.c",
+      "sourcePath": "src/lib/func_00296754.c",
+      "sourceSha256": "F87D10EF3841E560BA0E55989CF22DB5A21B108D0D2C1177B2322EA19F07E810",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149820436,
+      "bindings": {
+        "bzero": 2148086656,
+        "func_002839E8": 2149743128,
+        "func_80080998": 2148010392,
+        "resource_free": 2147947204,
+        "bcopy": 2148085856,
+        "D_8023DE30": 2149834288,
+        "func_00296CE0": 2149821856,
+        "D_8023DE34": 2149834292,
+        "func_8009C550": 2148123984,
+        "func_8009C620": 2148124192
+      },
+      "sections": {
+        ".text": 2149820436
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2713428,
+          "address": 2149820436,
+          "size": 604,
+          "sha256": "E9EC5F5AEDC8B2D402A6731530B975BE135708E549D9452FF1D5552795C2C9C5",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00296754"
+      ]
+    },
+    {
+      "name": "func_00296CE0",
+      "source": "game/accepted/library/src/lib/func_00296CE0.c",
+      "sourcePath": "src/lib/func_00296CE0.c",
+      "sourceSha256": "CDECC3E55CA2A7F65734E1FFAE94245A93328D85EE7900FDB6EF635381740089",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        }
+      ],
+      "address": 2149821856,
+      "bindings": {
+        "func_00283808": 2149742648,
+        "rodata_0029a070": 2149835056
+      },
+      "sections": {
+        ".text": 2149821856
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2714848,
+          "address": 2149821856,
+          "size": 208,
+          "sha256": "21F46E3642386F555C58CCF7AC27ECE4064D50665E03FF2A773B679B02034A96",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00296CE0"
+      ]
+    },
+    {
+      "name": "func_00297644",
+      "source": "game/accepted/library/src/lib/func_00297644.c",
+      "sourcePath": "src/lib/func_00297644.c",
+      "sourceSha256": "8C11AFB7E99EB4DC52CA89A24440A71828D80969B32AE0977B51E6A6DA99498B",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/chapter_card.h",
+          "file": "game/accepted/library/include/game/chapter_card.h",
+          "sha256": "0C36DC89D75B002F7AEA668905B3C5104A9A58D1DCF1639A11112CB2ECC2AB99"
+        },
+        {
+          "path": "include/game/combat_draw_commands.h",
+          "file": "game/accepted/library/include/game/combat_draw_commands.h",
+          "sha256": "0B78FA9F31CD5980AA803E52E85CDC3A767896D2F943593036CCC2C9E357A31B"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149824260,
+      "bindings": {
+        "func_002918F4": 2149800372,
+        "func_000523b4": 2149041332,
+        "func_00042c30": 2148977968,
+        "D_800E9BA0": 2148440992,
+        "gTitleCardDisplayListCursor": 2148440992,
+        "func_0004f2ac": 2149028780,
+        "func_00052ae8": 2149043176,
+        "func_00293208": 2149806792
+      },
+      "sections": {
+        ".text": 2149824260
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2717252,
+          "address": 2149824260,
+          "size": 344,
+          "sha256": "55B2FAD7A3FD24561FFEC22B1EF4F3584B0218E441BD56B6916C83B585FD9D13",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00297644"
+      ]
+    },
+    {
+      "name": "func_002978F4",
+      "source": "game/accepted/library/src/lib/func_002978F4.c",
+      "sourcePath": "src/lib/func_002978F4.c",
+      "sourceSha256": "7075B093132C4294822BCAD30F575AE2B6780462E249D1F4F68AF4B3E6AC56BB",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149824948,
+      "bindings": {
+        "func_000523b4": 2149041332,
+        "func_0004f2ac": 2149028780,
+        "func_000577a0": 2149062816,
+        "func_000552c0": 2149053376,
+        "func_00291194": 2149798484
+      },
+      "sections": {
+        ".text": 2149824948
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2717940,
+          "address": 2149824948,
+          "size": 348,
+          "sha256": "4BDD21631E1298259CAEA3D25AAD3BF111B1C037BE1F3EA6CB72BF181685846C",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002978F4"
+      ]
+    },
+    {
+      "name": "func_00297CC8",
+      "source": "game/accepted/library/src/lib/func_00297CC8.c",
+      "sourcePath": "src/lib/func_00297CC8.c",
+      "sourceSha256": "C334B9A81D8A3CE1069C98ABA65E480BFE7AC543ED7C2E6203EA6BD5AC26057B",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149825928,
+      "bindings": {
+        "func_00283748": 2149742456,
+        "resource_alloc": 2147946288,
+        "D_8022A974": 2149755252,
+        "func_80093380": 2148086656,
+        "func_002978F4": 2149824948,
+        "func_00051eb0": 2149040048,
+        "func_00296518": 2149819864,
+        "D_8023DE34": 2149834292,
+        "func_00045df4": 2148990708,
+        "func_00297644": 2149824260,
+        "func_00051f74": 2149040244,
+        "D_8018FDC0": 2149121472,
+        "func_002971B4": 2149823092,
+        "func_00296AB4": 2149821300,
+        "func_00294FEC": 2149814444,
+        "func_002950A0": 2149814624,
+        "D_8023DE30": 2149834288,
+        "func_0028F918": 2149792216,
+        "func_0029739C": 2149823580,
+        "func_002974E8": 2149823912,
+        "func_00296DB0": 2149822064,
+        "func_0029779C": 2149824604,
+        "func_0029636C": 2149819436,
+        "D_8023E5FF": 2149836287,
+        "func_0002CD70": 2148125040,
+        "func_00047ee0": 2148999136,
+        "func_00294940": 2149812736,
+        "func_00294B8C": 2149813324,
+        "func_00052484": 2149041540,
+        "func_00294C54": 2149813524,
+        "func_00296F98": 2149822552,
+        "func_00294FAC": 2149814380,
+        "func_002969B0": 2149821040,
+        "func_0029700C": 2149822668,
+        "func_00296C50": 2149821712,
+        "func_002952D4": 2149815188,
+        "func_0029709C": 2149822812,
+        "func_00295A54": 2149817108,
+        "func_002953E0": 2149815456,
+        "func_002954B0": 2149815664,
+        "func_002956F8": 2149816248,
+        "func_0029712C": 2149822956,
+        "func_00295B9C": 2149817436,
+        "func_0028ab74": 2149772340
+      },
+      "sections": {
+        ".text": 2149825928,
+        ".rodata": 2149835976
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2718920,
+          "address": 2149825928,
+          "size": 3148,
+          "sha256": "6B1EBB833329C11AB52785C563AF0DBD7F5101843B2A6E5550D5C1094CEC564C",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 2728968,
+          "address": 2149835976,
+          "size": 88,
+          "sha256": "FA9B47496E6F1DCAC760B14BD2835F5379CDF9C95C5E59557BF81F4C5D44E7F4",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_00297CC8"
+      ]
+    },
+    {
+      "name": "func_00298914",
+      "source": "game/accepted/library/src/lib/func_00298914.c",
+      "sourcePath": "src/lib/func_00298914.c",
+      "sourceSha256": "98BE07B1B3B7885E44C048A6BDB87143690AD4292B16371E8FD86C50DEFC1D11",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149829076,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "func_00296754": 2149820436
+      },
+      "sections": {
+        ".text": 2149829076
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2722068,
+          "address": 2149829076,
+          "size": 52,
+          "sha256": "BB631F60AD97B7AFE0A1061EE66F54B468766F56ACFB463C34C0DFD82745FC11",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00298914"
+      ]
+    },
+    {
+      "name": "func_00298948",
+      "source": "game/accepted/library/src/lib/func_00298948.c",
+      "sourcePath": "src/lib/func_00298948.c",
+      "sourceSha256": "3E3CCE1506B3AF05301C543237C50DF8BBEDAAF33EBC5946439BBA7D535B1A38",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149829128,
+      "bindings": {
+        "D_8022A99A": 2149755290,
+        "func_00052284": 2149041028,
+        "D_800E8100": 2148434176,
+        "func_00045df4": 2148990708,
+        "D_800EB1F0": 2148446704,
+        "func_800EA604": 2148443652,
+        "D_800E8700": 2148435712,
+        "D_8023DE34": 2149834292
+      },
+      "sections": {
+        ".text": 2149829128
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2722120,
+          "address": 2149829128,
+          "size": 552,
+          "sha256": "186C4BB5A20344A65F96A1F351EC1163F91AE89F0D54E75CAA16E89FE27064A6",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00298948"
+      ]
+    },
+    {
+      "name": "func_00298B70",
+      "source": "game/accepted/library/src/lib/func_00298B70.c",
+      "sourcePath": "src/lib/func_00298B70.c",
+      "sourceSha256": "279456680E987CE248D564063BDFE6747E320A67A640E7F6227C4C97D92D97F7",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149829680,
+      "bindings": {
+        "func_00052284": 2149041028,
+        "D_800C4B28": 2148289320,
+        "D_800EB1F0": 2148446704,
+        "func_800EA604": 2148443652,
+        "D_8022A974": 2149755252,
+        "D_800E8700": 2148435712,
+        "func_00295574": 2149815860,
+        "func_002950A0": 2149814624,
+        "func_00294B8C": 2149813324,
+        "func_002956F8": 2149816248
+      },
+      "sections": {
+        ".text": 2149829680
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2722672,
+          "address": 2149829680,
+          "size": 1704,
+          "sha256": "8BD757E2118B3BA120DA2F17D596371E1C335EBA05B1742AE164C486D22311A1",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00298B70"
+      ]
+    },
+    {
+      "name": "func_00299218",
+      "source": "game/accepted/library/src/lib/func_00299218.c",
+      "sourcePath": "src/lib/func_00299218.c",
+      "sourceSha256": "90823127FA4D8674743FE1B2264546D1F1C2CD930CE2876876083078A04E1885",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149831384,
+      "bindings": {
+        "D_8023DE30": 2149834288,
+        "func_0028F918": 2149792216
+      },
+      "sections": {
+        ".text": 2149831384
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2724376,
+          "address": 2149831384,
+          "size": 268,
+          "sha256": "1A8A3E3A70EFC69D30951BFB7F8B04B76C912D43B9D0719052BD43AF52C46CDD",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00299218"
+      ]
+    },
+    {
       "name": "func_002993C0",
       "source": "game/accepted/library/src/lib/func_002993C0.c",
       "sourcePath": "src/lib/func_002993C0.c",
@@ -43471,6 +45500,222 @@
       ],
       "targets": [
         "func_002993C0"
+      ]
+    },
+    {
+      "name": "func_002993EC",
+      "source": "game/accepted/library/src/lib/func_002993EC.c",
+      "sourcePath": "src/lib/func_002993EC.c",
+      "sourceSha256": "1C45500CD256C50ECD4AD984154FB6FF4F78908D60B1571116F669CE5CB6803C",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149831852,
+      "bindings": {
+        "D_8018FDC0": 2149121472,
+        "func_000552c0": 2149053376,
+        "D_800C4B28": 2148289320,
+        "D_800E8100": 2148434176,
+        "D_800EB1F0": 2148446704,
+        "func_800EA604": 2148443652,
+        "D_8023DE34": 2149834292,
+        "func_00286544": 2149754228,
+        "D_800E79B0": 2148432304,
+        "D_800E8700": 2148435712,
+        "func_00052284": 2149041028
+      },
+      "sections": {
+        ".text": 2149831852
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2724844,
+          "address": 2149831852,
+          "size": 852,
+          "sha256": "2227914A2DA027B9BFE57683669E620F1C3E6E7E5958DF2C89461E4F2567B2D2",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002993EC"
+      ]
+    },
+    {
+      "name": "func_00299740",
+      "source": "game/accepted/library/src/lib/func_00299740.c",
+      "sourcePath": "src/lib/func_00299740.c",
+      "sourceSha256": "03AE90933EA80845D2E21D7554D20924203D51C98A42006F85C51A2B23DE683E",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149832704,
+      "bindings": {
+        "func_000552c0": 2149053376,
+        "D_8018FDC0": 2149121472,
+        "func_0005526c": 2149053292,
+        "D_8022A974": 2149755252,
+        "D_8023DE34": 2149834292,
+        "func_00298948": 2149829128,
+        "func_00298B70": 2149829680,
+        "func_80093380": 2148086656,
+        "D_8023DE30": 2149834288,
+        "func_00299218": 2149831384,
+        "D_800E8100": 2148434176,
+        "func_002953E0": 2149815456,
+        "func_0028ab74": 2149772340,
+        "memcpy_aligned": 2148010392,
+        "D_8018F1A4": 2149118372,
+        "func_00283DF0": 2149744160,
+        "func_002993EC": 2149831852,
+        "func_00055390": 2149053584,
+        "func_0005a0f4": 2149073396
+      },
+      "sections": {
+        ".text": 2149832704,
+        ".rodata": 2149836064
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2725696,
+          "address": 2149832704,
+          "size": 904,
+          "sha256": "3A1C2FFF91BFD6213833940B43868507CACA08B7A99E1D5FAB49DEB023E53A21",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 2729056,
+          "address": 2149836064,
+          "size": 84,
+          "sha256": "86AC2799FC966839570543BF8793D4989C4AF7383404C0B48185A61CCF37037A",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_00299740"
+      ]
+    },
+    {
+      "name": "func_00299AC8",
+      "source": "game/accepted/library/src/lib/func_00299AC8.c",
+      "sourcePath": "src/lib/func_00299AC8.c",
+      "sourceSha256": "A2436A96168349AD3AD7CAD0826CA3588E1768AE4567C5FDB2138C4A370D66BE",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/combat_draw.h",
+          "file": "game/accepted/library/include/game/combat_draw.h",
+          "sha256": "DEA4C4DDDEA3D523C088558D41D15EDFCCC28C9467F48DA03E779F4F2F1A0B08"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149833608,
+      "bindings": {
+        "func_000552c0": 2149053376,
+        "D_8018FDC0": 2149121472,
+        "func_0005526c": 2149053292,
+        "D_8022A974": 2149755252,
+        "D_800E9BE0": 2148441056,
+        "gCardMatrixCount": 2148289508,
+        "D_801969B0": 2149149104,
+        "D_800E79E0": 2148432352,
+        "D_80197178": 2149151096,
+        "func_00056adc": 2149059548,
+        "func_00291854": 2149800212
+      },
+      "sections": {
+        ".text": 2149833608
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2726600,
+          "address": 2149833608,
+          "size": 480,
+          "sha256": "AAF1453482E5AB6FC58FFB4D3B7A185D00E308C23875955C86D180D84A4A55D4",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00299AC8"
+      ]
+    },
+    {
+      "name": "func_00299CA8",
+      "source": "game/accepted/library/src/lib/func_00299CA8.c",
+      "sourcePath": "src/lib/func_00299CA8.c",
+      "sourceSha256": "61A749181192F92B8DA0058DFE83024189AE05AD697027DEEE39F28322338F29",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_panels.h",
+          "file": "game/accepted/library/include/game/cutscene_panels.h",
+          "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        }
+      ],
+      "address": 2149834088,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "func_002836C8": 2149742328,
+        "func_00052284": 2149041028,
+        "func_000521fc": 2149040892
+      },
+      "sections": {
+        ".text": 2149834088
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2727080,
+          "address": 2149834088,
+          "size": 156,
+          "sha256": "AB442EFA0F35D8DECE664EED5694B862CCD950DBC99B66328CE6B9BB856E66A3",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00299CA8"
       ]
     },
     {
@@ -44333,6 +46578,48 @@
       ]
     },
     {
+      "name": "func_002ABF64",
+      "source": "game/accepted/library/src/lib/func_002ABF64.c",
+      "sourcePath": "src/lib/func_002ABF64.c",
+      "sourceSha256": "8C5C3A4CEB7DFF6AEBE15FA85BFEB38393B818CAE132D980B2E329C79770D128",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/actor_queries.h",
+          "file": "game/accepted/library/include/game/actor_queries.h",
+          "sha256": "614C9C0D99D581295ACCDF12CA8F1102F3FB5690E7286A7B98F0C7914EB9139F"
+        }
+      ],
+      "address": 2149828612,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344
+      },
+      "sections": {
+        ".text": 2149828612
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2801508,
+          "address": 2149828612,
+          "size": 112,
+          "sha256": "6670E5676A6C8AFE10E367AE248FF5F172E295253F9B3DD62C6285BAB05C3376",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002ABF64"
+      ]
+    },
+    {
       "name": "func_002ABFD4",
       "source": "game/accepted/library/src/lib/func_002ABFD4.c",
       "sourcePath": "src/lib/func_002ABFD4.c",
@@ -44382,6 +46669,51 @@
       ],
       "targets": [
         "func_002ABFD4"
+      ]
+    },
+    {
+      "name": "func_002AC700",
+      "source": "game/accepted/library/src/lib/func_002AC700.c",
+      "sourcePath": "src/lib/func_002AC700.c",
+      "sourceSha256": "51C86705A95E2950236B4972DF18A40F895A3400C90F1222BD9F0A506ECD91DB",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/actor_queries.h",
+          "file": "game/accepted/library/include/game/actor_queries.h",
+          "sha256": "614C9C0D99D581295ACCDF12CA8F1102F3FB5690E7286A7B98F0C7914EB9139F"
+        }
+      ],
+      "address": 2149830560,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "D_801CE8BC": 2149378236,
+        "func_0020BFF8": 2149354344,
+        "D_80193BD4": 2149137364,
+        "D_80195574": 2149143924,
+        "table_002868F0": 2149755168
+      },
+      "sections": {
+        ".text": 2149830560
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2803456,
+          "address": 2149830560,
+          "size": 332,
+          "sha256": "763FE9D1206AF5DCAE6B47F0921825C946EC500E5D3FD00F71F1E349BA4E06F8",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002AC700"
       ]
     },
     {
