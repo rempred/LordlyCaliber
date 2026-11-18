@@ -1,5 +1,6 @@
 #include "engine/scene_actors.h"
 #include "engine/scene_playback.h"
+#include "engine/scene_playback_inputs.h"
 #include "engine/scene_programs.h"
 #include <QDir>
 #include <QFile>
@@ -27,7 +28,8 @@ QByteArray motionBytes(const LordlyActorMotion &m) {
 void checkBodyCyclePlayback(const Rom &rom, const QJsonArray &cases) {
     QCOMPARE(cases.size(), 6);
     auto scenes = ScenePrograms::load(rom);
-    const SceneId id(scenes.original().selectors()[0]);
+    constexpr int selector = 1; // Selector zero runs the title scheduler.
+    const SceneId id(scenes.original().selectors()[selector]);
     const quint32 words[] = {
         0x56, 0x2b, 0, 1, 27, // If slot zero is busy. Slot 27 is deliberately empty.
         0x48, 0, 77,          // Mark the branch by changing the actor's opacity.
@@ -39,7 +41,7 @@ void checkBodyCyclePlayback(const Rom &rom, const QJsonArray &cases) {
     scenes.replace(id, script);
     ScenePlaybackStart start;
     start.alternate = 1; // Counter and Director only; preserve the supplied pose and timer.
-    const ScenePlayback initial(rom, scenes.runtimeDirectors(), 0, start,
+    const ScenePlayback initial(rom, scenes.runtimeDirectors(), selector, start,
                                 SceneCameras::freshModeTwo(rom));
     for (const auto &entry : cases) {
         const auto row = entry.toObject();
@@ -57,6 +59,134 @@ void checkBodyCyclePlayback(const Rom &rom, const QJsonArray &cases) {
     auto vacant = initial;
     QCOMPARE(vacant.advance(), ScenePlayback::Suspended);
     QVERIFY2(vacant.reason().contains("occupied actor slot"), qPrintable(vacant.reason()));
+}
+void checkBriefingPlayback(const Rom &rom, const QJsonArray &cases) {
+    QCOMPARE(cases.size(), 5);
+    auto scenes = ScenePrograms::load(rom);
+    constexpr int selector = 1493; // Retail briefing scene used by the timeline/export check.
+    const SceneId id(scenes.original().selectors()[selector]);
+    const QString asset = "rom-director:BRIEFING";
+    auto known = [](QJsonValue value) { return QJsonObject{{"status", "known"}, {"value", value}}; };
+    for (const auto &entry : cases) {
+        const auto fixture = entry.toObject();
+        const auto row = bytes(fixture["row"]);
+        const int source = u32(row, 0x48), owner = u32(row, 0x4c), mode = qint32(u32(row, 0x58)) < 4;
+        // Yield without a handoff so a second update revisits this same command.
+        const quint32 words[] = {0xc2, 0x12340005, 0xabcd0000U | quint16(fixture["pose"].toInt()),
+            0x80000000, 0x80000001, scenes.program(id).commands.last().operands.first()};
+        QByteArray script(sizeof(words), 0);
+        for (size_t i = 0; i < std::size(words); ++i)
+            put32(script, 4*i, words[i]);
+        scenes.replace(id, script);
+        QJsonArray rows, slotsJson, preparations, allocations;
+        for (int i = 0; i < 19; ++i) {
+            auto rejected = row;
+            if (i % 3 == 0) put32(rejected, 0x48, 0);
+            else put32(rejected, 0x40, i % 3 == 1 ? 0x300 : 0);
+            rows.append(QString::fromLatin1(rejected.toHex()));
+        }
+        rows.append(fixture["row"]);
+        for (int i = 0; i < 28; ++i) slotsJson.append(QJsonValue::Null);
+        for (const auto &v : fixture["initial"].toArray()) {
+            const auto a = v.toObject();
+            const int slot = a["slot"].toInt();
+            slotsJson[slot] = QJsonObject{{"identity", QString::number(slot)}, {"recordHex", a["record"]},
+                                         {"movementHex", QJsonValue::Null}};
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (!u32(row, 4*i)) continue;
+            if (i) allocations.append(true);
+            preparations.append(QJsonObject{{"sourceArt", source}, {"ownerContext", owner}, {"flagA", mode},
+                                          {"flagB", mode}, {"equipment", 0}, {"status", "ready"}});
+        }
+        QJsonObject call{{"nodeId", "node:BRIEFING:w0000"}, {"occurrence", 0},
+                         {"allocations", allocations}, {"preparations", preparations}};
+        QJsonObject file{{"schema","ob64-cutscene-launch-inputs.v1"}, {"assetId",asset},
+                         {"invocationId","briefing-test"}, {"evidenceGrade","Supported"}, {"sourceIdentity","ROM fixture"},
+                         {"actorInputRows",known(rows)}, {"subordinateServices",known(QJsonArray{call})},
+                         {"existingActors",known(QJsonObject{{"slots",slotsJson},{"otherJobsEmpty",true}})}};
+        ScenePlaybackStart start;
+        start.alternate = 1;
+        ScenePlayback initial(rom, scenes.runtimeDirectors(), selector, start, SceneCameras::freshModeTwo(rom));
+        auto launch = [&](const QJsonObject &input) {
+            auto playback = initial;
+            const auto imported = ScenePlaybackInputs::parse(QJsonDocument(input).toJson(), asset);
+            if (!imported.boundary().isEmpty()) throw Error(imported.boundary());
+            imported.supply(playback);
+            return playback;
+        };
+        auto playback = launch(file);
+        QVERIFY2(playback.advance() == ScenePlayback::Advanced, qPrintable(playback.reason()));
+        QMap<int,QByteArray> expected;
+        for (const auto &v : fixture["after"].toArray()) {
+            const auto a = v.toObject();
+            expected.insert(a["slot"].toInt(), bytes(a["record"]));
+        }
+        for (int i = 0; i < 28; ++i) {
+            QCOMPARE(playback.actors().actor(i).has_value(), expected.contains(i));
+            if (expected.contains(i)) QCOMPARE(playback.actors().actor(i)->record(), expected[i]);
+        }
+        QCOMPARE(playback.advance(), ScenePlayback::Suspended);
+        QVERIFY2(playback.reason().contains("command occurrence"), qPrintable(playback.reason()));
+        if (entry != cases.first()) continue;
+        auto check = [&](QJsonObject input, const QString &reason) {
+            auto trial = launch(input);
+            const auto before = trial.actors().actor(5);
+            const auto outcome = trial.advance();
+            if (reason.isEmpty())
+                QVERIFY2(outcome == ScenePlayback::Advanced, qPrintable(trial.reason()));
+            else {
+                QCOMPARE(outcome, ScenePlayback::Suspended);
+                QVERIFY2(trial.reason().contains(reason), qPrintable(trial.reason()));
+            }
+            QCOMPARE(trial.actors().actor(5).has_value(), before.has_value());
+            if (before) QCOMPARE(trial.actors().actor(5)->record(), before->record());
+        };
+        auto noService = file;
+        noService.remove("subordinateServices");
+        check(noService, "command occurrence");
+        auto vacant = noService;
+        slotsJson[5] = QJsonValue::Null;
+        vacant["existingActors"] = known(QJsonObject{{"slots",slotsJson},{"otherJobsEmpty",true}});
+        check(vacant, {});
+        auto vacantWithoutRows = vacant;
+        vacantWithoutRows.remove("actorInputRows");
+        check(vacantWithoutRows, {});
+        vacant.remove("existingActors");
+        check(vacant, "identify the anchor");
+        auto noRows = noService;
+        noRows.remove("actorInputRows");
+        check(noRows, "20 actor rows");
+        auto absent = noService;
+        auto variants = rows;
+        variants[19] = variants.at(0);
+        absent["actorInputRows"] = known(variants);
+        check(absent, {});
+        auto altered = row;
+        put32(altered, 0, 0);
+        variants[0] = QString::fromLatin1(altered.toHex());
+        variants[19] = rows.at(19);
+        absent["actorInputRows"] = known(variants);
+        check(absent, "without its first component");
+        put32(altered, 4, 0);
+        put32(altered, 8, 0);
+        variants[0] = QString::fromLatin1(altered.toHex());
+        absent["actorInputRows"] = known(variants);
+        check(absent, {}); // The later, populated eligible row must be ignored.
+        auto denied = file;
+        call["allocations"] = QJsonArray{false};
+        denied["subordinateServices"] = known(QJsonArray{call});
+        check(denied, "allocation failed");
+        auto p = preparations[0].toObject();
+        p["status"] = "cache-full";
+        call["preparations"] = QJsonArray{p};
+        denied["subordinateServices"] = known(QJsonArray{call});
+        check(denied, "cache-full");
+        p["ownerContext"] = owner + 1;
+        call["preparations"] = QJsonArray{p};
+        denied["subordinateServices"] = known(QJsonArray{call});
+        check(denied, "differs from");
+    }
 }
 } // namespace
 class PresentationRuntimeTests : public QObject {
@@ -199,6 +329,7 @@ class PresentationRuntimeTests : public QObject {
         const auto data = QJsonDocument::fromJson(file.readAll()).object();
         const auto rom = Rom::open(path);
         checkBodyCyclePlayback(rom, data["cycleQueries"].toArray());
+        checkBriefingPlayback(rom, data["briefings"].toArray());
         const auto results = data["results"].toArray();
         QCOMPARE(results.size(), 44);
         int caseIndex = 0;

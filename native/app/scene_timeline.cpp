@@ -32,7 +32,10 @@ void SceneTimeline::rebuild(){
     for(const auto &a:actions){
         const auto &c=program_.commands[a.command];QString track="Scene / camera";
         if(c.opcode==0xbf)track="Dialogue / choices";
-        else if(a.actorOperand>=0)track=QString("Actor %1").arg(qint32(c.operands[a.actorOperand]));
+        else if(a.actorOperand>=0){
+            const auto slot=SceneActions::actorSlotWord(c,a.actorOperand);
+            track=(slot&0xffffff00U)==0x08880000U ? "Actor from launch" : QString("Actor %1").arg(qint32(slot));
+        }
         else if(a.name=="Place sprite"||a.name=="Move sprite")track=QString("Sprite %1").arg(c.operands[0]&0xffff);
         else if(c.opcode==0x46||c.opcode==0x63||c.opcode==0x64||c.opcode==0x66)track=QString("Sprite %1").arg(quint8(c.operands[0]));
         else if(a.timing!=SceneActionTiming::None||c.opcode==0x8e||c.opcode==0x8f)track="Logic / waits";

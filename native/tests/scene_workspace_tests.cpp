@@ -21,6 +21,7 @@
 #include <QJsonDocument>
 #include <QFontDatabase>
 #include <QGraphicsView>
+#include <QGraphicsItem>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QInputDialog>
@@ -38,6 +39,93 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void briefingTimeline() {
+        try {
+            auto project = Project::fromRom(rom());
+            project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            const SceneId scene(0x01fbda40 - 0x594284);
+            auto source = programs.program(scene);
+            int command = -1;
+            for (int i = 0; i < source.commands.size(); ++i)
+                if (source.commands[i].opcode == 0xc2) { command = i; break; }
+            QVERIFY(command >= 0);
+            QCOMPARE(source.commands[command].operands, QVector<quint32>({5, 13}));
+            source.commands[command].operands = {0x12340005, 0xabcd000d};
+            const auto before = source.encode();
+            programs.replace(scene, before);
+            project.setScenePrograms(programs.json());
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850);
+            editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_VERIFY_WITH_TIMEOUT(scenes->count() > 1000, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole).toUInt() == scene.nativeKey) {
+                    scenes->setCurrentRow(i); break;
+                }
+            auto timeline = editor.findChild<SceneTimeline *>();
+            auto actions = editor.findChild<SceneActionEditor *>();
+            QGraphicsItem *clip = nullptr;
+            bool actorLane = false;
+            for (auto item : timeline->scene()->items()) {
+                if (item->toolTip() == "Actor 5") actorLane = true;
+                if (item->data(0).toInt() == command && item->toolTip().startsWith("Start briefing actors"))
+                    clip = item;
+            }
+            QVERIFY(actorLane);
+            QVERIFY(clip);
+            timeline->centerOn(clip);
+            QTest::mouseClick(timeline->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              timeline->mapFromScene(clip->sceneBoundingRect().center()));
+            auto anchor = actions->findChild<QLineEdit *>("sceneActionField0");
+            auto pose = actions->findChild<QLineEdit *>("sceneActionField1");
+            QVERIFY(anchor && pose);
+            QCOMPARE(anchor->accessibleName(), QString("Anchor actor slot"));
+            QCOMPARE(anchor->text(), QString("5"));
+            QCOMPARE(pose->text(), QString("13"));
+            anchor->setText("3");
+            auto expected = before;
+            put32(expected, 4 * (source.commands[command].word + 1), 0x12340003);
+            QCOMPARE(project.scenePrograms()->program(scene).source, expected);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(scene).source, before);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(scene).source, expected);
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (tools.isEmpty()) QSKIP("N64 toolchain is required for the briefing export");
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(scene).source, expected);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/native-briefing-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            const auto &directors = reopened.scenePrograms()->original();
+            const auto selectors = programs.resource(scene).selectors;
+            QVERIFY(!selectors.isEmpty());
+            for (int selector : selectors)
+                QCOMPARE(directors.entries()[directors.selectors()[selector]].program.source, expected);
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <= quint64(reopened.rom().bytes().size()));
+            auto checksum = reopened.rom().bytes();
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, reopened.rom().bytes());
+            QVERIFY(Rom::open(path).bytes() == project.rom().bytes());
+            qInfo().noquote() << "Briefing export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void keyVisibility(){
         QWidget host;auto layout=new QVBoxLayout(&host);auto picker=new SceneKeyPicker(rom());
         layout->addWidget(picker,1);layout->addWidget(picker->auditionWidget());host.resize(650,850);host.show();

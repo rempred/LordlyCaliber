@@ -100,6 +100,8 @@ class ScenePlayback {
     SceneActors &actors() {
         return actors_;
     }
+    using BriefingCalls = QMap<QPair<QString, int>, BriefingCall>;
+    void supplyBriefingCalls(QString asset, BriefingCalls calls, bool slotsKnown);
     const SceneActors &actors() const {
         return actors_;
     }
@@ -249,6 +251,11 @@ class ScenePlayback {
     DirectorSession director_;
     Rom rom_;
     SceneActors actors_;
+    BriefingCalls briefingCalls_;
+    QMap<int, int> briefingOccurrences_;
+    QString briefingNodePrefix_;
+    std::optional<quint32> briefingResource_;
+    bool briefingSlotsKnown_ = true;
     SceneSprites sprites_;
     SceneProjection projection_;
     SceneCameras cameras_;

@@ -4,14 +4,20 @@
 #include <algorithm>
 #include <limits>
 namespace lordly {
+quint32 SceneActions::actorSlotWord(const DirectorCommand &command, int operand) {
+    const auto raw = command.operands[operand];
+    if (command.opcode == 0xc2 && operand == 0 && (raw & 0xffffff00U) != 0x08880000U)
+        return quint32(qint16(raw));
+    return raw;
+}
 bool SceneActionField::canonical(quint32 word) const {
     if ((word & 0xffffff00U) == 0x08880000U)
         return false; // A launch translation is not an editable literal.
-    const auto value = qint64(qint32(word)) - bias;
+    const auto value = qint64(lowHalf ? quint16(word) : qint32(word)) - bias;
     return value >= minimum && value <= maximum && (choices.isEmpty() || choices.contains(value));
 }
 QString SceneActionField::text(quint32 word) const {
-    return scale == 1 ? QString::number(qint64(qint32(word)) - bias)
+    return scale == 1 ? QString::number(qint64(lowHalf ? quint16(word) : qint32(word)) - bias)
                       : QString::number(double(qint32(word)) / scale, 'f', 3);
 }
 quint32 SceneActionField::parse(const QString &text) const {
@@ -142,6 +148,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         case 0x1c:
         case 0x1d:
         case 0x48:
+        case 0xc2:
         case 0x2a:
             action.actorOperand = 0;
             break;
@@ -271,6 +278,13 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         case 0x66:
             action.name = "Release scene sprite";
             field("Sprite slot (-1 selects all)", 0, 1, -1, 29);
+            break;
+        case 0xc2:
+            action.name = "Start briefing actors";
+            field("Anchor actor slot", 0, 1, 0, 27);
+            action.fields.last().lowHalf = true;
+            field("Initial body pose", 1, 1, 0, 65535);
+            action.fields.last().lowHalf = true;
             break;
         case 0x2a:
             action.name = "Set Actor class and pose";
@@ -459,7 +473,12 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
             if (!f.canonical(source.operands[f.operand]))
                 throw Error("This source encoding requires the Commands inspector");
             auto result = program;
-            const auto replacement = f.parse(value);
+            auto replacement = f.parse(value);
+            if (f.lowHalf) {
+                replacement |= source.operands[f.operand] & 0xffff0000U;
+                if ((replacement & 0xffffff00U) == 0x08880000U)
+                    throw Error("This edit would encode a launch value. Use Commands to change the full word.");
+            }
             if (action.timing == SceneActionTiming::SharedCounter) {
                 const qint64 target = qint32(source.operands[f.operand]);
                 action_detail::shiftGates(

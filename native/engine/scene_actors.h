@@ -19,6 +19,14 @@ struct ActorBindingInputs {
 struct BodyRegistration {
     int slot, source, owner, flagA, flagB, equipment;
 };
+struct BriefingPreparation {
+    int source, owner, flagA, flagB, equipment;
+    QString status;
+};
+struct BriefingCall {
+    QVector<bool> allocations;
+    QVector<BriefingPreparation> preparations;
+};
 struct PresentationMemberState {
     quint16 value = 0;
     quint8 flags = 0;
@@ -72,6 +80,8 @@ class SceneActors {
         rosterLaunch_ = std::move(launch);
     }
     void materializeRoster(qint32 first, qint32 second, int variant);
+    // Returns true when the selected row consumed this invocation's services.
+    bool constructBriefing(int anchor, quint16 pose, bool slotsKnown, const BriefingCall *call);
     const QVector<int> &immediateRosterDraws() const {
         return rosterDraws_;
     }

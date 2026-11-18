@@ -9,6 +9,7 @@ struct SceneActionField {
     qint64 bias = 0;
     QVector<QPair<int, int>> mirrors;
     QVector<qint64> choices;
+    bool lowHalf = false;
     QString text(quint32 word) const;
     quint32 parse(const QString &) const;
     bool canonical(quint32 word) const;
@@ -54,6 +55,7 @@ class SceneActions {
     static QByteArray choiceText(const QString &first, const QString &second);
     static std::optional<QPair<QString, QString>> choiceOptions(const QByteArray &);
     static QVector<SceneAction> inspect(const DirectorProgram &);
+    static quint32 actorSlotWord(const DirectorCommand &, int operand);
     static QVector<SceneActionPosition> positions(const DirectorProgram &);
     static QMap<quint32, QString> kinds();
     static DirectorProgram insert(const DirectorProgram &, int before, quint32 kind,

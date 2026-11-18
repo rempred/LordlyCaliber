@@ -1075,6 +1075,22 @@ class SceneActionTests : public QObject {
                                          0x7d, 0x80000002, 0x80000000, 0x80000001, 0xff000005});
         QVERIFY(!SceneActions::positions(extraYield).first().canWait);
     }
+    void reserveBriefingAnchor() {
+        const auto source = program({0x80000006, 1, 0x36, 0,0,0,0,0,100000,45000,
+            0x35, 0,0,0,0,0,100000,45000, 0xc2, 0x12340001, 13, 0x7d,
+            0x80000002, 0x80000000, 0x80000001, 0xff000001});
+        for (auto kind : {0x14U, 0x2aU}) {
+            auto added = SceneActions::insert(source, 4, kind);
+            QCOMPARE(added.commands[4].operands[0], 2U);
+            QCOMPARE(added.commands[3].operands, source.commands[3].operands);
+            auto dynamic = source;
+            dynamic.commands[3].operands[0] = 0x08880007;
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(dynamic, 4, kind));
+        }
+        auto tagged = source;
+        tagged.commands[3].operands[1] = 0x08880100;
+        QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(tagged, 3, 1, "13"));
+    }
     void insertedWaitTimingAndExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

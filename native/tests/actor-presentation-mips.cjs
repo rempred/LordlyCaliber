@@ -67,6 +67,45 @@ function retailCycleQueries() {
  return cases;
 }
 const cycleQueries = process.argv[4] ? [] : retailCycleQueries();
+function retailBriefings() {
+ const cases = [];
+ m.load(0x8024387c, rom.subarray(0x2b867c, 0x2b89b8));
+ for (const [source, owner, mask, depth, pose] of [
+  [135,10,7,3,13], [135,10,5,4,13], [135,30,7,3,-100], [10,10,3,4,13], [30,30,1,3,13]
+ ]) {
+  m.load(scene, Buffer.alloc(0x1cc0));
+  m.load(cast + 0x1c4, Buffer.alloc(20 * 248));
+  m.load(pool, Buffer.alloc(20 * 0xb0));
+  allocations = [];
+  const row = Buffer.alloc(248);
+  for (let i=0; i<3; ++i)
+   if (mask & (1 << i)) row.writeUInt32BE(objects + i * 64, i * 4);
+  row.writeUInt32BE(0x200, 0x40);
+  row.writeUInt32BE(source, 0x48);
+  row.writeUInt32BE(owner, 0x4c);
+  row.writeUInt32BE(depth, 0x58);
+  m.load(cast + 0x1c4 + 19 * 248, row);
+  const occupied = [0, 2, 5];
+  const initial = occupied.map(slot => {
+   const p = actors + slot * 512, b = record(slot, 30, 0, 0, 100.25, -10.25);
+   b.writeInt32BE(-1, 0xf0);
+   m.load(p, b);
+   m.w32(scene + 24 + slot * 4, p);
+   return {slot, record:b.toString('hex')};
+  });
+  m.set('sp', sp); m.set('a0', 5); m.set('a1', pose);
+  try { m.call(0x80243ac8); }
+  catch (error) { throw Error(`Briefing source ${source}, owner ${owner}, mask ${mask}, allocations ${allocations.length}, return ${m.get('ra').toString(16)}: ${error.message}`); }
+  const after = [];
+  for (let slot=0; slot<28; ++slot) {
+   const p = m.r32(scene + 24 + 4 * slot);
+   if (p) after.push({slot, record:read(p,336)});
+  }
+  cases.push({row:row.toString('hex'), pose, initial, after});
+ }
+ return cases;
+}
+const briefings = process.argv[4] ? [] : retailBriefings();
 function run(group,kind){
  const initial=[],rows=Array.from({length:28},()=>Buffer.alloc(248)),objs=[];
  // Four independent army rows exercise both side/subgroup flags. Paired bodies
@@ -167,7 +206,7 @@ for(const preset of [0,1,7,63])for(let kind=0;kind<5;kind++){
  }
  entrances.push({preset,kind,variant,overrideFlag,sideGroups,members,rows:rows.map(r=>r.toString('hex')),objects:objs,initial,states});
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds,entrances,cycleQueries}));
+fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds,entrances,cycleQueries,briefings}));
 console.log(`Original presentation: ${results.length} sequences / ${results.length*80} snapshots, ${boundaries.length} boundary sequences, ${speeds.length} speed samples. Allocation/resource handles/terrain/audio controlled.`);
 
 console.log(`Original entrances: ${entrances.length} sequences / ${entrances.length*100} complete snapshots.`);

@@ -1222,7 +1222,8 @@ class SceneRuntimeTests : public QObject {
     }
     void imageSkipHandoff() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
-        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);const auto source=scenes.original().entries().first();
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);
+        const auto source=scenes.original().entries().value(scenes.original().selectors().at(1));
         const auto empty=[](LordlySceneService){return true;};
         for(const bool cancel:{false,true}) {
             QVector<quint32> words{0xb2,0,0x80000000U};if(cancel)words<<0xb3;
@@ -2540,14 +2541,14 @@ class SceneRuntimeTests : public QObject {
         QByteArray script(words.size() * 4, 0);
         for (int i = 0; i < words.size(); ++i)
             put32(script, i * 4, words[i]);
-        put32(bytes, 0x1f3ca84, 4);
-        put32(bytes, 0x1f3ca88, resource(script));
+        put32(bytes, 0x1f3ca84, 8);
+        put32(bytes, 0x1f3ca8c, resource(script)); // Regular scene, outside the title selector.
         const auto rom = Rom::fromBytes(bytes);
         const auto directors = Directors::load(rom);
         auto create = [&] {
             ScenePlaybackStart start;
             start.mode = 0;
-            return ScenePlayback(rom, directors, 0, start, SceneCameras::freshModeTwo(rom));
+            return ScenePlayback(rom, directors, 1, start, SceneCameras::freshModeTwo(rom));
         };
         // This scene contains no other scheduled domain objects.
         auto emptyDomains = [](LordlySceneService) { return true; };
@@ -2659,7 +2660,7 @@ class SceneRuntimeTests : public QObject {
             QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
         auto resources = Directors::load(rom);
-        int selector = 0;
+        int selector = 1;
         while (!resources.selectors()[selector])
             ++selector;
         ScenePlaybackStart start;
@@ -3289,9 +3290,9 @@ class SceneRuntimeTests : public QObject {
         auto alternate = setup;
         alternate << 0x97 << 0 << 0x80000000U << 0x39 << 1 << 0 << 0x80000000U << 0x7d
                   << 0x80000001U << 0xff000001U;
-        put32(bytes, 0x1f3ca84, 8);
-        put32(bytes, 0x1f3ca88, program(ordinary));
-        put32(bytes, 0x1f3ca8c, program(alternate));
+        put32(bytes, 0x1f3ca84, 12);
+        put32(bytes, 0x1f3ca8c, program(ordinary));
+        put32(bytes, 0x1f3ca90, program(alternate));
         const auto rom = Rom::fromBytes(bytes);
         const auto resources = Directors::load(rom);
         auto create = [&](int selector) {
@@ -3300,7 +3301,7 @@ class SceneRuntimeTests : public QObject {
         // This fixture explicitly has no terrain motion, channels or
         // other scheduled objects. Their callbacks acknowledge those empty pools.
         auto emptyDomains = [](LordlySceneService) { return true; };
-        auto baseline = create(0);
+        auto baseline = create(1);
         QCOMPARE(baseline.advance(), ScenePlayback::Suspended);
         QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_AFTER_DIRECTOR});
         QCOMPARE(baseline.completedUpdates(), 0U);
@@ -3328,7 +3329,7 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(baseline.completedUpdates(), 4U);
         baseline.advanceFade();
         QVERIFY(!baseline.fade().present());
-        auto resumed = create(0);
+        auto resumed = create(1);
         bool retry = false;
         auto delayedDomains = [&](LordlySceneService) {
             retry = !retry;
@@ -3351,7 +3352,7 @@ class SceneRuntimeTests : public QObject {
             QCOMPARE(resumed.director().state().counter, quint32(tick + 1));
             QCOMPARE(resumed.completedUpdates(), quint64(tick + 1));
         }
-        auto switched = create(1);
+        auto switched = create(2);
         QCOMPARE(switched.advance(emptyDomains), ScenePlayback::Advanced);
         QCOMPARE(switched.schedule().alternate, 1);
         const auto heldSprite = switched.sprites().sprite(0)->record();

@@ -17,7 +17,14 @@ previous editor.
 | `2A98C4`, `29E218` | The scene preview now answers Director command 0x2B. It reads the body pose even for an ordinary actor. At the final frame followed by a jump and end, the actor stays busy until its timer drops below two. The ROM build includes the sequencer's exact 88-byte switch table. |
 | `2A9364`, `2AB0F8`, `2ACFD8`, `2AD224` | The initializer and placement callers confirm that linked children resolve inherited arguments from their own records. The editor retains the private-pose mapping used by expanded projects. |
 | `20D870`, `20C120`, `2AB574`, `2AD434`, `2AD574` | Art and owner come from separate character bytes. Paired-body classification uses the owner. Leader normalization and explicit member binding are different slot operations. The availability filter now covers one expanded-capacity hook. |
-| `2B88C8`, `2B867C` | Command 0xC2 selects the first eligible row with an occupied anchor. Each later component copies the preceding present actor **after** its immediate pose, shifts X by −8 and Z by +8, and uses the auxiliary slot selected once for the row. Native preview of the full command still needs an adapter for the invocation's allocation and preparation results. |
+| `2B88C8`, `2B867C` | The Cutscene timeline shows command 0xC2 as **Start briefing actors**. Its fields edit the low halfwords and preserve the other bits. Preview scans the launch's first 20 actor rows. Each clone copies its predecessor after its immediate pose, shifts X by −8 and Z by +8, and uses the same auxiliary slot. |
+
+For a briefing with active components, import playback inputs with the caller's
+actor rows, slot state and `subordinateServices` outcomes for the reached
+command and occurrence. A known empty result continues to the next command.
+Missing outcomes, a failed allocation or an unavailable pose stop the preview
+at that word. The displayed actors retain their state from before the command.
+In-game construction can leave partial writes on a failure.
 
 Source matching establishes how the game handles those inputs. The briefing
 evidence does not identify a naturally observed invocation with those services

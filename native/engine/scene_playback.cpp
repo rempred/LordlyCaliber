@@ -232,7 +232,31 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     iris_->replaceBackgrounds(handles, count);
     applyIris();
 }
+void ScenePlayback::supplyBriefingCalls(QString asset, BriefingCalls calls, bool slotsKnown) {
+    briefingNodePrefix_ = "node:" + asset.section(':', -1).toUpper() + ":w";
+    briefingResource_ = director().resourceKey();
+    briefingCalls_ = std::move(calls);
+    briefingOccurrences_.clear();
+    briefingSlotsKnown_ = slotsKnown;
+}
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0xc2) {
+        if (args.size() != 2)
+            throw Error("Briefing construction requires an anchor slot and an initial pose");
+        const int word = director_.state().cursor;
+        const bool selected = briefingResource_ == director_.resourceKey() && !director_.isContinuation();
+        const auto node = briefingNodePrefix_ + QString::number(word, 16).toUpper().rightJustified(4, '0');
+        const auto call = briefingCalls_.constFind({node, briefingOccurrences_.value(word)});
+        const auto outcomes = selected && call != briefingCalls_.cend() ? &call.value() : nullptr;
+        try {
+            if (actors_.constructBriefing(qint16(args[0]), quint16(args[1]), briefingSlotsKnown_, outcomes))
+                ++briefingOccurrences_[word];
+        } catch (const Error &error) {
+            throw Error(QString("%1. Preview shows the actors before the briefing command at word %2.")
+                            .arg(QString::fromUtf8(error.what())).arg(word));
+        }
+        return true;
+    }
     if (opcode == 0x57) {
         if (args.size() != 3) throw Error("Controller mask query requires three operands");
         value = (pressed_ & quint16(args[2])) != 0;

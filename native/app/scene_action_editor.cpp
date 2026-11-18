@@ -226,7 +226,7 @@ bool SceneActionEditor::selectActor(int slot) {
         if (action.actorOperand < 0)
             continue;
         const auto &command = program.commands[action.command];
-        if (qint32(command.operands[action.actorOperand]) != slot)
+        if (qint32(SceneActions::actorSlotWord(command, action.actorOperand)) != slot)
             continue;
         if (selected < 0)
             selected = row;
@@ -682,7 +682,10 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Camera pan and zoom"
+        action.name == "Start briefing actors"
+            ? "Uses the first eligible actor row from the launch. The anchor starts at the initial pose. "
+              "The second and third components add 50 and 100. Both use slot 0, or the first vacant slot for paired actors."
+        : action.name == "Camera pan and zoom"
             ? "Pans and scales the world scene's projection. Scale 1 is normal. Layered scenes use "
               "their camera and transform commands instead."
         : action.name == "Wait for image transition"

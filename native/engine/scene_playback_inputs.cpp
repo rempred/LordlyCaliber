@@ -236,6 +236,21 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
         playback.actors().supplyBindingInputs(std::move(binding));
     }
     const auto actors = (captured() ? known("capturedSnapshot") : known("existingActors")).toObject();
+    ScenePlayback::BriefingCalls briefing;
+    for (const auto &entry : known("subordinateServices").toArray()) {
+        const auto row = entry.toObject();
+        BriefingCall call;
+        for (const auto &allocation : row["allocations"].toArray())
+            call.allocations << allocation.toBool();
+        for (const auto &preparation : row["preparations"].toArray()) {
+            const auto p = preparation.toObject();
+            call.preparations << BriefingPreparation{p["sourceArt"].toInt(), p["ownerContext"].toInt(),
+                p["flagA"].toInt(), p["flagB"].toInt(), p["equipment"].toInt(), p["status"].toString()};
+        }
+        briefing.insert({row["nodeId"].toString(), row["occurrence"].toInt()}, std::move(call));
+    }
+    playback.supplyBriefingCalls(json_["assetId"].toString(), std::move(briefing),
+                                !actors.isEmpty() || services()["directorLaunch"].isObject());
     if (!actors.isEmpty()) {
         const auto entries = actors["slots"].toArray();
         for (int slot = 0; slot < 28; ++slot) {
@@ -345,7 +360,7 @@ quint16 ScenePlaybackInputs::history(int update) const {
 QString ScenePlaybackInputs::boundary() const {
     if (captured() && resumeLimit() < 0) return "Captured Actor snapshot: no elapsed updates. Parser cursor is an observation; resume state is unknown.";
     QStringList unsupported;
-    for (const auto name : {"bodyPoseSetups", "subordinateServices", "rosterConstruction", "rosterResets", "rosterStateServices", "directActorCreates"})
+    for (const auto name : {"bodyPoseSetups", "rosterConstruction", "rosterResets", "rosterStateServices", "directActorCreates"})
         if (!known(name).isNull() && !known(name).isUndefined()) unsupported << QString::fromLatin1(name);
     const auto external = services();
     for (const auto name : {"menuCreates", "colorCreates", "poseCalls", "dialogueCreates"})

@@ -518,12 +518,19 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         case 0x2a: {
             QSet<quint32> used;
             for (const auto &c : p.commands) {
+                // A briefing row with an ordinary owner also writes its clones to slot zero.
+                if (c.opcode == 0xc2)
+                    used << 0;
                 const auto names = Directors::grammar()[c.opcode].operands;
-                for (int i = 0; i < names.size(); ++i)
-                    if (names[i].contains("actor_slot") || names[i] == "actor_selector")
-                        used << c.operands[i];
-                if (c.opcode == 7 || c.opcode == 0x1c || c.opcode == 0xa6)
-                    used << c.operands[0];
+                for (int i = 0; i < names.size(); ++i) {
+                    const bool firstSlot = i == 0 && (c.opcode == 7 || c.opcode == 0x1c || c.opcode == 0xa6);
+                    if (!firstSlot && !names[i].contains("actor_slot") && names[i] != "actor_selector")
+                        continue;
+                    const auto reference = actorSlotWord(c, i);
+                    if ((reference & 0xffffff00U) == 0x08880000U)
+                        throw Error("An actor slot is selected at launch. An unused slot cannot be chosen automatically.");
+                    used << reference;
+                }
             }
             slot = 0;
             while (slot < 28 && used.contains(slot))
