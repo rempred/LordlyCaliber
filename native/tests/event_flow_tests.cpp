@@ -196,6 +196,7 @@ class EventFlowTests:public QObject {
         QCOMPARE(authored->steps.size(),5);QCOMPARE(authored->steps[1].flags.first().use,QString("Checks"));
         QCOMPARE(authored->steps[2].flags.first().use,QString("Sets ON"));QCOMPARE(authored->steps[3].address.path,(QVector<int>{0,2,0}));
         auto edge=[&](int from,int to,QString label){return std::any_of(authored->edges.begin(),authored->edges.end(),[&](const auto &v){return v.from==from&&v.to==to&&v.label==label;});};
+        QVERIFY(edge(0,1,"Yes"));QVERIFY(edge(0,4,"No")); // A different target skips the whole rule.
         QVERIFY(edge(1,2,"Yes"));QVERIFY(edge(1,3,"No"));QVERIFY(edge(2,4,{}));QVERIFY(edge(3,4,{}));
         const auto links=EventFlagLinks::references(project.rom(),events,*project.scenePrograms(),4,flag);
         QCOMPARE(links.size(),2);

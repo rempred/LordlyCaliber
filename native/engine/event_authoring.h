@@ -18,6 +18,8 @@ class EventAuthoring {
     static QMap<int, QString> triggers();
     static QMap<QString, QString> conditions();
     static QMap<QString, QString> actions();
+    static bool endsHandler(const QString &type);
+    static bool fallsThrough(const QJsonArray &nodes);
     static QVector<EventActionType> actionTypes();
     static QByteArray compile(const QByteArray &, int row, const QJsonArray &trees,
                               const QJsonObject &triggers);

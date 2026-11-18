@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <functional>
 class QListWidget;
+class QComboBox;
 class QLineEdit;
 class QScrollArea;
 class QLabel;
@@ -42,6 +43,7 @@ class EventFlowEditor : public QWidget {
     QByteArray program_;
     SceneEvents *chartDraft_=nullptr;
     QListWidget *list_;
+    QComboBox *triggerFilter_;
     QLineEdit *search_;
     QScrollArea *scroll_;
     QLabel *notice_;

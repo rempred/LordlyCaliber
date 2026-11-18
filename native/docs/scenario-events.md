@@ -1,6 +1,10 @@
 # Scenario event instructions
 
-**Event tree** is the default. Select a row to edit its fields. **Scenario
+**Triggers and rules** is the default. Select a trigger to see its rules in
+the order the game tries them. Search by place, rule or action. Each numbered
+rule keeps its position when the list is filtered. **Arrive at town** and
+**Enter Stronghold** are separate triggers. Select a rule to inspect its
+conditions, effects and exit or to change its fields. **Scenario
 flowchart** groups the selected location's Arrival, Mission and Area
 Investigation events by trigger. Click an event to unfold it. Solid arrows
 show execution, including branches and shared destinations. Click a flag to
@@ -188,19 +192,29 @@ recruitment at the native queue boundary; it is not a full mission playthrough.
 
 ## Creating event logic (November 3)
 
-Events offers **Create event** for ordinary mission and area-investigation
-programs. Choose WHEN and its named town/squad, add IF / ELSE, and choose actions.
+Events offers **Add rule** for ordinary mission and area-investigation
+programs. Choose the trigger and its town or squad, add IF / ELSE, and choose actions.
 Conditions can combine ALL (AND), ANY (OR) and NOT. Selecting a THEN or ELSE branch
 places new actions there; Move up/down changes their order. Added events can be
 edited, duplicated and deleted, with normal project Undo/Redo.
 
 Actions include cutscenes, persistent flags, recruitment templates, Goth,
 calendar days, Chaos Frame, event-program changes and explicit event endings.
-New events run before the original handlers unless Run after existing events
-is selected. Continue with other events leaves the remaining handlers eligible;
-Stop processing this event trigger consumes the trigger; Return to gameplay
-requests the native caller-mode return. Scene rendering and complete mission
-playthrough are outside the instruction-level tests.
+Adding a rule next to a selected rule proposes the same trigger and target.
+Choose **Before** or **After** and select an original or authored rule, or
+select **the original rules** to place it at the edge of the group. Rules
+placed on the same side of the same rule retain their project order.
+If the named rule is deleted or changes trigger, its neighbors keep their
+own trigger and fall back to their chosen side of the original rules.
+
+**Continue with other events** lets the game try the next rule.
+**Finish this handler (caller can check again)** ends the current handler.
+At Zemio the game can still launch Hugo during that visit. For a first-visit
+override, play the custom scene, set its flag, then use **Return to gameplay**.
+When the flag is already set, continue to the next rule. In Project64 this
+returned to Stronghold Commands after the first visit and played the retail
+briefing on the second. In a new campaign, **Begin campaign on world map**
+is the destination of the New Game rule.
 
 An existing event's Change WHEN moves its native handler-table assignment.
 Exact town/squad guards become the target selector, including current project

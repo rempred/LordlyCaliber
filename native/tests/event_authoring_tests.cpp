@@ -58,12 +58,23 @@ class EventAuthoringTests:public QObject {
      auto p=Project::fromRom(Rom::open(path));p.loadCampaignMap();p.loadWorld();p.loadScenarios();p.loadSceneEvents();
      const auto before=p.manifest(),world=p.world()->json(),map=p.campaignMap()->json();
      auto config=NewCampaign::defaults(p,6);NewCampaign::initialize(p,config);
+     const auto openingChart=scenarioChart(p,{{"New Game",{1,-1,"New Game"}}});
+     const auto campaign=std::find_if(openingChart.cbegin(),openingChart.cend(),[](const auto &g){return g.address.tree=="campaign-opening";});
+     QVERIFY(campaign!=openingChart.cend());QCOMPARE(campaign->trigger,QString("New Game"));
+     QCOMPARE(campaign->steps.last().title,QString("Begin campaign on world map"));
+     QVERIFY(std::none_of(campaign->edges.cbegin(),campaign->edges.cend(),[&](const auto &edge){return edge.from==campaign->steps.size()-1;}));
      QCOMPARE(p.world()->json(),world);QCOMPARE(p.campaignMap()->json(),map);
      for(const auto &s:p.scenarios()->entries()){QVERIFY(s.squads.isEmpty());QVERIFY(s.layout.deployments.isEmpty());QVERIFY(s.layout.conditions.isEmpty());}
      StoryRoutes routes(p.rom());routes.scripts[0]=p.sceneEvents()->program(0);
      for(int node:routes.nodes.keys())QVERIFY(routes.routes(node).isEmpty());
-     for(int node=1;node<=53;++node)QCOMPARE(u16(routes.scripts[0],node*2),0);
-     for(int node=1;node<=52;++node)QCOMPARE(u16(p.sceneEvents()->program(70),node*2),0);
+     // Native dispatch dereferences even an empty route. It must reach a return.
+     for(const int row:{0,70}){
+         const auto bytes=p.sceneEvents()->program(row);
+         for(int node=1;node<=(row==0?53:52);++node){
+             const int entry=u16(bytes,node*2);
+             QVERIFY(entry>node*2 && entry+2<=bytes.size());QCOMPARE(u16(bytes,entry),0x2f00);
+         }
+     }
      QVERIFY(p.sceneEvents()->program(1).contains(QByteArray::fromHex("0901")));
      auto army=SaveDocument::open(p.runtimeRom(),NewCampaign::armyBytes(config,0));QCOMPARE(army.units().size(),1);QVERIFY(u16(army.memory(),0x193bc0+56+24)>0);
      auto armies=config["armies"].toArray();armies.append(NewCampaign::army(p,1,"Second army",army.serialize()));config["armies"]=armies;NewCampaign::configure(p,config);
@@ -408,6 +419,56 @@ class EventAuthoringTests:public QObject {
      flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),4);for(const auto &e:flow)if(e.entry==0x1bc){QCOMPARE(e.triggerFields.size(),1);EventFlow::set(events,*project.scenePrograms(),4,e.triggerFields.first(),3);QCOMPARE(u8(events.program(4),0x1bf),3);EventFlow::set(events,*project.scenePrograms(),4,e.triggerFields.first(),2);}
      project.setSceneEvents(events.json());QTemporaryDir folder;project.saveFolder(folder.path());auto reopened=Project::fromRom(Rom::open(path));reopened.applyManifest(Project::readProject(folder.path()));reopened.loadSceneEvents();QCOMPARE(reopened.sceneEvents()->program(4),bytes);
    }catch(const std::exception &e){QFAIL(e.what());}}
+ void zemioRulePriority(){
+    const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("ROM required");
+    auto p=Project::fromRom(Rom::open(path));p.loadSceneEvents();QUndoStack undo;
+    EventFlowEditor *view=nullptr;
+    EventFlowEditor widget(&p,&undo,[&]{view->setRow(4);});view=&widget;view->setRow(4);view->selectOffset(150);
+    auto list=view->findChild<QListWidget *>("storyEventList");
+    auto trigger=view->findChild<QComboBox *>("storyTriggerFilter");
+    trigger->setCurrentIndex(trigger->findData(QString("Enter Stronghold")));
+    QVERIFY(trigger->currentIndex()>0);
+    auto change=[&](bool create,bool after){
+        QTimer::singleShot(0,[&,create,after]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QTimer::singleShot(5000,dialog,&QDialog::reject);
+            auto relative=dialog->findChild<QComboBox *>("ruleRelativeTo");QCOMPARE(relative->currentData().toInt(),150);
+            auto direction=dialog->findChild<QComboBox *>("rulePosition");direction->setCurrentIndex(after?1:0);
+            if(create)dialog->findChild<QLineEdit *>("eventTreeName")->setText("Zemio watch");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        if(create)view->findChild<QPushButton *>("storyCreateEvent")->click();
+        else view->editTree(p.sceneEvents()->flagEdits()["4"].toObject()["trees"].toArray().first().toObject()["id"].toString());
+    };
+    auto check=[&](bool after){
+        QVector<int> shown,charted;
+        for(int i=0;i<list->count();++i)if(!list->item(i)->isHidden())shown<<list->item(i)->data(Qt::UserRole).toInt();
+        for(const auto &g:scenarioChart(p,{{"Mission",{4,-1,"Mission"}}}))if(g.group==2)charted<<g.address.offset;
+        const auto bytes=p.sceneEvents()->program(4);QVector<int> table;
+        for(int at=u16(bytes,4);u16(bytes,at)!=0xffff;at+=2)table<<u16(bytes,at);
+        QCOMPARE(table.size(),8);QCOMPARE(table[after?0:1],150);QCOMPARE(table[2],168);
+        QCOMPARE(table,shown);QCOMPARE(table,charted);
+    };
+    change(true,false);check(false);change(false,true);check(true);
+    undo.undo();view->setRow(4);check(false);undo.redo();view->setRow(4);check(true);
+    QTemporaryDir folder;p.saveFolder(folder.path());auto reopened=Project::fromRom(p.rom());
+    reopened.applyManifest(Project::readProject(folder.path()));reopened.loadSceneEvents();
+    QCOMPARE(reopened.sceneEvents()->program(4),p.sceneEvents()->program(4));
+ }
+ void ruleAnchors(){
+    // Two retail rules in trigger 2, with deliberately nonascending addresses.
+    const auto base=QByteArray::fromHex("000c000c000e000c000c000cffff00160014ffff2f002f00");
+    QJsonObject a{{"id","a"},{"name","First addition"},{"group",2},{"relativeTo",22},{"after",true},{"nodes",QJsonArray{}}};
+    QJsonObject b{{"id","b"},{"name","Second addition"},{"group",2},{"relativeTo","a"},{"nodes",QJsonArray{}}};
+    const auto build=[&](const QJsonArray &trees){
+        const auto bytes=EventAuthoring::compile(base,4,trees,{});QVector<int> order;
+        for(int at=u16(bytes,4);u16(bytes,at)!=65535;at+=2)order<<u16(bytes,at);
+        return order;
+    };
+    QCOMPARE(build({a,b}),QVector<int>({22,26,24,20}));
+    QCOMPARE(build({b}),QVector<int>({24,22,20})); // Removed anchor falls back before retail.
+    a["relativeTo"]="b";QVERIFY_THROWS_EXCEPTION(Error,build({a,b}));
+ }
  void compilerBounds(){QByteArray source=QByteArray::fromHex("000c000c000c000c000c000cffff");auto t=tree();const auto bytes=EventAuthoring::compile(source,4,{t},{});QVERIFY(bytes.startsWith(source.left(6)));QVERIFY(bytes.size()>source.size());
    auto invalid=t;invalid["nodes"]=QJsonArray{QJsonObject{{"type","unknown"}}};QVERIFY_EXCEPTION_THROWN(EventAuthoring::compile(source,4,{invalid},{}),Error);
    invalid=t;invalid["target"]=300;QVERIFY_EXCEPTION_THROWN(EventAuthoring::compile(source,4,{invalid},{}),Error);
@@ -581,9 +642,12 @@ class EventAuthoringTests:public QObject {
      auto longTree=tree();longTree["id"]="long-tree";longTree["name"]="Long branch test";longTree["nodes"]=QJsonArray{QJsonObject{{"type","if"},
          {"condition",QJsonObject{{"type","not"},{"condition",QJsonObject{{"type","flag"},{"flag",200},{"value",1}}}}},
          {"then",longThen},{"else",QJsonArray{QJsonObject{{"type","flag"},{"flag",206},{"value",1}}}}}};
-     events.setTrees(4,{tree(),longTree},*project.scenePrograms());events.setTrigger(4,0x1bc,{{"group",2},{"guard",0x1bc},{"target",2}},*project.scenePrograms());project.setSceneEvents(events.json());
+     longTree["relativeTo"]="test-tree";longTree["after"]=true;
+     events.setTrees(4,{longTree,tree()},*project.scenePrograms());events.setTrigger(4,0x1bc,{{"group",2},{"guard",0x1bc},{"target",2}},*project.scenePrograms());project.setSceneEvents(events.json());
      QTemporaryDir work;project.saveFolder(work.filePath("project"));auto loaded=Project::fromRom(rom);loaded.applyManifest(Project::readProject(work.filePath("project")));const auto built=rebuild(loaded,tools,work.path());
      const auto out=Rom::fromBytes(built.image);auto reopened=Project::fromRom(out);reopened.loadSceneEvents();QCOMPARE(reopened.sceneEvents()->json(),events.json());QCOMPARE(SceneEvents::readRow(out,4),events.program(4));QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+     const auto scriptBytes=SceneEvents::readRow(out,4);const int encounterTable=u16(scriptBytes,6);
+     QVERIFY(u16(scriptBytes,encounterTable)>u16(scriptBytes,encounterTable+2)); // Later-stored rule runs first.
      auto crc=built.image;Rom::updateChecksum(crc);QCOMPARE(crc,built.image);QCOMPARE(SceneEvents::retailRow(out,4),SceneEvents::retailRow(rom,4));
      QDir parent(QFileInfo(path).absolutePath());parent.mkpath("Test ROMs");QTemporaryDir folder(parent.filePath("Test ROMs/event-authoring-XXXXXX"));folder.setAutoRemove(false);exportRom(loaded,built,folder.filePath(QFileInfo(path).fileName()));
      QFile script(folder.filePath("event-4.bin"));QVERIFY(script.open(QIODevice::WriteOnly));script.write(SceneEvents::readRow(out,4));script.close();qInfo().noquote()<<"Authored export:"<<folder.path();

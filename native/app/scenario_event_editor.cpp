@@ -64,7 +64,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     setObjectName("scenarioEvents");
     auto outer=new QVBoxLayout(this);
     auto mode=new QHBoxLayout;viewChoice_=new QTabBar;viewChoice_->setObjectName("scenarioEventViewChoice");
-    viewChoice_->setExpanding(false);viewChoice_->addTab("Event tree");viewChoice_->addTab("Scenario flowchart");mode->addWidget(viewChoice_);mode->addStretch();
+    viewChoice_->setExpanding(false);viewChoice_->addTab("Triggers and rules");viewChoice_->addTab("Scenario flowchart");mode->addWidget(viewChoice_);mode->addStretch();
     otherPrograms_=new QCheckBox("All event programs");otherPrograms_->setObjectName("scenarioEventOtherPrograms");mode->addWidget(otherPrograms_);
     raw_=new QCheckBox("Raw instructions");raw_->setObjectName("scenarioEventRaw");mode->addWidget(raw_);outer->addLayout(mode);
     auto locationLine=new QHBoxLayout;
@@ -376,6 +376,11 @@ void ScenarioEventEditor::populatePrograms(int preferredRow){
     }
     rows_->setCurrentIndex(qMax(0,rows_->findData(preferredRow)));
     rows_->setVisible(all||rows_->count()>1);
+    if(!all && !allRows_ && location_>0 && locations_->count()==1) {
+        const auto place=project_->campaignMap()->name(location_);
+        const auto mission=phases_->currentIndex()==1 && rows_->count()==1?rows_->currentText():QString{};
+        locationLabel_->setText(mission.isEmpty()||mission==place?place:place+" · "+mission);
+    }
 }
 void ScenarioEventEditor::setCreateScenario(std::function<void(int)> callback){
     createScenarioCallback_=std::move(callback);updateView();

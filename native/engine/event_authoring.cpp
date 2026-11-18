@@ -142,15 +142,46 @@ QByteArray compileAll(const QByteArray &source,int row,const QJsonArray &trees,c
         }else if(contact&&target>=0)throw Error("This handler needs an explicit target condition; choose Any or create a new event");
         if(old!=group){groups[old].removeAll(entry);groups[group]<<entry;}changed.insert(old);changed.insert(group);
     }
-    if(trees.size()>128)throw Error("A program supports up to 128 added events");QSet<QString> ids;QVector<QVector<int>> before(6),after(6);
+    if(trees.size()>128)throw Error("A program supports up to 128 added events");
+    QMap<QString,int> authoredEntries;
+    QMap<int,int> authoredGroups;
     for(const auto &v:trees){if(!v.isObject())throw Error("Invalid event tree");const auto tree=v.toObject();const auto id=tree["id"].toString(),name=tree["name"].toString().trimmed();
-        if(id.isEmpty()||ids.contains(id)||name.isEmpty()||name.size()>120||!tree["nodes"].isArray())throw Error("Each event needs a unique ID, name and steps");ids.insert(id);
+        if(id.isEmpty()||authoredEntries.contains(id)||name.isEmpty()||name.size()>120||!tree["nodes"].isArray())throw Error("Each event needs a unique ID, name and steps");
         const int group=number(tree,"group",0,5),target=number(tree,"target",-1,255,-1);if(group<=2&&group>=1&&target==0)throw Error("Town IDs start at 1");
-        const int entry=c.bytes.size();if(entries)(*entries)[id]=entry;c.count=0;c.group=group;
+        const int entry=c.bytes.size();authoredEntries[id]=entry;authoredGroups[entry]=group;c.count=0;c.group=group;
         c.eventBody(tree,target);
-        word(c.bytes,0x2f);(tree["after"].toBool()?after:before)[group]<<entry;changed.insert(group);
+        word(c.bytes,0x2f);changed.insert(group);
     }
-    for(int group:changed){const int at=c.bytes.size();const auto list=before[group]+groups[group]+after[group];for(int entry:list)word(c.bytes,entry>>8,entry);word(c.bytes,255,255);if(at>65534)throw Error("Event table exceeds its native pointer range");put16(c.bytes,group*2,at);}
+    if(entries)*entries=authoredEntries;
+    QVector<QMap<int,QVector<int>>> before(6),after(6);
+    QVector<QVector<int>> first(6),last(6);
+    for(const auto &value:trees) {
+        const auto tree=value.toObject();
+        const int entry=authoredEntries.value(tree["id"].toString()), group=authoredGroups.value(entry);
+        const auto anchor=tree.value("relativeTo");
+        const int target=anchor.isString()?authoredEntries.value(anchor.toString(),-1):anchor.toInt(-1);
+        const bool follows=tree["after"].toBool();
+        // A deleted rule or one moved to another trigger no longer anchors this rule.
+        if((anchor.isString() && authoredGroups.value(target,-1)==group) ||
+           (anchor.isDouble() && groups[group].contains(target)))
+            (follows?after:before)[group][target]<<entry;
+        else
+            (follows?last:first)[group]<<entry;
+    }
+    for(int group:changed){
+        const int at=c.bytes.size();
+        if(at>65534)throw Error("Event table exceeds its native pointer range");
+        int count=0;
+        auto writeRule=[&](auto &self,int entry)->void {
+            for(int other:before[group].value(entry))self(self,other);
+            word(c.bytes,entry>>8,entry);++count;
+            for(int other:after[group].value(entry))self(self,other);
+        };
+        for(int entry:first[group]+groups[group]+last[group])writeRule(writeRule,entry);
+        if(count!=groups[group].size()+authoredGroups.values().count(group))
+            throw Error("These rules refer to each other for their position. Choose a different rule.");
+        word(c.bytes,255,255);put16(c.bytes,group*2,at);
+    }
     if(c.bytes.size()>65534)throw Error("Event program exceeds its native pointer range");return c.bytes;
 }
 }
@@ -185,7 +216,7 @@ QJsonArray EventAuthoring::missionTemplates(int battlefield,int location,int com
 QVector<int> EventAuthoring::stepPath(const QJsonObject &tree,int offset){
     Compiler c;c.group=tree["group"].toInt();c.wanted=offset;c.eventBody(tree,tree["target"].toInt(-1));return c.selected;
 }
-QMap<int,QString> EventAuthoring::triggers(){return {{0,"Mission entry"},{1,"Arrive at town"},{2,"Enter town"},{3,"Squad encounter"},{4,"Character defeated"},{5,"Mission completion"}};}
+QMap<int,QString> EventAuthoring::triggers(){return {{0,"Mission entry"},{1,"Arrive at town"},{2,"Enter Stronghold"},{3,"Squad encounter"},{4,"Character defeated"},{5,"Mission completion"}};}
 QMap<QString,QString> EventAuthoring::conditions(){return {{"flag","Story flag"},{"chaos","Chaos Frame"},{"answer","Last dialogue answer"},{"squad","Encountered / defeated squad"},{"town","Visited town"},{"squadState","Contacting squad state"},{"all","All conditions (AND)"},{"any","Any condition (OR)"},{"not","Not (invert condition)"}};}
 QVector<EventActionType> EventAuthoring::actionTypes() {
     return {{"recruit", "Add characters", "Characters and squads"},
@@ -200,7 +231,7 @@ QVector<EventActionType> EventAuthoring::actionTypes() {
             {"chaos", "Set Chaos Frame", "Time and campaign"},
             {"flag", "Set / clear story flag", "Flags and event flow"},
             {"program", "Load event program", "Flags and event flow"},
-            {"stop", "Stop processing this event trigger", "Flags and event flow"},
+            {"stop", "Finish this handler (caller can check again)", "Flags and event flow"},
             {"return", "Return to gameplay", "Flags and event flow"},
             {"continue", "Continue with other events", "Flags and event flow"}};
 }
@@ -208,6 +239,19 @@ QMap<QString,QString> EventAuthoring::actions() {
     QMap<QString,QString> result;
     for (const auto &action : actionTypes()) result[action.type] = action.name;
     return result;
+}
+bool EventAuthoring::endsHandler(const QString &type) {
+    static const QSet<QString> exits{"program","stop","continue","return","beginCampaign",
+        "startBattlefield","completeMission","returnToMap","battleResults"};
+    return exits.contains(type);
+}
+bool EventAuthoring::fallsThrough(const QJsonArray &nodes) {
+    for(const auto &value:nodes) {
+        const auto node=value.toObject();const auto type=node["type"].toString();
+        if(endsHandler(type))return false;
+        if(type=="if" && !fallsThrough(node["then"].toArray()) && !fallsThrough(node["else"].toArray()))return false;
+    }
+    return true;
 }
 QByteArray EventAuthoring::compile(const QByteArray &s,int row,const QJsonArray &t,const QJsonObject &r){return compileAll(s,row,t,r,nullptr);}
 QMap<QString,int> EventAuthoring::entries(const QByteArray &s,int row,const QJsonArray &t,const QJsonObject &r){QMap<QString,int> out;compileAll(s,row,t,r,&out);return out;}

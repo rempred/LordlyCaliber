@@ -1,5 +1,6 @@
 #include "app/scenario_flowchart_model.h"
 #include "app/event_tree_dialog.h"
+#include "engine/event_authoring.h"
 #include "engine/event_flag_links.h"
 #include "engine/project.h"
 #include "engine/retail_event_gate.h"
@@ -149,6 +150,7 @@ struct AuthoredGraph {
     }
     Tails body(QJsonArray nodes,QVector<int> parent,Tails incoming) {
         for(int i=0;i<nodes.size();++i) {
+            if(i>0 && incoming.isEmpty())break;
             const auto node=nodes[i].toObject();auto address=graph.address;
             address.path=parent+QVector<int>{i};
             const auto type=node["type"].toString();
@@ -162,8 +164,7 @@ struct AuthoredGraph {
                 if(type=="flag")step.flags.append({node["flag"].toInt(),node["value"].toInt(1)?"Sets ON":"Clears OFF"});
                 const int id=append(incoming,step);
                 incoming={{id,{}}};
-                if(type=="program"||type=="stop"||type=="continue"||type=="return"||
-                   type=="startBattlefield"||type=="completeMission"||type=="returnToMap"||type=="battleResults")incoming.clear();
+                if(EventAuthoring::endsHandler(type))incoming.clear();
             }
         }
         return incoming;
@@ -284,7 +285,7 @@ QVector<ChartEvent> scenarioChart(Project &project,const QVector<QPair<QString,E
                 for(const auto &v:trees)if(v.toObject()["id"]==e.authoredId){
                     AuthoredGraph builder{graph,events,project};
                     const auto tails=builder.body(v.toObject()["nodes"].toArray(),{},{});
-                    if(!tails.isEmpty())builder.append(tails,{"Continue with other events",{}});
+                    if(graph.steps.isEmpty()||!tails.isEmpty())builder.append(tails,{"Continue with other events",{}});
                     break;
                 }
             }
@@ -295,8 +296,11 @@ QVector<ChartEvent> scenarioChart(Project &project,const QVector<QPair<QString,E
             }
             if(!selectors.isEmpty()){
                 for(auto &edge:graph.edges){++edge.from;++edge.to;}
-                graph.steps.prepend({selectors.isEmpty()?e.trigger:e.trigger+" · "+selectors.join(", "),graph.address,{},false,e.triggerInstructions});
-                if(graph.steps.size()>1)graph.edges.prepend({0,1,{}});
+                graph.steps.prepend({e.trigger+" · "+selectors.join(", "),graph.address,{},true,e.triggerInstructions});
+                graph.edges.prepend({0,1,"Yes"});
+                if(graph.steps.last().address.row>=0 || graph.steps.last().title!="Continue with other events")
+                    graph.steps.append(ChartStep{"Try the next rule",{}});
+                graph.edges.append({0,int(graph.steps.size())-1,"No"});
             }
             graph.section=phase;
             if(graph.group==5)graph.trigger="Mission completion · after standard closing logic";

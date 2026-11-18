@@ -36,6 +36,7 @@ struct StoryEvent {
     QVector<StoryAction> actions;
     bool simpleVisit = false;
     QString authoredId;
+    int ruleIndex = -1; // Zero-based position within this trigger's native table.
 };
 class EventFlow {
   public:

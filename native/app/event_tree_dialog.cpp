@@ -1,5 +1,6 @@
 #include "app/event_tree_dialog.h"
 #include "engine/event_authoring.h"
+#include "engine/event_flow.h"
 #include "engine/new_campaign.h"
 #include "engine/event_script.h"
 #include "engine/squad_members.h"
@@ -136,16 +137,37 @@ QString conditionText(const QJsonObject &n,int row,const SceneEvents *flags=null
 }
 class TreeDialog:public QDialog {
   public:
-    Project *project;int row;QJsonObject original;SceneEvents flagState;QByteArray recruitmentTemplates;QLineEdit *name;QComboBox *trigger,*target;QCheckBox *after;QTreeWidget *tree;QScrollArea *details;QLabel *error;
+    Project *project;int row;QJsonObject original;SceneEvents flagState;QByteArray recruitmentTemplates;QLineEdit *name;QComboBox *trigger,*target,*position,*relative;QTreeWidget *tree;QScrollArea *details;QLabel *error;
     TreeDialog(Project *p,int r,QJsonObject value,QWidget *parent):QDialog(parent),project(p),row(r),original(value),flagState(*p->sceneEvents()){
         setWindowTitle("Edit event logic");resize(1050,740);auto outer=new QVBoxLayout(this);auto when=new QFormLayout;outer->addLayout(when);
         name=new QLineEdit(value["name"].toString("New event"));name->setMaxLength(120);name->setObjectName("eventTreeName");when->addRow("Name",name);
         trigger=new QComboBox;trigger->setObjectName("eventTreeWhen");for(auto [id,label]:EventAuthoring::triggers().asKeyValueRange())if(row!=1||id==0)trigger->addItem(row==1?QString("New Game"):label,id);
-        trigger->setCurrentIndex(trigger->findData(value["group"].toInt(3)));when->addRow("WHEN",trigger);target=new QComboBox;target->setObjectName("eventTreeTarget");when->addRow("Target",target);
+        trigger->setCurrentIndex(trigger->findData(row==1?0:value["group"].toInt(3)));when->addRow("Trigger",trigger);target=new QComboBox;target->setObjectName("eventTreeTarget");when->addRow("Target",target);
         auto refreshTarget=[this](int wanted){target->clear();const int group=trigger->currentData().toInt();for(auto [id,label]:eventTargets(project,row,group).asKeyValueRange())target->addItem(label+(id<0?QString{}:QString(" [%1]").arg(id)),id);
             if(target->findData(wanted)<0)target->addItem(QString("Target ID %1").arg(wanted),wanted);target->setCurrentIndex(target->findData(wanted));target->setEnabled(group>=1&&group<=4);};
         refreshTarget(value["target"].toInt(-1));connect(trigger,&QComboBox::activated,this,[refreshTarget](int){refreshTarget(-1);});
-        after=new QCheckBox("Run after existing events");after->setChecked(value["after"].toBool());when->addRow(after);
+        position=new QComboBox;position->setObjectName("rulePosition");position->addItems({"Before","After"});
+        position->setCurrentIndex(value["after"].toBool()?1:0);
+        relative=new QComboBox;relative->setObjectName("ruleRelativeTo");
+        auto placement=new QWidget;auto choices=new QHBoxLayout(placement);choices->setContentsMargins(0,0,0,0);
+        choices->addWidget(position);choices->addWidget(relative,1);when->addRow("Run",placement);
+        QMap<int,QVector<QPair<QString,QVariant>>> anchors;
+        if(value["id"]!="condition-editor-draft") {
+            project->loadCampaignMap();
+            for(const auto &e:EventFlow::read(project->rom(),flagState,*project->scenePrograms(),row,false,false,&*project->campaignMap())) {
+                if(e.ruleIndex<0 || (!e.authoredId.isEmpty() && e.authoredId==value["id"].toString()))continue;
+                QVariant key=e.authoredId.isEmpty()?QVariant(e.entry):QVariant(e.authoredId);
+                anchors[e.group].append({QString("%1. %2").arg(e.ruleIndex+1).arg(e.title),key});
+            }
+        }
+        auto refreshPlacement=[this,anchors](QVariant selected){
+            relative->clear();relative->addItem("the original rules");
+            for(const auto &choice:anchors.value(trigger->currentData().toInt()))relative->addItem(choice.first,choice.second);
+            const int index=relative->findData(selected);
+            relative->setCurrentIndex(qMax(0,index));
+        };
+        refreshPlacement(value.value("relativeTo").toVariant());
+        connect(trigger,&QComboBox::currentIndexChanged,this,[refreshPlacement]{refreshPlacement({});});
         auto bar=new QHBoxLayout;outer->addLayout(bar);
         auto addIf=new QPushButton("Add IF / ELSE");addIf->setObjectName("eventTreeAddIf");bar->addWidget(addIf);
         auto addAction=new QPushButton("Add action…");addAction->setObjectName("eventTreeAddAction");bar->addWidget(addAction);
@@ -171,7 +193,7 @@ class TreeDialog:public QDialog {
         connect(buttons,&QDialogButtonBox::accepted,this,[this]{try{auto trees=project->sceneEvents()->flagEdits()[QString::number(row)].toObject()["trees"].toArray();const auto value=result();bool found=false;for(int i=0;i<trees.size();++i)if(trees[i].toObject()["id"]==value["id"]){trees[i]=value;found=true;}if(!found)trees<<value;auto events=flagState;events.setTrees(row,trees,*project->scenePrograms());accept();}catch(const std::exception &e){error->setText(QString::fromUtf8(e.what()));}});
         if(tree->topLevelItemCount())tree->setCurrentItem(tree->topLevelItem(0));else showFields();
     }
-    QJsonObject result()const{auto out=original;if(out["id"].toString().isEmpty())out["id"]=QUuid::createUuid().toString(QUuid::WithoutBraces);out["name"]=name->text().trimmed();out["group"]=trigger->currentData().toInt();out["target"]=target->isEnabled()?target->currentData().toInt():-1;out["after"]=after->isChecked();out["nodes"]=nodes(tree->invisibleRootItem());return out;}
+    QJsonObject result()const{auto out=original;if(out["id"].toString().isEmpty())out["id"]=QUuid::createUuid().toString(QUuid::WithoutBraces);out["name"]=name->text().trimmed();out["group"]=trigger->currentData().toInt();out["target"]=target->isEnabled()?target->currentData().toInt():-1;out["after"]=position->currentIndex()==1;if(relative->currentIndex()>0)out["relativeTo"]=QJsonValue::fromVariant(relative->currentData());else out.remove("relativeTo");out["nodes"]=nodes(tree->invisibleRootItem());return out;}
     QJsonArray nodes(QTreeWidgetItem *parent)const{QJsonArray out;for(int i=0;i<parent->childCount();++i)out<<serialize(parent->child(i));return out;}
     QJsonObject serialize(QTreeWidgetItem *item)const{auto n=item->data(0,Qt::UserRole).toJsonObject();const auto type=n["type"].toString();
         if(type=="if"){n["condition"]=serialize(item->child(0));n["then"]=nodes(item->child(1));n["else"]=nodes(item->child(2));}
@@ -287,7 +309,17 @@ class TreeDialog:public QDialog {
     }
 };
 }
-QString eventTreeSummary(const QJsonObject &n,int row,const SceneEvents *flags,const Project *project){const auto type=n["type"].toString();if(type=="if")return "IF";if(type=="flag")return QString("%1 %2").arg(n["value"].toInt()?"Set":"Clear",flags?flags->flagName(n["flag"].toInt(),row):EventScript::flagName(n["flag"].toInt(),row));if(type=="scene")return QString("Play cutscene · %1").arg(named("scene",row).value(n["scene"].toInt(),QString::number(n["scene"].toInt())));
+QString eventTreeSummary(const QJsonObject &n,int row,const SceneEvents *flags,const Project *project){const auto type=n["type"].toString();if(type=="if")return "IF";if(type=="flag")return QString("%1 %2").arg(n["value"].toInt()?"Set":"Clear",flags?flags->flagName(n["flag"].toInt(),row):EventScript::flagName(n["flag"].toInt(),row));
+    if(type=="scene") {
+        const int selector=n["scene"].toInt();
+        QString title=named("scene",row).value(selector,QString::number(selector));
+        if(project && project->scenePrograms()) {
+            const auto &programs=*project->scenePrograms();
+            title=programs.replacementNames().value(programs.original().selectors().value(selector),title);
+            for(const auto &scene:programs.authoredScenes())if(scene.selector==selector){title=scene.name;break;}
+        }
+        return "Play cutscene · "+title;
+    }
     if(type=="recruit")return "Add characters · "+named("recruitment-template",row).value(n["template"].toInt(),QString("Template ID %1").arg(n["template"].toInt()));
     if(type=="initializeCampaign")return "Initialize campaign settings";
     if(type=="startingArmy") {

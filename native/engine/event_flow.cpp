@@ -10,6 +10,7 @@
 #include <QRegularExpression>
 #include <algorithm>
 #include <array>
+#include <tuple>
 namespace lordly {
 namespace {
 const QJsonObject &catalog() {
@@ -27,7 +28,7 @@ QString reference(const QString &kind,int id,const QString &scope="global") {
 }
 QString trigger(int group) {
     switch(group){case 0:return "Mission entry";case 1:return "Arrive at town";
-    case 2:return "Enter town";case 3:return "Squad encounter";case 4:return "Character defeated";
+    case 2:return "Enter Stronghold";case 3:return "Squad encounter";case 4:return "Character defeated";
     case 5:return "Mission completion";default:return "Shared story logic";}
 }
 bool conditional(int op){return op>=0xa0&&QSet<int>{1,2,3,6,7,11,12,13,14,15}.contains(op&15);}
@@ -460,7 +461,7 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
     for(int h=0;h<nativeHandlers.size();++h){const auto entry=nativeHandlers[h].toObject();
         StoryEvent event;event.entry=entry["entry"].toInt();event.group=entry["group"].toInt(-1);event.trigger=trigger(event.group);
         if(entry["group"]=="world-location")event.trigger=row==70?"Choose Area Investigation":"Arrive at map location";
-        else if(row==1)event.trigger="New campaign";
+        else if(row==1)event.trigger="New Game";
         else if(row==62)event.trigger="Ending sequence";
         else if(row==66)event.trigger="History playback";
         else if(row==68)event.trigger="Training encounter";
@@ -862,7 +863,7 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
     const auto rowEdits=events.flagEdits()[QString::number(row)].toObject();const auto authored=rowEdits["trees"].toArray();
     if(!authored.isEmpty()){
         const auto base=events.authoredBase(row);const auto positions=EventAuthoring::entries(base,row,authored,triggerChanges);
-        for(const auto &v:authored){const auto tree=v.toObject();StoryEvent e;e.entry=positions.value(tree["id"].toString());e.group=tree["group"].toInt();e.title=tree["name"].toString();e.trigger=trigger(e.group);e.authoredId=tree["id"].toString();result<<e;}
+        for(const auto &v:authored){const auto tree=v.toObject();StoryEvent e;e.entry=positions.value(tree["id"].toString());e.group=tree["group"].toInt();e.title=tree["name"].toString();e.trigger=row==1?"New Game":trigger(e.group);e.authoredId=tree["id"].toString();result<<e;}
     }
     EventHelperNames::summarize(result,bytes,offsets,incoming);
     if(structural){
@@ -893,7 +894,25 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
             action.title=action.condition.title;
         }
     }
-    std::sort(result.begin(),result.end(),[](const auto &a,const auto &b){return a.entry<b.entry;});
+    if(row!=0 && row!=70 && bytes.size()>=2) {
+        const int groups=u16(bytes,0)==2?1:6;
+        QMap<QPair<int,int>,int> positions;
+        for(int g=0;g<groups && 2*g+2<=bytes.size();++g) {
+            const int table=u16(bytes,2*g);
+            if(table<2*groups || table%2)continue;
+            for(int at=table;at+2<=bytes.size();at+=2) {
+                const int entry=u16(bytes,at);
+                if(entry==65535)break;
+                positions.insert({g,entry},(at-table)/2);
+            }
+        }
+        for(auto &e:result)e.ruleIndex=positions.value({e.group,e.entry},-1);
+    }
+    std::stable_sort(result.begin(),result.end(),[](const auto &a,const auto &b){
+        if((a.ruleIndex<0)!=(b.ruleIndex<0))return a.ruleIndex>=0;
+        if(a.ruleIndex<0)return a.entry<b.entry;
+        return std::tie(a.group,a.ruleIndex)<std::tie(b.group,b.ruleIndex);
+    });
     return result;
 }
 void EventFlow::set(SceneEvents &events,const ScenePrograms &scenes,int row,const StoryField &field,int value){

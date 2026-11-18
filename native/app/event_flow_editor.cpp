@@ -47,18 +47,23 @@ EventFlowEditor::EventFlowEditor(Project *p,QUndoStack *undo,std::function<void(
     setObjectName("storyEventsView");auto layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);
     auto split=new QSplitter;layout->addWidget(split,1);
     auto left=new QWidget;auto leftLayout=new QVBoxLayout(left);leftLayout->setContentsMargins(0,0,0,0);
-    search_=new QLineEdit;search_->setObjectName("storyEventSearch");search_->setPlaceholderText("Find a town, character or event…");leftLayout->addWidget(search_);
+    triggerFilter_=new QComboBox;triggerFilter_->setObjectName("storyTriggerFilter");triggerFilter_->setAccessibleName("Trigger");leftLayout->addWidget(triggerFilter_);
+    search_=new QLineEdit;search_->setObjectName("storyEventSearch");search_->setPlaceholderText("Find a rule, place or character…");leftLayout->addWidget(search_);
     list_=new QListWidget;list_->setObjectName("storyEventList");list_->setWordWrap(true);list_->setTextElideMode(Qt::ElideNone);leftLayout->addWidget(list_,1);split->addWidget(left);
-    auto add=new QPushButton("Create event…");add->setObjectName("storyCreateEvent");add->setEnabled(false);leftLayout->addWidget(add);connect(add,&QPushButton::clicked,this,[this]{editTree();});
+    auto add=new QPushButton("Add rule…");add->setObjectName("storyCreateEvent");add->setEnabled(false);leftLayout->addWidget(add);connect(add,&QPushButton::clicked,this,[this]{editTree();});
     auto flags=new QPushButton("Flags…");flags->setObjectName("storyFlags");leftLayout->addWidget(flags);connect(flags,&QPushButton::clicked,this,[this]{editFlags();});
     scroll_=new QScrollArea;scroll_->setObjectName("storyEventDetails");scroll_->setWidgetResizable(true);split->addWidget(scroll_);split->setStretchFactor(0,0);split->setStretchFactor(1,1);split->setSizes({310,900});
     notice_=label({});notice_->setObjectName("storyEventNotice");layout->addWidget(notice_);
     connect(search_,&QLineEdit::textChanged,this,[this]{filter();});
+    connect(triggerFilter_,&QComboBox::currentIndexChanged,this,[this]{filter();});
     connect(list_,&QListWidget::currentRowChanged,this,[this]{page_=0;focusOffset_=-1;
         revealedEntry_=list_->currentRow()>=0&&list_->currentRow()<events_.size()?events_[list_->currentRow()].entry:-1;
         selectedAuthoredId_=list_->currentRow()>=0&&list_->currentRow()<events_.size()?events_[list_->currentRow()].authoredId:QString{};showEvent();});
 }
 void EventFlowEditor::setRow(int row,int entryFilter) {
+    const QString previousTrigger=row==row_?triggerFilter_->currentData().toString():QString{};
+    const QSignalBlocker blockTrigger(triggerFilter_);
+    triggerFilter_->clear();triggerFilter_->addItem("All triggers");
     const int entry=row_==row&&list_->currentRow()>=0&&list_->currentRow()<events_.size()?events_[list_->currentRow()].entry:-1;
     if(row_!=row||entryFilter_!=entryFilter){focusOffset_=-1;revealedEntry_=-1;if(row_!=row)selectedAuthoredId_.clear();}
     entryFilter_=entryFilter;
@@ -72,18 +77,49 @@ void EventFlowEditor::setRow(int row,int entryFilter) {
             project_->loadCampaignMap();
             events_=EventFlow::read(project_->rom(),*project_->sceneEvents(),*project_->scenePrograms(),row,originalScenes,true,&*project_->campaignMap());
         }
+        QMap<QString,int> authoredTargets;
+        if(row>=0)for(const auto &v:project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["trees"].toArray()){
+            const auto tree=v.toObject();authoredTargets[tree["id"].toString()]=tree["target"].toInt(-1);
+        }
+        QMap<int,QMap<int,QString>> targetNames;
         int selected=0;for(int n=0;n<events_.size();++n){const auto &event=events_[n];
-            auto item=new QListWidgetItem(event.title+"\n"+event.trigger,list_);item->setData(Qt::UserRole,event.entry);
-            QString search=event.title+" "+event.trigger;for(const auto &action:event.actions)search+=" "+action.title+" "+action.detail+" "+storyConditionText(action.condition);
+            if(triggerFilter_->findData(event.trigger)<0)triggerFilter_->addItem(event.trigger,event.trigger);
+            QString title=event.title;
+            if(!event.authoredId.isEmpty() && event.group>=1 && event.group<=4){
+                if(!targetNames.contains(event.group))targetNames[event.group]=eventTargets(project_,row,event.group);
+                const int target=authoredTargets.value(event.authoredId,-1);
+                title=targetNames[event.group].value(target,QString::number(target))+" · "+title;
+            }
+            if(event.simpleVisit && !event.actions.isEmpty())title+="\n"+event.actions.first().title;
+            auto item=new QListWidgetItem(list_);item->setData(Qt::UserRole,event.entry);
+            item->setData(Qt::UserRole+2,title);
+            QString search=title+" "+event.trigger;for(const auto &action:event.actions)search+=" "+action.title+" "+action.detail+" "+storyConditionText(action.condition);
             for(const auto &condition:event.requirements)search+=" "+condition.title+" "+storyConditionText(condition.condition);
             item->setData(Qt::UserRole+1,search);const int preferred=revealedEntry_>=0?revealedEntry_:entryFilter_>=0?entryFilter_:entry;
             if(event.entry==preferred)selected=n;}
         if(!selectedAuthoredId_.isEmpty())for(int n=0;n<events_.size();++n)if(events_[n].authoredId==selectedAuthoredId_){selected=n;revealedEntry_=events_[n].entry;break;}
+        const int restore=triggerFilter_->findData(previousTrigger);
+        if(restore>0 && entryFilter_<0)triggerFilter_->setCurrentIndex(restore);
         list_->setCurrentRow(events_.isEmpty()?-1:selected);filter();showEvent();
     }catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}
 }
-void EventFlowEditor::filter(){int first=-1;for(int n=0;n<list_->count();++n){const int at=list_->item(n)->data(Qt::UserRole).toInt();const bool hidden=(entryFilter_>=0&&at!=entryFilter_&&at!=revealedEntry_)||!list_->item(n)->data(Qt::UserRole+1).toString().contains(search_->text(),Qt::CaseInsensitive);list_->item(n)->setHidden(hidden);if(!hidden&&first<0)first=n;}
-    if(list_->currentItem()&&list_->currentItem()->isHidden())list_->setCurrentRow(first);}
+void EventFlowEditor::filter(){
+    int first=-1;
+    const QString trigger=triggerFilter_->currentData().toString();
+    for(int n=0;n<list_->count();++n){
+        const auto &event=events_[n];
+        auto item=list_->item(n);
+        const bool hidden=(entryFilter_>=0 && event.entry!=entryFilter_ && event.entry!=revealedEntry_)
+            || (!trigger.isEmpty() && event.trigger!=trigger)
+            || !item->data(Qt::UserRole+1).toString().contains(search_->text(),Qt::CaseInsensitive);
+        item->setHidden(hidden);
+        QString title=item->data(Qt::UserRole+2).toString();
+        if(event.ruleIndex>=0)title=QString("%1. %2").arg(event.ruleIndex+1).arg(title);
+        item->setText(trigger.isEmpty()?event.trigger+"\n"+title:title);
+        if(!hidden && first<0)first=n;
+    }
+    if(!list_->currentItem()||list_->currentItem()->isHidden())list_->setCurrentRow(first);
+}
 int EventFlowEditor::selectedOffset()const{return focusOffset_>=0?focusOffset_:list_->currentRow()>=0&&list_->currentRow()<events_.size()?events_[list_->currentRow()].entry:-1;}
 QString EventFlowEditor::destination(int offset)const{
     QSet<int> seen;QString fallback;
@@ -120,7 +156,7 @@ void EventFlowEditor::selectOffset(int offset){
         int selectedPage=0,anchor=offset;
         for(int a=0;a<event.actions.size();++a)if(event.actions[a].instructions.contains(offset)){found=true;selectedPage=a/40;anchor=event.actions[a].instructions.first();}
         for(const auto &condition:event.requirements)found|=condition.instructions.contains(offset);
-        if(!found)continue;const QSignalBlocker block(list_);revealedEntry_=event.entry;selectedAuthoredId_=event.authoredId;focusOffset_=offset;search_->clear();filter();list_->setCurrentRow(n);page_=selectedPage;showEvent();
+        if(!found)continue;const QSignalBlocker block(list_);revealedEntry_=event.entry;selectedAuthoredId_=event.authoredId;focusOffset_=offset;if(triggerFilter_->currentIndex()>0)triggerFilter_->setCurrentIndex(triggerFilter_->findData(event.trigger));search_->clear();filter();list_->setCurrentRow(n);page_=selectedPage;showEvent();
         if(auto widget=scroll_->widget()->findChild<QWidget *>(QString("storyAction_%1").arg(anchor)))scroll_->ensureWidgetVisible(widget);
         return;}
 }
@@ -198,7 +234,7 @@ void EventFlowEditor::showEvent(){
     auto content=new QWidget;auto layout=new QVBoxLayout(content);layout->setSizeConstraint(QLayout::SetMinAndMaxSize);scroll_->setWidget(content);
     if(list_->currentRow()<0||list_->currentRow()>=events_.size()){layout->addWidget(label("Select an event."));layout->addStretch();return;}
     const auto &event=events_[list_->currentRow()];
-    auto heading=label(event.title);auto font=heading->font();font.setBold(true);font.setPointSize(font.pointSize()+2);heading->setFont(font);layout->addWidget(heading);
+    auto heading=label(event.simpleVisit?event.trigger+" · "+event.title:event.title);auto font=heading->font();font.setBold(true);font.setPointSize(font.pointSize()+2);heading->setFont(font);layout->addWidget(heading);
     if(event.group==5) {
         auto common=new QGroupBox("Standard scenario closing logic · game-run");
         auto box=new QVBoxLayout(common);
@@ -237,6 +273,10 @@ void EventFlowEditor::showEvent(){
             for(auto parent=destination->parent();parent;parent=parent->parent())parent->setExpanded(true);
             outline->setCurrentItem(destination);outline->scrollToItem(destination);
         });
+        common->setCheckable(true);common->setChecked(false);
+        outline->hide();detail->hide();
+        connect(common,&QGroupBox::toggled,outline,&QWidget::setVisible);
+        connect(common,&QGroupBox::toggled,detail,&QWidget::setVisible);
         layout->addWidget(common);
     }
     const auto gates=project_->sceneEvents()->flagEdits()[QString::number(row_)].toObject()["gates"].toObject();
@@ -298,12 +338,14 @@ void EventFlowEditor::showEvent(){
             outline->setCurrentItem(outline->topLevelItem(0));layout->addStretch();return;
         }
     }
-    auto when=new QGroupBox("WHEN");auto triggerForm=new QFormLayout(when);triggerForm->addRow(label(event.trigger));
+    auto when=new QGroupBox("Trigger");auto triggerForm=new QFormLayout(when);
+    triggerForm->addRow(label(event.ruleIndex<0?event.trigger:QString("%1 · Rule %2 of %3").arg(event.trigger).arg(event.ruleIndex+1)
+        .arg(std::count_if(events_.cbegin(),events_.cend(),[&](const auto &other){return other.group==event.group && other.ruleIndex>=0;}))));
     if(!event.authoredId.isEmpty()){
         const auto trees=project_->sceneEvents()->flagEdits()[QString::number(row_)].toObject()["trees"].toArray();QJsonObject tree;
         for(const auto &v:trees)if(v.toObject()["id"]==event.authoredId)tree=v.toObject();
         if(event.group>=1&&event.group<=4)triggerForm->addRow(label(eventTargets(project_,row_,event.group).value(tree["target"].toInt(-1),QString("Target ID %1").arg(tree["target"].toInt(-1)))));layout->addWidget(when);
-        auto controls=new QHBoxLayout;auto edit=new QPushButton("Edit logic tree…"),copy=new QPushButton("Duplicate event…"),remove=new QPushButton("Delete event");controls->addWidget(edit);controls->addWidget(copy);controls->addWidget(remove);layout->addLayout(controls);
+        auto controls=new QHBoxLayout;auto edit=new QPushButton("Edit rule…"),copy=new QPushButton("Duplicate rule…"),remove=new QPushButton("Delete rule");controls->addWidget(edit);controls->addWidget(copy);controls->addWidget(remove);layout->addLayout(controls);
         connect(edit,&QPushButton::clicked,this,[this,id=event.authoredId]{editTree(id);});
         connect(copy,&QPushButton::clicked,this,[this,tree]{try{auto draft=tree;draft.remove("id");draft["name"]=tree["name"].toString()+" copy";QJsonObject flags;
             if(auto result=editEventTree(project_,row_,draft,this,&flags)){auto events=*project_->sceneEvents();events.apply(flags,*project_->scenePrograms());auto trees=events.flagEdits()[QString::number(row_)].toObject()["trees"].toArray();trees<<*result;events.setTrees(row_,trees,*project_->scenePrograms());selectedAuthoredId_=(*result)["id"].toString();search_->clear();undo_->push(new EventEdit(project_,events.json()));changed_();}}catch(const std::exception &e){notice_->setText(QString::fromUtf8(e.what()));}});
@@ -316,12 +358,25 @@ void EventFlowEditor::showEvent(){
             else if(type=="not")showCondition(item,condition["condition"].toObject());
             else if(type=="flag")preview->setItemWidget(item,1,eventFlagLinks(project_,row_,condition["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);else if(row==row_)selectOffset(at);}));
         };
-        std::function<void(QTreeWidgetItem *,QJsonArray)> show=[&](QTreeWidgetItem *parent,QJsonArray nodes){for(const auto &v:nodes){auto n=v.toObject();auto item=new QTreeWidgetItem(parent,{eventTreeSummary(n,row_,&*project_->sceneEvents(),project_)});if(n["type"]=="if"){
-            showCondition(item,n["condition"].toObject());
-            show(new QTreeWidgetItem(item,{"THEN"}),n["then"].toArray());show(new QTreeWidgetItem(item,{"ELSE"}),n["else"].toArray());}
-            else if(n["type"]=="flag")preview->setItemWidget(item,1,eventFlagLinks(project_,row_,n["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);}));
-        }};
+        std::function<void(QTreeWidgetItem *,QJsonArray)> show=[&](QTreeWidgetItem *parent,QJsonArray nodes){
+            bool reachable=true;
+            for(const auto &value:nodes) {
+                const auto n=value.toObject();
+                const auto title=eventTreeSummary(n,row_,&*project_->sceneEvents(),project_);
+                auto item=new QTreeWidgetItem(parent,{reachable?title:"Unreachable · "+title});
+                if(!reachable)continue;
+                if(n["type"]=="if"){
+                    showCondition(item,n["condition"].toObject());
+                    show(new QTreeWidgetItem(item,{"THEN"}),n["then"].toArray());
+                    show(new QTreeWidgetItem(item,{"ELSE"}),n["else"].toArray());
+                }else if(n["type"]=="flag"){
+                    preview->setItemWidget(item,1,eventFlagLinks(project_,row_,n["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);}));
+                }
+                reachable=EventAuthoring::fallsThrough({n});
+            }
+        };
         show(preview->invisibleRootItem(),tree["nodes"].toArray());preview->expandAll();
+        if(EventAuthoring::fallsThrough(tree["nodes"].toArray()))layout->addWidget(label("When the steps finish, try the next rule for this trigger."));
         connect(preview,&QTreeWidget::itemDoubleClicked,this,[this,preview,id=event.authoredId](QTreeWidgetItem *item){
             QVector<int> path;
             while(item){auto parent=item->parent();path.prepend(parent?parent->indexOfChild(item):preview->indexOfTopLevelItem(item));item=parent;}
@@ -332,6 +387,7 @@ void EventFlowEditor::showEvent(){
     if(canChangeTrigger(row_,event)){auto change=new QPushButton("Change WHEN…");change->setObjectName("storyChangeWhen");triggerForm->addRow(change);connect(change,&QPushButton::clicked,this,[this]{editWhen();});}
     for(const auto &f:event.triggerFields)addField(triggerForm,f);
     when->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Minimum);layout->addWidget(when);
+    if(event.simpleVisit)layout->addWidget(label("After the cutscene, return to gameplay."));
     auto outline=new QTreeWidget;outline->setObjectName("storyCompactTree");outline->setHeaderHidden(true);
     outline->setWordWrap(true);outline->setTextElideMode(Qt::ElideNone);outline->setIndentation(16);layout->addWidget(outline);
     auto details=new QWidget;auto detailLayout=new QVBoxLayout(details);detailLayout->setContentsMargins(0,0,0,0);layout->addWidget(details);
@@ -489,7 +545,15 @@ void EventFlowEditor::editChartStep(int row,int offset,QWidget *owner){
 }
 void EventFlowEditor::editTree(QString id,QVector<int> path,int offset){
     try{QJsonObject draft;const auto trees=project_->sceneEvents()->flagEdits()[QString::number(row_)].toObject()["trees"].toArray();for(const auto &v:trees)if(v.toObject()["id"]==id)draft=v.toObject();
-        if(id.isEmpty()&&list_->currentRow()>=0&&list_->currentRow()<events_.size()){const auto &selected=events_[list_->currentRow()];if(selected.group>=0&&selected.group<=5){draft["group"]=selected.group;draft["target"]=selected.triggerFields.isEmpty()?-1:selected.triggerFields.first().value;}}
+        if(id.isEmpty()&&list_->currentRow()>=0&&list_->currentRow()<events_.size()){
+            const auto &selected=events_[list_->currentRow()];
+            if(selected.ruleIndex>=0){
+                draft["group"]=selected.group;
+                draft["relativeTo"]=selected.authoredId.isEmpty()?QJsonValue(selected.entry):QJsonValue(selected.authoredId);
+                draft["target"]=selected.triggerFields.isEmpty()?-1:selected.triggerFields.first().value;
+                for(const auto &v:trees)if(v.toObject()["id"]==selected.authoredId)draft["target"]=v.toObject()["target"];
+            }
+        }
         QJsonObject flags;
         if(path.isEmpty()&&offset>=0&&!id.isEmpty())for(const auto &event:events_)if(event.authoredId==id&&offset>event.entry)
             path=EventAuthoring::stepPath(draft,offset-event.entry);
