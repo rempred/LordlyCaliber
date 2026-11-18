@@ -23,6 +23,7 @@ class SceneReportRuntime {
     };
     QVector<Panel> panels() const;
     QVector<Slot> slotsInUse() const;
+    int pageIndicatorFrame() const;
     bool backgroundVisible() const {
         return machine_.byte(machine_.word(0x8023de34) + 0x66) != 2;
     }

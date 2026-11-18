@@ -2,6 +2,7 @@
 #include "engine/avatar_artwork.h"
 #include "engine/image.h"
 #include "engine/item_data.h"
+#include "engine/scene_report_art.h"
 #include "engine/text.h"
 #include "game/director/panel_animation.h"
 #include <QPainter>
@@ -196,7 +197,16 @@ void ScenePanels::createArmy(int slot, int preset) {
     if (preset == 13) {
         e.payload = QByteArray(0x604, 0);
         put32(e.payload, 0x600, key);
-        e.payload.replace(0, reportClock_.size(), reportClock_);
+        QByteArray encoded;
+        for (char ch : reportClock_) {
+            if (ch == ':')
+                encoded.append("\x81\x46", 2);
+            else {
+                encoded.append('\x82');
+                encoded.append(char(0x4f + ch - '0'));
+            }
+        }
+        e.payload.replace(0, encoded.size(), encoded);
         put8(e.payload, 0x5f4, 1);
         put8(e.payload, 0x5f5, 1);
         put8(e.payload, 0x5f6, 17);
@@ -251,6 +261,7 @@ void ScenePanels::setReportArtwork(const QByteArray &portrait) {
                                320 * 4, QImage::Format_RGBA8888)
                             .copy();
     reportPortrait_ = AvatarArtwork::render(portrait);
+    reportArt_ = std::make_shared<SceneReportArt>(rom_);
 }
 void ScenePanels::replaceArmyHelp(int slot, int section) {
     checkSlot(slot);
@@ -594,16 +605,26 @@ QImage ScenePanels::render() const {
                   right = qint32(u32(r, 0x34)), bottom = qint32(u32(r, 0x38));
         painter.save();
         painter.setOpacity(alpha / 255.);
-        painter.setPen(reportScreen ? QColor(117, 91, 44) : QColor(213, 220, 244));
-        painter.setBrush(reportScreen ? QColor(230, 222, 179) : QColor(27, 35, 62));
-        painter.drawRect(QRect(left, top, right - left, bottom - top));
+        const auto kind = e.payload.isEmpty() ? 0 : u32(e.payload, 0x600);
+        const int preset = kind & 255;
+        const QRect box(left, top, right - left, bottom - top);
+        const bool front = e.identity == entities_.last().identity;
+        if (reportArt_)
+            reportArt_->frame(painter, box, preset, r, front);
+        else {
+            painter.setPen(QColor(213, 220, 244));
+            painter.setBrush(QColor(27, 35, 62));
+            painter.drawRect(box);
+        }
         painter.setClipRect(QRect(left + 1, top + 1, right - left - 2, bottom - top - 2));
         painter.setPen(reportScreen ? Qt::black : Qt::white);
-        const auto kind = e.payload.isEmpty() ? 0 : u32(e.payload, 0x600);
         const bool pagedList = reportScreen && ((kind & 255) == 6 || (kind & 255) == 11);
         const bool option = u32(r, 8) == 0x8017ec84 || (kind & 0xfffffffc) == 0x20404 || pagedList;
         auto drawLine = [&](const QByteArray &text, int x, int y) {
-            painter.drawText(QPoint(x, y + 10), label(text));
+            if (reportArt_)
+                reportArt_->line(painter, text, {x, y});
+            else
+                painter.drawText(QPoint(x, y + 10), label(text));
         };
         if (e.reward) {
             if (artwork_ && (*e.reward & 0x1ff))
@@ -640,14 +661,32 @@ QImage ScenePanels::render() const {
                     ++end;
                 if (end == 0x500)
                     throw Error("Panel line has no terminator");
-                drawLine(e.payload.mid(at, end - at),
-                         left + (option ? 24 : qint16(u16(e.payload, 0x5f8)) + 6),
-                         top + i * u8(e.payload, 0x5f6) +
-                             (option ? 4 : qint16(u16(e.payload, 0x5fa)) + 5));
+                auto dx = option ? 24 : qint16(u16(e.payload, 0x5f8)) + 6;
+                auto dy = option ? 4 : qint16(u16(e.payload, 0x5fa)) + 5;
+                if (reportScreen) {
+                    if (option) {
+                        dx = 22;
+                        dy = 6;
+                    }
+                    if (preset == 5) {
+                        dx = 8;
+                        dy = 5;
+                    }
+                    if (preset == 13) {
+                        dx = 4;
+                        dy = 4;
+                    }
+                }
+                drawLine(e.payload.mid(at, end - at), left + dx,
+                         top + dy + i * u8(e.payload, 0x5f6));
             }
         if (reportScreen && (kind & 255) == 5)
-            painter.drawImage(right - 48, top + 4, reportPortrait_);
-        if (e.parent || option) {
+            painter.drawImage(right - 48, top + 5, reportPortrait_);
+        if (reportArt_ && !e.payload.isEmpty()) {
+            painter.setClipping(false);
+            const int pageFrame = report_ && front ? report_->pageIndicatorFrame() : 0;
+            reportArt_->decorations(painter, box, preset, r, e.payload, pagedList, pageFrame);
+        } else if (e.parent || option) {
             const int selected = pagedList ? int(u8(e.payload, 0x5fc)) - u8(e.payload, 0x5f1)
                                            : qint8(u8(r, 0x22)),
                       x = left + (e.parent ? 1 : 3),

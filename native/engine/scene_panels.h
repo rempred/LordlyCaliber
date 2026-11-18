@@ -7,8 +7,10 @@
 #include <QImage>
 #include <QVector>
 #include <array>
+#include <memory>
 #include <optional>
 namespace lordly {
+class SceneReportArt;
 // Map-menu owner pool and shared animated entities. Host identities replace RAM
 // pointers; text pointers are offsets into the retained payload.
 class ScenePanels {
@@ -69,7 +71,7 @@ class ScenePanels {
     bool empty() const {
         return entities_.isEmpty();
     }
-    // Desktop frame/glyph rasterization is approximate; layout/state is native.
+    // The report uses ROM artwork. Other panel types use desktop frames and text.
     QImage render() const;
 
   private:
@@ -95,6 +97,7 @@ class ScenePanels {
     QByteArray subjectName_, selectedName_;
     QByteArray reportClock_ = "00:00:00";
     QImage reportBackground_, reportPortrait_;
+    std::shared_ptr<const SceneReportArt> reportArt_;
     bool armyFlag_ = false;
     int armyHandshake_ = 3;
     std::optional<SceneReportRuntime> report_;

@@ -972,7 +972,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
                               "\nHugo's Report uses the open save's categories and play time. "
                               "Without a save it starts at 00:00:00. "
                               "For report pages, open a native RAM dump from Hugo's Report in "
-                              "Save. Panel trim and text use desktop drawing.");
+                              "Save. Paper, borders and lettering come from the open ROM.");
         if (selector_ >= 1073 && selector_ <= 1078)
             context_->setText(
                 context_->text() +

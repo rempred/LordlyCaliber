@@ -192,6 +192,7 @@ void SceneReportRuntime::advance(quint16 pressed, quint16 direction) {
     machine_.half(0x800e8700, direction);
     call(report + 0x299740);
     const auto head = machine_.word(0x8018fdc0);
+    machine_.half(head + 0xd0, quint16(machine_.half(head + 0xd0) + 1));
     int count = 0;
     for (auto a = machine_.word(head + 4); a;) {
         if (++count > 64)
@@ -204,6 +205,10 @@ void SceneReportRuntime::advance(quint16 pressed, quint16 direction) {
             call(resident + 0x521fc, a);
         a = next;
     }
+}
+int SceneReportRuntime::pageIndicatorFrame() const {
+    // The active panel takes one 16-pixel sprite from the atlas every four ticks.
+    return (machine_.half(machine_.word(0x8018fdc0) + 0xd0) >> 2) & 3;
 }
 QVector<SceneReportRuntime::Slot> SceneReportRuntime::slotsInUse() const {
     QVector<Slot> result;

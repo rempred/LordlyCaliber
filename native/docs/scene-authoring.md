@@ -315,9 +315,12 @@ past”. The categories and clock can use the open save. For a full report
 page, open a 4 or 8 MiB native-order RAM dump taken while this report was
 active. The preview starts the selected script with the captured report
 records. Use **Up**, **Down**, **Confirm (A)** and **Cancel (B)** to navigate.
-The crest and Hugo portrait use ROM artwork. Panel borders, text and cursor
-use desktop drawing. People relationship diagrams and every report history
-configuration still need visual verification.
+The preview reads the crest, Hugo portrait, papyrus, borders, menu tabs and
+pointer from the open ROM. It draws the current lines with the game's bitmap
+fonts, including the stacked labels in Tips. Project64 references cover the
+opening, Tips list and both pages of Critical Attacks. Desktop texture sampling
+can produce small pixel differences. People relationship diagrams and other
+report histories still need visual verification.
 
 For the shared chapter script, use the **chapter** picker to choose the
 Prologue through Final Chapter. The sparkle pattern uses a repeatable

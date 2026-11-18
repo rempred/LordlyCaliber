@@ -838,6 +838,45 @@ class SceneRuntimeTests : public QObject {
         actors.supplyBodyRows(rows);
         QCOMPARE(query(0x90), 1);
     }
+    void reportArtworkFromOpenRom() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("US Rev 0 ROM required");
+        const auto rom = Rom::open(path);
+        auto render = [](const Rom &source) {
+            ScenePanels panels(source);
+            panels.setReportArtwork({});
+            panels.createArmy(1, 5);
+            panels.createArmy(0, 4);
+            panels.createArmy(6, 13);
+            panels.replaceArmyHelp(1, 1);
+            for (int i = 0; i < 32; ++i)
+                panels.advanceArmy(0, 0);
+            return panels.render();
+        };
+        const auto original = render(rom);
+        QSet<QRgb> grain;
+        for (int y = 72; y < 80; ++y)
+            for (int x = 140; x < 230; ++x)
+                grain.insert(original.pixel(x, y));
+        QVERIFY(grain.size() >= 5);
+        auto edited = rom.bytes();
+        for (int i = 1; i < 4; ++i)
+            put16(edited, 0x66b88 + 2 * i, 0xf801);
+        const auto recolored = render(Rom::fromBytes(edited));
+        QCOMPARE(original.copy(140, 72, 90, 8), recolored.copy(140, 72, 90, 8));
+        for (const QRect box :
+             {QRect(32, 24, 100, 14), QRect(54, 100, 44, 14), QRect(198, 100, 88, 14)}) {
+            int changed = 0;
+            for (int y = box.top(); y <= box.bottom(); ++y)
+                for (int x = box.left(); x <= box.right(); ++x)
+                    if (original.pixel(x, y) != recolored.pixel(x, y)) {
+                        ++changed;
+                        QCOMPARE(recolored.pixelColor(x, y), QColor(Qt::red));
+                    }
+            QVERIFY(changed > 25);
+        }
+    }
     void armyMenuHelpAndClosing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
