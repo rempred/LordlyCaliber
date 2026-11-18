@@ -36,8 +36,6 @@ QString trigger(int group) {
 bool conditional(int op){return op>=0xa0&&QSet<int>{1,2,3,6,7,11,12,13,14,15}.contains(op&15);}
 bool pureProducer(int op){return (op>=0x60&&op<=0x6f)||(op>=0x78&&op<=0x7f)||(op>=0x88&&op<=0x9f);}
 QString relation(int op){switch(op>>4){case 0xa:return "=";case 0xb:return "≠";case 0xc:return ">";case 0xd:return "<";case 0xe:return "≥";default:return "≤";}}
-QString requestName(int value){return catalog()["requests"].toObject()[QString::number(value)].toObject()["name"].toString(QString("Game operation ID %1").arg(value));}
-QMap<int,QString> requestChoices(){QMap<int,QString> result;for(int n=0;n<256;++n)result[n]=requestName(n);return result;}
 struct Expression {
     QString text, kind;
     int value=-1, property=-1, bank=-1;
@@ -594,8 +592,12 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
                     if(property==0xe9&&owns(at,count+1)&&word(at+count*2)==0x70e7){action.instructions<<at+count*2;++count;}
                 }else if(load&&reg==0&&owns(at,literalWords+1)&&u8(bytes,after)==0x11){
                     const int token=(u8(bytes,after+1)<<8)|(value&255);action.kind="action";
-                    action.title=token==1?"Finish this event":token==0?"Return to gameplay":"Request · "+requestName(token&255);
-                    auto f=field(at,"value","Next operation");f.choices=requestChoices();if(u8(bytes,after+1)==0)f.choices[1]="Finish this event";
+                    const auto &request = EventScript::request(token);
+                    action.title=token==1?"Finish this event":token==0?"Return to gameplay":"Request · "+request.name;
+                    if (token != 1) action.detail = request.detail(false);
+                    auto f=field(at,"value","Next operation");
+                    f.kind = "named-state";
+                    f.choices = EventScript::requestChoices(token & 255, u8(bytes,after+1) == 0);
                     f.mask=255;f.value&=255;f.maximum=255;action.fields<<f;consume(literalWords+1);lastScene=-1;
                 }else if(load&&reg==0&&owns(at,literalWords+1)&&u8(bytes,after)==0x12){
                     action.kind="program";action.title="Load event program · "+EventScript::rowName(u8(bytes,after+1));
@@ -604,7 +606,11 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
                     action.detail="The selected flag range is cleared before changing event program.";consume(literalWords+1);lastScene=-1;
                 }else if(op==0x16&&arg>=5&&arg<=8){action.kind="action";action.title=QString("Add starting squad %1 from the saved opening choices").arg(arg-4);action.fields<<field(at,"operand","Starting squad operation");consume(1);
                 }else if(op==0x18){action.kind="action";action.title="Request world-map travel destination";auto f=field(at,"operand","Map location","world-location");f.choices[0]="No forced destination";action.fields<<f;action.detail="Used when the world map next processes travel.";consume(1);
-                }else if(op==0x13){action.kind="action";action.title=requestName(arg);auto f=field(at,"operand","Operation");f.choices=requestChoices();action.fields<<f;consume(1);lastScene=-1;
+                }else if(op==0x13){
+                    const auto &request = EventScript::request(arg);
+                    action.kind="action";action.title=request.name;action.detail=request.detail(true);
+                    auto f=field(at,"operand","Operation");f.kind="named-state";f.choices=EventScript::requestChoices(arg,false);
+                    action.fields<<f;consume(1);lastScene=-1;
                 }else if(op==4){action.kind="return";action.title="Return to the calling event logic";consume(1);lastScene=-1;
                 }else if(op==0x2f){action.kind="end";
                     // Row 0 is the arrival check, called by the world-map mode.
@@ -941,8 +947,9 @@ QStringList choiceEffects(const StoryEvent &event,const QByteArray &bytes,int pc
         }
         if(a.otherwise>=0){effects<<"Next decision · "+a.title;return effects;}
         if(a.target>=0 && (u8(bytes,last)==1 || u8(bytes,last)==2)){pc=a.target;continue;}
-        // Returning to world routing and issuing request 2 starts the already selected map.
-        if(pc+8<=bytes.size() && u32(bytes,pc)==0x680070e8 && u32(bytes,pc+4)==0x68021100){
+        // World routing followed by a request to replace this mode with the selected battlefield.
+        if(pc+8<=bytes.size() && u32(bytes,pc)==0x680070e8 && u8(bytes,pc+4)==0x68 &&
+           u8(bytes,pc+6)==0x11 && EventScript::request(u8(bytes,pc+5)).code==0x8003){
             effects<<"Start the selected battlefield";return effects;
         }
         effects<<a.title;

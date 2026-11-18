@@ -176,15 +176,16 @@ void annotate(QVector<EventStep> &steps, const QByteArray &bytes,
             step.text = QString("Queue %1 from %2").arg(arg == 0 ? "squad recruitment" : "individual recruitment",
                 r[0].kind == Value::Constant ? templateLabel(r[0].number) : "R0 (recruitment template)");
         } else if (op == 0x13) {
-            step.text = arg == 0x16 ? "Process queued army operation (request 22); then continue"
-                                   : QString("Request operation %1; then continue").arg(arg);
+            step.text = EventScript::operationText(arg);
         } else if (op == 0x11) {
-            step.text = r[0].kind == Value::Constant
-                ? QString("Request transition %1 (R0 low byte %2; operand %3)")
-                    .arg((arg << 8) | (r[0].number & 255)).arg(r[0].number & 255).arg(arg)
-                : QString("Request transition (R0 low byte; operand %1)").arg(arg);
-            if (arg == 0 && r[0].kind == Value::Constant && (r[0].number & 255) == 1)
-                step.text = "Finish this handler (transition request 1)";
+            if (r[0].kind == Value::Constant) {
+                const int token = (arg << 8) | (r[0].number & 255);
+                const auto &request = EventScript::request(token);
+                step.text = token == 1 ? QStringLiteral("Finish this handler (transition request 1)")
+                    : QString("Request transition %1 · %2. %3").arg(token).arg(request.name, request.detail(false));
+            } else {
+                step.text = QString("Request transition (R0 low byte; operand %1)").arg(arg);
+            }
         } else if (op == 0x12) {
             step.text = QString("Switch to event row %1").arg(arg);
             if (r[0].kind == Value::Constant) {

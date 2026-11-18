@@ -1,3 +1,4 @@
+#include "rebuild/accepted_rom.h"
 #include "engine/body_visual_policy.h"
 #include "engine/body_markers.h"
 #include "engine/direct_descriptors.h"
@@ -56,30 +57,7 @@ QVector<QJsonObject> BodyVisualPolicyImage::owners(bool construction) {
     return result;
 }
 QByteArray BodyVisualPolicyImage::retailBytes(int offset, int size) {
-    // This baseline is compiled and authenticated from the accepted C at build time.
-    static const auto regions = [] {
-        QFile f(":/generated/accepted-rom.bin");
-        if (!f.open(QIODevice::ReadOnly)) throw Error("Missing accepted C baseline");
-        const auto bytes = f.readAll();
-        if (bytes.size() < 44 || !bytes.startsWith("LCCODE01")) throw Error("Invalid accepted C baseline");
-        QMap<int, QByteArray> result;
-        qsizetype at = 44;
-        for (quint32 i = 0; i < u32(bytes, 8); ++i) {
-            if (at + 16 > bytes.size()) throw Error("Truncated accepted C baseline");
-            const int start = u32(bytes, at), size = u32(bytes, at + 8);
-            at += 16;
-            if (size <= 0 || at + size > bytes.size()) throw Error("Invalid accepted C allocation");
-            result[start] = bytes.mid(at, size);
-            at += size;
-        }
-        if (at != bytes.size()) throw Error("Unexpected accepted C baseline tail");
-        return result;
-    }();
-    auto it = regions.upperBound(offset);
-    if (it == regions.begin()) throw Error("Missing accepted C region");
-    --it;
-    if (offset + size > it.key() + it->size()) throw Error("Accepted C region exceeds owner");
-    return it->mid(offset - it.key(), size);
+    return acceptedRomBytes(offset, size);
 }
 bool BodyVisualPolicyImage::matches(const Rom &rom, const QJsonObject &o) {
     if (sha256(rom.bytes().mid(o["start"].toInt(), o["size"].toInt())) != o["sha256"].toString().toLatin1())

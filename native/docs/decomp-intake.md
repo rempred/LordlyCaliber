@@ -1,5 +1,22 @@
 # Using newly accepted Decomp C
 
+## November 18 story request mapper
+
+The editor imports `func_00046738`, its unsigned 16-bit declaration in
+`game/story_event.h`, and the updated scheduler declaration from Decomp
+`17cb2e9d`. The export build compiles the mapper and its switch table as part
+of 1,542 accepted producers and verifies 1,763 code and data regions. Logic
+runs that compiled code to identify the game operation and its subtype. The
+three opening journeys share a request code and select different route maps.
+The name-entry screen likewise uses a subtype to select the question it asks.
+
+The operation picker shows 19 choices. Opening a project that uses another
+encoding for “return to previous game mode” also shows its stored value. Under
+“Next operation,” the exact transition token 1 finishes the event. Under a
+request that resumes at the next step, operand 1 requests a cutscene. The
+description tells the author when control returns. Cutscene decision outcomes
+use the same Logic projection.
+
 ## November 18 cutscene services
 
 The editor imports all 46 functions from Decomp `2447f1d5` under fingerprint

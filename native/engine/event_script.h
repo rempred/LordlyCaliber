@@ -28,8 +28,17 @@ struct EventParameter {
     QVector<Part> parts;
     QString kind;
 };
+struct EventRequest {
+    quint16 code = 0;
+    int nameEntrySubtype = -1, operationSubtype = -1, openingVariant = -1;
+    QString name;
+    QString detail(bool resume) const;
+};
 class EventScript {
   public:
+    static const EventRequest &request(int operand);
+    static QMap<int, QString> requestChoices(int current, bool finishOnOne);
+    static QString operationText(int operand);
     static QVector<EventHandler> decode(const QByteArray &, int eventRow = -1);
     // Presentation only: authenticated retail descriptions, with current-byte
     // decoding after edits. Export validation continues to use decode/apply.

@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "8412D50E1A2CDD150C75409B585A92DBF5748C5F5FE16C9530EDCEFB15B7ECF3",
-  "revision": "098941a2731f2f786d15d79aeaf4f9ba6a67fed1",
+  "fingerprint": "633858359D12F0FDEC97023B190478784A5848F1C3B84F95A1431AF1FC78822C",
+  "revision": "17cb2e9ddcf52a59fa2a3c7d07bd78234b8d2172",
   "counts": {
-    "owners": 1672,
-    "functions": 1718,
-    "producerSources": 1541,
-    "sourceAndHeaderFiles": 1585
+    "owners": 1673,
+    "functions": 1719,
+    "producerSources": 1542,
+    "sourceAndHeaderFiles": 1587
   },
   "sources": [
     {
@@ -12984,11 +12984,73 @@
       ]
     },
     {
+      "name": "func_00046738",
+      "source": "game/accepted/library/src/lib/func_00046738.c",
+      "sourcePath": "src/lib/func_00046738.c",
+      "sourceSha256": "332875108669143D08109ABA483F781C1A0DE45D9561F52826F1965BFD69F851",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/story_event.h",
+          "file": "game/accepted/library/include/game/story_event.h",
+          "sha256": "44FE3279FCC302C2553CCE469B301147C4829AF274538E216E5680CC444D3418"
+        }
+      ],
+      "address": 2148993080,
+      "bindings": {
+        "D_8018FAE0": 2149120736,
+        "D_8018FBDC": 2149120988
+      },
+      "sections": {
+        ".text": 2148993080,
+        ".rodata": 2149123784
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 288568,
+          "address": 2148993080,
+          "size": 284,
+          "sha256": "943CCC1372EDDD9E5ECD5E004B3C6C5CE51BAAD6953E839590BC9E340F349D1E",
+          "code": 1
+        },
+        {
+          "section": ".rodata",
+          "offset": 0,
+          "start": 419272,
+          "address": 2149123784,
+          "size": 112,
+          "sha256": "B3175D5D424061777093567E87204F7C72F7E1F22CA58D63E349101CB41A7D7D",
+          "code": 0
+        }
+      ],
+      "targets": [
+        "func_00046738"
+      ]
+    },
+    {
       "name": "func_00047a94",
       "source": "game/accepted/library/src/lib/func_00047a94.c",
       "sourcePath": "src/lib/func_00047a94.c",
-      "sourceSha256": "E76473D7CC3200AF6F0B26A68E8D1FFEE427316F5DFD7F6379E8DBFA694F12B4",
-      "headers": [],
+      "sourceSha256": "9F8B2E8A4C79172B735F809056EB3212019210240FC76D0B571635FAFDD99B07",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/story_event.h",
+          "file": "game/accepted/library/include/game/story_event.h",
+          "sha256": "44FE3279FCC302C2553CCE469B301147C4829AF274538E216E5680CC444D3418"
+        }
+      ],
       "address": 2148998036,
       "bindings": {
         "D_80197B03": 2149153539,

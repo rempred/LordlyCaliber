@@ -1,10 +1,13 @@
 #include "engine/event_script.h"
+#include "engine/effect_machine.h"
 #include "engine/scene_events.h"
+#include "rebuild/accepted_rom.h"
 #include <QCryptographicHash>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <algorithm>
+#include <array>
 
 namespace lordly {
 namespace {
@@ -156,6 +159,80 @@ QSet<int> EventScript::instructionOffsets(int row) {
     const auto &source = instructions(row); QSet<int> result;
     for (auto it=source.begin();it!=source.end();++it) result.insert(it.key());
     return result;
+}
+const EventRequest &EventScript::request(int operand) {
+    static const auto requests = [] {
+        // Run the compiled resident mapper and its own switch table. Only these
+        // three optional one-byte writes accompany its unsigned return code.
+        EffectMachine machine;
+        machine.mount(0x80170838, acceptedRomBytes(0x46738, 284), true);
+        machine.mount(0x801906c8, acceptedRomBytes(0x665c8, 108));
+        const auto descriptions = catalog()["requests"].toObject();
+        // The catalog names the observed game consumers. Match those names to
+        // the returned code AND the fields written, e.g. the three route maps.
+        QMap<std::array<int, 4>, QString> names;
+        for (int i = 0; i < 256; ++i) {
+            const auto description = descriptions[QString::number(i)].toObject();
+            const auto writes = description["writes"].toObject();
+            const std::array<int, 4> key{description["code"].toInt(), writes["nameEntrySubtype"].toInt(-1),
+                                         writes["operationSubtype"].toInt(-1), writes["openingVariant"].toInt(-1)};
+            if (!names.contains(key))
+                names.insert(key, description["name"].toString());
+        }
+        std::array<EventRequest, 256> result;
+        constexpr std::array<quint32, 3> fields{0x801939d1, 0x8018fae0, 0x8018fbdc};
+        for (int i = 0; i < 256; ++i) {
+            for (auto address : fields)
+                machine.byte(address, 0xff); // Every subtype written by retail is in 0..3.
+            machine.registers[4] = i;
+            machine.call(0x80170838, 64);
+            auto written = [&](quint32 address) {
+                const int value = machine.byte(address);
+                return value == 0xff ? -1 : value;
+            };
+            auto &op = result[i];
+            op = {quint16(machine.registers[2]), written(fields[0]), written(fields[1]), written(fields[2]), {}};
+            op.name = names.value({op.code, op.nameEntrySubtype, op.operationSubtype, op.openingVariant},
+                                  QString("Game operation %1").arg(i));
+        }
+        return result;
+    }();
+    return requests[quint8(operand)];
+}
+QMap<int, QString> EventScript::requestChoices(int current, bool finishOnOne) {
+    static const auto distinct = [] {
+        QMap<int, QString> result;
+        for (int i = 0; i < 256; ++i)
+            if (i == 0 || request(i).code != 0xfffe)
+                result[i] = request(i).name;
+        return result;
+    }();
+    auto choices = distinct;
+    if (!choices.contains(current))
+        choices[current] = request(current).name + QString(" · existing value %1").arg(current);
+    if (finishOnOne)
+        choices[1] = "Finish this event";
+    return choices;
+}
+QString EventRequest::detail(bool resume) const {
+    QString mode;
+    if (code == 0xfffe)
+        mode = "Return to the previous game mode.";
+    else if (code == 0xfffd)
+        mode = "Wait for the next game-mode request.";
+    else if (code & 0x8000)
+        mode = "Replace the current game mode.";
+    else
+        mode = "Open as a child of the current game mode.";
+    if (resume)
+        mode += " Continue at the next event step after the game accepts the request.";
+    return mode;
+}
+QString EventScript::operationText(int operand) {
+    const auto &operation = request(operand);
+    auto title = operation.name;
+    if (!title.isEmpty()) title[0] = title.front().toUpper();
+    return QString("%1 (request %2). %3").arg(title).arg(operand).arg(operation.detail(true));
 }
 QVector<EventParameter> EventScript::parameters(const QByteArray &bytes, int row, int at) {
     const auto &source = instructions(row);
@@ -376,6 +453,7 @@ QVector<EventHandler> EventScript::display(const QByteArray &bytes, int row, boo
             step.text = QString("%1 · opcode %2, operand %3 (0x%4)").arg(name)
                 .arg(op, 2, 16, QChar('0')).arg(arg).arg(arg, 2, 16, QChar('0'));
             if(controls.contains(at))step=controls[at];
+            else if (op == 0x13) step.text = operationText(arg);
             else if(op>=0x68&&op<=0x6f) {
                 const auto ref=description[4].toObject();
                 step.text=QString("Prepare R%1 = %2").arg(op&7).arg(arg);

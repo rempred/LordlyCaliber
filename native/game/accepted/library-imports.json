@@ -2,21 +2,21 @@
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
   "evidenceSchemaVersion": 7,
-  "revision": "098941a2731f2f786d15d79aeaf4f9ba6a67fed1",
-  "verifiedAt": "2026-11-18T14:39:31.791Z",
+  "revision": "17cb2e9ddcf52a59fa2a3c7d07bd78234b8d2172",
+  "verifiedAt": "2026-11-18T22:00:49.551Z",
   "sourceClasses": [
     "PURE_C",
     "HYBRID_C"
   ],
-  "fingerprint": "8412D50E1A2CDD150C75409B585A92DBF5748C5F5FE16C9530EDCEFB15B7ECF3",
-  "verificationSha256": "8E353BC37DDC00BB47717E4034BA6810F3C6580C20F673DCBD21A7E7FA645639",
-  "freshCompilationSha256": "93C2A2205C7F128FDEAA6F2959B722CFC9E2E45923241F31C1E528E9675EDA2E",
+  "fingerprint": "633858359D12F0FDEC97023B190478784A5848F1C3B84F95A1431AF1FC78822C",
+  "verificationSha256": "3E224A6173EDC1E8444500EFCEBEB828EC6490BB9B7A29A4D60BDF28B2B83A3B",
+  "freshCompilationSha256": "BAC50FF5A04BC26C237AC61C4CAEFBB347D1CDC276B4320E3D5D1335FAE5B1CD",
   "purpose": "Complete accepted matching C and hybrid-C source library. ROM and preview manifests qualify active adoption; existing adaptations retain their own baselines.",
   "counts": {
-    "owners": 1672,
-    "functions": 1718,
-    "producerSources": 1541,
-    "sourceAndHeaderFiles": 1585
+    "owners": 1673,
+    "functions": 1719,
+    "producerSources": 1542,
+    "sourceAndHeaderFiles": 1587
   },
   "imports": [
     {
@@ -1796,8 +1796,8 @@
           ],
           "proof": {
             "path": "generated/c/func_0021EBBC.source-object-proof.json",
-            "bytes": 18834410,
-            "sha256": "CC4E02C77E3CD37DB64D9357EDE48CFCF122584973C3F19653E794E98721A813"
+            "bytes": 18834976,
+            "sha256": "F66DB9A17357707B047969B9676038F0B4785893A49A72CA54ED5AA7D2762AE5"
           },
           "textMode": "atomic-contiguous-owner-union",
           "physicalOwners": [
@@ -4177,7 +4177,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_indexed_record_copy_flag.source-object-proof.json",
             "bytes": 372547,
-            "sha256": "E480E33C81A688C81AC16269BA1110D6EFED8E39582D73D5626426AB1D7616F9"
+            "sha256": "44E495939A472FBE614365B0EA87E39A71A18C38022D9218219929D36876CA40"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4197,7 +4197,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_large_record_copy_flag.source-object-proof.json",
             "bytes": 372533,
-            "sha256": "4666D18976404272C2CC91A41D29CC3EE1AA62856B8683790AC3AFE50C4905CB"
+            "sha256": "A709D3B75D623BACF7DF778E24F043C2986A667607AA5AECFA54365314882077"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4217,7 +4217,7 @@
           "proof": {
             "path": "generated/c/boot_resource_probe_small_record_copy_flag.source-object-proof.json",
             "bytes": 372533,
-            "sha256": "41491939C5883CF4F45A70E226A3C726C02DF699C121100BDF41666C0D0A6A86"
+            "sha256": "7A99B1365C42082E65E8DD3CC53EECC9EB656710A9F41CC61EF519D69760A5BC"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4237,7 +4237,7 @@
           "proof": {
             "path": "generated/c/func_00005760.source-object-proof.json",
             "bytes": 367131,
-            "sha256": "DFD0CE783FF7BAE0C623F3AE66C0E7B8DCF87FB47A0B383128D848E5BC05861F"
+            "sha256": "0CF1C7DAD7C84957422E5046754F61A2342466EAD1ADA4A20F63FC8726CD8B5D"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4257,7 +4257,7 @@
           "proof": {
             "path": "generated/c/func_0000581C.source-object-proof.json",
             "bytes": 377052,
-            "sha256": "2D218DDEC16B685705802E41D1E61B2EA0B4EBB648039BA22B5FD8A48EBAD7B9"
+            "sha256": "CE863E8692C72515F50F0A509DA3926328620201D84C90E3983819AAC8ED73E9"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4277,7 +4277,7 @@
           "proof": {
             "path": "generated/c/func_00005978.source-object-proof.json",
             "bytes": 377052,
-            "sha256": "5E9958B7C08BA26D5F1182FFB9B23707AAE6E816376C6D9FFBC8F95552F92B10"
+            "sha256": "66F87B344636E89105BCC820840343A048EF8EE3059E7E951B2FE825BC734BC7"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4297,7 +4297,7 @@
           "proof": {
             "path": "generated/c/func_00005A88.source-object-proof.json",
             "bytes": 377056,
-            "sha256": "D8F12D5D44E202C6EE570C111DD6A65F5931DCD1B722981BD253C38EA3FC0EF0"
+            "sha256": "74A472A5F9626E44CB5CD3461C1DC6274E0F667219B331182B0BAFD2F62AB61F"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -4321,7 +4321,7 @@
           "proof": {
             "path": "generated/c/func_00005D9C.source-object-proof.json",
             "bytes": 370456,
-            "sha256": "72E5239C4FCB636FD81F6FC14256445BA44FFF122E4E7C6FB77C6447BF4DB3FD"
+            "sha256": "601261DFEC5BD857781E7CB0664B71F0CC48BCC910A0B3167E3834EF8FBE9EAE"
           },
           "textMode": "native-text-owner-functions-projection",
           "physicalOwners": [
@@ -6889,7 +6889,7 @@
           "proof": {
             "path": "generated/c/func_0001c9f0.source-object-proof.json",
             "bytes": 1233942,
-            "sha256": "9C12534A658A3BA4C0EE80AD585878391FE4AC588F9157220767C5D14116B72F"
+            "sha256": "0B55FBD4FD3639D533F74F12D800180A400B57602EEF250088E8A91A14C50914"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6909,7 +6909,7 @@
           "proof": {
             "path": "generated/c/func_0001ca94.source-object-proof.json",
             "bytes": 1306676,
-            "sha256": "856693D0E947E38F57687D249F03B636063EA53B5D7148612362EE314AB170A3"
+            "sha256": "59018821D3DA7255FDD600A755AB61AA43A1977F203832FB73B16AE890C265BA"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6929,7 +6929,7 @@
           "proof": {
             "path": "generated/c/func_0001cf2c.source-object-proof.json",
             "bytes": 1240498,
-            "sha256": "6F78D5ABBF5FBC4459ABB449EE1299CC94534E14D9E732478804205F7EAF8A71"
+            "sha256": "60920418119817C24AF9A824623DCCDBD6D7C08132C12F69418F226715169F91"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6949,7 +6949,7 @@
           "proof": {
             "path": "generated/c/func_0001cfe4.source-object-proof.json",
             "bytes": 1242111,
-            "sha256": "686651EF0F732C5D5D19375C0BFCDBDBE27E8D6E920B758021D44B82E260B698"
+            "sha256": "F2C17FBD4C633D4F8EFE0A64216AFB0B6D69E2A0FAF936B8620E7D8CE4BFE619"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6969,7 +6969,7 @@
           "proof": {
             "path": "generated/c/func_0001d094.source-object-proof.json",
             "bytes": 1240498,
-            "sha256": "237CC976FA9E142A279F807E0E30E4F9264DD73366FE1FBAB28DF3F96BE72CE7"
+            "sha256": "CAC6F049164D2F74A3B2D2DEE109420927044F6CCCEBA36AF99C9F3EF0967066"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -6989,7 +6989,7 @@
           "proof": {
             "path": "generated/c/func_0001d120.source-object-proof.json",
             "bytes": 1238874,
-            "sha256": "77FAEAEA04323D1788962586392FCEE6A2021373DAF1274A89D9D34940CC4F30"
+            "sha256": "EDDA520AB7B73941DA722953B60349735FDF27E7E63253A85A5B41FA9CAFEAE1"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7009,7 +7009,7 @@
           "proof": {
             "path": "generated/c/func_0001d17c.source-object-proof.json",
             "bytes": 1238868,
-            "sha256": "8F72C7BE04BDAED1A8CCCB238D1E3E74194CE577ACF6AD72405075E1178B5BDA"
+            "sha256": "A2EA19AD89F2A2118C504C4CE44B06FB7AD5AAF99BDAAC8B831FA22304B3DAB2"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7029,7 +7029,7 @@
           "proof": {
             "path": "generated/c/func_0001d1d8.source-object-proof.json",
             "bytes": 1239404,
-            "sha256": "40F5330B6F3C9959415E6FE889BCEE6B6983EF5486ACF32E5F453CBD3C821015"
+            "sha256": "22F64C9EE05803D0CD0A278F5E19A20A971A404E3F332E1E28584CB2FAB240BB"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7149,7 +7149,7 @@
           "proof": {
             "path": "generated/c/float_ldexp_d.source-object-proof.json",
             "bytes": 1277148,
-            "sha256": "3C9CC81C75EC3DBB6393941A3F577EB178448EEA90FCD9639A43CD9D231056E3"
+            "sha256": "BBEE37DCDBA607CE5FCBAA0C6EF07B22EEBB5835FACA98218D68F035B090D5F3"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7169,7 +7169,7 @@
           "proof": {
             "path": "generated/c/func_0001de40.source-object-proof.json",
             "bytes": 1327333,
-            "sha256": "BE5C51F1C05C0481925278A5CCEE1E3C4C19665CF0184E12875B1F428B9186C1"
+            "sha256": "EFA8D99C338EF866BC099FB81F0FEBCED68CC984FD1D13276A6B5EF2464FD870"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7189,7 +7189,7 @@
           "proof": {
             "path": "generated/c/func_0001e340.source-object-proof.json",
             "bytes": 1285101,
-            "sha256": "C2C21350FCAC047C288670BF4EB5E776215C1752E766E24749F950D2ABF7C478"
+            "sha256": "03E6EB211231B0F5639E34357100B75A6BE43D3278A11B2A0051D37567C817AE"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7209,7 +7209,7 @@
           "proof": {
             "path": "generated/c/func_0001e414.source-object-proof.json",
             "bytes": 1291710,
-            "sha256": "197BADB323F33B518ACED73E1084D098D0A497343C90CD4FC956ACBD042E3B91"
+            "sha256": "200A750781A58D38F4558BACBC06B30A2940424F7FBA5219235DB3DAD73FB05A"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7229,7 +7229,7 @@
           "proof": {
             "path": "generated/c/func_0001e6e8.source-object-proof.json",
             "bytes": 1288623,
-            "sha256": "ADE809B93BD08B4A82DE9D701F254FCC9B948BBEE5784A3455FB77A30F58347A"
+            "sha256": "4548909B64B73C4C4693DB8EE74925E42E319F135184F47798AFFFBF08B6C175"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7249,7 +7249,7 @@
           "proof": {
             "path": "generated/c/func_0001e7ec.source-object-proof.json",
             "bytes": 1316470,
-            "sha256": "A65858F0BCDD1CC2A94DF43C2A8FB99A34BCB197D096B38B271937F9D5E04A30"
+            "sha256": "B78FB6B78F4F3A16D8759902784E1915A5DE157C5C02BE804460807699BF765D"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7269,7 +7269,7 @@
           "proof": {
             "path": "generated/c/func_0001ea6c.source-object-proof.json",
             "bytes": 1279309,
-            "sha256": "B367E2E4F6E59AFFA4AB6300760DB5547E606FBDB02B25A5F4287C9A57E1BBF6"
+            "sha256": "F3AA224E06A5B7D69040907BC71865491480470D581D34D02F5E07E996722499"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7601,7 +7601,7 @@
           "proof": {
             "path": "generated/c/func_0001ec80.source-object-proof.json",
             "bytes": 434250,
-            "sha256": "137B071788F4CB81C49D549D58465C81280DE0F34DDF4A73F2A2A3D8E5E67413"
+            "sha256": "CB327A2A8C325D1FC3F7BFD9C4163BA1195CCD5C48C4C5FB5EA7E4FFF612C57B"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7621,7 +7621,7 @@
           "proof": {
             "path": "generated/c/func_0001ee6c.source-object-proof.json",
             "bytes": 450798,
-            "sha256": "692F87C5052879D9CB2ED6E92E08ACFBC12D3C628036A6B57D106C8E1407451C"
+            "sha256": "6C3367AA3203314AC5296D9E1F65C282F1926898C50F424900A1D0FA03567449"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7700,7 +7700,7 @@
           "proof": {
             "path": "generated/c/func_0001ef30.source-object-proof.json",
             "bytes": 888042,
-            "sha256": "667634F1AC707CB8B1CBA376229207168CCA7A76516B15F982B6A65626263501"
+            "sha256": "AC07A6D8228B622454E6C520672A212F3E630A3F337198AF6C2AAB46B32ED811"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7720,7 +7720,7 @@
           "proof": {
             "path": "generated/c/func_0001f2a4.source-object-proof.json",
             "bytes": 875377,
-            "sha256": "E1D222B07C4C0B90ED830A479F38B28E13BB8C81013406CA7EAD012109FBC068"
+            "sha256": "0F48437EAF9B46D3FE06C000C8F4956AF5B0F1FEAB550452E4B1077B4C6B3088"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7740,7 +7740,7 @@
           "proof": {
             "path": "generated/c/func_0001f2b8.source-object-proof.json",
             "bytes": 911936,
-            "sha256": "4FEADF20301C2B3DC8D81C7614F012AD8A18E2BCDF3609BC38144764E2707F60"
+            "sha256": "7A60CB508DF16406C1FFD9F2B763F1E1302F85F85227911DC57EE0D04B4D873B"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7760,7 +7760,7 @@
           "proof": {
             "path": "generated/c/func_0001f4a8.source-object-proof.json",
             "bytes": 886695,
-            "sha256": "91573F3B0EB5FCE43990BC23FDCFD579817470401BB2822817C929E9F11F3B4B"
+            "sha256": "EC981A9911AA8E91148E27355425E4DF4239943F779BEAEB2EF4EACD49B3DB0F"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7780,7 +7780,7 @@
           "proof": {
             "path": "generated/c/func_0001f6c0.source-object-proof.json",
             "bytes": 880340,
-            "sha256": "4FEC0F2765717B951810C07146C748C2F2A763B2BBA21717AA37EDAB25A6477E"
+            "sha256": "CECBDB3D569C7E59B5FBE00C6DCEBFEE3B68503BB3020BA2772B78B55A3D69BB"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7800,7 +7800,7 @@
           "proof": {
             "path": "generated/c/func_0001f830.source-object-proof.json",
             "bytes": 882007,
-            "sha256": "640493D5BD479FC1FFAFAAA92F95EFCED6C42C22C1A14F41ABC58FDB4ADA0A42"
+            "sha256": "3815C06DEC17F56DFE9EE482DD879C2AB077CDA72252B0E7CCF296E1B4C181B1"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7820,7 +7820,7 @@
           "proof": {
             "path": "generated/c/func_0001f9a0.source-object-proof.json",
             "bytes": 878759,
-            "sha256": "29047C3483450721B5BF281434957DB043FC0342E9EC816FC182AC594B770CD5"
+            "sha256": "7CB2EF3FF5C421F84FB3D1CB5EA4FE88172ECE381B0B4B146F6A7E01DE564D12"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -7840,7 +7840,7 @@
           "proof": {
             "path": "generated/c/func_0001fa3c.source-object-proof.json",
             "bytes": 885809,
-            "sha256": "BBDE21AD370342A162C52BD8DF59CEEF729F60D4E85103F7FBEB0DC194E4FA8C"
+            "sha256": "C1C15640583C07973EE477CD8A9D672CCE066D25E189FA99F5F09F339463D01B"
           },
           "textMode": "native-text-owner-functions-mixed-readonly-fragment-projection",
           "physicalOwners": [
@@ -8186,7 +8186,7 @@
           "proof": {
             "path": "generated/c/func_0001fd20.source-object-proof.json",
             "bytes": 335805,
-            "sha256": "B6A56066935AD63A95CAFA71375D8E787D3248B6AF37BC55F5834DC29D258A01"
+            "sha256": "66441B226991EB540857B03D7BA4393604CC963D7465BBF43521CD5FAE5DE5EC"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8206,7 +8206,7 @@
           "proof": {
             "path": "generated/c/func_0001ffec.source-object-proof.json",
             "bytes": 311302,
-            "sha256": "9C5F1A36D763EB103BF622170836C3F4FFC2B67DFB715AB5C36FE9310D2B2CDB"
+            "sha256": "CC9900F35B41EF34832897495F1A2C5158E47F7B1557C0B280ED0247642253D0"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8226,7 +8226,7 @@
           "proof": {
             "path": "generated/c/func_0002019c.source-object-proof.json",
             "bytes": 303402,
-            "sha256": "241783F75721470475F43465FA531CD2289C9EF9CD6C2D5A0728057BF39A57B3"
+            "sha256": "F4C5DB98D21C630E025406CB30FDD4962EDBA9458E01C8B7CD327D536B73D254"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8246,7 +8246,7 @@
           "proof": {
             "path": "generated/c/func_000201c8.source-object-proof.json",
             "bytes": 303402,
-            "sha256": "DD235C0E1E46B667775E2C6DE03F702EC1A36C56472ACCE036975FCD89E1E9FC"
+            "sha256": "10AC5BFD6719D966D34B862950C3E087C3C5515E76A3089C61096C2FA4BBD6F1"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8266,7 +8266,7 @@
           "proof": {
             "path": "generated/c/func_000201e0.source-object-proof.json",
             "bytes": 303341,
-            "sha256": "68E8D5BCB4CD31325DCCE712B733878352FD14E6C3DFAA2C73215DF92B7B1370"
+            "sha256": "B5B3D34B7749229FA975512F7983B505BAEE55140033B8125021E609F596C1A8"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8286,7 +8286,7 @@
           "proof": {
             "path": "generated/c/func_00020234.source-object-proof.json",
             "bytes": 303341,
-            "sha256": "D434F2BFFB02631F1E7F10EBF7D6560A625611DCF51814A719BE660F365A86C8"
+            "sha256": "BD4321C8C3ACE1C5DAD19642E84E6725FDC74079BFE3BDACEFE9770E255DD0AD"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8306,7 +8306,7 @@
           "proof": {
             "path": "generated/c/func_00020274.source-object-proof.json",
             "bytes": 306719,
-            "sha256": "AF1105E9AD3AC63D4BA91FAA43D6EC018F62715E7FA06B0CEEE7D71B74B44B76"
+            "sha256": "57243B1A5EE35EF51B2E0ADC79FE75D75395544FDFB5DF23FC7A434129AB5CD8"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8326,7 +8326,7 @@
           "proof": {
             "path": "generated/c/func_000202bc.source-object-proof.json",
             "bytes": 306719,
-            "sha256": "E2EA6CE0FEB5D4F0F7AB55E7EEB02F8D4B7FA37953162F9AB610D48B59A8ED54"
+            "sha256": "BBC810EBA53CD6C0C8FEC7D75D3D0EBD7A1564D804BD1F4D6B3C066471E4CDB2"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -8346,7 +8346,7 @@
           "proof": {
             "path": "generated/c/func_00020308.source-object-proof.json",
             "bytes": 300127,
-            "sha256": "03B3A203715D993EC16E749B3D5C2E4E6A7938A17D6F69A2AF55F1F94E8BAEAA"
+            "sha256": "FE1FD4C918EC7C5AC1DC37189E469D3A113D0BBF688E9BE7FF7392A7EC189CB0"
           },
           "textMode": "native-text-owner-retained-literal-run-projection",
           "physicalOwners": [
@@ -11973,7 +11973,7 @@
           "proof": {
             "path": "generated/c/func_0001c2b0.source-object-proof.json",
             "bytes": 262135,
-            "sha256": "D11EA89E8C667119E3DFA3C5D96DFF0BA39C76268DF1BD2F882F86E993511871"
+            "sha256": "AA2733B382A9FDBA605E74109FAC3647F136204CC67ACE3769551D74C0C074F6"
           },
           "textMode": "native-text-single-owner-readonly-fragment-projection",
           "physicalOwners": [
@@ -21578,9 +21578,73 @@
       }
     },
     {
+      "source": "src/lib/func_00046738.c",
+      "sourceClass": "PURE_C",
+      "sourceSha256": "332875108669143D08109ABA483F781C1A0DE45D9561F52826F1965BFD69F851",
+      "file": "game/accepted/library/src/lib/func_00046738.c",
+      "symbols": [
+        "func_00046738"
+      ],
+      "owners": [
+        {
+          "symbol": "func_00046738",
+          "functions": [
+            "func_00046738"
+          ],
+          "proof": {
+            "path": "generated/c/func_00046738.source-object-proof.json",
+            "bytes": 71898,
+            "sha256": "C7564E77C499C6F467EE7A6EFC0971D5E9D09A1D268C59DA45B4AD0342100ADD"
+          },
+          "textMode": "section-assigned",
+          "physicalOwners": [
+            {
+              "romStart": 288568,
+              "bytes": 284,
+              "sectionName": ".ob64.r1016",
+              "sha256": "943CCC1372EDDD9E5ECD5E004B3C6C5CE51BAAD6953E839590BC9E340F349D1E"
+            }
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        },
+        {
+          "path": "include/game/story_event.h",
+          "bytes": 132,
+          "sha256": "44FE3279FCC302C2553CCE469B301147C4829AF274538E216E5680CC444D3418",
+          "file": "game/accepted/library/include/game/story_event.h"
+        }
+      ],
+      "compiler": {
+        "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
+        "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
+        "executableSha256": "F3F1C99A322F5B3D8C108C2A44AF1D6D084DD27575C5D60BF0F0D33FFF34B1C6",
+        "flags": [
+          "-quiet",
+          "-O2",
+          "-meb",
+          "-mips3",
+          "-mgp32",
+          "-mfp32",
+          "-G",
+          "0",
+          "-fno-PIC",
+          "-mno-abicalls",
+          "-fno-builtin",
+          "-funsigned-char"
+        ]
+      }
+    },
+    {
       "source": "src/lib/func_00047a94.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "E76473D7CC3200AF6F0B26A68E8D1FFEE427316F5DFD7F6379E8DBFA694F12B4",
+      "sourceSha256": "9F8B2E8A4C79172B735F809056EB3212019210240FC76D0B571635FAFDD99B07",
       "file": "game/accepted/library/src/lib/func_00047a94.c",
       "symbols": [
         "func_00047a94"
@@ -21593,8 +21657,8 @@
           ],
           "proof": {
             "path": "generated/c/func_00047a94.source-object-proof.json",
-            "bytes": 62453,
-            "sha256": "21B73B7F96F2D8F54951423622D6DF3875A4046DD191CDD5E27A784783D2916D"
+            "bytes": 62793,
+            "sha256": "ECE7BE23671ABC0BF427B5ABC92E26AF47602128E60C70A9DC7B1D2D6C08B05C"
           },
           "textMode": "section-assigned",
           "physicalOwners": [
@@ -21607,7 +21671,20 @@
           ]
         }
       ],
-      "dependencies": [],
+      "dependencies": [
+        {
+          "path": "include/common/types.h",
+          "bytes": 219,
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7",
+          "file": "game/accepted/library/include/common/types.h"
+        },
+        {
+          "path": "include/game/story_event.h",
+          "bytes": 132,
+          "sha256": "44FE3279FCC302C2553CCE469B301147C4829AF274538E216E5680CC444D3418",
+          "file": "game/accepted/library/include/game/story_event.h"
+        }
+      ],
       "compiler": {
         "manifestPath": "docs/external-intake/phase6-kmc-reproduction-20260801/reproduction-manifest.json",
         "manifestSha256": "98C8ACC06A8FBF40DADBD25AE20C2539E8765E14EA12895158C37CC413D06C26",
@@ -74279,7 +74356,7 @@
           "proof": {
             "path": "generated/c/func_000240b0.source-object-proof.json",
             "bytes": 503275,
-            "sha256": "EEDA3010C9D6F44744D389D17A14412FE7EBCC80747482F4BBCC57B9496F6512"
+            "sha256": "B61B849DA945BAEB597CDE149F39ECF30F66C91EA021C7A8325ADF299E847F16"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74299,7 +74376,7 @@
           "proof": {
             "path": "generated/c/func_000241f8.source-object-proof.json",
             "bytes": 482220,
-            "sha256": "704769DF23728BF499C3773B7A44F2376F179FA8CDD2A99AA36BBA27D9BF197B"
+            "sha256": "FFE897030A9FD5A768E6703876C12967C06D029500E12AA3ED95939687F160AF"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74319,7 +74396,7 @@
           "proof": {
             "path": "generated/c/func_00024250.source-object-proof.json",
             "bytes": 485250,
-            "sha256": "5F80DF1A8BFDF3983AFED18AC2D57544603057911354B716EBF0E0480FF567CA"
+            "sha256": "84C853B8C29C988F724A4BF94447D6192A820628169DE5BE28F6180A32A007A3"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74339,7 +74416,7 @@
           "proof": {
             "path": "generated/c/func_000242e0.source-object-proof.json",
             "bytes": 478795,
-            "sha256": "8A57915491C6991A26C0A3CB3B2B1ABB9265C9205E3570B98463B93549666043"
+            "sha256": "2E83E8669B75F29714093E98026B940F140F269E4362F561670DB4307DF05DAE"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74359,7 +74436,7 @@
           "proof": {
             "path": "generated/c/func_000242e8.source-object-proof.json",
             "bytes": 496259,
-            "sha256": "27EED9FCC2CC3C7C8A82C63CE722722BC972F8529AB3B092C89C36D88EFBFF5F"
+            "sha256": "BAD839352B06A9204A9682FD40B47025A7FA50A4F7E443A354B98C2814C4CBB2"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74379,7 +74456,7 @@
           "proof": {
             "path": "generated/c/func_000243ec.source-object-proof.json",
             "bytes": 491536,
-            "sha256": "2D149BA0FE460E466C193235A222B9BA3B0F6688EC0DF43DDA5EC15D79B12C81"
+            "sha256": "085F085A2EF849273B89D7EC7D848F387FA2784D573025F091268923677EE1EB"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74399,7 +74476,7 @@
           "proof": {
             "path": "generated/c/func_000244ec.source-object-proof.json",
             "bytes": 486815,
-            "sha256": "9ED62827B8FAB843B98ADCDF6B6D0668F9EAAD950DE378FE6C36E65C284FCDDD"
+            "sha256": "E67AFBE99F96B062B485255B721D54D5DD44C4981A0F9894230A0E94C038A5B3"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74419,7 +74496,7 @@
           "proof": {
             "path": "generated/c/func_000245dc.source-object-proof.json",
             "bytes": 483591,
-            "sha256": "0EBAD6708571DB2D2A24E041DAE35EDD2DAB55A7D5BD045A715B710F96A2B6DA"
+            "sha256": "24E6464103142127B17F8D12BA5B816AECAFEE44998EA49B83D9AB05A1BB465D"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74439,7 +74516,7 @@
           "proof": {
             "path": "generated/c/func_0002466c.source-object-proof.json",
             "bytes": 483800,
-            "sha256": "3F308071BD7FA4114182AEC0951331D0F5AFA315A78F4AAB99AB1226089533EB"
+            "sha256": "0F2BB7EA3DF3B448D3806955F0BF523F8740EE4ECDA0D0DB479A8FFB0698C82E"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74460,7 +74537,7 @@
           "proof": {
             "path": "generated/c/func_000246C0.source-object-proof.json",
             "bytes": 492928,
-            "sha256": "0934626F7F720BBE284AAD39EA5D5EA2FE9ABCC1425CDD2DFB18E0BA0BF5A7E4"
+            "sha256": "CFBDAA0396042CD0C5B81EF6F96578A39CAF2432B044A51032EB09A4D1C22EDC"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74480,7 +74557,7 @@
           "proof": {
             "path": "generated/c/func_000247a4.source-object-proof.json",
             "bytes": 491973,
-            "sha256": "CE21E8611E286B45336FF72ED9D6077E5A0D0E321FB8C605E98C29545E653616"
+            "sha256": "AD680663881AB1A6BA8450C3E1663C9EFF6BA6DCB49C21583C0D182A5E131CC9"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74500,7 +74577,7 @@
           "proof": {
             "path": "generated/c/func_00024874.source-object-proof.json",
             "bytes": 480463,
-            "sha256": "411A624866239346008155DE395A412455DE5B53ECAA11A35E6A596B055A26A3"
+            "sha256": "49327C28F3A12E531E9F822CB44D8EFCB94339E1B4D998D21C2C802042219408"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -74520,7 +74597,7 @@
           "proof": {
             "path": "generated/c/func_000248ac.source-object-proof.json",
             "bytes": 503984,
-            "sha256": "7016A0049EF7A3F513A6DA926C55F1A56B355AA980FF93599A8130193C039BCC"
+            "sha256": "688F46B541359554721AE89730B5D3871C57F450BE2578CB9E1AF062EC85CA8C"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -75058,7 +75135,7 @@
           "proof": {
             "path": "generated/c/_Printf.source-object-proof.json",
             "bytes": 545827,
-            "sha256": "27EDD3316C927FF2F8CFEE9C5EC70102F22F618AA105290462B49D49B7098911"
+            "sha256": "1565D7C6606358EC76C50BC24672CD0402675F574478CFDD0645D6B82AD01386"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [
@@ -75078,7 +75155,7 @@
           "proof": {
             "path": "generated/c/func_0002a560.source-object-proof.json",
             "bytes": 601560,
-            "sha256": "AA26EC858A5E3593FE29EA669B9178046088F7B66CD90F5643754EA17C203D7D"
+            "sha256": "43D47AF7B554FF4D6FFC7E5646DE7BFADD2376B8A777425E56C5F021DC358CFC"
           },
           "textMode": "native-text-owner-functions-readonly-fragment-projection",
           "physicalOwners": [

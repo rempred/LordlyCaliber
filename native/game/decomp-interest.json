@@ -3,6 +3,15 @@
   "purpose": "Editor consumers of recovered game functions. Matching status comes from Decomp, not this list. Symbols are case-insensitive; ROM offsets in source comments are US Rev 0 z64 offsets.",
   "groups": [
     {
+      "id": "story-event-request-mapper", "priority": 1,
+      "behavior": "Select the next game operation when a story event yields",
+      "symbols": ["func_00046738"],
+      "editorFiles": ["engine/event_semantics.cpp", "engine/event_flow.cpp", "engine/event_instruction_meaning.h"],
+      "editorUse": "imported",
+      "benefit": "Logic and cutscene outcome descriptions use the compiled mapper's return code and optional subtype writes to identify the game operation.",
+      "preserve": "The interpreter handles exact transition token 1 itself. The mapper accepts the low byte for other requests. Multiple operations share a mode code."
+    },
+    {
       "id": "accepted-library-matrices", "priority": 1,
       "behavior": "Camera, projection and rotation math",
       "symbols": ["func_00020d40", "func_00022720", "func_000228d0", "func_00022e90", "func_00023018", "func_00028740"],

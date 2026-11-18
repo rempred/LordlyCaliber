@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/event_script.h"
 #include "engine/event_helper_names.h"
 #include <QByteArray>
 #include <QCryptographicHash>
@@ -97,10 +98,6 @@ class EventInstructionMeaning {
                       const QString &scope = "global") const {
         const auto name = kind == "scene" && !original_ ? QString{} : named(kind, id, scope);
         return name.isEmpty() ? QString("%1 %2").arg(fallback).arg(id) : name;
-    }
-    QString request(int id) const {
-        return catalog_["requests"].toObject()[QString::number(id)].toObject()["name"]
-            .toString(QString("Game operation %1").arg(id));
     }
     QString property(int id, int group) const {
         if (id == 0xfd) {
@@ -576,15 +573,19 @@ class EventInstructionMeaning {
         case 0x11: {
             if (r[0].literal >= 0) {
                 const int token = (arg << 8) | (r[0].literal & 255);
-                return {token == 1 ? "Finish this event" : "Request · " + request(token & 255),
-                        token == 1 ? QString{} : QString("Exit through the requested game-mode transition (request %1).").arg(token & 255)};
+                if (token == 1) return {"Finish this event", {}};
+                const auto &request = EventScript::request(token);
+                return {"Request · " + request.name, request.detail(false)};
             }
             return {"Finish or request the next game operation", "The request uses " + low(r[0], 0) + QString(" with high byte %1; exact token 1 finishes this event.").arg(arg)};
         }
         case 0x12: return {"Load event program · " + reference("event-row", arg, "row"),
                           r[0].literal >= 0 ? QString("Clear flags %1 through %2 (exclusive) before changing programs.").arg(r[0].literal & 255).arg((r[0].literal >> 8) & 255) :
                               "Clear the flag range given by the low/high bytes of " + r0 + " before changing programs."};
-        case 0x13: return {request(arg), "Resume at the next event step after the requested operation is accepted."};
+        case 0x13: {
+            const auto &request = EventScript::request(arg);
+            return {request.name, request.detail(true)};
+        }
         case 0x15: return {"Record history · " + reference("scene-history", arg, "entry"),
                           QString("Date: year %1, month %2, day %3. Duplicate history entries are not added.").arg(r0, text(r[1], 1), text(r[2], 2))};
         case 0x16: {

@@ -1,9 +1,4 @@
-typedef signed char s8;
-typedef unsigned char u8;
-typedef signed short s16;
-typedef unsigned short u16;
-typedef signed int s32;
-typedef unsigned int u32;
+#include "game/story_event.h"
 
 union EndMarker {
     struct {
@@ -13,7 +8,6 @@ union EndMarker {
     u32 whole;
 };
 
-extern s16 func_00046738(s32 arg0);
 extern s32 func_00046854(s32 arg0);
 extern s32 func_00048024(void);
 extern void func_00048294(void);
@@ -206,7 +200,7 @@ block_36:
             goto block_39;
         }
         *(u16 *)0x8018F1A0 = 0x8000;
-        *(s16 *)0x8018F1A2 = func_00046738(0xFF);
+        *(u16 *)0x8018F1A2 = func_00046738(0xFF);
         return D_80197B10 & 8;
 
 helper_deferred_return:
@@ -214,7 +208,7 @@ helper_deferred_return:
 
 block_39:
         if (*(u16 *)0x8018F1A0 == 0) {
-            *(s16 *)0x8018F1A2 = func_00046738(0xFF);
+            *(u16 *)0x8018F1A2 = func_00046738(0xFF);
         }
         return 0;
     }
