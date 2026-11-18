@@ -1,4 +1,5 @@
 #include "app/campaign_editor.h"
+#include "app/scene_preview.h"
 #include "app/campaign_setup_dialog.h"
 #include "engine/new_campaign.h"
 #include "app/campaign_art_editor.h"
@@ -563,7 +564,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     badgeArea->adjustSize();
     tabs_->tabBar()->setTabButton(storylineTab,QTabBar::RightSide,badgeArea);
     tabs_->setCurrentWidget(scenarios_);
-    events_->editCutscene = [this](int selector) { openCutscene(selector); };
+    events_->editCutscene = [this](int selector,int row,int at) { openCutscene(selector,row,at); };
     scenarios_->openStoryline = [this](int key) {
         const auto rows = project_->sceneEvents()->scenarioRows(key);
         tabs_->setCurrentWidget(story_);
@@ -583,7 +584,7 @@ CampaignEditor::CampaignEditor(Project *p, QUndoStack *undo, std::function<void(
     };
     for (auto child : scenarios_->findChildren<QWidget *>())
         if (auto events = dynamic_cast<ScenarioEventEditor *>(child))
-            events->editCutscene = [this](int selector) { openCutscene(selector); };
+            events->editCutscene = [this](int selector,int row,int at) { openCutscene(selector,row,at); };
     connect(flowChaos_, &QSpinBox::valueChanged, this, [this] {
         if (!loading_)
             refreshFlow();
@@ -875,7 +876,7 @@ void CampaignEditor::selectEvent(int row, int offset) {
     story_->setCurrentWidget(events_);
     events_->selectEventRow(row, offset);
 }
-void CampaignEditor::openCutscene(int selector) {
+void CampaignEditor::openCutscene(int selector,int eventRow,int requestOffset) {
     for (const auto &id : project_->scenePrograms()->scenes())
         if (project_->scenePrograms()->resource(id).selectors.contains(selector)) {
             tabs_->setCurrentWidget(story_);
@@ -892,6 +893,9 @@ void CampaignEditor::openCutscene(int selector) {
                     scenes->item(row)->data(Qt::UserRole + 1).toString() == id.authoredId) {
                     scenes->setCurrentRow(row);
                     scenes->scrollToItem(scenes->item(row));
+                    if(eventRow>=0 && requestOffset>=0)
+                        if(auto preview=story_->currentWidget()->findChild<ScenePreview *>())
+                            preview->selectEventLaunch(eventRow,requestOffset);
                     return;
                 }
         }

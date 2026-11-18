@@ -1045,6 +1045,7 @@ QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &fl
             if(&a==&action)break;
             if(a.scene==action.answerScene){
                 d.scene=a.title.section(" · ",1);
+                d.questionOffset=a.instructions.last();
                 d.commonEffects.clear();
             }else if(!d.scene.isEmpty() && a.kind=="action"){
                 d.commonEffects<<a.title;
@@ -1060,6 +1061,74 @@ QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &fl
         result<<d;
     }
     return result;
+}
+std::optional<SceneAnswerDecision>
+EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &bytes,
+                         const SceneEventSite &site, int selector, const QJsonObject &gates) {
+    if (site.offset < 0 || site.offset + 2 > bytes.size() || u8(bytes, site.offset) != 0x10)
+        return {};
+    for (const auto &event : flow) {
+        const auto &actions = event.actions;
+        auto at = std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
+            return a.scene == selector && !a.instructions.isEmpty() &&
+                   a.instructions.last() == site.offset;
+        });
+        if (at == actions.cend())
+            continue;
+        SceneAnswerDecision decision;
+        decision.selector = selector;
+        int next = site.offset + 2;
+        for (++at; at != actions.cend(); ++at) {
+            if (at->instructions.isEmpty() || at->instructions.first() != next)
+                return {};
+            const int last = at->instructions.last();
+            next = last + 2;
+            // Flag and dated-history writes can precede the answer comparison.
+            // Neither redirects the event or overwrites dialogue control 3.
+            const int first = at->instructions.first();
+            const bool writeFlag = last == first + 4 && u8(bytes, first) == 0x68 &&
+                                   u8(bytes, first + 2) == 0x69 && u8(bytes, first + 3) <= 1 &&
+                                   u16(bytes, last) == 0x7160;
+            const bool history = last == first + 6 && u16(bytes, first) == 0x60f4 &&
+                                 u16(bytes, first + 2) == 0x61f5 &&
+                                 u16(bytes, first + 4) == 0x62f6 && u8(bytes, last) == 0x15;
+            if (at->kind == "action" && (writeFlag || history)) {
+                if (writeFlag)
+                    decision.commonFlags[u8(bytes, first + 1)] = u8(bytes, first + 3) != 0;
+                decision.commonEffects << at->title;
+                continue;
+            }
+            const int op = u8(bytes, last);
+            if (at->answerScene != selector || (op != 0xab && op != 0xbb) ||
+                gates.contains(QString::number(last)))
+                return {};
+            const auto &fields = at->condition.fields;
+            const auto field =
+                std::find_if(fields.cbegin(), fields.cend(),
+                             [](const StoryField &f) { return f.kind == "dialogue-answer"; });
+            if (field == fields.cend())
+                return {};
+            decision.comparedAnswer = field->value;
+            auto reaction = [&](int pc, SceneAnswerReaction &out) {
+                const auto arm =
+                    std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
+                        return a.scene >= 0 && !a.instructions.isEmpty() &&
+                               a.instructions.first() == pc;
+                    });
+                if (arm == actions.cend() || u8(bytes, arm->instructions.last()) != 0x10)
+                    return false;
+                out.selector = arm->scene;
+                out.requestOffset = arm->instructions.last();
+                out.effects = choiceEffects(event, bytes, pc, gates);
+                return true;
+            };
+            if (reaction(op == 0xab ? at->target : at->otherwise, decision.equal) &&
+                reaction(op == 0xab ? at->otherwise : at->target, decision.different))
+                return decision;
+            return {};
+        }
+    }
+    return {};
 }
 void EventFlow::set(SceneEvents &events,const ScenePrograms &scenes,int row,const StoryField &field,int value){
     if(value<field.minimum||value>field.maximum||(!field.choices.isEmpty()&&!field.choices.contains(value)))throw Error("Choose a supported event value");

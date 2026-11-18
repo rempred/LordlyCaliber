@@ -63,7 +63,7 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
                                           .arg(site.row)
                                           .arg(site.name)
                                           .arg(context.invocation),
-                                      chain(selector, &context, {})};
+                                      chain(selector, &context, {}), -1, context.site};
         } catch (const Error &) {
             // An alternate invocation may have a usable predecessor; retain it.
         }
@@ -102,5 +102,58 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
         }
     }
     return result;
+}
+void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom &rom,
+                                      const ScenePrograms &scenes, const SceneEvents &events,
+                                      int selector) {
+    struct Row {
+        QByteArray bytes;
+        QVector<StoryEvent> flow;
+        QJsonObject gates;
+    };
+    QMap<int, Row> rows;
+    const auto &contexts = SceneEvents::contexts();
+    for (auto &plan : plans) {
+        if (plan.site.isEmpty())
+            continue;
+        const auto &site = SceneEvents::site(plan.site);
+        const auto parent = std::find_if(contexts.cbegin(), contexts.cend(),
+                                         [&](const auto &c) { return c.id == plan.id; });
+        if (parent == contexts.cend())
+            continue;
+        // The reaction inherits the exact launch arguments of this event invocation.
+        auto child = [&](const SceneEventContext &c) {
+            return c.parent == plan.site && c.parentInvocation == parent->invocation;
+        };
+        if (std::none_of(contexts.cbegin(), contexts.cend(), child))
+            continue;
+        if (!rows.contains(site.row))
+            rows.insert(
+                site.row,
+                {events.program(site.row), EventFlow::read(rom, events, scenes, site.row, false),
+                 events.flagEdits()[QString::number(site.row)].toObject()["gates"].toObject()});
+        const auto &row = rows.constFind(site.row).value();
+        auto decision = EventFlow::sceneDecision(row.flow, row.bytes, site, selector, row.gates);
+        if (!decision)
+            continue;
+        auto arguments = [&](SceneAnswerReaction &arm) {
+            bool found = false;
+            for (const auto &c : contexts)
+                if (child(c)) {
+                    const auto &target = SceneEvents::site(c.site);
+                    if (target.row != site.row || target.offset != arm.requestOffset ||
+                        events.target(c.site) != arm.selector)
+                        continue;
+                    if (found && (arm.translations.known != c.translations.known ||
+                                  arm.translations.values != c.translations.values))
+                        return false;
+                    arm.translations = c.translations;
+                    found = true;
+                }
+            return found;
+        };
+        if (arguments(decision->equal) && arguments(decision->different))
+            plan.decision = std::move(decision);
+    }
 }
 } // namespace lordly

@@ -27,7 +27,7 @@ class ScenarioEventEditor : public QWidget {
     void selectEventRow(int row, int offset = -1);
     void setRawInstructions(bool);
     void setCreateScenario(std::function<void(int)>);
-    std::function<void(int)> editCutscene;
+    std::function<void(int selector,int row,int requestOffset)> editCutscene;
   protected:
     void showEvent(QShowEvent *) override;
   private:

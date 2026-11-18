@@ -41,6 +41,7 @@ class ScenePreview : public QWidget {
     void setBodyAnimations(BodyAnimationData::Pointer);
     void setItems(ItemData, IconArtwork);
     void setSaveProvider(std::function<const SaveDocument *()> provider);
+    void selectEventLaunch(int row, int requestOffset);
     void setObjectNavigationEnabled(bool enabled);
     void beginPositionPick(int command, int slot);
     void armAssetPlacement(bool sprite, int bank, int animation, int facing, int variant = 0);
@@ -101,7 +102,6 @@ class ScenePreview : public QWidget {
         bool unfinishedFade = false, pausedMovement = false;
         bool automaticInputLastUpdate = false, automaticChoiceMoved = false;
         int automaticChoices = 0;
-        QMap<int,bool> storyFlags;
     };
     void restart();
     void seek(int tick);
@@ -164,6 +164,7 @@ class ScenePreview : public QWidget {
     QPushButton *play_, *step_, *skip_;
     QCheckBox *loop_;
     QLabel *status_, *context_;
+    QPushButton *answerPath_;
     QComboBox *liveObjects_;
     QLabel *objectState_;
     QPushButton *findObject_;

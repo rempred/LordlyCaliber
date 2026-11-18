@@ -31,7 +31,7 @@ class CampaignEditor : public QWidget {
     void showBranchConditions();
     void changeBranch(std::function<void(SceneEvents &)>, const QString &);
     void refreshFlow();
-    void openCutscene(int selector);
+    void openCutscene(int selector, int eventRow = -1, int requestOffset = -1);
     void editRule(int row);
     void createNode();
     void createMission(int location = -1);

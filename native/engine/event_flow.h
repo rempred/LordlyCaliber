@@ -36,11 +36,22 @@ struct PlayerAnswer {
     QStringList effects;
 };
 struct PlayerDecision {
-    int entry = -1, group = -1, archive = -1, dialogue = -1, selector = -1;
+    int entry = -1, group = -1, archive = -1, dialogue = -1, selector = -1, questionOffset = -1;
     QString scene;
     QStringList commonEffects;
     StoryField answerField;
     std::array<PlayerAnswer,2> answers;
+};
+struct SceneAnswerReaction {
+    int selector = -1, requestOffset = -1;
+    DirectorLaunchTranslations translations;
+    QStringList effects;
+};
+struct SceneAnswerDecision {
+    int selector = -1, comparedAnswer = -1;
+    QStringList commonEffects;
+    QMap<int,bool> commonFlags;
+    SceneAnswerReaction equal, different;
 };
 struct StoryEvent {
     int entry = 0, group = -1;
@@ -62,6 +73,8 @@ class EventFlow {
     static void set(SceneEvents &, const ScenePrograms &, int row, const StoryField &, int value);
     static QVector<PlayerDecision> playerDecisions(const QVector<StoryEvent> &, const QByteArray &program,
         const ScenePrograms &, const Dialogues &, const QJsonObject &gates);
+    static std::optional<SceneAnswerDecision> sceneDecision(const QVector<StoryEvent> &, const QByteArray &program,
+        const SceneEventSite &, int selector, const QJsonObject &gates);
     // The order here is the order shown in the dialogue, independent of the byte values.
     static QVector<QPair<int,QString>> questionAnswers(int selector,const ScenePrograms &,const Dialogues &);
     static QVector<int> questionSelectors(const ScenePrograms &);

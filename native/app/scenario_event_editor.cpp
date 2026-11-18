@@ -78,7 +78,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     views_=new QStackedWidget;outer->addWidget(views_,1);
     eventsView_=new EventFlowEditor(project_,undo_,[this]{refresh();changed_();},this);views_->addWidget(eventsView_);
     eventsView_->rawInstructions=[this](int at){setRawInstructions(true);selectEventRow(rows_->currentData().toInt(),at);};
-    eventsView_->editCutscene=[this](int selector){if(editCutscene)editCutscene(selector);};
+    eventsView_->editCutscene=[this](int selector,int row,int at){if(editCutscene)editCutscene(selector,row,at);};
     eventsView_->openEventProgram=[this](int row){selectEventRow(row);};
     eventsView_->openEventInstruction=[this](int row,int at){setRawInstructions(false);selectEventRow(row,at);};
     auto rawPage=new QWidget;views_->addWidget(rawPage);auto layout = new QVBoxLayout(rawPage);layout->setContentsMargins(0,0,0,0);
@@ -226,7 +226,7 @@ ScenarioEventEditor::ScenarioEventEditor(Project *p, QUndoStack *undo, std::func
     openCutscene_=new QPushButton("Edit this cutscene…");openCutscene_->setObjectName("scenarioEventOpenCutscene");buttons->addWidget(openCutscene_);
     connect(openCutscene_,&QPushButton::clicked,this,[this]{
         const auto item=steps_->currentItem();if(!item||!item->parent()||!editCutscene)return;
-        for(const auto &site:SceneEvents::sites())if(site.row==rows_->currentData().toInt()&&site.offset==item->data(0,offsetRole).toInt()) {editCutscene(project_->sceneEvents()->target(site.id));return;}
+        for(const auto &site:SceneEvents::sites())if(site.row==rows_->currentData().toInt()&&site.offset==item->data(0,offsetRole).toInt()) {editCutscene(project_->sceneEvents()->target(site.id),site.row,site.offset);return;}
     });
     buttons->addStretch();
     restore_ = new QPushButton("Restore loaded instruction values"); restore_->setObjectName("scenarioEventRestore"); buttons->addWidget(restore_);

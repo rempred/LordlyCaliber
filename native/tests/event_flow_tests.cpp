@@ -41,6 +41,18 @@ class EventFlowTests:public QObject {
         const auto retail=p.sceneEvents()->program(22);
         QUndoStack undo;ScenarioEventEditor editor(&p,&undo,[]{});editor.showAllRows();editor.show();editor.selectEventRow(22,190);
         auto *open=editor.findChild<QPushButton *>("storyPlayerDecisions");QVERIFY(open && open->isVisible());
+        int selected=-1,row=-1,site=-1;
+        editor.editCutscene=[&](int id,int r,int at){selected=id;row=r;site=at;};
+        QTimer::singleShot(0,[&]{
+            auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QTimer::singleShot(5000,dialog,&QDialog::reject);
+            auto versions=dialog->findChild<QComboBox *>("decisionVersion");QVERIFY(versions);
+            versions->setCurrentIndex(3);
+            auto play=dialog->findChild<QPushButton *>("previewStoryDecision");QVERIFY(play && play->isVisible());
+            play->click();
+        });
+        open->click();
+        QCOMPARE(selected,180);QCOMPARE(row,22);QCOMPARE(site,544);QCOMPARE(undo.count(),0);
         auto exercise=[&](bool all,bool save){
             QTimer::singleShot(0,[&,all,save]{
                 auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);

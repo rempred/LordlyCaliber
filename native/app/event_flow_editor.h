@@ -20,7 +20,7 @@ class EventFlowEditor : public QWidget {
     int selectedOffset() const;
     void editTree(QString id = {},QVector<int> path = {},int offset=-1,QJsonObject draft={});
     std::function<void(int)> rawInstructions;
-    std::function<void(int)> editCutscene;
+    std::function<void(int selector,int row,int requestOffset)> editCutscene;
     std::function<void(int)> openEventProgram;
     std::function<void(int,int)> openEventInstruction;
   private:

@@ -94,7 +94,8 @@ int DirectorSession::invoke(void *context, LordlyDirectorWord opcode,
         return 0;
     }
 }
-int DirectorSession::dispatch(const Service &service, int instructionBudget, const Observer &observer) {
+int DirectorSession::dispatch(const Service &service, int instructionBudget, const Observer &observer,
+                             const Request &request) {
     if (instructionBudget < 1)
         throw Error("Director instruction budget must be positive");
     if (terminalResult_ != LORDLY_DIRECTOR_YIELD)
@@ -126,13 +127,21 @@ int DirectorSession::dispatch(const Service &service, int instructionBudget, con
         const auto opcode = current_.words[state_.cursor];
         try {
             if (opcode == 0x80000003 || opcode == 0xbb) {
-                if (opcode == 0xbb && !requestedSelector_)
+                auto selector = requestedSelector_;
+                auto arguments = requestedTranslations_;
+                if (opcode == 0xbb && !selector && request) {
+                    DirectorLaunchTranslations values;
+                    selector = request(values);
+                    if (selector)
+                        arguments = values;
+                }
+                if (opcode == 0xbb && !selector)
                     throw Error("Scene replacement requires the current gameplay Director request");
-                auto next = load(opcode == 0xbb ? *requestedSelector_
-                                                : qint32(current_.words[state_.cursor + 1]),
-                                 false, opcode == 0xbb ? requestedTranslations_ : std::nullopt);
-                if (opcode == 0xbb && requestedTranslations_)
-                    translations_ = *requestedTranslations_;
+                auto next =
+                    load(opcode == 0xbb ? *selector : qint32(current_.words[state_.cursor + 1]),
+                         false, opcode == 0xbb ? arguments : std::nullopt);
+                if (opcode == 0xbb && arguments)
+                    translations_ = *arguments;
                 current_ = std::move(next);
                 previous_.reset();
                 state_.resume_cursor = state_.cursor = state_.active = 0;

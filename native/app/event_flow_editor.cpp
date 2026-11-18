@@ -339,7 +339,7 @@ void EventFlowEditor::showEvent(){
                     for(const auto &a:e.requirements+e.actions)if(a.instructions.contains(address.offset)){
                         if(!a.condition.operation.isEmpty())addCondition(form,a.condition);
                         for(const auto &f:a.fields)addField(form,f);
-                        if(a.scene>=0&&editCutscene){auto edit=new QPushButton("Edit cutscene…");form->addRow(edit);connect(edit,&QPushButton::clicked,this,[this,id=a.scene]{editCutscene(id);});}
+                        if(a.scene>=0&&editCutscene){auto edit=new QPushButton("Edit cutscene…");form->addRow(edit);connect(edit,&QPushButton::clicked,this,[this,id=a.scene,at=a.instructions.value(a.instructions.size()-1,-1)]{editCutscene(id,row_,at);});}
                         found=true;break;
                     }if(found)break;
                 }
@@ -485,7 +485,7 @@ void EventFlowEditor::showEvent(){
         }
         if(a.kind=="program"&&!a.fields.isEmpty()&&openEventProgram){auto open=new QPushButton("Open related events");open->setObjectName(QString("storyOpenProgram_%1").arg(a.fields.first().offset));controls->addWidget(open);
             connect(open,&QPushButton::clicked,this,[this,row=a.fields.first().value]{openEventProgram(row);});}
-        if(a.scene>=0&&editCutscene){auto open=new QPushButton("Edit cutscene…");controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,id=a.scene]{editCutscene(id);});}
+        if(a.scene>=0&&editCutscene){auto open=new QPushButton("Edit cutscene…");controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,id=a.scene,at=a.instructions.value(a.instructions.size()-1,-1)]{editCutscene(id,row_,at);});}
         if(a.target>=0&&step.predicate.operation.isEmpty()){
             auto link=[&](QString prefix,int at){auto open=new QPushButton(prefix+destination(at));controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,at]{selectOffset(at);});};
             link(a.otherwise>=0?"Yes → ":"Go to → ",a.target);if(a.otherwise>=0)link("No → ",a.otherwise);
@@ -550,7 +550,7 @@ void EventFlowEditor::showDecisions(){
     auto body=new QWidget;auto columns=new QHBoxLayout(body);scroll->setWidget(body);
     std::array<QGroupBox *,2> cards;
     std::array<QLabel *,2> descriptions;
-    int inspect=-1;bool create=false;
+    int inspect=-1;bool create=false,play=false;
     for(int i=0;i<2;++i){
         cards[i]=new QGroupBox;auto col=new QVBoxLayout(cards[i]);descriptions[i]=label({});
         descriptions[i]->setTextFormat(Qt::PlainText);descriptions[i]->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -564,6 +564,10 @@ void EventFlowEditor::showDecisions(){
     }
     auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);
     auto save=buttons->button(QDialogButtonBox::Save);save->setEnabled(false);
+    auto playQuestion=buttons->addButton("Preview decision…",QDialogButtonBox::ActionRole);
+    playQuestion->setObjectName("previewStoryDecision");playQuestion->setVisible(bool(editCutscene));
+    connect(swap,&QCheckBox::toggled,playQuestion,&QPushButton::setDisabled);
+    connect(playQuestion,&QPushButton::clicked,&dialog,[&]{play=true;dialog.reject();});
     auto newRule=buttons->addButton("Create rule using this question…",QDialogButtonBox::ActionRole);
     newRule->setObjectName("createDecisionRule");
     newRule->setVisible(EventAuthoring::supported(row_));
@@ -609,6 +613,10 @@ void EventFlowEditor::showDecisions(){
     if(!initialGroup.isEmpty())question->setCurrentIndex(question->findData(initialGroup));
     selectQuestion();
     if(dialog.exec()!=QDialog::Accepted){
+        if(play && editCutscene){
+            const auto d=decisions_[variant->currentData().toInt()];
+            editCutscene(d.selector,row_,d.questionOffset);return;
+        }
         if(inspect>=0)selectOffset(inspect);
         if(create){
             const auto &d=decisions_[variant->currentData().toInt()];

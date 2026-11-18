@@ -361,6 +361,19 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     status_->setObjectName("scenePlaybackStatus");
     status_->setWordWrap(true);
     layout->addWidget(status_);
+    answerPath_ = new QPushButton("View event outcome…");
+    answerPath_->setObjectName("sceneAnswerOutcome");
+    layout->addWidget(answerPath_, 0, Qt::AlignLeft);
+    answerPath_->hide();
+    connect(answerPath_, &QPushButton::clicked, this, [this] {
+        if (!current_)
+            return;
+        QMessageBox dialog(QMessageBox::Information, "Event path for this answer", {},
+                           QMessageBox::Ok, this);
+        dialog.setTextFormat(Qt::PlainText);
+        dialog.setText(current_->playback.answerPath().join("\n"));
+        dialog.exec();
+    });
     seekTimer_ = new QTimer(this);
     seekTimer_->setInterval(0);
     connect(seekTimer_, &QTimer::timeout, this, &ScenePreview::continueSeek);
@@ -899,10 +912,15 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         chapterChoice_->setVisible(selector_ == 1073 && resource.selectors.contains(1077));
         missionTitleUi_->setVisible(selector_ == 1078);
         mode_ = defaultMode_ = mode;
-        const auto launch = SceneImages::launch(programs.program(id));
+        const auto program = programs.program(id);
+        const auto launch = SceneImages::launch(program);
         const auto previousContext = launchContext_->currentData().toString();
-        launchPlans_ = SceneLaunchPlan::choices(
-            *resources_, events ? *events : SceneEvents::load(rom_), selector_);
+        if (!events)
+            events.emplace(SceneEvents::load(rom_));
+        launchPlans_ = SceneLaunchPlan::choices(*resources_, *events, selector_);
+        if (std::any_of(program.commands.cbegin(), program.commands.cend(),
+                        [](const auto &c) { return c.opcode == 0xbb; }))
+            SceneLaunchPlan::addAnswerRoutes(launchPlans_, rom_, programs, *events, selector_);
         {
             const QSignalBlocker block(launchContext_);
             launchContext_->clear();
@@ -916,13 +934,13 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
                 (!launchPlans_.isEmpty() &&
                  (launchPlans_.first().steps.size() > 1 || launchPlans_.first().tailCall >= 0)));
         }
-        storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
-        if (mode == 2) party_ = SceneParty::infer(programs.program(id), classCount_);
-        const auto actions = SceneActions::inspect(programs.program(id));
+        storyCastEnabled_ = SceneStoryCast::supports(program);
+        if (mode == 2) party_ = SceneParty::infer(program, classCount_);
+        const auto actions = SceneActions::inspect(program);
         classDefaultsEnabled_ = mode == 2 && std::any_of(actions.cbegin(), actions.cend(),
             [](const auto &action) { return action.name == "Create class Actor"; });
         storyCastUi_->setVisible(storyCastEnabled_);
-        const auto &commands = programs.program(id).commands;
+        const auto &commands = program.commands;
         scriptInputControls_ = std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
             return c.opcode == 0x57;
         });
@@ -994,6 +1012,37 @@ void ScenePreview::setSaveProvider(std::function<const SaveDocument *()> provide
     savedCast_->setEnabled(bool(saveProvider_));
     armyCast_->setEnabled(bool(saveProvider_));
 }
+void ScenePreview::selectEventLaunch(int row, int requestOffset) {
+    if (activeInputs() || !resources_ || selector_ < 0)
+        return;
+    for (int i = 0; i < launchPlans_.size(); ++i) {
+        if (launchPlans_[i].site.isEmpty())
+            continue;
+        const auto &s = SceneEvents::site(launchPlans_[i].site);
+        if (s.row == row && s.offset == requestOffset) {
+            launchContext_->setCurrentIndex(i);
+            return;
+        }
+    }
+    // A new or redirected event can have no recorded launch context. Keep it
+    // selectable without borrowing another event's cast or answer mapping.
+    const auto id = QString("event:%1:%2").arg(row).arg(requestOffset);
+    int index = launchContext_->findData(id);
+    if (index < 0) {
+        SceneLaunchPlan plan;
+        plan.id = id;
+        plan.name = QString("Event %1 · request %2 · launch inputs unavailable")
+                        .arg(row).arg(requestOffset);
+        const auto key = resources_->selectors().at(selector_);
+        if (SceneLaunchPlan::fresh(resources_->entries()[key].program))
+            plan.steps.append(SceneLaunchStep{selector_});
+        index = launchPlans_.size();
+        launchPlans_.append(plan);
+        launchContext_->addItem(plan.name, id);
+    }
+    launchContextUi_->show();
+    launchContext_->setCurrentIndex(index);
+}
 void ScenePreview::loadArmyCast() {
     const auto save=saveProvider_ ? saveProvider_() : nullptr;
     if (!save) throw Error("Open a save in the Save workspace and select a slot first");
@@ -1036,6 +1085,8 @@ void ScenePreview::restart() {
         const auto plan = inputs ? SceneLaunchPlan{"imported", "Imported playback inputs", {{selector_}}} :
             launchPlans_.value(launchContext_->currentIndex(),
                                SceneLaunchPlan{"direct", "Direct scene launch", {{selector_}}});
+        if (plan.steps.isEmpty())
+            throw Error("This event has no recorded launch inputs for the scene's starting state.");
         const int startupSelector = plan.steps.first().selector;
         const auto &startupProgram =
             resources_->entries()[resources_->selectors()[startupSelector]].program;
@@ -1091,7 +1142,7 @@ void ScenePreview::restart() {
             if (used)
                 context_->setText(
                     context_->text() +
-                    (opcode == 0x8f ? "\nSaved story flags are clear in this preview; a saved game "
+                    (opcode == 0x8f ? "\nStory flags start clear in this preview. A saved game "
                                       "may choose different dialogue."
                      : opcode == 0xbd ? (inputs ? "\nAlternate presentation follows the imported launch context."
                                                                : "\nAlternate presentation is inactive in this preview.")
@@ -1289,12 +1340,12 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     }
     if (value && opcode == 0x8f && args.size() == 3) {
         const int flag=(args[2]&0xffff0000U)==0x4c430000U?int(args[2]&65535):int(qint16(args[2]+0xaa));
-        *value=next.storyFlags.value(flag,false);
+        *value=next.playback.storyFlag(flag);
         return true;
     }
     if(opcode==0x8e&&args.size()==2&&(args[0]&0xffff0000U)==0x4c430000U){
         const int flag=int(args[0]&65535);if(flag>=768||args[1]>2)throw Error("Invalid scene story-flag action");
-        next.storyFlags[flag]=args[1]==2?!next.storyFlags.value(flag,false):args[1]==1;
+        next.playback.setStoryFlag(flag,args[1]==2?!next.playback.storyFlag(flag):args[1]==1);
         return true;
     }
     // Declared isolated preview inputs. The gameplay owner is absent here.
@@ -2047,6 +2098,7 @@ void ScenePreview::presentSelectionOutline() {
     selectionOutline_->setAcceptedMouseButtons(Qt::NoButton);
 }
 void ScenePreview::present() {
+    answerPath_->setVisible(current_ && current_->playback.hasAnswerOutcome());
     emit timelineChanged(sceneId_, commandTimes_, current_ ? current_->activeWord : -1, tick_);
     reportExit();
     const QSignalBlocker block(position_);
@@ -2068,6 +2120,10 @@ void ScenePreview::present() {
     setProperty("sceneTick", tick_);
     setProperty("scenePreparing", preparing_);
     setProperty("sceneStopped", !current_ || current_->stopped);
+    setProperty("sceneFocusedDialogueState",
+                current_ && current_->dialogue
+                    ? current_->dialogue->focusedState(current_->playback.dialogue()->resources)
+                    : -1);
     setProperty("sceneAudioRequests", current_ && current_->playback.audio()
                                           ? qulonglong(current_->playback.audio()->requestCount())
                                           : qulonglong(0));
@@ -2094,6 +2150,11 @@ void ScenePreview::present() {
                          .arg(current_->backgroundName.isEmpty()
                                   ? QString{}
                                   : "\nBackground channels: " + current_->backgroundName));
+    if (current_->playback.hasAnswerOutcome() && !director.isContinuation()) {
+        const auto reaction = resources_->entries().constFind(director.resourceKey());
+        if (reaction != resources_->entries().cend())
+            status_->setText(status_->text() + "\nReaction · " + reaction->name);
+    }
     if (current_->playback.display().black())
         status_->setText(status_->text() + "\nDisplay blacked out by scene command.");
     if (preparing_)

@@ -4,6 +4,7 @@ namespace lordly {
 void ScenePlayback::supplyLaunchPlan(const Directors &resources, const SceneLaunchPlan &plan) {
     if (completed_ || schedule_.active || plan.steps.isEmpty() || plan.steps.size() > 8)
         throw Error("Launch context must be supplied before scene playback starts");
+    answerDecision_ = plan.decision;
     if (plan.steps.size() == 1 && plan.tailCall < 0)
         return;
     QVector<DirectorContext> contexts;
@@ -33,14 +34,40 @@ void ScenePlayback::supplyLaunchPlan(const Directors &resources, const SceneLaun
     tailCall_ = plan.tailCall;
     selectedEntered_ = false;
 }
+QStringList ScenePlayback::answerPath() const {
+    if (!selectedAnswer_ || !answerDecision_)
+        return {};
+    const auto &d = *answerDecision_;
+    return d.commonEffects + (*selectedAnswer_ == d.comparedAnswer ? d.equal : d.different).effects;
+}
 bool ScenePlayback::updateDirectors() {
     auto dispatch = [&] {
         director_.setBarrierState(imageView_ ? u8(*imageView_, 0x840) : 0);
         director_.setController(pressed_);
-        const int result =
-            director_.dispatch([this](quint32 op, const QVector<quint32> &args,
-                                      int &value) { return command(op, args, value); },
-                               instructionBudget_, observer_ ? *observer_ : DirectorSession::Observer{});
+        std::optional<int> answer;
+        auto eventRequest = [&](DirectorLaunchTranslations &arguments) -> std::optional<int> {
+            if (!answerDecision_ || selectedAnswer_ || !dialogue_ || director_.isContinuation() ||
+                director_.selector() != answerDecision_->selector ||
+                (!contexts_.isEmpty() && activeContext_ != contexts_.size() - 1))
+                return {};
+            const auto value = dialogue_->windows.control(3);
+            if (value != 1 && value != 255)
+                return {};
+            answer = value;
+            const auto &arm = value == answerDecision_->comparedAnswer ? answerDecision_->equal
+                                                                       : answerDecision_->different;
+            arguments = arm.translations;
+            return arm.selector;
+        };
+        const int result = director_.dispatch(
+            [this](quint32 op, const QVector<quint32> &args, int &value) {
+                return command(op, args, value);
+            },
+            instructionBudget_, observer_ ? *observer_ : DirectorSession::Observer{}, eventRequest);
+        if (answer && result == LORDLY_DIRECTOR_YIELD) {
+            selectedAnswer_ = answer;
+            storyFlags_.insert(answerDecision_->commonFlags);
+        }
         if (imageView_)
             put8(*imageView_, 0x840, director_.state().barrier_state);
         return result;

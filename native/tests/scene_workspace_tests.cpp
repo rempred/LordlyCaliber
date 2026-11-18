@@ -1,3 +1,4 @@
+#include "app/campaign_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/scene_action_editor.h"
 #include "app/scene_key_picker.h"
@@ -25,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPainter>
 #include <QProcess>
 #include <QPushButton>
@@ -41,6 +43,191 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void storyDecisionHandoff_data() {
+        QTest::addColumn<int>("question");
+        QTest::addColumn<bool>("second");
+        QTest::addColumn<bool>("swapped");
+        QTest::addColumn<int>("reaction");
+        QTest::newRow("Wentinus orders") << 180 << false << false << 181;
+        QTest::newRow("Wentinus peace") << 180 << true << false << 182;
+        QTest::newRow("Wentinus edited orders") << 180 << false << true << 182;
+        QTest::newRow("Wentinus edited peace") << 180 << true << true << 181;
+        QTest::newRow("Sheen accepts") << 159 << false << false << 160;
+        QTest::newRow("Sheen refuses") << 159 << true << false << 161;
+    }
+    void storyDecisionHandoff() {
+        QFETCH(int, question);
+        QFETCH(bool, second);
+        QFETCH(bool, swapped);
+        QFETCH(int, reaction);
+        if (qEnvironmentVariableIsEmpty("LORDLY_TEST_ROM"))
+            QSKIP("US Rev 0 ROM required");
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadScenePrograms();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        auto events = *project.sceneEvents();
+        if (swapped)
+            events.editParameter(22, 562, "value", 1, scenes);
+        const bool wentinus = question == 180;
+        ScenePreview preview(project.rom());
+        preview.resize(1250, 950);
+        preview.show();
+        const auto key = scenes.original().selectors()[question];
+        const auto &resource = scenes.original().entries()[key];
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), resource, -1).mode,
+                            *project.dialogues(), events);
+        preview.selectEventLaunch(wentinus ? 22 : 20, wentinus ? 544 : 202);
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto down = preview.findChild<QPushButton *>("panelDown");
+        auto outcome = preview.findChild<QPushButton *>("sceneAnswerOutcome");
+        QVERIFY(status && confirm && step && down && outcome);
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 15000);
+        int choices = 0;
+        bool moved = false;
+        for (int n = 0;
+             n < 4000 && !preview.property("sceneStopped").toBool() && !outcome->isVisible(); ++n) {
+            const int state = preview.property("sceneFocusedDialogueState").toInt();
+            if (state == 7 && second && !moved) {
+                down->click();
+                moved = true;
+            } else if (state == 7) {
+                confirm->click();
+                ++choices;
+            } else if (n % 20 == 0 && confirm->isVisible()) {
+                confirm->click();
+                moved = false;
+            } else {
+                step->click();
+                if (state != 7)
+                    moved = false;
+            }
+        }
+        QVERIFY2(choices > 0, qPrintable(status->text()));
+        QVERIFY2(outcome->isVisible(), qPrintable(status->text()));
+        QVERIFY2(status->text().contains(QString("selector %1 ·").arg(reaction)),
+                 qPrintable(status->text()));
+        bool sawReactionPage = false;
+        int briefingMenu = -1;
+        for (int n = 0; n < 2200 && !preview.property("sceneStopped").toBool(); ++n) {
+            const int state = preview.property("sceneFocusedDialogueState").toInt();
+            if (n > 8 && (state == 3 || state == 6))
+                sawReactionPage = true;
+            // The orders reaction opens the Repeat / End menu at this barrier.
+            if (reaction == 181 && briefingMenu < 0 &&
+                status->text().section('\n', 0, 0).endsWith("word 1039"))
+                briefingMenu = n;
+            if (briefingMenu >= 0 && n - briefingMenu <= 43) {
+                if (n - briefingMenu == 40)
+                    down->click();
+                else if (n - briefingMenu == 42)
+                    confirm->click();
+                else
+                    step->click();
+            } else if (n % 20 == 0 && confirm->isVisible())
+                confirm->click();
+            else
+                step->click();
+        }
+        QVERIFY2(sawReactionPage, qPrintable(status->text()));
+        if (reaction == 181)
+            QVERIFY2(briefingMenu >= 0, qPrintable(status->text()));
+        QVERIFY2(preview.property("sceneStopped").toBool() &&
+                     (status->text().contains("Scene released") ||
+                      status->text().contains("returned to the game")),
+                 qPrintable(status->text()));
+        QString effects;
+        QTimer::singleShot(0, &preview, [&] {
+            if (auto dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+                effects = dialog->text();
+                dialog->accept();
+            }
+        });
+        outcome->click();
+        if (wentinus) {
+            QVERIFY(effects.contains("Flag 119"));
+            QVERIFY(effects.contains(reaction == 182 ? "scenario 21" : "Flag 19"));
+        } else
+            QVERIFY(effects.contains(reaction == 160 ? "Recruit character" : "Refuse Sheen"));
+    }
+    void openDecisionFromCampaign() {
+        auto project = Project::fromRom(rom());
+        QUndoStack undo;
+        CampaignEditor campaign(&project, &undo, [] {});
+        campaign.resize(1400, 900);
+        campaign.show();
+        campaign.selectEvent(22, 190);
+        auto tabs = campaign.findChild<QTabWidget *>("storylineTabs");
+        QVERIFY(tabs);
+        auto decisions = tabs->currentWidget()->findChild<QPushButton *>("storyPlayerDecisions");
+        QVERIFY(decisions && decisions->isVisible());
+        QTimer::singleShot(0, [&] {
+            auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QTimer::singleShot(5000, dialog, &QDialog::reject);
+            auto version = dialog->findChild<QComboBox *>("decisionVersion");
+            auto open = dialog->findChild<QPushButton *>("previewStoryDecision");
+            QVERIFY(version && open);
+            version->setCurrentIndex(3);
+            open->click();
+        });
+        decisions->click();
+        QCOMPARE(tabs->tabText(tabs->currentIndex()), QString("Cutscenes"));
+        auto context = tabs->currentWidget()->findChild<QComboBox *>("sceneLaunchContext");
+        QVERIFY(context);
+        const auto &launches = SceneEvents::contexts();
+        const auto launch = std::find_if(launches.cbegin(), launches.cend(), [&](const auto &c) {
+            return c.id == context->currentData().toString();
+        });
+        QVERIFY2(launch != launches.cend(), qPrintable(context->currentText()));
+        const auto &site = SceneEvents::site(launch->site);
+        QCOMPARE(site.row, 22);
+        QCOMPARE(site.offset, 544);
+        QCOMPARE(undo.count(), 0);
+        auto preview = tabs->currentWidget()->findChild<ScenePreview *>();
+        QVERIFY(preview);
+        preview->selectEventLaunch(22, 8); // An occurrence absent from the launch catalog.
+        QCOMPARE(context->currentData().toString(), QString("event:22:8"));
+        const int count = context->count();
+        preview->selectEventLaunch(22, 8);
+        QCOMPARE(context->count(), count);
+        preview->selectEventLaunch(22, 544);
+        QCOMPARE(context->currentData().toString(), launch->id);
+    }
+    void storyDecisionUsesSelectedEvent() {
+        if (qEnvironmentVariableIsEmpty("LORDLY_TEST_ROM"))
+            QSKIP("US Rev 0 ROM required");
+        auto project = Project::fromRom(rom());
+        project.loadScenePrograms();
+        project.loadSceneEvents();
+        auto &scenes = *project.scenePrograms();
+        const auto &events = *project.sceneEvents();
+        for (int selector : {171, 174, 177, 180}) {
+            auto plans = SceneLaunchPlan::choices(scenes.runtimeDirectors(), events, selector);
+            SceneLaunchPlan::addAnswerRoutes(plans, project.rom(), scenes, events, selector);
+            bool story = false, other = false;
+            for (const auto &plan : plans) {
+                if (plan.site.isEmpty())
+                    continue;
+                const int row = SceneEvents::site(plan.site).row;
+                if (row == 22) {
+                    story = true;
+                    QVERIFY(plan.decision);
+                    QCOMPARE(plan.decision->equal.selector, selector + 2);
+                    QCOMPARE(plan.decision->different.selector, selector + 1);
+                }
+                if (row == 66) {
+                    other = true;
+                    QVERIFY(!plan.decision);
+                }
+            }
+            QVERIFY(story);
+            QVERIFY(other);
+        }
+    }
     void hugoReportTips_data() {
         QTest::addColumn<bool>("upperRdram");
         QTest::newRow("retail capture") << false;

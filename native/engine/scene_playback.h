@@ -66,6 +66,10 @@ class ScenePlayback {
     // Preview event scheduling shares scene services while each Director keeps
     // its own counter, continuation and cursor. Event timing is approximate.
     void supplyLaunchPlan(const Directors &, const SceneLaunchPlan &);
+    QStringList answerPath() const;
+    bool hasAnswerOutcome() const { return selectedAnswer_.has_value(); }
+    bool storyFlag(int id) const { return storyFlags_.value(id,false); }
+    void setStoryFlag(int id,bool value) { storyFlags_[id]=value; }
     bool selectedSceneEntered() const {
         return selectedEntered_;
     }
@@ -250,6 +254,9 @@ class ScenePlayback {
         DirectorLaunchTranslations launchTranslations;
     };
     QVector<DirectorContext> contexts_;
+    std::optional<SceneAnswerDecision> answerDecision_;
+    std::optional<int> selectedAnswer_;
+    QMap<int,bool> storyFlags_;
     QSet<int> createdWindows_;
     int activeContext_ = -1, tailCall_ = -1;
     bool selectedEntered_ = true;

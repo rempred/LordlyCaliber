@@ -16,9 +16,11 @@ class DirectorSession {
   public:
     using Service = std::function<bool(quint32, const QVector<quint32> &, int &)>;
     using Observer = std::function<void(quint32 resource, int word, quint32 opcode)>;
+    using Request = std::function<std::optional<int>(DirectorLaunchTranslations &)>;
     DirectorSession(Directors resources, int selector, int mode,
                     DirectorLaunchTranslations translations = {});
-    int dispatch(const Service &service = {}, int instructionBudget = 10000, const Observer &observer = {});
+    int dispatch(const Service &service = {}, int instructionBudget = 10000, const Observer &observer = {},
+                 const Request &request = {});
     const LordlyDirectorDispatch &state() const {
         return state_;
     }

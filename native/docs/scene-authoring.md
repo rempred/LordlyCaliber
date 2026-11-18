@@ -1,5 +1,28 @@
 # Native scene authoring
 
+## Play a story decision from its event
+
+In Logic, open **Player decisions**, select the cast or question you want, and
+choose **Preview decision…**. If you change the outcomes, save the decision
+before opening its preview. Cutscenes opens the question at the chosen event
+request. Use **Play** or **Step**, then **Up**, **Down** and **Confirm** to answer.
+For a conversation with several questions, such as Sheen's offer, use **Edit
+cutscene…** on the scene request in its event row. This also opens the scene
+with that event's launch inputs.
+
+When the event compares the dialogue answer and immediately requests a reaction
+on each branch, the preview continues in the same room with the current cast.
+The playback status names the reaction. **View event outcome…** shows the event
+actions for the answer you actually chose, including shared changes and the next
+destination where the event identifies one. The timeline still edits the
+question. To edit a reaction, open its scene from Logic.
+
+The Wentinus orders-or-peace decision and Sheen's final recruitment offer use
+this handoff. Selecting a different event occurrence can give the same question
+different behavior. A request that depends on an unresolved game condition still
+stops at the handoff. Later campaign actions shown in the outcome are a reading
+of the event program. Use the exported game to play the resulting battlefield.
+
 ## Scene timeline workspace (November 14)
 
 The default Cutscenes workspace has an event-row filter and named scene list on
