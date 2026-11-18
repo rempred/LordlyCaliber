@@ -474,14 +474,33 @@ window.OB64 = window.OB64 || {};
         !['Candidate', 'Supported', 'Verified', 'Editor-ready'].includes(input.evidenceGrade)) {
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
-    ['actorInputRows', 'existingActors', 'capturedSnapshot', 'capturedPresentation', 'currentUnitMembers', 'schedulerBranch',
+    ['actorInputRows', 'actorProfileGenders', 'armyMenu', 'existingActors', 'capturedSnapshot', 'capturedPresentation', 'currentUnitMembers', 'schedulerBranch',
       'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers','directActorCreates'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'directActorCreates') {
+      if (key === 'armyMenu') {
+        var validName = function(name) { return typeof name === 'string' && name.length <= 63 && !/[^\x20-\x7e]/.test(name); };
+        if (!value || typeof value !== 'object' || Array.isArray(value) ||
+            (value.subject != null && (!Number.isInteger(value.subject) || value.subject < 0 || value.subject > 255)) ||
+            (value.peopleUnlocked != null && typeof value.peopleUnlocked !== 'boolean') ||
+            (value.selectedName != null && !validName(value.selectedName)) ||
+            (value.subjectNames != null && (typeof value.subjectNames !== 'object' || Array.isArray(value.subjectNames) ||
+              Object.keys(value.subjectNames).some(function(id) {
+                return !/^(0|[1-9][0-9]{0,2})$/.test(id) || Number(id)>255 || !validName(value.subjectNames[id]);
+              })))) fail('Army help requires valid subject and selected names.', 'launch-input');
+      } else if (key === 'actorProfileGenders') {
+        if (!Array.isArray(value) || value.length > 200) fail('Actor profile genders require at most 200 character rows.', 'launch-input');
+        var usedMembers = {};
+        value.forEach(function(row) {
+          if (!row || !['persistent','deployed'].includes(row.table) || !Number.isInteger(row.index) || row.index < 0 ||
+              row.index >= 100 || !Number.isInteger(row.gender) || row.gender < 0 || row.gender > 255 ||
+              usedMembers[row.table + '/' + row.index]) fail('Invalid or duplicate actor profile character row.', 'launch-input');
+          usedMembers[row.table + '/' + row.index] = true;
+        });
+      } else if (key === 'directActorCreates') {
         if (!Array.isArray(value) || value.length > 256) fail('Direct creation requires a bounded service list.','actor-creation-input');
         var creationIds = new Set();
         value.forEach(function(row) {

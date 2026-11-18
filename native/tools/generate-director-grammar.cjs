@@ -12,6 +12,9 @@ const context={window:{OB64:{}}};vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root,'cutscene-data.js'),'utf8'),context);
 const data=context.window.OB64.cutsceneData,grammar=data.directorGrammar;
 const actorFields = {
+  0x90: ['compare_mode','signed_target','actor_slot'],
+  0xa1: ['compare_mode','signed_target','actor_slot'],
+  0xae: ['panel_slot','help_section_0_to_9'],
   0x2b: ['compare_mode_and_actor_slot', 'target', 'unused_word'],
   0xc2: ['anchor_actor_slot', 'initial_body_pose']
 };
@@ -23,6 +26,9 @@ const rows=model.entries.map(entry=>{
    ? ['actor_slot','art_bank','animation_key','facing','x_milliunits','y_milliunits','z_milliunits','variant'] : null;
  // Runtime-qualified corrections to the older browser feature reference.
  const descriptions={
+  0x90:'Compares the signed actor profile. A vacant slot or zero art key gives -1. Other actors use their roster gender and alignment band, with story-class overrides.',
+  0xa1:'Compares the signed roster result: 0 for a vacant or unlinked slot, 1 for a persistent character, 2 for a deployed character.',
+  0xae:'Replaces the text of an open Army panel. Help 7 expands the scene subject. Help 8 and 9 expand the selected name.',
   0x54:'Returns 1 during image interpolation, -1 while echo trails drain, and 0 when finished.',
   0xc2:'The first eligible briefing row uses the occupied anchor. Each later component copies the preceding actor after its first pose. The two operands use their signed low 16 bits.'
  };

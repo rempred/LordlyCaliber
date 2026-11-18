@@ -226,6 +226,31 @@ void ScenePlaybackInputs::validatePoseRegistry(const Rom &rom, BodyAnimationData
 }
 void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
     playback.actors().allowCapturedBodyPreview(captured());
+    const auto army = known("armyMenu").toObject();
+    if (!army.isEmpty()) {
+        QMap<int, QByteArray> names;
+        const auto roster = army["subjectNames"].toObject();
+        for (auto it = roster.begin(); it != roster.end(); ++it)
+            names[it.key().toInt()] = it.value().toString().toLatin1();
+        playback.panels().supplyArmySubject(army["subject"].toInt(-1), names,
+                                            army.contains("selectedName")
+                                                ? army["selectedName"].toString().toLatin1()
+                                                : QByteArray{});
+        playback.panels().supplyArmyFlag(army["peopleUnlocked"].toBool());
+    }
+    const auto genders = known("actorProfileGenders");
+    if (!genders.isUndefined() && !genders.isNull()) {
+        if (!genders.isArray())
+            throw Error("Actor profile genders require character records");
+        for (const auto &entry : genders.toArray()) {
+            const auto row = entry.toObject();
+            const auto table = row["table"].toString();
+            if (table != "persistent" && table != "deployed")
+                throw Error("Unknown character table for actor profile");
+            playback.actors().supplyMemberGender(table == "deployed", row["index"].toInt(-1),
+                                                 row["gender"].toInt(-1));
+        }
+    }
     const auto rows = known("actorInputRows").toArray();
     const auto members = known("currentUnitMembers").toArray();
     if (!rows.isEmpty()) {

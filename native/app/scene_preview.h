@@ -137,6 +137,7 @@ class ScenePreview : public QWidget {
     StageFlatRenderer stageRenderer_;
     StageObjectRenderer objectRenderer_;
     std::optional<Directors> resources_;
+    QByteArray originalReportScript_;
     std::optional<Dialogues> dialogues_;
     std::optional<DialogueDrawing> dialogueDrawing_;
     DialogueTextEnvironment dialogueEnvironment_;
@@ -190,6 +191,10 @@ class ScenePreview : public QWidget {
     QWidget *panelControlsUi_;
     QWidget *launchImageUi_;
     QComboBox *launchImage_;
+    QComboBox *visitingUnit_;
+    QWidget *missionTitleUi_;
+    QComboBox *chapterChoice_;
+    QSpinBox *missionScenario_, *missionNumber_;
     QWidget *storyCastUi_;
     std::array<QComboBox *, 5> storyCast_{}, storySecondary_{};
     std::function<const SaveDocument *()> saveProvider_;

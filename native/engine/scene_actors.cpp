@@ -103,6 +103,11 @@ void SceneActors::supplyBodyRows(const QVector<QByteArray> &rows) {
     for (int i = 0; i < 28; ++i)
         bodyRows_[i] = i < rows.size() ? rows[i] : QByteArray{};
 }
+void SceneActors::supplyMemberGender(bool deployed, int member, int gender) {
+    if (member < 0 || member >= 100 || gender < 0 || gender > 255)
+        throw Error("Actor profile needs a valid character row and gender byte");
+    memberGenders_[deployed ? 1 : 0].insert(member, gender);
+}
 const QByteArray &SceneActors::bodyRow(int identity) const {
     if (identity < 0 || identity >= 28 || bodyRows_[identity].size() != 248)
         throw Error("Body command requires its caller appearance row");
@@ -329,13 +334,55 @@ bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &val
         if (actors_[slot]) actors_[slot]->setSecondaryHeight(coordinate(args[1]), args[2] != 0);
         return true;
     }
-    if (opcode == 0xa1) {
-        // ROM2ABF64: vacant/unlinked = 0, current unit = 1, deployed unit = 2.
-        if (args.size() != 3) throw Error("Actor roster-source query is truncated");
+    if (opcode == 0xa1 || opcode == 0x90) {
+        // US Rev 0 func_002ABF64 and func_002AC700 both read the third operand.
+        if (args.size() != 3)
+            throw Error("Actor query is truncated");
         const auto &instance = actor(qint32(args[2]));
-        value = 0;
-        if (instance && u8(instance->record(), 0x147) != 255)
-            value = (u32(bodyRow(u8(instance->record(), 0x147)), 0x40) & 0x100) ? 2 : 1;
+        value = opcode == 0x90 ? -1 : 0;
+        if (!instance)
+            return true;
+        const int index = u8(instance->record(), 0x147);
+        if (opcode == 0xa1 && index == 255)
+            return true;
+        if (index >= bodyRows_.size() || bodyRows_[index].size() != 248)
+            throw Error(
+                QString(
+                    "Actor profile needs the invocation's actor input row for slot %1 (index %2)")
+                    .arg(args[2])
+                    .arg(index));
+        const auto &row = bodyRow(index);
+        const bool deployed = (u32(row, 0x40) & 0x100) != 0;
+        if (opcode == 0xa1) {
+            value = deployed ? 2 : 1;
+            return true;
+        }
+        const int art = qint32(u32(row, 0x48));
+        if (!art)
+            return true;
+        // Later duplicate keys win. A proven override also determines the answer
+        // when the launch did not capture the ordinary member's gender byte.
+        std::optional<int> override;
+        for (int at = 0x2868f0; at < 0x2868f0 + 46; at += 2) {
+            const int key = u8(rom_.bytes(), at + 1);
+            if (key == 255)
+                break;
+            if (key == art)
+                override = u8(rom_.bytes(), at);
+        }
+        const int member = u8(row, 0xf6);
+        if (override)
+            value = *override;
+        else {
+            const auto &members = memberGenders_[deployed ? 1 : 0];
+            if (!members.contains(member))
+                throw Error(
+                    QString("Actor profile for slot %1 needs gender from %2 character row %3")
+                        .arg(args[2])
+                        .arg(deployed ? "deployed" : "persistent")
+                        .arg(member));
+            value = 3 * members.value(member) + std::min<int>(u8(row, 0x34), 98) / 33;
+        }
         return true;
     }
     if (opcode == 0x13) {

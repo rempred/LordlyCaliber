@@ -2,7 +2,7 @@
   "generator": "native/tools/generate-director-grammar.cjs",
   "source": "native/game/accepted/library/src/lib/func_00284288.c",
   "sourceSha256": "147E507C2AB4226F860747C6567B7518998965F87AA7D599814D4D477EC7952C",
-  "sourceCommit": "d66e14504e4a3c03d13df996ba42957b9111a48d",
+  "sourceCommit": "098941a2731f2f786d15d79aeaf4f9ba6a67fed1",
   "rows": [
     {
       "opcode": 0,
@@ -1353,11 +1353,11 @@
       "opcode": 144,
       "words": 4,
       "name": "actor_gender_alignment_profile_query",
-      "description": "Actor gender/Alignment profile query. The producer selects an Actor slot. It returns `3 * Gender + floor(clamp(Alignment, 0, 98) / 33)`, applies 22 story-class overrides, and returns -1 for a missing Actor or class source.",
+      "description": "Compares the signed actor profile. A vacant slot or zero art key gives -1. Other actors use their roster gender and alignment band, with story-class overrides.",
       "operands": [
         "compare_mode",
-        "target",
-        "producer_input"
+        "signed_target",
+        "actor_slot"
       ],
       "query": "Q4",
       "mode": null
@@ -1476,11 +1476,11 @@
       "opcode": 161,
       "words": 4,
       "name": "actor_roster_source_query",
-      "description": "Actor roster-source query. The producer selects an Actor slot. It returns 0 for absent or unlinked, 1 for persistent-character source, or 2 for deployed-character source.",
+      "description": "Compares the signed roster result: 0 for a vacant or unlinked slot, 1 for a persistent character, 2 for a deployed character.",
       "operands": [
         "compare_mode",
-        "target",
-        "producer_input"
+        "signed_target",
+        "actor_slot"
       ],
       "query": "Q4",
       "mode": null
@@ -1567,10 +1567,10 @@
       "opcode": 174,
       "words": 3,
       "name": "alternate_help_text_section_replace",
-      "description": "Replaces one alternate-preset render entity's text with help section `operand 1 + 13`, then rebuilds its text layout.",
+      "description": "Replaces the text of an open Army panel. Help 7 expands the scene subject. Help 8 and 9 expand the selected name.",
       "operands": [
-        "operand_0",
-        "operand_1"
+        "panel_slot",
+        "help_section_0_to_9"
       ],
       "query": null,
       "mode": null

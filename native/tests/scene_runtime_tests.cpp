@@ -794,6 +794,130 @@ class SceneRuntimeTests : public QObject {
         QVERIFY_THROWS_EXCEPTION(Error, ScenePanels::confirmationChoice(rom, 2));
         qInfo() << snapshots << "original confirmation entity/payload/query snapshots agree";
     }
+    void actorProfileAndRosterSource() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("US Rev 0 ROM required");
+        const auto rom = Rom::open(path);
+        SceneActors actors(rom, 2, 0);
+        int value = 100;
+        auto query = [&](int op) {
+            if (!actors.service(op, {0, 0, 3}, value))
+                throw Error("Missing actor service");
+            return value;
+        };
+        QCOMPARE(query(0x90), -1);
+        QCOMPARE(query(0xa1), 0);
+        actors.service(0x14, {3, 30, 1, 2, 0, 0, 0, 0, 0}, value);
+        auto actor = actors.actor(3)->record();
+        put8(actor, 0x147, 255);
+        actors.supplyActor(3, actor);
+        QCOMPARE(query(0xa1), 0);
+        put8(actor, 0x147, 2);
+        actors.supplyActor(3, actor);
+        QVector<QByteArray> rows(20, QByteArray(248, 0));
+        actors.supplyBodyRows(rows);
+        QCOMPARE(query(0x90), -1);
+        for (bool deployed : {false, true}) {
+            put32(rows[2], 0x48, 2);
+            put8(rows[2], 0xf6, 7);
+            put32(rows[2], 0x40, deployed ? 256 : 0);
+            const int gender = deployed ? 2 : 1;
+            actors.supplyMemberGender(deployed, 7, gender);
+            for (int alignment : {0, 32, 33, 65, 66, 98, 99, 255}) {
+                put8(rows[2], 0x34, alignment);
+                actors.supplyBodyRows(rows);
+                QCOMPARE(query(0xa1), deployed ? 2 : 1);
+                QCOMPARE(query(0x90), gender * 3 + std::min(alignment, 98) / 33);
+            }
+        }
+        put32(rows[2], 0x48, 0x56);
+        actors.supplyBodyRows(rows);
+        QCOMPARE(query(0x90), 5);
+        put32(rows[2], 0x48, 0x7c);
+        actors.supplyBodyRows(rows);
+        QCOMPARE(query(0x90), 1);
+    }
+    void armyMenuHelpAndClosing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("US Rev 0 ROM required");
+        ScenePanels panels(Rom::open(path));
+        panels.supplyArmyFlag(true);
+        panels.createArmy(1, 5);
+        panels.createArmy(0, 4);
+        QCOMPARE(panels.query(6), -5);
+        auto text = [&] {
+            for (const auto &e : panels.entities())
+                if (u32(e.payload, 0x600) == 5) {
+                    QByteArray result;
+                    for (int k = 0; k < u8(e.payload, 0x5f5); ++k)
+                        result += e.payload.constData() + u32(e.payload, 0x530 + 4 * k);
+                    return result;
+                }
+            return QByteArray{};
+        };
+        panels.replaceArmyHelp(1, 0);
+        QVERIFY(text().contains("Knowledge is a strong weapon"));
+        panels.supplyArmySubject(0xdc, {{0x6d, "Subject"}}, "Selected");
+        panels.replaceArmyHelp(1, 7);
+        QVERIFY(text().contains("Subject"));
+        for (int section : {8, 9}) {
+            panels.replaceArmyHelp(1, section);
+            QVERIFY(text().contains("Selected"));
+        }
+        panels.supplyArmySubject(0x51, {{0x53, "Fallback"}}, {});
+        panels.replaceArmyHelp(1, 7);
+        QVERIFY(text().contains("Fallback"));
+        panels.supplyArmySubject(0x4d, {}, {});
+        panels.replaceArmyHelp(1, 7);
+        QVERIFY(text().contains("Saldian"));
+        for (int tick = 0; tick < 32 && u16(panels.entities().last().record, 0x18) != 255; ++tick)
+            panels.advanceArmy(0, 0);
+        QCOMPARE(u16(panels.entities().last().record, 0x18), 255);
+        QCOMPARE(u8(panels.entities().last().payload, 0x5f0), 6);
+        QCOMPARE(u8(panels.entities().last().record, 0x25), 4);
+        panels.advanceArmy(0, 0x400);
+        QCOMPARE(u8(panels.entities().last().record, 0x22), 1);
+        panels.advanceArmy(0x8000, 0);
+        QCOMPARE(panels.query(0), 1);
+        panels.closeArmy(1, true);
+        QCOMPARE(panels.query(1), -6);
+        panels.release(1);
+        QCOMPARE(panels.query(1), -5);
+    }
+    void chapterCardImagesAndReveal() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("US Rev 0 ROM required");
+        const auto rom = Rom::open(path);
+        SceneChapterCard chapter(rom, 1073, 0, 0);
+        chapter.startFade();
+        const auto dark = chapter.render();
+        for (int i = 0; i < 85; ++i)
+            chapter.advance();
+        const auto initial = chapter.render();
+        QVERIFY(dark != initial);
+        QVERIFY(!chapter.revealing());
+        chapter.startReveal();
+        QVERIFY(chapter.revealing());
+        for (int i = 0; i < 32; ++i)
+            chapter.advance();
+        const auto progress = chapter.render();
+        QVERIFY(progress != initial);
+        int ticks = 32;
+        while (chapter.revealing() && ticks++ < 500)
+            chapter.advance();
+        QVERIFY(!chapter.revealing());
+        QVERIFY(chapter.render() != progress);
+        SceneChapterCard first(rom, 1078, 20, 0), alias(rom, 1078, 21, 0), second(rom, 1078, 23, 0);
+        const auto before = first.render(), other = second.render();
+        QCOMPARE(before, alias.render());
+        QVERIFY(before.copy(0, 110, 320, 30) != other.copy(0, 110, 320, 30));
+        QCOMPARE(before.copy(0, 0, 320, 55), other.copy(0, 0, 320, 55));
+        first.advance();
+        QVERIFY(first.render() != before);
+    }
     void panelsNativeReference() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

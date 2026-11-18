@@ -155,6 +155,10 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         case 0xbf:
             action.actorOperand = 3;
             break;
+        case 0x90:
+        case 0xa1:
+            action.actorOperand = 2;
+            break;
         default:
             break;
         }
@@ -278,6 +282,28 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         case 0x66:
             action.name = "Release scene sprite";
             field("Sprite slot (-1 selects all)", 0, 1, -1, 29);
+            break;
+        case 0x90:
+        case 0xa1:
+            action.name =
+                c.opcode == 0x90 ? "Check actor gender and alignment" : "Check actor roster source";
+            field("Actor slot", 2, 1, 0, 27);
+            field("Signed comparison target", 1);
+            break;
+        case 0xae:
+            action.name = "Replace Army help text";
+            field("Open panel slot", 0, 1, 0, 13);
+            field("Help section", 1, 1, 0, 9);
+            break;
+        case 0xaf:
+            action.name = "Fade in the chapter title";
+            break;
+        case 0xb0:
+            action.name = "Reveal chapter lettering";
+            break;
+        case 0xb1:
+            action.name = "Check chapter reveal progress";
+            field("Comparison target (0 finished, 1 revealing)", 1);
             break;
         case 0xc2:
             action.name = "Start briefing actors";

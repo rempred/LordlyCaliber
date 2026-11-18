@@ -3,6 +3,7 @@
 #include "engine/item_data.h"
 #include "engine/item_icons.h"
 #include "engine/rom.h"
+#include "engine/scene_report_runtime.h"
 #include <QImage>
 #include <QVector>
 #include <array>
@@ -19,6 +20,32 @@ class ScenePanels {
     };
     explicit ScenePanels(Rom rom) : rom_(rom), icons_(std::move(rom)) {}
     void create(int slot, int preset, int width, int height);
+    void createArmy(int slot, int preset);
+    void replaceArmyHelp(int slot, int section);
+    void closeArmy(int slot, bool immediate);
+    void advanceArmy(quint16 action, quint16 direction);
+    void armyMenuLabel() {
+        if (report_)
+            report_->menuLabel();
+        else if (armyHandshake_ >= 3)
+            --armyHandshake_;
+    }
+    void supplyReportRuntime(const QByteArray &ram, const QByteArray &script) {
+        report_.emplace(rom_, ram, script);
+    }
+    bool usesReportRuntime() const {
+        return report_.has_value();
+    }
+    void supplyArmyNames(QByteArray subject, QByteArray selected) {
+        subjectName_ = std::move(subject);
+        selectedName_ = std::move(selected);
+    }
+    void supplyArmySubject(int subject, const QMap<int, QByteArray> &names, QByteArray selected);
+    void supplyArmyFlag(bool flag) {
+        armyFlag_ = flag;
+    }
+    void supplyReportClock(int hours, int minutes, int seconds);
+    void setReportArtwork(const QByteArray &portrait);
     static QString rewardName(const Rom &, quint16 item);
     static QString confirmationChoice(const Rom &, int index);
     void setItems(ItemData data, IconArtwork icons) {
@@ -53,7 +80,7 @@ class ScenePanels {
         QByteArray data;
     };
     QByteArray resource(quint32 key) const;
-    QByteArray textPayload(quint32 selector, QByteArray &entity) const;
+    QByteArray textPayload(quint32 selector, QByteArray &entity, bool replaceNames = false) const;
     void child(Entity &parent);
     Rom rom_;
     ItemIcons icons_;
@@ -65,5 +92,12 @@ class ScenePanels {
     QVector<int> audio_;
     quint64 nextIdentity_ = 1;
     std::optional<quint16> reward_;
+    QByteArray subjectName_, selectedName_;
+    QByteArray reportClock_ = "00:00:00";
+    QImage reportBackground_, reportPortrait_;
+    bool armyFlag_ = false;
+    int armyHandshake_ = 3;
+    std::optional<SceneReportRuntime> report_;
+    void syncReport();
 };
 } // namespace lordly

@@ -4,41 +4,108 @@
 #include "app/scene_preview.h"
 #include "app/scene_timeline.h"
 #include "app/theme.h"
+#include "engine/director_session.h"
 #include "engine/pose_preview.h"
 #include "engine/project.h"
+#include "engine/save_document.h"
+#include "engine/scene_images.h"
 #include "engine/scene_sprites.h"
-#include "engine/director_session.h"
 #include "rebuild/scene_logic.h"
-#include <QtTest>
+#include <QCheckBox>
 #include <QComboBox>
-#include <QListWidget>
-#include <QPushButton>
-#include <QTabWidget>
-#include <QTemporaryDir>
-#include <QUndoStack>
-#include <QProcess>
-#include <QFile>
-#include <QJsonDocument>
-#include <QFontDatabase>
-#include <QGraphicsView>
-#include <QGraphicsItem>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QInputDialog>
-#include <QLineEdit>
-#include <QLabel>
-#include <QTimer>
 #include <QDoubleSpinBox>
-#include <QCheckBox>
-#include <QScrollArea>
-#include <bit>
+#include <QFile>
+#include <QFontDatabase>
+#include <QGraphicsItem>
+#include <QGraphicsView>
+#include <QInputDialog>
+#include <QJsonDocument>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QPainter>
+#include <QProcess>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QTabWidget>
+#include <QTemporaryDir>
+#include <QTimer>
+#include <QUndoStack>
 #include <QVBoxLayout>
+#include <QtTest>
+#include <bit>
 using namespace lordly;
 class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void hugoReportTips_data() {
+        QTest::addColumn<bool>("upperRdram");
+        QTest::newRow("retail capture") << false;
+        QTest::newRow("report script in Expansion Pak RAM") << true;
+    }
+    void hugoReportTips() {
+        const auto path = qEnvironmentVariable("LORDLY_REPORT_RAM");
+        if (path.isEmpty())
+            QSKIP("Requires the native RAM dump of the retail Hugo Report menu-open reference");
+        QFile capture(path);
+        QVERIFY(capture.open(QIODevice::ReadOnly));
+        const auto game = rom();
+        const auto programs = ScenePrograms::load(game);
+        const auto &original = programs.original();
+        const auto key = original.selectors()[0];
+        QCOMPARE(programs.displayName(key), QString("Hugo's Report"));
+        const auto bytes = original.entries()[key].program.encode();
+        auto edited = original.entries()[key];
+        auto help =
+            std::find_if(edited.program.commands.begin(), edited.program.commands.end(),
+                         [](const DirectorCommand &command) { return command.opcode == 0xae; });
+        QVERIFY(help != edited.program.commands.end());
+        help->operands[1] = 1;
+        QCOMPARE(SceneImages::backgrounds(game, edited, -1).mode, 2);
+        QCOMPARE(
+            SceneImages::backgrounds(game, original.entries()[original.selectors()[1078]], -1).mode,
+            0);
+        auto input = capture.readAll();
+        QFETCH(bool, upperRdram);
+        if (upperRdram) {
+            QCOMPARE(input.size(), 0x400000);
+            const auto originalScript = input.mid(u32(input, 0x22a958) & 0x1fffffff, bytes.size());
+            input.append(QByteArray(0x400000, 0));
+            input.replace(0x500000, originalScript.size(), originalScript);
+            put32(input, 0x22a958, 0x80500000u);
+        }
+        const auto save = SaveDocument::open(game, input);
+        const auto &ram = save.memory();
+        QCOMPARE(u32(ram, 0x22a950), 30u);
+        QCOMPARE(ram.mid(u32(ram, 0x22a958) & 0x1fffffff, bytes.size()), bytes);
+        QCOMPARE(u8(ram, 0x193686) & 2, 0);
+        ScenePreview preview(game);
+        preview.setSaveProvider([&] { return &save; });
+        preview.selectScene(programs, key, 2);
+        auto click = [&](const char *name) {
+            auto b = preview.findChild<QPushButton *>(name);
+            QVERIFY(b && b->isEnabled());
+            b->click();
+        };
+        for (int n = 0; n < 250; ++n) {
+            if (n == 22 || n == 29 || (n >= 90 && n < 138 && !(n % 2)))
+                click("panelDown");
+            else if (n == 45 || n == 152 || n == 197)
+                click("panelConfirm");
+            else if (n == 218)
+                click("panelCancel");
+            else
+                click("sceneStep");
+            QVERIFY2(!preview.property("sceneStopped").toBool(),
+                     qPrintable(preview.findChild<QLabel *>("scenePlaybackStatus")->text()));
+            if (n == 180)
+                QVERIFY(preview.commandTimes().contains(524)); // detail page is waiting for input
+        }
+        QVERIFY(preview.commandTimes().contains(539)); // Back rebuilds the list
+    }
     void zemioBriefingVisit() {
         auto project = Project::fromRom(rom());
         project.loadScenePrograms();

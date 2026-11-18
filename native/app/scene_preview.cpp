@@ -1,28 +1,29 @@
 #include "app/scene_preview.h"
-#include <QCheckBox>
+#include "engine/avatar_artwork.h"
 #include "engine/class_data.h"
 #include "engine/save_document.h"
-#include "engine/scene_images.h"
 #include "engine/scene_actions.h"
 #include "engine/scene_document_compiler.h"
+#include "engine/scene_images.h"
 #include "engine/scene_story_cast.h"
 #include "engine/text.h"
-#include <QComboBox>
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QElapsedTimer>
-#include <QFileDialog>
 #include <QFile>
-#include <QJsonArray>
-#include <QMessageBox>
+#include <QFileDialog>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGridLayout>
 #include <QHideEvent>
+#include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
@@ -72,6 +73,41 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     launchRow->addWidget(launchImage_, 1);
     launchImageUi_->hide();
     layout->addWidget(launchImageUi_);
+    visitingUnit_ = new QComboBox;
+    visitingUnit_->setObjectName("sceneVisitingUnit");
+    visitingUnit_->setToolTip(
+        "Choose the visiting squad from the save open in the Save workspace.");
+    visitingUnit_->hide();
+    layout->addWidget(visitingUnit_);
+    connect(visitingUnit_, &QComboBox::activated, this, [this] { restart(); });
+    chapterChoice_ = new QComboBox;
+    chapterChoice_->setObjectName("sceneChapterCard");
+    chapterChoice_->addItems(
+        {"Prologue", "Chapter One", "Chapter Two", "Chapter Three", "Final Chapter"});
+    chapterChoice_->hide();
+    layout->addWidget(chapterChoice_);
+    connect(chapterChoice_, &QComboBox::activated, this, [this] { restart(); });
+    missionTitleUi_ = new QWidget;
+    auto missionRow = new QHBoxLayout(missionTitleUi_);
+    missionRow->setContentsMargins(0, 0, 0, 0);
+    missionRow->addWidget(new QLabel("Mission title scenario"));
+    missionScenario_ = new QSpinBox;
+    missionScenario_->setObjectName("missionTitleScenario");
+    missionScenario_->setRange(0, 61);
+    missionRow->addWidget(missionScenario_);
+    missionRow->addWidget(new QLabel("Mission number"));
+    missionNumber_ = new QSpinBox;
+    missionNumber_->setRange(1, 99);
+    missionNumber_->setObjectName("missionTitleNumber");
+    missionRow->addWidget(missionNumber_);
+    missionRow->addStretch();
+    missionTitleUi_->hide();
+    layout->addWidget(missionTitleUi_);
+    for (auto input : {missionScenario_, missionNumber_})
+        connect(input, &QSpinBox::valueChanged, this, [this] {
+            if (selector_ == 1078)
+                restart();
+        });
     launchContextUi_ = new QWidget;
     launchContextUi_->setObjectName("sceneLaunchContextSetup");
     auto contextRow = new QHBoxLayout(launchContextUi_);
@@ -856,6 +892,12 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         resources_ = programs.runtimeDirectors();
         if (selector_ != resource.selectors.first()) selectedObject_ = {};
         selector_ = resource.selectors.first();
+        originalReportScript_ =
+            selector_ == 0
+                ? programs.original().entries()[programs.original().selectors()[0]].program.encode()
+                : QByteArray{};
+        chapterChoice_->setVisible(selector_ == 1073 && resource.selectors.contains(1077));
+        missionTitleUi_->setVisible(selector_ == 1078);
         mode_ = defaultMode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
         const auto previousContext = launchContext_->currentData().toString();
@@ -926,10 +968,16 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             "\nDialogue uses the preview names and current Actor "
             "matrices. Desktop cadence: one resource pass per step, drawn over the scene.");
         if (selector_ == 0)
+            context_->setText(context_->text() +
+                              "\nHugo's Report uses the open save's categories and play time. "
+                              "Without a save it starts at 00:00:00. "
+                              "For report pages, open a native RAM dump from Hugo's Report in "
+                              "Save. Panel trim and text use desktop drawing.");
+        if (selector_ >= 1073 && selector_ <= 1078)
             context_->setText(
                 context_->text() +
-                "\nTitle reveal uses its separate update timing and resolution. Rectangle edge "
-                "coverage is approximate; title menus and the People board remain unfinished.");
+                "\nTitle textures come from the ROM. Sparkle positions use a repeatable preview "
+                "seed; desktop blending approximates the console.");
         contextSummary_ = context_->text();
         restart();
     } catch (const std::exception &e) {
@@ -993,6 +1041,29 @@ void ScenePreview::restart() {
             resources_->entries()[resources_->selectors()[startupSelector]].program;
         if (mode_ == 2)
             party_ = SceneParty::infer(startupProgram, classCount_);
+        {
+            const QSignalBlocker block(visitingUnit_);
+            const int selected =
+                visitingUnit_->currentIndex() < 0 ? -1 : visitingUnit_->currentData().toInt();
+            visitingUnit_->clear();
+            visitingUnit_->addItem("Visiting unit · sample party", -1);
+            const auto save = saveProvider_ ? saveProvider_() : nullptr;
+            if (party_ && save && !inputs)
+                for (const auto &unit : save->units()) {
+                    if (unit.members.isEmpty() || !unit.members.first() ||
+                        unit.members.first() >= 100)
+                        continue;
+                    const auto name =
+                        save->value(SaveTable::Characters, unit.members.first(), "name").toString();
+                    visitingUnit_->addItem(
+                        QString("Visiting unit %1 · %2").arg(unit.index + 1).arg(name), unit.index);
+                }
+            const int found = visitingUnit_->findData(selected);
+            visitingUnit_->setCurrentIndex(std::max(0, found));
+            visitingUnit_->setVisible(visitingUnit_->count() > 1);
+            if (found > 0)
+                party_->useSavedUnit(*save, selected);
+        }
         const bool inherited = plan.steps.size() > 1 || plan.tailCall >= 0;
         context_->setText(contextSummary_ + (party_ ? "\n" + party_->description() : QString{}) +
                           (inherited
@@ -1049,6 +1120,8 @@ void ScenePreview::restart() {
         auto cameras = mode_ ? SceneCameras::freshModeTwo(rom_)
                              : SceneCameras(camera(90, 0, 0, 120), world, world);
         ScenePlaybackStart start;
+        start.missionScenario = missionScenario_->value();
+        start.missionSequenceBefore = missionNumber_->value() - 1;
         start.bodyAnimations = bodyAnimations_;
         start.mode = mode_;
         start.sceneFlags = 0;
@@ -1062,9 +1135,17 @@ void ScenePreview::restart() {
             start.translations = SceneStoryCast::translations(cast);
         }
         if (inputs) inputs->configure(start, cameras);
-        ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
+        const int physicalSelector =
+            selector_ == 1073 ? 1073 + chapterChoice_->currentIndex() : selector_;
+        ScenePlayback playback(rom_, *resources_, physicalSelector, start, cameras,
                                [](int, float, float) { return 0.f; });
         playback.supplyLaunchPlan(*resources_, plan);
+        if (selector_ == 0) {
+            auto portrait =
+                portraits_ ? portraits_(125, false)
+                           : AvatarArtwork::load(rom_).dialogueWords(ClassData::load(rom_), 125, 0);
+            playback.panels().setReportArtwork(portrait);
+        }
         if (!inputs && (storyCastEnabled_ || classDefaultsEnabled_ || party_ || inherited))
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
         if (party_ && !inputs) party_->supply(playback.actors(),
@@ -1086,6 +1167,51 @@ void ScenePreview::restart() {
             playback.panels().setItems(*items_, *itemIcons_);
         playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
         if (inputs) inputs->supply(playback);
+        if (!inputs && saveProvider_) {
+            const auto save = saveProvider_();
+            if (selector_ == 0 && save && save->memory().size() > 0x196a2b) {
+                const auto &ram = save->memory();
+                playback.panels().supplyArmyFlag((u8(ram, 0x193686) & 2) != 0);
+                playback.panels().supplyReportClock(u16(ram, 0x196a28), u8(ram, 0x196a2a),
+                                                    u8(ram, 0x196a2b));
+            }
+            if (save && save->selectedSlot() < 0) {
+                const auto &ram = save->memory();
+                if (selector_ == 0 && ram.size() >= 0x400000) {
+                    const auto ptr = u32(ram, 0x22a958);
+                    const auto &script = originalReportScript_;
+                    const qint64 at = qint64(ptr) - 0x80000000LL;
+                    if (at >= 0 && at + script.size() <= ram.size() &&
+                        ram.mid(at, script.size()) == script) {
+                        playback.panels().supplyReportRuntime(ram, script);
+                        context_->setText(context_->text() +
+                                          "\nHugo's Report uses the open state's report records "
+                                          "and selected names.");
+                    }
+                }
+                // Roster rows belong to this invocation. A battery or a different
+                // scene cannot identify the current unit by its Actor slot.
+                if (ram.size() >= 0x1ce8c0 && (u16(ram, 0x18f1a0) & 0xfff) == selector_) {
+                    const auto address = u32(ram, 0x1ce8bc);
+                    const qint64 rows = qint64(address) - 0x80000000LL + 0x1c4;
+                    if (address >= 0x80000000U && rows + 20 * 248 <= ram.size()) {
+                        QVector<QByteArray> captured;
+                        for (int i = 0; i < 20; ++i)
+                            captured << ram.mid(rows + i * 248, 248);
+                        playback.actors().supplyBodyRows(captured);
+                        for (int i = 0; i < 100; ++i) {
+                            playback.actors().supplyMemberGender(false, i,
+                                                                 u8(ram, 0x193bd4 + i * 56));
+                            playback.actors().supplyMemberGender(true, i,
+                                                                 u8(ram, 0x195574 + i * 52));
+                        }
+                        context_->setText(context_->text() +
+                                          "\nActor profiles use the open runtime state's character "
+                                          "and scene rows.");
+                    }
+                }
+            }
+        }
         const auto launch = SceneImages::launch(startupProgram);
         if (launch.resource_class == 4) {
             const int overrideRow = launchImage_->currentData().toInt();
@@ -1474,10 +1600,12 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         painter.fillRect(frame.rect(), Qt::black);
         painter.restore();
         selection.clip(clip);
-        if (!drawing.panels().empty())
+        if (!drawing.panels().empty() || drawing.titleScene())
             overlay(drawing.panels().render());
         if (drawing.titleScene())
             overlay(drawing.titleReveal().render(drawing.highResolution()));
+        if (drawing.chapterCard())
+            overlay(drawing.chapterCard()->render());
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));
@@ -1631,8 +1759,13 @@ void ScenePreview::step() {
             current_->finished = true;
             current_->reason = QString("Playback input completed its declared %1 updates.").arg(inputs->updateLimit());
         }
-        if (tick_ % 120 == 0)
+        if (tick_ % 120 == 0) {
             checkpoints_.insert(tick_, *current_);
+            // A report checkpoint retains 8 or 12 MiB. Keep launch and the
+            // most recent eight. Earlier positions can replay from launch.
+            if (current_->playback.panels().usesReportRuntime() && checkpoints_.size() > 9)
+                checkpoints_.erase(std::next(checkpoints_.begin()));
+        }
     } catch (const std::exception &e) {
         current_->stopped = true;
         current_->reason = QString::fromUtf8(e.what());

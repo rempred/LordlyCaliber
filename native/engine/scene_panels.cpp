@@ -1,4 +1,6 @@
 #include "engine/scene_panels.h"
+#include "engine/avatar_artwork.h"
+#include "engine/image.h"
 #include "engine/item_data.h"
 #include "engine/text.h"
 #include "game/director/panel_animation.h"
@@ -17,11 +19,23 @@ QString label(const QByteArray &b) {
     QString out;
     for (int i = 0; i < b.size(); ++i) {
         const auto c = u8(b, i);
+        if (c == 0x0e || c == 0x0f)
+            continue;
+        if (c == 0x10 && i + 1 < b.size()) {
+            ++i;
+            out += ' ';
+            continue;
+        }
         if (c < 0x80)
             out += QChar(c);
+        else if (c == 0x82 && i + 1 < b.size() && u8(b, i + 1) >= 0x4f && u8(b, i + 1) <= 0x58)
+            out += QChar('0' + u8(b, ++i) - 0x4f);
         else if (c == 0x81 && i + 1 < b.size()) {
             const auto d = u8(b, ++i);
-            out += d == 0xaa ? QChar(0x2191) : d == 0xab ? QChar(0x2193) : QChar(0xfffd);
+            out += d == 0x46   ? QChar(':')
+                   : d == 0xaa ? QChar(0x2191)
+                   : d == 0xab ? QChar(0x2193)
+                               : QChar(0xfffd);
         } else
             out += QChar(0xfffd);
     }
@@ -90,7 +104,7 @@ QByteArray ScenePanels::resource(quint32 key) const {
         throw Error("Panel resource exceeds its envelope");
     return rom_.bytes().mid(at + 4, size);
 }
-QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity) const {
+QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity, bool replaceNames) const {
     const auto directory = resource(0x18855fe), compressed = resource(u32(directory, 0));
     const quint32 size = u32(compressed, 0);
     if (size > 65536)
@@ -105,10 +119,26 @@ QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity) const 
         if (section != int(selector & 255))
             begin = end + 4;
     }
-    if (end - begin > 0x4fe)
+    auto contents = text.mid(begin, end - begin);
+    if (replaceNames) {
+        for (int marker : {0x8d, 0x8e, 0x8f}) {
+            const auto token =
+                QByteArray(1, static_cast<char>(quint8(0x87))) + static_cast<char>(marker);
+            if (!contents.contains(token))
+                continue;
+            const auto &name = marker == 0x8d ? subjectName_ : selectedName_;
+            if (name.isNull())
+                throw Error(marker == 0x8d ? "Army help requires the current scene subject's name"
+                                           : "Army help requires the selected name");
+            if (name.size() > 63 || name.contains(char(0)))
+                throw Error("Invalid Army help name");
+            contents.replace(token, name);
+        }
+    }
+    if (contents.size() > 0x4fe)
         throw Error("Panel text exceeds its native storage");
     QByteArray p(0x604, 0);
-    p.replace(0, end - begin, text.mid(begin, end - begin));
+    p.replace(0, contents.size(), contents);
     put8(p, 0x5f3, 0x17);
     put8(p, 0x5f6, 15);
     put8(p, 0x5fe, 2);
@@ -138,6 +168,225 @@ QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity) const 
     put8(p, 0x5f4, lines);
     put8(p, 0x5f5, lines);
     return p;
+}
+void ScenePanels::createArmy(int slot, int preset) {
+    checkSlot(slot);
+    if (preset < 4 || preset > 24)
+        throw Error("Hugo's Report panel preset must be in 4..24");
+    if (report_) {
+        report_->create(slot, preset);
+        syncReport();
+        return;
+    }
+    if (preset != 4 && preset != 5 && preset != 7 && preset != 13)
+        throw Error(QString("Hugo's Report page %1 needs report records. Open a native RAM dump "
+                            "from Hugo's Report in Save.")
+                        .arg(preset));
+    Entity e;
+    e.identity = nextIdentity_;
+    e.record = QByteArray(232, 0);
+    const bool options = preset == 4 || preset == 7;
+    const quint32 key = options ? (0x20400 | preset) : preset;
+    const int32_t listStart[]{32, 94, 32, 94}, listEnd[]{32, 94, 120, 160};
+    const int32_t help[]{24, 19, 292, 80}, badgeStart[]{288, 96, 288, 118},
+        badgeEnd[]{194, 96, 288, 118};
+    const auto start = options ? listStart : preset == 5 ? help : badgeStart;
+    const auto end = options ? listEnd : preset == 5 ? help : badgeEnd;
+    lordly_panel_initialize(bytes(e.record), options ? 0x400 : 0, 0, start, end);
+    if (preset == 13) {
+        e.payload = QByteArray(0x604, 0);
+        put32(e.payload, 0x600, key);
+        e.payload.replace(0, reportClock_.size(), reportClock_);
+        put8(e.payload, 0x5f4, 1);
+        put8(e.payload, 0x5f5, 1);
+        put8(e.payload, 0x5f6, 17);
+    } else {
+        e.payload = textPayload(options ? key : 13, e.record);
+        put32(e.payload, 0x600, key);
+        put8(e.payload, 0x5f6, 17);
+        if (options) {
+            put8(e.record, 0x24, 0xfe);
+            if (!armyFlag_ && u8(e.payload, 0x5f4)) {
+                put8(e.payload, 0x5f4, u8(e.payload, 0x5f4) - 1);
+                put8(e.payload, 0x5f1, 1);
+                put8(e.record, 0x25, u8(e.payload, 0x5f4));
+            }
+            put32(e.record, 0x48, 94 + 17 * u8(e.payload, 0x5f4) + 8);
+        }
+    }
+    release(slot);
+    owners_[slot] = Owner{key, e.identity};
+    ++nextIdentity_;
+    if (options)
+        entities_.push_back(std::move(e));
+    else
+        entities_.prepend(std::move(e));
+}
+void ScenePanels::supplyReportClock(int hours, int minutes, int seconds) {
+    if (hours >= 100) {
+        hours = 99;
+        minutes = 59;
+        seconds = 59;
+    }
+    if (hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60)
+        throw Error("Invalid Hugo's Report play time");
+    reportClock_ = QString("%1:%2:%3")
+                       .arg(hours, 2, 10, QChar('0'))
+                       .arg(minutes, 2, 10, QChar('0'))
+                       .arg(seconds, 2, 10, QChar('0'))
+                       .toLatin1();
+}
+void ScenePanels::setReportArtwork(const QByteArray &portrait) {
+    // Report initialization (0028ADF4) selects child 19 of the title archive
+    // and the ordinary portrait for identity 125.
+    const auto directory = resource(0x1890c90);
+    const auto packed = resource(u32(directory, 19 * 4));
+    const auto size = u32(packed, 0);
+    if (size < 8 || size > 0x200000)
+        throw Error("Invalid Hugo's Report background allocation");
+    const auto image = decodeN64Image(decodeLzss(packed.mid(4), size));
+    if (image.width != 320 || image.height != 240)
+        throw Error("Invalid Hugo's Report background dimensions");
+    reportBackground_ = QImage(reinterpret_cast<const uchar *>(image.rgba.constData()), 320, 240,
+                               320 * 4, QImage::Format_RGBA8888)
+                            .copy();
+    reportPortrait_ = AvatarArtwork::render(portrait);
+}
+void ScenePanels::replaceArmyHelp(int slot, int section) {
+    checkSlot(slot);
+    if (report_) {
+        report_->help(slot, section);
+        syncReport();
+        return;
+    }
+    if (!owners_[slot])
+        throw Error("Army help needs an open panel in its target slot");
+    for (auto &e : entities_)
+        if (e.identity == owners_[slot]->entity) {
+            const auto id = u32(e.payload, 0x600);
+            auto next = textPayload(quint8(section + 13), e.record, true);
+            // func_00296754 replaces the text and its line table in the existing panel.
+            e.payload.replace(0, 0x5f0, next.first(0x5f0));
+            put8(e.payload, 0x5f4, u8(next, 0x5f4));
+            put8(e.payload, 0x5f5, u8(next, 0x5f5));
+            put32(e.payload, 0x600, id);
+            return;
+        }
+    throw Error("Army help target has closed");
+}
+void ScenePanels::supplyArmySubject(int subject, const QMap<int, QByteArray> &names,
+                                    QByteArray selected) {
+    if (subject == 0xdc)
+        subject = 0x6d;
+    if (subject == 0xdd)
+        subject = 0x63;
+    QByteArray result = names.value(subject);
+    if (subject == 0x51 && result.isNull()) {
+        result = names.value(0x52);
+        if (result.isNull())
+            result = names.value(0x53);
+    }
+    if (subject == 0x4d || subject == 0x64) {
+        const auto start = subject == 0x4d ? 0x29a070 : 0x29a078;
+        const auto end = rom_.bytes().indexOf(char(0), start);
+        if (end < start || end - start > 63)
+            throw Error("Army help subject has no bounded retail name");
+        result = rom_.bytes().mid(start, end - start);
+    }
+    supplyArmyNames(result, std::move(selected));
+}
+void ScenePanels::closeArmy(int slot, bool immediate) {
+    checkSlot(slot);
+    if (report_) {
+        report_->close(slot, immediate);
+        syncReport();
+        return;
+    }
+    if (query(slot) < -4)
+        return;
+    for (auto it = entities_.begin(); it != entities_.end(); ++it)
+        if (it->identity == owners_[slot]->entity && u8(it->payload, 0x5f0) != 3) {
+            if (immediate)
+                entities_.erase(it);
+            else {
+                lordly_panel_close(bytes(it->record));
+                put8(it->payload, 0x5f0, 3);
+            }
+            return;
+        }
+}
+void ScenePanels::advanceArmy(quint16 action, quint16 direction) {
+    if (report_) {
+        report_->advance(action, direction);
+        syncReport();
+        return;
+    }
+    audio_.clear();
+    if (!entities_.isEmpty()) {
+        auto &e = entities_.last();
+        const int key = u32(e.payload, 0x600);
+        const auto owner = std::find_if(owners_.begin(), owners_.end(), [&](const auto &o) {
+            return o && o->selector == quint32(key);
+        });
+        if (owner != owners_.end() && (key & 255) == 4) {
+            int selected = qint8(u8(e.record, 0x22)), previous = qint8(u8(e.record, 0x24));
+            auto &status = (*owner)->status;
+            status = selected == previous ? selected : -1;
+            const int phase = u8(e.payload, 0x5f0);
+            if (phase == 4 && armyHandshake_ == 2) {
+                armyHandshake_ = 0;
+                put8(e.payload, 0x5f0, 6);
+            }
+            if (phase == 3) {
+                lordly_panel_close(bytes(e.record));
+                put8(e.payload, 0x5f0, 4);
+            }
+            if (phase == 6 && u16(e.record, 0x18) == 255) {
+                if (armyHandshake_ == 1) {
+                    put8(e.payload, 0x5f0, 4);
+                } else if (action & 0xd000) {
+                    status = (action & 0x8000)   ? selected + !armyFlag_
+                             : (action & 0x4000) ? previous
+                                                 : 20;
+                    if ((action & 0xc000) == 0x4000)
+                        put8(e.record, 0x22, quint8(previous));
+                    if (action & 0xc000)
+                        audio_ << (action & 0x8000 ? 3 : 13);
+                    armyHandshake_ = 5;
+                    put8(e.payload, 0x5f0, 4);
+                } else {
+                    const int count = u8(e.record, 0x25);
+                    const int next = (direction & 0x800) ? std::max(0, selected - 1)
+                                     : (direction & 0x400) && selected + 1 < count ? selected + 1
+                                                                                   : selected;
+                    if (next != selected) {
+                        put8(e.record, 0x22, next);
+                        audio_ << 2;
+                    }
+                }
+            }
+        }
+    }
+    for (auto it = entities_.begin(); it != entities_.end();) {
+        if (lordly_panel_animate(bytes(it->record)))
+            it = entities_.erase(it);
+        else
+            ++it;
+    }
+}
+void ScenePanels::syncReport() {
+    owners_ = {};
+    entities_.clear();
+    audio_ = report_->sounds();
+    for (const auto &slot : report_->slotsInUse())
+        owners_[slot.index] = Owner{quint32(slot.key), slot.panel, slot.status};
+    for (const auto &p : report_->panels()) {
+        Entity e;
+        e.identity = p.address;
+        e.record = p.record;
+        e.payload = p.content;
+        entities_ << std::move(e);
+    }
 }
 void ScenePanels::create(int slot, int preset, int width, int height) {
     checkSlot(slot);
@@ -203,6 +452,13 @@ void ScenePanels::create(int slot, int preset, int width, int height) {
     ++nextIdentity_;
 }
 void ScenePanels::release(int slot) {
+    if (report_) {
+        if (slot != -1)
+            checkSlot(slot);
+        report_->release(slot);
+        syncReport();
+        return;
+    }
     if (slot == -1) {
         owners_ = {};
         return;
@@ -323,6 +579,9 @@ QImage ScenePanels::render() const {
     QImage result(320, 240, QImage::Format_RGBA8888);
     result.fill(Qt::transparent);
     QPainter painter(&result);
+    const bool reportScreen = !reportBackground_.isNull();
+    if (reportScreen && (!report_ || report_->backgroundVisible()))
+        painter.drawImage(0, 0, reportBackground_);
     QFont font("Consolas");
     font.setPixelSize(11);
     painter.setFont(font);
@@ -335,12 +594,14 @@ QImage ScenePanels::render() const {
                   right = qint32(u32(r, 0x34)), bottom = qint32(u32(r, 0x38));
         painter.save();
         painter.setOpacity(alpha / 255.);
-        painter.setPen(QColor(213, 220, 244));
-        painter.setBrush(QColor(27, 35, 62));
+        painter.setPen(reportScreen ? QColor(117, 91, 44) : QColor(213, 220, 244));
+        painter.setBrush(reportScreen ? QColor(230, 222, 179) : QColor(27, 35, 62));
         painter.drawRect(QRect(left, top, right - left, bottom - top));
         painter.setClipRect(QRect(left + 1, top + 1, right - left - 2, bottom - top - 2));
-        painter.setPen(Qt::white);
-        const bool option = u32(r, 8) == 0x8017ec84;
+        painter.setPen(reportScreen ? Qt::black : Qt::white);
+        const auto kind = e.payload.isEmpty() ? 0 : u32(e.payload, 0x600);
+        const bool pagedList = reportScreen && ((kind & 255) == 6 || (kind & 255) == 11);
+        const bool option = u32(r, 8) == 0x8017ec84 || (kind & 0xfffffffc) == 0x20404 || pagedList;
         auto drawLine = [&](const QByteArray &text, int x, int y) {
             painter.drawText(QPoint(x, y + 10), label(text));
         };
@@ -363,9 +624,12 @@ QImage ScenePanels::render() const {
             }
         } else
             for (int i = 0; i < u8(e.payload, 0x5f4); ++i) {
-                const int index = u8(e.payload, 0x5f1) + i;
-                if (index >= u8(e.payload, 0x5f5))
+                const int line = u8(e.payload, 0x5f1) + i;
+                if (line >= u8(e.payload, 0x5f5))
                     continue;
+                // The list callback 002971B4 draws relative pointers which the
+                // page provider rewrites as the player scrolls.
+                const int index = pagedList ? i : line;
                 if (index >= 48)
                     throw Error("Panel line index exceeds its pointer table");
                 const int at = u32(e.payload, 0x530 + index * 4);
@@ -381,12 +645,16 @@ QImage ScenePanels::render() const {
                          top + i * u8(e.payload, 0x5f6) +
                              (option ? 4 : qint16(u16(e.payload, 0x5fa)) + 5));
             }
+        if (reportScreen && (kind & 255) == 5)
+            painter.drawImage(right - 48, top + 4, reportPortrait_);
         if (e.parent || option) {
-            const int selected = qint8(u8(r, 0x22)), x = left + (e.parent ? 1 : 3),
+            const int selected = pagedList ? int(u8(e.payload, 0x5fc)) - u8(e.payload, 0x5f1)
+                                           : qint8(u8(r, 0x22)),
+                      x = left + (e.parent ? 1 : 3),
                       y = top + (e.parent ? (selected & 1) * 14 + 4
                                           : selected * u8(e.payload, 0x5f6) + 6);
             painter.setPen(Qt::NoPen);
-            painter.setBrush(Qt::white);
+            painter.setBrush(reportScreen ? Qt::black : Qt::white);
             painter.drawPolygon(QPolygon{{x, y}, {x + 7, y + 4}, {x, y + 8}});
         }
         painter.restore();

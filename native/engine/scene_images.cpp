@@ -235,6 +235,12 @@ SceneBackgrounds SceneImages::backgrounds(const Rom &rom, const DirectorResource
     if (cls == 4 || cls == 5) {
         result.mode = 0;
         result.modeEvidence = "Resource class 4/5 selects scene-group launch preload.";
+    } else if (cls == 6 && (scene.selectors.contains(0) || scene.selectors.contains(1073) ||
+                            scene.selectors.contains(1078))) {
+        // These wrappers select their own controller and drawing path. An edited
+        // Director stream remains attached to the same retail selector.
+        result.mode = scene.selectors.contains(1078) ? 0 : 2;
+        result.modeEvidence = "Class-six report or title preview uses its dedicated screen controller.";
     } else if (freshEnvironment) {
         result.mode = 2;
         result.modeEvidence = "Qualified fresh environment launch selects mode two.";

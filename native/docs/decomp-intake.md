@@ -1,5 +1,28 @@
 # Using newly accepted Decomp C
 
+## November 18 cutscene services
+
+The editor imports all 46 functions from Decomp `2447f1d5` under fingerprint
+`8412D50E`. The ROM baseline now compiles 1,541 producers containing 1,672
+accepted targets and 1,718 compiler-recorded functions. It verifies 1,685
+code regions and 76 read-only data regions. An unchanged US Rev 0 export
+matched the input, including byte order. The source-selection audit counts 34
+existing extension hooks within accepted C, zero whole-owner assembly gaps
+and zero unclassified assembly files.
+
+| Editor consumer | What changed |
+| --- | --- |
+| Actor questions | The third operand selects the actor. The signed profile result uses the member's roster, gender and alignment, followed by story-art overrides. The roster-source question distinguishes a vacant slot, a persistent character and a deployed character. A visiting unit can come from Save. |
+| Hugo's Report | Scene 0 uses its own panel creation, input, help and close handlers. A verified report RAM dump supplies player history, page data and names. The preview executes the original report handlers against an isolated copy. Project edits still control the Director script. |
+| Chapter titles | Selectors 1073–1077 share one script. The chapter picker selects the artwork and preserves the original selector through the reveal. Desktop playback calls the accepted reveal initialization, progress query and pixel update routines. |
+| Mission title | Selector 1078 uses the scenario and mission number from preview setup. The ROM supplies the crest layers, label, digits and scenario title. Different scenarios can share a title image. |
+| Town briefings | The recorded Zemio visit below remains the reference for the visiting squad and both construction calls. The new actor profile and roster-source questions are separate from briefing actor construction. |
+
+The retail report and the exported edit were exercised through the world map.
+On the edited visit, word 14 displayed the authored help section. The Tips list
+and both pages of **25. Critical Attacks** agreed with the preview. See the
+[Cutscenes controls and limits](scene-authoring.md#visiting-units-hugos-report-and-titles).
+
 ## November 17 actor placement and briefing
 
 The editor imports all 13 matching functions from Decomp `d66e1450`, verified

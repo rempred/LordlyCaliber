@@ -1,4 +1,5 @@
 #include "engine/scene_party.h"
+#include "engine/save_document.h"
 #include "game/director/actor_body.h"
 #include "game/director/actor_roster.h"
 #include <QMap>
@@ -98,9 +99,40 @@ QString SceneParty::description() const {
     };
     auto text = QString("Sample party classes: %1. Class-default equipment and a sample formation.")
                     .arg(names(classes));
+    if (!savedMembers.isEmpty())
+        text = "Visiting unit from the selected save. Preview uses its members, formation, "
+               "equipment, gender and alignment.";
+    else
+        text += " The sample visitor uses gender 0 and alignment 50.";
     if (!encounter.isEmpty())
         text += QString(" Encounter classes inferred from dialogue: %1.").arg(names(encounter));
     return text;
+}
+void SceneParty::useSavedUnit(const SaveDocument &save, int selected) {
+    for (const auto &unit : save.units())
+        if (unit.index == selected) {
+            QVector<int> ids;
+            QVector<SavedMember> members;
+            for (int i = 0; i < unit.members.size(); ++i) {
+                const int index = unit.members[i];
+                if (!index || index == 255)
+                    continue;
+                const int cell = unit.cells[i];
+                if (index >= 100 || cell < 0 || cell >= 9)
+                    throw Error("Saved visiting unit has an invalid member or formation position");
+                const auto record = save.memory().mid(0x193bc0 + 56 * index, 56);
+                if (record.size() != 56 || !u8(record, 17))
+                    throw Error("Saved visiting unit references an empty character");
+                ids << u8(record, 17);
+                members << SavedMember{index, cell, record};
+            }
+            if (ids.isEmpty())
+                throw Error("Saved visiting unit has no members");
+            classes = std::move(ids);
+            savedMembers = std::move(members);
+            return;
+        }
+    throw Error("Selected visiting unit is unavailable in the open save");
 }
 void SceneParty::supply(SceneActors &actors, const BodyAnimationData &data, bool reset) const {
     ActorBindingInputs inputs;
@@ -118,24 +150,30 @@ void SceneParty::supply(SceneActors &actors, const BodyAnimationData &data, bool
             if (ordinal == 20)
                 throw Error("Preview party exceeds the native roster");
             const int primary = ids[member];
+            const auto *saved =
+                (&ids == &classes && !savedMembers.isEmpty()) ? &savedMembers.at(member) : nullptr;
+            const int index = saved ? saved->index : firstMember + member;
             const int secondaryDefault = u8(data.classes().entries().at(primary).record, 69);
-            const int secondary = secondaryDefault ? secondaryDefault : primary;
+            const int secondary =
+                saved ? u8(saved->record, 18) : (secondaryDefault ? secondaryDefault : primary);
             auto &row = inputs.rows[ordinal];
             put32(row, 0x40, (side ? 0x500 : 0) | (member == 0 ? 0x200 : 0));
             put32(row, 0x48, primary);
             put32(row, 0x4c, secondary);
-            const int cell = formation[member], lane = side ? cell % 3 : 2 - cell % 3,
-                      depth = side ? cell / 3 : 8 - cell / 3;
+            const int cell = saved ? saved->cell : formation[member],
+                      lane = side ? cell % 3 : 2 - cell % 3, depth = side ? cell / 3 : 8 - cell / 3;
             put32(row, 0x54, lane);
             put32(row, 0x58, depth);
-            put8(row, 0xf6, quint8(firstMember + member));
+            put8(row, 0xf6, index);
+            put8(row, 0x34, saved ? u8(saved->record, 27) : 50);
+            actors.supplyMemberGender(side, index, saved ? u8(saved->record, 20) : 0);
             uint16_t equipment[4];
             if (lordly_body_appearance(reinterpret_cast<const uint8_t *>(records.constData()),
                                        data.classes().entries().size(), primary, secondary,
                                        equipment))
                 throw Error("Preview party has an invalid class appearance");
             for (int i = 0; i < 4; ++i)
-                put16(row, 0x36 + i * 2, equipment[i]);
+                put16(row, 0x36 + i * 2, saved ? u16(saved->record, 42 + 2 * i) : equipment[i]);
             const bool paired = secondary == 10 || secondary == 25 || secondary == 123 ||
                                 data.routes().entry(primary).construction == 2;
             const int children = secondary == 1 ? 3 : paired ? 2 : 1;
@@ -149,9 +187,9 @@ void SceneParty::supply(SceneActors &actors, const BodyAnimationData &data, bool
                 put16(object, 0x2c, quint16(38 * (lane - 1) + dz));
                 actors.supplyBodyObject(address, object);
             }
-            roster.members[side ? 1 : 0].insert(firstMember + member, {1, 0});
+            roster.members[side ? 1 : 0].insert(index, {1, 0});
             if (side)
-                inputs.unitMembers[member] = quint8(firstMember + member);
+                inputs.unitMembers[member] = quint8(index);
             ++ordinal;
         }
     };

@@ -61,6 +61,7 @@ class SceneActors {
     const ActorHeightJob &heightJob(int slot) const;
     void supplyHeightJob(int slot, ActorHeightJob job);
     void supplyBindingInputs(ActorBindingInputs inputs);
+    void supplyMemberGender(bool deployed, int member, int gender);
     // Explicit launch state: absent rows remain unknown, never silently zero-filled.
     void supplyBodyRows(const QVector<QByteArray> &rows);
     const QByteArray &bodyRow(int identity) const;
@@ -164,6 +165,7 @@ class SceneActors {
     std::optional<quint32> sceneFlags_;
     int nextPoseSlot_ = 0;
     std::optional<ActorBindingInputs> binding_;
+    std::array<QHash<int, int>, 2> memberGenders_;
     bool capturedBodyPreview_ = false;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;

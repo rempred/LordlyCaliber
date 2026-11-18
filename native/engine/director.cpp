@@ -28,6 +28,9 @@ const QMap<int, QString> &researchedSceneNames() {
             if (entry[0] == "scene" && entry[1] == "global")
                 result[entry[2].toInt()] = entry[3].toString();
         }
+        // The world-map Report command launches selector 0. A report capture
+        // identifies the screen more precisely than the older army-menu label.
+        result[0] = "Hugo's Report";
         return result;
     }();
     return names;

@@ -3,6 +3,7 @@
 #include "engine/scene_actors.h"
 #include "engine/scene_audio.h"
 #include "engine/scene_camera.h"
+#include "engine/scene_chapter_card.h"
 #include "engine/scene_crop.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_dialogue_context.h"
@@ -29,6 +30,7 @@ struct ScenePlaybackStart {
     DirectorLaunchTranslations translations;
     std::optional<quint32> sceneFlags;
     std::optional<LordlyActorLighting> lighting;
+    int missionScenario = 0, missionSequenceBefore = 0;
 };
 struct SceneDialogueState {
     SceneResources resources;
@@ -150,6 +152,9 @@ class ScenePlayback {
     const SceneTitleReveal &titleReveal() const {
         return titleReveal_;
     }
+    const std::optional<SceneChapterCard> &chapterCard() const {
+        return chapterCard_;
+    }
     bool titleScene() const {
         return screenVariant_ == 0;
     }
@@ -264,6 +269,7 @@ class ScenePlayback {
     SceneCrop crop_;
     SceneDisplay display_;
     SceneTitleReveal titleReveal_;
+    std::optional<SceneChapterCard> chapterCard_;
     bool highResolution_ = false;
     int titlePhase_ = 0;
     ScenePanels panels_;

@@ -135,6 +135,8 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
       lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
     screenVariant_ = selector;
+    if (selector >= 1073 && selector <= 1078)
+        chapterCard_.emplace(rom, selector, start.missionScenario, start.missionSequenceBefore);
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
     if (start.sceneFlags)
@@ -240,6 +242,15 @@ void ScenePlayback::supplyBriefingCalls(QString asset, BriefingCalls calls, bool
     briefingSlotsKnown_ = slotsKnown;
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (chapterCard_ && (opcode == 0xaf || opcode == 0xb0 || opcode == 0xb1)) {
+        if (opcode == 0xaf)
+            chapterCard_->startFade();
+        else if (opcode == 0xb0)
+            chapterCard_->startReveal();
+        else
+            value = chapterCard_->revealing() ? 1 : 0;
+        return true;
+    }
     if (opcode == 0xc2) {
         if (args.size() != 2)
             throw Error("Briefing construction requires an anchor slot and an initial pose");
@@ -275,8 +286,24 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         display_.requestReveal();
         return true;
     }
-    if (titleScene() && (opcode == 0x62 || opcode == 0x6a || opcode == 0x6b))
-        throw Error("Title menu panels require their separate early-overlay owner");
+    if (titleScene()) {
+        if (opcode == 0x80000005 && args.size() == 1 && args[0] == 0x70) {
+            panels_.armyMenuLabel();
+            return true;
+        }
+        if (opcode == 0x62 && args.size() == 2) {
+            panels_.createArmy(qint32(args[0]), qint32(args[1]));
+            return true;
+        }
+        if (opcode == 0xae && args.size() == 2) {
+            panels_.replaceArmyHelp(qint32(args[0]), qint32(args[1]));
+            return true;
+        }
+        if ((opcode == 0x83 || opcode == 0x8b) && args.size() == 1) {
+            panels_.closeArmy(quint8(args[0]), opcode == 0x8b);
+            return true;
+        }
+    }
     if (opcode == 0x62) {
         if (args.size() != 2)
             throw Error("Panel creation requires two operands");
@@ -674,7 +701,7 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     const auto clearObserver = qScopeGuard([this] { observer_ = nullptr; });
     instructionBudget_ = instructionBudget;
     int status;
-    if (titleScene()) {
+    if (titleScene() || chapterCard_) {
         // Early wrapper ROM281C78..281CE4 updates counter, Director, title menu,
         // People board, then this reveal. Its scheduler is not the Actor sweep.
         // The two independent menu owners still reject their launch commands;
@@ -686,10 +713,15 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
                 status = LORDLY_SCENE_BUDGET;
                 break;
             }
-            if (titlePhase_ == 2)
-                titleReveal_.advance();
-            else if (!invoke(this,
-                             titlePhase_ == 0 ? LORDLY_SCENE_COUNTER : LORDLY_SCENE_DIRECTOR)) {
+            if (titlePhase_ == 2) {
+                if (chapterCard_)
+                    chapterCard_->advance();
+                else {
+                    panels_.advanceArmy(pressed_, direction_);
+                    titleReveal_.advance();
+                }
+            } else if (!invoke(this,
+                               titlePhase_ == 0 ? LORDLY_SCENE_COUNTER : LORDLY_SCENE_DIRECTOR)) {
                 status = LORDLY_SCENE_UNAVAILABLE;
                 break;
             }
@@ -705,10 +737,14 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     if (status == LORDLY_SCENE_COMPLETE) {
         // Scene wrapper ROM281A8C calls the menu updater after the complete
         // Actor/Director scheduler, including its alternate path.
-        if (!titleScene())
+        if (!titleScene() && !chapterCard_)
             panels_.advance(pressed_, direction_);
         ++completed_;
         released_ = releaseRequested_;
+        if (released_)
+            chapterCard_.reset();
+        if (released_ && titleScene())
+            panels_ = ScenePanels(rom_);
         return released_ ? Released : Advanced;
     }
     if (status == LORDLY_SCENE_INVALID)

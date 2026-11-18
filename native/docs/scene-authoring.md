@@ -299,3 +299,28 @@ checks pass (5,601 ms and 7,693 ms respectively).
 Correction to the earlier migration research note: allocation record word six is
 not always zero. The browser exporter fills it with the first 32 bits of the
 script's decoded SHA-256 after encoding; plain manifest records keep zero.
+
+## Visiting units, Hugo's Report and titles
+
+For a scene that takes a visiting unit, open a save in **Save**, select the
+slot you want, then choose its unit in **Cutscenes → Scene playback**. The
+preview reads the members, formation, equipment, gender and alignment. The
+sample visitor remains available when you want to try the scene without a
+save. For the observed Zemio cast, use the [recorded launch](decomp-intake.md#november-17-actor-placement-and-briefing).
+
+**Hugo's Report** is selector 0. On the timeline, **Replace Army help text**
+edits the destination panel and the help section. The opening command uses
+panel 1. Section 0 introduces the menu, and section 1 begins “This is the
+past”. The categories and clock can use the open save. For a full report
+page, open a 4 or 8 MiB native-order RAM dump taken while this report was
+active. The preview starts the selected script with the captured report
+records. Use **Up**, **Down**, **Confirm (A)** and **Cancel (B)** to navigate.
+The crest and Hugo portrait use ROM artwork. Panel borders, text and cursor
+use desktop drawing. People relationship diagrams and every report history
+configuration still need visual verification.
+
+For the shared chapter script, use the **chapter** picker to choose the
+Prologue through Final Chapter. The sparkle pattern uses a repeatable
+preview seed. The mission-entry script takes a scenario title image and a
+mission number. These preview settings let you inspect the different launches
+of the same script. The exported game supplies them from its campaign.
