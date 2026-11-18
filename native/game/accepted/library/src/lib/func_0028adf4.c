@@ -1,4 +1,5 @@
 #include "game/cutscene_panels.h"
+#include "game/story_event_entry.h"
 
 extern struct {
     u8 field00;
@@ -14,7 +15,6 @@ extern s16 D_8022A994;
 extern s32 D_8022A990;
 
 extern void bzero(void *buffer, s32 size);
-extern void func_00047ee0(s32 selector, s32 index);
 extern void func_0028aa4c(void);
 extern void *func_00070F30(s32 size);
 extern void *func_0002dfb8(void *buffer, u32 key);

@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <algorithm>
 #include <functional>
 namespace lordly {
 namespace {
@@ -371,22 +372,23 @@ QByteArray SceneEvents::authoredBase(int row) const {
         edits.remove("unlockNodes");
     return flagRow(retailRow(rom_, row), row, {{rowKey, edits}}, false);
 }
+QVector<int> SceneEvents::scenarioKeys(int row) const {
+    if (customMissionRow(row) && missionName(row).isEmpty()) return {};
+    const auto bytes = program(row);
+    static const auto stores = QByteArray::fromHex("70e970e7");
+    QSet<int> keys;
+    for (int at = 0; at + 6 <= bytes.size(); at += 2)
+        if (u8(bytes, at) == 0x68 && bytes.mid(at + 2, 4) == stores)
+            keys.insert(u8(bytes, at + 1));
+    auto result = keys.values();
+    std::sort(result.begin(), result.end());
+    return result;
+}
 QVector<int> SceneEvents::scenarioRows(int key) const {
     QVector<int> result;
     if (key < 0 || key > 255) return result;
-    auto match = QByteArray::fromHex("680070e970e7"); match[1] = char(key);
-    for (int row : {2, 3})
-        if (!missionName(row).isEmpty() && program(row).contains(match))
-            result << row;
-    for (int row = 4; row < retailRowCount; ++row) {
-        if (!catalog()["rows"].toArray()[row].isObject()) continue;
-        const auto bytes = flags_[QString::number(row)].toObject()["replace"].toBool()?program(row):retailRow(rom_, row);
-        for (int at = 0; at + match.size() <= bytes.size(); at += 2)
-            if (bytes.mid(at, match.size()) == match) { result << row; break; }
-    }
-    for (int row = firstCustomRow; row < rowCapacity; ++row)
-        if (!missionName(row).isEmpty() && program(row).contains(match))
-            result << row;
+    for (int row = 2; row < rowCapacity; ++row)
+        if (scenarioKeys(row).contains(key)) result << row;
     return result;
 }
 void SceneEvents::editFlag(int row, int offset, int flag, bool value) {

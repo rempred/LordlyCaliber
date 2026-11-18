@@ -479,12 +479,14 @@ class EventFlowTests:public QObject {
             auto flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),4);auto visit=entry(flow,0xa8);
             QVERIFY(visit.simpleVisit);QCOMPARE(visit.triggerFields.size(),1);QCOMPARE(visit.triggerFields[0].value,2);QCOMPARE(visit.triggerFields[0].choices[2],QString("Mulsuk"));
             QCOMPARE(visit.actions.size(),1);QCOMPARE(visit.actions[0].scene,610);QCOMPARE(visit.triggerInstructions.size()+visit.actions[0].instructions.size(),9);
+            QCOMPARE(visit.actions.first().requestOffset,0xb4);
             const auto original=events.program(4);
             EventFlow::set(events,*project.scenePrograms(),4,visit.triggerFields[0],3);
             EventFlow::set(events,*project.scenePrograms(),4,visit.actions[0].fields[0],611);
             auto expected=original;expected[0xab]=3;expected[0xb1]=char(611&255);QCOMPARE(events.program(4),expected);
             flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),4);visit=entry(flow,0xa8);
             QVERIFY(visit.simpleVisit);QCOMPARE(visit.title,QString("Jadd"));QCOMPARE(visit.actions[0].scene,611);
+            QCOMPARE(visit.actions.first().requestOffset,0xb4);
             // A different return request is an extra action, never silently hidden.
             events.editParameter(4,0xb6,"value",3,*project.scenePrograms());
             flow=EventFlow::read(project.rom(),events,*project.scenePrograms(),4);visit=entry(flow,0xa8);
@@ -507,6 +509,34 @@ class EventFlowTests:public QObject {
             }
             QVERIFY(namedAnswer);
         }catch(const std::exception &e){QFAIL(e.what());}
+    }
+    void sharedAndTrainingEntries() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Retail ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadSceneEvents();
+        const auto &events = *project.sceneEvents();
+        const auto report = EventFlow::read(project.rom(), events, *project.scenePrograms(), 67);
+        const QStringList triggers{
+            "Open Hugo's Report", "Open Hugo's Report", "Open Hugo's Report",
+            "Advance the campaign calendar by one day", "Open Miscellany", "Open Tips"};
+        const QVector<int> directEntries{14, 4370, 5128, 7074, 8988, 9330};
+        QVector<int> called;
+        for (const auto &routine : report)
+            if (triggers.contains(routine.trigger)) called << routine.entry;
+        QCOMPARE(called, directEntries);
+        for (int i = 0; i < directEntries.size(); ++i) {
+            const auto &routine = entry(report, directEntries[i]);
+            QCOMPARE(routine.trigger, triggers[i]);
+            QCOMPARE(routine.ruleIndex, -1);
+        }
+        const auto training = EventFlow::read(project.rom(), events, *project.scenePrograms(), 68);
+        QCOMPARE(entry(training, 18).trigger, QString("Training encounter"));
+        QCOMPARE(entry(training, 150).trigger, QString("Unit defeated during training"));
+        QCOMPARE(entry(training, 18).ruleIndex, 0);
+        QCOMPARE(entry(training, 42).ruleIndex, 1);
+        QCOMPARE(entry(training, 150).ruleIndex, 0);
+        QCOMPARE(entry(training, 236).ruleIndex, 1);
     }
     void arrivalAndInvestigationRoutes(){
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
@@ -689,6 +719,7 @@ class EventFlowTests:public QObject {
             const auto reopenedVisit=entry(EventFlow::read(output,*reopened.sceneEvents(),*reopened.scenePrograms(),10,false),262);
             QVERIFY(std::any_of(reopenedVisit.actions.cbegin(),reopenedVisit.actions.cend(),[](const auto &a){return a.title=="Visiting squad uses the player army roster";}));
             flow=EventFlow::read(output,*reopened.sceneEvents(),*reopened.scenePrograms(),4,false);QVERIFY(entry(flow,0xa8).simpleVisit);QCOMPARE(entry(flow,0xa8).actions.first().scene,611);
+            QCOMPARE(entry(flow,0xa8).actions.first().requestOffset,0xb4);
             QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);QCOMPARE(SceneEvents::retailRow(output,4),SceneEvents::retailRow(rom,4));
             QDir parent(QFileInfo(path).absolutePath());QVERIFY(parent.mkpath("Test ROMs"));QTemporaryDir folder(parent.filePath("Test ROMs/event-flow-XXXXXX"));QVERIFY(folder.isValid());folder.setAutoRemove(false);
             exportRom(loaded,built,folder.filePath(QFileInfo(path).fileName()));QFile event(folder.filePath("event-4.bin"));QVERIFY(event.open(QIODevice::WriteOnly));event.write(SceneEvents::readRow(output,4));event.close();

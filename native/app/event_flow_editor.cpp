@@ -339,7 +339,7 @@ void EventFlowEditor::showEvent(){
                     for(const auto &a:e.requirements+e.actions)if(a.instructions.contains(address.offset)){
                         if(!a.condition.operation.isEmpty())addCondition(form,a.condition);
                         for(const auto &f:a.fields)addField(form,f);
-                        if(a.scene>=0&&editCutscene){auto edit=new QPushButton("Edit cutscene…");form->addRow(edit);connect(edit,&QPushButton::clicked,this,[this,id=a.scene,at=a.instructions.value(a.instructions.size()-1,-1)]{editCutscene(id,row_,at);});}
+                        if(a.scene>=0&&editCutscene){auto edit=new QPushButton("Edit cutscene…");form->addRow(edit);connect(edit,&QPushButton::clicked,this,[this,id=a.scene,at=a.requestOffset]{editCutscene(id,row_,at);});}
                         found=true;break;
                     }if(found)break;
                 }
@@ -485,7 +485,7 @@ void EventFlowEditor::showEvent(){
         }
         if(a.kind=="program"&&!a.fields.isEmpty()&&openEventProgram){auto open=new QPushButton("Open related events");open->setObjectName(QString("storyOpenProgram_%1").arg(a.fields.first().offset));controls->addWidget(open);
             connect(open,&QPushButton::clicked,this,[this,row=a.fields.first().value]{openEventProgram(row);});}
-        if(a.scene>=0&&editCutscene){auto open=new QPushButton("Edit cutscene…");controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,id=a.scene,at=a.instructions.value(a.instructions.size()-1,-1)]{editCutscene(id,row_,at);});}
+        if(a.scene>=0&&editCutscene){auto open=new QPushButton("Edit cutscene…");controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,id=a.scene,at=a.requestOffset]{editCutscene(id,row_,at);});}
         if(a.target>=0&&step.predicate.operation.isEmpty()){
             auto link=[&](QString prefix,int at){auto open=new QPushButton(prefix+destination(at));controls->addWidget(open);connect(open,&QPushButton::clicked,this,[this,at]{selectOffset(at);});};
             link(a.otherwise>=0?"Yes → ":"Go to → ",a.target);if(a.otherwise>=0)link("No → ",a.otherwise);

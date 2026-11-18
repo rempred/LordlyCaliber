@@ -408,6 +408,18 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
     const auto bytes=SceneEvents::flagRow(retail,row,events.flagEdits(),false);
     const auto offsets=replaced?QSet<int>{}:EventScript::instructionOffsets(row);
     auto nativeHandlers=info["handlers"].toArray();
+    // The row 67 caller passes one index to func_00047ee0. Look up its
+    // handler in the current program, independently of the mission scheduler.
+    QMap<int,QStringList> sharedCallers;
+    if (row == 67 && !replaced) {
+        const std::array<QString,6> triggers{
+            "Open Hugo's Report", "Open Hugo's Report", "Open Hugo's Report",
+            "Advance the campaign calendar by one day", "Open Miscellany", "Open Tips"};
+        for (int index = 0; index < int(triggers.size()); ++index) {
+            auto &names = sharedCallers[u16(bytes, 2 * index)];
+            if (!names.contains(triggers[index])) names << triggers[index];
+        }
+    }
     const auto triggerChanges=events.flagEdits()[QString::number(row)].toObject()["triggers"].toObject();
     for(int n=0;n<nativeHandlers.size();++n){auto h=nativeHandlers[n].toObject();const auto change=triggerChanges[QString::number(h["entry"].toInt())].toObject();if(!change.isEmpty()){h["group"]=change["group"];nativeHandlers[n]=h;}}
     const bool scopedNames=originalSceneText&&!scenes.modified()&&bytes==retail&&events.json()["bindings"].toObject().isEmpty();
@@ -461,10 +473,12 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
     for(int h=0;h<nativeHandlers.size();++h){const auto entry=nativeHandlers[h].toObject();
         StoryEvent event;event.entry=entry["entry"].toInt();event.group=entry["group"].toInt(-1);event.trigger=trigger(event.group);
         if(entry["group"]=="world-location")event.trigger=row==70?"Choose Area Investigation":"Arrive at map location";
+        else if (sharedCallers.contains(event.entry)) event.trigger = sharedCallers.value(event.entry).join(" / ");
         else if(row==1)event.trigger="New Game";
         else if(row==62)event.trigger="Ending sequence";
         else if(row==66)event.trigger="History playback";
-        else if(row==68)event.trigger="Training encounter";
+        else if(row==68 && event.group==3)event.trigger="Training encounter";
+        else if(row==68 && event.group==4)event.trigger="Unit defeated during training";
         else if(row>=110)event.trigger="Chapter introduction";
         const int end=h+1<nativeHandlers.size()?nativeHandlers[h+1].toObject()["entry"].toInt():info["byteLength"].toInt();
         bool original=originalSceneText&&bytes.mid(event.entry,end-event.entry)==retail.mid(event.entry,end-event.entry);
@@ -564,6 +578,7 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
                     auto f=field(after,"destination","Destination");action.target=f.value;action.fields<<f;consume(2);lastScene=-1;
                 }else if(load&&reg==0&&owns(at,literalWords+1)&&u8(bytes,after)==0x10){
                     action.kind="action";const auto site=launches.value(after);action.scene=site.id.isEmpty()?value:events.target(site.id);
+                    action.requestOffset = after;
                     action.title="Play cutscene · "+sceneNames.value(action.scene,QString("Cutscene ID %1").arg(action.scene));
                     auto f=field(at,"value","Cutscene");f.value=action.scene;f.maximum=site.id.isEmpty()?f.maximum:65535;f.choices=sceneNames;f.kind="scene";action.fields<<f;
                     if(u8(bytes,after+1))action.detail=QString("Additional launch options: %1. See Raw instructions.").arg(u8(bytes,after+1));
@@ -905,13 +920,15 @@ QVector<StoryEvent> EventFlow::read(const Rom &rom,const SceneEvents &events,con
             action.title=action.condition.title;
         }
     }
-    if(row!=0 && row!=70 && bytes.size()>=2) {
+    if(row!=0 && row!=67 && row!=70 && bytes.size()>=2) {
         const int groups=u16(bytes,0)==2?1:6;
         QMap<QPair<int,int>,int> positions;
         for(int g=0;g<groups && 2*g+2<=bytes.size();++g) {
             const int table=u16(bytes,2*g);
             if(table<2*groups || table%2)continue;
-            for(int at=table;at+2<=bytes.size();at+=2) {
+            // Row 68's encounter table ends at the first instruction without
+            // a terminator. Instructions cannot contribute rule indices.
+            for(int at=table;at+2<=bytes.size() && !offsets.contains(at);at+=2) {
                 const int entry=u16(bytes,at);
                 if(entry==65535)break;
                 positions.insert({g,entry},(at-table)/2);
@@ -1052,7 +1069,7 @@ QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &fl
             if(&a==&action)break;
             if(a.scene==action.answerScene){
                 d.scene=a.title.section(" · ",1);
-                d.questionOffset=a.instructions.last();
+                d.questionOffset=a.requestOffset;
                 d.commonEffects.clear();
             }else if(!d.scene.isEmpty() && a.kind=="action"){
                 d.commonEffects<<a.title;
@@ -1077,8 +1094,7 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
     for (const auto &event : flow) {
         const auto &actions = event.actions;
         auto at = std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
-            return a.scene == selector && !a.instructions.isEmpty() &&
-                   a.instructions.last() == site.offset;
+            return a.scene == selector && a.requestOffset == site.offset;
         });
         if (at == actions.cend())
             continue;
@@ -1122,10 +1138,10 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
                         return a.scene >= 0 && !a.instructions.isEmpty() &&
                                a.instructions.first() == pc;
                     });
-                if (arm == actions.cend() || u8(bytes, arm->instructions.last()) != 0x10)
+                if (arm == actions.cend() || arm->requestOffset < 0)
                     return false;
                 out.selector = arm->scene;
-                out.requestOffset = arm->instructions.last();
+                out.requestOffset = arm->requestOffset;
                 out.effects = choiceEffects(event, bytes, pc, gates);
                 return true;
             };

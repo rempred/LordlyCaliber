@@ -153,6 +153,45 @@ class SceneWorkspaceTests : public QObject {
         } else
             QVERIFY(effects.contains(reaction == 160 ? "Recruit character" : "Refuse Sheen"));
     }
+    void openTownVisitFromCampaign_data() {
+        QTest::addColumn<bool>("redirect");
+        QTest::newRow("retail Mulsuk") << false;
+        QTest::newRow("edited Jadd") << true;
+    }
+    void openTownVisitFromCampaign() {
+        QFETCH(bool, redirect);
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        if (redirect) {
+            auto events = *project.sceneEvents();
+            events.editParameter(4, 0xaa, "value", 3, *project.scenePrograms());
+            events.editParameter(4, 0xb0, "value", 611, *project.scenePrograms());
+            project.setSceneEvents(events.json());
+        }
+        QUndoStack undo;
+        CampaignEditor campaign(&project, &undo, [] {});
+        campaign.resize(1400, 900);
+        campaign.show();
+        campaign.selectEvent(4, 0xa8);
+        QApplication::processEvents();
+        auto tabs = campaign.findChild<QTabWidget *>("storylineTabs");
+        QVERIFY(tabs);
+        const auto buttons = tabs->currentWidget()->findChildren<QPushButton *>();
+        auto play = std::find_if(buttons.cbegin(), buttons.cend(), [](const auto *button) {
+            return button->isVisible() && button->text() == "Edit cutscene…";
+        });
+        QVERIFY(play != buttons.cend());
+        (*play)->click();
+        QCOMPARE(tabs->tabText(tabs->currentIndex()), QString("Cutscenes"));
+        auto context = tabs->currentWidget()->findChild<QComboBox *>("sceneLaunchContext");
+        QVERIFY(context);
+        QCOMPARE(context->currentData().toString(), QString("event-director:4:b00B4:invocation:168:0"));
+        const auto sceneList = tabs->currentWidget()->findChild<QListWidget *>("cutsceneScenes");
+        QVERIFY(sceneList && sceneList->currentItem());
+        const auto key = project.scenePrograms()->original().selectors().at(redirect ? 611 : 610);
+        QCOMPARE(sceneList->currentItem()->data(Qt::UserRole).toUInt(), key);
+        QCOMPARE(undo.count(), 0);
+    }
     void openDecisionFromCampaign() {
         auto project = Project::fromRom(rom());
         QUndoStack undo;

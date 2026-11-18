@@ -42,8 +42,13 @@ class EventContextTests:public QObject {
         const auto bytes=events.program(10);int initialization=-1;
         for(int at=0;at+6<=bytes.size();at+=2)if(u8(bytes,at)==0x68&&bytes.mid(at+2,4)==QByteArray::fromHex("70e970e7")){initialization=at;break;}
         QVERIFY(initialization>=0);events.editParameter(10,initialization,"value",1,*project.scenePrograms());
+        const int added = events.createMission(6, 1, "Second mission", -1, -1, *project.scenePrograms());
         EventContexts edited(project.rom(),events);QVERIFY(edited.locationsForScenario(1).contains(6));
-        QVERIFY(edited.scenarioPrograms(1).contains(10));
+        const auto programs = edited.scenarioPrograms(1);
+        QVERIFY(programs.contains(10));
+        QVERIFY(programs.contains(added));
+        QVERIFY(edited.scenarioKeys(added + 1).isEmpty());
+        QCOMPARE(events.scenarioRows(1), programs);
     }
     void chooseActivitiesAndFollowPrograms(){
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

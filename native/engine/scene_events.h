@@ -37,6 +37,7 @@ class SceneEvents {
     void restore(const QString &);
     QByteArray program(int row,bool structural=true) const;
     QByteArray authoredBase(int row) const;
+    QVector<int> scenarioKeys(int row) const;
     QVector<int> scenarioRows(int key) const;
     void editFlag(int row, int offset, int flag, bool value);
     void editBranch(int row, int offset, int target);

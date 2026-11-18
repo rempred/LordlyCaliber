@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "633858359D12F0FDEC97023B190478784A5848F1C3B84F95A1431AF1FC78822C",
-  "revision": "17cb2e9ddcf52a59fa2a3c7d07bd78234b8d2172",
+  "fingerprint": "D695992DEA7F10DDCACFE89ACF8DE2ECAC6E5804EAA3931CFB02A0FD0254F903",
+  "revision": "ed57a210a6352a8666acd6244ba6d65237211f75",
   "counts": {
-    "owners": 1673,
-    "functions": 1719,
-    "producerSources": 1542,
-    "sourceAndHeaderFiles": 1587
+    "owners": 1676,
+    "functions": 1722,
+    "producerSources": 1545,
+    "sourceAndHeaderFiles": 1591
   },
   "sources": [
     {
@@ -13084,6 +13084,98 @@
       ]
     },
     {
+      "name": "func_00047dd8",
+      "source": "game/accepted/library/src/lib/func_00047dd8.c",
+      "sourcePath": "src/lib/func_00047dd8.c",
+      "sourceSha256": "373F60CC9AE17E0324F098C49778B6C05F824E5324B02FE0EA69845355DBA802",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        }
+      ],
+      "address": 2148998872,
+      "bindings": {
+        "D_80197B0C": 2149153548,
+        "D_80197B04": 2149153540,
+        "D_80197B18": 2149153560,
+        "D_80197B1C": 2149153564,
+        "func_00046854": 2148993364,
+        "D_801936A8": 2149136040,
+        "resource_free": 2147947204,
+        "func_00048294": 2149000084,
+        "func_0004813C": 2148999740
+      },
+      "sections": {
+        ".text": 2148998872
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 294360,
+          "address": 2148998872,
+          "size": 264,
+          "sha256": "3F602C51BC1E1DEF6A33669D3271EB7431526B233CCC38E6D149B7515937C0FE",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00047dd8"
+      ]
+    },
+    {
+      "name": "func_00047ee0",
+      "source": "game/accepted/library/src/lib/func_00047ee0.c",
+      "sourcePath": "src/lib/func_00047ee0.c",
+      "sourceSha256": "833D79ACF7B6B0C30CFFE51F92590904466EAF38217B38A8591AEA88B8AEFDC9",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/story_event_entry.h",
+          "file": "game/accepted/library/include/game/story_event_entry.h",
+          "sha256": "AB138614B333689574C9C6FE205A4B48DC97A059CFA91D5CB95F2EF3F75B7549"
+        }
+      ],
+      "address": 2148999136,
+      "bindings": {
+        "D_80197B00": 2149153536,
+        "D_80197B02": 2149153538,
+        "D_80197B03": 2149153539,
+        "D_80197B04": 2149153540,
+        "D_80197B01": 2149153537,
+        "func_8009DBB8": 2148129720,
+        "resource_free": 2147947204,
+        "func_0002e138": 2148130104,
+        "func_00046854": 2148993364,
+        "D_80197B14": 2149153556
+      },
+      "sections": {
+        ".text": 2148999136
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 294624,
+          "address": 2148999136,
+          "size": 324,
+          "sha256": "8C8B8C9FC303AB374040971AB365E7C3B44ACE68181C6FBB5CAE7EA79F12AAD1",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00047ee0"
+      ]
+    },
+    {
       "name": "func_0004813C",
       "source": "game/accepted/library/src/lib/func_0004813c.c",
       "sourcePath": "src/lib/func_0004813c.c",
@@ -13149,6 +13241,54 @@
       ],
       "targets": [
         "func_0004820c"
+      ]
+    },
+    {
+      "name": "func_00048294",
+      "source": "game/accepted/library/src/lib/func_00048294.c",
+      "sourcePath": "src/lib/func_00048294.c",
+      "sourceSha256": "C814C30AFA7E21BAC5EE64A8CD7854373EA0BB6BAEA86F32E3AB03C1734E8061",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        }
+      ],
+      "address": 2149000084,
+      "bindings": {
+        "D_80197B18": 2149153560,
+        "resource_free": 2147947204,
+        "D_8018F1A0": 2149118368,
+        "D_80197B1C": 2149153564,
+        "D_80197B08": 2149153544,
+        "D_801936A8": 2149136040,
+        "D_80197B02": 2149153538,
+        "D_80197B00": 2149153536,
+        "func_80093380": 2148086656,
+        "D_80197B60": 2149153632,
+        "func_80080998": 2148010392,
+        "D_80197B06": 2149153542,
+        "func_8009DBB8": 2148129720,
+        "func_0002e138": 2148130104
+      },
+      "sections": {
+        ".text": 2149000084
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 295572,
+          "address": 2149000084,
+          "size": 544,
+          "sha256": "C2FCFAA4C0513C297DDE69EA008597A5727F2B049B4887A809D766A5A8614689",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00048294"
       ]
     },
     {
@@ -44779,7 +44919,7 @@
       "name": "func_0028adf4",
       "source": "game/accepted/library/src/lib/func_0028adf4.c",
       "sourcePath": "src/lib/func_0028adf4.c",
-      "sourceSha256": "EE65C4EB03961977EBD30EE2880C192D93EC4EEF732C0D389F47F1EC73DC6D74",
+      "sourceSha256": "ADFCAD73A966BFFBDD9D228785EAD44F5010648D33553A19321CC1A375EC1A15",
       "headers": [
         {
           "path": "include/common/types.h",
@@ -44790,6 +44930,11 @@
           "path": "include/game/cutscene_panels.h",
           "file": "game/accepted/library/include/game/cutscene_panels.h",
           "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        },
+        {
+          "path": "include/game/story_event_entry.h",
+          "file": "game/accepted/library/include/game/story_event_entry.h",
+          "sha256": "AB138614B333689574C9C6FE205A4B48DC97A059CFA91D5CB95F2EF3F75B7549"
         }
       ],
       "address": 2149772980,
@@ -45270,7 +45415,7 @@
       "name": "func_00297CC8",
       "source": "game/accepted/library/src/lib/func_00297CC8.c",
       "sourcePath": "src/lib/func_00297CC8.c",
-      "sourceSha256": "C334B9A81D8A3CE1069C98ABA65E480BFE7AC543ED7C2E6203EA6BD5AC26057B",
+      "sourceSha256": "8CAB7510C7CEA14C67E8EC0DE6EFC3A39E6589C3E666CEEE5E014FEF03018B08",
       "headers": [
         {
           "path": "include/common/types.h",
@@ -45281,6 +45426,11 @@
           "path": "include/game/cutscene_panels.h",
           "file": "game/accepted/library/include/game/cutscene_panels.h",
           "sha256": "954308348940948C6518BED81DA4E631F7451DC66E0BB7974ED5919B7FF46368"
+        },
+        {
+          "path": "include/game/story_event_entry.h",
+          "file": "game/accepted/library/include/game/story_event_entry.h",
+          "sha256": "AB138614B333689574C9C6FE205A4B48DC97A059CFA91D5CB95F2EF3F75B7549"
         }
       ],
       "address": 2149825928,

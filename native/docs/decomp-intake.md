@@ -1,5 +1,36 @@
 # Using newly accepted Decomp C
 
+## November 18 story event entry
+
+Decomp commit `ed57a210` supplies the world event dispatcher
+(`func_00047dd8`), the event-context loader (`func_00048294`) and the
+caller-selected entry routine (`func_00047ee0`). The editor export build
+compiled 1,545 accepted producers and verified 1,766 code and data regions.
+
+For a world-map arrival, the dispatcher selects the primary program. Area
+Investigation selects the secondary program. With no active mission the
+loader obtains rows 0 and 70. With a newly selected mission it stores that
+row as active and loads it alongside row 65. In training, group 3 handles
+encounters and group 4 handles defeats. Logic shows these triggers separately
+and stops reading rule indices when the instructions begin.
+
+Hugo's Report and the calendar use a different entry path. The caller selects
+one pointer by index and the game restores the surrounding event context
+after the call. Logic identifies what invokes each of row 67's six routines
+from the current entry pointers. **Edit cutscene** on a town visit uses the
+request instruction even when the return to gameplay shares its line.
+
+Campaign and Logic find a battlefield's missions from the scenario assignment
+in each current program. Editing a retail assignment or creating a mission
+updates that lookup. Empty expansion slots are skipped.
+
+Run `node native/tests/story-event-entry-mips.cjs <ROM>` from the editor
+checkout to check 167 training continuations and the six indexed report
+entries. Training runs the resident loader, encounter request and completion
+wrapper using event resources decoded from the supplied ROM. The report
+comparison stops at the interpreter boundary to verify selection and context
+restoration.
+
 ## November 18 story request mapper
 
 The editor imports `func_00046738`, its unsigned 16-bit declaration in

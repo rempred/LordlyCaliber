@@ -74,16 +74,7 @@ QVector<int> EventContexts::locationsForProgram(int row,int offset)const{
 }
 QVector<int> EventContexts::scenarioKeys(int row) const {
     if (keys_.contains(row)) return keys_.value(row);
-    const auto bytes = events_.program(row);
-    QSet<int> keys;
-    // This is the native scenario initialization sequence already used by
-    // SceneEvents::scenarioRows, read from current bytes so edited keys count.
-    const auto suffix = QByteArray::fromHex("70e970e7");
-    for (int at = 0; at + 6 <= bytes.size(); at += 2)
-        if (u8(bytes, at) == 0x68 && bytes.mid(at + 2, 4) == suffix)
-            keys.insert(u8(bytes, at + 1));
-    auto result = keys.values();std::sort(result.begin(), result.end());
-    keys_[row] = result;return result;
+    return keys_[row] = events_.scenarioKeys(row);
 }
 QVector<int> EventContexts::locationsForScenario(int key) const {
     QVector<int> result;

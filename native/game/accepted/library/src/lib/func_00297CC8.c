@@ -1,4 +1,5 @@
 #include "game/cutscene_panels.h"
+#include "game/story_event_entry.h"
 
 extern u8 D_8023E5FF[];
 
@@ -6,7 +7,6 @@ extern void *resource_alloc(u32);
 extern void func_80093380(void *, u32);
 extern void *func_0002CD70(void *, s32, u32);
 extern s32 func_00045df4(s16);
-extern void func_00047ee0(s32, s32);
 extern u8 *func_0028ab74(s32);
 extern void func_0028F918(s32);
 

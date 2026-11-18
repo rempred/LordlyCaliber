@@ -29,6 +29,7 @@ struct StoryAction {
     bool advanced = false;
     StoryCondition condition;
     int answerScene = -1;
+    int requestOffset = -1; // Event opcode that launches scene, including in a folded visit.
 };
 struct PlayerAnswer {
     int value = -1, destination = -1;
