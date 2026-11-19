@@ -1101,8 +1101,6 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
             continue;
         const auto first = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 1, gates);
         const auto second = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 255, gates);
-        if (!first || !second || !first->readAnswer || !second->readAnswer)
-            return {};
         SceneAnswerDecision decision;
         decision.selector = selector;
         QMap<int, QString> effects;
@@ -1110,12 +1108,15 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
             if (action.kind == "action" && !action.instructions.isEmpty())
                 effects.insert(action.instructions.last(), action.title);
         }
-        auto arm = [&](const EventReaction &run, SceneAnswerReaction &out) {
+        auto arm = [&](const std::optional<EventReaction> &input, SceneAnswerReaction &out) {
+            if (!input || !input->readAnswer)
+                return;
+            const auto &run = *input;
             const auto reaction = std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
                 return a.requestOffset == run.requestOffset && a.scene == run.selector;
             });
             if (reaction == actions.cend() || reaction->instructions.isEmpty())
-                return false;
+                return;
             out.selector = run.selector;
             out.requestOffset = run.requestOffset;
             out.flags = run.flags;
@@ -1125,9 +1126,10 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
                     out.effects << effect.value();
             }
             out.effects += choiceEffects(event, bytes, reaction->instructions.first(), gates);
-            return true;
         };
-        if (arm(*first, decision.first) && arm(*second, decision.second))
+        arm(first, decision.first);
+        arm(second, decision.second);
+        if (decision.first.selector >= 0 || decision.second.selector >= 0)
             return decision;
         return {};
     }

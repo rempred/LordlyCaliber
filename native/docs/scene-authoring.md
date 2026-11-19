@@ -19,9 +19,11 @@ continues to edit the question. To edit a reaction, open its scene from Logic.
 
 Wentinus, Sheen, Liedel and Paul use this handoff. For Sheen, the last answer
 decides whether he joins. The same question launched from a different event
-can have a different outcome. Playback identifies a handoff it cannot resolve
-from the available game state. Later campaign actions shown in the outcome come
-from the event program. Use the exported game to play the resulting battlefield.
+can have a different outcome. Playback follows each answer independently. If one
+answer needs a campaign value the preview lacks, choosing it explains the
+handoff. You can still play the other answer when its reaction is known.
+Later campaign actions shown in the outcome come from the event program. Use
+the exported game to play the resulting battlefield.
 
 ## Replace a scene or write your own
 

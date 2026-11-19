@@ -142,23 +142,26 @@ class SceneWorkspaceTests : public QObject {
     void storyDecisionHandoff_data() {
         QTest::addColumn<int>("question");
         QTest::addColumn<bool>("second");
-        QTest::addColumn<bool>("swapped");
+        QTest::addColumn<QString>("edit");
         QTest::addColumn<int>("reaction");
-        QTest::newRow("Wentinus orders") << 180 << false << false << 181;
-        QTest::newRow("Wentinus peace") << 180 << true << false << 182;
-        QTest::newRow("Wentinus edited orders") << 180 << false << true << 182;
-        QTest::newRow("Wentinus edited peace") << 180 << true << true << 181;
-        QTest::newRow("Sheen accepts") << 159 << false << false << 160;
-        QTest::newRow("Sheen refuses") << 159 << true << false << 161;
-        QTest::newRow("Liedel accepts") << 121 << false << false << 122;
-        QTest::newRow("Liedel returns") << 121 << true << false << 123;
-        QTest::newRow("Let Paul leave") << 289 << false << false << 291;
-        QTest::newRow("Confront Paul") << 289 << true << false << 290;
+        const QString retail, swap = "swap answers", skip = "skip peace reaction";
+        QTest::newRow("Wentinus orders") << 180 << false << retail << 181;
+        QTest::newRow("Wentinus peace") << 180 << true << retail << 182;
+        QTest::newRow("Wentinus edited orders") << 180 << false << swap << 182;
+        QTest::newRow("Wentinus edited peace") << 180 << true << swap << 181;
+        QTest::newRow("Only orders resolves") << 180 << false << skip << 181;
+        QTest::newRow("Peace continues in gameplay") << 180 << true << skip << -1;
+        QTest::newRow("Sheen accepts") << 159 << false << retail << 160;
+        QTest::newRow("Sheen refuses") << 159 << true << retail << 161;
+        QTest::newRow("Liedel accepts") << 121 << false << retail << 122;
+        QTest::newRow("Liedel returns") << 121 << true << retail << 123;
+        QTest::newRow("Let Paul leave") << 289 << false << retail << 291;
+        QTest::newRow("Confront Paul") << 289 << true << retail << 290;
     }
     void storyDecisionHandoff() {
         QFETCH(int, question);
         QFETCH(bool, second);
-        QFETCH(bool, swapped);
+        QFETCH(QString, edit);
         QFETCH(int, reaction);
         if (qEnvironmentVariableIsEmpty("LORDLY_TEST_ROM"))
             QSKIP("US Rev 0 ROM required");
@@ -168,8 +171,10 @@ class SceneWorkspaceTests : public QObject {
         project.loadDialogues();
         const auto &scenes = *project.scenePrograms();
         auto events = *project.sceneEvents();
-        if (swapped)
+        if (edit == "swap answers")
             events.editParameter(22, 562, "value", 1, scenes);
+        if (edit == "skip peace reaction")
+            events.editParameter(22, 566, "destination", 606, scenes);
         const bool wentinus = question == 180;
         const bool liedel = question == 121;
         const bool paul = question == 289;
@@ -211,6 +216,11 @@ class SceneWorkspaceTests : public QObject {
             }
         }
         QVERIFY2(choices > 0, qPrintable(status->text()));
+        if (reaction < 0) {
+            QVERIFY(!outcome->isVisible());
+            QVERIFY2(status->text().contains("more event or launch information"), qPrintable(status->text()));
+            return;
+        }
         QVERIFY2(outcome->isVisible(), qPrintable(status->text()));
         QVERIFY2(status->text().contains(QString("selector %1 ·").arg(reaction)),
                  qPrintable(status->text()));

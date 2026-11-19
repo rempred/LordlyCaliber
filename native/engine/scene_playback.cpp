@@ -53,8 +53,10 @@ bool ScenePlayback::updateDirectors() {
             const auto value = dialogue_->windows.control(3);
             if (value != 1 && value != 255)
                 return {};
-            answer = value;
             const auto &arm = answerDecision_->reaction(value);
+            if (arm.selector < 0)
+                throw Error("This answer returns to gameplay. Its next scene requires more event or launch information.");
+            answer = value;
             arguments = arm.translations;
             return arm.selector;
         };

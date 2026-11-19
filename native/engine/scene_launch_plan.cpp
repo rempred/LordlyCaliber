@@ -137,6 +137,8 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
         if (!decision)
             continue;
         auto arguments = [&](SceneAnswerReaction &arm) {
+            if (arm.selector < 0)
+                return false;
             bool found = false;
             for (const auto &c : contexts)
                 if (child(c)) {
@@ -152,7 +154,11 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
                 }
             return found;
         };
-        if (arguments(decision->first) && arguments(decision->second))
+        if (!arguments(decision->first))
+            decision->first = {};
+        if (!arguments(decision->second))
+            decision->second = {};
+        if (decision->first.selector >= 0 || decision->second.selector >= 0)
             plan.decision = std::move(decision);
     }
 }
