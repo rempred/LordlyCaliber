@@ -4,6 +4,15 @@
 #include <functional>
 #include <optional>
 namespace lordly {
+namespace {
+QVector<DirectorCommand> waitForClosedWindow(quint32 id) {
+    // Closing marks a resource for release. While it exists the query returns
+    // 0 or 2. Once gone it returns 1 or 3, depending on its final shared status.
+    return {{0,0,{}}, {0,0x80000002,{}}, {0,0x80000000,{}},
+            {0,0x10,{1,0,id}}, {0,0x10,{1,2,id}}, {0,0,{}},
+            {0,0x80000002,{}}, {0,0x80000002,{}}, {0,0x80000000,{}}};
+}
+}
 namespace action_detail {
 namespace {
 bool uncertainControl(const DirectorCommand &c) {
@@ -12,17 +21,51 @@ bool uncertainControl(const DirectorCommand &c) {
            c.opcode == 0xbb || c.opcode == 0x39 || c.opcode == 0x80000003 || c.opcode == 0x80000005;
 }
 } // namespace
-bool completeDialogue(const DirectorProgram &p, int index) {
+int dialogueLength(const DirectorProgram &p, int index) {
     const auto &c = p.commands;
     if (index < 0 || index + 6 >= c.size() || c[index].opcode != 0xbf)
-        return false;
+        return 0;
     const auto id = c[index].operands[0];
-    return id <= 255 && c[index + 1].opcode == 0 && c[index + 2].opcode == 0x80000002 &&
+    const bool spoken = id <= 255 && c[index + 1].opcode == 0 && c[index + 2].opcode == 0x80000002 &&
            c[index + 3].opcode == 0x80000000 && c[index + 4].opcode == 0x10 &&
            c[index + 4].operands == QVector<quint32>{0, 2, id} && c[index + 5].opcode == 6 &&
            c[index + 5].operands == QVector<quint32>{id} && c[index + 6].opcode == 5 &&
            c[index + 6].operands == QVector<quint32>{id};
+    if (!spoken)
+        return 0;
+    const auto wait = waitForClosedWindow(id);
+    const int after = index + 7;
+    if (after + wait.size() <= c.size() &&
+        std::equal(wait.begin(), wait.end(), c.begin() + after, [](const auto &a, const auto &b) {
+            return a.opcode == b.opcode && a.operands == b.operands;
+        }))
+        return 7 + int(wait.size());
+    return 7;
 }
+} // namespace action_detail
+DirectorProgram SceneActions::upgradeDialogueExit(const DirectorProgram &p, int command) {
+    // Only migrate a saved high-level line immediately followed by release.
+    // Its older seven-command form remains readable everywhere else.
+    auto commands = p.commands;
+    bool changed = false;
+    const int last = int(p.commands.size()) - 8;
+    const int first = command < 0 ? 0 : command;
+    for (int i = command < 0 ? last : std::min(command, last); i >= first; --i) {
+        if (p.commands[i + 7].opcode != 0x7d || action_detail::dialogueLength(p, i) != 7)
+            continue;
+        const auto &window = p.commands[i].operands;
+        if (window[1] != 5 || window[12] != 1)
+            continue;
+        const auto wait = waitForClosedWindow(window[0]);
+        for (auto it = wait.crbegin(); it != wait.crend(); ++it)
+            commands.insert(i + 7, *it);
+        changed = true;
+    }
+    if (!changed)
+        return p;
+    return DirectorProgram::decode(DirectorProgram{commands, {}}.encode());
+}
+namespace action_detail {
 bool completeImageTransitionWait(const DirectorProgram &p, int index) {
     const auto &c = p.commands;
     return index >= 0 && index + 3 < c.size() && c[index].opcode == 0 &&
@@ -78,7 +121,8 @@ QVector<CounterState> counterStates(const DirectorProgram &program) {
                 continue;
             }
             const auto &c = program.commands[i];
-            const int completion = completeDialogue(program, i) ? 7
+            const int dialogue = dialogueLength(program, i);
+            const int completion = dialogue ? dialogue
                                    : completeImageTransitionWait(program, i)
                                        ? 4
                                        : actionCompletion(program, i);
@@ -363,8 +407,10 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                   << command(0x80000000) << command(0x80000005, {a}) << command(0x10, {0, 1, id})
                   << command(0x59, {join}) << command(0x80000005, {b}) << command(0x10, {0, 1, id})
                   << command(0x59, {join}) << command(0x80000005, {join});
-        } else
+        } else {
             added << command(0x10, {0, 2, id}) << command(6, {id}) << command(5, {id});
+            added += waitForClosedWindow(id);
+        }
     } else if (kind == 0xe || kind == 0xb5) {
         if (!point->canWait)
             throw Error(point->waitReason);

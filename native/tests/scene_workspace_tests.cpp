@@ -942,6 +942,19 @@ class SceneWorkspaceTests : public QObject {
             replacement = SceneActions::edit(replacement, end, 2, QString::number(entry));
             auto scenes = *project.scenePrograms();
             scenes.replace(key, replacement.source);
+            // Files written by the older editor closed this window and
+            // immediately released the scene. Reopen that saved performance.
+            auto legacyProgram = replacement;
+            legacyProgram.commands.remove(end + 7, 9);
+            const auto legacyBytes = legacyProgram.encode();
+            QCOMPARE(SceneActions::edit(DirectorProgram::decode(legacyBytes), end, 2,
+                                        QString::number(entry)).source, replacement.source);
+            auto oldManifest = scenes.json();
+            oldManifest["version"] = 1;
+            oldManifest["programs"] = QJsonObject{{QString::number(key), QString::fromLatin1(legacyBytes.toHex())}};
+            auto restored = *project.scenePrograms();
+            restored.apply(oldManifest);
+            QCOMPARE(restored.program(key).source, replacement.source);
             project.setDialogues(lines.json());
             project.setScenePrograms(scenes.json());
             QTemporaryDir temporary;

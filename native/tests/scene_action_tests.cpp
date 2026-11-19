@@ -1450,10 +1450,10 @@ class SceneActionTests : public QObject {
             const auto blank = scenes.program(id);
             auto authored = SceneActions::insert(blank, 3, 0xbf);
             auto action = SceneActions::inspect(authored).last();
-            QCOMPARE(action.commandCount, 7);
+            QCOMPARE(action.commandCount, 16);
             QCOMPARE(action.command, 3);
             auto expected = authored.source;
-            for (auto target : {QPair{3, 0}, QPair{7, 2}, QPair{8, 0}, QPair{9, 0}})
+            for (auto target : {QPair{3, 0}, QPair{7, 2}, QPair{8, 0}, QPair{9, 0}, QPair{13, 2}, QPair{14, 2}})
                 put32(expected, (authored.commands[target.first].word + target.second + 1) * 4, 7);
             authored = SceneActions::edit(authored, 3, 0, "7");
             QCOMPARE(authored.source, expected);
@@ -1509,7 +1509,7 @@ class SceneActionTests : public QObject {
             };
             exerciseText(project);
             authored = SceneActions::edit(authored, 3, 2, QString::number(entry));
-            authored = SceneActions::insert(authored, 10, 0xe, 3);
+            authored = SceneActions::insert(authored, action.command + action.commandCount, 0xe, 3);
             scenes.replace(id, authored.source);
             project.setScenePrograms(scenes.json());
             SceneResources resources({8, 0xffff, 13});
@@ -1554,10 +1554,27 @@ class SceneActionTests : public QObject {
             QCOMPARE(closed, 1);
             QVERIFY(u8(resources.record(0), 0x8a) & 2);
             QVERIFY(u16(resources.record(0), 0) & 0x1000);
-            for (int update = 1; update <= 3; ++update) {
-                session.advanceCounter();
-                QCOMPARE(session.dispatch(service),
-                         update == 3 ? LORDLY_DIRECTOR_RELEASE : LORDLY_DIRECTOR_YIELD);
+            const int waitWord = session.state().resume_cursor;
+            for (quint8 pause : {1, 0}) {
+                auto active = resources.record(0);
+                put8(active, 0x8a, pause);
+                resources.supplyRecord(0, active);
+                QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                QCOMPARE(session.state().resume_cursor, waitWord);
+            }
+            resources.supplyRecord(0, QByteArray(resources.record(0).size(), 0));
+            for (int status : {0, 2}) {
+                auto ending = session;
+                windows.setSharedStatus(status);
+                QCOMPARE(windows.query(7, resources), status ? 3 : 1);
+                QCOMPARE(ending.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                QVERIFY(ending.state().resume_cursor != waitWord);
+                QCOMPARE(ending.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                for (int update = 1; update <= 3; ++update) {
+                    ending.advanceCounter();
+                    QCOMPARE(ending.dispatch(service),
+                             update == 3 ? LORDLY_DIRECTOR_RELEASE : LORDLY_DIRECTOR_YIELD);
+                }
             }
             QTemporaryDir work;
             project.saveFolder(work.filePath("project"));

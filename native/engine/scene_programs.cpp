@@ -3,6 +3,7 @@
 #include "engine/legacy_scene_arena.h"
 #include "engine/scene_images.h"
 #include "engine/scene_import.h"
+#include "engine/scene_actions.h"
 #include "game/director/control_flow.h"
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -407,14 +408,15 @@ QJsonObject ScenePrograms::json() const {
             {"selector", scene.selector},
             {"baseline", QString::fromLatin1(scene.baseline.program.source.toHex())},
             {"program", QString::fromLatin1(scene.current.source.toHex())}};
-    QJsonObject result{{"version", 1}, {"programs", entries}, {"authored", authored}};
+    QJsonObject result{{"version", 2}, {"programs", entries}, {"authored", authored}};
     QJsonObject names;
     for (auto it = replacementNames_.cbegin(); it != replacementNames_.cend(); ++it) names[QString::number(it.key())] = it.value();
     if (!names.isEmpty()) result["replacementNames"] = names;
     return result;
 }
 void ScenePrograms::apply(const QJsonObject &value) {
-    if (value["version"] != 1 || !value["programs"].isObject())
+    const bool legacy = value["version"] == 1;
+    if ((!legacy && value["version"] != 2) || !value["programs"].isObject())
         throw Error("Invalid saved scene programs");
     auto next = *this;
     next.changes_.clear();
@@ -440,7 +442,9 @@ void ScenePrograms::apply(const QJsonObject &value) {
                 selector < 0 || object["selector"].toDouble() != selector)
                 throw Error("Invalid saved authored scene identity");
             const auto baseline = DirectorProgram::decode(bytes(object["baseline"]));
-            const auto current = DirectorProgram::decode(bytes(object["program"]));
+            auto current = DirectorProgram::decode(bytes(object["program"]));
+            if (legacy && current.source != baseline.source)
+                current = SceneActions::upgradeDialogueExit(current);
             if (baseline.resourceClass() < 0 || current.resourceClass() != baseline.resourceClass())
                 throw Error("Saved authored scene changed its terminal class");
             if (originalAuthored_.contains(uuid)) {
@@ -470,7 +474,10 @@ void ScenePrograms::apply(const QJsonObject &value) {
         if (!valid || QString::number(key) != it.key() || !it.value().isString() ||
             bytes.toHex() != hex.toLower())
             throw Error("Invalid saved scene program bytes");
-        next.replace(key, bytes);
+        const auto &source = next.resource(key).program.source;
+        next.replace(key, legacy && bytes != source
+                              ? SceneActions::upgradeDialogueExit(DirectorProgram::decode(bytes)).source
+                              : bytes);
     }
     QSet<int> removed;
     for (const auto &scene : authored_)

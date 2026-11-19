@@ -348,12 +348,14 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
                 field("Window ID", 0, 1, 0, 255);
                 action.fields.last().mirrors = {
                     {6, 0}, {10, 0}, {15, 2}, {choice->secondBegin - 1 - i, 2}};
-            } else if (action_detail::completeDialogue(program, i)) {
+            } else if (const int count = action_detail::dialogueLength(program, i)) {
                 action.name = "Dialogue";
-                action.commandCount = 7;
+                action.commandCount = count;
                 action.timing = SceneActionTiming::Completion;
                 field("Window ID", 0, 1, 0, 255);
                 action.fields.last().mirrors = {{4, 2}, {5, 0}, {6, 0}};
+                if (count > 7)
+                    action.fields.last().mirrors += {{10, 2}, {11, 2}};
             }
             field("Text archive", 1, 1, 0, 502);
             field("Text entry (0x8000 selects alternate table)", 2, 1, 0, 65535);
@@ -521,7 +523,10 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
                 args[1] = args[3] == quint32(-1000) && args[4] == quint32(-1000) ? quint32(-999) : args[3];
                 args[2] = args[4];
             }
-            return DirectorProgram::decode(result.encode());
+            result = DirectorProgram::decode(result.encode());
+            if (action.name == "Dialogue" && action.commandCount == 7)
+                return upgradeDialogueExit(result, action.command);
+            return result;
         }
     throw Error("Select a supported scene action");
 }

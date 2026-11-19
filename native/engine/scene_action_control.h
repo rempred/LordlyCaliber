@@ -6,7 +6,7 @@ struct CounterState {
     int arm = -1;
     qint64 target = 0;
 };
-bool completeDialogue(const DirectorProgram &, int command);
+int dialogueLength(const DirectorProgram &, int command);
 bool completeImageTransitionWait(const DirectorProgram &, int command);
 int actionCompletion(const DirectorProgram &, int command);
 QVector<CounterState> counterStates(const DirectorProgram &);

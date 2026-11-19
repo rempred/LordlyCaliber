@@ -32,6 +32,12 @@ actors or movement before the exit. Use the timeline and **Play** to check
 who is on stage when the speaker's line opens. A scene with an unresolved
 exit explains why clearing is unavailable. Individual actions remain editable.
 
+A spoken line waits for its window to close before the next action can run.
+Earlier saved projects with a generated line immediately before release gain
+that wait when opened. If you have only an older exported ROM, edit the final
+line in **Step details** and export it again. This fixes the case where the line
+stayed on screen as the game entered the name keyboard.
+
 To give a scene its own identity, choose **New scene**, select a supported
 setup and name the scene. Choose its background, place the cast and add their
 actions. To make an answer matter on a later visit, add a two-answer choice

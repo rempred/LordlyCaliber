@@ -1138,6 +1138,8 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
             if (dialogues.entry(table, archive, entry) == text)
                 return;
             dialogues.setEntry(table, archive, entry, text);
+            if (!choice)
+                program = SceneActions::upgradeDialogueExit(program, at);
         }
         auto scenes = *project_->scenePrograms();
         scenes.replace(key_, program.source);

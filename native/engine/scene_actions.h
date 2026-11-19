@@ -58,6 +58,8 @@ class SceneActions {
     static quint32 actorSlotWord(const DirectorCommand &, int operand);
     static QVector<SceneActionPosition> positions(const DirectorProgram &);
     static QMap<quint32, QString> kinds();
+    // Upgrade the older generated line that closes immediately before scene release.
+    static DirectorProgram upgradeDialogueExit(const DirectorProgram &, int command = -1);
     static DirectorProgram insert(const DirectorProgram &, int before, quint32 kind,
                                   int ticks = 30);
     static DirectorProgram move(const DirectorProgram &, int actionCommand, int before);
