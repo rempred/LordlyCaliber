@@ -4,12 +4,8 @@
 * merges their tails before filling the retail branch and call delay slots.
 * The two scalar control flags are separate locals, not a synthetic stack record.
 */
-typedef signed char s8;
-typedef unsigned char u8;
-typedef signed short s16;
-typedef unsigned short u16;
-typedef signed int s32;
-typedef unsigned int u32;
+#include "game/cutscene_audio_envelope.h"
+
 typedef float f32;
 void func_00019e10();
 void func_00019fc0();
@@ -24,7 +20,6 @@ void func_001F0E04(s32, s32);
 s32 func_0026285C(void *, u16);
 void func_0028308C(s32, s32, s32);
 void func_002831E0(s32, s32);
-void func_00283224(s32, s32, s32, s32);
 void func_002834C4(s32, s32);
 void func_00283564(s32, s32, s32, s32);
 void func_00283654(void);

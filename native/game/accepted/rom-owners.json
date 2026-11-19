@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "C4055C66DBA44E9E8301AF5EF0C212DB79D78CEB9EF3E0B5E4337ED585A6F962",
-  "revision": "9be888063222eed0b10dd1fd6a2a7e96eca53dc5",
+  "fingerprint": "718A3FB4DBCC9727AFC56CFC3E1B8853AC53848521253289B69222B27CC9C945",
+  "revision": "b4beb6d41bcead903437e235c09a235f0fb24bc0",
   "counts": {
-    "owners": 1678,
-    "functions": 1724,
-    "producerSources": 1547,
-    "sourceAndHeaderFiles": 1593
+    "owners": 1680,
+    "functions": 1726,
+    "producerSources": 1549,
+    "sourceAndHeaderFiles": 1596
   },
   "sources": [
     {
@@ -43333,6 +43333,100 @@
       ]
     },
     {
+      "name": "func_00283224",
+      "source": "game/accepted/library/src/lib/func_00283224.c",
+      "sourcePath": "src/lib/func_00283224.c",
+      "sourceSha256": "CFB272364AC6BE016D923E91D6BAFB954198E9EEC9A73F698648FC62CB76480E",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_audio_envelope.h",
+          "file": "game/accepted/library/include/game/cutscene_audio_envelope.h",
+          "sha256": "CC6E5CD7789EA1E5E21D7087437F2532F0AA3E243AD4C4E20850D06B23022E7C"
+        }
+      ],
+      "address": 2149741140,
+      "bindings": {
+        "D_8022A8C4": 2149755076,
+        "func_00070F30": 2147946288,
+        "bzero": 2148086656,
+        "D_800EB2E0": 2148446944
+      },
+      "sections": {
+        ".text": 2149741140
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2634276,
+          "address": 2149741140,
+          "size": 244,
+          "sha256": "3651FA70644553ED463562A1FC6B678B7259F7CD3F321263F1DA7FAD88E345E5",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00283224"
+      ]
+    },
+    {
+      "name": "func_00283350",
+      "source": "game/accepted/library/src/lib/func_00283350.c",
+      "sourcePath": "src/lib/func_00283350.c",
+      "sourceSha256": "CF2530805F20492F80E6882F354DDD93E2F4C7A761119BB5D7E903C484B3D9C0",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_audio_envelope.h",
+          "file": "game/accepted/library/include/game/cutscene_audio_envelope.h",
+          "sha256": "CC6E5CD7789EA1E5E21D7087437F2532F0AA3E243AD4C4E20850D06B23022E7C"
+        },
+        {
+          "path": "include/game/effect_presentation_p04.h",
+          "file": "game/accepted/library/include/game/effect_presentation_p04.h",
+          "sha256": "38A7AB65C6D7FC0DAE8C13BEF97A8E4F640CC1C0A0160CDE271C96096B935377"
+        }
+      ],
+      "address": 2149741440,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "table_00286878": 2149755048,
+        "func_00011f08": 2148014856,
+        "func_00208DC8": 2149341496,
+        "func_000118c4": 2148013252,
+        "D_8022A8C4": 2149755076,
+        "resource_free": 2147947204
+      },
+      "sections": {
+        ".text": 2149741440
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2634576,
+          "address": 2149741440,
+          "size": 372,
+          "sha256": "10EA25D3F0CBCAD9FC262AC2609FA3BA88394D4735309A160288CF61A42EA430",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_00283350"
+      ]
+    },
+    {
       "name": "func_0028364C",
       "source": "game/accepted/library/src/lib/func_0028364C.c",
       "sourcePath": "src/lib/func_0028364C.c",
@@ -43900,8 +43994,19 @@
       "name": "func_00284288",
       "source": "game/accepted/library/src/lib/func_00284288.c",
       "sourcePath": "src/lib/func_00284288.c",
-      "sourceSha256": "147E507C2AB4226F860747C6567B7518998965F87AA7D599814D4D477EC7952C",
-      "headers": [],
+      "sourceSha256": "8832BDFE22CBEA7E51FC14E77FC20B35F4D5EC91420F6094FF63349CED5A5DA0",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_audio_envelope.h",
+          "file": "game/accepted/library/include/game/cutscene_audio_envelope.h",
+          "sha256": "CC6E5CD7789EA1E5E21D7087437F2532F0AA3E243AD4C4E20850D06B23022E7C"
+        }
+      ],
       "address": 2149745336,
       "bindings": {
         "D_8022A958": 2149755224,
