@@ -44,12 +44,19 @@ std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int
         m.mount(m.registers[4], QByteArray(512, 0));
     });
     EventReaction result;
-    // Supply only three property callbacks. A new interpreter invocation has
-    // a fresh local register frame, so reads of unset registers stay unresolved.
+    // A new invocation has a fresh register frame. Unset inputs stay unresolved.
     constexpr quint32 dialogue = 0x80005000, flagRead = 0x80005004, flagWrite = 0x80005008;
     m.word(0x8018f1b0 + (0x90 >> 3) * 4, dialogue);
     m.word(0x8018f1b0 + (0x60 >> 3) * 4, flagRead);
     m.word(0x8018f220 + (0x60 >> 3) * 4, flagWrite);
+    constexpr quint32 writeTranslation = 0x801705bc;
+    m.mount(writeTranslation, acceptedRomBytes(0x464bc, 20), true);
+    m.word(0x8018f220 + (0xd0 >> 3) * 4, writeTranslation);
+    m.observe(writeTranslation, [&] {
+        const int index = qint32(m.registers[4]);
+        if (index < 0 || index >= 256) throw UnknownEventInput{};
+        result.translations.insert(index, quint16(m.registers[6]));
+    });
     m.service(dialogue, [&] {
         if (m.registers[4] != 3) throw UnknownEventInput{};
         result.readAnswer = true;
@@ -94,7 +101,7 @@ std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int
                 require(arg & 7);
                 regs[r] = Known;
             } else throw UnknownEventInput{};
-        } else if (op >= 0x70 && op <= 0x77 && (arg & 0xf8) == 0x60) {
+        } else if (op >= 0x70 && op <= 0x77 && ((arg & 0xf8) == 0x60 || (arg & 0xf8) == 0xd0)) {
             require(r);
             require(arg & 7);
         } else if (op == 0x15) {

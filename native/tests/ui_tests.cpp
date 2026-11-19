@@ -6928,6 +6928,13 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
             auto reward = preview.findChild<QComboBox *>("sceneReward");
             QCOMPARE(reward->isVisible(), preset == 34);
+            if (preset == 34) {
+                QCOMPARE(reward->currentData().toInt(), -1);
+                position->setValue(12);
+                QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 20000);
+                QVERIFY2(status->text().contains("Choose a preview reward"), qPrintable(status->text()));
+                reward->setCurrentIndex(reward->findData(1));
+            }
             const auto seek = [&](int tick) {
                 position->setValue(tick);
                 QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);

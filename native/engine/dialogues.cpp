@@ -71,6 +71,10 @@ int Dialogues::entryCount(Table table, int archive) const {
     return original(table, archive).entryCount() +
            int(changes_.value(identity(table, archive)).added.size());
 }
+bool Dialogues::entryEdited(Table table, int archive, int index) const {
+    const auto change = changes_.constFind(identity(table, archive));
+    return change != changes_.cend() && (change->edits.contains(index) || index >= original(table, archive).entryCount());
+}
 QByteArray Dialogues::entry(Table table, int archive, int index) const {
     const auto &source = original(table, archive);
     const auto changes = changes_.value(identity(table, archive));

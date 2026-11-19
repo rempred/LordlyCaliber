@@ -17,6 +17,6 @@ struct SceneLaunchPlan {
     static bool fresh(const DirectorProgram &);
     static QVector<SceneLaunchPlan> choices(const Directors &, const SceneEvents &, int selector);
     static void addAnswerRoutes(QVector<SceneLaunchPlan> &, const Rom &, const ScenePrograms &,
-                                const SceneEvents &, int selector);
+                                const Directors &, const SceneEvents &, int selector);
 };
 } // namespace lordly

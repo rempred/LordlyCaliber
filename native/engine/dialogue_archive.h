@@ -8,6 +8,8 @@ namespace lordly {
 class DialogueArchive {
   public:
     enum class Table { Primary, Alternate };
+    struct EntryRef { Table table; int archive; int entry; };
+    static EntryRef windowEntry(const QByteArray &window);
     static QVector<quint32> directory(const Rom &rom, Table table = Table::Primary);
     static DialogueArchive load(const Rom &rom, int selector, Table table = Table::Primary);
     static QByteArray windowSource(const Rom &rom, const QByteArray &window);

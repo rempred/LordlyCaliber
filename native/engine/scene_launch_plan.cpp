@@ -1,5 +1,25 @@
 #include "engine/scene_launch_plan.h"
+#include "engine/event_script.h"
+#include <algorithm>
 namespace lordly {
+namespace {
+bool usesRewardPanel(const DirectorProgram &program) {
+    return std::any_of(program.commands.cbegin(), program.commands.cend(), [](const auto &command) {
+        return command.opcode == 0x62 && command.operands.size() == 2 && command.operands[1] == 34;
+    });
+}
+DirectorLaunchTranslations launchArguments(const SceneEventContext &context,
+                                          const DirectorProgram &program, const SceneEvents &events) {
+    auto arguments = context.translations;
+    if (usesRewardPanel(program)) {
+        const auto &site = SceneEvents::site(context.site);
+        arguments.known[255] = 0;
+        if (const auto reward = EventScript::launchReward(events.program(site.row), context.invocation, site.offset))
+            arguments.set(255, *reward);
+    }
+    return arguments;
+}
+}
 bool SceneLaunchPlan::fresh(const DirectorProgram &program) {
     const int kind = program.resourceClass();
     if (kind == 2 || kind == 7 || kind == 6)
@@ -37,7 +57,7 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
         SceneLaunchStep step;
         step.selector = id;
         if (context)
-            step.translations = context->translations;
+            step.translations = launchArguments(*context, program(id), events);
         QVector<SceneLaunchStep> steps;
         if (!fresh(program(id))) {
             if (!context || context->parent.isEmpty())
@@ -104,7 +124,7 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
     return result;
 }
 void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom &rom,
-                                      const ScenePrograms &scenes, const SceneEvents &events,
+                                      const ScenePrograms &scenes, const Directors &directors, const SceneEvents &events,
                                       int selector) {
     struct Row {
         QByteArray bytes;
@@ -139,6 +159,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
         auto arguments = [&](SceneAnswerReaction &arm) {
             if (arm.selector < 0)
                 return false;
+            const auto executed = arm.translations;
             bool found = false;
             for (const auto &c : contexts)
                 if (child(c)) {
@@ -146,10 +167,18 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
                     if (target.row != site.row || target.offset != arm.requestOffset ||
                         events.target(c.site) != arm.selector)
                         continue;
-                    if (found && (arm.translations.known != c.translations.known ||
-                                  arm.translations.values != c.translations.values))
+                    const auto key = directors.selectors().value(arm.selector);
+                    const auto resource = directors.entries().constFind(key);
+                    if (resource == directors.entries().cend())
                         return false;
-                    arm.translations = c.translations;
+                    auto translated = launchArguments(c, resource->program, events);
+                    for (int i = 0; i < int(executed.known.size()); ++i)
+                        if (executed.known[i])
+                            translated.set(i, executed.values[i]);
+                    if (found && (arm.translations.known != translated.known ||
+                                  arm.translations.values != translated.values))
+                        return false;
+                    arm.translations = translated;
                     found = true;
                 }
             return found;

@@ -30,6 +30,9 @@ class DirectorSession {
     bool isContinuation() const {
         return current_.continuation;
     }
+    std::optional<quint16> rewardSelection() const {
+        return translations_.known[255] ? std::optional<quint16>(translations_.values[255]) : std::nullopt;
+    }
     quint32 resourceKey() const {
         return current_.key;
     }

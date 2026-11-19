@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QSet>
 #include <QVector>
+#include <optional>
 namespace lordly {
 struct EventStep {
     int offset = 0, length = 2, flag = -1, target = -1;
@@ -50,6 +51,7 @@ class EventScript {
     static QString flagName(int flag, int eventRow = -1, int offset = -1);
     static QString groupName(int group);
     static QSet<int> instructionOffsets(int row);
+    static std::optional<quint16> launchReward(const QByteArray &, int entry, int request);
     static QVector<EventParameter> parameters(const QByteArray &, int row, int offset);
     static QJsonObject parameterEdit(const QByteArray &, int row, int offset, const QString &key, int value);
     static QByteArray applyOperands(const QByteArray &, int row, const QJsonObject &);

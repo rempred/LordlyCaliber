@@ -76,7 +76,7 @@ void texture(QPainter &p, QRect dest, const QImage &src, int u = 0, int v = 0, b
     p.drawImage(clip.topLeft(), image);
 }
 } // namespace
-SceneReportArt::SceneReportArt(const Rom &rom) {
+SceneReportArt::SceneReportArt(const Rom &rom) : font_(rom, 0) {
     // Resident panel initialization at z64 51CE4 and 51D08 loads these two
     // archives. Several textures also have unused lookalikes elsewhere in ROM.
     const auto pixels = unpack(rom, 0x1dfa632, 0x10000), pal = unpack(rom, 0x1dfb536, 0x1000);
@@ -101,12 +101,14 @@ SceneReportArt::SceneReportArt(const Rom &rom) {
         u16(labels, 6) != 24)
         throw Error("Invalid Hugo's Report label atlas");
     labels_ = indexed(labels, 8, labels, 8 + 16 * 24, 32, 24);
+}
+ScenePanelFont::ScenePanelFont(const Rom &rom, int palette) {
     metrics_.normal = fieldResource(rom, 0x218c450);
     metrics_.alternate = fieldResource(rom, 0x218de48);
     wideCodes_ = dialogueWideCodes(rom);
     std::array<QRgb, 4> ink;
     for (int i = 0; i < 4; ++i)
-        ink[i] = color(u16(rom.bytes(), 0x66b88 + 2 * i));
+        ink[i] = color(u16(rom.bytes(), 0x66b88 + 8 * palette + 2 * i));
     normal_ = fontSheet(fieldResource(rom, 0x218c4fa), 11, 14, ink, metrics_.normal.size());
     compact_ = fontSheet(fieldResource(rom, 0x218def2), 8, 8, ink, metrics_.alternate.size());
     wide_ = fontSheet(fieldResource(rom, 0x216e296), 11, 14, ink, wideCodes_.size());
@@ -187,7 +189,7 @@ void SceneReportArt::drawPaper(QPainter &p, QRect box, const QByteArray &record,
     }
     p.drawImage(clip.topLeft(), image);
 }
-void SceneReportArt::line(QPainter &p, const QByteArray &bytes, QPoint pos) const {
+void ScenePanelFont::line(QPainter &p, const QByteArray &bytes, QPoint pos) const {
     int x = pos.x(), y = pos.y(), origin = x, firstEnd = x;
     bool compact = false;
     for (int i = 0; i < bytes.size(); ++i) {

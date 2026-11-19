@@ -33,12 +33,26 @@ DialogueTextEnvironment DialoguePlayback::environment(const Rom &rom) {
 QByteArray DialoguePlayback::source(const QByteArray &record) const {
     if (!dialogues_)
         return DialogueArchive::windowSource(rom_, record);
-    const auto group = u16(record, 0x88) & 0xc000;
-    if (group != 0 && group != 0x8000)
-        throw Error("Dialogue window selects an unresolved archive table group");
-    return dialogues_->entry(group ? Dialogues::Table::Alternate : Dialogues::Table::Primary,
-                             u16(record, 0x96), u16(record, 0x88) & 0x3fff) +
-           char(0);
+    const auto ref = DialogueArchive::windowEntry(record);
+    return dialogues_->entry(ref.table, ref.archive, ref.entry) + char(0);
+}
+QStringList DialoguePlayback::sourceLabels(const SceneResources &resources) const {
+    QStringList result;
+    const auto &queue = dispatcher_.state().queue;
+    for (int i = 0; i < queue.count; ++i) {
+        const int slot = queue.entries[i];
+        if (state(slot, resources) < 0)
+            continue;
+        const auto record = resources.record(slot);
+        if (u16(record, 0x88) & 0x4000)
+            continue;
+        const auto ref = DialogueArchive::windowEntry(record);
+        const bool edited = dialogues_ && dialogues_->entryEdited(ref.table, ref.archive, ref.entry);
+        result << QString("%1 dialogue · %2archive %3, entry %4")
+            .arg(edited ? "Project" : "ROM", ref.table == DialogueArchive::Table::Alternate ? "alternate " : "")
+            .arg(ref.archive).arg(ref.entry);
+    }
+    return result;
 }
 void DialogueSession::advance(DialogueInput input) {
     playback_.advance(resources_, windows_, environment_, input);

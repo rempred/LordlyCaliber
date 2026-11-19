@@ -11,6 +11,7 @@ class DialoguePlayback {
     explicit DialoguePlayback(Rom, std::optional<Dialogues> dialogues = {});
     static DialogueTextEnvironment environment(const Rom &);
     QByteArray source(const QByteArray &record) const;
+    QStringList sourceLabels(const SceneResources &) const;
     void advance(SceneResources &, SceneDialogue &, const DialogueTextEnvironment &, DialogueInput);
     RasterImage image(const SceneResources &, DialogueDrawing &) const;
     int state(int slot, const SceneResources &) const;

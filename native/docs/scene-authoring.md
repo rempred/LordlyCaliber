@@ -25,6 +25,20 @@ handoff. You can still play the other answer when its reaction is known.
 Later campaign actions shown in the outcome come from the event program. Use
 the exported game to play the resulting battlefield.
 
+While a dialogue window is on screen, its source appears below the preview.
+**ROM dialogue** identifies an entry in the open ROM. **Project dialogue**
+identifies an entry added or edited in the current project. For example, in
+The Southern Reaches, accepting Dio's challenge plays scene 12. Dio says
+“we're not pest control” from archive 5, entry 9. Declining plays scene 13
+and “we're not janitors” from archive 5, entry 20. Open the challenge from
+its event in Logic to try the two paths.
+
+Leave **Preview reward** on **Use event reward** to use the item selected by
+the parent event. The Bacchus exchange gives the Pedra of Bane. If the item
+depends on an unknown campaign value, choose a sample to see its icon and
+name. A sample changes only the preview. To change what happens in the game,
+edit the event's selection and its inventory award together.
+
 ## Replace a scene or write your own
 
 To keep a retail scene's place in the story, open it from its event in Logic.

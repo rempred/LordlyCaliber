@@ -258,10 +258,11 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     reward_ = new QComboBox;
     reward_->setObjectName("sceneReward");
     reward_->setToolTip(
-        "Declared sample reward; the game supplies this item from the parent event.");
+        "Use the event's item, or choose a sample for this preview.");
+    reward_->addItem("Use event reward", -1);
     const auto rewardItems = ItemData::load(rom_);
     for (int i = 1; i < rewardItems.entries().size(); ++i)
-        reward_->addItem(decodeText(rewardItems.entries()[i].name), i);
+        reward_->addItem(decodeText(rewardItems.entries()[i].name).replace('\n', ' '), i);
     for (int i = 1; i < 45; ++i)
         reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | i)), 0x200 | i);
     rewardRow->addWidget(reward_, 1);
@@ -440,6 +441,8 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
         restart();
     });
     connect(launchContext_, &QComboBox::currentIndexChanged, this, [this] {
+        const QSignalBlocker block(reward_);
+        reward_->setCurrentIndex(0);
         inputHistory_.clear();
         pressedHistory_.clear();
         restart();
@@ -534,8 +537,9 @@ void ScenePreview::setItems(ItemData itemData, IconArtwork icons) {
     const QSignalBlocker block(reward_);
     const int selected = reward_->currentData().toInt();
     reward_->clear();
+    reward_->addItem("Use event reward", -1);
     for (int id = 1; id < items_->entries().size(); ++id)
-        reward_->addItem(decodeText(items_->entries()[id].name), id);
+        reward_->addItem(decodeText(items_->entries()[id].name).replace('\n', ' '), id);
     for (int id = 1; id < 45; ++id)
         reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | id)), 0x200 | id);
     reward_->setCurrentIndex(qMax(0, reward_->findData(selected)));
@@ -903,7 +907,11 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
             throw Error("Select a layered or world preview mode for this scene");
         resources_ = programs.runtimeDirectors();
-        if (selector_ != resource.selectors.first()) selectedObject_ = {};
+        if (selector_ != resource.selectors.first()) {
+            selectedObject_ = {};
+            const QSignalBlocker block(reward_);
+            reward_->setCurrentIndex(0);
+        }
         selector_ = resource.selectors.first();
         originalReportScript_ =
             selector_ == 0
@@ -925,7 +933,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         launchPlans_ = SceneLaunchPlan::choices(*resources_, *events, selector_);
         if (std::any_of(program.commands.cbegin(), program.commands.cend(),
                         [](const auto &c) { return c.opcode == 0xbb; }))
-            SceneLaunchPlan::addAnswerRoutes(launchPlans_, rom_, programs, *events, selector_);
+            SceneLaunchPlan::addAnswerRoutes(launchPlans_, rom_, programs, *resources_, *events, selector_);
         {
             const QSignalBlocker block(launchContext_);
             launchContext_->clear();
@@ -1224,7 +1232,8 @@ void ScenePreview::restart() {
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767, 32767, 32767}));
         if (items_ && itemIcons_)
             playback.panels().setItems(*items_, *itemIcons_);
-        playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
+        if (reward_->currentData().toInt() >= 0)
+            playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
         if (inputs) inputs->supply(playback);
         if (!inputs && saveProvider_) {
             const auto save = saveProvider_();
@@ -2168,6 +2177,22 @@ void ScenePreview::present() {
                          .arg(current_->backgroundName.isEmpty()
                                   ? QString{}
                                   : "\nBackground channels: " + current_->backgroundName));
+    if (current_->dialogue && current_->playback.dialogue()) {
+        const auto sources = current_->dialogue->sourceLabels(current_->playback.dialogue()->resources);
+        if (!sources.isEmpty())
+            status_->setText(status_->text() + "\n" + sources.join("\n"));
+    }
+    for (const auto &panel : current_->playback.panels().entities()) {
+        if (!panel.reward)
+            continue;
+        rewardUi_->show();
+        const int item = reward_->findData(int(*panel.reward));
+        const auto name = item >= 0 ? reward_->itemText(item) : ScenePanels::rewardName(rom_, *panel.reward);
+        const auto source = reward_->currentData().toInt() >= 0 ? "Sample reward" : "Launch reward";
+        status_->setText(status_->text() + QString("\n%1 · %2").arg(source, name));
+    }
+    if (current_->reason.contains("Choose a preview reward"))
+        rewardUi_->show();
     if (current_->playback.hasAnswerOutcome() && !director.isContinuation()) {
         const auto reaction = resources_->entries().constFind(director.resourceKey());
         if (reaction != resources_->entries().cend())

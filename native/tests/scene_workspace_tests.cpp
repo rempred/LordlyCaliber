@@ -48,6 +48,117 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void rewardBranchesAgreeOrRequireGameState() {
+        // Two paths driven by an unknown flag select the same equipment.
+        auto row = QByteArray::fromHex("68036060ac0368ff6901010268ff690171d068011000");
+        QCOMPARE(EventScript::launchReward(row, 0, 20), std::optional<quint16>{1});
+        // Changing only the second arm makes the reward depend on the flag.
+        row[15] = 2;
+        QVERIFY(!EventScript::launchReward(row, 0, 20));
+        // Starting after that choice uses the current invocation's own write.
+        QCOMPARE(EventScript::launchReward(row, 12, 20), std::optional<quint16>{2});
+    }
+    void eventSelectedGifts_data() {
+        QTest::addColumn<int>("selector");
+        QTest::addColumn<int>("row");
+        QTest::addColumn<int>("site");
+        QTest::addColumn<bool>("edited");
+        QTest::addColumn<int>("token");
+        QTest::newRow("Bacchus Pedra") << 1554 << 82 << 0x352 << false << 0x22c;
+        QTest::newRow("Bacchus edited to Heal Leaf") << 1554 << 82 << 0x352 << true << 0x201;
+        QTest::newRow("Equipment gift") << 1157 << 74 << 0xd6 << false << 0x98;
+    }
+    void eventSelectedGifts() {
+        QFETCH(int, selector); QFETCH(int, row); QFETCH(int, site); QFETCH(bool, edited); QFETCH(int, token);
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        auto events = *project.sceneEvents();
+        if (edited)
+            events.editParameter(row, 0x348, "value", token, scenes);
+        // The edited case resumes the actual answer in the parent rule.
+        const auto key = scenes.original().selectors().at(edited ? 1553 : selector);
+        ScenePreview preview(project.rom());
+        project.loadIconArtwork();
+        preview.setItems(project.itemData(), *project.iconArtwork());
+        preview.show();
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), scenes.resource(key), -1).mode,
+                            *project.dialogues(), events);
+        preview.selectEventLaunch(row, edited ? 0x33c : site);
+        auto *status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto *confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto *step = preview.findChild<QPushButton *>("sceneStep");
+        const auto name = ScenePanels::rewardName(project.rom(), quint16(token));
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 15000);
+        for (int tick = 0; tick < 2600 && !preview.property("sceneStopped").toBool()
+             && !status->text().contains("Launch reward"); ++tick) {
+            if (preview.property("sceneFocusedDialogueState").toInt() == 7 ||
+                (tick % 20 == 0 && confirm->isVisible())) confirm->click();
+            else step->click();
+        }
+        QVERIFY2(status->text().contains("Launch reward · " + name), qPrintable(status->text()));
+        for (int i = 0; i < 16; ++i) step->click();
+        const auto frame = preview.renderedFrame().scaled(320, 240);
+        const auto icon = project.iconArtwork()->image(quint16(token));
+        int opaque = 0, matched = 0;
+        for (int y = 0; y < icon.height(); ++y)
+            for (int x = 0; x < icon.width(); ++x) {
+                const auto color = icon.pixelColor(x, y);
+                if (color.alpha() != 255) continue;
+                ++opaque;
+                if (frame.pixelColor(104 + x, 134 + y) == color) ++matched;
+            }
+        QVERIFY(opaque > 0);
+        QCOMPARE(matched, opaque);
+        const auto folder = qEnvironmentVariable("LORDLY_SCENE_TEST_OUTPUT");
+        if (!folder.isEmpty()) {
+            QDir().mkpath(folder);
+            QVERIFY(preview.renderedFrame().save(QDir(folder).filePath(QString("gift-%1-%2.png").arg(selector).arg(token))));
+        }
+    }
+    void duelDialogueOrigin_data() {
+        QTest::addColumn<int>("selector"); QTest::addColumn<int>("entry"); QTest::addColumn<bool>("edited");
+        QTest::newRow("Accept the duel") << 12 << 9 << false;
+        QTest::newRow("Decline the duel") << 13 << 20 << false;
+        QTest::newRow("Edit only acceptance") << 12 << 9 << true;
+    }
+    void duelDialogueOrigin() {
+        QFETCH(int, selector); QFETCH(int, entry); QFETCH(bool, edited);
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadDialogues();
+        auto lines = *project.dialogues();
+        const auto retail = lines.entry(Dialogues::Table::Primary, 5, entry);
+        QVERIFY(retail.contains(selector == 12 ? "not pest@n control" : "not janitors"));
+        if (edited)
+            lines.setEntry(Dialogues::Table::Primary, 5, entry, Dialogues::spokenText("Dio", "I have new orders."));
+        const auto &scenes = *project.scenePrograms();
+        const auto key = scenes.original().selectors().at(11);
+        ScenePreview preview(project.rom());
+        preview.show();
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), scenes.resource(key), -1).mode,
+                            lines, *project.sceneEvents());
+        preview.selectEventLaunch(4, 0x3e);
+        auto *status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto *confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto *step = preview.findChild<QPushButton *>("sceneStep");
+        const auto source = QString("%1 dialogue · archive 5, entry %2").arg(edited ? "Project" : "ROM").arg(entry);
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 15000);
+        bool moved = false;
+        auto *down = preview.findChild<QPushButton *>("panelDown");
+        for (int tick = 0; tick < 5000 && !preview.property("sceneStopped").toBool()
+             && !status->text().contains(source); ++tick) {
+            if (preview.property("sceneFocusedDialogueState").toInt() == 7 && selector == 13 && !moved) {
+                down->click();
+                moved = true;
+            } else if (preview.property("sceneFocusedDialogueState").toInt() == 7) confirm->click();
+            else if (tick % 20 == 0 && confirm->isVisible()) confirm->click();
+            else step->click();
+        }
+        QVERIFY2(status->text().contains(source), qPrintable(status->text()));
+        QVERIFY(status->text().contains(QString("selector %1 ·").arg(selector)));
+    }
     void openingClassActors_data() {
         QTest::addColumn<int>("selector");
         QTest::addColumn<int>("slot");
@@ -369,8 +480,9 @@ class SceneWorkspaceTests : public QObject {
         auto &scenes = *project.scenePrograms();
         const auto &events = *project.sceneEvents();
         for (int selector : {171, 174, 177, 180}) {
-            auto plans = SceneLaunchPlan::choices(scenes.runtimeDirectors(), events, selector);
-            SceneLaunchPlan::addAnswerRoutes(plans, project.rom(), scenes, events, selector);
+            const auto directors = scenes.runtimeDirectors();
+            auto plans = SceneLaunchPlan::choices(directors, events, selector);
+            SceneLaunchPlan::addAnswerRoutes(plans, project.rom(), scenes, directors, events, selector);
             bool story = false, other = false;
             for (const auto &plan : plans) {
                 if (plan.site.isEmpty())

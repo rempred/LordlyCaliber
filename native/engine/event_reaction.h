@@ -10,6 +10,7 @@ struct EventReaction {
     bool readAnswer = false;
     QVector<int> instructions;
     QMap<int, bool> flags;
+    QMap<int, quint16> translations;
 };
 // Resume a mission rule at the scene-completion boundary. Inputs beyond the
 // supplied answer and flags written during this invocation remain unknown.

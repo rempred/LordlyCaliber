@@ -1120,6 +1120,8 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
             out.selector = run.selector;
             out.requestOffset = run.requestOffset;
             out.flags = run.flags;
+            for (auto it = run.translations.cbegin(); it != run.translations.cend(); ++it)
+                out.translations.set(it.key(), it.value());
             for (int pc : run.instructions) {
                 const auto effect = effects.constFind(pc);
                 if (effect != effects.cend())

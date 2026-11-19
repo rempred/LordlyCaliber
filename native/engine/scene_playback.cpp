@@ -339,7 +339,7 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
             throw Error("Map help requires its launch image dimensions");
         panels_.create(qint32(args[0]), qint32(args[1]),
                        imageView_ ? qint16(u16(*imageView_, 0x834)) : 320,
-                       imageView_ ? qint16(u16(*imageView_, 0x836)) : 240);
+                       imageView_ ? qint16(u16(*imageView_, 0x836)) : 240, director_.rewardSelection());
         return true;
     }
     if (opcode == 0x6a) {

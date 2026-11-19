@@ -12,6 +12,7 @@ class Dialogues {
     const DialogueArchive &original(Table, int archive) const;
     int entryCount(Table, int archive) const;
     QByteArray entry(Table, int archive, int index) const;
+    bool entryEdited(Table, int archive, int index) const;
     void setEntry(Table, int archive, int index, const QByteArray &);
     int appendEntry(Table, int archive, const QByteArray &);
     void restoreEntry(Table, int archive, int index);

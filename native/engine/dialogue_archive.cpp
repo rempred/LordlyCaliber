@@ -32,14 +32,18 @@ DialogueArchive DialogueArchive::load(const Rom &rom, int selector, Table table)
     result.name_ = member.name;
     return result;
 }
-QByteArray DialogueArchive::windowSource(const Rom &rom, const QByteArray &window) {
+DialogueArchive::EntryRef DialogueArchive::windowEntry(const QByteArray &window) {
     if (window.size() != 168)
         throw Error("Dialogue source lookup requires a complete window record");
     const auto kind = u8(window, 0x88) & 0xc0;
     if (kind != 0 && kind != 0x80)
         throw Error("Dialogue window selects an unresolved archive table group");
     const auto table = kind == 0 ? Table::Primary : Table::Alternate;
-    return load(rom, u16(window, 0x96), table).entry(u16(window, 0x88) & 0x3fff) + char(0);
+    return {table, u16(window, 0x96), u16(window, 0x88) & 0x3fff};
+}
+QByteArray DialogueArchive::windowSource(const Rom &rom, const QByteArray &window) {
+    const auto ref = windowEntry(window);
+    return load(rom, ref.archive, ref.table).entry(ref.entry) + char(0);
 }
 DialogueArchive DialogueArchive::fromDecoded(QByteArray bytes) {
     const auto first = u32(bytes, 0);

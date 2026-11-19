@@ -212,6 +212,72 @@ void annotate(QVector<EventStep> &steps, const QByteArray &bytes,
     }
 }
 }
+std::optional<quint16> EventScript::launchReward(const QByteArray &bytes, int entry, int request) {
+    auto valid = [&](int at) { return at >= 0 && !(at & 1) && at + 1 < bytes.size(); };
+    if (!valid(entry) || !valid(request) || u8(bytes, request) != 0x10)
+        return {};
+    // Follow this invocation up to its first scene request. The panel reads
+    // substitution 255, shared with the event that launches the Director.
+    struct State { Registers registers{}; std::optional<quint16> reward; };
+    QMap<int, State> inputs;
+    inputs.insert(entry, State{});
+    QVector<int> pending{entry};
+    while (!pending.isEmpty()) {
+        const int at = pending.takeLast(), op = u8(bytes, at), arg = u8(bytes, at + 1);
+        if (op == 0x10 || op == 4 || op == 0x11 || op == 0x12 || op == 0x2f)
+            continue;
+        auto state = inputs.value(at);
+        if (op >= 0x70 && op <= 0x77 && (arg & 0xf8) == 0xd0) {
+            const auto index = state.registers[arg & 7], value = state.registers[op & 7];
+            if (index.kind != Value::Constant)
+                state.reward.reset();
+            else if (index.number == 255)
+                state.reward = value.kind == Value::Constant
+                    ? std::optional<quint16>(quint16(value.number)) : std::nullopt;
+            else if (index.number > 255)
+                state.reward.reset();
+        }
+        QVector<int> next;
+        if (op == 2) {
+            const auto target = state.registers[0];
+            if (target.kind != Value::Constant)
+                return {};
+            next << 2 * int(quint16((at + 2) / 2 + (arg << 8) + (target.number & 255)));
+        } else {
+            next = successors(bytes, at);
+        }
+        // A called routine can replace the reward and registers. A later
+        // explicit write in this invocation can still establish a new value.
+        if (op == 3)
+            state.reward.reset();
+        state.registers = advance(bytes, at, state.registers);
+        // Two different instructions may supply the same value. The producer
+        // offsets matter to operand editing, but not to the launched reward.
+        for (auto &reg : state.registers)
+            reg.low = reg.high = -1;
+        for (int dest : next) {
+            if (!valid(dest))
+                return {};
+            auto it = inputs.find(dest);
+            if (it == inputs.end()) {
+                inputs.insert(dest, state);
+                pending << dest;
+                continue;
+            }
+            auto merged = *it;
+            for (int r = 0; r < 8; ++r)
+                if (!(merged.registers[r] == state.registers[r]))
+                    merged.registers[r] = {};
+            if (merged.reward != state.reward)
+                merged.reward.reset();
+            if (merged.registers != it->registers || merged.reward != it->reward) {
+                *it = merged;
+                pending << dest;
+            }
+        }
+    }
+    return inputs.value(request).reward;
+}
 QVector<EventHandler> EventScript::decode(const QByteArray &bytes, int eventRow) {
     if (bytes.size() < 8 || bytes.size() % 2) throw Error("Invalid event script");
     // Retail chapter introductions 110–114 have only the entry-handler group.

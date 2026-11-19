@@ -11,6 +11,7 @@
 #include <optional>
 namespace lordly {
 class SceneReportArt;
+class ScenePanelFont;
 // Map-menu owner pool and shared animated entities. Host identities replace RAM
 // pointers; text pointers are offsets into the retained payload.
 class ScenePanels {
@@ -19,9 +20,10 @@ class ScenePanels {
         quint64 identity = 0, parent = 0;
         QByteArray record, payload;
         std::optional<quint16> reward;
+        QByteArray rewardLabel;
     };
     explicit ScenePanels(Rom rom) : rom_(rom), icons_(std::move(rom)) {}
-    void create(int slot, int preset, int width, int height);
+    void create(int slot, int preset, int width, int height, std::optional<quint16> eventReward = {});
     void createArmy(int slot, int preset);
     void replaceArmyHelp(int slot, int section);
     void closeArmy(int slot, bool immediate);
@@ -55,7 +57,7 @@ class ScenePanels {
         artwork_ = std::move(icons);
     }
     void supplyReward(quint16 item) {
-        currentRewardName(item);
+        currentRewardBytes(item);
         reward_ = item;
     }
     const QByteArray &ownerData(int slot) const;
@@ -88,7 +90,8 @@ class ScenePanels {
     ItemIcons icons_;
     std::optional<ItemData> items_;
     std::optional<IconArtwork> artwork_;
-    QString currentRewardName(quint16 item) const;
+    static QByteArray rewardBytes(const Rom &, quint16 item);
+    QByteArray currentRewardBytes(quint16 item) const;
     std::array<std::optional<Owner>, 14> owners_{};
     QVector<Entity> entities_;
     QVector<int> audio_;
@@ -98,6 +101,7 @@ class ScenePanels {
     QByteArray reportClock_ = "00:00:00";
     QImage reportBackground_, reportPortrait_;
     std::shared_ptr<const SceneReportArt> reportArt_;
+    std::shared_ptr<const ScenePanelFont> rewardFont_;
     bool armyFlag_ = false;
     int armyHandshake_ = 3;
     std::optional<SceneReportRuntime> report_;

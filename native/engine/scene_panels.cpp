@@ -56,15 +56,18 @@ QString ScenePanels::confirmationChoice(const Rom &rom, int index) {
         throw Error("Confirmation choice has no bounded terminator");
     return label(bytes.first(end));
 }
-QString ScenePanels::currentRewardName(quint16 item) const {
+QByteArray ScenePanels::currentRewardBytes(quint16 item) const {
     if (items_ && !(item & ~0x1ff)) {
         if (item >= items_->entries().size())
             throw Error("Reward item exceeds project items");
-        return decodeText(items_->entries()[item].name);
+        return items_->entries()[item].name;
     }
-    return rewardName(rom_, item);
+    return rewardBytes(rom_, item);
 }
 QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
+    return decodeText(rewardBytes(rom, item)).replace('\n', ' ');
+}
+QByteArray ScenePanels::rewardBytes(const Rom &rom, quint16 item) {
     rom.requireSupported();
     if (rom.revision())
         throw Error("Reward names currently require US revision zero");
@@ -74,7 +77,7 @@ QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
         const auto data = ItemData::load(rom);
         if (index >= data.entries().size())
             throw Error("Reward item exceeds the loaded table");
-        return decodeText(data.entries()[index].name);
+        return data.entries()[index].name;
     }
     if ((item & ~0x3ff) || index >= 45)
         throw Error("Reward item is outside the current native table");
@@ -89,7 +92,7 @@ QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
     const auto end = rom.bytes().indexOf('\0', at);
     if (end < at || end - at > 96)
         throw Error("Reward name has no bounded terminator");
-    return decodeText(rom.bytes().mid(at, end - at));
+    return rom.bytes().mid(at, end - at);
 }
 const QByteArray &ScenePanels::ownerData(int slot) const {
     checkSlot(slot);
@@ -399,24 +402,25 @@ void ScenePanels::syncReport() {
         entities_ << std::move(e);
     }
 }
-void ScenePanels::create(int slot, int preset, int width, int height) {
+void ScenePanels::create(int slot, int preset, int width, int height, std::optional<quint16> eventReward) {
     checkSlot(slot);
     if (preset != 33 && preset != 3 && preset != 1 && preset != 2 && preset != 34)
         throw Error("This panel preset is not implemented");
-    if (preset == 34 && !reward_)
-        throw Error("Reward panel requires the parent event's item selection");
     if (width < 1 || height < 1 || width > 2048 || height > 2048)
         throw Error("Invalid panel image dimensions");
     rom_.requireSupported();
     if (rom_.revision())
         throw Error("Map panels currently require US revision zero");
     if (preset == 34) {
+        const auto item = reward_ ? reward_ : eventReward;
+        if (!item)
+            throw Error("The reward depends on the parent event. Choose a preview reward to see its name and icon.");
         Entity e;
         e.identity = nextIdentity_;
         e.record = QByteArray(232, 0);
         const int32_t initial[4]{100, 155, 220, 155}, target[4]{100, 130, 220, 155};
         lordly_panel_initialize(bytes(e.record), 0x100, 0x802364cc, initial, target);
-        e.reward = reward_;
+        e.reward = item;
         e.payload = QByteArray(0x604, 0);
         put8(e.payload, 0x5f3, 23);
         put8(e.payload, 0x5fe, 2);
@@ -425,9 +429,11 @@ void ScenePanels::create(int slot, int preset, int width, int height) {
             put8(e.payload, at, 1);
         put8(e.record, 0x25, 1);
         QByteArray data(56, 0);
-        put16(data, 0, *reward_);
+        put16(data, 0, *item);
         put16(data, 2, 0xffff);
-        currentRewardName(*reward_);
+        e.rewardLabel = currentRewardBytes(*item);
+        if (!rewardFont_)
+            rewardFont_ = std::make_shared<ScenePanelFont>(rom_, 3);
         release(slot);
         owners_[slot] = Owner{0x100, e.identity, 0, std::move(data)};
         entities_.push_back(std::move(e));
@@ -636,8 +642,7 @@ QImage ScenePanels::render() const {
                                          16, QImage::Format_RGBA8888));
             }
             // Native content callback2A54A8 places the text22 pixels after the icon.
-            painter.drawText(QRect(left + 26, top + 4, right - left - 30, 16),
-                             Qt::AlignLeft | Qt::AlignVCenter, currentRewardName(*e.reward));
+            rewardFont_->line(painter, e.rewardLabel, {left + 26, top + 4});
         } else if (e.parent) {
             for (int i = 0; i < 2; ++i) {
                 painter.drawText(QPoint(left + 21, top + (i ? 14 : 2) + 10),
