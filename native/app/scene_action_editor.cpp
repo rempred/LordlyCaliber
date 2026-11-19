@@ -24,6 +24,23 @@
 #include <cmath>
 namespace lordly {
 namespace {
+std::optional<QPair<QString, QString>> authoredWords(Project &project,
+                                                     const DirectorCommand &command, bool choice) {
+    if (command.opcode != 0xbf)
+        return {};
+    const auto &a = command.operands;
+    if (a[1] > 65535 || a[2] > 65535 || (a[2] & 0x4000))
+        return {};
+    try {
+        project.loadDialogues();
+        const auto table = a[2] & 0x8000 ? Dialogues::Table::Alternate : Dialogues::Table::Primary;
+        const auto text = project.dialogues()->entry(table, int(a[1]), int(a[2] & 0x3fff));
+        return choice ? SceneActions::choiceOptions(text) : Dialogues::spokenFields(text);
+    } catch (const Error &) {
+        return {};
+    }
+}
+
 class SceneStoryCommand final : public QUndoCommand {
   public:
     SceneStoryCommand(Project *p,const QString &name,const ScenePrograms &scenes,const SceneEvents &events):QUndoCommand(name),p_(p),beforeScenes_(p->scenePrograms()->json()),beforeEvents_(p->sceneEvents()->json()),afterScenes_(scenes.json()),afterEvents_(events.json()){}
@@ -260,6 +277,7 @@ void SceneActionEditor::selectCommand(int command) {
     showAction();
 }
 void SceneActionEditor::refresh(int command) {
+    QMap<int, QString> dialogueLabels, branchAnswers;
     commandTimes_.clear(); activeWord_ = -2;
     const QSignalBlocker block(list_);
     list_->clear();
@@ -280,16 +298,34 @@ void SceneActionEditor::refresh(int command) {
             insertion = position_->findData(priorPosition);
         position_->setCurrentIndex(insertion < 0 ? position_->count() - 1 : insertion);
         const auto choices = SceneActions::choices(program);
+        QMap<int, QPair<QString, QString>> answerPairs;
+        for (const auto &choice : choices)
+            if (const auto words = authoredWords(*project_, program.commands[choice.command], true))
+                answerPairs.insert(choice.command, *words);
         for (const auto &action : actions_) {
             QString branch;
-            for (const auto &choice : choices)
-                if (choice.option(action.command))
-                    branch = QString("Option %1 · ").arg(choice.option(action.command));
+            for (const auto &choice : choices) {
+                const int option = choice.option(action.command);
+                if (!option) continue;
+                branch = tr("Option %1 · ").arg(option);
+                if (const auto it = answerPairs.constFind(choice.command); it != answerPairs.cend()) {
+                    const auto &answer = option == 1 ? it->first : it->second;
+                    branch += tr("“%1” · ").arg(answer);
+                    branchAnswers.insert(action.command, answer);
+                }
+            }
+            const auto &step = program.commands[action.command];
+            QString title = action.name;
+            if (const auto words = authoredWords(*project_, step, action.name == "Choice")) {
+                const auto caption =
+                    action.name == "Choice"
+                        ? tr("%1 / %2").arg(words->first, words->second)
+                        : tr("%1: %2").arg(words->first, words->second.simplified());
+                title += " · " + caption;
+                dialogueLabels.insert(action.command, caption);
+            }
             auto item =
-                new QListWidgetItem(branch + QString("%1 · word %2")
-                                                 .arg(action.name)
-                                                 .arg(program.commands[action.command].word),
-                                    list_);
+                new QListWidgetItem(branch + title + tr(" · word %1").arg(step.word), list_);
             item->setData(Qt::UserRole, action.command);
             item->setData(Qt::UserRole + 2, item->text());
         }
@@ -300,6 +336,7 @@ void SceneActionEditor::refresh(int command) {
                 break;
             }
     }
+    emit dialogueLabelsChanged(key_, dialogueLabels, branchAnswers);
     showAction();
 }
 void SceneActionEditor::updateTimeline(SceneId id, const QMap<int, int> &times, int word, int tick) {
@@ -373,18 +410,67 @@ void SceneActionEditor::addAtPlayhead(quint32 kind){
     if(kind==0xbf||kind==SceneActions::Choice){changeDialogue(true,kind==SceneActions::Choice,true);return;}
     insertAtPlayhead();
 }
-void SceneActionEditor::addFromWorkspace(quint32 kind,int where){
-    if(where==0){addAtPlayhead(kind);return;}
-    const int row=list_->currentRow();if(!key_||row<0||row>=actions_.size()){emit stageFeedback("Select a timeline step first.");return;}
-    const auto &action=actions_[row];int at=where==1?action.command:action.command+action.commandCount;
-    if(where>=3){
-        const auto branches=SceneActions::choices(project_->scenePrograms()->program(key_));
-        const auto choice=std::find_if(branches.begin(),branches.end(),[&](const auto &c){return c.command==action.command||c.option(action.command);});
-        if(choice==branches.end()){emit stageFeedback("Select a choice or a step inside that choice first.");return;}
-        at=where==3?choice->firstEnd:choice->secondEnd;
+QVector<QPair<QString, int>> SceneActionEditor::storyDestinations() const {
+    QVector<QPair<QString, int>> destinations;
+    if (!key_)
+        return destinations;
+    const auto program = project_->scenePrograms()->program(key_);
+    QVector<int> exits;
+    for (const auto &position : SceneActions::positions(program)) {
+        const auto &c = program.commands[position.command];
+        if (c.opcode == 0x7d || (c.opcode == 0x39 && c.operands == QVector<quint32>{0}))
+            exits << position.command;
     }
-    const int index=position_->findData(at);if(index<0){emit stageFeedback("Select a complete step at an editable boundary.");return;}
-    position_->setCurrentIndex(index);kind_->setCurrentIndex(kind_->findData(kind));changeStructure(Change::Add);
+    if (exits.size() == 1)
+        destinations.append({tr("End of scene"), exits.first()});
+    const auto choices = SceneActions::choices(program);
+    for (int i = 0; i < choices.size(); ++i) {
+        const auto &choice = choices[i];
+        QPair<QString, QString> answers{tr("Option 1"), tr("Option 2")};
+        if (const auto parsed = authoredWords(*project_, program.commands[choice.command], true))
+            answers = *parsed;
+        const auto prefix = choices.size() > 1 ? tr("Choice %1 · ").arg(i + 1) : QString{};
+        destinations.append(
+            {prefix + tr("If player chooses “%1”").arg(answers.first), choice.firstEnd});
+        destinations.append(
+            {prefix + tr("If player chooses “%1”").arg(answers.second), choice.secondEnd});
+    }
+    return destinations;
+}
+void SceneActionEditor::addFromWorkspace(quint32 kind, int where, int at) {
+    if (at < 0) {
+        if (where == 0) {
+            addAtPlayhead(kind);
+            return;
+        }
+        const int row = list_->currentRow();
+        if (!key_ || row < 0 || row >= actions_.size()) {
+            emit stageFeedback("Select a timeline step first.");
+            return;
+        }
+        const auto &action = actions_[row];
+        at = where == 1 ? action.command : action.command + action.commandCount;
+        if (where == 3 || where == 4) {
+            const auto choices = SceneActions::choices(project_->scenePrograms()->program(key_));
+            const auto selected =
+                std::find_if(choices.cbegin(), choices.cend(), [&](const auto &choice) {
+                    return choice.command == action.command || choice.option(action.command);
+                });
+            if (selected == choices.cend()) {
+                emit stageFeedback("Select a choice first.");
+                return;
+            }
+            at = where == 3 ? selected->firstEnd : selected->secondEnd;
+        }
+    }
+    const int index = position_->findData(at);
+    if (index < 0) {
+        emit stageFeedback("Select a complete step at an editable boundary.");
+        return;
+    }
+    position_->setCurrentIndex(index);
+    kind_->setCurrentIndex(kind_->findData(kind));
+    changeStructure(Change::Add);
 }
 void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,SceneVector position,int variant,int slot){
     if(!key_||property("invalidEdits").toBool()){emit stageFeedback("Finish the invalid fields in Step details first.");return;}
@@ -412,7 +498,11 @@ void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,S
         refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
         emit assetAdded(sprite,slot);
         emit stageFeedback(tr("Placed %1 %2 on stage.").arg(sprite ? "Sprite" : "Actor").arg(slot));
-    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text());}
+    } catch (const std::exception &e) {
+        editing_ = false;
+        notice_->setText(QString::fromUtf8(e.what()));
+        emit stageFeedback(notice_->text());
+    }
 }
 void SceneActionEditor::placeSpriteAtPlayhead(int slot,SceneVector position){
     if(!key_||property("invalidEdits").toBool()){emit stageFeedback("Finish the invalid fields in Step details first.");return;}
@@ -1026,6 +1116,7 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
             return;
         int at = create ? position_->currentData().toInt() : actions_[row].command;
         int archive = 5, entry = -1;
+        QByteArray originalText;
         auto table = Dialogues::Table::Primary;
         QPair<QString, QString> options = choice
                                               ? QPair<QString, QString>{"Yes", "No"}
@@ -1041,6 +1132,7 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
             table = entry & 0x8000 ? Dialogues::Table::Alternate : Dialogues::Table::Primary;
             entry &= 0x3fff;
             const auto bytes = project_->dialogues()->entry(table, archive, entry);
+            originalText = bytes;
             const auto parsed =
                 choice ? SceneActions::choiceOptions(bytes) : Dialogues::spokenFields(bytes);
             if (!parsed) {
@@ -1056,10 +1148,9 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
         auto layout = new QVBoxLayout(&dialog);
         auto help =
             new QLabel(choice ? "Write two options, up to 24 characters each. Add branch actions "
-                                "using the After option 1 / After option 2 positions."
-                              : "Write the speaker and dialogue. Lines wrap automatically, with up "
-                                "to eight pages. The player advances pages with A. Portrait and "
-                                "placement are editable in the action fields.");
+                                "from Stage with Add step, then choose the answer by name."
+                              : "Choose who speaks, where their window appears, and which face the player sees. "
+                                "Text wraps automatically. The player advances pages with A.");
         help->setWordWrap(true);
         layout->addWidget(help);
         if (!create) {
@@ -1075,6 +1166,54 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
         first->setObjectName(choice ? "sceneChoiceOption1" : "sceneDialogueSpeaker");
         first->setMaxLength(choice ? 24 : 28);
         form->addRow(choice ? "Option 1" : "Speaker", first);
+        QComboBox *speakerActor = nullptr;
+        QComboBox *portrait = nullptr;
+        if (!choice) {
+            speakerActor = new QComboBox;
+            speakerActor->setObjectName("sceneDialogueCast");
+            if (!create)
+                speakerActor->addItem("Keep current window settings", -2);
+            speakerActor->addItem("Fixed window", -1);
+            QSet<int> cast;
+            for (const auto &c : program.commands)
+                if ((c.opcode == 0x14 || c.opcode == 0x2a) && c.operands[0] < 28)
+                    cast.insert(int(c.operands[0]));
+            if (!create && program.commands[at].operands[3] < 28)
+                cast.insert(int(program.commands[at].operands[3]));
+            for (int slot = 0; slot < 28; ++slot)
+                if (cast.contains(slot))
+                    speakerActor->addItem(tr("Follow Actor %1").arg(slot), slot);
+            speakerActor->setToolTip("Point the speech window at this actor's position on stage.");
+            form->addRow("Speech window", speakerActor);
+            portrait = new QComboBox;
+            portrait->setObjectName("sceneDialoguePortrait");
+            if (!create)
+                portrait->addItem("Keep current portrait", -2);
+            portrait->addItem("Use the text's portrait (if any)", 0);
+            portrait->addItem("Use the window owner's game portrait", -1);
+            portrait->setIconSize({30, 36});
+            try {
+                project_->loadAvatarArtwork();
+                const auto classes = project_->classData();
+                const auto &names = project_->records(Table::Classes);
+                for (int id = 1; id <= 255; ++id) {
+                    if (!classes.dialoguePortraitToken(id, 0))
+                        continue;
+                    const auto pixels = project_->avatarArtwork()->dialogueWords(classes, id, 0);
+                    if (pixels.isEmpty())
+                        continue;
+                    const auto icon = QPixmap::fromImage(AvatarArtwork::render(pixels));
+                    // The dialogue table after the original 165 classes contains story faces.
+                    const auto name =
+                        id < 165 && id < names.size() ? names[id].name : tr("Story portrait");
+                    portrait->addItem(QIcon(icon), tr("%1 · %2").arg(name).arg(id), id);
+                }
+            } catch (const Error &e) {
+                portrait->setToolTip(tr("Some portrait artwork could not be loaded. %1")
+                                         .arg(QString::fromUtf8(e.what())));
+            }
+            form->addRow("Portrait", portrait);
+        }
         QLineEdit *second = nullptr;
         QPlainTextEdit *body = nullptr;
         if (choice) {
@@ -1089,8 +1228,16 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
             form->addRow("Text", body);
         }
         auto encoded = [&] {
-            return choice ? SceneActions::choiceText(first->text(), second->text())
-                          : Dialogues::spokenText(first->text(), body->toPlainText());
+            if (choice) {
+                if (!create && first->text() == options.first && second->text() == options.second)
+                    return originalText;
+                return SceneActions::choiceText(first->text(), second->text());
+            }
+            // Native @x centers the full panel for every portrait and text width.
+            // The pointer still tracks the actor. Retain existing text layout on edit.
+            const bool centered = create ? speakerActor->currentData().toInt() >= 0 : originalText.startsWith("@x");
+            const auto words = Dialogues::spokenText(first->text(), body->toPlainText());
+            return centered ? "@x" + words : words;
         };
         layout->addLayout(form);
         auto status = new QLabel;
@@ -1137,16 +1284,45 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
             entry = dialogues.appendEntry(table, archive, text);
             if (entry > 0x3fff)
                 throw Error("This dialogue archive has no remaining entry IDs.");
-            if(atPlayhead){auto edit=insertSceneActionAtTime(program,commandTimes_,previewTick_,choice?SceneActions::Choice:0xbf);program=edit.program;at=edit.command;}
-            else program = SceneActions::insert(program, at, choice ? SceneActions::Choice : 0xbf);
+            if (atPlayhead) {
+                auto edit = insertSceneActionAtTime(program, commandTimes_, previewTick_,
+                                                    choice ? SceneActions::Choice : 0xbf);
+                program = edit.program;
+                at = edit.command;
+            } else
+                program = SceneActions::insert(program, at, choice ? SceneActions::Choice : 0xbf);
             program.commands[at].operands[2] = quint32(entry);
             program = DirectorProgram::decode(program.encode());
         } else {
-            if (dialogues.entry(table, archive, entry) == text)
+            if (dialogues.entry(table, archive, entry) == text &&
+                (!speakerActor || (speakerActor->currentData().toInt() == -2 &&
+                                   portrait->currentData().toInt() == -2)))
                 return;
             dialogues.setEntry(table, archive, entry, text);
             if (!choice)
                 program = SceneActions::upgradeDialogueExit(program, at);
+        }
+        if (speakerActor && speakerActor->currentData().toInt() != -2) {
+            const int slot = speakerActor->currentData().toInt();
+            auto &args = program.commands[at].operands;
+            if (slot >= 0) {
+                args[3] = quint32(slot);
+                args[4] = 0;
+                args[5] = 1;
+                args[9] = 0;
+                args[12] = 0;
+            } else if (!create) {
+                args[4] = 7;
+                args[5] = 160;
+                args[9] = 1;
+                args[12] = 1;
+            }
+            program = DirectorProgram::decode(program.encode());
+        }
+        if (portrait && portrait->currentData().toInt() != -2) {
+            program.commands[at].operands[10] = quint32(portrait->currentData().toInt());
+            program.commands[at].operands[11] = 0;
+            program = DirectorProgram::decode(program.encode());
         }
         auto scenes = *project_->scenePrograms();
         scenes.replace(key_, program.source);

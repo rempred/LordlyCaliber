@@ -12,6 +12,7 @@ class SceneTimeline : public QGraphicsView {
     void setProgram(SceneId, const DirectorProgram &);
     void updatePlayback(SceneId, const QMap<int, int> &, int activeWord, int tick);
     void selectCommand(int);
+    void setDialogueLabels(SceneId, const QMap<int, QString> &, const QMap<int, QString> &);
   signals:
     void commandSelected(int);
     void commandActivated(int);
@@ -25,6 +26,7 @@ class SceneTimeline : public QGraphicsView {
     SceneId id_;
     DirectorProgram program_;
     QMap<int, int> times_;
+    QMap<int, QString> dialogueLabels_, branchAnswers_;
     QVector<QPair<QRectF, QString>> trackLabels_;
     QGraphicsLineItem *playhead_ = nullptr;
     int command_ = -1, tick_ = 0;

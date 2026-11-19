@@ -148,20 +148,33 @@ void CutsceneEditor::createWorkspace(QTabWidget *pages){
     for (auto [id, name] : kinds.asKeyValueRange()) action->addItem(name, id);
     auto where = new QComboBox;
     where->setObjectName("sceneWorkspaceInsertWhere");
-    where->addItems({"At playhead", "Before selected step", "After selected step", "Choice: option 1", "Choice: option 2"});
+    action->setCurrentIndex(action->findData(0xbf));
     fields->addRow("Action", action);
     fields->addRow("Insert", where);
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
     buttons->addButton("Add step", QDialogButtonBox::AcceptRole)->setObjectName("sceneWorkspaceAdd");
     fields->addRow(buttons);
-    connect(compose, &QPushButton::clicked, this, [=, this] { scenePreview_->pauseForEditing(); composer->open(); });
+    connect(compose, &QPushButton::clicked, this, [=, this] {
+        scenePreview_->pauseForEditing();
+        where->clear();
+        where->addItems({"At playhead", "Before selected step", "After selected step"});
+        for (const auto &[label, command] : actionEditor_->storyDestinations()) where->addItem(label, command);
+        const int ending = where->findText("End of scene");
+        if (ending >= 0) where->setCurrentIndex(ending);
+        composer->open();
+    });
     connect(buttons, &QDialogButtonBox::rejected, composer, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, composer, &QDialog::accept);
     connect(composer, &QDialog::accepted, this, [=, this] {
         const auto id = selectedScene();
         const auto before = programs().program(id).source;
-        actionEditor_->addFromWorkspace(action->currentData().toUInt(), where->currentIndex());
-        if (programs().program(id).source != before) pages->setCurrentWidget(actionEditor_);
+        const auto kind = action->currentData().toUInt();
+        actionEditor_->addFromWorkspace(kind, where->currentIndex(), where->currentData().isValid() ? where->currentData().toInt() : -1);
+        if (programs().program(id).source != before) {
+            if (kind == 0xbf || kind == SceneActions::Choice)
+                scenePreview_->showEditFeedback(tr("Added %1 · %2").arg(action->currentText(),where->currentText()));
+            else pages->setCurrentWidget(actionEditor_);
+        }
     });
     timeline_ = new SceneTimeline;
     sequenceLayout->addWidget(timeline_, 1);
@@ -184,6 +197,7 @@ void CutsceneEditor::createWorkspace(QTabWidget *pages){
     connect(timeline_,&SceneTimeline::commandSelected,this,[this](int c){actionEditor_->selectCommand(c);timeline_->selectCommand(c);const auto &p=programs().program(selectedScene());if(c>=0&&c<p.commands.size()&&scenePreview_->commandTimes().contains(p.commands[c].word))scenePreview_->seekToCommand(p.commands[c].word);});
     connect(timeline_,&SceneTimeline::commandActivated,this,[this,pages](int c){actionEditor_->selectCommand(c);pages->setCurrentWidget(actionEditor_);});
     connect(actionEditor_,&SceneActionEditor::commandSelected,timeline_,&SceneTimeline::selectCommand);
+    connect(actionEditor_, &SceneActionEditor::dialogueLabelsChanged, timeline_, &SceneTimeline::setDialogueLabels);
     auto advanced = new QCheckBox("Show technical tabs");
     advanced->setObjectName("cutsceneRawToggle");
     detailLayout->insertWidget(1, advanced);

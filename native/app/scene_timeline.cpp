@@ -12,7 +12,15 @@ SceneTimeline::SceneTimeline(QWidget *parent):QGraphicsView(parent){
 }
 void SceneTimeline::setProgram(SceneId id,const DirectorProgram &p){
     if(id_==id&&program_.source==p.source)return;
-    id_=id;program_=p;times_.clear();command_=-1;tick_=0;rebuild();
+    id_=id;program_=p;times_.clear();dialogueLabels_.clear();branchAnswers_.clear();command_=-1;tick_=0;rebuild();
+}
+void SceneTimeline::setDialogueLabels(SceneId id, const QMap<int, QString> &labels,
+                                     const QMap<int, QString> &branchAnswers) {
+    if (id_ == id && (dialogueLabels_ != labels || branchAnswers_ != branchAnswers)) {
+        dialogueLabels_ = labels;
+        branchAnswers_ = branchAnswers;
+        rebuild();
+    }
 }
 void SceneTimeline::updatePlayback(SceneId id,const QMap<int,int> &times,int word,int tick){
     Q_UNUSED(word);if(id!=id_)return;const bool changed=times_!=times;const bool moved=tick_!=tick;times_=times;tick_=tick;
@@ -46,8 +54,15 @@ void SceneTimeline::rebuild(){
         else if(a.name=="Place sprite"||a.name=="Move sprite")track=QString("Sprite %1").arg(c.operands[0]&0xffff);
         else if(c.opcode==0x46||c.opcode==0x63||c.opcode==0x64||c.opcode==0x66)track=QString("Sprite %1").arg(quint8(c.operands[0]));
         else if(a.timing!=SceneActionTiming::None||c.opcode==0x8e||c.opcode==0x8f)track="Logic / waits";
-        QString label=a.name;
-        for(const auto &choice:choices)if(const int branch=choice.option(a.command);branch){track+=QString(" · option %1").arg(branch);label=QString("Option %1 · ").arg(branch)+label;}
+        QString label=dialogueLabels_.value(a.command,a.name);
+        QString condition;
+        for (const auto &choice : choices) {
+            if (const int branch = choice.option(a.command)) {
+                const auto answer = branchAnswers_.value(a.command);
+                condition = answer.isEmpty() ? tr("Option %1").arg(branch) : tr("If “%1”").arg(answer);
+                track = condition + " · " + track;
+            }
+        }
         if(!tracks.contains(track))tracks<<track;const int r=tracks.indexOf(track);
         const int observed=times_.value(c.word,-1);int duration=0;
         if(c.opcode==7)duration=int(c.operands[5]);
@@ -58,7 +73,7 @@ void SceneTimeline::rebuild(){
         auto &ends=laneEnds[r];int lane=0;while(lane<ends.size()&&ends[lane]>x)++lane;
         if(lane==ends.size())ends<<0.;ends[lane]=x+w+5;
         if(observed<0)pendingEnds[r]=x+w+5;
-        const QString tip=label+(observed<0?"\nNot reached in this preview. Its time depends on earlier waits and choices.":QString("\nStart: update %1").arg(observed));
+        const QString tip=(condition.isEmpty()?QString{}:condition+"\n")+label+(observed<0?"\nNot reached in this preview. Its time depends on earlier waits and choices.":QString("\nStart: update %1").arg(observed));
         if(observed<0)label+=" · pending";
         clips<<Clip{a.command,r,lane,x,w,label,tip,observed<0};width=qMax(width,x+w+20);
     }

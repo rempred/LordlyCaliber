@@ -78,6 +78,9 @@ Choose a scene from the list on the left. The **Stage** tab shows the cast and p
 | Add someone | Choose **Add actor or sprite…**, pick the artwork and animation, then **Place on stage**. Click where the actor's feet or sprite's origin should appear. |
 | Change a position immediately | Click the cast member, or select it in **Cast**. Choose **Reposition** and click its new position. Dragging an existing member is a shortcut. |
 | Make someone travel | Choose the member in **Cast**, then **Move…**. Set the travel time in updates, choose whether later steps wait for arrival, then **Choose destination** and click the stage. Press **Play** to watch. |
+| Give someone a line | Choose **Add step… → Dialogue**. **End of scene** appends it before the exit. Enter the speaker and text, then choose **Follow Actor** in **Speech window** to point the panel at that cast member. **Portrait** lets you pick a face by its ROM thumbnail. A stage costume can have no usable automatic face. |
+| Write a decision | Add a **Choice** and type both answers. To write a reply, add **Dialogue** and choose **If player chooses “…”** for the answer you want. Repeat for the other answer. Put a step at **End of scene** when both paths should run it. |
+| Find a line you wrote | The dialogue clips show the speaker and the line. Hover to read the full text. Double-click a clip to open **Step details**. |
 | Change an existing member's animation | Select it in **Cast**, choose **Animation…**, preview the artwork, then **Apply animation**. Changing a sprite's animation recreates it at the current position and ends its previous authored movement. |
 | Cancel a pending placement | Press **Escape** or **Cancel positioning**. After a click commits the edit, use project **Undo**. |
 | Work with a particular event or branch | Filter the scene catalog by event row, or open the scene from the corresponding rule in Logic. **Event trigger…** binds a scene to an event. |

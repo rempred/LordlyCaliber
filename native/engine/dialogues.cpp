@@ -36,7 +36,8 @@ QByteArray Dialogues::spokenText(const QString &speaker, const QString &text) {
     return (speaker + "@n\"" + pages.join("@p@c") + "\"@a@s@c").toLatin1();
 }
 std::optional<QPair<QString, QString>> Dialogues::spokenFields(const QByteArray &bytes) {
-    const auto source = QString::fromLatin1(bytes);
+    const auto words = bytes.startsWith("@x") ? bytes.sliced(2) : bytes;
+    const auto source = QString::fromLatin1(words);
     const int split = source.indexOf("@n\"");
     const QString suffix = "\"@a@s@c";
     if (split < 1 || !source.endsWith(suffix))
@@ -45,7 +46,7 @@ std::optional<QPair<QString, QString>> Dialogues::spokenFields(const QByteArray 
     auto body = source.mid(split + 3, source.size() - split - 3 - suffix.size());
     body.replace("@p@c", "\n").replace("@n", "\n");
     try {
-        if (spokenText(speaker, body) == bytes)
+        if (spokenText(speaker, body) == words)
             return QPair{speaker, body};
     } catch (const Error &) {
     }

@@ -25,12 +25,15 @@ class SceneActionEditor : public QWidget {
     void placeActorAtPlayhead(int slot, SceneVector);
     void setPlacementMode(bool move, int duration, bool wait);
     void addAtPlayhead(quint32 kind);
-    void addFromWorkspace(quint32 kind, int where);
+    QVector<QPair<QString,int>> storyDestinations() const;
+    void addFromWorkspace(quint32 kind, int where, int before = -1);
     void playObjectKey(bool sprite,int slot,int bank,int animation,int facing,const QByteArray &record,int variant=-1);
     void addAsset(bool sprite, int bank, int animation, int facing, SceneVector position,int variant=0,int slot=-1);
     void placeSpriteAtPlayhead(int slot, SceneVector position);
     void reportExit(SceneId, int word, const QSet<int> &movingActors, bool fade, int panUpdates, bool paused);
   signals:
+    void dialogueLabelsChanged(SceneId id, const QMap<int, QString> &labels,
+                               const QMap<int, QString> &branchAnswers);
     void stageFeedback(const QString &message);
     void assetAdded(bool sprite, int slot);
     void commandSelected(int command);

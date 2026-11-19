@@ -58,23 +58,28 @@ QByteArray SceneActions::choiceText(const QString &first, const QString &second)
                 throw Error(
                     "Choice options cannot contain control tokens or non-ASCII characters.");
     }
-    return QByteArray("@S0@%0@n    1. {T05}") + first.trimmed().toLatin1() + "@n    2. {T05}" +
+    return QByteArray("@S0@%0@n    1. ") + first.trimmed().toLatin1() + "@n    2. " +
            second.trimmed().toLatin1() + "@1@w3001@c@n@2@w3255@c@n@#";
 }
 std::optional<QPair<QString, QString>> SceneActions::choiceOptions(const QByteArray &text) {
-    const QByteArray prefix = QByteArray("@S0@%0@n    1. {T05}"),
-                     separator = QByteArray("@n    2. {T05}"),
+    const QByteArray prefix = QByteArray("@S0@%0@n    1. "),
+                     separator = QByteArray("@n    2. "),
                      suffix = "@1@w3001@c@n@2@w3255@c@n@#";
-    if (!text.startsWith(prefix) || !text.endsWith(suffix))
+    auto source = text;
+    if (source.startsWith(prefix + "{T05}") && source.contains(separator + "{T05}")) {
+        source.replace(separator + "{T05}", separator);
+        source.remove(prefix.size(), 5);
+    }
+    if (!source.startsWith(prefix) || !source.endsWith(suffix))
         return {};
-    const auto middle = text.indexOf(separator, prefix.size());
+    const auto middle = source.indexOf(separator, prefix.size());
     if (middle < 0)
         return {};
-    const auto first = QString::fromLatin1(text.mid(prefix.size(), middle - prefix.size()));
-    const auto second = QString::fromLatin1(text.mid(
-        middle + separator.size(), text.size() - suffix.size() - middle - separator.size()));
+    const auto first = QString::fromLatin1(source.mid(prefix.size(), middle - prefix.size()));
+    const auto second = QString::fromLatin1(source.mid(
+        middle + separator.size(), source.size() - suffix.size() - middle - separator.size()));
     try {
-        if (choiceText(first, second) == text)
+        if (choiceText(first, second) == source)
             return QPair{first, second};
     } catch (const Error &) {
     }
