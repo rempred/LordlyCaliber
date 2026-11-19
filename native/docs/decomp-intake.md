@@ -1,5 +1,21 @@
 # Using newly accepted Decomp C
 
+## November 18 Liedel text renderer
+
+Decomp `e82db7aa` supplies the text renderer `func_0004fe04`, compact glyph
+helper `func_0004f86c` and their shared declarations. The editor compiles
+1,554 accepted sources and authenticates 1,776 ROM regions at verified
+fingerprint `033E541F`.
+
+Liedel's offer uses the ordinary renderer for the heart after “Please.”
+The bytes are `87 6A` in primary archive 75, entry 7. Project64 returned
+glyph 793, directory index 281, with an advance of 11 pixels. The compact
+helper handles a separate encoded span. A single compact line sits four
+pixels below the baseline origin. Two compact lines use the original top
+and a second line seven pixels below it, with an encoded horizontal indent.
+Dialogue and menu labels now use the same positioning rules. A wide space
+advances the cursor without painting a glyph.
+
 ## November 18 graduation dialogue
 
 At Decomp commit `88369c7c`, Director commands `0x10`, `0x06` and `0x05`

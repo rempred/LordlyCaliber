@@ -48,6 +48,41 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void liedelResponseFromItsEvent_data() {
+        QTest::addColumn<int>("selector");
+        QTest::addColumn<int>("request");
+        QTest::addColumn<int>("line");
+        QTest::newRow("Welcome") << 122 << 0x19e << 10;
+        QTest::newRow("Return") << 123 << 0x1b2 << 12;
+    }
+    void liedelResponseFromItsEvent() {
+        QFETCH(int, selector); QFETCH(int, request); QFETCH(int, line);
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        const auto key = scenes.original().selectors().at(selector);
+        ScenePreview preview(project.rom());
+        preview.show();
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), scenes.resource(key), -1).mode,
+                            *project.dialogues(), *project.sceneEvents());
+        preview.selectEventLaunch(16, request);
+        auto *status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto *confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto *step = preview.findChild<QPushButton *>("sceneStep");
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 30000);
+        const auto source = QString("ROM dialogue · archive 75, entry %1").arg(line);
+        bool sawLine = false;
+        for (int tick = 0; tick < 3000 && !preview.property("sceneStopped").toBool(); ++tick) {
+            sawLine |= status->text().contains(source) && status->text().contains(QString("selector %1 ·").arg(selector));
+            if (tick % 20 == 0 && confirm->isVisible()) confirm->click();
+            else step->click();
+        }
+        QVERIFY2(sawLine, qPrintable(status->text()));
+        QVERIFY2(preview.property("sceneStopped").toBool() &&
+            (status->text().contains("released", Qt::CaseInsensitive) ||
+             status->text().contains("ended", Qt::CaseInsensitive)), qPrintable(status->text()));
+    }
     void rewardBranchesAgreeOrRequireGameState() {
         // Two paths driven by an unknown flag select the same equipment.
         auto row = QByteArray::fromHex("68036060ac0368ff6901010268ff690171d068011000");

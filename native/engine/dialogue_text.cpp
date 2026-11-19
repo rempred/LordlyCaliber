@@ -20,6 +20,25 @@ QVector<quint16> dialogueWideCodes(const Rom &rom) {
         throw Error("Unsorted double-byte character directory");
     return codes;
 }
+int layoutCompactText(const QByteArray &text, int &cursor, int x, int y,
+                      const std::function<int(int, int, int, int)> &draw) {
+    const int begin = cursor + 1;
+    const int end = int(text.indexOf(char(0x0f), begin));
+    const int terminator = int(text.indexOf(char(0), begin));
+    if (end < 0 || (terminator >= 0 && terminator < end)) {
+        cursor = int(text.size());
+        return x;
+    }
+    cursor = end;
+    const int split = int(text.indexOf(char(0x10), begin));
+    if (split < 0 || split >= end)
+        return draw(begin, end, x, y + 4);
+    const int digit = u8(text, split + 1);
+    const int indent = quint8(digit < 'A' ? digit - '0' : digit < 'a' ? digit - 'A' + 10 : digit - 'a' + 10);
+    const int first = draw(begin, split, x, y);
+    const int second = draw(split + 2, end, x + indent, y + 7);
+    return std::max(first, second);
+}
 int dialogueWideIndex(const QVector<quint16> &codes, quint16 code) {
     const auto found = std::lower_bound(codes.cbegin(), codes.cend(), code);
     return found != codes.cend() && *found == code ? int(found - codes.cbegin()) : -1;

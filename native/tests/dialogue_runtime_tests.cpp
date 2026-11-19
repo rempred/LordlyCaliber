@@ -180,6 +180,46 @@ class DialogueRuntimeTests : public QObject {
         }
         QCOMPARE(painted, 192);
     }
+    void rendererFontPaths() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        DialogueDrawing drawing(rom);
+        QFile fixture(QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir()
+                          .filePath("../../tests/fixtures/cutscene-active-dialogue-drawing.json"));
+        QVERIFY(fixture.open(QIODevice::ReadOnly));
+        const auto sample = QJsonDocument::fromJson(fixture.readAll()).object()["cases"].toArray()[2].toObject();
+        const auto record = QByteArray::fromHex(sample["recordHex"].toString().toLatin1());
+        const auto payload = QByteArray::fromHex(sample["payloadHex"].toString().toLatin1());
+        auto glyphs = [&](QByteArray text) {
+            auto edited = payload;
+            text.append(char(0));
+            edited.replace(0x178, text.size(), text);
+            QVector<DialogueRectangle> result;
+            for (const auto &rect : drawing.compose(record, edited))
+                if (rect.texture.palette.size() == 4) result << rect;
+            return result;
+        };
+        const auto normal = glyphs("A");
+        QCOMPARE(normal.size(), 1);
+        const int x = normal[0].bounds[0], y = normal[0].bounds[1];
+        const auto single = glyphs(QByteArray::fromHex("0e410f"));
+        QCOMPARE(single.size(), 1);
+        QCOMPARE(single[0].bounds, (std::array<int, 4>{x, y+4, x+8, y+12}));
+        const auto two = glyphs(QByteArray::fromHex("0e411063420f"));
+        QCOMPARE(two.size(), 2);
+        QCOMPARE(two[0].bounds, (std::array<int, 4>{x, y, x+8, y+8}));
+        QCOMPARE(two[1].bounds, (std::array<int, 4>{x+12, y+7, x+20, y+15}));
+        QVERIFY(glyphs(QByteArray::fromHex("0e4142")).isEmpty());
+        const auto heart = glyphs(QByteArray::fromHex("876a41"));
+        QCOMPARE(heart.size(), 2);
+        QCOMPARE(heart[0].bounds, (std::array<int, 4>{x, y, x+11, y+14}));
+        QCOMPARE(heart[1].bounds[0], x+11);
+        QCOMPARE(dialogueWideIndex(dialogueWideCodes(rom), 0x876a), 281);
+        const auto space = glyphs(QByteArray::fromHex("814041"));
+        QCOMPARE(space.size(), 1);
+        QCOMPARE(space[0].bounds, heart[1].bounds);
+    }
     void ordinaryDrawingCommands() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

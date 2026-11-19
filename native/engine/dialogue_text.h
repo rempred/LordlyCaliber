@@ -1,10 +1,15 @@
 #pragma once
 #include "engine/rom.h"
 #include <QHash>
+#include <functional>
 #include <optional>
 namespace lordly {
 QVector<quint16> dialogueWideCodes(const Rom &);
 int dialogueWideIndex(const QVector<quint16> &, quint16 code);
+// Draw a 0x0E compact span. The callback returns the horizontal cursor after
+// drawing [begin, end). Leave cursor on 0x0F, or at the end for an unclosed span.
+int layoutCompactText(const QByteArray &, int &cursor, int x, int y,
+                      const std::function<int(int begin, int end, int x, int y)> &draw);
 struct DialogueFontMetrics {
     QByteArray normal, alternate;
     qint16 fixedIndex = -1;

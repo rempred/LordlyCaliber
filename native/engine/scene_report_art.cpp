@@ -190,48 +190,35 @@ void SceneReportArt::drawPaper(QPainter &p, QRect box, const QByteArray &record,
     p.drawImage(clip.topLeft(), image);
 }
 void ScenePanelFont::line(QPainter &p, const QByteArray &bytes, QPoint pos) const {
-    int x = pos.x(), y = pos.y(), origin = x, firstEnd = x;
-    bool compact = false;
-    for (int i = 0; i < bytes.size(); ++i) {
+    auto drawGlyph = [&](int &i, int end, int x, int y, bool compact) {
         const int c = u8(bytes, i);
-        if (c == 14) {
-            compact = true;
-            origin = x;
-            firstEnd = x;
-            continue;
-        }
-        if (c == 15) {
-            compact = false;
-            x = std::max(x, firstEnd);
-            y = pos.y();
-            continue;
-        }
-        if (c == 16 && i + 1 < bytes.size()) {
-            const int indent = u8(bytes, ++i);
-            firstEnd = x;
-            const int offset = indent >= 'a'   ? indent - 'a' + 10
-                               : indent >= 'A' ? indent - 'A' + 10
-                                               : indent - '0';
-            x = origin + offset;
-            y = pos.y() + 7;
-            continue;
-        }
         const QImage *sheet = compact ? &compact_ : &normal_;
         int index = c < 128 ? c + 16 : c, w = compact ? 8 : 11, h = compact ? 8 : 14;
         if (lordly_text_lead_byte(c)) {
-            if (++i >= bytes.size())
-                throw Error("Truncated report character");
+            if (++i >= end)
+                throw Error("Truncated panel character");
             const int code = (c << 8) | u8(bytes, i);
-            index = dialogueWideIndex(wideCodes_, code);
+            index = code == 0x8140 ? -1 : dialogueWideIndex(wideCodes_, code);
             sheet = &wide_;
             w = 11;
             h = 14;
         } else if (c < 17)
-            continue;
-        const int advance = metrics_.glyphWidth(c, compact);
+            return x;
         if (c != 32 && index >= 0)
             p.drawImage(QRect(x, y, w, h), *sheet, QRect(index % 32 * w, index / 32 * h, w, h));
-        x += advance;
+        return x + metrics_.glyphWidth(c, compact);
+    };
+    int x = pos.x();
+    for (int i = 0; i < bytes.size() && u8(bytes, i); ++i) {
+        if (u8(bytes, i) == 0x0e) {
+            x = layoutCompactText(bytes, i, x, pos.y(), [&](int begin, int end, int left, int top) {
+                for (int j = begin; j < end; ++j)
+                    left = drawGlyph(j, end, left, top, true);
+                return left;
+            });
+        } else {
+            x = drawGlyph(i, int(bytes.size()), x, pos.y(), false);
+        }
     }
 }
 void SceneReportArt::decorations(QPainter &p, QRect box, int preset, const QByteArray &r,

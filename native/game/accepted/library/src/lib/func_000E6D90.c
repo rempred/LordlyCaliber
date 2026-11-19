@@ -1,8 +1,5 @@
-typedef unsigned char u8;
-typedef signed short s16;
-typedef unsigned short u16;
-typedef signed int s32;
-typedef unsigned int u32;
+#include "game/dialogue_text.h"
+
 typedef struct DialogueState {
     s16 field00;
     u16 field02;
@@ -94,7 +91,6 @@ extern void func_0004cb6c(s32,s32,s32,s32,s32,s32,s32);
 extern void func_0004c848(s32,s32,s32,s32,s32,s32,s32,s32,s32);
 extern void func_000ead04(s32,s32);
 extern void func_0004f1e8(void);
-extern void func_0004fe04(u8 *);
 extern void func_0004ef34(u8 *,s32,s32);
 extern void func_00008A74(s32,s32,s32,s32);
 extern void func_000e4930(void);

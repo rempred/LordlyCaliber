@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "0A7096D7F2C873DA8E01CA7786DFB57F991278F231D79C039CAC7970C6ADDDBC",
-  "revision": "88369c7c8ec3efb7d0031a94c2fb478a9cd65a8a",
+  "fingerprint": "033E541F963498D98E6251E9A64310CDB72C13E3E064D53195162E6C424E2ED4",
+  "revision": "e82db7aa0258d44252c9ae3b100f10c57b8a8ca6",
   "counts": {
-    "owners": 1683,
-    "functions": 1729,
-    "producerSources": 1552,
-    "sourceAndHeaderFiles": 1600
+    "owners": 1685,
+    "functions": 1731,
+    "producerSources": 1554,
+    "sourceAndHeaderFiles": 1603
   },
   "sources": [
     {
@@ -14164,6 +14164,119 @@
       ]
     },
     {
+      "name": "func_0004f86c",
+      "source": "game/accepted/library/src/lib/func_0004f86c.c",
+      "sourcePath": "src/lib/func_0004f86c.c",
+      "sourceSha256": "D78B830C4049404971FA18A957259C432C19B6F7FACEF3300B1AA4836D04B514",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/dialogue_text.h",
+          "file": "game/accepted/library/include/game/dialogue_text.h",
+          "sha256": "1980387F45E75553A5B0B50929DF845F318FF5A138CF40742F4118589097B157"
+        }
+      ],
+      "address": 2149030252,
+      "bindings": {
+        "D_80190F68": 2149125992,
+        "func_0004f2e4": 2149028836,
+        "D_8018FC78": 2149121144,
+        "D_80190F76": 2149126006,
+        "func_00050620": 2149033760,
+        "D_80190F64": 2149125988,
+        "D_80190F66": 2149125990,
+        "func_000507e8": 2149034216,
+        "D_800E9BA0": 2148440992,
+        "D_80190F6E": 2149125998,
+        "D_80190F6D": 2149125997,
+        "D_80190C88": 2149125256,
+        "func_00050ce8": 2149035496,
+        "func_00042c30": 2148977968,
+        "D_80190F60": 2149125984
+      },
+      "sections": {
+        ".text": 2149030252
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 325740,
+          "address": 2149030252,
+          "size": 1432,
+          "sha256": "39E3DA2C3253B2FD27CBB065D7240A1F8178335424F14A71C1679944AC2CE150",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0004f86c"
+      ]
+    },
+    {
+      "name": "func_0004fe04",
+      "source": "game/accepted/library/src/lib/func_0004fe04.c",
+      "sourcePath": "src/lib/func_0004fe04.c",
+      "sourceSha256": "F159E8E9CA2E45C353B45A98C79C1EF36ECD94364D9C285A319F62EE61314B2F",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/dialogue_text.h",
+          "file": "game/accepted/library/include/game/dialogue_text.h",
+          "sha256": "1980387F45E75553A5B0B50929DF845F318FF5A138CF40742F4118589097B157"
+        }
+      ],
+      "address": 2149031684,
+      "bindings": {
+        "func_00050f98_chunk4head": 2149036184,
+        "D_80190F68": 2149125992,
+        "D_80190F6C": 2149125996,
+        "D_80190F5C": 2149125980,
+        "D_80190F5E": 2149125982,
+        "D_80190F64": 2149125988,
+        "D_80190F66": 2149125990,
+        "func_0004f86c": 2149030252,
+        "D_80190F76": 2149126006,
+        "D_8018FC78": 2149121144,
+        "func_0004f2e4": 2149028836,
+        "func_00050620": 2149033760,
+        "func_000507e8": 2149034216,
+        "D_800E9BA0": 2148440992,
+        "D_80190F6E": 2149125998,
+        "D_80190F6D": 2149125997,
+        "D_80190C88": 2149125256,
+        "func_00050ce8": 2149035496,
+        "func_00042c30": 2148977968,
+        "D_80190F60": 2149125984
+      },
+      "sections": {
+        ".text": 2149031684
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 327172,
+          "address": 2149031684,
+          "size": 2048,
+          "sha256": "AD74FB308F223A87E0F0B359A6C04850DEB196CA6FBD20F445E595E38E5D7DAB",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_0004fe04"
+      ]
+    },
+    {
       "name": "func_00050604",
       "source": "game/accepted/library/src/lib/func_00050604.c",
       "sourcePath": "src/lib/func_00050604.c",
@@ -16050,8 +16163,19 @@
       "name": "func_000E6D90",
       "source": "game/accepted/library/src/lib/func_000E6D90.c",
       "sourcePath": "src/lib/func_000E6D90.c",
-      "sourceSha256": "8C24BCE5FC535A7E76E9570E2A756DF3B2E88334920C521D244A4AED4D74A750",
-      "headers": [],
+      "sourceSha256": "6D3DF4B83027DBEDC125A9CE6A77B0EA2FC4D8122F2F89DD69B4B7BC6FDE5CFE",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/dialogue_text.h",
+          "file": "game/accepted/library/include/game/dialogue_text.h",
+          "sha256": "1980387F45E75553A5B0B50929DF845F318FF5A138CF40742F4118589097B157"
+        }
+      ],
       "address": 2149163024,
       "bindings": {
         "D_8019E194": 2149179796,
