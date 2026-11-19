@@ -9,6 +9,7 @@ story events, sprites and combat animations.
 · [User guide](native/README.md)
 · [Release notes](https://github.com/rempred/LordlyCaliber/releases)
 · [Report a bug](https://github.com/rempred/LordlyCaliber/issues)
+· [How to contribute](CONTRIBUTING.md)
 
 ## What you can edit
 
