@@ -5,6 +5,7 @@
 * The two scalar control flags are separate locals, not a synthetic stack record.
 */
 #include "game/cutscene_audio_envelope.h"
+#include "game/cutscene_dialogue_handlers.h"
 
 typedef float f32;
 void func_00019e10();
@@ -57,10 +58,7 @@ void func_0029DEC8(s32, f32, s32);
 s32 func_0029DF04(s32);
 s32 func_0029FF74(s32);
 void func_002A0088(s32, s32, s32, s32, s32, s32, s32, s32, s32, s32);
-s32 func_002A0354(s32);
-void func_002A0374(s32);
 void func_002A053C(s32);
-void func_002A0548(s32);
 u8 func_002A05DC(s32);
 void func_002A05EC(s32);
 s32 func_002A08C0(s32, s32, s32, s32, f32, f32, f32, s32, s32);

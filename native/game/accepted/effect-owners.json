@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-effect-owners.cjs",
-  "fingerprint": "718A3FB4DBCC9727AFC56CFC3E1B8853AC53848521253289B69222B27CC9C945",
-  "revision": "b4beb6d41bcead903437e235c09a235f0fb24bc0",
+  "fingerprint": "0A7096D7F2C873DA8E01CA7786DFB57F991278F231D79C039CAC7970C6ADDDBC",
+  "revision": "88369c7c8ec3efb7d0031a94c2fb478a9cd65a8a",
   "scope": {
     "inventorySha256": "AFD1CE586CBEC30D1DA458E8B291F63912980AC7715833EDB839E435D38BC70B",
     "targets": 529,

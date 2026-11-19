@@ -1,5 +1,19 @@
 # Using newly accepted Decomp C
 
+## November 18 graduation dialogue
+
+At Decomp commit `88369c7c`, Director commands `0x10`, `0x06` and `0x05`
+have accepted C for querying, resuming and closing a dialogue window. Their
+shared header also supplies the declarations used by the Director dispatcher.
+The source build uses verified fingerprint `0A7096D7`.
+
+Query and resume pass the low byte of the operand to the dialogue overlay.
+Close first searches 28 actor tracking slots. It frees the first entry whose
+signed window ID equals the full operand, then passes the low byte to the
+overlay to request closure. The frame can remain visible while that request
+is pending. An authored spoken line waits for its window to disappear before
+the scene moves on. See the [scene authoring guide](scene-authoring.md).
+
 ## November 18 story event entry
 
 Decomp commit `ed57a210` supplies the world event dispatcher

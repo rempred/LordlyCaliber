@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "718A3FB4DBCC9727AFC56CFC3E1B8853AC53848521253289B69222B27CC9C945",
-  "revision": "b4beb6d41bcead903437e235c09a235f0fb24bc0",
+  "fingerprint": "0A7096D7F2C873DA8E01CA7786DFB57F991278F231D79C039CAC7970C6ADDDBC",
+  "revision": "88369c7c8ec3efb7d0031a94c2fb478a9cd65a8a",
   "counts": {
-    "owners": 1680,
-    "functions": 1726,
-    "producerSources": 1549,
-    "sourceAndHeaderFiles": 1596
+    "owners": 1683,
+    "functions": 1729,
+    "producerSources": 1552,
+    "sourceAndHeaderFiles": 1600
   },
   "sources": [
     {
@@ -43994,7 +43994,7 @@
       "name": "func_00284288",
       "source": "game/accepted/library/src/lib/func_00284288.c",
       "sourcePath": "src/lib/func_00284288.c",
-      "sourceSha256": "8832BDFE22CBEA7E51FC14E77FC20B35F4D5EC91420F6094FF63349CED5A5DA0",
+      "sourceSha256": "8526301AAE6DA44D6E2CC5B527F2981C80C43AC74D280FC9757DB5E1877B4038",
       "headers": [
         {
           "path": "include/common/types.h",
@@ -44005,6 +44005,11 @@
           "path": "include/game/cutscene_audio_envelope.h",
           "file": "game/accepted/library/include/game/cutscene_audio_envelope.h",
           "sha256": "CC6E5CD7789EA1E5E21D7087437F2532F0AA3E243AD4C4E20850D06B23022E7C"
+        },
+        {
+          "path": "include/game/cutscene_dialogue_handlers.h",
+          "file": "game/accepted/library/include/game/cutscene_dialogue_handlers.h",
+          "sha256": "9AA0845A38D77FB51EEF0F5CCEA31F7DE3214AEDB41CC373D071E3F61A47DEB8"
         }
       ],
       "address": 2149745336,
@@ -46355,6 +46360,86 @@
       ]
     },
     {
+      "name": "func_002A0354",
+      "source": "game/accepted/library/src/lib/func_002A0354.c",
+      "sourcePath": "src/lib/func_002A0354.c",
+      "sourceSha256": "5AB82106E29CB8DC5CD1AF9154D2CA2D00436934FC4C828704B54D6F9218D401",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_dialogue_handlers.h",
+          "file": "game/accepted/library/include/game/cutscene_dialogue_handlers.h",
+          "sha256": "9AA0845A38D77FB51EEF0F5CCEA31F7DE3214AEDB41CC373D071E3F61A47DEB8"
+        }
+      ],
+      "address": 2149780260,
+      "bindings": {
+        "func_000fa314": 2149183860
+      },
+      "sections": {
+        ".text": 2149780260
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2753364,
+          "address": 2149780260,
+          "size": 32,
+          "sha256": "6E50324505D0303713E28B8A1DCE36932B4308C83B8AE389ABD598E9C229C772",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002A0354"
+      ]
+    },
+    {
+      "name": "func_002A0374",
+      "source": "game/accepted/library/src/lib/func_002A0374.c",
+      "sourcePath": "src/lib/func_002A0374.c",
+      "sourceSha256": "7D521624EBADA8B1E138B564DF90325BBCE7ED58D8523627AB6564367DD4A4DC",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_dialogue_handlers.h",
+          "file": "game/accepted/library/include/game/cutscene_dialogue_handlers.h",
+          "sha256": "9AA0845A38D77FB51EEF0F5CCEA31F7DE3214AEDB41CC373D071E3F61A47DEB8"
+        }
+      ],
+      "address": 2149780292,
+      "bindings": {
+        "func_000fa460": 2149184192
+      },
+      "sections": {
+        ".text": 2149780292
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2753396,
+          "address": 2149780292,
+          "size": 28,
+          "sha256": "52EA7F87D4324331345C8F858FC38C2F2B64DD64513E454DC7C87C02AE2431A9",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002A0374"
+      ]
+    },
+    {
       "name": "func_002A053C",
       "source": "game/accepted/library/src/lib/func_002A053C.c",
       "sourcePath": "src/lib/func_002A053C.c",
@@ -46379,6 +46464,48 @@
       ],
       "targets": [
         "func_002A053C"
+      ]
+    },
+    {
+      "name": "func_002A0548",
+      "source": "game/accepted/library/src/lib/func_002A0548.c",
+      "sourcePath": "src/lib/func_002A0548.c",
+      "sourceSha256": "1EE3596CED06A587021E71DF83950B98A55F028E8CAA0893EDC49A98A8AD50F2",
+      "headers": [
+        {
+          "path": "include/common/types.h",
+          "file": "game/accepted/library/include/common/types.h",
+          "sha256": "943133AAE4A5A2DF5FC41F480D969DF1DAD701C2C238B70E2DB42E168C922AB7"
+        },
+        {
+          "path": "include/game/cutscene_dialogue_handlers.h",
+          "file": "game/accepted/library/include/game/cutscene_dialogue_handlers.h",
+          "sha256": "9AA0845A38D77FB51EEF0F5CCEA31F7DE3214AEDB41CC373D071E3F61A47DEB8"
+        }
+      ],
+      "address": 2149780760,
+      "bindings": {
+        "D_8022A974": 2149755252,
+        "resource_free": 2147947204,
+        "func_000fa4f4": 2149184340
+      },
+      "sections": {
+        ".text": 2149780760
+      },
+      "projections": [],
+      "parts": [
+        {
+          "section": ".text",
+          "offset": 0,
+          "start": 2753864,
+          "address": 2149780760,
+          "size": 148,
+          "sha256": "BE6FC0E37D24217B5E45C4981492D677AF770D909F784FF56A4D6E4CE31D1981",
+          "code": 1
+        }
+      ],
+      "targets": [
+        "func_002A0548"
       ]
     },
     {

@@ -1163,8 +1163,10 @@ class DialogueRuntimeTests : public QObject {
             put32(bytes, at, quint32(packed.size() + 4));
             put32(bytes, at + 4, quint32(raw.size()));
             bytes.replace(at + 8, packed.size(), packed);
-            put32(bytes, 0x1f3ca84, 4);
-            put32(bytes, 0x1f3ca88, at - 0x594280);
+            // Exercise the story scheduler. Selector zero runs Hugo's Report
+            // and intentionally omits the actor-linked placement stage.
+            put32(bytes, 0x1f3ca84, 8);
+            put32(bytes, 0x1f3ca8c, at - 0x594280);
             const auto rom = Rom::fromBytes(bytes);
             const auto directors = Directors::load(rom);
             SceneResources pool({8, 0xffff, 13});
@@ -1172,7 +1174,7 @@ class DialogueRuntimeTests : public QObject {
             windows.create({3, 20, 2, 0, 0, 10, 192, 1, 1, 1, 84, 1, 0}, pool,
                            [](int) { return QPointF(100, 50); });
             auto create = [&] {
-                return ScenePlayback(rom, directors, 0, {}, SceneCameras::freshModeTwo(rom));
+                return ScenePlayback(rom, directors, 1, {}, SceneCameras::freshModeTwo(rom));
             };
             auto emptyDomains = [](LordlySceneService) { return true; };
             int calls = 0;
