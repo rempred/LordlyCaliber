@@ -1,6 +1,9 @@
 #include "app/scene_key_picker.h"
 #include "engine/pose_preview.h"
 #include <QComboBox>
+#include <QGridLayout>
+#include <QTabWidget>
+#include <QtConcurrent>
 #include <QCheckBox>
 #include <QLabel>
 #include <QListWidget>
@@ -34,6 +37,21 @@ template<class Player> QImage visibleFrame(const Rom &rom,const ActorArt &art,Pl
     }
     return {};
 }
+QImage keyImage(const Rom &rom, const ActorArt &art, bool sprite, int state, int variant, const ActorArtworkEdits &edits) {
+    if (sprite) return visibleFrame(rom, art, SpritePosePlayer(rom,art,state,variant), variant, edits);
+    ActorPosePlayer actor(rom,art,state,variant);
+    actor.setLinkedObjectKnownAbsent(true);
+    return visibleFrame(rom,art,actor,variant,edits);
+}
+QImage appearanceImage(const Rom &rom, const ActorArt &art, bool sprite, int variant, const ActorArtworkEdits &edits) {
+    for (const auto &key : art.selections()) {
+        try {
+            auto image = keyImage(rom,art,sprite,key.state,variant,edits);
+            if (!image.isNull()) return image.scaled(64,64,Qt::KeepAspectRatio,Qt::FastTransformation);
+        } catch (const std::exception &) { continue; }
+    }
+    return {};
+}
 struct KeyFrames { int count; bool loops; };
 template<class Player> KeyFrames countFrames(Player player) {
     QSet<int> frames;QSet<QString> visited;
@@ -55,11 +73,37 @@ SceneKeyPicker::SceneKeyPicker(const Rom &rom,QWidget *parent):QWidget(parent),r
     for(int bank=1;bank<=ActorArt::bankCount(rom_);++bank)banks_->addItem(QString("Bank %1").arg(bank),bank);
     variants_=new QComboBox;variants_->setObjectName("sceneKeyAppearance");variants_->setIconSize({40,40});
     variants_->setToolTip("Artwork appearance used by the game within this bank. Applies to previews and placement.");
-    layout->addWidget(kind_);layout->addWidget(banks_);layout->addWidget(variants_);
+    auto typeRow = new QHBoxLayout;
+    typeRow->addWidget(new QLabel("Type"));
+    typeRow->addWidget(kind_);
+    typeRow->addStretch();
+    layout->addLayout(typeRow);
+    pages_ = new QTabWidget;
+    pages_->setObjectName("sceneArtworkPages");
+    layout->addWidget(pages_,1);
+    gallery_ = new QListWidget;
+    gallery_->setObjectName("sceneArtworkGallery");
+    gallery_->setViewMode(QListView::IconMode);
+    gallery_->setResizeMode(QListView::Adjust);
+    gallery_->setMovement(QListView::Static);
+    gallery_->setIconSize({64,64});
+    gallery_->setGridSize({112,104});
+    gallery_->setUniformItemSizes(true);
+    pages_->addTab(gallery_,"Artwork");
+    auto animations = new QWidget;
+    auto animationLayout = new QVBoxLayout(animations);
+    pages_->addTab(animations,"Animation");
+    pages_->setCurrentWidget(animations);
+    auto filters = new QHBoxLayout;
+    filters->addWidget(new QLabel("Bank"));
+    filters->addWidget(banks_);
+    filters->addWidget(new QLabel("Appearance"));
+    filters->addWidget(variants_,1);
+    animationLayout->addLayout(filters);
     keys_=new QListWidget;keys_->setObjectName("sceneKeyGrid");keys_->setViewMode(QListView::IconMode);
     keys_->setResizeMode(QListView::Adjust);keys_->setMovement(QListView::Static);
     keys_->setIconSize({64,64});keys_->setGridSize({126,140});keys_->setWordWrap(true);keys_->setSpacing(3);keys_->setTextElideMode(Qt::ElideNone);
-    layout->addWidget(keys_,1);setMinimumWidth(240);
+    animationLayout->addWidget(keys_,1);setMinimumWidth(240);
     audition_=new QWidget(this);audition_->setObjectName("sceneKeyAudition");
     auto auditionLayout=new QHBoxLayout(audition_);image_=new QLabel;image_->setObjectName("sceneKeyPreviewImage");image_->setAlignment(Qt::AlignCenter);
     image_->setMinimumSize(150,120);image_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
@@ -72,22 +116,107 @@ SceneKeyPicker::SceneKeyPicker(const Rom &rom,QWidget *parent):QWidget(parent),r
     connect(timer_,&QTimer::timeout,this,&SceneKeyPicker::step);
     connect(play_,&QPushButton::toggled,this,[this](bool play){play_->setText(play?"Pause preview":"Play preview");if(play){if(finished_)restart();timer_->start();}else timer_->stop();});
     connect(banks_,&QComboBox::currentIndexChanged,this,&SceneKeyPicker::loadBank);
-    connect(kind_,&QComboBox::currentIndexChanged,this,&SceneKeyPicker::loadBank);
+    connect(kind_, &QComboBox::currentIndexChanged, this, [this] { resetGallery(); loadBank(); });
+    galleryLoader_ = new QFutureWatcher<GalleryBank>(this);
+    connect(pages_, &QTabWidget::currentChanged, this, &SceneKeyPicker::loadNextGalleryBank);
+    connect(galleryLoader_, &QFutureWatcher<GalleryBank>::finished, this, [this] {
+        const auto result = galleryLoader_->result();
+        loadingBank_ = false;
+        if (result.generation == galleryGeneration_) {
+            const QSignalBlocker block(gallery_);
+            for (int child = 0; child < result.thumbnails.size(); ++child) {
+                const auto &image = result.thumbnails[child];
+                if (image.isNull()) continue;
+                auto tile = new QListWidgetItem(QIcon(QPixmap::fromImage(image)),
+                    tr("Bank %1 · %2").arg(result.bank).arg(child), gallery_);
+                tile->setToolTip(tr("Bank %1, appearance %2").arg(result.bank).arg(child));
+                tile->setData(Qt::UserRole,result.bank);
+                tile->setData(Qt::UserRole+1,child);
+                if (result.bank == banks_->currentData().toInt() && child == variants_->currentData().toInt())
+                    gallery_->setCurrentItem(tile);
+            }
+        }
+        loadNextGalleryBank();
+    });
+    connect(gallery_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
+        if (!item) return;
+        banks_->setCurrentIndex(banks_->findData(item->data(Qt::UserRole)));
+        variants_->setCurrentIndex(variants_->findData(item->data(Qt::UserRole+1)));
+        selectFirstVisibleKey();
+    });
     connect(variants_,&QComboBox::currentIndexChanged,this,&SceneKeyPicker::loadKeys);
     connect(keys_,&QListWidget::currentRowChanged,this,&SceneKeyPicker::selectKey);
-    connect(keys_,&QListWidget::itemClicked,this,[this]{selectKey();});
     loadBank();
 }
-void SceneKeyPicker::setArtwork(const ActorArtworkEdits &a){if(artwork_==a)return;artwork_=a;loadBank();}
+void SceneKeyPicker::selectFirstVisibleKey() {
+    for (int i = 0; i < keys_->count(); ++i)
+        if (keys_->item(i)->data(Qt::UserRole + 5).toBool()) { keys_->setCurrentRow(i); return; }
+}
+void SceneKeyPicker::openLibrary(bool browseArtwork) {
+    if (!keys_->currentItem()) selectFirstVisibleKey();
+    pages_->setCurrentIndex(browseArtwork ? 0 : 1);
+    if (browseArtwork) {
+        const QSignalBlocker block(gallery_);
+        for (int i=0;i<gallery_->count();++i) {
+            const auto item=gallery_->item(i);
+            if (item->data(Qt::UserRole).toInt()==banks_->currentData().toInt()
+                && item->data(Qt::UserRole+1).toInt()==variants_->currentData().toInt()) {
+                gallery_->setCurrentItem(item);
+                gallery_->scrollToItem(item);
+                break;
+            }
+        }
+    }
+}
+void SceneKeyPicker::resetGallery() {
+    ++galleryGeneration_;
+    nextBank_ = 1;
+    gallery_->clear();
+    loadNextGalleryBank();
+}
+void SceneKeyPicker::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    loadNextGalleryBank();
+}
+void SceneKeyPicker::loadNextGalleryBank() {
+    if (loadingBank_ || !isVisible() || pages_->currentWidget() != gallery_ || nextBank_ > banks_->count()) return;
+    loadingBank_ = true;
+    galleryLoader_->setFuture(QtConcurrent::run([bank=nextBank_++, generation=galleryGeneration_,
+            rom=rom_, edits=artwork_, sprite=kind_->currentIndex()==1] {
+        GalleryBank result{generation,bank,{}};
+        try {
+            const auto art = ActorArt::load(rom,bank);
+            const auto count = art.variantCount(rom,edits.value(art.descriptorKey()));
+            for (int variant=0;variant<count;++variant)
+                result.thumbnails << appearanceImage(rom,art,sprite,variant,edits);
+        } catch (const std::exception &) { /* The bank still appears in the numeric selector. */ }
+        return result;
+    }));
+}
+void SceneKeyPicker::setArtwork(const ActorArtworkEdits &a){if(artwork_==a)return;artwork_=a;resetGallery();loadBank();}
 void SceneKeyPicker::hideEvent(QHideEvent *event){timer_->stop();play_->setChecked(false);QWidget::hideEvent(event);}
 QVector<int> SceneKeyPicker::selectedKey()const{
     const auto item=keys_->currentItem();if(!item)return {};
     return {kind_->currentIndex(),banks_->currentData().toInt(),item->data(Qt::UserRole+1).toInt(),item->data(Qt::UserRole+2).toInt(),variants_->currentData().toInt()};
 }
+void SceneKeyPicker::selectArtwork(int bank,int appearance,int animation,int facing) {
+    const int index = banks_->findData(bank);
+    if (index < 0) return;
+    banks_->setCurrentIndex(index);
+    const int child = variants_->findData(appearance);
+    if (child < 0) return;
+    variants_->setCurrentIndex(child);
+    for (int i = 0; i < keys_->count(); ++i) {
+        const auto item = keys_->item(i);
+        if (item->data(Qt::UserRole+1).toInt() == animation && item->data(Qt::UserRole+2).toInt() == facing) {
+            keys_->setCurrentItem(item);
+            keys_->scrollToItem(item);
+            return;
+        }
+    }
+}
 QImage SceneKeyPicker::firstFrame(int state,int variant)const{
-    if(kind_->currentIndex()==1)return visibleFrame(rom_,*art_,SpritePosePlayer(rom_,*art_,state,variant),variant,artwork_);
-    ActorPosePlayer player(rom_,*art_,state,variant);player.setLinkedObjectKnownAbsent(true);
-    return visibleFrame(rom_,*art_,player,variant,artwork_);
+    return keyImage(rom_,*art_,kind_->currentIndex()==1,state,variant,artwork_);
 }
 void SceneKeyPicker::loadBank(){
     emit placementCancelled();
@@ -95,10 +224,9 @@ void SceneKeyPicker::loadBank(){
     const QSignalBlocker guard(variants_);variants_->clear();
     try{
         art_=ActorArt::load(rom_,banks_->currentData().toInt());
-        const auto selections=art_->selections();const auto count=art_->variantCount(rom_,artwork_.value(art_->descriptorKey()));int firstVisible=-1;
+        const auto count=art_->variantCount(rom_,artwork_.value(art_->descriptorKey()));int firstVisible=-1;
         for(int variant=0;variant<count;++variant){
-            QImage thumbnail;
-            for(const auto &key:selections){try{thumbnail=firstFrame(key.state,variant);}catch(const std::exception &){}if(!thumbnail.isNull())break;}
+            const auto thumbnail=appearanceImage(rom_,*art_,kind_->currentIndex()==1,variant,artwork_);
             variants_->addItem(QIcon(QPixmap::fromImage(thumbnail)),QString("Appearance %1%2").arg(variant).arg(thumbnail.isNull()?" · empty":""),variant);
             if(firstVisible<0&&!thumbnail.isNull())firstVisible=variant;
         }
@@ -107,7 +235,7 @@ void SceneKeyPicker::loadBank(){
 }
 void SceneKeyPicker::loadKeys(){
     emit placementCancelled();timer_->stop();player_=std::monostate{};state_=-1;image_->clear();
-    const QSignalBlocker guard(keys_);keys_->clear();
+    QSignalBlocker guard(keys_);keys_->clear();
     try{
         if(!art_)return;QMap<int,KeyFrames> counts;const int variant=variants_->currentData().toInt();
         for(const auto &key:art_->selections()){
@@ -126,9 +254,11 @@ void SceneKeyPicker::loadKeys(){
             }
             catch(const std::exception &e){item->setText(item->text()+"\nCount unavailable");item->setToolTip(QString::fromUtf8(e.what()));}
         }
-        status_->setText(QString("Bank %1 · %2 keys. Select one, then click in the scene.").arg(art_->bank()).arg(keys_->count()));
+        status_->setText(QString("Bank %1 · %2 keys. Choose an animation to preview it.").arg(art_->bank()).arg(keys_->count()));
     }catch(const std::exception &e){art_.reset();status_->setText(QString::fromUtf8(e.what()));}
     image_->clear();
+    guard.unblock();
+    if (pages_->currentWidget() == gallery_ && isVisible()) selectFirstVisibleKey();
 }
 void SceneKeyPicker::selectKey(){
     if(!art_||!keys_->currentItem())return;

@@ -3566,8 +3566,11 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
             auto negativePrograms = *project.scenePrograms(); negativePrograms.replace(id, negative.source);
             ScenePreview negativePreview(project.rom()); negativePreview.selectScene(negativePrograms, id, 2);
             negativePreview.seekToUpdate(3); QTRY_COMPARE(negativePreview.property("sceneTick").toInt(), 3);
-            QVERIFY2(negativePreview.findChild<QLabel *>("sceneActorState")->text().contains("X -1.000 Â· Y 0.000 Â· Z -1.000"),
-                     qPrintable(negativePreview.findChild<QLabel *>("sceneActorState")->text()));
+            const auto actorRecord = negativePreview.selectedObjectRecord();
+            QVERIFY(!actorRecord.isEmpty());
+            QCOMPARE(std::bit_cast<float>(u32(actorRecord, 0x11c)), -1.f);
+            QCOMPARE(std::bit_cast<float>(u32(actorRecord, 0x120)), 0.f);
+            QCOMPARE(std::bit_cast<float>(u32(actorRecord, 0x124)), -1.f);
             auto checksum = built.image; Rom::updateChecksum(checksum); QCOMPARE(checksum, built.image);
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             output.setAutoRemove(false); qInfo().noquote() << "Timed scene export:" << candidate;

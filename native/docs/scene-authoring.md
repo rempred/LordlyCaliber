@@ -25,7 +25,7 @@ handoff. You can still play the other answer when its reaction is known.
 Later campaign actions shown in the outcome come from the event program. Use
 the exported game to play the resulting battlefield.
 
-While a dialogue window is on screen, its source appears below the preview.
+While a dialogue window is on screen, open **Playback details…** to see its source.
 **ROM dialogue** identifies an entry in the open ROM. **Project dialogue**
 identifies an entry added or edited in the current project. For example, in
 The Southern Reaches, accepting Dio's challenge plays scene 12. Dio says
@@ -33,7 +33,7 @@ The Southern Reaches, accepting Dio's challenge plays scene 12. Dio says
 and “we're not janitors” from archive 5, entry 20. Open the challenge from
 its event in Logic to try the two paths.
 
-Leave **Preview reward** on **Use event reward** to use the item selected by
+In **Playback details…**, leave **Preview reward** on **Use event reward** to use the item selected by
 the parent event. The Bacchus exchange gives the Pedra of Bane. If the item
 depends on an unknown campaign value, choose a sample to see its icon and
 name. A sample changes only the preview. To change what happens in the game,
@@ -42,7 +42,7 @@ edit the event's selection and its inventory award together.
 ## Replace a scene or write your own
 
 To keep a retail scene's place in the story, open it from its event in Logic.
-Choose **Clear scene content** to keep the supported background setup and exit.
+Open **Scene options…** and choose **Clear scene content** to keep the supported background setup and exit.
 **Undo** restores the original performance. Use **Add step** to add dialogue,
 actors or movement before the exit. Use the timeline and **Play** to check
 who is on stage when the speaker's line opens. A scene with an unresolved
@@ -58,7 +58,7 @@ To give a scene its own identity, choose **New scene**, select a supported
 setup and name the scene. Choose its background, place the cast and add their
 actions. To make an answer matter on a later visit, add a two-answer choice
 and put **Set story flag** inside the relevant answer. Give the flag a name
-you will recognize in Logic. Use **Add event trigger** to choose the event
+you will recognize in Logic. Use **Event trigger…** to choose the event
 and target. A later rule can check that same flag and play another scene.
 In a rule with nested conditions, each scene step has its own **Edit cutscene…**
 button. It opens that occurrence with its launch context.
@@ -69,35 +69,22 @@ The desktop preview is silent. When a sound envelope needs a starting volume
 from game memory, playback uses a compatible capture when available. Otherwise
 it identifies the missing volume and continues the dialogue and action.
 
-## Scene timeline workspace (November 14)
+## Edit the stage
 
-The default Cutscenes workspace has an event-row filter and named scene list on
-the left, the scene and independent key preview in the center, a bank/key grid
-on the right, and actor/sprite tracks below. The filter reads both original event
-launches and scene actions inside authored trees. New scenes switch to All until
-they have a launch. Add event trigger opens the existing event logic editor with
-the selected scene already assigned; its WHEN, target and IF conditions use the
-same event compiler as Storyline.
+Choose a scene from the list on the left. The **Stage** tab shows the cast and playback controls above the picture and the timeline below it. Drag the divider to give the picture or the timeline more room. **New scene** lets you choose a background setup and an opening hold. The default holds for 90 updates so you can stage a performance before the exit. Set it to zero for an immediate exit.
 
-Select an Actor or Sprite key, then click the scene to create it. Place drags
-change position at the playhead; Move drags add movement with an editable duration
-in native updates and an optional completion wait. Empty-space dragging pans the
-preview. The key grid auditions independently and supports replay and looping.
-Tiles show the number of distinct artwork frames reached by the native pose
-player, including linked states, and mark looping animations. This is an artwork
-count, not a duration in game updates. Context-dependent sequences whose count
-cannot be resolved say so explicitly. The scene view retains a 640x480 image;
-smaller workspaces scroll instead of compressing the canvas or overlaying controls.
-The Appearance selector exposes the sprite children stored in each bank, with
-thumbnails. Some banks intentionally have blank child zero; the picker initially
-selects a visible appearance and labels empty appearances/keys explicitly. The
-same chosen child reaches audition, placement and Play key on selected object.
-For example, the original Hugo assignment scene uses bank3 / appearance6 for
-Dio. Sprite preview opacity uses its native color bytes; Actor preview uses its
-separate material-opacity bytes. Neither mode treats the Sprite material controls
-as opacity.
-Play key on selected object changes its animation; changing a sprite key recreates
-that sprite at its current position and ends its previous authored movement.
+| To do this | On the Stage tab |
+| --- | --- |
+| Add someone | Choose **Add actor or sprite…**, pick the artwork and animation, then **Place on stage**. Click where the actor's feet or sprite's origin should appear. |
+| Change a position immediately | Click the cast member, or select it in **Cast**. Choose **Reposition** and click its new position. Dragging an existing member is a shortcut. |
+| Make someone travel | Choose the member in **Cast**, then **Move…**. Set the travel time in updates, choose whether later steps wait for arrival, then **Choose destination** and click the stage. Press **Play** to watch. |
+| Change an existing member's animation | Select it in **Cast**, choose **Animation…**, preview the artwork, then **Apply animation**. Changing a sprite's animation recreates it at the current position and ends its previous authored movement. |
+| Cancel a pending placement | Press **Escape** or **Cancel positioning**. After a click commits the edit, use project **Undo**. |
+| Work with a particular event or branch | Filter the scene catalog by event row, or open the scene from the corresponding rule in Logic. **Event trigger…** binds a scene to an event. |
+
+Place, Reposition and Move use the current playhead. When placing at the very beginning, the stage first runs the opening update so your click uses the scene camera. If it is inside a condition or completion wait, select a reached timeline step or a point inside a timed wait. The editor reports the reason on stage if it cannot write the edit. When a cast member is absent, step or play until it appears. An event can continue into another scene. Open that scene to edit its cast.
+
+The **Artwork** gallery shows characters and props from across the ROM. Click a thumbnail to audition it. Use **Place on stage** immediately, or open **Animation** to choose a pose and facing. The bank and appearance numbers let you identify the same asset again. Each tile gives the number of distinct artwork frames and identifies a loop where known. Some appearances contain empty keys. For example, Dio in Hugo's assignment scene uses bank 3, appearance 6.
 
 Timeline clips use observed native command times. Simultaneous commands occupy
 separate lanes. Pending commands are explicitly marked: their time has not been
@@ -105,7 +92,7 @@ established through the current waits or choices. Click a reached clip to seek,
 double-click to edit its fields in Step details. Add step can insert at the
 playhead, before/after a step, or into either choice branch. The timeline is a
 projection of the native program, not a second saved script. Raw commands and
-inspectors remain available behind their toggle.
+inspectors are under **Playback details… → Show technical tabs**.
 
 Dialogue and two-option choices use the existing native dialogue compiler.
 Set story flag supports OFF/ON/toggle and named project flags, including creating
@@ -199,10 +186,9 @@ removal and ordering also keep both commands together. Preview equipment comes f
 the class defaults, as stated in the preview context. Army member bindings and
 event-selected cast still need their own launch data.
 
-In Scene playback, click a visible Actor to select its live slot and pause, or
+On **Stage**, click a visible actor to select its cast slot and pause, or
 double-click to open its action. Selection follows the rendered layers, including
-transparent holes and foreground occlusion. Dragging an object places or moves it;
-dragging empty space pans. The outline shows the
+transparent holes and foreground occlusion. Dragging a cast member repositions it immediately. Choose **Move…** for a timed movement. Dragging empty space pans. The outline shows the
 selected projected extent; it is an editor overlay and is not part of the scene.
 Typed SceneId values distinguish native resource keys from authored UUIDs. No
 fabricated ROM key is assigned to a scene before it has an exported allocation.
@@ -373,7 +359,7 @@ script's decoded SHA-256 after encoding; plain manifest records keep zero.
 ## Visiting units, Hugo's Report and titles
 
 For a scene that takes a visiting unit, open a save in **Save**, select the
-slot you want, then choose its unit in **Cutscenes → Scene playback**. The
+slot you want, then choose its unit in **Cutscenes → Stage → Playback details…**. The
 preview reads the members, formation, equipment, gender and alignment. The
 sample visitor remains available when you want to try the scene without a
 save. For the observed Zemio cast, use the [recorded launch](decomp-intake.md#november-17-actor-placement-and-briefing).

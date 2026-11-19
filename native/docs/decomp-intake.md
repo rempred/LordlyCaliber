@@ -129,7 +129,7 @@ In-game construction can leave partial writes on a failure.
 
 The [Zemio playback inputs](../tests/fixtures/zemio-briefing-inputs.json) reproduce
 one observed US Rev 0 visit. Select **Hugo repeats the Southern Reaches briefing**
-in Cutscenes, open **Scene playback**, expand **Raw / preview setup**, and choose
+in Cutscenes, open **Stage → Playback details…** and choose
 **Import playback inputs…**. Magnus takes slot 5 in pose 13 at both briefing
 commands. Repeat and Yes return to the tactical explanation. End and Yes rebuild
 the room for Hugo's farewell. The regression check is

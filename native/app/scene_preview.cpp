@@ -33,6 +33,33 @@
 #include <QVBoxLayout>
 #include <bit>
 namespace lordly {
+namespace {
+class StageView final : public QGraphicsView {
+  public:
+    using QGraphicsView::QGraphicsView;
+    void aim(std::optional<QPointF> from = {}, std::optional<QPointF> to = {}) {
+        from_ = from;
+        to_ = to;
+        viewport()->update();
+    }
+  protected:
+    void drawForeground(QPainter *painter, const QRectF &) override {
+        if (!to_) return;
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        for (const auto color : {QColor("#21190e"), QColor("#fff2a8")}) {
+            QPen pen(color, color.lightness() < 100 ? 4 : 2);
+            pen.setCosmetic(true);
+            painter->setPen(pen);
+            if (from_) painter->drawLine(*from_, *to_);
+            painter->drawEllipse(*to_, 4, 4);
+        }
+        painter->restore();
+    }
+  private:
+    std::optional<QPointF> from_, to_;
+};
+}
 ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom), stageRenderer_(rom),
       objectRenderer_(rom) {
@@ -279,7 +306,8 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     play_->setObjectName("scenePlay");
     step_ = new QPushButton("Step");
     step_->setObjectName("sceneStep");
-    auto fit = new QPushButton("Fit");
+    auto fit = new QPushButton("Fit stage");
+    fit->setObjectName("sceneFitStage");
     loop_ = new QCheckBox("Loop");loop_->setObjectName("sceneLoop");
     position_ = new QSpinBox;
     position_->setObjectName("scenePosition");
@@ -289,6 +317,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     rate_->setRange(1, 120);
     rate_->setValue(30);
     rate_->setSuffix(" steps/s");
+    auto beginning = new QPushButton("Restart");
+    beginning->setToolTip("Return to the first update of this scene");
+    connect(beginning, &QPushButton::clicked, this, [this] { seekToUpdate(0); });
+    controls->addWidget(beginning);
     controls->addWidget(play_);
     controls->addWidget(step_);
     skip_ = new QPushButton("Skip scene (Enter)");
@@ -296,9 +328,13 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     controls->addWidget(skip_);
     connect(skip_, &QPushButton::clicked, this, &ScenePreview::skipScene);
     controls->addWidget(loop_);
-    controls->addWidget(new QLabel("Step"));
+    controls->addWidget(new QLabel("Update"));
     controls->addWidget(position_);
+    rate_->setObjectName("scenePlaybackRate");
     controls->addWidget(rate_);
+    transportState_ = new QLabel;
+    transportState_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    controls->addWidget(transportState_, 1);
     controls->addStretch();
     controls->addWidget(fit);
     layout->addLayout(controls);
@@ -350,7 +386,8 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     panelControlsUi_->hide();
     layout->addWidget(panelControlsUi_);
     canvas_ = new QGraphicsScene(this);
-    view_ = new QGraphicsView(canvas_);
+    view_ = new StageView(canvas_);
+    view_->viewport()->setMouseTracking(true);
     view_->setObjectName("sceneCanvas");
     view_->installEventFilter(this);
     view_->viewport()->installEventFilter(this);
@@ -394,10 +431,12 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     });
 
     auto actors = new QHBoxLayout;
-    actors->addWidget(new QLabel("Live object"));
+
     liveObjects_ = new QComboBox;
     liveObjects_->setObjectName("sceneLiveActors");
     liveObjects_->setMinimumContentsLength(10);
+    liveObjects_->setPlaceholderText("No cast on stage");
+    liveObjects_->setToolTip("Select an actor or sprite present at this update. Play or step to see later entrances.");
     actors->addWidget(liveObjects_);
     objectState_ = new QLabel("No active Actors");
     objectState_->setObjectName("sceneActorState");
@@ -423,6 +462,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     layout->addLayout(placement);
     connect(cancelPlacement_, &QPushButton::clicked, this, &ScenePreview::cancelPositionPick);
     connect(liveObjects_, &QComboBox::currentIndexChanged, this, [this] {
+        if (placingCast_) cancelPositionPick();
         if (liveObjects_->currentIndex() >= 0)
             selectedObject_ = {SceneObjectKind(liveObjects_->currentData(Qt::UserRole + 1).toInt()),
                                liveObjects_->currentData().toInt()};
@@ -456,6 +496,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     present();
 }
 void ScenePreview::startPlayback() {
+    cancelPositionPick();
     if (!preparing_ && current_ && (current_->stopped || tick_ >= 30000)) restart();
     if (preparing_) {
         resumeAfterPrepare_=true;seekTimer_->start();play_->setText("Pause setup");return;
@@ -627,12 +668,68 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         current_->playback.imageControlsEnabled())
         step();
 }
-void ScenePreview::armAssetPlacement(bool sprite,int bank,int animation,int facing,int variant){
-    stop();cancelPositionPick();assetSprite_=sprite;assetBank_=bank;assetAnimation_=animation;assetFacing_=facing;assetVariant_=variant;
-    placementHelp_->setText(QString("Click in the scene to place %1 · bank %2 · key %3 · appearance %4. Escape cancels.").arg(sprite?"sprite":"Actor").arg(bank).arg(animation).arg(variant));
-    placementHelp_->show();cancelPlacement_->show();view_->setCursor(Qt::CrossCursor);
+void ScenePreview::preparePlacementFrame() {
+    if (current_ && tick_ == 0 && !preparing_ && !current_->stopped) {
+        // The opening commands install the camera used to draw newly created cast members.
+        stop();
+        step();
+    }
 }
-void ScenePreview::clearAssetPlacement(){assetBank_=-1;view_->unsetCursor();}
+void ScenePreview::armAssetPlacement(bool sprite,int bank,int animation,int facing,int variant){
+    preparePlacementFrame();
+    if (!current_ || preparing_ || (current_->playback.director().selector() != selector_ || current_->playback.director().isContinuation())) {
+        showEditFeedback(preparing_ ? "Wait for the scene to finish loading." : "Open the scene currently playing to edit its cast.");
+        return;
+    }
+    stop();cancelPositionPick();assetSprite_=sprite;assetBank_=bank;assetAnimation_=animation;assetFacing_=facing;assetVariant_=variant;
+    placementHelp_->setText(QString("Click the stage to place the %1.").arg(sprite?"sprite":"actor"));
+    placementHelp_->show();cancelPlacement_->show();view_->viewport()->setCursor(Qt::CrossCursor);view_->setFocus();
+}
+void ScenePreview::clearAssetPlacement() { cancelPositionPick(); }
+void ScenePreview::pauseForEditing() {
+    if (!preparing_) stop();
+    cancelPositionPick();
+}
+void ScenePreview::showEditFeedback(const QString &message) { placementHelp_->setText(message); }
+void ScenePreview::selectCastMember(bool sprite, int slot) {
+    selectedObject_ = {sprite ? SceneObjectKind::Sprite : SceneObjectKind::Actor, slot};
+    presentObjects();
+}
+QPointF ScenePreview::selectedOrigin() const {
+    if (!current_ || selectedObjectRecord().isEmpty()) throw Error("Select an actor or sprite on stage.");
+    const auto &playback = current_->playback;
+    const int slot = selectedObject_.slot;
+    if (selectedObject_.kind == SceneObjectKind::Sprite) {
+        const auto record = selectedObjectRecord();
+        return spriteScreenPosition(*current_, slot, {
+            double(qint32(u32(record, 0x24))), double(-qint64(qint32(u32(record, 0x28)))), 0});
+    }
+    const auto &actor = playback.actors().actor(slot)->pose().actor().position;
+    return playback.actors().projectPosition(slot, {actor.x, actor.y, actor.z}, playback.cameras(),
+                                            playback.transforms(), playback.lighting());
+}
+void ScenePreview::beginCastPlacement(bool move) {
+    pauseForEditing();
+    preparePlacementFrame();
+    if (!current_ || preparing_ || selectedObjectRecord().isEmpty() ||
+        (current_->playback.director().selector() != selector_ || current_->playback.director().isContinuation())) {
+        showEditFeedback("Play or step to a cast member in the selected scene first.");
+        return;
+    }
+    if (move) {
+        try {
+            aimOrigin_ = selectedOrigin();
+        } catch (const std::exception &e) { showEditFeedback(QString::fromUtf8(e.what())); return; }
+    }
+    placingCast_ = true;
+    movingCast_ = move;
+    castTarget_ = selectedObject_;
+    placementHelp_->setText(move ? tr("Click the destination for %1.").arg(liveObjects_->currentText())
+                                 : tr("Click where %1 should stand.").arg(liveObjects_->currentText()));
+    cancelPlacement_->show();
+    view_->viewport()->setCursor(Qt::CrossCursor);
+    view_->setFocus();
+}
 QPointF ScenePreview::spriteScreenPosition(const Snapshot &s,int slot,SceneVector position)const{
     const auto sprite=s.playback.sprites().sprite(slot);if(!sprite)throw Error("Select a visible sprite.");
     const auto record=sprite->record();
@@ -654,6 +751,16 @@ SceneVector ScenePreview::spritePositionAt(const Snapshot &s,int slot,QPointF sc
     }throw Error("The sprite position could not be resolved.");
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if ((assetBank_ >= 0 || placingCast_) && object == view_->viewport()) {
+        auto stage = static_cast<StageView *>(view_);
+        if (event->type() == QEvent::Leave) stage->aim();
+        if (event->type() == QEvent::MouseMove) {
+            auto point = view_->mapToScene(static_cast<QMouseEvent *>(event)->position().toPoint());
+            if (QRectF(0, 0, 320, 240).contains(point)) stage->aim(aimOrigin_, point);
+            else stage->aim();
+            return true;
+        }
+    }
     if(assetBank_>=0){
         if(event->type()==QEvent::KeyPress&&static_cast<QKeyEvent *>(event)->key()==Qt::Key_Escape){clearAssetPlacement();cancelPositionPick();return true;}
         if(object==view_->viewport()&&(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease)){
@@ -663,18 +770,25 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                 if(!current_||preparing_)throw Error("Wait for the scene to be ready before placing an object.");
                 auto draft=*current_;const auto point=view_->mapToScene(mouse->position().toPoint());
                 if(!QRectF(0,0,320,240).contains(point))throw Error("Choose a point inside the scene.");
-                int slot=0,value=0;SceneVector position;
+                QSet<quint32> occupied;
+                for (int n = 0; n < (assetSprite_ ? 30 : 28); ++n)
+                    if (assetSprite_ ? draft.playback.sprites().sprite(n) != nullptr : draft.playback.actors().actor(n).has_value())
+                        occupied.insert(n);
+                const auto resource = resources_->entries().constFind(resources_->selectors()[selector_]);
+                if (resource == resources_->entries().cend() || draft.playback.director().isContinuation())
+                    throw Error("Return to the selected scene to add a cast member.");
+                const auto &program = resource->program;
+                const int slot = SceneActions::unusedObjectSlot(program, assetSprite_, occupied);
+                int value=0;SceneVector position;
                 if(assetSprite_){
-                    while(slot<30&&draft.playback.sprites().sprite(slot))++slot;if(slot==30)throw Error("All sprite slots are occupied.");
                     draft.playback.sprites().service(0x46,{quint32(slot),quint32(assetBank_),quint32(assetAnimation_),quint32(assetFacing_),0,0,0,100,quint32(assetVariant_)},value);
                     position=spritePositionAt(draft,slot,point);
                 }else{
-                    while(slot<28&&draft.playback.actors().actor(slot))++slot;if(slot==28)throw Error("All Actor slots are occupied.");
                     draft.playback.actors().service(0x14,{quint32(slot),quint32(assetBank_),quint32(assetAnimation_),quint32(assetFacing_),0,0,0,0,quint32(assetVariant_)},value);
                     position=draft.playback.actors().positionAt(slot,point,draft.playback.cameras(),draft.playback.transforms(),draft.playback.lighting());
                 }
                 const int bank=assetBank_;clearAssetPlacement();
-                emit assetPlaced(assetSprite_,bank,assetAnimation_,assetFacing_,position,assetVariant_);
+                emit assetPlaced(assetSprite_,bank,assetAnimation_,assetFacing_,position,assetVariant_,slot);
             }catch(const std::exception &e){placementHelp_->setText(QString::fromUtf8(e.what()));}
             return true;
         }
@@ -728,7 +842,7 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
             return true;
         }
     }
-    if (placementCommand_ >= 0) {
+    if (placementCommand_ >= 0 || placingCast_) {
         if ((object == view_ || object == view_->viewport()) && event->type() == QEvent::KeyPress &&
             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
             cancelPositionPick();
@@ -746,12 +860,15 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
                 if (!QRectF(0, 0, 320, 240).contains(point))
                     throw Error("Choose a point within the scene image.");
                 const auto &playback = current_->playback;
-                const auto position =
-                    playback.actors().positionAt(placementSlot_, point, playback.cameras(),
-                                                 playback.transforms(), playback.lighting());
+                const bool cast = placingCast_;
+                const bool sprite = cast && castTarget_.kind == SceneObjectKind::Sprite;
+                const int slot = cast ? castTarget_.slot : placementSlot_;
+                const auto position = sprite ? spritePositionAt(*current_, slot, point) :
+                    playback.actors().positionAt(slot, point, playback.cameras(), playback.transforms(), playback.lighting());
                 const int command = placementCommand_;
                 cancelPositionPick();
-                emit positionPicked(command, position);
+                if (!cast) emit positionPicked(command, position);
+                else emit castDestination(sprite, slot, position, movingCast_);
             } catch (const std::exception &e) {
                 placementHelp_->setText(QString::fromUtf8(e.what()));
             }
@@ -1721,7 +1838,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     }
 }
 void ScenePreview::step() {
-    if (placementCommand_ >= 0) cancelPositionPick();
+    if (placementCommand_ >= 0 || placingCast_ || assetBank_ >= 0) cancelPositionPick();
     if (!current_ || current_->stopped || tick_ >= 30000) {
         stop();
         return;
@@ -1961,11 +2078,15 @@ void ScenePreview::continueSeek() {
 void ScenePreview::setObjectNavigationEnabled(bool enabled) {
     if (!enabled) cancelPositionPick();
     objectNavigationEnabled_ = enabled;
+    placementHelp_->setMinimumHeight(enabled ? cancelPlacement_->sizeHint().height() : 0);
     findObject_->setVisible(enabled);
     presentSelectedObject();
 }
 void ScenePreview::cancelPositionPick() {
     assetBank_ = -1;
+    placingCast_ = false;
+    aimOrigin_.reset();
+    static_cast<StageView *>(view_)->aim();
     draggingActor_ = -1; dragPosition_.reset(); selectionPress_.reset();
     placementCommand_ = placementSlot_ = -1;
     placementHelp_->clear(); cancelPlacement_->hide();
@@ -2075,6 +2196,7 @@ void ScenePreview::presentSelectedObject() {
     const bool present = current_ && slot >= 0 &&
                          (actor ? current_->playback.actors().actor(slot).has_value()
                                 : current_->playback.sprites().sprite(slot) != nullptr);
+    emit castEditable(present && objectNavigationEnabled_ && !preparing_ && !current_->playback.director().isContinuation() && current_->playback.director().selector() == selector_);
     findObject_->setText(actor ? "Find Actor action" : "Find sprite action");
     findObject_->setEnabled(present && objectNavigationEnabled_ && !preparing_);
     presentSelectionOutline();
@@ -2125,6 +2247,11 @@ void ScenePreview::presentSelectionOutline() {
     selectionOutline_->setAcceptedMouseButtons(Qt::NoButton);
 }
 void ScenePreview::present() {
+    const auto summary = preparing_ ? tr("Preparing scene…") :
+        !current_ ? tr("No active scene") : current_->finished ? tr("Scene ended") :
+        current_->stopped ? current_->reason : QString{};
+    transportState_->setText(fontMetrics().elidedText(summary, Qt::ElideRight, qMax(64, transportState_->width())));
+    transportState_->setToolTip(summary);
     answerPath_->setVisible(current_ && current_->playback.hasAnswerOutcome());
     emit timelineChanged(sceneId_, commandTimes_, current_ ? current_->activeWord : -1, tick_);
     reportExit();

@@ -17,6 +17,7 @@ class SceneTimeline : public QGraphicsView {
     void commandActivated(int);
     void timeSelected(int);
   protected:
+    void drawForeground(QPainter *, const QRectF &) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
   private:
@@ -24,6 +25,7 @@ class SceneTimeline : public QGraphicsView {
     SceneId id_;
     DirectorProgram program_;
     QMap<int, int> times_;
+    QVector<QPair<QRectF, QString>> trackLabels_;
     QGraphicsLineItem *playhead_ = nullptr;
     int command_ = -1, tick_ = 0;
 };

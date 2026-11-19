@@ -8,7 +8,10 @@
 #include "app/event_tree_dialog.h"
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDoubleSpinBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QSpinBox>
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -44,69 +47,278 @@ void CutsceneEditor::createWorkspace(QTabWidget *pages){
     auto empty=new QLabel("No cutscenes match this event row and search.",pages->parentWidget());
     empty->setObjectName("cutsceneEmptySelection");empty->setWordWrap(true);empty->hide();
     static_cast<QVBoxLayout *>(pages->parentWidget()->layout())->insertWidget(0,empty);
-    workspace_=new QWidget;workspace_->setObjectName("cutsceneWorkspace");
-    auto layout=new QVBoxLayout(workspace_);auto tools=new QHBoxLayout;
-    auto tool=new QComboBox;tool->setObjectName("scenePlacementTool");tool->addItems({"Place","Move"});
-    auto duration=new QDoubleSpinBox;duration->setObjectName("sceneMoveSeconds");duration->setRange(1,1800);duration->setDecimals(0);duration->setValue(30);duration->setSuffix(" updates");
-    auto wait=new QCheckBox("Wait until finished");wait->setObjectName("sceneMoveWait");
-    tools->addWidget(tool);tools->addWidget(new QLabel("Move duration"));tools->addWidget(duration);tools->addWidget(wait);
-    auto trigger=new QPushButton("Add event trigger…");trigger->setObjectName("sceneCreateTrigger");tools->addWidget(trigger);
-    connect(trigger,&QPushButton::clicked,this,&CutsceneEditor::createSceneTrigger);
-    auto updateTool=[=,this]{scenePreview_->clearAssetPlacement();actionEditor_->setPlacementMode(tool->currentIndex()==1,qRound(duration->value()),wait->isChecked());};
-    connect(tool,&QComboBox::currentIndexChanged,this,updateTool);connect(duration,&QDoubleSpinBox::valueChanged,this,updateTool);connect(wait,&QCheckBox::toggled,this,updateTool);
-    auto action=new QComboBox;action->setObjectName("sceneWorkspaceAction");
-    action->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);action->setMinimumContentsLength(16);
-    const auto kinds=SceneActions::kinds();for(auto [kind,name]:kinds.asKeyValueRange())action->addItem(name,kind);
-    auto add=new QPushButton("Add step");add->setObjectName("sceneWorkspaceAdd");
-    auto where=new QComboBox;where->setObjectName("sceneWorkspaceInsertWhere");where->addItems({"At playhead","Before selected step","After selected step","Choice: option 1","Choice: option 2"});
-    auto actionTools=new QHBoxLayout;actionTools->addWidget(action,1);actionTools->addWidget(where);actionTools->addWidget(add);
-    connect(add,&QPushButton::clicked,this,[=,this]{actionEditor_->addFromWorkspace(action->currentData().toUInt(),where->currentIndex());pages->setCurrentWidget(actionEditor_);});
-    layout->addLayout(tools);layout->addLayout(actionTools);
-    auto scroll=new QScrollArea;scroll->setObjectName("cutsceneWorkspaceScroll");scroll->setWidgetResizable(true);
-    auto body=new QWidget;auto bodyLayout=new QVBoxLayout(body);bodyLayout->setContentsMargins(0,0,0,0);
-    bodyLayout->setSizeConstraint(QLayout::SetMinimumSize);
-    auto upper=new QWidget;auto upperLayout=new QHBoxLayout(upper);upperLayout->setContentsMargins(0,0,0,0);
-    auto center=new QWidget;auto centerLayout=new QVBoxLayout(center);centerLayout->setContentsMargins(0,0,0,0);
-    pages->removeTab(pages->indexOf(scenePreview_));centerLayout->addWidget(scenePreview_);scenePreview_->show();
-    // Keep inherited launch inputs available without consuming the scene canvas.
-    // Child visibility still follows the selected scene's own requirements.
-    auto setup=new QWidget(scenePreview_);setup->setObjectName("sceneOptionalSetup");
-    auto setupLayout=new QVBoxLayout(setup);setupLayout->setContentsMargins(0,0,0,0);
-    for(const auto name:{"sceneLaunchImageSetup","sceneLaunchContextSetup","sceneCastSetup","sceneNamesSetup","sceneRewardSetup"}){
-        auto w=scenePreview_->findChild<QWidget *>(name);scenePreview_->layout()->removeWidget(w);setupLayout->addWidget(w);
-    }
-    static_cast<QVBoxLayout *>(scenePreview_->layout())->insertWidget(0,setup);
-    auto sceneCanvas=scenePreview_->findChild<QGraphicsView *>("sceneCanvas");
-    // Preserve a 640x480 image area, excluding the view's frame and fit margin.
-    sceneCanvas->setMinimumWidth(648);sceneCanvas->setFixedHeight(488);
+    workspace_ = new QWidget;
+    workspace_->setObjectName("cutsceneWorkspace");
+    auto layout = new QVBoxLayout(workspace_);
+    layout->setContentsMargins(8, 6, 8, 6);
+    auto heading = new QHBoxLayout;
+    auto title = new QLabel;
+    title->setObjectName("sceneStageTitle");
+    title->setTextFormat(Qt::PlainText);
+    title->setWordWrap(true);
+    auto font = title->font();
+    font.setBold(true);
+    font.setPointSize(font.pointSize() + 2);
+    title->setFont(font);
+    title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    heading->addWidget(title, 1);
+    auto trigger = new QPushButton("Event trigger…");
+    trigger->setObjectName("sceneCreateTrigger");
+    heading->addWidget(trigger);
+    connect(trigger, &QPushButton::clicked, this, &CutsceneEditor::createSceneTrigger);
+    auto settings = new QPushButton("Playback details…");
+    settings->setObjectName("sceneOpenSetup");
+    heading->addWidget(settings);
+    layout->addLayout(heading);
+
+    auto split = new QSplitter(Qt::Vertical);
+    split->setChildrenCollapsible(false);
+    layout->addWidget(split, 1);
+    pages->removeTab(pages->indexOf(scenePreview_));
+    split->addWidget(scenePreview_);
+    scenePreview_->show();
+    auto previewLayout = static_cast<QVBoxLayout *>(scenePreview_->layout());
+    previewLayout->setContentsMargins(0, 0, 0, 0);
+    previewLayout->setSpacing(3);
+    auto sceneCanvas = scenePreview_->findChild<QGraphicsView *>("sceneCanvas");
+    sceneCanvas->setMinimumSize(200, 135);
     sceneCanvas->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     sceneCanvas->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scenePreview_->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Minimum);
-    keyPicker_=new SceneKeyPicker(rom_);keyPicker_->setObjectName("cutscenePlacementLibrary");
-    if(project_->combatArtwork())keyPicker_->setArtwork(project_->combatArtwork()->previewEdits());
-    centerLayout->addWidget(keyPicker_->auditionWidget());keyPicker_->auditionWidget()->setFixedHeight(170);
-    auto useKey=new QPushButton("Play key on selected object");useKey->setObjectName("sceneUseSelectedKey");
-    static_cast<QVBoxLayout *>(keyPicker_->layout())->addWidget(useKey);
-    connect(useKey,&QPushButton::clicked,this,[this,pages]{const auto key=keyPicker_->selectedKey();if(key.isEmpty())return;const auto object=scenePreview_->selectedObject();scenePreview_->clearAssetPlacement();actionEditor_->playObjectKey(object.kind==SceneObjectKind::Sprite,object.slot,key[1],key[2],key[3],scenePreview_->selectedObjectRecord(),key[4]);pages->setCurrentWidget(actionEditor_);});
-    keyPicker_->setMinimumWidth(290);keyPicker_->setMaximumWidth(380);
-    upperLayout->addWidget(center,1);upperLayout->addWidget(keyPicker_);
-    bodyLayout->addWidget(upper);timeline_=new SceneTimeline;timeline_->setFixedHeight(240);bodyLayout->addWidget(timeline_);
-    scroll->setWidget(body);layout->addWidget(scroll,1);
-    pages->insertTab(0,workspace_,"Scene timeline");pages->setCurrentWidget(workspace_);
-    pages->setTabText(pages->indexOf(actionEditor_),"Step details");
-    for(int i=0;i<pages->count();++i)if(pages->tabText(i)=="Commands")pages->setTabText(i,"Raw commands");
-    connect(keyPicker_,&SceneKeyPicker::keySelected,scenePreview_,&ScenePreview::armAssetPlacement);
-    connect(keyPicker_,&SceneKeyPicker::placementCancelled,scenePreview_,&ScenePreview::clearAssetPlacement);
-    connect(scenePreview_,&ScenePreview::assetPlaced,actionEditor_,&SceneActionEditor::addAsset);
-    connect(scenePreview_,&ScenePreview::spritePlacedAtPlayhead,actionEditor_,&SceneActionEditor::placeSpriteAtPlayhead);
+
+    auto details = new QDialog(scenePreview_);
+    details->setWindowTitle("Playback details");
+    details->resize(770, 540);
+    auto detailLayout = new QVBoxLayout(details);
+    auto detailScroll = new QScrollArea;
+    detailScroll->setWidgetResizable(true);
+    auto setup = new QWidget;
+    setup->setObjectName("sceneOptionalSetup");
+    auto setupLayout = new QVBoxLayout(setup);
+    for (const auto name : {"scenePlaybackStatus", "sceneActorState", "scenePreviewContext",
+                            "sceneLaunchImageSetup", "sceneLaunchContextSetup", "sceneCastSetup",
+                            "sceneNamesSetup", "sceneRewardSetup", "scenePlaybackInputsStatus",
+                            "sceneImportPlaybackInputs", "sceneClearPlaybackInputs"}) {
+        auto widget = scenePreview_->findChild<QWidget *>(name);
+        const bool hidden = widget->isHidden();
+        setupLayout->addWidget(widget);
+        widget->setVisible(!hidden);
+    }
+    auto rateRow = new QHBoxLayout;
+    rateRow->addWidget(new QLabel("Playback speed"));
+    rateRow->addWidget(scenePreview_->findChild<QSpinBox *>("scenePlaybackRate"));
+    rateRow->addStretch();
+    rateRow->addWidget(scenePreview_->findChild<QPushButton *>("sceneFitStage"));
+    setupLayout->addLayout(rateRow);
+    setupLayout->addStretch();
+    detailScroll->setWidget(setup);
+    detailLayout->addWidget(detailScroll);
+    auto close = new QDialogButtonBox(QDialogButtonBox::Close);
+    detailLayout->addWidget(close);
+    connect(close, &QDialogButtonBox::rejected, details, &QDialog::reject);
+    connect(settings, &QPushButton::clicked, details, &QDialog::open);
+
+    createCastTools(previewLayout);
+
+    auto sequence = new QWidget;
+    auto sequenceLayout = new QVBoxLayout(sequence);
+    sequenceLayout->setContentsMargins(0, 2, 0, 0);
+    auto sequenceTools = new QHBoxLayout;
+    auto label = new QLabel("Timeline");
+    auto labelFont = label->font();
+    labelFont.setBold(true);
+    label->setFont(labelFont);
+    sequenceTools->addWidget(label);
+    sequenceTools->addStretch();
+    auto edit = new QPushButton("Edit selected step");
+    auto findAction = scenePreview_->findChild<QPushButton *>("sceneFindActorAction");
+    setupLayout->insertWidget(2, findAction);
+    connect(findAction, &QPushButton::clicked, details, &QDialog::accept);
+    sequenceTools->addWidget(edit);
+    connect(edit, &QPushButton::clicked, this, [this,pages] { pages->setCurrentWidget(actionEditor_); });
+    auto compose = new QPushButton("Add step…");
+    compose->setObjectName("sceneComposeStep");
+    sequenceTools->addWidget(compose);
+    sequenceLayout->addLayout(sequenceTools);
+    auto composer = new QDialog(workspace_);
+    composer->setWindowTitle("Add a scene step");
+    auto fields = new QFormLayout(composer);
+    auto action = new QComboBox;
+    action->setObjectName("sceneWorkspaceAction");
+    const auto kinds = SceneActions::kinds();
+    for (auto [id, name] : kinds.asKeyValueRange()) action->addItem(name, id);
+    auto where = new QComboBox;
+    where->setObjectName("sceneWorkspaceInsertWhere");
+    where->addItems({"At playhead", "Before selected step", "After selected step", "Choice: option 1", "Choice: option 2"});
+    fields->addRow("Action", action);
+    fields->addRow("Insert", where);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
+    buttons->addButton("Add step", QDialogButtonBox::AcceptRole)->setObjectName("sceneWorkspaceAdd");
+    fields->addRow(buttons);
+    connect(compose, &QPushButton::clicked, this, [=, this] { scenePreview_->pauseForEditing(); composer->open(); });
+    connect(buttons, &QDialogButtonBox::rejected, composer, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, composer, &QDialog::accept);
+    connect(composer, &QDialog::accepted, this, [=, this] {
+        const auto id = selectedScene();
+        const auto before = programs().program(id).source;
+        actionEditor_->addFromWorkspace(action->currentData().toUInt(), where->currentIndex());
+        if (programs().program(id).source != before) pages->setCurrentWidget(actionEditor_);
+    });
+    timeline_ = new SceneTimeline;
+    sequenceLayout->addWidget(timeline_, 1);
+    split->addWidget(sequence);
+    split->setStretchFactor(0, 4);
+    split->setStretchFactor(1, 1);
+    split->setSizes({520, 185});
+    pages->insertTab(0, workspace_, "Stage");
+    pages->setCurrentWidget(workspace_);
+    auto fitPage = [this, pages] {
+        pages->setSizePolicy(pages->currentWidget() == workspace_ ? QSizePolicy::Ignored : QSizePolicy::Expanding, QSizePolicy::Expanding);
+    };
+    connect(pages, &QTabWidget::currentChanged, pages, fitPage);
+    fitPage();
+    pages->setTabText(pages->indexOf(actionEditor_), "Step details");
+    for (int i = 0; i < pages->count(); ++i)
+        if (pages->tabText(i) == "Commands") pages->setTabText(i, "Raw commands");
     connect(scenePreview_,&ScenePreview::timelineChanged,timeline_,&SceneTimeline::updatePlayback);
     connect(timeline_,&SceneTimeline::timeSelected,scenePreview_,&ScenePreview::seekToUpdate);
     connect(timeline_,&SceneTimeline::commandSelected,this,[this](int c){actionEditor_->selectCommand(c);timeline_->selectCommand(c);const auto &p=programs().program(selectedScene());if(c>=0&&c<p.commands.size()&&scenePreview_->commandTimes().contains(p.commands[c].word))scenePreview_->seekToCommand(p.commands[c].word);});
     connect(timeline_,&SceneTimeline::commandActivated,this,[this,pages](int c){actionEditor_->selectCommand(c);pages->setCurrentWidget(actionEditor_);});
     connect(actionEditor_,&SceneActionEditor::commandSelected,timeline_,&SceneTimeline::selectCommand);
-    auto advanced=new QCheckBox("Raw / preview setup");advanced->setObjectName("cutsceneRawToggle");actionTools->addWidget(advanced);
-    auto showPages=[=,this](bool show){setup->setVisible(show);mode_->setVisible(show);requests_->setVisible(show);images_->setVisible(show);sceneStatus_->setVisible(show);for(const auto name:{"scenePreviewContext","sceneImportPlaybackInputs","sceneClearPlaybackInputs"})if(auto w=scenePreview_->findChild<QWidget *>(name))w->setVisible(show);for(int i=0;i<pages->count();++i){const auto page=pages->widget(i);pages->setTabVisible(i,show||page==workspace_||page==actionEditor_||pages->tabText(i)=="Dialogue");}};
-    connect(advanced,&QCheckBox::toggled,pages,showPages);showPages(false);
+    auto advanced = new QCheckBox("Show technical tabs");
+    advanced->setObjectName("cutsceneRawToggle");
+    detailLayout->insertWidget(1, advanced);
+    auto showPages = [=, this](bool show) {
+        for (auto widget : {mode_, requests_, images_}) widget->setVisible(show);
+        sceneStatus_->setVisible(show);
+        for (int i = 0; i < pages->count(); ++i)
+            pages->setTabVisible(i, show || pages->widget(i) == workspace_ || pages->widget(i) == actionEditor_ || pages->tabText(i) == "Dialogue" || pages->tabText(i) == "Background preview");
+    };
+    connect(advanced, &QCheckBox::toggled, pages, showPages);
+    showPages(false);
+}
+void CutsceneEditor::createCastTools(QVBoxLayout *previewLayout) {
+    auto tools = new QHBoxLayout;
+    auto addCast = new QPushButton("Add actor or sprite…");
+    addCast->setObjectName("sceneAddCast");
+    tools->addWidget(addCast);
+    auto cast = scenePreview_->findChild<QComboBox *>("sceneLiveActors");
+    tools->addWidget(new QLabel("Cast"));
+    cast->setMaximumWidth(210);
+    tools->addWidget(cast);
+    auto reposition = new QPushButton("Reposition");
+    reposition->setObjectName("sceneReposition");
+    auto move = new QPushButton("Move…");
+    move->setObjectName("sceneMove");
+    auto animate = new QPushButton("Animation…");
+    animate->setObjectName("sceneAnimate");
+    for (auto button : {reposition, move, animate}) {
+        tools->addWidget(button);
+        button->setEnabled(false);
+        connect(scenePreview_, &ScenePreview::castEditable, button, &QPushButton::setEnabled);
+    }
+    tools->addStretch();
+    reposition->setToolTip("Click a point on stage to place the selected cast member there immediately.");
+    move->setToolTip("Choose a duration, then click a destination on stage.");
+    previewLayout->insertLayout(0, tools);
+
+    createArtworkDialog(addCast, animate, cast);
+    auto motion = new QDialog(scenePreview_);
+    motion->setObjectName("sceneMotionDialog");
+    auto motionLayout = new QFormLayout(motion);
+    auto duration = new QSpinBox;
+    duration->setObjectName("sceneMoveDuration");
+    duration->setRange(1, 1800);
+    duration->setValue(30);
+    duration->setSuffix(" updates");
+    motionLayout->addRow("Travel time", duration);
+    auto wait = new QCheckBox("Wait for arrival before the next step");
+    wait->setObjectName("sceneMoveWait");
+    wait->setChecked(true);
+    motionLayout->addRow(wait);
+    auto motionButtons = new QDialogButtonBox(QDialogButtonBox::Cancel);
+    motionButtons->addButton("Choose destination", QDialogButtonBox::AcceptRole)->setObjectName("sceneChooseDestination");
+    motionLayout->addRow(motionButtons);
+    connect(motionButtons, &QDialogButtonBox::rejected, motion, &QDialog::reject);
+    connect(motionButtons, &QDialogButtonBox::accepted, motion, &QDialog::accept);
+    connect(move, &QPushButton::clicked, this, [=, this] {
+        scenePreview_->pauseForEditing();
+        motion->setWindowTitle(tr("Move %1").arg(cast->currentText()));
+        motion->open();
+    });
+    connect(motion, &QDialog::accepted, this, [=, this] {
+        scenePreview_->beginCastPlacement(true);
+    });
+    connect(reposition, &QPushButton::clicked, this, [this] { scenePreview_->beginCastPlacement(false); });
+    connect(scenePreview_, &ScenePreview::castDestination, this, [=, this](bool sprite, int slot, SceneVector position, bool moving) {
+        actionEditor_->setPlacementMode(moving, duration->value(), wait->isChecked());
+        if (sprite) actionEditor_->placeSpriteAtPlayhead(slot, position);
+        else actionEditor_->placeActorAtPlayhead(slot, position);
+        actionEditor_->setPlacementMode(false, duration->value(), false);
+    });
+    connect(scenePreview_, &ScenePreview::assetPlaced, actionEditor_, &SceneActionEditor::addAsset);
+    connect(scenePreview_, &ScenePreview::spritePlacedAtPlayhead, actionEditor_, &SceneActionEditor::placeSpriteAtPlayhead);
+    connect(actionEditor_, &SceneActionEditor::stageFeedback, scenePreview_, &ScenePreview::showEditFeedback);
+    connect(actionEditor_, &SceneActionEditor::assetAdded, scenePreview_, &ScenePreview::selectCastMember);
+}
+void CutsceneEditor::createArtworkDialog(QPushButton *addCast, QPushButton *animate, QComboBox *cast) {
+    auto library = new QDialog(scenePreview_);
+    library->setObjectName("sceneArtworkDialog");
+    library->resize(690, 540);
+    auto libraryLayout = new QVBoxLayout(library);
+    keyPicker_ = new SceneKeyPicker(rom_);
+    keyPicker_->setObjectName("cutscenePlacementLibrary");
+    if (project_->combatArtwork()) keyPicker_->setArtwork(project_->combatArtwork()->previewEdits());
+    libraryLayout->addWidget(keyPicker_, 1);
+    libraryLayout->addWidget(keyPicker_->auditionWidget());
+    auto libraryButtons = new QDialogButtonBox(QDialogButtonBox::Cancel);
+    auto useKey = libraryButtons->addButton("Place on stage", QDialogButtonBox::AcceptRole);
+    useKey->setObjectName("sceneUseSelectedKey");
+    libraryLayout->addWidget(libraryButtons);
+    auto grid = keyPicker_->findChild<QListWidget *>("sceneKeyGrid");
+    auto kind = keyPicker_->findChild<QComboBox *>("sceneKeyKind");
+    auto allowKey = [=] {
+        const auto item = grid->currentItem();
+        useKey->setEnabled(item != nullptr);
+        const bool animate = library->property("changingAnimation").toBool();
+        const bool empty = item && !item->data(Qt::UserRole + 5).toBool();
+        useKey->setText(animate ? (empty ? "Apply empty animation" : "Apply animation") :
+                                  (empty ? "Place empty artwork" : "Place on stage"));
+    };
+    connect(keyPicker_, &SceneKeyPicker::keySelected, library, allowKey);
+    connect(keyPicker_, &SceneKeyPicker::placementCancelled, library, [useKey] { useKey->setEnabled(false); });
+    auto openLibrary = [=, this](bool changingAnimation) {
+        scenePreview_->pauseForEditing();
+        library->setProperty("changingAnimation", changingAnimation);
+        library->setWindowTitle(changingAnimation ? tr("Animation for %1").arg(cast->currentText()) : tr("Add an actor or sprite"));
+        useKey->setText(changingAnimation ? "Apply animation" : "Place on stage");
+        if (changingAnimation) kind->setCurrentIndex(scenePreview_->selectedObject().kind == SceneObjectKind::Sprite ? 1 : 0);
+        kind->setEnabled(!changingAnimation);
+        if (changingAnimation) {
+            const auto record = scenePreview_->selectedObjectRecord();
+            const bool sprite = kind->currentIndex() == 1;
+            if (!record.isEmpty()) keyPicker_->selectArtwork(
+                int(u32(record,sprite ? 0x30 : 0xe8)), u8(record,sprite ? 0x4c : 0x146),
+                qint16(u16(record,sprite ? 0x44 : 0x138)), u8(record,sprite ? 0x4b : 0x13f));
+        }
+        keyPicker_->openLibrary(!changingAnimation);
+        allowKey();
+        library->open();
+    };
+    connect(addCast, &QPushButton::clicked, this, [openLibrary] { openLibrary(false); });
+    connect(animate, &QPushButton::clicked, this, [openLibrary] { openLibrary(true); });
+    connect(libraryButtons, &QDialogButtonBox::rejected, library, &QDialog::reject);
+    connect(libraryButtons, &QDialogButtonBox::accepted, library, &QDialog::accept);
+    connect(library, &QDialog::accepted, this, [=, this] {
+        const auto key = keyPicker_->selectedKey();
+        if (key.isEmpty()) return;
+        if (!library->property("changingAnimation").toBool()) {
+            scenePreview_->armAssetPlacement(key[0] == 1, key[1], key[2], key[3], key[4]);
+            return;
+        }
+        const auto object = scenePreview_->selectedObject();
+        actionEditor_->playObjectKey(key[0] == 1, object.slot, key[1], key[2], key[3],
+                                     scenePreview_->selectedObjectRecord(), key[4]);
+    });
 }
 void CutsceneEditor::createSceneTrigger(){
     if(!selectedScene()||invalidSceneInput())return;

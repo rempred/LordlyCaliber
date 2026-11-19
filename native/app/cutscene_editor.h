@@ -15,6 +15,7 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsPixmapItem;
 class QTabWidget;
+class QVBoxLayout;
 namespace lordly {
 class Project;
 class SaveDocument;
@@ -50,6 +51,8 @@ class CutsceneEditor : public QWidget {
     bool invalidSceneInput() const;
     void refreshSceneInputState();
     void createWorkspace(QTabWidget *);
+    void createCastTools(QVBoxLayout *);
+    void createArtworkDialog(QPushButton *addCast, QPushButton *animate, QComboBox *cast);
     void refreshEventRows();
     void filterScenes();
     void createSceneTrigger();

@@ -33,6 +33,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSplitter>
+#include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -90,6 +91,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     };
     scenes_ = addList("Scenes", "cutsceneScenes");
     scenes_->setWordWrap(true);
+    scenes_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scenes_->setTextElideMode(Qt::ElideNone);
     scenes_->setResizeMode(QListView::Adjust);
     if (project_) {
@@ -99,7 +101,16 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         duplicateScene_ = new QPushButton("Duplicate");
         duplicateScene_->setObjectName("sceneDuplicate");
         buttons->addWidget(newScene_);
-        buttons->addWidget(duplicateScene_);
+        auto options = new QPushButton("Scene options…");
+        options->setObjectName("sceneOptions");
+        options->setCheckable(true);
+        buttons->addWidget(options);
+        auto extra = new QWidget;
+        auto extraLayout = new QVBoxLayout(extra);
+        extraLayout->setContentsMargins(0, 0, 0, 0);
+        extraLayout->addWidget(duplicateScene_);
+        connect(options, &QPushButton::toggled, extra, &QWidget::setVisible);
+        extra->hide();
         static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(buttons);
         auto actions = new QHBoxLayout;
         renameScene_ = new QPushButton("Rename");
@@ -108,14 +119,15 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         removeScene_->setObjectName("sceneRemove");
         actions->addWidget(renameScene_);
         actions->addWidget(removeScene_);
-        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(actions);
+        extraLayout->addLayout(actions);
         templateScene_ = new QPushButton("Use as template");
         templateScene_->setObjectName("sceneUseTemplate");
         templateScene_->setToolTip("Name a replacement of this scene. It keeps the current actions and every existing game trigger; no new selector is allocated. The name is saved in the Project.");
-        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(templateScene_);
+        extraLayout->addWidget(templateScene_);
         wipeScene_ = new QPushButton("Clear scene content");
         wipeScene_->setObjectName("sceneWipe");
-        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(wipeScene_);
+        extraLayout->addWidget(wipeScene_);
+        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(extra);
         for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_, templateScene_})
             button->setEnabled(false);
         connect(newScene_, &QPushButton::clicked, this, [this] { createScene(true); });
@@ -608,6 +620,7 @@ void CutsceneEditor::createScene(bool blank) {
         layout->addRow("Name", name);
         auto source = selectedScene();
         QComboBox *templates = nullptr;
+        QSpinBox *hold = nullptr;
         if (blank) {
             templates = new QComboBox;
             templates->setObjectName("newSceneTemplate");
@@ -626,6 +639,13 @@ void CutsceneEditor::createScene(bool blank) {
                 throw Error(
                     "This ROM has no supported room or environment setup for a blank scene");
             layout->addRow("Setup template", templates);
+            hold = new QSpinBox;
+            hold->setObjectName("newSceneHold");
+            hold->setRange(0, 1800);
+            hold->setValue(90);
+            hold->setSuffix(" updates");
+            hold->setSpecialValueText("Exit immediately");
+            layout->addRow("Hold before exit", hold);
         } else if (source) {
             name->setText(("Copy of " + programs().displayName(source)).left(120));
         } else
@@ -643,11 +663,18 @@ void CutsceneEditor::createScene(bool blank) {
         }
         auto next = *project_->scenePrograms();
         const auto created = next.createScene(name->text(), source, blank);
+        if (hold && hold->value()) {
+            const auto program = next.program(created);
+            const auto exit = std::find_if(program.commands.cbegin(), program.commands.cend(), [](const auto &command) { return command.opcode == 0x7d; });
+            if (exit == program.commands.cend()) throw Error("The selected setup has no scene exit.");
+            next.replace(created, SceneActions::insert(program, int(exit - program.commands.cbegin()), 0xe, hold->value()).source);
+        }
         pushSceneProgramChange(project_, undo_, blank ? "Create scene" : "Duplicate scene", next);
         findChild<QLineEdit *>("cutsceneScenesSearch")->clear();
         // A new scene has no event-row reference until it is assigned to a launch.
         if(eventRows_)eventRows_->setCurrentIndex(0);
         reloadScenes(created);
+        if (hold && hold->value()) scenePreview_->seekToUpdate(1);
         scenes_->scrollToItem(scenes_->currentItem());
     } catch (const std::exception &e) {
         QMessageBox::warning(this, "Scene creation", QString::fromUtf8(e.what()));
@@ -700,6 +727,10 @@ void CutsceneEditor::selectScene() {
         return;
     const auto key = selectedScene();
     transformPreview_->clear();
+    if (auto title = findChild<QLabel *>("sceneStageTitle")) {
+        title->setText(programs().displayName(key));
+        title->setToolTip(title->text());
+    }
     auto scene = programs().resource(key);
     scene.program = programs().program(key);
     if (project_) {

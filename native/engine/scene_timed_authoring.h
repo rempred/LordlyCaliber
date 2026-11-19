@@ -11,7 +11,7 @@ struct TimedSceneEdit {
 TimedSceneEdit insertSceneActionAtTime(const DirectorProgram &, const QMap<int, int> &commandTimes,
                                       int tick, quint32 kind, int duration = 30);
 TimedSceneEdit placeSceneActorAtTime(const DirectorProgram &, const QMap<int, int> &commandTimes,
-                                    int tick, int slot, SceneVector position);
+                                    int tick, int slot, SceneVector position, int travelUpdates = 0);
 DirectorProgram holdSceneBeforeExit(const DirectorProgram &, int exitCommand,
                                     const QSet<int> &movingActors, bool fade, int panUpdates);
 } // namespace lordly

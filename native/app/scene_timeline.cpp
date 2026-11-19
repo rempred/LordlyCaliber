@@ -1,6 +1,7 @@
 #include "app/scene_timeline.h"
 #include <QGraphicsItem>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QScrollBar>
 #include <algorithm>
 namespace lordly {
@@ -14,14 +15,20 @@ void SceneTimeline::setProgram(SceneId id,const DirectorProgram &p){
     id_=id;program_=p;times_.clear();command_=-1;tick_=0;rebuild();
 }
 void SceneTimeline::updatePlayback(SceneId id,const QMap<int,int> &times,int word,int tick){
-    Q_UNUSED(word);if(id!=id_)return;const bool changed=times_!=times;times_=times;tick_=tick;
+    Q_UNUSED(word);if(id!=id_)return;const bool changed=times_!=times;const bool moved=tick_!=tick;times_=times;tick_=tick;
     if(changed||!playhead_)rebuild();
     else playhead_->setLine(gutter+tick_*pixelsPerTick,0,gutter+tick_*pixelsPerTick,scene()->sceneRect().height());
+    if (moved) {
+        const auto x = mapFromScene(playhead_->line().p1()).x();
+        const int left = qMin(gutter, viewport()->width()/2);
+        if (x < left || x > viewport()->width()-10)
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value()+x-left-20);
+    }
 }
 void SceneTimeline::selectCommand(int command){if(command_==command)return;command_=command;rebuild();}
 void SceneTimeline::rebuild(){
     const int horizontal=horizontalScrollBar()->value(),vertical=verticalScrollBar()->value();
-    scene()->clear();playhead_=nullptr;
+    scene()->clear();playhead_=nullptr;trackLabels_.clear();
     struct Clip {int command,track,lane;double x,width;QString label,tip;bool pending;};
     QVector<Clip> clips;QStringList tracks{"Scene / camera","Dialogue / choices","Logic / waits"};
     const auto actions=SceneActions::inspect(program_);const auto choices=SceneActions::choices(program_);
@@ -34,7 +41,7 @@ void SceneTimeline::rebuild(){
         if(c.opcode==0xbf)track="Dialogue / choices";
         else if(a.actorOperand>=0){
             const auto slot=SceneActions::actorSlotWord(c,a.actorOperand);
-            track=(slot&0xffffff00U)==0x08880000U ? "Actor from launch" : QString("Actor %1").arg(qint32(slot));
+            track=(slot&0xffffff00U)==0x08880000U ? "Actor from launch" : slot < 28 ? QString("Actor %1").arg(slot) : "Scene / cast";
         }
         else if(a.name=="Place sprite"||a.name=="Move sprite")track=QString("Sprite %1").arg(c.operands[0]&0xffff);
         else if(c.opcode==0x46||c.opcode==0x63||c.opcode==0x64||c.opcode==0x66)track=QString("Sprite %1").arg(quint8(c.operands[0]));
@@ -64,6 +71,7 @@ void SceneTimeline::rebuild(){
         auto label=scene()->addSimpleText(QString::number(t)+" updates");label->setPos(x+3,3);
     }
     for(int r=0;r<tracks.size();++r){
+        trackLabels_ << qMakePair(QRectF(0,tops[r],gutter,bottoms[r]-tops[r]),tracks[r]);
         auto name=scene()->addSimpleText(fontMetrics().elidedText(tracks[r],Qt::ElideRight,gutter-10));name->setPos(5,tops[r]+6);name->setToolTip(tracks[r]);
         scene()->addLine(0,bottoms[r],width,bottoms[r],QPen(QColor("#c6ab70")));
     }
@@ -74,15 +82,32 @@ void SceneTimeline::rebuild(){
         text->setBrush(c.command==command_?Qt::white:QColor("#442b15"));text->setData(0,c.command);text->setToolTip(c.tip);
     }
     playhead_=scene()->addLine(gutter+tick_*pixelsPerTick,0,gutter+tick_*pixelsPerTick,height,QPen(QColor("#ac251c"),2));
-    scene()->setSceneRect(0,0,width,height+10);horizontalScrollBar()->setValue(horizontal);verticalScrollBar()->setValue(vertical);
+    scene()->setSceneRect(0,0,qMax(width,gutter+(reached+30)*pixelsPerTick),height+10);horizontalScrollBar()->setValue(horizontal);verticalScrollBar()->setValue(vertical);
+}
+void SceneTimeline::drawForeground(QPainter *painter, const QRectF &) {
+    const int left = mapToScene(0, 0).toPoint().x();
+    if (left <= 0) return;
+    painter->save();
+    painter->setPen(QColor("#442b15"));
+    painter->fillRect(QRectF(left,0,gutter,30),backgroundBrush());
+    for (const auto &[row,label] : trackLabels_) {
+        auto box = row.translated(left,0);
+        painter->fillRect(box,backgroundBrush());
+        painter->drawText(box.adjusted(5,6,-4,0), Qt::AlignLeft | Qt::AlignTop,
+                          fontMetrics().elidedText(label,Qt::ElideRight,gutter-10));
+        painter->drawLine(box.bottomLeft(),box.bottomRight());
+    }
+    painter->restore();
 }
 void SceneTimeline::mousePressEvent(QMouseEvent *e){
+    if(e->position().x()<gutter&&mapToScene(0,0).x()>0)return;
     if(e->button()==Qt::LeftButton){const auto item=itemAt(e->position().toPoint());
         if(item&&item->data(0).isValid()){emit commandSelected(item->data(0).toInt());return;}
         const auto p=mapToScene(e->position().toPoint());if(p.x()>=gutter){emit timeSelected(qMax(0,qRound((p.x()-gutter)/pixelsPerTick)));return;}
     }QGraphicsView::mousePressEvent(e);
 }
 void SceneTimeline::mouseDoubleClickEvent(QMouseEvent *e){
+    if(e->position().x()<gutter&&mapToScene(0,0).x()>0)return;
     const auto item=itemAt(e->position().toPoint());if(item&&item->data(0).isValid()){emit commandActivated(item->data(0).toInt());return;}
     QGraphicsView::mouseDoubleClickEvent(e);
 }

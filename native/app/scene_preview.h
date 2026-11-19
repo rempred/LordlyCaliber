@@ -46,8 +46,13 @@ class ScenePreview : public QWidget {
     void beginPositionPick(int command, int slot);
     void armAssetPlacement(bool sprite, int bank, int animation, int facing, int variant = 0);
     void clearAssetPlacement();
+    void beginCastPlacement(bool move);
+    void selectCastMember(bool sprite, int slot);
+    void pauseForEditing();
+    void showEditFeedback(const QString &message);
     SceneSelectionTarget selectedObject() const { return selectedObject_; }
     QByteArray selectedObjectRecord() const;
+    QPointF selectedOrigin() const;
     void seekToCommand(int word);
     void seekToUpdate(int tick);
     void reportExit();
@@ -65,7 +70,9 @@ class ScenePreview : public QWidget {
     void positionPicked(int command, SceneVector position);
     void actorPlacedAtPlayhead(int slot, SceneVector position);
     void spritePlacedAtPlayhead(int slot, SceneVector position);
-    void assetPlaced(bool sprite, int bank, int animation, int facing, SceneVector position, int variant);
+    void assetPlaced(bool sprite, int bank, int animation, int facing, SceneVector position, int variant, int slot);
+    void castDestination(bool sprite, int slot, SceneVector position, bool moving);
+    void castEditable(bool editable);
     void timelineChanged(SceneId, const QMap<int, int> &commandTimes, int activeWord, int tick);
     void exitReached(SceneId, int word, const QSet<int> &actors, bool fade, int panUpdates, bool paused);
 
@@ -163,7 +170,7 @@ class ScenePreview : public QWidget {
     QSpinBox *position_, *rate_;
     QPushButton *play_, *step_, *skip_;
     QCheckBox *loop_;
-    QLabel *status_, *context_;
+    QLabel *status_, *context_, *transportState_;
     QPushButton *answerPath_;
     QComboBox *liveObjects_;
     QLabel *objectState_;
@@ -171,6 +178,10 @@ class ScenePreview : public QWidget {
     SceneSelectionTarget selectedObject_;
     void findSelectedAction();
     void cancelPositionPick();
+    void preparePlacementFrame();
+    bool placingCast_ = false, movingCast_ = false;
+    SceneSelectionTarget castTarget_;
+    std::optional<QPointF> aimOrigin_;
     int placementCommand_ = -1, placementSlot_ = -1;
     QLabel *placementHelp_;
     QPushButton *cancelPlacement_;

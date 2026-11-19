@@ -20,7 +20,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QFile>
 #include <QFontDatabase>
 #include <QGraphicsItem>
@@ -36,6 +36,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTreeWidget>
@@ -828,17 +829,23 @@ class SceneWorkspaceTests : public QObject {
         preview->seekToUpdate(220);QTRY_VERIFY2_WITH_TIMEOUT(preview->property("sceneTick").toInt()>=220||preview->property("sceneStopped").toBool(),qPrintable(status->text()),20000);
         QVERIFY2(!preview->property("sceneStopped").toBool(),qPrintable(status->text()));
         auto canvas=preview->findChild<QGraphicsView *>("sceneCanvas");QVERIFY(canvas);
-        for(const auto size:{QSize(1280,850),QSize(1600,1050)})for(bool advanced:{false,true}){
-            editor.resize(size);editor.findChild<QCheckBox *>("cutsceneRawToggle")->setChecked(advanced);QTest::qWait(100);
-            QVERIFY(canvas->viewport()->width()>=640);QVERIFY(canvas->viewport()->height()>=480);
-            QVERIFY2(canvas->transform().m11()>=1.99,"The scene image must be at least 640x480");
-            const auto bottom=canvas->mapTo(preview,canvas->rect().bottomLeft()).y();
-            if(status->mapTo(preview,QPoint()).y()<=bottom){editor.grab().save("scene-workspace-layout-failure.png");qInfo()<<"geometry"<<size<<advanced<<preview->geometry()<<preview->minimumSizeHint()<<canvas->geometry()<<status->geometry()<<preview->parentWidget()->geometry()<<preview->parentWidget()->minimumSizeHint();}
-            QVERIFY2(status->mapTo(preview,QPoint()).y()>bottom,"Status text overlaps the scene");
-            auto live=preview->findChild<QComboBox *>("sceneLiveActors");QVERIFY(live->mapTo(preview,QPoint()).y()>bottom);
+        auto timeline=editor.findChild<SceneTimeline *>();
+        for(const auto size:{QSize(1024,768),QSize(1280,850),QSize(1600,1050)}){
+            editor.resize(size);QTest::qWait(100);
+            QCOMPARE(editor.size(),size);
+            for(auto widget : QList<QWidget *>{canvas,timeline,editor.findChild<QPushButton *>("sceneAddCast"),editor.findChild<QPushButton *>("sceneMove")}) {
+                QVERIFY(widget->isVisible());
+                QVERIFY2(editor.rect().contains(QRect(widget->mapTo(&editor,QPoint()),widget->size())),qPrintable(widget->objectName()));
+            }
+            const auto stage=canvas->mapTo(&editor,canvas->rect().bottomLeft()).y();
+            QVERIFY(timeline->mapTo(&editor,QPoint()).y()>stage);
+            QVERIFY(canvas->transform().m11()>=1);
+            QVERIFY(editor.grab().save(QString("stage-%1.png").arg(size.width())));
         }
-        editor.findChild<QCheckBox *>("cutsceneRawToggle")->setChecked(false);editor.resize(1500,1000);QTest::qWait(100);
-        QVERIFY(editor.grab().save("scene-workspace-fixed.png"));
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneOpenSetup"),Qt::LeftButton);
+        QVERIFY(status->isVisible());
+        auto details=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        QVERIFY(details);details->reject();
         preview->seekToUpdate(6000);QTRY_VERIFY2_WITH_TIMEOUT(preview->property("sceneTick").toInt()>=6000||preview->property("sceneStopped").toBool(),qPrintable(status->text()),90000);
         QVERIFY2(status->text().contains("Scene released"),qPrintable(status->text()));
     }
@@ -866,51 +873,126 @@ class SceneWorkspaceTests : public QObject {
     }
     void authoringAndUndo(){
         auto project=Project::fromRom(rom());project.loadScenePrograms();project.loadSceneEvents();
-        auto programs=*project.scenePrograms();SceneId source;
-        for(auto id:programs.scenes())if(programs.canCreateBlank(id)){source=id;break;}
-        QVERIFY(source);const auto id=programs.createScene("Workspace test",source,true);
-        project.setScenePrograms(programs.json());const auto baseline=programs.program(id).source;
         QUndoStack undo;CutsceneEditor editor(project.rom(),nullptr,&project,&undo);
-        editor.resize(1500,1000);editor.show();
+        editor.resize(1280,850);editor.show();
         auto scenes=editor.findChild<QListWidget *>("cutsceneScenes");QVERIFY(scenes);
         QTRY_VERIFY_WITH_TIMEOUT(scenes->count()>1000,10000);
-        for(int i=0;i<scenes->count();++i)if(scenes->item(i)->data(Qt::UserRole+1).toString()==id.authoredId)scenes->setCurrentRow(i);
+        QTimer::singleShot(0,&editor,[&]{
+            auto dialog=editor.findChild<QDialog *>("sceneCreateDialog");QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>("newSceneName")->setText("Workspace test");
+            QTest::mouseClick(dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
+        });
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneCreate"),Qt::LeftButton);
+        const auto id=SceneId::authored(scenes->currentItem()->data(Qt::UserRole+1).toString());
+        QVERIFY(id);const auto baseline=project.scenePrograms()->program(id).source;
+        const auto initialIndex=undo.index();
         auto pages=editor.findChild<QTabWidget *>("cutsceneDetailPages");QVERIFY(pages);
         QCOMPARE(pages->currentWidget()->objectName(),"cutsceneWorkspace");
-        auto picker=editor.findChild<SceneKeyPicker *>();QVERIFY(picker);
-        auto banks=picker->findChild<QComboBox *>("sceneKeyBank");auto grid=picker->findChild<QListWidget *>("sceneKeyGrid");
-        banks->setCurrentIndex(banks->findData(3));QVERIFY(grid->count()>0);
-        auto variants=picker->findChild<QComboBox *>("sceneKeyAppearance");variants->setCurrentIndex(variants->findData(6));
-        QCOMPARE(grid->count(),ActorArt::load(rom(),3).selections().size());
-        grid->setCurrentRow(0);QTest::qWait(100);
-        QCOMPARE(project.scenePrograms()->program(id).source,baseline); // Audition never edits.
+        auto preview=editor.findChild<ScenePreview *>();QVERIFY(preview);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(),1);
+        preview->seekToUpdate(0);  // Adding at the opening must use the scene's actual camera.
         auto actions=editor.findChild<SceneActionEditor *>();QVERIFY(actions);
-        actions->addAtPlayhead(0xe);
-        auto preview=editor.findChild<ScenePreview *>();QVERIFY(preview);preview->seekToUpdate(1);
-        QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),1,5000);
-        grid->setCurrentRow(1);grid->setCurrentRow(0);
         auto canvas=preview->findChild<QGraphicsView *>("sceneCanvas");QVERIFY(canvas);
+        auto picker=editor.findChild<SceneKeyPicker *>();QVERIFY(picker);
+        auto add=editor.findChild<QPushButton *>("sceneAddCast");
+        auto use=editor.findChild<QPushButton *>("sceneUseSelectedKey");
+        auto dialog=editor.findChild<QDialog *>("sceneArtworkDialog");
+        QTest::mouseClick(add,Qt::LeftButton);QVERIFY(dialog->isVisible());
+        auto gallery=picker->findChild<QListWidget *>("sceneArtworkGallery");
+        QVERIFY(gallery->isVisible());
+        auto dioTile=[&]() -> QListWidgetItem * {
+            for(int i=0;i<gallery->count();++i) {
+                auto item=gallery->item(i);
+                if(item->data(Qt::UserRole).toInt()==3 && item->data(Qt::UserRole+1).toInt()==6)return item;
+            }
+            return nullptr;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(dioTile(),10000);
+        gallery->scrollToItem(dioTile());
+        QTest::mouseClick(gallery->viewport(),Qt::LeftButton,Qt::NoModifier,gallery->visualItemRect(dioTile()).center());
+        QCOMPARE(picker->selectedKey()[1],3);QCOMPARE(picker->selectedKey()[4],6);
+        QVERIFY(dialog->grab().save("cast-gallery.png"));
+        auto artPages=picker->findChild<QTabWidget *>("sceneArtworkPages");
+        QTest::mouseClick(artPages->tabBar(),Qt::LeftButton,Qt::NoModifier,artPages->tabBar()->tabRect(1).center());
+        auto grid=picker->findChild<QListWidget *>("sceneKeyGrid");
+        QCOMPARE(grid->count(),ActorArt::load(rom(),3).selections().size());
+        QTest::mouseClick(grid->viewport(),Qt::LeftButton,Qt::NoModifier,grid->visualItemRect(grid->item(0)).center());
+        QVERIFY(use->isEnabled());
+        QVERIFY(dialog->grab().save("cast-artwork.png"));
+        QTest::mouseClick(dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel),Qt::LeftButton);
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(160,120)));
+        QCOMPARE(undo.index(),initialIndex);
+        QTest::mouseClick(add,Qt::LeftButton);QTest::mouseClick(use,Qt::LeftButton);
+        auto cancel=preview->findChild<QPushButton *>("sceneCancelPosition");QVERIFY(cancel->isVisible());
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,QPoint(1,1));
+        QVERIFY(preview->findChild<QLabel *>("scenePlacementHelp")->text().contains("inside the scene"));
+        QCOMPARE(undo.index(),initialIndex);
+        QTest::mouseClick(cancel,Qt::LeftButton);QVERIFY(!cancel->isVisible());
+        preview->seekToUpdate(0);
+        QTest::mouseClick(add,Qt::LeftButton);QTest::mouseClick(use,Qt::LeftButton);
         QSignalSpy placed(preview,&ScenePreview::assetPlaced);
-        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->viewport()->rect().center());
-        QCOMPARE(placed.count(),1);
-        QCOMPARE(placed.first().last().toInt(),6);
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(110,140)));
+        QCOMPARE(placed.count(),1);QCOMPARE(placed.first()[5].toInt(),6);
+        QCOMPARE(undo.index(),initialIndex+1);
         bool dio=false;for(auto c:project.scenePrograms()->program(id).commands)if(c.opcode==0x14&&c.operands[1]==3){QCOMPARE(c.operands[8],6U);dio=true;}QVERIFY(dio);
         auto placedActions=SceneActions::inspect(project.scenePrograms()->program(id));
         QVERIFY(std::any_of(placedActions.begin(),placedActions.end(),[](const auto &a){return a.name=="Create Actor";}));
-        QTRY_VERIFY_WITH_TIMEOUT(preview->property("sceneTick").toInt()>=2,5000);
-        QPoint actorPoint(-1,-1);
-        for(int y=2;y<238&&actorPoint.x()<0;y+=3)for(int x=2;x<318;x+=3)if(preview->actorAt({x,y})==0&&preview->actorAt({x+1,y+1})==0&&preview->actorAt({x-1,y-1})==0){actorPoint={x,y};break;}
-        QVERIFY2(actorPoint.x()>=0,"Placed Actor must be visible and selectable");
+        QTRY_VERIFY_WITH_TIMEOUT(!preview->selectedObjectRecord().isEmpty(),5000);
+        QVERIFY2(QLineF(preview->selectedOrigin(),QPointF(110,140)).length()<2,"First placement must appear at the clicked point");
+        auto progress=editor.findChild<QSpinBox *>("scenePosition");
+        progress->setValue(12);
+        QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),12,5000);
+        const auto record=preview->selectedObjectRecord();
+        auto reposition=editor.findChild<QPushButton *>("sceneReposition");QVERIFY(reposition->isEnabled());
+        QTest::mouseClick(reposition,Qt::LeftButton);
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(140,140)));
+        QTRY_VERIFY_WITH_TIMEOUT(!preview->selectedObjectRecord().isEmpty() && u32(preview->selectedObjectRecord(),0x11c)!=u32(record,0x11c),5000);
+        QVERIFY2(QLineF(preview->selectedOrigin(),QPointF(140,140)).length()<2,"Reposition must show the clicked origin");
+        QCOMPARE(undo.index(),initialIndex+2);
+        progress->setValue(22);
+        QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),22,5000);
         const auto beforeMove=project.scenePrograms()->program(id).source;
-        actions->setPlacementMode(true,12,false);
-        const auto from=canvas->mapFromScene(actorPoint),to=from+QPoint(30,15);
-        QSignalSpy dragged(preview,&ScenePreview::actorPlacedAtPlayhead);
-        QVERIFY(canvas->viewport()->rect().contains(from));
-        QTest::mousePress(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,from);
-        QTest::mouseMove(canvas->viewport(),to,20);QTest::mouseRelease(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,to);
-        QCOMPARE(dragged.count(),1);
-        QVERIFY2(project.scenePrograms()->program(id).source!=beforeMove,qPrintable(editor.findChild<QLabel *>("sceneActionStatus")->text()));
-        bool moved=false;for(const auto &c:project.scenePrograms()->program(id).commands)if(c.opcode==7&&c.operands[0]==0&&c.operands[5]==12)moved=true;QVERIFY(moved);
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneMove"),Qt::LeftButton);
+        editor.findChild<QSpinBox *>("sceneMoveDuration")->setValue(12);
+        QVERIFY(editor.findChild<QCheckBox *>("sceneMoveWait")->isChecked());
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneChooseDestination"),Qt::LeftButton);
+        QTest::mouseMove(canvas->viewport(),canvas->mapFromScene(QPointF(207,140)));
+        QVERIFY(editor.grab().save("choose-destination.png"));
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(207,140)));
+        QCOMPARE(undo.index(),initialIndex+3);
+        bool moved=false;quint32 dest=0;
+        for(const auto &c:project.scenePrograms()->program(id).commands)
+            if(c.opcode==7 && c.operands[0]==0 && c.operands[5]==12){moved=true;dest=c.operands[3];}
+        QVERIFY(moved);
+        auto stepButton=preview->findChild<QPushButton *>("sceneStep");
+        QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),22,5000);
+        const auto startX=std::bit_cast<float>(u32(preview->selectedObjectRecord(),0x11c));
+        for(int i=0;i<5;++i) QTest::mouseClick(stepButton,Qt::LeftButton);
+        const auto midX=std::bit_cast<float>(u32(preview->selectedObjectRecord(),0x11c));
+        for(int i=0;i<10;++i) QTest::mouseClick(stepButton,Qt::LeftButton);
+        const auto endX=std::bit_cast<float>(u32(preview->selectedObjectRecord(),0x11c));
+        QVERIFY2(QLineF(preview->selectedOrigin(),QPointF(207,140)).length()<2,"Movement must reach the clicked destination");
+        QVERIFY(std::abs(endX-float(qint32(dest))/1000.f)<0.1);
+        QVERIFY(std::abs(endX-midX)<std::abs(endX-startX));QVERIFY(midX!=endX);
+        const auto gameFolder=qEnvironmentVariable("LORDLY_STAGE_GAME_FIXTURE");
+        if (!gameFolder.isEmpty()) {
+            auto game=Project::fromRom(rom());game.applyManifest(project.manifest());
+            auto events=*game.sceneEvents();
+            const auto program=game.scenePrograms()->program(id);
+            const auto selector=game.scenePrograms()->resource(id).selectors.first();
+            QJsonObject rule{{"id","stage-movement"},{"name","Stage movement"},{"group",1},{"target",2},
+                {"nodes",QJsonArray{QJsonObject{{"type","scene"},{"scene",selector}}}}};
+            events.setTrees(4,{rule},*game.scenePrograms());
+            game.setSceneEvents(events.json());
+            QDir().mkpath(gameFolder);QDir out(gameFolder);
+            game.saveFolder(out.filePath("project"));
+            auto reopened=Project::fromRom(rom());reopened.applyManifest(Project::readProject(out.filePath("project")));
+            QCOMPARE(reopened.scenePrograms()->program(id).source,program.source);
+            const auto filename=out.filePath("Ogre Battle 64 - Person of Lordly Caliber (USA).z64");
+            exportRom(reopened,rebuild(reopened,qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"),out.filePath("build")),filename);
+            auto decoded=ScenePrograms::load(Rom::open(filename));
+            QCOMPARE(decoded.program(id).source,program.source);
+        }
         undo.undo();QCOMPARE(project.scenePrograms()->program(id).source,beforeMove);undo.redo();
         preview->seekToUpdate(0);QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),0,5000);
         actions->addAtPlayhead(SceneActions::SetStoryFlag);
@@ -924,10 +1006,22 @@ class SceneWorkspaceTests : public QObject {
         QTemporaryDir folder;project.saveFolder(folder.path());
         auto reopened=Project::fromRom(rom());reopened.applyManifest(Project::readProject(folder.path()));
         QCOMPARE(reopened.scenePrograms()->program(id).source,edited);
-        while(undo.canUndo())undo.undo();QCOMPARE(project.scenePrograms()->program(id).source,baseline);
+        while(undo.index()>initialIndex)undo.undo();QCOMPARE(project.scenePrograms()->program(id).source,baseline);
         while(undo.canRedo())undo.redo();QCOMPARE(project.scenePrograms()->program(id).source,edited);
         preview->seekToUpdate(3);QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),3,5000);
         QVERIFY(editor.grab().save("scene-workspace.png"));
+        QTest::mouseClick(add,Qt::LeftButton);QTest::mouseClick(use,Qt::LeftButton);
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(185,142)));
+        QTRY_COMPARE(preview->selectedObject().slot,1);
+        QTRY_VERIFY(!preview->selectedObjectRecord().isEmpty());
+        auto cast=editor.findChild<QComboBox *>("sceneLiveActors");
+        QCOMPARE(cast->currentData().toInt(),1);
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneAnimate"),Qt::LeftButton);
+        QVERIFY(dialog->isVisible());
+        QCOMPARE(picker->selectedKey()[1],3);
+        QCOMPARE(picker->selectedKey()[4],6);
+        QTest::mouseClick(dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel),Qt::LeftButton);
+        undo.undo();QCOMPARE(project.scenePrograms()->program(id).source,edited);
     }
     void filterCreationAndTrigger(){
         auto project=Project::fromRom(rom());project.loadScenePrograms();project.loadSceneEvents();
@@ -953,7 +1047,13 @@ class SceneWorkspaceTests : public QObject {
         undo.undo();QCOMPARE(project.sceneEvents()->json(),eventsBefore);undo.redo();QVERIFY(project.sceneEvents()->json()!=eventsBefore);
         QCOMPARE(editor.size(),QSize(1280,850));QVERIFY(editor.grab().save("scene-workspace-small.png"));
     }
+    void spriteAuthoring_data() {
+        QTest::addColumn<bool>("waitForArrival");
+        QTest::newRow("continue during travel") << false;
+        QTest::newRow("wait for arrival") << true;
+    }
     void spriteAuthoring(){
+        QFETCH(bool,waitForArrival);
         auto project=Project::fromRom(rom());project.loadScenePrograms();project.loadSceneEvents();auto programs=*project.scenePrograms();SceneId source;
         for(auto id:programs.scenes())if(programs.resource(id).selectors.contains(610))source=id;
         const auto id=programs.createScene("Sprite placement",source,true);project.setScenePrograms(programs.json());
@@ -961,20 +1061,26 @@ class SceneWorkspaceTests : public QObject {
         auto list=editor.findChild<QListWidget *>("cutsceneScenes");QTRY_VERIFY_WITH_TIMEOUT(list->count()>1000,10000);
         for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole+1).toString()==id.authoredId)list->setCurrentRow(i);
         auto actions=editor.findChild<SceneActionEditor *>();auto preview=editor.findChild<ScenePreview *>();actions->addAtPlayhead(0xe);preview->seekToUpdate(1);QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(),1,5000);
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneAddCast"),Qt::LeftButton);
         auto picker=editor.findChild<SceneKeyPicker *>();picker->findChild<QComboBox *>("sceneKeyKind")->setCurrentIndex(1);
         auto banks=picker->findChild<QComboBox *>("sceneKeyBank");banks->setCurrentIndex(banks->findData(7));auto grid=picker->findChild<QListWidget *>("sceneKeyGrid");grid->setCurrentRow(0);
+        auto use=editor.findChild<QPushButton *>("sceneUseSelectedKey");QVERIFY(use->isEnabled());QTest::mouseClick(use,Qt::LeftButton);
         auto canvas=preview->findChild<QGraphicsView *>("sceneCanvas");QSignalSpy placed(preview,&ScenePreview::assetPlaced);
         QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->viewport()->rect().center());QCOMPARE(placed.count(),1);
-        QCOMPARE(placed.first().last().toInt(),1);
+        QCOMPARE(placed.first()[5].toInt(),1);
         bool appearance=false;for(auto c:project.scenePrograms()->program(id).commands)if(c.opcode==0x46&&c.operands[1]==7){QCOMPARE(c.operands[8],1U);appearance=true;}QVERIFY(appearance);
         QTRY_VERIFY2_WITH_TIMEOUT(preview->property("sceneTick").toInt()==2,qPrintable(editor.findChild<QLabel *>("sceneActionStatus")->text()+" / "+preview->findChild<QLabel *>("scenePlaybackStatus")->text()),5000);
         QPoint point(-1,-1);for(int y=2;y<238&&point.x()<0;y+=3)for(int x=2;x<318;x+=3)if(preview->spriteAt({x,y})==0&&preview->spriteAt({x+1,y+1})==0&&preview->spriteAt({x-1,y-1})==0){point={x,y};break;}QVERIFY(point.x()>=0);
         const auto before=project.scenePrograms()->program(id).source;
-        editor.findChild<QDoubleSpinBox *>("sceneMoveSeconds")->setValue(12);editor.findChild<QComboBox *>("scenePlacementTool")->setCurrentIndex(1);
-        const auto from=canvas->mapFromScene(point),to=from+QPoint(30,15);QSignalSpy dragged(preview,&ScenePreview::spritePlacedAtPlayhead);
-        QTest::mousePress(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,from);QTest::mouseMove(canvas->viewport(),to,20);QTest::mouseRelease(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,to);
-        QCOMPARE(dragged.count(),1);QVERIFY(project.scenePrograms()->program(id).source!=before);
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneMove"),Qt::LeftButton);
+        editor.findChild<QSpinBox *>("sceneMoveDuration")->setValue(12);
+        auto wait=editor.findChild<QCheckBox *>("sceneMoveWait");if(!waitForArrival)QTest::mouseClick(wait,Qt::LeftButton);QCOMPARE(wait->isChecked(),waitForArrival);
+        QTest::mouseClick(editor.findChild<QPushButton *>("sceneChooseDestination"),Qt::LeftButton);
+        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,canvas->mapFromScene(QPointF(200,130)));
+        QVERIFY(project.scenePrograms()->program(id).source!=before);
         bool moved=false;const auto p=project.scenePrograms()->program(id);for(const auto &a:SceneActions::inspect(p))if(a.name=="Move sprite"){QCOMPARE(p.commands[a.command+2].operands[1],12U);moved=true;}QVERIFY(moved);
+        bool waits=false;for(const auto &c:p.commands)if(c.opcode==0x8f&&(c.operands[2]&0xffff0000)==0x4c4d0000)waits=true;
+        QCOMPARE(waits,waitForArrival);
         undo.undo();QCOMPARE(project.scenePrograms()->program(id).source,before);undo.redo();
     }
     void compiledFlagDispatcher(){

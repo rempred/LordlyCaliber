@@ -224,6 +224,13 @@ QString waitReason(const DirectorProgram &p, int before, const action_detail::Co
     return "There is no later yield to retain a pending wait.";
 }
 std::optional<quint32> spriteReference(const DirectorCommand &c) {
+    if (c.opcode == 0x8e || c.opcode == 0x8f) {
+        const auto word = c.operands[c.opcode == 0x8e ? 0 : 2];
+        const auto tag = word & 0xffff0000U;
+        if (tag == 0x4c4d0000U || (c.opcode == 0x8e &&
+            (tag == 0x4c4e0000U || tag == 0x4c500000U || tag == 0x4c510000U || tag == 0x4c540000U)))
+            return word & 0xffffU;
+    }
     const bool narrow = c.opcode == 0x46 || c.opcode == 0x63 || c.opcode == 0x64;
     if (!narrow && c.opcode != 0x65 && c.opcode != 0x66)
         return {};
@@ -320,6 +327,37 @@ QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
                                       reason.isEmpty(), reason};
     }
     return result;
+}
+int SceneActions::unusedObjectSlot(const DirectorProgram &p, bool sprite, QSet<quint32> used) {
+    if (sprite) {
+        for (const auto &c : p.commands)
+            if (const auto reference = spriteReference(c)) {
+                if (*reference >= 30)
+                    throw Error("A sprite slot is selected at launch; an unused slot cannot be "
+                                "chosen automatically.");
+                used << *reference;
+            }
+    } else {
+        for (const auto &c : p.commands) {
+            // A briefing row with an ordinary owner also writes its clones to slot zero.
+            if (c.opcode == 0xc2)
+                used << 0;
+            const auto names = Directors::grammar()[c.opcode].operands;
+            for (int i = 0; i < names.size(); ++i) {
+                const bool firstSlot = i == 0 && (c.opcode == 7 || c.opcode == 0x1c || c.opcode == 0xa6);
+                if (!firstSlot && !names[i].contains("actor_slot") && names[i] != "actor_selector")
+                    continue;
+                const auto reference = actorSlotWord(c, i);
+                if ((reference & 0xffffff00U) == 0x08880000U)
+                    throw Error("An actor slot is selected at launch. An unused slot cannot be chosen automatically.");
+                used << reference;
+            }
+        }
+    }
+    const int limit = sprite ? 30 : 28;
+    for (int slot = 0; slot < limit; ++slot)
+        if (!used.contains(slot)) return slot;
+    throw Error(sprite ? "All 30 sprite slots are in use." : "All 28 Actor slots are in use.");
 }
 DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint32 kind,
                                      int ticks) {
@@ -508,20 +546,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         case 0x46:
         case 0x63:
         case CreatePathSprite: {
-            QSet<quint32> used;
-            for (const auto &c : p.commands)
-                if (const auto reference = spriteReference(c)) {
-                    if (*reference >= 30)
-                        throw Error("A sprite slot is selected at launch; an unused slot cannot be "
-                                    "chosen automatically.");
-                    used << *reference;
-                }
-            spriteSlot = 0;
-            while (spriteSlot < 30 && used.contains(spriteSlot))
-                ++spriteSlot;
-            if (spriteSlot == 30)
-                throw Error("All 30 sprite slots are already referenced; select an existing sprite "
-                            "action to edit.");
+            spriteSlot = unusedObjectSlot(p, true);
             operands = kind == 0x46
                            ? QVector<quint32>{spriteSlot, 30, 1, 2, 0, 0, 0, 100, 0}
                            : QVector<quint32>{spriteSlot,  30,          1,          0, 0, 0, 180,
@@ -562,28 +587,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
             break;
         case 0x14:
         case 0x2a: {
-            QSet<quint32> used;
-            for (const auto &c : p.commands) {
-                // A briefing row with an ordinary owner also writes its clones to slot zero.
-                if (c.opcode == 0xc2)
-                    used << 0;
-                const auto names = Directors::grammar()[c.opcode].operands;
-                for (int i = 0; i < names.size(); ++i) {
-                    const bool firstSlot = i == 0 && (c.opcode == 7 || c.opcode == 0x1c || c.opcode == 0xa6);
-                    if (!firstSlot && !names[i].contains("actor_slot") && names[i] != "actor_selector")
-                        continue;
-                    const auto reference = actorSlotWord(c, i);
-                    if ((reference & 0xffffff00U) == 0x08880000U)
-                        throw Error("An actor slot is selected at launch. An unused slot cannot be chosen automatically.");
-                    used << reference;
-                }
-            }
-            slot = 0;
-            while (slot < 28 && used.contains(slot))
-                ++slot;
-            if (slot == 28)
-                throw Error(
-                    "All 28 Actor slots are already referenced; select an existing Actor to edit.");
+            slot = unusedObjectSlot(p, false);
             operands = {slot, 1, 0, 0, 0, 0, 0, 0, 0};
             break;
         }

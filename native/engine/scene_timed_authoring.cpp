@@ -37,7 +37,7 @@ TimedSceneEdit insertSceneActionAtTime(const DirectorProgram &source, const QMap
     return {SceneActions::insert(source, before, kind, duration), before};
 }
 TimedSceneEdit placeSceneActorAtTime(const DirectorProgram &source, const QMap<int, int> &times,
-                                    int tick, int slot, SceneVector position) {
+                                    int tick, int slot, SceneVector position, int travelUpdates) {
     if (slot < 0 || slot >= 28 || !std::isfinite(position.x) || !std::isfinite(position.z))
         throw Error("Choose an existing Actor and finite position");
     const auto coordinate = [](double value) {
@@ -46,6 +46,15 @@ TimedSceneEdit placeSceneActorAtTime(const DirectorProgram &source, const QMap<i
         return quint32(qint32(scaled));
     };
     const auto x = coordinate(position.x), z = coordinate(position.z);
+    if (travelUpdates < 0 || travelUpdates > 65535) throw Error("Travel time exceeds the game counter.");
+    if (travelUpdates > 0) {
+        // Keep existing positioning at this update. Movement begins at its result.
+        auto edit = insertSceneActionAtTime(source, times, tick, 7);
+        edit.program.commands[edit.command].operands = {
+            quint32(slot), quint32(-1000), quint32(-1000), x, z, quint32(travelUpdates), 0};
+        edit.program = DirectorProgram::decode(edit.program.encode());
+        return edit;
+    }
     TimedSceneEdit result{source, -1};
     for (int i = 0; i < source.commands.size(); ++i) {
         const auto &c = source.commands[i];

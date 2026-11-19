@@ -338,7 +338,7 @@ void SceneActionEditor::reportExit(SceneId id, int word, const QSet<int> &actors
         (paused ? ". Resume paused movement before adding a completion wait." : ". Hold until finished adds waits before the exit."));
 }
 void SceneActionEditor::insertAtPlayhead() {
-    if (!key_ || property("invalidEdits").toBool()) return;
+    if (!key_ || property("invalidEdits").toBool()) { emit stageFeedback("Finish the invalid fields in Step details first."); return; }
     try {
         const int tick = previewTick_;
         const auto edit = insertSceneActionAtTime(project_->scenePrograms()->program(key_), commandTimes_, tick, kind_->currentData().toUInt());
@@ -347,26 +347,25 @@ void SceneActionEditor::insertAtPlayhead() {
         refresh(edit.command); emit commandSelected(edit.command);
         if (changed_) changed_();
         emit previewUpdateRequested(tick);
-    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
+    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text()); }
 }
 void SceneActionEditor::placeActorAtPlayhead(int slot, SceneVector position) {
-    if (!key_ || property("invalidEdits").toBool()) return;
+    if (!key_ || property("invalidEdits").toBool()) { emit stageFeedback("Finish the invalid fields in Step details first."); return; }
     try {
         const int tick = previewTick_;
         const auto program = project_->scenePrograms()->program(key_);
-        auto edit = placeSceneActorAtTime(program, commandTimes_, tick, slot, position);
-        if(moveTool_){
-            edit.program.commands[edit.command].operands={quint32(slot),quint32(-1000),quint32(-1000),
-                quint32(qint32(std::round(position.x*1000))),quint32(qint32(std::round(position.z*1000))),quint32(moveDuration_),0};
-            edit.program=DirectorProgram::decode(edit.program.encode());
-            if(waitForMove_)edit.program=SceneActions::setCompletion(edit.program,edit.command,true);
-        }
+        auto edit = placeSceneActorAtTime(program, commandTimes_, tick, slot, position,
+                                          moveTool_ ? moveDuration_ : 0);
+        if (moveTool_ && waitForMove_)
+            edit.program = SceneActions::setCompletion(edit.program, edit.command, true);
         auto next = *project_->scenePrograms(); next.replace(key_, edit.program.source);
-        editing_ = true; pushSceneProgramChange(project_, undo_, "Place Actor at playhead", next); editing_ = false;
+        editing_ = true; pushSceneProgramChange(project_, undo_, moveTool_ ? "Move actor" : "Reposition actor", next); editing_ = false;
         refresh(edit.command); emit commandSelected(edit.command);
         if (changed_) changed_();
-        emit previewUpdateRequested(tick);
-    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); }
+        emit previewUpdateRequested(qMax(1,tick));
+        emit stageFeedback(moveTool_ ? tr("Actor %1 moves over %2 updates. Press Play to watch.").arg(slot).arg(moveDuration_)
+                                     : tr("Repositioned Actor %1.").arg(slot));
+    } catch (const std::exception &e) { editing_ = false; notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text()); }
 }
 void SceneActionEditor::setPlacementMode(bool move,int duration,bool wait){moveTool_=move;moveDuration_=duration;waitForMove_=wait;}
 void SceneActionEditor::addAtPlayhead(quint32 kind){
@@ -376,23 +375,25 @@ void SceneActionEditor::addAtPlayhead(quint32 kind){
 }
 void SceneActionEditor::addFromWorkspace(quint32 kind,int where){
     if(where==0){addAtPlayhead(kind);return;}
-    const int row=list_->currentRow();if(!key_||row<0||row>=actions_.size())return;
+    const int row=list_->currentRow();if(!key_||row<0||row>=actions_.size()){emit stageFeedback("Select a timeline step first.");return;}
     const auto &action=actions_[row];int at=where==1?action.command:action.command+action.commandCount;
     if(where>=3){
         const auto branches=SceneActions::choices(project_->scenePrograms()->program(key_));
         const auto choice=std::find_if(branches.begin(),branches.end(),[&](const auto &c){return c.command==action.command||c.option(action.command);});
-        if(choice==branches.end()){notice_->setText("Select a choice or a step inside that choice first.");return;}
+        if(choice==branches.end()){emit stageFeedback("Select a choice or a step inside that choice first.");return;}
         at=where==3?choice->firstEnd:choice->secondEnd;
     }
-    const int index=position_->findData(at);if(index<0){notice_->setText("Select a complete step at an editable boundary.");return;}
+    const int index=position_->findData(at);if(index<0){emit stageFeedback("Select a complete step at an editable boundary.");return;}
     position_->setCurrentIndex(index);kind_->setCurrentIndex(kind_->findData(kind));changeStructure(Change::Add);
 }
-void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,SceneVector position,int variant){
-    if(!key_||property("invalidEdits").toBool())return;
+void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,SceneVector position,int variant,int slot){
+    if(!key_||property("invalidEdits").toBool()){emit stageFeedback("Finish the invalid fields in Step details first.");return;}
     try{
         const int tick=previewTick_;
         auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,sprite?0x46:0x14);
-        auto &args=edit.program.commands[edit.command].operands;args[1]=bank;args[2]=animation;args[3]=facing;args[8]=variant;
+        auto &args=edit.program.commands[edit.command].operands;
+        if (slot < 0) slot = int(args[0]);
+        args[0]=quint32(slot);args[1]=bank;args[2]=animation;args[3]=facing;args[8]=variant;
         args[4]=quint32(qint32(std::round(position.x*(sprite?1:1000))));
         args[5]=quint32(qint32(std::round(position.y*(sprite?1:1000))));
         if(!sprite)args[6]=quint32(qint32(std::round(position.z*1000)));
@@ -401,7 +402,7 @@ void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,S
         edit.program=DirectorProgram::decode(edit.program.encode());
         // Native creation treats (-1,-1) as "reuse". Allocate normally first,
         // then place explicitly so that exact screen position remains editable.
-        if(sentinel){const int slot=edit.program.commands[edit.command].operands[0];
+        if(sentinel){
             edit.program=SceneActions::insert(edit.program,edit.command+1,SceneActions::PlaceSprite);
             edit.program=SceneActions::edit(edit.program,edit.command+1,0,QString::number(slot));
             edit.program=SceneActions::edit(edit.program,edit.command+1,1,"-1");
@@ -409,10 +410,12 @@ void SceneActionEditor::addAsset(bool sprite,int bank,int animation,int facing,S
         auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
         editing_=true;pushSceneProgramChange(project_,undo_,sprite?"Place sprite":"Place Actor",next);editing_=false;
         refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
-    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+        emit assetAdded(sprite,slot);
+        emit stageFeedback(tr("Placed %1 %2 on stage.").arg(sprite ? "Sprite" : "Actor").arg(slot));
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text());}
 }
 void SceneActionEditor::placeSpriteAtPlayhead(int slot,SceneVector position){
-    if(!key_||property("invalidEdits").toBool())return;
+    if(!key_||property("invalidEdits").toBool()){emit stageFeedback("Finish the invalid fields in Step details first.");return;}
     try{
         const int tick=previewTick_;
         auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,moveTool_?SceneActions::MoveSprite:SceneActions::PlaceSprite,moveDuration_);
@@ -423,10 +426,12 @@ void SceneActionEditor::placeSpriteAtPlayhead(int slot,SceneVector position){
         auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
         editing_=true;pushSceneProgramChange(project_,undo_,moveTool_?"Move sprite at playhead":"Place sprite at playhead",next);editing_=false;
         refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
-    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+        emit stageFeedback(moveTool_ ? tr("Sprite %1 moves over %2 updates. Press Play to watch.").arg(slot).arg(moveDuration_)
+                                     : tr("Repositioned Sprite %1.").arg(slot));
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text());}
 }
 void SceneActionEditor::playObjectKey(bool sprite,int slot,int bank,int animation,int facing,const QByteArray &record,int variant){
-    if(!key_||property("invalidEdits").toBool())return;
+    if(!key_||property("invalidEdits").toBool()){emit stageFeedback("Finish the invalid fields in Step details first.");return;}
     try{
         if(slot<0||record.isEmpty())throw Error("Select an Actor or sprite in the scene first.");
         const int tick=previewTick_;auto edit=insertSceneActionAtTime(project_->scenePrograms()->program(key_),commandTimes_,tick,sprite?0x46:3);
@@ -434,7 +439,8 @@ void SceneActionEditor::playObjectKey(bool sprite,int slot,int bank,int animatio
         else edit.program.commands[edit.command].operands={quint32(slot),quint32(bank),quint32(animation),quint32(facing),quint32(-1000),quint32(-1000),0,quint32(variant)};
         edit.program=DirectorProgram::decode(edit.program.encode());auto next=*project_->scenePrograms();next.replace(key_,edit.program.source);
         editing_=true;pushSceneProgramChange(project_,undo_,"Play animation key",next);editing_=false;refresh(edit.command);emit commandSelected(edit.command);if(changed_)changed_();emit previewUpdateRequested(tick+1);
-    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what()));}
+        emit stageFeedback(tr("Applied animation to %1 %2.").arg(sprite ? "Sprite" : "Actor").arg(slot));
+    }catch(const std::exception &e){editing_=false;notice_->setText(QString::fromUtf8(e.what())); emit stageFeedback(notice_->text());}
 }
 void SceneActionEditor::holdBeforeExit() {
     if (!key_ || property("invalidEdits").toBool() || exitWord_ < 0) return;
@@ -970,6 +976,7 @@ void SceneActionEditor::changeStructure(Change operation) {
     } catch (const std::exception &e) {
         editing_ = false;
         notice_->setText(QString::fromUtf8(e.what()));
+        emit stageFeedback(notice_->text());
     }
 }
 void SceneActionEditor::applyPosition(int command, SceneVector position) {
@@ -1156,6 +1163,7 @@ void SceneActionEditor::changeDialogue(bool create, bool choice, bool atPlayhead
     } catch (const std::exception &e) {
         editing_ = false;
         notice_->setText(QString::fromUtf8(e.what()));
+        emit stageFeedback(notice_->text());
     }
 }
 } // namespace lordly

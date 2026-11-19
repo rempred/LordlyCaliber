@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/director.h"
 #include <optional>
+#include <QSet>
 namespace lordly {
 struct SceneActionField {
     QString name;
@@ -56,6 +57,7 @@ class SceneActions {
     static std::optional<QPair<QString, QString>> choiceOptions(const QByteArray &);
     static QVector<SceneAction> inspect(const DirectorProgram &);
     static quint32 actorSlotWord(const DirectorCommand &, int operand);
+    static int unusedObjectSlot(const DirectorProgram &, bool sprite, QSet<quint32> occupied = {});
     static QVector<SceneActionPosition> positions(const DirectorProgram &);
     static QMap<quint32, QString> kinds();
     // Upgrade the older generated line that closes immediately before scene release.
