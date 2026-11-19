@@ -212,6 +212,7 @@ class ScenePreview : public QWidget {
     QComboBox *launchContext_;
     bool preparing_ = false, resumeAfterPrepare_ = false;
     QString contextSummary_;
+    QMap<int, QString> flagNames_;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
     QComboBox *reward_;

@@ -4,8 +4,11 @@
 #include "app/scene_key_picker.h"
 #include "app/scene_preview.h"
 #include "app/scene_timeline.h"
+#include "app/event_flow_editor.h"
 #include "app/theme.h"
 #include "engine/director_session.h"
+#include "engine/event_authoring.h"
+#include "engine/scene_background_edit.h"
 #include "engine/pose_preview.h"
 #include "engine/project.h"
 #include "engine/save_document.h"
@@ -34,6 +37,7 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -43,6 +47,52 @@ class SceneWorkspaceTests : public QObject {
     Q_OBJECT
     Rom rom()const{return Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));}
   private slots:
+    void openingClassActors_data() {
+        QTest::addColumn<int>("selector");
+        QTest::addColumn<int>("slot");
+        QTest::addColumn<int>("body");
+        QTest::newRow("Ischka graduation") << 2 << 6 << 32;
+        QTest::newRow("Dio challenges Magnus") << 11 << 1 << 84;
+    }
+    void openingClassActors() {
+        QFETCH(int, selector);
+        QFETCH(int, slot);
+        QFETCH(int, body);
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        const auto key = scenes.original().selectors().at(selector);
+        ScenePreview preview(project.rom());
+        preview.show();
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), scenes.resource(key), -1).mode,
+                            *project.dialogues(), *project.sceneEvents());
+        preview.selectEventLaunch(selector == 2 ? 1 : 4, selector == 2 ? 82 : 62);
+        auto *actors = preview.findChild<QComboBox *>("sceneLiveActors");
+        auto *status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto *confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto *step = preview.findChild<QPushButton *>("sceneStep");
+        QVERIFY(actors && status && confirm && step);
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 10000);
+        bool appeared = false, spoke = false;
+        for (int i = 0; i < 3000 && !preview.property("sceneStopped").toBool(); ++i) {
+            const int index = actors->findText(QString("Actor %1").arg(slot));
+            if (!appeared && index >= 0) {
+                actors->setCurrentIndex(index);
+                const auto record = preview.selectedObjectRecord();
+                appeared = record.size() >= 0x150 && u8(record,0x13d) && u32(record,0xe8) == quint32(body);
+            }
+            const int state = preview.property("sceneFocusedDialogueState").toInt();
+            spoke |= state == 3 || state == 6 || state == 7;
+            if (i % 20 == 0 && confirm->isVisible())
+                confirm->click();
+            else
+                step->click();
+        }
+        QVERIFY2(appeared && spoke, qPrintable(status->text()));
+        QVERIFY2(status->text().contains("Scene released") || status->text().contains("returned to the game")
+                 || status->text().contains("requested a scene"), qPrintable(status->text()));
+    }
     void storyDecisionHandoff_data() {
         QTest::addColumn<int>("question");
         QTest::addColumn<bool>("second");
@@ -54,6 +104,8 @@ class SceneWorkspaceTests : public QObject {
         QTest::newRow("Wentinus edited peace") << 180 << true << true << 181;
         QTest::newRow("Sheen accepts") << 159 << false << false << 160;
         QTest::newRow("Sheen refuses") << 159 << true << false << 161;
+        QTest::newRow("Liedel accepts") << 121 << false << false << 122;
+        QTest::newRow("Liedel returns") << 121 << true << false << 123;
     }
     void storyDecisionHandoff() {
         QFETCH(int, question);
@@ -71,6 +123,7 @@ class SceneWorkspaceTests : public QObject {
         if (swapped)
             events.editParameter(22, 562, "value", 1, scenes);
         const bool wentinus = question == 180;
+        const bool liedel = question == 121;
         ScenePreview preview(project.rom());
         preview.resize(1250, 950);
         preview.show();
@@ -78,7 +131,7 @@ class SceneWorkspaceTests : public QObject {
         const auto &resource = scenes.original().entries()[key];
         preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), resource, -1).mode,
                             *project.dialogues(), events);
-        preview.selectEventLaunch(wentinus ? 22 : 20, wentinus ? 544 : 202);
+        preview.selectEventLaunch(wentinus ? 22 : liedel ? 16 : 20, wentinus ? 544 : liedel ? 394 : 202);
         auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
         auto confirm = preview.findChild<QPushButton *>("panelConfirm");
         auto step = preview.findChild<QPushButton *>("sceneStep");
@@ -150,6 +203,11 @@ class SceneWorkspaceTests : public QObject {
         if (wentinus) {
             QVERIFY(effects.contains("Flag 119"));
             QVERIFY(effects.contains(reaction == 182 ? "scenario 21" : "Flag 19"));
+        } else if (liedel) {
+            if (reaction == 122)
+                QVERIFY2(effects.contains("Recruit character"), qPrintable(effects));
+            else
+                QVERIFY2(effects.contains("Central Division", Qt::CaseInsensitive) || effects.contains("return", Qt::CaseInsensitive), qPrintable(effects));
         } else
             QVERIFY(effects.contains(reaction == 160 ? "Recruit character" : "Refuse Sheen"));
     }
@@ -782,6 +840,193 @@ class SceneWorkspaceTests : public QObject {
         const auto output=Rom::open(path);auto reopened=ScenePrograms::load(output);bool found=false;for(auto candidate:reopened.scenes())if(reopened.program(candidate).source==p.source)found=true;QVERIFY(found);
         const auto placement=ClassPlacement::read(output);QVERIFY(placement);QFile meta(QDir(run).filePath("probe.json"));QVERIFY(meta.open(QIODevice::WriteOnly));
         meta.write(QJsonDocument(QJsonObject{{"flagsAddress",double(placement->layout.customFlags)},{"startFlag",start},{"doneFlag",done},{"scene",programs.resource(id).selectors.first()}}).toJson());
+    }
+    void originalStoryVisits() {
+        try {
+            auto project = Project::fromRom(rom());
+            project.loadSceneEvents();
+            project.loadDialogues();
+            auto scenes = *project.scenePrograms();
+            auto events = *project.sceneEvents();
+            auto dialogue = *project.dialogues();
+            const SceneId source(scenes.original().selectors().at(610));
+            const auto offer = scenes.createScene("The sealed dispatch", source, true);
+            const auto sent = scenes.createScene("Dispatch delivered", source, true);
+            const auto held = scenes.createScene("Dispatch held", source, true);
+            const int seen = events.createFlag("Heard the courier");
+            const int accepted = events.createFlag("Took the dispatch");
+            const int delivered = events.createFlag("Courier confirmed delivery");
+            const int kept = events.createFlag("Courier kept the dispatch");
+            auto blank = scenes.program(offer);
+            const auto backdrop = BackgroundEdit::inspect(project.rom(), blank);
+            QVERIFY2(backdrop.editable(), qPrintable(backdrop.reason));
+            blank = backdrop.select(project.rom(), blank, 58);
+            auto exitAt = [](const DirectorProgram &p) {
+                for (int i = 0; i < p.commands.size(); ++i)
+                    if (p.commands[i].opcode == 0x7d) return i;
+                throw Error("Missing scene exit");
+            };
+            // Pick two places on the actual background using the same stage tool as the editor.
+            scenes.replace(offer, SceneActions::insert(blank, exitAt(blank), 0xe, 100).source);
+            ScenePreview stage(project.rom());
+            stage.resize(960, 760);
+            stage.show();
+            const auto mode = SceneImages::backgrounds(project.rom(), scenes.resource(offer), -1).mode;
+            stage.selectScene(scenes, offer, mode, dialogue, events);
+            stage.seekToUpdate(1);
+            QTRY_COMPARE_WITH_TIMEOUT(stage.property("sceneTick").toInt(), 1, 5000);
+            auto canvas = stage.findChild<QGraphicsView *>("sceneCanvas");
+            QVERIFY(canvas);
+            QVector<SceneVector> positions;
+            connect(&stage, &ScenePreview::assetPlaced, &stage,
+                    [&](bool,int,int,int,SceneVector position,int){ positions << position; });
+            for (const auto x : {104, 183}) {
+                stage.armAssetPlacement(false, 3, 0, 0, 6);
+                const auto point = canvas->mapFromScene(QPointF(x, 139));
+                QTest::mouseClick(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+            }
+            QCOMPARE(positions.size(), 2);
+            auto setFlag = [](DirectorProgram p, int at, int flag) {
+                p = SceneActions::insert(p, at, SceneActions::SetStoryFlag);
+                return SceneActions::edit(p, at, 0, QString::number(flag));
+            };
+            auto addText = [&](DirectorProgram p, quint32 kind, QByteArray text) {
+                const int entry = dialogue.appendEntry(Dialogues::Table::Primary, 5, text);
+                const int at = exitAt(p);
+                p = SceneActions::insert(p, at, kind);
+                return SceneActions::edit(p, at, 2, QString::number(entry));
+            };
+            auto opening = blank;
+            int at = exitAt(opening);
+            opening = SceneActions::insert(opening, at, 0x14);
+            opening = SceneActions::edit(opening, at, 1, "3");
+            opening = SceneActions::edit(opening, at, 8, "6");
+            opening = SceneActions::edit(opening, at, 4, QString::number(positions[0].x, 'f', 3));
+            opening = SceneActions::edit(opening, at, 5, QString::number(positions[0].y, 'f', 3));
+            opening = SceneActions::edit(opening, at, 6, QString::number(positions[0].z, 'f', 3));
+            at = exitAt(opening);
+            opening = SceneActions::insert(opening, at, 7);
+            opening = SceneActions::edit(opening, at, 3, QString::number(positions[1].x, 'f', 3));
+            opening = SceneActions::edit(opening, at, 4, QString::number(positions[1].z, 'f', 3));
+            opening = SceneActions::edit(opening, at, 5, "120");
+            opening = SceneActions::insert(opening, exitAt(opening), 0xe, 24);
+            opening = addText(opening, 0xbf, Dialogues::spokenText("Courier", "Magnus, a sealed dispatch from Zemio."));
+            opening = addText(opening, SceneActions::Choice, SceneActions::choiceText("Take the dispatch", "Leave it here"));
+            const auto choices = SceneActions::choices(opening);
+            QCOMPARE(choices.size(), 1);
+            opening = setFlag(opening, choices.first().firstEnd, accepted);
+            scenes.replace(offer, opening.source);
+            auto follow = [&](SceneId id, int marker, QString line) {
+                auto p = setFlag(blank, exitAt(blank), marker);
+                scenes.replace(id, addText(p, 0xbf, Dialogues::spokenText("Courier", line)).source);
+            };
+            follow(sent, delivered, "Your dispatch reached the captain.");
+            follow(held, kept, "I kept the dispatch here, as ordered.");
+            const QJsonObject finish{{"type","return"}};
+            auto play = [&](SceneId id) { return QJsonObject{{"type","scene"},{"scene",scenes.resource(id).selectors.first()}}; };
+            auto ifFlag = [](int flag, int value, QJsonArray yes, QJsonArray no) {
+                return QJsonObject{{"type","if"},{"condition",QJsonObject{{"type","flag"},{"flag",flag},{"value",value}}},
+                                   {"then",yes},{"else",no}};
+            };
+            const auto revisit = ifFlag(accepted, 1, {play(sent)}, {play(held)});
+            const QJsonObject markVisit{{"type","flag"},{"flag",seen},{"value",1}};
+            const auto visit = ifFlag(seen, 0, {play(offer), markVisit}, {revisit});
+            const QJsonObject rule{{"id","zemio-courier"},{"name","Visit the Zemio courier"},
+                                   {"group",2},{"target",1},{"after",false},{"nodes",QJsonArray{visit,finish}}};
+            events.setTrees(4, {rule}, scenes);
+            project.setDialogues(dialogue.json());
+            project.setScenePrograms(scenes.json());
+            project.setSceneEvents(events.json());
+            QTemporaryDir temporary;
+            const auto run = qEnvironmentVariable("LORDLY_SCENE_TEST_OUTPUT", temporary.path());
+            QDir out(run);
+            QVERIFY(out.mkpath("."));
+            project.saveFolder(out.filePath("project"));
+            auto saved = Project::fromRom(rom());
+            saved.applyManifest(Project::readProject(out.filePath("project")));
+            auto build = rebuild(saved, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), out.filePath("build"));
+            const auto filename = out.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(saved, build, filename);
+            auto reopened = Project::fromRom(Rom::open(filename));
+            reopened.loadSceneEvents(); reopened.loadDialogues();
+            QCOMPARE(reopened.sceneEvents()->program(4), events.program(4));
+            for (const auto &id : {offer, sent, held})
+                QCOMPARE(reopened.scenePrograms()->program(id).source, scenes.program(id).source);
+            const auto requests = EventAuthoring::sceneRequests(rule);
+            QCOMPARE(requests.size(), 3);
+            const int entry = EventAuthoring::entries(events.authoredBase(4), 4, {rule}, {}).value("zemio-courier", -1);
+            QVERIFY(entry >= 0);
+            QUndoStack undo;
+            EventFlowEditor logic(&reopened, &undo, []{});
+            QMap<int,int> links;
+            logic.editCutscene = [&](int id,int row,int pc){ QCOMPARE(row,4); links[pc]=id; };
+            logic.setRow(4); logic.selectOffset(entry); logic.show();
+            QApplication::processEvents();
+            auto outline = logic.findChild<QScrollArea *>("storyEventDetails")->widget()->findChild<QTreeWidget *>("storyAuthoredTree");
+            QVERIFY(outline);
+            for(auto button : outline->findChildren<QPushButton *>())
+                if(button->text()=="Edit cutscene…") button->click();
+            QCOMPARE(links.size(), 3);
+            const auto bytes = reopened.sceneEvents()->program(4);
+            for (const auto &offset : requests) {
+                const int pc = entry + offset;
+                QCOMPARE(u16(bytes, pc), 0x1000);
+                QCOMPARE(links.value(pc,-1), int(u8(bytes,pc-3) | (u8(bytes,pc-1) << 8)));
+            }
+            ScenePreview playback(reopened.rom());
+            playback.resize(1060, 820);
+            playback.show();
+            auto *step = playback.findChild<QPushButton *>("sceneStep");
+            auto *confirm = playback.findChild<QPushButton *>("panelConfirm");
+            auto *down = playback.findChild<QPushButton *>("panelDown");
+            auto *status = playback.findChild<QLabel *>("scenePlaybackStatus");
+            QVERIFY(step && confirm && down && status);
+            for (bool take : {true, false}) {
+                for (auto id : {offer, take ? sent : held}) {
+                    const auto &library = *reopened.scenePrograms();
+                    const auto resource = library.resource(id);
+                    playback.selectScene(library, id, SceneImages::backgrounds(reopened.rom(), resource, -1).mode,
+                                         *reopened.dialogues(), *reopened.sceneEvents());
+                    playback.selectEventLaunch(4, links.key(resource.selectors.first(), -1));
+                    QTRY_VERIFY_WITH_TIMEOUT(!playback.property("scenePreparing").toBool(), 10000);
+                    bool chose = false, pressedDown = false, sawSpeech = false;
+                    bool sawStart = false, sawDestination = false;
+                    for (int n = 0; n < 800 && !playback.property("sceneStopped").toBool(); ++n) {
+                        const int state = playback.property("sceneFocusedDialogueState").toInt();
+                        sawSpeech |= state == 3 || state == 6;
+                        if (id == offer && n % 4 == 0 && (!sawStart || !sawDestination)) {
+                            for (int y : {115, 123, 131, 137}) {
+                                sawStart |= playback.actorAt({108, y}) == 0;
+                                sawDestination |= playback.actorAt({181, y}) == 0;
+                            }
+                        }
+                        if (state == 7 && !take && !pressedDown) {
+                            down->click();
+                            pressedDown = true;
+                        } else if (state == 7 && !chose) {
+                            confirm->click();
+                            chose = true;
+                        } else if ((id != offer || n >= 140) && n % 20 == 0 && confirm->isVisible()) {
+                            confirm->click();
+                        } else {
+                            step->click();
+                        }
+                    }
+                    QVERIFY2(sawSpeech, qPrintable(status->text()));
+                    QVERIFY2(status->text().contains("returned to the game") || status->text().contains("Scene released"),
+                             qPrintable(status->text()));
+                    if (id == offer) {
+                        QVERIFY(chose);
+                        QVERIFY(sawStart && sawDestination);
+                        QCOMPARE(status->text().contains("Took the dispatch set"), take);
+                    } else {
+                        QVERIFY(!chose);
+                        QVERIFY2(status->text().contains(take ? "Courier confirmed delivery set" : "Courier kept the dispatch set"),
+                                 qPrintable(status->text()));
+                    }
+                }
+            }
+        } catch(const std::exception &e) { QFAIL(e.what()); }
     }
     void exportRoundTrip(){
         try {

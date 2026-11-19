@@ -917,6 +917,11 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         const auto previousContext = launchContext_->currentData().toString();
         if (!events)
             events.emplace(SceneEvents::load(rom_));
+        flagNames_.clear();
+        for (const auto &entry : events->customFlags()) {
+            const auto flag = entry.toObject();
+            flagNames_.insert(flag["id"].toInt(), flag["name"].toString());
+        }
         launchPlans_ = SceneLaunchPlan::choices(*resources_, *events, selector_);
         if (std::any_of(program.commands.cbegin(), program.commands.cend(),
                         [](const auto &c) { return c.opcode == 0xbb; }))
@@ -936,9 +941,8 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         }
         storyCastEnabled_ = SceneStoryCast::supports(program);
         if (mode == 2) party_ = SceneParty::infer(program, classCount_);
-        const auto actions = SceneActions::inspect(program);
-        classDefaultsEnabled_ = mode == 2 && std::any_of(actions.cbegin(), actions.cend(),
-            [](const auto &action) { return action.name == "Create class Actor"; });
+        classDefaultsEnabled_ = std::any_of(program.commands.cbegin(), program.commands.cend(),
+            [](const auto &command) { return command.opcode == 0x2a; });
         storyCastUi_->setVisible(storyCastEnabled_);
         const auto &commands = program.commands;
         scriptInputControls_ = std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
@@ -1031,11 +1035,13 @@ void ScenePreview::selectEventLaunch(int row, int requestOffset) {
     if (index < 0) {
         SceneLaunchPlan plan;
         plan.id = id;
-        plan.name = QString("Event %1 · request %2 · launch inputs unavailable")
+        plan.name = QString("Event %1 · request %2")
                         .arg(row).arg(requestOffset);
         const auto key = resources_->selectors().at(selector_);
         if (SceneLaunchPlan::fresh(resources_->entries()[key].program))
             plan.steps.append(SceneLaunchStep{selector_});
+        else
+            plan.name += " · starting state unavailable";
         index = launchPlans_.size();
         launchPlans_.append(plan);
         launchContext_->addItem(plan.name, id);
@@ -1197,7 +1203,9 @@ void ScenePreview::restart() {
                            : AvatarArtwork::load(rom_).dialogueWords(ClassData::load(rom_), 125, 0);
             playback.panels().setReportArtwork(portrait);
         }
-        if (!inputs && (storyCastEnabled_ || classDefaultsEnabled_ || party_ || inherited))
+        if (!inputs)
+            playback.actors().allowNewBodyAppearance(true);
+        if (!inputs && (storyCastEnabled_ || party_ || inherited))
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
         if (party_ && !inputs) party_->supply(playback.actors(),
                                    *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)));
@@ -2157,6 +2165,10 @@ void ScenePreview::present() {
     }
     if (current_->playback.display().black())
         status_->setText(status_->text() + "\nDisplay blacked out by scene command.");
+    for (const auto &[id, set] : current_->playback.writtenStoryFlags().asKeyValueRange()) {
+        const auto name = flagNames_.value(id, QString("Flag %1").arg(id));
+        status_->setText(status_->text() + QString("\n%1 %2").arg(name, set ? "set" : "cleared"));
+    }
     if (preparing_)
         status_->setText("Preparing inherited scene…\n" + status_->text());
     if (!commandSeekNotice_.isEmpty()) status_->setText(status_->text() + "\n" + commandSeekNotice_);

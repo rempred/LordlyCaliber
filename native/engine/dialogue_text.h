@@ -3,6 +3,8 @@
 #include <QHash>
 #include <optional>
 namespace lordly {
+QVector<quint16> dialogueWideCodes(const Rom &);
+int dialogueWideIndex(const QVector<quint16> &, quint16 code);
 struct DialogueFontMetrics {
     QByteArray normal, alternate;
     qint16 fixedIndex = -1;

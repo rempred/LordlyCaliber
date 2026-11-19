@@ -369,19 +369,26 @@ void EventFlowEditor::showEvent(){
             else if(type=="not")showCondition(item,condition["condition"].toObject());
             else if(type=="flag")preview->setItemWidget(item,1,eventFlagLinks(project_,row_,condition["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);else if(row==row_)selectOffset(at);}));
         };
-        std::function<void(QTreeWidgetItem *,QJsonArray)> show=[&](QTreeWidgetItem *parent,QJsonArray nodes){
+        const auto sceneRequests = EventAuthoring::sceneRequests(tree);
+        std::function<void(QTreeWidgetItem *,QJsonArray,QVector<int>)> show=[&](QTreeWidgetItem *parent,QJsonArray nodes,QVector<int> path){
             bool reachable=true;
             QJsonObject previous;
-            for(const auto &value:nodes) {
-                const auto n=value.toObject();
+            for(int index=0;index<nodes.size();++index) {
+                const auto n=nodes[index].toObject();
+                const auto stepPath = path + QVector<int>{index};
                 const auto title=eventTreeSummary(n,row_,&*project_->sceneEvents(),project_);
                 auto item=new QTreeWidgetItem(parent,{reachable?title:"Unreachable · "+title});
                 if(!reachable)continue;
                 if(n["type"]=="if"){
                     showCondition(item,n["condition"].toObject());
                     const auto labels=eventAnswerBranches(*project_,previous,n["condition"].toObject());
-                    show(new QTreeWidgetItem(item,{labels.value(0,"THEN")}),n["then"].toArray());
-                    show(new QTreeWidgetItem(item,{labels.value(1,"ELSE")}),n["else"].toArray());
+                    show(new QTreeWidgetItem(item,{labels.value(0,"THEN")}),n["then"].toArray(),stepPath + QVector<int>{1});
+                    show(new QTreeWidgetItem(item,{labels.value(1,"ELSE")}),n["else"].toArray(),stepPath + QVector<int>{2});
+                }else if(n["type"]=="scene" && editCutscene && sceneRequests.contains(stepPath)){
+                    const int request = event.entry + sceneRequests.value(stepPath);
+                    auto open = new QPushButton("Edit cutscene…");
+                    preview->setItemWidget(item,1,open);
+                    connect(open,&QPushButton::clicked,this,[this,selector=n["scene"].toInt(),request]{editCutscene(selector,row_,request);});
                 }else if(n["type"]=="flag"){
                     preview->setItemWidget(item,1,eventFlagLinks(project_,row_,n["flag"].toInt(),[this](int row,int at){if(openEventInstruction)openEventInstruction(row,at);}));
                 }
@@ -389,7 +396,7 @@ void EventFlowEditor::showEvent(){
                 previous=n;
             }
         };
-        show(preview->invisibleRootItem(),tree["nodes"].toArray());preview->expandAll();
+        show(preview->invisibleRootItem(),tree["nodes"].toArray(),{});preview->expandAll();
         if(EventAuthoring::fallsThrough(tree["nodes"].toArray()))layout->addWidget(label("When the steps finish, try the next rule for this trigger."));
         connect(preview,&QTreeWidget::itemDoubleClicked,this,[this,preview,id=event.authoredId](QTreeWidgetItem *item){
             QVector<int> path;

@@ -26,6 +26,7 @@ class EventAuthoring {
     static QMap<QString, int> entries(const QByteArray &, int row, const QJsonArray &trees,
                                      const QJsonObject &triggers);
     static QVector<int> stepPath(const QJsonObject &tree,int relativeOffset);
+    static QMap<QVector<int>, int> sceneRequests(const QJsonObject &tree);
     static QByteArray compileCondition(const QJsonObject &,int group,int origin,
                                       int yesSelector,int noSelector);
     static void validateReferences(const QJsonArray &, const QSet<int> &scenes, const QSet<int> &flags);

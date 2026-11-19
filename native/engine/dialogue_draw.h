@@ -35,8 +35,10 @@ class DialogueDrawing {
     QByteArray resource(quint32 key, bool compressed = false) const;
     QByteArray member(quint32 key, int index);
     DialogueTexture frame(int index);
-    DialogueTexture glyph(int index, int color) const;
+    DialogueTexture glyph(int index, int color, bool wide) const;
     Rom rom_;
+    QVector<quint16> wideCodes_;
+    QByteArray normalFont_, wideFont_;
     PortraitProvider portraits_;
     QHash<quint64, QByteArray> members_;
     mutable std::optional<ClassData> classes_;

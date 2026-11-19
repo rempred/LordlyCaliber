@@ -220,6 +220,10 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
             ++identity;
         if (identity == 28)
             throw Error("No free body appearance identity");
+        // This identity belongs to a newly created body. The native selection
+        // below fills its equipment from the two classes in the command.
+        if (newBodyAppearance_ && bodyRows_[identity].isEmpty())
+            bodyRows_[identity] = QByteArray(248, 0);
         bodyRow(identity); // Validate before replacing appearance fields.
         put8(record, 0x147, quint8(identity));
         put8(record, 0x148, 1);

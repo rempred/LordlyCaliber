@@ -21,6 +21,7 @@ void link(QByteArray &b,int at,int target){
 struct Compiler {
     QByteArray bytes;int count=0,group=0;
     int wanted=-1;QVector<int> selected;
+    QMap<QVector<int>, int> *sceneRequests = nullptr;
     void locate(int start,const QVector<int> &path){if(wanted>=start&&wanted<bytes.size()&&path.size()>selected.size())selected=path;}
     void budget(int depth){if(depth>16||++count>1024)throw Error("An event supports 1,024 steps and 16 nesting levels");}
     // Each predicate uses a short branch over a long jump. Tree size cannot
@@ -54,11 +55,12 @@ struct Compiler {
     }
     void body(const QJsonArray &nodes,int depth=0,const QVector<int> &parent={}) {
         for(int i=0;i<nodes.size();++i){const auto v=nodes[i];budget(depth);if(!v.isObject())throw Error("Invalid event step");const auto n=v.toObject();const auto type=n["type"].toString();
-            const int start=bytes.size();const auto path=wanted<0?parent:parent+QVector<int>{i};
+            const bool trackPath = wanted >= 0 || sceneRequests;
+            const int start=bytes.size();const auto path=trackPath?parent+QVector<int>{i}:parent;
             if(type=="if") {if(!n["condition"].isObject()||!n["then"].isArray()||!n["else"].isArray())throw Error("IF needs a condition, THEN and ELSE");
                 auto branches=condition(n["condition"].toObject(),depth+1,wanted<0?path:path+QVector<int>{0});for(int at:branches.first)link(bytes,at,bytes.size());
-                body(n["then"].toArray(),depth+1,wanted<0?path:path+QVector<int>{1});const int end=jump(bytes);for(int at:branches.second)link(bytes,at,bytes.size());
-                body(n["else"].toArray(),depth+1,wanted<0?path:path+QVector<int>{2});link(bytes,end,bytes.size());
+                body(n["then"].toArray(),depth+1,trackPath?path+QVector<int>{1}:path);const int end=jump(bytes);for(int at:branches.second)link(bytes,at,bytes.size());
+                body(n["else"].toArray(),depth+1,trackPath?path+QVector<int>{2}:path);link(bytes,end,bytes.size());
             }else if(type=="flag") {load(bytes,0,number(n,"flag",0,767));load(bytes,1,number(n,"value",0,1,1));word(bytes,0x71,0x60);}
             else if(type=="startingArmy") {load(bytes,0,number(n,"army",0,15));word(bytes,9,0);}
             else if(type=="initializeCampaign") {word(bytes,9,1);}
@@ -67,7 +69,11 @@ struct Compiler {
                 word(bytes,9,2);load(bytes,0,99);load(bytes,1,1);word(bytes,0x71,0x60);
                 load(bytes,0,0);word(bytes,0x70,0xe8);load(bytes,0,3);word(bytes,0x11);
             }
-            else if(type=="scene") {load(bytes,0,number(n,"scene",0,16383));word(bytes,0x10);}
+            else if(type=="scene") {
+                load(bytes,0,number(n,"scene",0,16383));
+                if (sceneRequests) sceneRequests->insert(path, int(bytes.size()));
+                word(bytes,0x10);
+            }
             else if(type=="recruit") {load(bytes,0,number(n,"template",0,555));word(bytes,0x16,number(n,"mode",0,1,1));word(bytes,0x13,22);}
             else if(type=="goth"||type=="days") {int amount=number(n,"amount",-32767,32767);if(type=="goth")amount=-amount;load(bytes,0,amount&255);word(bytes,type=="goth"?0x2e:0x17,(amount>>8)&255);}
             else if(type=="chaos") {load(bytes,0,number(n,"value",0,100,50));word(bytes,0x70,0xff);}
@@ -215,6 +221,14 @@ QJsonArray EventAuthoring::missionTemplates(int battlefield,int location,int com
 }
 QVector<int> EventAuthoring::stepPath(const QJsonObject &tree,int offset){
     Compiler c;c.group=tree["group"].toInt();c.wanted=offset;c.eventBody(tree,tree["target"].toInt(-1));return c.selected;
+}
+QMap<QVector<int>, int> EventAuthoring::sceneRequests(const QJsonObject &tree) {
+    QMap<QVector<int>, int> offsets;
+    Compiler compiler;
+    compiler.sceneRequests = &offsets;
+    compiler.group = tree["group"].toInt();
+    compiler.eventBody(tree, tree["target"].toInt(-1));
+    return offsets;
 }
 QMap<int,QString> EventAuthoring::triggers(){return {{0,"Mission entry"},{1,"Arrive at town"},{2,"Enter Stronghold"},{3,"Squad encounter"},{4,"Character defeated"},{5,"Mission completion"}};}
 QMap<QString,QString> EventAuthoring::conditions(){return {{"flag","Story flag"},{"chaos","Chaos Frame"},{"answer","Last dialogue answer"},{"squad","Encountered / defeated squad"},{"town","Visited town"},{"squadState","Contacting squad state"},{"all","All conditions (AND)"},{"any","Any condition (OR)"},{"not","Not (invert condition)"}};}

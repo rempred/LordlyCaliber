@@ -1,4 +1,5 @@
 #include "engine/dialogue_text.h"
+#include "engine/field_resources.h"
 #include "game/director/dialogue_layout.h"
 #include "game/director/dialogue_motion.h"
 #include "game/director/dialogue_prefix.h"
@@ -7,6 +8,22 @@
 #include <functional>
 #include <optional>
 namespace lordly {
+QVector<quint16> dialogueWideCodes(const Rom &rom) {
+    const auto bytes = fieldResource(rom, 0x216c9de);
+    if (bytes.isEmpty() || bytes.size() % 2 || bytes.size() > 8192)
+        throw Error("Invalid double-byte character directory");
+    QVector<quint16> codes;
+    codes.reserve(bytes.size() / 2);
+    for (int i = 0; i < bytes.size(); i += 2)
+        codes.append(u16(bytes, i));
+    if (!std::is_sorted(codes.cbegin(), codes.cend()))
+        throw Error("Unsorted double-byte character directory");
+    return codes;
+}
+int dialogueWideIndex(const QVector<quint16> &codes, quint16 code) {
+    const auto found = std::lower_bound(codes.cbegin(), codes.cend(), code);
+    return found != codes.cend() && *found == code ? int(found - codes.cbegin()) : -1;
+}
 QByteArray DialogueTextEnvironment::source(quint64 identity) const {
     if (!identity)
         return {};

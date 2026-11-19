@@ -103,13 +103,7 @@ SceneReportArt::SceneReportArt(const Rom &rom) {
     labels_ = indexed(labels, 8, labels, 8 + 16 * 24, 32, 24);
     metrics_.normal = fieldResource(rom, 0x218c450);
     metrics_.alternate = fieldResource(rom, 0x218de48);
-    const auto codes = fieldResource(rom, 0x216c9de);
-    if (codes.size() % 2 || codes.size() > 8192)
-        throw Error("Invalid report double-byte character directory");
-    for (int at = 0; at < codes.size(); at += 2)
-        wideCodes_.push_back(u16(codes, at));
-    if (!std::is_sorted(wideCodes_.cbegin(), wideCodes_.cend()))
-        throw Error("Unsorted report double-byte character directory");
+    wideCodes_ = dialogueWideCodes(rom);
     std::array<QRgb, 4> ink;
     for (int i = 0; i < 4; ++i)
         ink[i] = color(u16(rom.bytes(), 0x66b88 + 2 * i));
@@ -226,9 +220,7 @@ void SceneReportArt::line(QPainter &p, const QByteArray &bytes, QPoint pos) cons
             if (++i >= bytes.size())
                 throw Error("Truncated report character");
             const int code = (c << 8) | u8(bytes, i);
-            const auto found = std::lower_bound(wideCodes_.cbegin(), wideCodes_.cend(), code);
-            index = found != wideCodes_.cend() && *found == code ? int(found - wideCodes_.cbegin())
-                                                                 : -1;
+            index = dialogueWideIndex(wideCodes_, code);
             sheet = &wide_;
             w = 11;
             h = 14;

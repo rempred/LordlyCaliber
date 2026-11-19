@@ -69,6 +69,7 @@ class ScenePlayback {
     QStringList answerPath() const;
     bool hasAnswerOutcome() const { return selectedAnswer_.has_value(); }
     bool storyFlag(int id) const { return storyFlags_.value(id,false); }
+    const QMap<int, bool> &writtenStoryFlags() const { return storyFlags_; }
     void setStoryFlag(int id,bool value) { storyFlags_[id]=value; }
     bool selectedSceneEntered() const {
         return selectedEntered_;

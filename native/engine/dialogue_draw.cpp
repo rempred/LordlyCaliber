@@ -1,6 +1,8 @@
 #include "engine/dialogue_draw.h"
 #include "engine/avatar_artwork.h"
 #include "engine/archive.h"
+#include "engine/dialogue_text.h"
+#include "game/director/text_metrics.h"
 #include "game/director/dialogue_draw_plan.h"
 #include <algorithm>
 #include <cmath>
@@ -10,6 +12,11 @@ DialogueDrawing::DialogueDrawing(Rom rom) : rom_(std::move(rom)) {
     rom_.requireSupported();
     if (rom_.revision())
         throw Error("Dialogue drawing currently requires US revision zero");
+    normalFont_ = resource(0x218c4fa);
+    wideFont_ = resource(0x216e296);
+    wideCodes_ = dialogueWideCodes(rom_);
+    if (wideFont_.size() != wideCodes_.size() * 39)
+        throw Error("Double-byte glyphs do not fit the ROM font atlas");
 }
 QByteArray DialogueDrawing::resource(quint32 key, bool compressed) const {
     if (!key || (key & 1) || key >= 0x10000000)
@@ -104,9 +111,9 @@ DialogueTexture DialogueDrawing::portrait(int identity, bool variant) const {
         texture.palette[i] = u16(palette, i * 2);
     return texture;
 }
-DialogueTexture DialogueDrawing::glyph(int index, int color) const {
-    const auto bytes = resource(0x218c4fa);
-    if (index < 0 || index >= 166 || index * 39 + 39 > bytes.size() || color < 0 || color > 9)
+DialogueTexture DialogueDrawing::glyph(int index, int color, bool wide) const {
+    const auto &bytes = wide ? wideFont_ : normalFont_;
+    if (index < 0 || index >= bytes.size() / 39 || color < 0 || color > 9)
         throw Error("Unsupported dialogue glyph or palette");
     DialogueTexture texture{16, 14, 8, 4, QByteArray(112, 0), {}};
     for (int y = 0; y < 14; ++y)
@@ -172,17 +179,17 @@ QVector<DialogueRectangle> DialogueDrawing::compose(const QByteArray &window,
         const auto text = payload.mid(start, end - start), metrics = resource(0x218c450);
         const int origin = x;
         int spacing = 0, lineGap = verticalSpacing - '0';
-        auto drawGlyph = [&](int index) {
-            if (index < 0 || index >= metrics.size())
+        auto drawGlyph = [&](int index, bool wide = false) {
+            if (index < 0 || (!wide && index >= metrics.size()))
                 throw Error("Dialogue glyph exceeds its metric table");
             if (x < 320 && y < 240 && x + 11 >= 0 && y + 14 >= 0)
                 result << DialogueRectangle{
-                    glyph(index, color),
+                    glyph(index, color, wide),
                     {std::max(0, x), std::max(0, y), std::min(320, x + 11), std::min(240, y + 14)},
                     clip,
                     {double(std::max(0, -x)), double(std::max(0, -y))},
                     {1, 1}};
-            x += u8(metrics, index) + spacing;
+            x += (wide ? 11 : u8(metrics, index)) + spacing;
         };
         for (int i = 0; i < text.size() && u8(text, i); ++i) {
             const auto c = u8(text, i);
@@ -228,12 +235,23 @@ QVector<DialogueRectangle> DialogueDrawing::compose(const QByteArray &window,
                 }
                 continue;
             }
-            if (c < 32 || c >= 128)
-                throw Error("Unsupported encoded dialogue character");
+            if (lordly_text_lead_byte(c)) {
+                if (++i >= text.size())
+                    throw Error("Incomplete double-byte dialogue character");
+                const int code = (c << 8) | u8(text, i);
+                const int index = dialogueWideIndex(wideCodes_, code);
+                if (index < 0)
+                    throw Error(QString("Dialogue character 0x%1 is missing from the ROM font").arg(code, 4, 16, QChar('0')));
+                drawGlyph(index, true);
+                continue;
+            }
+            if (c < 32)
+                throw Error(QString("Unsupported dialogue byte 0x%1 at text offset %2")
+                                .arg(c, 2, 16, QChar('0')).arg(i));
             if (c == 32)
                 x += u8(metrics, 48) + spacing;
             else
-                drawGlyph(c + 16);
+                drawGlyph(c < 128 ? c + 16 : c);
         }
     };
     struct Event {
