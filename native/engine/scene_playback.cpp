@@ -38,7 +38,7 @@ QStringList ScenePlayback::answerPath() const {
     if (!selectedAnswer_ || !answerDecision_)
         return {};
     const auto &d = *answerDecision_;
-    return d.commonEffects + (*selectedAnswer_ == d.comparedAnswer ? d.equal : d.different).effects;
+    return d.reaction(*selectedAnswer_).effects;
 }
 bool ScenePlayback::updateDirectors() {
     auto dispatch = [&] {
@@ -54,8 +54,7 @@ bool ScenePlayback::updateDirectors() {
             if (value != 1 && value != 255)
                 return {};
             answer = value;
-            const auto &arm = value == answerDecision_->comparedAnswer ? answerDecision_->equal
-                                                                       : answerDecision_->different;
+            const auto &arm = answerDecision_->reaction(value);
             arguments = arm.translations;
             return arm.selector;
         };
@@ -66,7 +65,7 @@ bool ScenePlayback::updateDirectors() {
             instructionBudget_, observer_ ? *observer_ : DirectorSession::Observer{}, eventRequest);
         if (answer && result == LORDLY_DIRECTOR_YIELD) {
             selectedAnswer_ = answer;
-            storyFlags_.insert(answerDecision_->commonFlags);
+            storyFlags_.insert(answerDecision_->reaction(*answer).flags);
         }
         if (imageView_)
             put8(*imageView_, 0x840, director_.state().barrier_state);

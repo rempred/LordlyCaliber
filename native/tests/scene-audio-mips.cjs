@@ -31,10 +31,11 @@ m.trap(0x80093380,c=>m.load(c.get('a0'),Buffer.alloc(c.get('a1'))));
 m.trap(0x800712c4,c=>assert.equal(c.get('a0'),envelope));
 const entry={110:0x28308c,111:0x2831e0,112:0x2834c4,113:0x283564,180:0x283224,0:0x283350};
 const results=[];
-function run(commands,route=0,count=0,suppressed=0) {
+function run(commands,route=0,count=0,suppressed=0,indexedGain=null) {
  voices=Array(7).fill(count);guard=suppressed;calls=[];
  m.load(root,Buffer.alloc(0x1cc0));m.w32(0x8022a974,root);m.w32(0x8022a8c4,0);
  m.w16(0x8022a994,route);[6000,14000,9000,21000].forEach((gain,i)=>m.w32(0x800eb2e0+8*i,gain));
+ if(indexedGain!==null)m.w32(0x800eb440,indexedGain);
  for(let i=0;i<7;++i){m.w32(0x8022a8a8+i*4,context(i));m.w32(context(i)+0x24,100+i);}
  const steps=[];
  for(const command of commands){
@@ -48,7 +49,7 @@ function run(commands,route=0,count=0,suppressed=0) {
    envelope:env?Buffer.from(m.ram.subarray(m.phys(env),m.phys(env)+8)).toString('hex'):null,
    gains:[m.r32(0x800eb2e0),m.r32(0x800eb2e8)]});
  }
- results.push({route,count,suppressed,steps});
+ results.push({route,count,suppressed,indexedGain,steps});
 }
 for(let context=0;context<8;++context)for(const action of [-1,0,1,2,5])
  for(const route of [0,9])for(const count of [0,2])run([[110,context,action,0x12345678],[0],[-1],[0]],route,count);
@@ -62,5 +63,8 @@ for(let group=0;group<8;++group)for(const step of [-65539,-5,0,5,65539,214748364
 for(const pending of [0,256,700])run([[180,0,0,-5,20],[110,0,0,pending],[0],[-1],[0],[0]],9,2);
 // Graduation's closing fade reads gain-table entry3 before starting its envelope.
 run([[180,0,3,-500,30],[0],[0]]);
+// Paul's signed half-step operates on the word at base + 8 * 44.
+for(const gain of [0x6000,0x3027,0x12340021])
+ run([[180,0,44,-637,30],...Array.from({length:30},()=>[0])],0,0,0,gain);
 fs.writeFileSync(process.argv[3],JSON.stringify({results}));
 console.log(`${results.length} original audio sequences; ${results.reduce((n,r)=>n+r.steps.length,0)} snapshots`);

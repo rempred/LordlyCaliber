@@ -13,6 +13,7 @@
 #include "engine/project.h"
 #include "engine/save_document.h"
 #include "engine/scene_images.h"
+#include "engine/scene_import.h"
 #include "engine/scene_sprites.h"
 #include "rebuild/scene_logic.h"
 #include <QCheckBox>
@@ -93,6 +94,51 @@ class SceneWorkspaceTests : public QObject {
         QVERIFY2(status->text().contains("Scene released") || status->text().contains("returned to the game")
                  || status->text().contains("requested a scene"), qPrintable(status->text()));
     }
+    void theodricusBriefingMenu() {
+        auto project = Project::fromRom(rom());
+        project.loadSceneEvents();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        const auto key = scenes.original().selectors().at(10);
+        ScenePreview preview(project.rom());
+        preview.show();
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), scenes.resource(key), -1).mode,
+                            *project.dialogues(), *project.sceneEvents());
+        preview.selectEventLaunch(4, 50);
+        auto *status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto *confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto *down = preview.findChild<QPushButton *>("panelDown");
+        auto *step = preview.findChild<QPushButton *>("sceneStep");
+        QVERIFY(status && confirm && step && down);
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 10000);
+        int menus = 0, menuStart = -1;
+        bool replayed = false, closing = false;
+        for (int n = 0; n < 13000 && !preview.property("sceneStopped").toBool(); ++n) {
+            const int word = preview.activeWord();
+            if (word >= 1100 && word <= 1755 && menus == 1) replayed = true;
+            if (word >= 2392) closing = true;
+            // The scheduler waits after the menu input query at word 1948.
+            if (menuStart < 0 && menus < 2 && (menus == 0 || replayed) &&
+                status->text().section('\n', 0, 0).endsWith("word 1949")) {
+                menuStart = n;
+                ++menus;
+            }
+            if (menuStart >= 0) {
+                const int age = n - menuStart;
+                if (menus == 2 && age == 40) down->click();
+                else if (age == 42) confirm->click();
+                else step->click();
+                if (age == 43) menuStart = -1;
+            } else if (n % 20 == 0 && confirm->isVisible()) {
+                confirm->click();
+            } else {
+                step->click();
+            }
+        }
+        QVERIFY2(replayed && menus == 2 && closing, qPrintable(status->text()));
+        QVERIFY2(status->text().contains("returned to the game") || status->text().contains("Scene released"),
+                 qPrintable(status->text()));
+    }
     void storyDecisionHandoff_data() {
         QTest::addColumn<int>("question");
         QTest::addColumn<bool>("second");
@@ -106,6 +152,8 @@ class SceneWorkspaceTests : public QObject {
         QTest::newRow("Sheen refuses") << 159 << true << false << 161;
         QTest::newRow("Liedel accepts") << 121 << false << false << 122;
         QTest::newRow("Liedel returns") << 121 << true << false << 123;
+        QTest::newRow("Let Paul leave") << 289 << false << false << 291;
+        QTest::newRow("Confront Paul") << 289 << true << false << 290;
     }
     void storyDecisionHandoff() {
         QFETCH(int, question);
@@ -124,6 +172,7 @@ class SceneWorkspaceTests : public QObject {
             events.editParameter(22, 562, "value", 1, scenes);
         const bool wentinus = question == 180;
         const bool liedel = question == 121;
+        const bool paul = question == 289;
         ScenePreview preview(project.rom());
         preview.resize(1250, 950);
         preview.show();
@@ -131,7 +180,9 @@ class SceneWorkspaceTests : public QObject {
         const auto &resource = scenes.original().entries()[key];
         preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), resource, -1).mode,
                             *project.dialogues(), events);
-        preview.selectEventLaunch(wentinus ? 22 : liedel ? 16 : 20, wentinus ? 544 : liedel ? 394 : 202);
+        const QMap<int, QPair<int, int>> launches{{180,{22,544}}, {121,{16,394}}, {159,{20,202}}, {289,{35,158}}};
+        const auto [row, request] = launches.value(question);
+        preview.selectEventLaunch(row, request);
         auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
         auto confirm = preview.findChild<QPushButton *>("panelConfirm");
         auto step = preview.findChild<QPushButton *>("sceneStep");
@@ -203,6 +254,11 @@ class SceneWorkspaceTests : public QObject {
         if (wentinus) {
             QVERIFY(effects.contains("Flag 119"));
             QVERIFY(effects.contains(reaction == 182 ? "scenario 21" : "Flag 19"));
+        } else if (paul) {
+            QVERIFY2(effects.contains("202"), qPrintable(effects));
+            QCOMPARE(effects.contains("203"), reaction == 290);
+            if (reaction == 290)
+                QVERIFY2(status->text().contains("Sound gain 44"), qPrintable(status->text()));
         } else if (liedel) {
             if (reaction == 122)
                 QVERIFY2(effects.contains("Recruit character"), qPrintable(effects));
@@ -313,8 +369,8 @@ class SceneWorkspaceTests : public QObject {
                 if (row == 22) {
                     story = true;
                     QVERIFY(plan.decision);
-                    QCOMPARE(plan.decision->equal.selector, selector + 2);
-                    QCOMPARE(plan.decision->different.selector, selector + 1);
+                    QCOMPARE(plan.decision->reaction(255).selector, selector + 2);
+                    QCOMPARE(plan.decision->reaction(1).selector, selector + 1);
                 }
                 if (row == 66) {
                     other = true;
@@ -840,6 +896,91 @@ class SceneWorkspaceTests : public QObject {
         const auto output=Rom::open(path);auto reopened=ScenePrograms::load(output);bool found=false;for(auto candidate:reopened.scenes())if(reopened.program(candidate).source==p.source)found=true;QVERIFY(found);
         const auto placement=ClassPlacement::read(output);QVERIFY(placement);QFile meta(QDir(run).filePath("probe.json"));QVERIFY(meta.open(QIODevice::WriteOnly));
         meta.write(QJsonDocument(QJsonObject{{"flagsAddress",double(placement->layout.customFlags)},{"startFlag",start},{"doneFlag",done},{"scene",programs.resource(id).selectors.first()}}).toJson());
+    }
+    void rebuildGraduationInPlace() {
+        try {
+            auto project = Project::fromRom(rom());
+            project.loadSceneEvents();
+            project.loadDialogues();
+            const int selector = 2;
+            const auto key = project.scenePrograms()->original().selectors().at(selector);
+            const auto original = project.scenePrograms()->program(key);
+            const auto blank = wipeSceneProgram(original);
+            const auto event = project.sceneEvents()->program(1);
+            QUndoStack undo;
+            {
+                CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+                editor.show();
+                auto *list = editor.findChild<QListWidget *>("cutsceneScenes");
+                auto *wipe = editor.findChild<QPushButton *>("sceneWipe");
+                QVERIFY(list && wipe);
+                QTRY_VERIFY_WITH_TIMEOUT(list->count() > 1000, 10000);
+                for (int i = 0; i < list->count(); ++i) {
+                    if (list->item(i)->data(Qt::UserRole).toUInt() == key) {
+                        list->setCurrentRow(i);
+                        break;
+                    }
+                }
+                QCOMPARE(list->currentItem()->data(Qt::UserRole).toUInt(), key);
+                QVERIFY(wipe->isEnabled());
+                wipe->click();
+                QCOMPARE(project.scenePrograms()->program(key).source, blank.source);
+                undo.undo();
+                QCOMPARE(project.scenePrograms()->program(key).source, original.source);
+                undo.redo();
+                QCOMPARE(project.scenePrograms()->program(key).source, blank.source);
+            }
+            int end = 0;
+            while (end < blank.commands.size() && blank.commands[end].opcode != 0x7d &&
+                   blank.commands[end].opcode != 0x39)
+                ++end;
+            QVERIFY(end < blank.commands.size());
+            auto lines = *project.dialogues();
+            const auto text = Dialogues::spokenText("Registrar", "Magnus, step forward and give your name.");
+            const int entry = lines.appendEntry(Dialogues::Table::Primary, 5, text);
+            auto replacement = SceneActions::insert(blank, end, 0xbf);
+            replacement = SceneActions::edit(replacement, end, 2, QString::number(entry));
+            auto scenes = *project.scenePrograms();
+            scenes.replace(key, replacement.source);
+            project.setDialogues(lines.json());
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir temporary;
+            QDir out(qEnvironmentVariable("LORDLY_SCENE_TEST_OUTPUT", temporary.path()));
+            QVERIFY(out.mkpath("."));
+            project.saveFolder(out.filePath("project"));
+            auto saved = Project::fromRom(rom());
+            saved.applyManifest(Project::readProject(out.filePath("project")));
+            auto built = rebuild(saved, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), out.filePath("build"));
+            const auto filename = out.filePath(QFileInfo(qEnvironmentVariable("LORDLY_TEST_ROM")).fileName());
+            exportRom(saved, built, filename);
+            auto reopened = Project::fromRom(Rom::open(filename));
+            reopened.loadSceneEvents();
+            reopened.loadDialogues();
+            const auto &library = *reopened.scenePrograms();
+            const auto current = library.original().selectors().at(selector);
+            QCOMPARE(library.program(current).source, replacement.source);
+            QCOMPARE(reopened.sceneEvents()->program(1), event);
+            ScenePreview playback(reopened.rom());
+            playback.show();
+            playback.selectScene(library, current, SceneImages::backgrounds(reopened.rom(), library.resource(current), -1).mode,
+                                 *reopened.dialogues(), *reopened.sceneEvents());
+            playback.selectEventLaunch(1, 82);
+            QTRY_VERIFY_WITH_TIMEOUT(!playback.property("scenePreparing").toBool(), 10000);
+            auto *step = playback.findChild<QPushButton *>("sceneStep");
+            auto *confirm = playback.findChild<QPushButton *>("panelConfirm");
+            auto *status = playback.findChild<QLabel *>("scenePlaybackStatus");
+            QVERIFY(step && confirm && status);
+            bool spoke = false;
+            for (int i = 0; i < 600 && !playback.property("sceneStopped").toBool(); ++i) {
+                const int state = playback.property("sceneFocusedDialogueState").toInt();
+                spoke |= state == 3 || state == 6;
+                if (i % 20 == 0 && confirm->isVisible()) confirm->click();
+                else step->click();
+            }
+            QVERIFY2(spoke, qPrintable(status->text()));
+            QVERIFY2(status->text().contains("returned to the game") || status->text().contains("Scene released") ||
+                     status->text().contains("requested a scene"), qPrintable(status->text()));
+        } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void originalStoryVisits() {
         try {

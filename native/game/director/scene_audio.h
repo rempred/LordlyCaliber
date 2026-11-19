@@ -18,7 +18,8 @@ enum {
     LORDLY_AUDIO_TIME,
     LORDLY_AUDIO_PAN,
     LORDLY_AUDIO_PITCH,
-    LORDLY_AUDIO_BUS_GAIN
+    LORDLY_AUDIO_BUS_GAIN,
+    LORDLY_AUDIO_BUS_GAIN_UNKNOWN
 };
 typedef struct {
     int16_t route;
@@ -31,10 +32,11 @@ typedef struct {
     int envelope_present;
     int16_t step, level, remaining, group;
     uint32_t gains[4];
+    uint8_t unknown_gain_mask, unknown_level;
 } LordlySceneAudio;
 typedef void (*LordlyAudioSink)(void *, int kind, int context, uint32_t value, uint32_t extra);
 int lordly_audio_command(LordlySceneAudio *, const LordlyAudioInputs *, uint32_t opcode,
-                         const uint32_t args[4], LordlyAudioSink, void *);
+                         const uint32_t args[4], const uint32_t *indexed_gain, LordlyAudioSink, void *);
 void lordly_audio_advance(LordlySceneAudio *, const LordlyAudioInputs *, LordlyAudioSink, void *);
 #ifdef __cplusplus
 }

@@ -2,6 +2,7 @@
  * Portable reconstruction; not an accepted matching-C claim. */
 #include "scene_audio.h"
 static void bus(LordlySceneAudio *s, int mask, uint32_t value, LordlyAudioSink sink, void *user) {
+    s->unknown_gain_mask &= (uint8_t)~mask;
     if (mask & 1)
         s->gains[0] = (uint16_t)value;
     if (mask & 2)
@@ -9,7 +10,7 @@ static void bus(LordlySceneAudio *s, int mask, uint32_t value, LordlyAudioSink s
     sink(user, LORDLY_AUDIO_BUS_GAIN, mask, value, 0);
 }
 int lordly_audio_command(LordlySceneAudio *s, const LordlyAudioInputs *in, uint32_t op,
-                         const uint32_t a[4], LordlyAudioSink sink, void *user) {
+                         const uint32_t a[4], const uint32_t *indexed_gain, LordlyAudioSink sink, void *user) {
     int context = (int32_t)a[0], first, end, i;
     if (context < 0 || context > 7)
         return 0;
@@ -62,15 +63,18 @@ int lordly_audio_command(LordlySceneAudio *s, const LordlyAudioInputs *in, uint3
     case 0xb4: {
         int32_t half = (int32_t)a[2] / 2;
         if (!s->envelope_present) {
-            uint32_t level;
+            uint32_t level = 0;
+            s->unknown_level = 0;
             if (context >= 2 && context <= 6)
                 level = 32767;
-            else {
-                if (a[1] > 3)
-                    return 0;
+            else if (a[1] < 4) {
                 level = s->gains[a[1]];
-            }
-            if ((int32_t)a[2] > 0)
+                s->unknown_level = (s->unknown_gain_mask >> a[1]) & 1;
+            } else if (indexed_gain)
+                level = *indexed_gain;
+            else
+                s->unknown_level = 1;
+            if (!s->unknown_level && (int32_t)a[2] > 0)
                 level -= (uint32_t)half * a[3];
             s->level = (int16_t)(uint16_t)level;
             s->envelope_present = 1;
@@ -95,14 +99,21 @@ void lordly_audio_advance(LordlySceneAudio *s, const LordlyAudioInputs *in, Lord
             bus(s, 2, 32767, sink, user);
             if (s->envelope_present) {
                 s->envelope_present = 0;
+                s->unknown_level = 0;
                 bus(s, 1, 32767, sink, user);
             }
             s->pending[i] = 0;
         }
     if (s->envelope_present && s->remaining > 0) {
-        int level = s->level + s->step;
+        const int mask = s->group == 7 ? 3 : s->group < 2 ? 2 : 1;
         --s->remaining;
+        if (s->unknown_level) {
+            s->unknown_gain_mask |= (uint8_t)mask;
+            sink(user, LORDLY_AUDIO_BUS_GAIN_UNKNOWN, mask, 0, 0);
+            return;
+        }
+        int level = s->level + s->step;
         s->level = (int16_t)(level < 0 ? 0 : level > 32767 ? 32767 : level);
-        bus(s, s->group == 7 ? 3 : s->group < 2 ? 2 : 1, (uint32_t)s->level, sink, user);
+        bus(s, mask, (uint32_t)s->level, sink, user);
     }
 }

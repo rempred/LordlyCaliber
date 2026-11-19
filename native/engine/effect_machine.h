@@ -31,6 +31,8 @@ class EffectMachine {
     void number(quint32, float);
     quint32 physical(quint32, quint32 bytes = 1) const;
     void call(quint32 entry, quint32 budget = 2000000);
+    // Return true if the requested instruction boundary is reached before the function returns.
+    bool callUntil(quint32 entry, quint32 stop, quint32 budget);
     quint32 lastInstruction() const {
         return pc_;
     }

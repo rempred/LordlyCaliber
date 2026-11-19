@@ -10,18 +10,42 @@ For a conversation with several questions, such as Sheen's offer, use **Edit
 cutscene…** on the scene request in its event row. This also opens the scene
 with that event's launch inputs.
 
-When the event compares the dialogue answer and immediately requests a reaction
-on each branch, the preview continues in the same room with the current cast.
-The playback status names the reaction. **View event outcome…** shows the event
-actions for the answer you actually chose, including shared changes and the next
-destination where the event identifies one. The timeline still edits the
-question. To edit a reaction, open its scene from Logic.
+When the scene asks gameplay for its successor, the preview resumes the selected
+mission rule at that request. It follows the answer through branches and jumps
+to the next scene, carrying the current cast and the story flags written along
+that path. **View event outcome…** lists the actions for the answer you chose,
+including the next destination when the event identifies one. The timeline
+continues to edit the question. To edit a reaction, open its scene from Logic.
 
-The Wentinus orders-or-peace decision and Sheen's final recruitment offer use
-this handoff. Selecting a different event occurrence can give the same question
-different behavior. A request that depends on an unresolved game condition still
-stops at the handoff. Later campaign actions shown in the outcome are a reading
-of the event program. Use the exported game to play the resulting battlefield.
+Wentinus, Sheen, Liedel and Paul use this handoff. For Sheen, the last answer
+decides whether he joins. The same question launched from a different event
+can have a different outcome. Playback identifies a handoff it cannot resolve
+from the available game state. Later campaign actions shown in the outcome come
+from the event program. Use the exported game to play the resulting battlefield.
+
+## Replace a scene or write your own
+
+To keep a retail scene's place in the story, open it from its event in Logic.
+Choose **Clear scene content** to keep the supported background setup and exit.
+**Undo** restores the original performance. Use **Add step** to add dialogue,
+actors or movement before the exit. Use the timeline and **Play** to check
+who is on stage when the speaker's line opens. A scene with an unresolved
+exit explains why clearing is unavailable. Individual actions remain editable.
+
+To give a scene its own identity, choose **New scene**, select a supported
+setup and name the scene. Choose its background, place the cast and add their
+actions. To make an answer matter on a later visit, add a two-answer choice
+and put **Set story flag** inside the relevant answer. Give the flag a name
+you will recognize in Logic. Use **Add event trigger** to choose the event
+and target. A later rule can check that same flag and play another scene.
+In a rule with nested conditions, each scene step has its own **Edit cutscene…**
+button. It opens that occurrence with its launch context.
+
+Save the project to retain names and editable rules. Export the ROM and enter
+the event in game to check its timing, sound and campaign consequences.
+The desktop preview is silent. When a sound envelope needs a starting volume
+from game memory, playback uses a compatible capture when available. Otherwise
+it identifies the missing volume and continues the dialogue and action.
 
 ## Scene timeline workspace (November 14)
 
@@ -85,10 +109,11 @@ Verification lives in `scene_workspace_tests`, the existing scene-action and
 Director checks, and the parent task note. A copied battery-save run entered an
 authored Mulsuk scene through town arrival, observed movement and both saved flag
 writes, then returned to the map. That run required one observed liberation-dialog
-confirmation. Choice-branch authoring is separately checked through the Director
-and dialogue playback paths; both native game choice branches have not been
-observed in the emulator in this pass. Desktop scene drawing remains an editing
-preview, with approximations identified in its expanded context.
+confirmation. An independently authored Zemio courier was also played through
+both answers in Project64. Accepting the dispatch set the named flag and played
+the delivery line on the next visit. Leaving it played the line about keeping
+the dispatch. Drawing approximations are identified in the expanded preview
+context.
 
 The Commands page edits complete Director programs in the project. It supports
 operand changes, insertion, removal, restore and undo. Valid values enter the

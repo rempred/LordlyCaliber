@@ -47,12 +47,12 @@ struct SceneAnswerReaction {
     int selector = -1, requestOffset = -1;
     DirectorLaunchTranslations translations;
     QStringList effects;
+    QMap<int, bool> flags;
 };
 struct SceneAnswerDecision {
-    int selector = -1, comparedAnswer = -1;
-    QStringList commonEffects;
-    QMap<int,bool> commonFlags;
-    SceneAnswerReaction equal, different;
+    int selector = -1;
+    SceneAnswerReaction first, second;
+    const SceneAnswerReaction &reaction(int answer) const { return answer == 1 ? first : second; }
 };
 struct StoryEvent {
     int entry = 0, group = -1;

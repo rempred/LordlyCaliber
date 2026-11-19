@@ -3,6 +3,8 @@
 #include "game/director/scene_audio.h"
 #include <QVector>
 #include <array>
+#include <functional>
+#include <optional>
 namespace lordly {
 struct SceneAudioRequest {
     int kind, context;
@@ -14,6 +16,9 @@ class SceneAudio {
     SceneAudio(LordlyAudioInputs inputs, std::array<quint32, 4> gains);
     bool service(quint32, const QVector<quint32> &);
     void advance();
+    using GainReader = std::function<std::optional<quint32>(quint32 address)>;
+    void setGainReader(GainReader reader) { gainReader_ = std::move(reader); }
+    std::optional<quint32> missingGain() const { return missingGain_; }
     void supplyInputs(LordlyAudioInputs inputs) {
         inputs_ = inputs;
     }
@@ -34,6 +39,8 @@ class SceneAudio {
     static void emitRequest(void *, int, int, uint32_t, uint32_t);
     LordlyAudioInputs inputs_{};
     LordlySceneAudio state_{};
+    GainReader gainReader_;
+    std::optional<quint32> missingGain_;
     QVector<SceneAudioRequest> requests_;
     quint64 requestCount_ = 0;
 };

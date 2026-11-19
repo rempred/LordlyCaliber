@@ -152,7 +152,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
                 }
             return found;
         };
-        if (arguments(decision->equal) && arguments(decision->different))
+        if (arguments(decision->first) && arguments(decision->second))
             plan.decision = std::move(decision);
     }
 }

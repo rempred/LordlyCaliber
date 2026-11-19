@@ -15,7 +15,7 @@ QByteArray bytes(const QJsonValue &v, int size) {
     return data;
 }
 float real(const QByteArray &data, int at) { return std::bit_cast<float>(u32(data, at)); }
-QByteArray memory(const QJsonArray &regions, quint32 address, int size) {
+QByteArray memory(const QJsonArray &regions, quint32 address, int size, bool required = true) {
     for (const auto &value : regions) {
         const auto region = value.toObject();
         const auto base = region["address"].toInteger(-1);
@@ -27,7 +27,9 @@ QByteArray memory(const QJsonArray &regions, quint32 address, int size) {
         if (address >= base && quint64(address) + size <= quint64(base + data.size()))
             return data.mid(address - base, size);
     }
-    throw Error(QString("Captured input is missing RAM %1 (%2 bytes)").arg(address, 8, 16, QChar('0')).arg(size));
+    if (required)
+        throw Error(QString("Captured input is missing RAM %1 (%2 bytes)").arg(address, 8, 16, QChar('0')).arg(size));
+    return {};
 }
 SceneCamera camera(const QJsonObject &object) {
     const auto values = object["values"].toArray();
@@ -339,7 +341,13 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
             if (resume["entry"] == "normal-mode-two-continuous") {
                 std::array<quint32, 4> gains{};
                 for (int i = 0; i < 4; ++i) gains[i] = u32(memory(regions, 0x800eb2e0 + 8*i, 4), 0);
-                playback.supplyAudio(SceneAudio({0, {}, 0, 1}, gains));
+                SceneAudio audio({0, {}, 0, 1}, gains);
+                audio.setGainReader([regions](quint32 address) -> std::optional<quint32> {
+                    const auto word = memory(regions, address, 4, false);
+                    if (word.isEmpty()) return {};
+                    return u32(word, 0);
+                });
+                playback.supplyAudio(std::move(audio));
             }
         }
         const auto query = playback.director().restoreMovementQuery(actors["observedParserCursor"].toInt(-1));

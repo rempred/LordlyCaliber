@@ -1251,6 +1251,16 @@ void ScenePreview::restart() {
                 // Roster rows belong to this invocation. A battery or a different
                 // scene cannot identify the current unit by its Actor slot.
                 if (ram.size() >= 0x1ce8c0 && (u16(ram, 0x18f1a0) & 0xfff) == selector_) {
+                    const auto scriptAt = ram.size() >= 0x22a95c ? qint64(u32(ram, 0x22a958)) - 0x80000000LL : -1;
+                    const auto &source = selectedProgram.source;
+                    if (!inputs && scriptAt >= 0 && !source.isEmpty() && scriptAt + source.size() <= ram.size()
+                        && QByteArrayView(ram).sliced(scriptAt, source.size()) == source) {
+                        playback.audio()->setGainReader([ram](quint32 address) -> std::optional<quint32> {
+                            const qint64 at = qint64(address) - 0x80000000LL;
+                            if (at < 0 || at + 4 > ram.size()) return {};
+                            return u32(ram, at);
+                        });
+                    }
                     const auto address = u32(ram, 0x1ce8bc);
                     const qint64 rows = qint64(address) - 0x80000000LL + 0x1c4;
                     if (address >= 0x80000000U && rows + 20 * 248 <= ram.size()) {
@@ -2188,6 +2198,9 @@ void ScenePreview::present() {
             status_->text() +
             QString("\nSilent audio preview: %1 native service requests; no resident voices.")
                 .arg(current_->playback.audio()->requestCount()));
+    if (const auto index = current_->playback.audio()->missingGain())
+        status_->setText(status_->text() + QString("\nSound gain %1 uses a starting volume from game memory. "
+                                                  "The preview omits that volume.").arg(*index));
 }
 void ScenePreview::reportExit() {
     emit exitReached(sceneId_, current_ ? current_->exitWord : -1,

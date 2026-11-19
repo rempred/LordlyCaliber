@@ -447,6 +447,26 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(ScenePanels::rewardName(rom, 1), QString("Short Sword"));
         QCOMPARE(ScenePanels::rewardName(rom, 0x201), QString("Heal Leaf"));
     }
+    void uncapturedAudioFade() {
+        LordlyAudioInputs inputs{9, {1}, 0, 1};
+        SceneAudio audio(inputs, {32767, 32767, 32767, 32767});
+        QVERIFY(audio.service(0xb4, {0, 44, quint32(-637), 30}));
+        QCOMPARE(audio.missingGain().value_or(0), 44u);
+        for (int i = 0; i < 30; ++i) {
+            audio.clearRequests();
+            audio.advance();
+            QCOMPARE(audio.requests().size(), 1);
+            QCOMPARE(audio.requests().first().kind, int(LORDLY_AUDIO_BUS_GAIN_UNKNOWN));
+            QCOMPARE(audio.state().remaining, 29 - i);
+        }
+        QVERIFY(audio.service(0x6e, {0, 0, 1}));
+        inputs.voices[0] = 0;
+        audio.supplyInputs(inputs);
+        audio.advance();
+        QVERIFY(!audio.state().envelope_present);
+        QCOMPARE(int(audio.state().unknown_gain_mask), 0);
+        QCOMPARE(audio.state().gains[1], 32767u);
+    }
     void audioRequestsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -471,6 +491,13 @@ class SceneRuntimeTests : public QObject {
             inputs.controller_suppressed = sequence["suppressed"].toInt();
             inputs.scene_present = 1;
             SceneAudio audio(inputs, {6000, 14000, 9000, 21000});
+            if (!sequence["indexedGain"].isNull()) {
+                const quint32 gain = quint32(sequence["indexedGain"].toInteger());
+                audio.setGainReader([gain](quint32 addr) -> std::optional<quint32> {
+                    if (addr == 0x800eb440) return gain;
+                    return {};
+                });
+            }
             for (const auto &value : sequence["steps"].toArray()) {
                 const auto step = value.toObject();
                 for (int i = 0; i < 7; ++i)

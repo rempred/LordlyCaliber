@@ -78,11 +78,16 @@ void EffectMachine::number(quint32 a, float v) {
     word(a, std::bit_cast<quint32>(v));
 }
 void EffectMachine::call(quint32 entry, quint32 budget) {
+    callUntil(entry, 0, budget);
+}
+bool EffectMachine::callUntil(quint32 entry, quint32 stop, quint32 budget) {
     constexpr quint32 returned = 0x80000100;
     registers[31] = returned;
     quint32 pc = entry, next = pc + 4;
     while (pc != returned) {
         pc_ = pc;
+        if (stop && pc == stop)
+            return true;
         if (!budget--)
             throw Error(QString("Effect instruction limit at %1").arg(pc, 8, 16, QChar('0')));
         if (auto observer = observers_.constFind(pc); observer != observers_.cend())
@@ -111,6 +116,7 @@ void EffectMachine::call(quint32 entry, quint32 budget) {
                         QString(" at %1").arg(pc_, 8, 16, QChar('0')));
         }
     }
+    return false;
 }
 std::pair<quint32, quint32> EffectMachine::step(quint32 pc, quint32 next) {
     const auto instruction = word(pc);

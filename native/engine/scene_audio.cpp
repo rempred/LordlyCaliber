@@ -21,7 +21,17 @@ bool SceneAudio::service(quint32 opcode, const QVector<quint32> &args) {
     std::array<uint32_t, 4> words{};
     std::copy(args.cbegin(), args.cend(), words.begin());
     auto next = *this;
-    if (!lordly_audio_command(&next.state_, &next.inputs_, opcode, words.data(), emitRequest,
+    std::optional<uint32_t> indexedGain;
+    if (opcode == 0xb4 && !state_.envelope_present && words[1] >= 4 &&
+        (words[0] < 2 || words[0] == 7)) {
+        const quint32 address = 0x800eb2e0u + words[1] * 8u;
+        if (address < 0x80000000u || address > 0x807ffffcu)
+            throw Error("The scene's sound gain address is outside game RAM");
+        if (gainReader_) indexedGain = gainReader_(address);
+        if (!indexedGain) next.missingGain_ = words[1];
+    }
+    if (!lordly_audio_command(&next.state_, &next.inputs_, opcode, words.data(),
+                              indexedGain ? &*indexedGain : nullptr, emitRequest,
                               &next))
         throw Error(
             "Scene audio command requires a valid context, gain bus and current scene state");

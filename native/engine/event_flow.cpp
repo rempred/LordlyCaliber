@@ -1,4 +1,5 @@
 #include "engine/event_flow.h"
+#include "engine/event_reaction.h"
 #include "engine/dialogues.h"
 #include "engine/scene_actions.h"
 #include "engine/event_authoring.h"
@@ -1098,58 +1099,37 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
         });
         if (at == actions.cend())
             continue;
+        const auto first = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 1, gates);
+        const auto second = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 255, gates);
+        if (!first || !second || !first->readAnswer || !second->readAnswer)
+            return {};
         SceneAnswerDecision decision;
         decision.selector = selector;
-        int next = site.offset + 2;
-        for (++at; at != actions.cend(); ++at) {
-            if (at->instructions.isEmpty() || at->instructions.first() != next)
-                return {};
-            const int last = at->instructions.last();
-            next = last + 2;
-            // Flag and dated-history writes can precede the answer comparison.
-            // Neither redirects the event or overwrites dialogue control 3.
-            const int first = at->instructions.first();
-            const bool writeFlag = last == first + 4 && u8(bytes, first) == 0x68 &&
-                                   u8(bytes, first + 2) == 0x69 && u8(bytes, first + 3) <= 1 &&
-                                   u16(bytes, last) == 0x7160;
-            const bool history = last == first + 6 && u16(bytes, first) == 0x60f4 &&
-                                 u16(bytes, first + 2) == 0x61f5 &&
-                                 u16(bytes, first + 4) == 0x62f6 && u8(bytes, last) == 0x15;
-            if (at->kind == "action" && (writeFlag || history)) {
-                if (writeFlag)
-                    decision.commonFlags[u8(bytes, first + 1)] = u8(bytes, first + 3) != 0;
-                decision.commonEffects << at->title;
-                continue;
-            }
-            const int op = u8(bytes, last);
-            if (at->answerScene != selector || (op != 0xab && op != 0xbb) ||
-                gates.contains(QString::number(last)))
-                return {};
-            const auto &fields = at->condition.fields;
-            const auto field =
-                std::find_if(fields.cbegin(), fields.cend(),
-                             [](const StoryField &f) { return f.kind == "dialogue-answer"; });
-            if (field == fields.cend())
-                return {};
-            decision.comparedAnswer = field->value;
-            auto reaction = [&](int pc, SceneAnswerReaction &out) {
-                const auto arm =
-                    std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
-                        return a.scene >= 0 && !a.instructions.isEmpty() &&
-                               a.instructions.first() == pc;
-                    });
-                if (arm == actions.cend() || arm->requestOffset < 0)
-                    return false;
-                out.selector = arm->scene;
-                out.requestOffset = arm->requestOffset;
-                out.effects = choiceEffects(event, bytes, pc, gates);
-                return true;
-            };
-            if (reaction(op == 0xab ? at->target : at->otherwise, decision.equal) &&
-                reaction(op == 0xab ? at->otherwise : at->target, decision.different))
-                return decision;
-            return {};
+        QMap<int, QString> effects;
+        for (const auto &action : actions) {
+            if (action.kind == "action" && !action.instructions.isEmpty())
+                effects.insert(action.instructions.last(), action.title);
         }
+        auto arm = [&](const EventReaction &run, SceneAnswerReaction &out) {
+            const auto reaction = std::find_if(actions.cbegin(), actions.cend(), [&](const StoryAction &a) {
+                return a.requestOffset == run.requestOffset && a.scene == run.selector;
+            });
+            if (reaction == actions.cend() || reaction->instructions.isEmpty())
+                return false;
+            out.selector = run.selector;
+            out.requestOffset = run.requestOffset;
+            out.flags = run.flags;
+            for (int pc : run.instructions) {
+                const auto effect = effects.constFind(pc);
+                if (effect != effects.cend())
+                    out.effects << effect.value();
+            }
+            out.effects += choiceEffects(event, bytes, reaction->instructions.first(), gates);
+            return true;
+        };
+        if (arm(*first, decision.first) && arm(*second, decision.second))
+            return decision;
+        return {};
     }
     return {};
 }

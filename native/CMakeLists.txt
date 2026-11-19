@@ -181,6 +181,7 @@ qt_add_resources(lordly_engine scene_images PREFIX "/" BASE . FILES game/directo
 target_sources(lordly_engine PRIVATE engine/director.cpp engine/scene_programs.cpp engine/scene_events.cpp engine/scene_program_resources.cpp engine/legacy_scene_arena.cpp)
 target_sources(lordly_engine PRIVATE engine/event_script.cpp)
 target_sources(lordly_engine PRIVATE engine/event_flow.cpp)
+target_sources(lordly_engine PRIVATE engine/event_reaction.cpp)
 target_sources(lordly_engine PRIVATE engine/event_authoring.cpp)
 target_sources(lordly_engine PRIVATE engine/mission_battlefield.cpp engine/scenario_battlefields.cpp engine/battlefield_clone.cpp engine/mission_runtime.cpp rebuild/mission_runtime.cpp engine/retail_event_gate.cpp rebuild/retail_event_gate_runtime.cpp)
 target_sources(lordly_engine PRIVATE engine/mission_tables.cpp)
