@@ -1,0 +1,57 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct {
+    u32 flag : 1;
+    u32 mode : 4;
+    u32 rest : 27;
+} Bits42;
+extern u8 D_80187030_ovl_040E80;
+extern u8 D_80187031_ovl_040E80;
+void func_8016CDF4_ovl_040E80(Bits42 *p);
+typedef struct {
+    u8 b[16];
+    s16 h;
+} Opts42;
+extern Opts42 D_800ABD80;
+extern Opts42 D_800E9C08;
+extern u8 D_80195560_ovl_040E80[];
+extern u8 D_80193BC0_ovl_040E80[];
+extern u8 D_80187618_ovl_040E80[];
+extern u8 D_80187444_ovl_040E80[];
+extern u8 D_80196A28_ovl_040E80[];
+void NewGameInit(void);
+void func_8016CF64_ovl_040E80(s32 a);
+void func_800742F4(s32 a, void *b);
+void func_8017AAF4_ovl_040E80(void *name, void *rec);
+void func_8016B774_ovl_040E80(void);
+void func_8016BA10_ovl_040E80(s32 a);
+void func_8016CC2C_ovl_040E80(void *c);
+void *HMalloc(s32 size);
+void HFree(void *p);
+void bzero(void *p, s32 n);
+void _bcopy(const void *src, void *dst, s32 n);
+void func_80074494(void *a, void *table);
+void func_8017AA18_ovl_040E80(u8 *str, u8 *dst);
+void func_8016CD90_ovl_040E80(Bits42 *p) {
+    p->flag = D_80187030_ovl_040E80 = 0;
+    p->mode = D_80187031_ovl_040E80 = 0;
+}
+void func_8016CDCC_ovl_040E80(Bits42 *p);
+void func_8016CDF4_ovl_040E80(Bits42 *p);
+void func_8016CE40_ovl_040E80(s32 a);
+void func_8016CEC4_ovl_040E80(s32 a);
+void func_8016CF64_ovl_040E80(s32 a);
+void func_8016D068_ovl_040E80(s32 a);
+void func_8016D100_ovl_040E80(s32 a);

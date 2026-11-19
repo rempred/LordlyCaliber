@@ -35,6 +35,11 @@ function projectReadonly(object, projections) {
 }
 function build(native, tools, output, sourceFilter) {
   const manifest = JSON.parse(fs.readFileSync(path.join(native, 'game/accepted/rom-owners.json')));
+  // ogredecomp's matched C, qualified by the same compile/link/hash checks below.
+  const extraPath = path.join(native, 'game/accepted/ogredecomp-owners.json');
+  const extra = fs.existsSync(extraPath) ? JSON.parse(fs.readFileSync(extraPath)) : {sources: [], counts: {functions: 0}};
+  assert.equal(extra.schemaVersion ?? 1, 1);
+  manifest.sources = manifest.sources.concat(extra.sources);
   const pins = JSON.parse(fs.readFileSync(path.join(native, 'rebuild/toolchain.json'))).tools;
   for (const [name, hash] of Object.entries(pins))
     assert.equal(digest(fs.readFileSync(path.join(tools, name))).toLowerCase(), hash);
@@ -118,7 +123,7 @@ function build(native, tools, output, sourceFilter) {
     chunks.push(h,b.bytes);
   }
   fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output+'.tmp',Buffer.concat(chunks));fs.renameSync(output+'.tmp',output);
-  console.log(`Compiled ${sources.length} complete sources / ${blocks.length} exact ROM blocks${sourceFilter ? ' (filtered check)' : ' / ' + manifest.counts.functions + ' accepted C functions'}`);
+  console.log(`Compiled ${sources.length} complete sources / ${blocks.length} exact ROM blocks${sourceFilter ? ' (filtered check)' : ' / ' + manifest.counts.functions + ' accepted C functions + ' + extra.counts.functions + ' ogredecomp C functions'}`);
 }
 if (require.main === module) build(path.resolve(process.argv[2]), path.resolve(process.argv[3]), path.resolve(process.argv[4]));
 module.exports = {build};

@@ -57,7 +57,7 @@ set(accepted_rom_binary "${CMAKE_CURRENT_BINARY_DIR}/accepted-rom.bin")
 add_custom_command(OUTPUT "${accepted_rom_binary}"
   COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-accepted-rom.cjs"
     "${CMAKE_CURRENT_SOURCE_DIR}" "${LORDLY_N64_TOOLS}" "${accepted_rom_binary}"
-  DEPENDS ${accepted_effect_inputs} game/accepted/rom-owners.json
+  DEPENDS ${accepted_effect_inputs} game/accepted/rom-owners.json game/accepted/ogredecomp-owners.json
     tools/build-accepted-rom.cjs tools/build-accepted-effects.cjs tools/decomp-evidence.cjs rebuild/toolchain.json
   COMMENT "Compiling and authenticating the complete accepted C ROM baseline" VERBATIM)
 set_source_files_properties("${accepted_rom_binary}" PROPERTIES GENERATED TRUE)

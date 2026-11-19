@@ -1,0 +1,137 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct {
+    u32 w0;
+    u32 w1;
+} Gfx;
+typedef struct {
+               u8 unk00[1];
+               u8 flags;
+               u8 members[5];
+               u8 unk07[0x12];
+} SquadRec;
+typedef struct Task27 {
+               u8 unk00[4];
+               u16 state;
+               u16 next;
+               void (*fn)(s32, struct Task27 *);
+               s16 hC;
+               s16 hE;
+               s16 h10;
+               u8 unk12[0x26];
+} Task27;
+typedef struct {
+               u8 unk00[0x18];
+               s32 *w18;
+               s16 h1C;
+               s16 h1E;
+               u8 *w20;
+               u8 *w24;
+               s16 h28;
+} Obj27;
+typedef struct {
+    u8 unk00[0x4C];
+    s32 w4C;
+} Unit27;
+extern Gfx *D_800E9BA0;
+extern u8 D_801976DC;
+extern SquadRec gSquads[];
+extern Unit27 *D_8022D134_ovl_27A020[];
+extern s32 D_8022D150_ovl_27A020[];
+extern void *D_8022C890_ovl_27A020;
+extern u16 D_8022D0F0_ovl_27A020;
+extern Task27 *D_8022D148_ovl_27A020;
+extern Obj27 *D_8022CB20_ovl_27A020;
+void *HFree(void *p);
+s32 func_8016E1DC(s32 a, s32 b);
+void func_80226980_ovl_27A020(void);
+void func_801CBF44(void);
+s32 func_802283C0_ovl_27A020(void);
+void func_8022B5EC_ovl_27A020(s32 a, Task27 *t);
+void func_8022A488_ovl_27A020(Obj27 *o);
+void func_8022A2A8_ovl_27A020(Obj27 *o);
+extern s16 D_8022D0F2_ovl_27A020;
+extern void *D_8022D100_ovl_27A020;
+extern void *D_8022D104_ovl_27A020;
+extern void *D_8022D108_ovl_27A020;
+extern void *D_8022D10C_ovl_27A020;
+extern void *D_8022D110_ovl_27A020;
+extern void *D_8022D114_ovl_27A020;
+extern void *D_8022D118_ovl_27A020;
+extern void *D_8022D11C_ovl_27A020;
+extern void *D_8022D120_ovl_27A020;
+extern s32 D_800C6D60;
+extern s8 *D_800C47F0[];
+extern u16 D_800E9BE4[];
+void *HMalloc(s32 size);
+void func_8017BED4(void);
+void func_8022A95C_ovl_27A020(Obj27 *o);
+void func_8022A750_ovl_27A020(Obj27 *o);
+void func_8022AAA4_ovl_27A020(Obj27 *o);
+void func_8022AC5C_ovl_27A020(Obj27 *o);
+void *LoadChunk(s32 id);
+void func_8017BDC0(void);
+typedef struct {
+    s16 *list;
+    u16 key;
+} Find27;
+extern void *D_801CE8BC;
+extern u8 *D_8022C5C0_ovl_27A020;
+extern u8 D_8022C5C4_ovl_27A020;
+extern u8 D_801976DA;
+extern u8 D_800E9C0A[];
+extern f32 D_801CE8EC;
+extern f32 D_801CE8F0;
+extern f32 D_801CE8F4;
+void func_801BE894(void);
+void func_800EA76C(void);
+void func_80079618(s32 a);
+void func_8020B098(void);
+void func_801BBC78(void);
+void func_801B0020(void);
+void func_801C1D98(void);
+void func_801C1A9C(void);
+void func_801C234C(void);
+extern inline s32 func_80225890_ovl_27A020(s16 slot) {
+    SquadRec *sq = &gSquads[D_801976DC];
+    u8 m = sq->members[slot];
+    if (m < 100) {
+        return 0;
+    }
+    return m - 99;
+}
+s32 func_802258DC_ovl_27A020(s16 i);
+void func_80226980_ovl_27A020(void);
+void func_80226CC0_ovl_27A020(void);
+s16 func_8022857C_ovl_27A020(void) {
+    func_80226980_ovl_27A020();
+    func_801CBF44();
+    return func_802283C0_ovl_27A020();
+}
+void func_80228650_ovl_27A020(void);
+void func_80228680_ovl_27A020(void);
+Task27 *func_8022874C_ovl_27A020(void (*fn)(s32, Task27 *));
+void func_802287C0_ovl_27A020(Task27 *t);
+void func_8022881C_ovl_27A020(Task27 *t, s16 a);
+void func_80228838_ovl_27A020(Task27 *t);
+s16 func_80228844_ovl_27A020(Find27 *f);
+void func_8022AFCC_ovl_27A020(Obj27 *o);
+void func_8022B494_ovl_27A020(void);
+void func_8022B560_ovl_27A020(void);
+void func_8022BC08_ovl_27A020(void);
+s16 func_8022BC28_ovl_27A020(Obj27 *o);
+void func_8022BC30_ovl_27A020(void);
+void func_8022BC80_ovl_27A020(void);
+void func_8022BCD0_ovl_27A020(void);

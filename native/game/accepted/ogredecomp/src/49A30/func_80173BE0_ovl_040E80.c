@@ -1,0 +1,44 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+extern u8 D_8018F481_ovl_040E80;
+extern void *D_8018FDC0_ovl_040E80;
+extern s32 D_801939C8_ovl_040E80;
+extern s32 D_80197AF4_ovl_040E80;
+extern f32 D_80196AF4_ovl_040E80;
+extern f32 D_801977D0_ovl_040E80;
+void func_8017BDC0_ovl_040E80(void);
+void func_8017BF10_ovl_040E80(void);
+void func_8017EE64_ovl_040E80(s32 a, u16 b, s16 c, s16 d, s16 e, s16 f);
+void func_8017F490_ovl_040E80(void);
+void func_8017BFB0_ovl_040E80(u16 a, u8 b, void *c, s16 x0, s16 y0, s16 x1, s16 y1, s16 x2, s16 y2, s16 x3, s16 y3);
+void func_801841F4_ovl_040E80(void);
+void func_80180BDC_ovl_040E80(void);
+void func_80173B30_ovl_040E80(u8 *p);
+void func_80173B40_ovl_040E80(u8 *p);
+void func_80173B50_ovl_040E80(u8 *p);
+void *func_80173B60_ovl_040E80(void *list);
+void *func_80173BA0_ovl_040E80(void *list);
+void func_80173BE0_ovl_040E80(void *list, s32 a, u16 b, s16 c, s16 d, s16 e, s16 f) {
+    void *old = D_8018FDC0_ovl_040E80;
+    D_8018FDC0_ovl_040E80 = list;
+    func_8017EE64_ovl_040E80(a, b, c, d, e, f);
+    D_8018FDC0_ovl_040E80 = old;
+}
+void func_80173C54_ovl_040E80(void *list, u16 a, u8 b, void *c, s16 x0, s16 y0, s16 x1, s16 y1, s16 x2, s16 y2,
+                              s16 x3, s16 y3);
+void func_80173D14_ovl_040E80(void *list);
+void func_80173D4C_ovl_040E80(void *list);
+void func_80173D84_ovl_040E80(void *list);
+void func_801768D4_ovl_040E80(s32 w, s32 h, s32 x0, s32 y0, s32 x1, s32 y1);

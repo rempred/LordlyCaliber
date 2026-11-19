@@ -1,0 +1,154 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct {
+    u32 w0;
+    u32 w1;
+} Gfx;
+typedef struct {
+              u8 unk0[4];
+              u16 w;
+              u16 h;
+} SizeCE;
+extern Gfx *D_800E9BA0;
+extern s32 D_801B8090_ovl_1CE070;
+extern s32 D_801B8094_ovl_1CE070;
+extern u8 D_801B80B0_ovl_1CE070[];
+extern void *D_801BA6F8_ovl_1CE070;
+extern u8 D_800A8210;
+extern u8 D_800A8211;
+extern u8 D_800A8212;
+extern s32 D_800C4B20;
+extern u8 D_801BA710[];
+extern u8 D_80243DB0[];
+void *HMalloc(s32 size);
+void bzero(void *p, s32 n);
+void func_8019898C_ovl_1CE070(SizeCE *s, s32 a, s32 b, s32 c, s32 d, s32 e, s32 f);
+u8 func_8016CD30(void);
+void func_8019915C_ovl_1CE070(void);
+void func_80076E00(void);
+void func_801792BC(void);
+void func_8017BF10(void);
+void func_80073398(void);
+void func_80179058(void);
+void func_80070F14(void);
+void func_80070C60(void *p, u32 size);
+void func_8009DAEC(void);
+void func_80179060(void);
+void func_8017BDC0(void);
+void func_80076E2C(void);
+typedef struct {
+              u8 unk0[6];
+              u16 h6;
+              u8 unk8[2];
+} RecCE;
+typedef struct {
+               u8 unk0[4];
+               u32 n;
+               u8 unk8[4];
+               RecCE *recs;
+               u16 (*links)[2];
+} SkelCE;
+typedef struct {
+    f32 m[4][4];
+    s32 pad;
+} MtxCE;
+extern u8 *D_801B8080_ovl_1CE070;
+extern u8 *D_801B8088_ovl_1CE070;
+extern u8 *D_801B808C_ovl_1CE070;
+extern u8 *D_801B8084_ovl_1CE070;
+extern u8 D_800E7A0C;
+void *HMalloc(s32 size);
+void guMtxCatF(void *a, void *b, void *c);
+void nuGfxTaskAllEndWait(void);
+void func_80072738(s32 a);
+void func_80089BC0(void);
+void func_80089AB0(void *p, s32 n);
+void osViSetSpecialFeatures(u32 f);
+void func_8016CD50(s32 a);
+extern u8 *D_800A8204[];
+extern u8 *D_800C4BB8;
+void HFree(void *p);
+u8 *func_80199ECC_ovl_1CE070(u8 *t, u32 page);
+typedef struct {
+    void *name;
+    s32 index;
+    u8 *buf;
+    s32 size;
+} Arc16_1CE070;
+extern Arc16_1CE070 D_801B99A0_ovl_1CE070;
+s32 ChunkSize(s32 id);
+void *LoadChunkRaw(void *dst, s32 id);
+s32 ReadU32BE(void *p);
+void DecodeLZ(void *dst, void *src);
+void func_8007ACB0(void *arc, void *reqs, s32 n);
+u32 func_80197B70_ovl_1CE070(s32 siz, u32 w);
+u32 func_80197BC4_ovl_1CE070(s32 siz, u32 w);
+u32 func_80197C14_ovl_1CE070(s32 siz, u32 w, s32 h);
+void *func_801985D0_ovl_1CE070(s32 id);
+void func_80198EAC_ovl_1CE070(SizeCE *s, s32 a, s32 b);
+void func_80198EE0_ovl_1CE070(void);
+void func_80198EEC_ovl_1CE070(void);
+void func_80198FB4_ovl_1CE070(void);
+void func_80199088_ovl_1CE070(void);
+void func_801993F0_ovl_1CE070(void);
+void func_80199460_ovl_1CE070(void);
+void func_801994C0_ovl_1CE070(void);
+void func_80199518_ovl_1CE070(void);
+void func_80199C3C_ovl_1CE070(void *root, SkelCE *s, MtxCE *out);
+void func_80199CF0_ovl_1CE070(void *mv) {
+    u8 *m = mv;
+    u32 i;
+    u32 k;
+    u32 *p;
+    u32 *q;
+    (*(u32 *)((u8 *)(m) + (0x8))) += (u32)m;
+    (*(u32 *)((u8 *)(m) + (0xC))) += (u32)m;
+    (*(u32 *)((u8 *)(m) + (0x10))) += (u32)m;
+    if ((*(u32 *)((u8 *)(m) + (0x14))) != 0) {
+        (*(u32 *)((u8 *)(m) + (0x14))) += (u32)m;
+    }
+    (*(u32 *)((u8 *)(m) + (0x18))) += (u32)m;
+    for (i = 0; i < (*(u32 *)((u8 *)(m) + (4))); i++) {
+        p = (u32 *)(i * 4 + (u32)(*(u32 * *)((u8 *)(m) + (8))));
+        if (*p != 0) {
+            *p += (u32)m;
+            q = (u32 *)(*(u32 * *)((u8 *)(m) + (8)))[i];
+            for (k = 0; k < 10; k++, q++) {
+                if (*q != 0) {
+                    *q += (u32)m;
+                    *(u32 *)*q += (u32)m;
+                }
+            }
+        }
+    }
+    for (i = 0; i < (*(u32 *)((u8 *)(m) + (4))); i++) {
+        u16 f = *(u16 *)((*(u8 * *)((u8 *)(m) + (0xC))) + i * 10 + 2);
+        if (f & 0x8000) {
+            k = f & 0x7FFF;
+            (*(u32 * *)((u8 *)(m) + (0x14)))[k] += (u32)m;
+        }
+    }
+    for (i = 0; i < (*(u32 *)((u8 *)(m) + (4))); i++) {
+        p = (u32 *)(i * 4 + (u32)(*(u32 * *)((u8 *)(m) + (0x18))));
+        if (*p != 0) {
+            *p += (u32)m;
+        }
+    }
+}
+void func_80199E48_ovl_1CE070(SkelCE *s, void **out);
+u8 *func_80199ECC_ovl_1CE070(u8 *t, u32 page);
+u8 *func_80199FF0_ovl_1CE070(u8 *t, u32 page);
+u8 *func_8019A09C_ovl_1CE070(u8 *desc, u32 index);
+void func_8019AF0C_ovl_1CE070(void);

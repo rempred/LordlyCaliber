@@ -1,0 +1,41 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct Task23 {
+               u16 next;
+               u8 unk02[2];
+               void (*fn)(s32, struct Task23 *);
+               u16 state;
+               u16 nextState;
+               s16 hC;
+               s16 hE;
+               u8 unk10[0x20];
+} Task23;
+extern void *D_801F0530_ovl_23B220;
+extern u16 D_801F0534_ovl_23B220;
+extern Task23 *D_801F0560_ovl_23B220;
+extern s32 D_801F0538_ovl_23B220;
+void *HFree(void *p);
+void *HMalloc(s32 size);
+void bzero(void *p, s32 n);
+void func_801E7170_ovl_23B220(void);
+void func_801E7228_ovl_23B220(void);
+void func_801E724C_ovl_23B220(void);
+Task23 *func_801E7318_ovl_23B220(void (*fn)(s32, Task23 *));
+void func_801E738C_ovl_23B220(Task23 *t);
+void func_801E73E0_ovl_23B220(Task23 *t, s16 a);
+void func_801E73FC_ovl_23B220(Task23 *t) {
+    t->hC = 0;
+    t->hE = 0;
+}

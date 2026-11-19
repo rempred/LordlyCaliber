@@ -1,0 +1,48 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct {
+    u8 b[0xA8];
+} SceneSlot;
+extern u8 D_801936E0_ovl_040E80;
+extern u8 D_8018F330_ovl_040E80[];
+extern u8 D_8018F344_ovl_040E80[];
+extern u8 D_8018F360_ovl_040E80[];
+extern u8 D_8019EE50[];
+extern u8 D_801AD5A0[];
+extern SceneSlot D_800E82CA[];
+void func_8016C814_ovl_040E80(void);
+s32 func_80077314(void *p);
+void func_80079618();
+void func_80073164(s32 a, s32 b, s32 c, s32 d, s32 e, s32 f, s32 g);
+s32 func_80076F5C(s32 a, void *b, s32 c, s32 d, s32 e, s32 f, s32 g);
+void func_801792BC_ovl_040E80(void);
+void func_80179060_ovl_040E80(void);
+extern u8 D_8018F481_ovl_040E80;
+u8 *func_801736E0_ovl_040E80(void) {
+    u8 *p = D_8018F330_ovl_040E80;
+    if (D_801936E0_ovl_040E80) {
+        p = D_8018F344_ovl_040E80;
+    }
+    return p;
+}
+void func_80173704_ovl_040E80(void);
+void func_801737AC_ovl_040E80(void);
+void func_801737B4_ovl_040E80(void);
+void func_801737D0_ovl_040E80(void);
+u8 *func_80173830_ovl_040E80(void);
+void func_8017383C_ovl_040E80(void);
+void func_801738AC_ovl_040E80(void);
+void func_801738B4_ovl_040E80(void);
+void func_801738BC_ovl_040E80(void);

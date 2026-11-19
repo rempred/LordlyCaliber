@@ -1,0 +1,80 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+typedef struct {
+              void *data;
+              s16 h4;
+} Grid29;
+typedef struct {
+              u8 unk0[8];
+              s16 h8;
+              s16 hA;
+} Pair29;
+typedef struct {
+                 u8 unk0000[0x168];
+                 void *p168[0x38];
+                 Pair29 *p248[0x5BF];
+                 void *p1944[0x1C];
+                 u8 unk19B4[0x94];
+                 Grid29 *grid;
+                 u8 unk1A4C[0x168];
+                 void *p1BB4[20];
+} Battle29;
+extern Battle29 *D_8022A974;
+extern s8 D_801CFC70;
+extern u8 D_801D082C;
+void *HMalloc(s32 size);
+void *HFree(void *p);
+void func_8022BB58_ovl_29A4C0(s32 a, s32 b);
+void func_801C22E8(s32 a);
+s32 func_801BEA0C(s32 fmt, s32 w);
+u16 func_801BEB28(u16 c);
+u32 func_801BEA70(u32 c);
+extern u8 D_8018FC19;
+extern f32 D_8022A720;
+extern f32 D_8022A734;
+extern f32 D_8022A738;
+extern f32 D_8022A73C;
+extern f32 D_8022A740;
+extern f32 D_8022A744;
+extern f32 D_8022A748;
+extern f32 D_801D0700;
+extern f32 D_801D0704;
+extern f32 D_801D0710;
+extern f32 D_801D0720;
+extern f32 D_801D072C;
+extern f32 D_801D0730;
+extern f32 D_801D083C;
+void func_8022AC90_ovl_29A4C0(s32 *in);
+void func_8022B414_ovl_29A4C0(s32 i);
+void func_8022B4A8_ovl_29A4C0(void *pix, s32 fmt, s32 h, s32 w);
+void func_8022BD74_ovl_29A4C0(void);
+void func_8022BDDC_ovl_29A4C0(void);
+void func_8022BF5C_ovl_29A4C0(s32 *a);
+void func_8022BFFC_ovl_29A4C0(void) {
+    s32 i;
+    for (i = 0; i < 0x1C; i++) {
+        if (D_8022A974->p1944[i] != ((void *)0)) {
+            HFree(D_8022A974->p1944[i]);
+        }
+    }
+}
+void func_8022C1B0_ovl_29A4C0(s32 i);
+u32 func_8022C200_ovl_29A4C0(u32 c);
+u32 func_8022C228_ovl_29A4C0(u32 c);
+s32 func_8022C594_ovl_29A4C0(s32 i);
+s32 func_8022C96C_ovl_29A4C0(void);
+void func_8022CD00_ovl_29A4C0(void);
+void func_8022CD70_ovl_29A4C0(s32 i, s32 v);
+s32 func_8022D0FC_ovl_29A4C0(s32 i);

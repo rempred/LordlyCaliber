@@ -1,0 +1,35 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef signed long long s64;
+typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+typedef volatile u8 vu8;
+typedef volatile u16 vu16;
+typedef volatile u32 vu32;
+typedef volatile s32 vs32;
+extern u8 D_801936B0_ovl_040E80[];
+extern u8 D_80196AEC_ovl_040E80;
+extern u8 D_801936E0_ovl_040E80;
+extern u8 D_801951A0_ovl_040E80;
+extern u8 D_80197AFC_ovl_040E80;
+extern u8 D_80197AE6_ovl_040E80;
+extern s32 D_801971E8_ovl_040E80;
+extern u8 D_801969B4_ovl_040E80;
+extern s32 D_80193674_ovl_040E80;
+void func_80173610_ovl_040E80(void) {
+    D_80196AEC_ovl_040E80 = 0;
+    D_801936E0_ovl_040E80 = 0;
+    D_801951A0_ovl_040E80 = 0;
+    D_80197AFC_ovl_040E80 = 0;
+    D_80197AE6_ovl_040E80 = 0;
+    D_801971E8_ovl_040E80 = 0;
+    D_801969B4_ovl_040E80 = 0;
+    D_80193674_ovl_040E80 = 0;
+    bzero(&D_801936B0_ovl_040E80[2], 5);
+}
+void func_80173674_ovl_040E80(u8 mode);
