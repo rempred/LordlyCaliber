@@ -104,6 +104,16 @@ class SceneWorkspaceTests : public QObject {
         QTest::newRow("Bacchus edited to Heal Leaf") << 1554 << 82 << 0x352 << true << 0x201;
         QTest::newRow("Equipment gift") << 1157 << 74 << 0xd6 << false << 0x98;
     }
+    void consumableGrantFollowsEventWriter() {
+        const auto bytes=SceneEvents::retailRow(rom(),82);
+        const auto effects=EventScript::giftEffects(bytes,0x88);
+        QCOMPARE(effects.consumableGrants,QVector<int>{38});
+        auto edited=bytes;
+        put8(edited,0x91,1);
+        QCOMPARE(EventScript::giftEffects(edited,0x88).consumableGrants,QVector<int>{1});
+        put16(edited,0xa2,0);
+        QVERIFY(EventScript::giftEffects(edited,0x88).consumableGrants.isEmpty());
+    }
     void eventSelectedGifts() {
         QFETCH(int, selector); QFETCH(int, row); QFETCH(int, site); QFETCH(bool, edited); QFETCH(int, token);
         auto project = Project::fromRom(rom());
@@ -134,6 +144,11 @@ class SceneWorkspaceTests : public QObject {
             else step->click();
         }
         QVERIFY2(status->text().contains("Launch reward · " + name), qPrintable(status->text()));
+        if (row == 82) {
+            const auto info = preview.findChild<QLabel *>("sceneGiftEffects")->text();
+            QVERIFY2(info.contains(name) && info.contains("Pedra of Bane unlocked"), qPrintable(info));
+            QVERIFY2(info.contains("No grant verified"), qPrintable(info));
+        }
         for (int i = 0; i < 16; ++i) step->click();
         const auto frame = preview.renderedFrame().scaled(320, 240);
         const auto icon = project.iconArtwork()->image(quint16(token));
@@ -294,6 +309,13 @@ class SceneWorkspaceTests : public QObject {
         const QString retail, swap = "swap answers", skip = "skip peace reaction";
         QTest::newRow("Wentinus orders") << 180 << false << retail << 181;
         QTest::newRow("Wentinus peace") << 180 << true << retail << 182;
+        QTest::newRow("Keep Yes orders") << 180 << false << QString("yes") << 182;
+        QTest::newRow("Keep Yes peace") << 180 << true << QString("yes") << 182;
+        QTest::newRow("Keep No orders") << 180 << false << QString("no") << 181;
+        QTest::newRow("Keep No peace") << 180 << true << QString("no") << 181;
+        QTest::newRow("Campaign flag unknown") << 180 << false << QString("flag unknown") << -1;
+        QTest::newRow("Campaign flag on") << 180 << false << QString("flag on") << 182;
+        QTest::newRow("Campaign flag off") << 180 << true << QString("flag off") << 181;
         QTest::newRow("Wentinus edited orders") << 180 << false << swap << 182;
         QTest::newRow("Wentinus edited peace") << 180 << true << swap << 181;
         QTest::newRow("Only orders resolves") << 180 << false << skip << 181;
@@ -320,6 +342,19 @@ class SceneWorkspaceTests : public QObject {
         auto events = *project.sceneEvents();
         if (edit == "swap answers")
             events.editParameter(22, 562, "value", 1, scenes);
+        if (edit.startsWith("flag "))
+            events.setRetailGate(22,566,{{"mode","if"},{"condition",QJsonObject{{"type","flag"},{"flag",34},{"value",1}}},
+                {"yes","yes"},{"no","no"}},scenes);
+        if (edit == "yes" || edit == "no") {
+            events.setRetailGate(22,566,{{"mode","keep"},{"outcome",edit}},scenes);
+            const auto flow = EventFlow::read(project.rom(),events,scenes,22);
+            const auto decisions = EventFlow::playerDecisions(flow,events.program(22),scenes,*project.dialogues(),
+                events.flagEdits()["22"].toObject()["gates"].toObject(),22);
+            const auto kept = std::find_if(decisions.cbegin(),decisions.cend(),[](const auto &d){return d.selector == 180;});
+            QVERIFY(kept != decisions.cend() && kept->keptOutcome);
+            QCOMPARE(kept->answers[0].destination, kept->answers[1].destination);
+            QCOMPARE(kept->answers[0].effects, kept->answers[1].effects);
+        }
         if (edit == "skip peace reaction")
             events.editParameter(22, 566, "destination", 606, scenes);
         const bool wentinus = question == 180;
@@ -335,6 +370,20 @@ class SceneWorkspaceTests : public QObject {
         const QMap<int, QPair<int, int>> launches{{180,{22,544}}, {121,{16,394}}, {159,{20,202}}, {289,{35,158}}};
         const auto [row, request] = launches.value(question);
         preview.selectEventLaunch(row, request);
+        if (edit.startsWith("flag ")) {
+            const auto button = preview.findChild<QPushButton *>("sceneSampleFlags");
+            QVERIFY(button && button->isVisible());
+            if (edit != "flag unknown") {
+                QTimer::singleShot(0,&preview,[&] {
+                    auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    if (!dialog) return;
+                    auto sample=dialog->findChild<QComboBox *>("sampleFlag34");
+                    if (sample) sample->setCurrentIndex(edit == "flag on" ? 2 : 1);
+                    dialog->accept();
+                });
+                button->click();
+            }
+        }
         auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
         auto confirm = preview.findChild<QPushButton *>("panelConfirm");
         auto step = preview.findChild<QPushButton *>("sceneStep");
@@ -365,7 +414,7 @@ class SceneWorkspaceTests : public QObject {
         QVERIFY2(choices > 0, qPrintable(status->text()));
         if (reaction < 0) {
             QVERIFY(!outcome->isVisible());
-            QVERIFY2(status->text().contains("more event or launch information"), qPrintable(status->text()));
+            QVERIFY2(status->text().contains(edit == "flag unknown" ? "Test story flags" : "more event or launch information"), qPrintable(status->text()));
             return;
         }
         QVERIFY2(outcome->isVisible(), qPrintable(status->text()));
@@ -377,17 +426,12 @@ class SceneWorkspaceTests : public QObject {
             const int state = preview.property("sceneFocusedDialogueState").toInt();
             if (n > 8 && (state == 3 || state == 6))
                 sawReactionPage = true;
-            // The orders reaction opens the Repeat / End menu at this barrier.
-            if (reaction == 181 && briefingMenu < 0 &&
-                status->text().section('\n', 0, 0).endsWith("word 1039"))
-                briefingMenu = n;
-            if (briefingMenu >= 0 && n - briefingMenu <= 43) {
-                if (n - briefingMenu == 40)
-                    down->click();
-                else if (n - briefingMenu == 42)
-                    confirm->click();
-                else
-                    step->click();
+            // The map waits for A before the actual options panel exists.
+            // Choose End only after the panel accepts input and its cursor moves.
+            const int choice=preview.property("sceneBriefingMenuChoice").toInt();
+            if (reaction==181 && choice>=0) {
+                if (choice==0) down->click();
+                else { briefingMenu=n; confirm->click(); }
             } else if (n % 20 == 0 && confirm->isVisible())
                 confirm->click();
             else

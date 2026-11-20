@@ -160,11 +160,17 @@ joins them into one. Existing formatting is retained on an unchanged save, and
 inline renames keep the current font. Font changes appear in project review and
 support undo/redo, project saving and ROM export/reopen.
 
-ROM exports now use a source-built baseline covering all 1,650 currently accepted
+ROM exports use a source-built baseline covering all 2,611 currently accepted
 C/hybrid-C functions. The application build checks each code/table region against
 its accepted bytes; exports preserve modified and unknown data. An untouched US
 Rev0 ROM exports byte-for-byte identically, including its original byte order.
 Effect previews use the completed accepted attack-effects C batch.
+
+In **Logic → Player decisions**, retaining one branch shows both answers reaching the same outcome. For an inserted flag condition, **Preview decision → Test story flags** lets you supply the missing campaign flag and play the answer. Sample flags last for the current scene selection. Re-export an older project containing an inserted condition to use the corrected mission-event jump helper.
+
+A gift in **Cutscenes** shows the item supplied by the selected event, the verified flags that follow it, and a recognized consumable inventory grant when present. Changing the sample reward changes the picture for the preview. For example, changing the Bacchus gift's displayed item in the event can leave the Pedra of Bane unlock intact.
+
+In **Shops → Purchase preview**, select a stock item and enter the game date, Goth and number already owned. Annihilation uses a date-dependent shop price. Squad order conditions in **Scenarios** now identify source squads, inclusive map areas and transient gameplay flags for three additional retail condition types.
 
 Town editing separates **Morale** from the **Takeover penalty** stored in its
 high bit. Both survive project save, ROM export/reopen and objective toggles.

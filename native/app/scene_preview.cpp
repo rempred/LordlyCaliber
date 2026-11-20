@@ -10,6 +10,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
@@ -146,6 +149,45 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
                                "and scenery. This does not change the ROM.");
     contextRow->addWidget(launchContext_, 1);
     layout->addWidget(launchContextUi_);
+    sampleFlagsButton_ = new QPushButton("Test story flags…");
+    sampleFlagsButton_->setObjectName("sceneSampleFlags");
+    sampleFlagsButton_->hide();
+    layout->addWidget(sampleFlagsButton_);
+    connect(sampleFlagsButton_, &QPushButton::clicked, this, [this] {
+        if (!refreshAnswers_ || launchContext_->currentIndex() < 0) return;
+        const auto &plan = launchPlans_[launchContext_->currentIndex()];
+        QMap<int,QComboBox *> values;
+        for (int id : sampleFlags_.keys()) values[id] = nullptr;
+        if (plan.decision)
+            for (int id : plan.decision->missingFlags) values[id] = nullptr;
+        QDialog dialog(this);
+        dialog.setWindowTitle("Story flags before the answer");
+        auto form = new QFormLayout(&dialog);
+        form->addRow(new QLabel("Choose a sample campaign state for this preview."));
+        for (auto it=values.begin();it!=values.end();++it) {
+            auto input = new QComboBox;
+            it.value() = input;
+            input->setObjectName(QString("sampleFlag%1").arg(it.key()));
+            input->addItems({"Unknown","Off","On"});
+            if (sampleFlags_.contains(it.key())) input->setCurrentIndex(sampleFlags_[it.key()] ? 2 : 1);
+            const int row = plan.site.isEmpty() ? -1 : SceneEvents::site(plan.site).row;
+            form->addRow(flagNames_.value(it.key(),EventScript::flagName(it.key(),row)),input);
+        }
+        auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+        form->addRow(buttons);
+        connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+        connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+        if (dialog.exec()!=QDialog::Accepted) return;
+        for (auto it=values.cbegin();it!=values.cend();++it) {
+            const int value=it.value()->currentIndex();
+            if (value) sampleFlags_[it.key()]=value==2;
+            else sampleFlags_.remove(it.key());
+        }
+        refreshAnswers_();
+        inputHistory_.clear();
+        pressedHistory_.clear();
+        restart();
+    });
     launchContextUi_->hide();
     storyCastUi_ = new QWidget;
     storyCastUi_->setObjectName("sceneCastSetup");
@@ -279,7 +321,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     layout->addWidget(dialogueNamesUi_);
     rewardUi_ = new QWidget;
     rewardUi_->setObjectName("sceneRewardSetup");
-    auto rewardRow = new QHBoxLayout(rewardUi_);
+    auto rewardDetails = new QVBoxLayout(rewardUi_);
+    rewardDetails->setContentsMargins(0, 0, 0, 0);
+    auto rewardRow = new QHBoxLayout;
+    rewardDetails->addLayout(rewardRow);
     rewardRow->setContentsMargins(0, 0, 0, 0);
     rewardRow->addWidget(new QLabel("Preview reward"));
     reward_ = new QComboBox;
@@ -293,6 +338,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     for (int i = 1; i < 45; ++i)
         reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | i)), 0x200 | i);
     rewardRow->addWidget(reward_, 1);
+    rewardEffects_ = new QLabel;
+    rewardEffects_->setWordWrap(true);
+    rewardEffects_->setObjectName("sceneGiftEffects");
+    rewardDetails->addWidget(rewardEffects_);
     rewardUi_->hide();
     layout->addWidget(rewardUi_);
     connect(reward_, &QComboBox::currentIndexChanged, this, [this] {
@@ -571,6 +620,22 @@ void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provide
     if (dialogueDrawing_)
         dialogueDrawing_->setPortraitProvider(portraits_);
     refreshPortraits();
+}
+void ScenePreview::showGift(const SceneGift *gift) {
+    if (!gift) {
+        rewardEffects_->setText("Event gift and consequences unknown for this launch.");
+        return;
+    }
+    const int item = gift->shown ? reward_->findData(int(*gift->shown)) : -1;
+    QStringList lines{"Shown by the event · " + (item >= 0 ? reward_->itemText(item) : QString("Unknown item"))};
+    lines += gift->flags;
+    for (int id : gift->grants) {
+        const int index = id > 0 && id <= 44 ? reward_->findData(0x200 | id) : -1;
+        const auto name = index < 0 ? QString("consumable %1").arg(id) : reward_->itemText(index);
+        lines << QString("Inventory · Add one %1 if there is room").arg(name);
+    }
+    if (gift->grants.isEmpty()) lines << "Inventory · No grant verified in the inspected event steps";
+    rewardEffects_->setText(lines.join("\n"));
 }
 void ScenePreview::setItems(ItemData itemData, IconArtwork icons) {
     items_ = std::move(itemData);
@@ -1015,11 +1080,15 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     storyCastEnabled_ = false;
     classDefaultsEnabled_ = false;
     scriptInputControls_ = false;
+    inputResource_.reset();
     party_.reset();
     storyCastUi_->hide();
     dialogueNamesUi_->hide();
     rewardUi_->hide();
     try {
+        sampleFlagsButton_->hide();
+        sampleFlags_.clear();
+        refreshAnswers_ = {};
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
             throw Error("Select a layered or world preview mode for this scene");
@@ -1049,8 +1118,12 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         }
         launchPlans_ = SceneLaunchPlan::choices(*resources_, *events, selector_);
         if (std::any_of(program.commands.cbegin(), program.commands.cend(),
-                        [](const auto &c) { return c.opcode == 0xbb; }))
-            SceneLaunchPlan::addAnswerRoutes(launchPlans_, rom_, programs, *resources_, *events, selector_);
+                        [](const auto &c) { return c.opcode == 0xbb; })) {
+            refreshAnswers_ = [this, programs, events = *events] {
+                SceneLaunchPlan::addAnswerRoutes(launchPlans_, rom_, programs, *resources_, events, selector_,sampleFlags_);
+            };
+            refreshAnswers_();
+        }
         {
             const QSignalBlocker block(launchContext_);
             launchContext_->clear();
@@ -1070,9 +1143,6 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             [](const auto &command) { return command.opcode == 0x2a; });
         storyCastUi_->setVisible(storyCastEnabled_);
         const auto &commands = program.commands;
-        scriptInputControls_ = std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
-            return c.opcode == 0x57;
-        });
         dialogueNamesUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(),
                                                  [](const auto &c) { return c.opcode == 0xbf; }));
         rewardUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
@@ -1216,6 +1286,8 @@ void ScenePreview::restart() {
         const auto plan = inputs ? SceneLaunchPlan{"imported", "Imported playback inputs", {{selector_}}} :
             launchPlans_.value(launchContext_->currentIndex(),
                                SceneLaunchPlan{"direct", "Direct scene launch", {{selector_}}});
+        showGift(plan.gift ? &*plan.gift : nullptr);
+        sampleFlagsButton_->setVisible(!inputs && ((plan.decision && !plan.decision->missingFlags.isEmpty()) || !sampleFlags_.isEmpty()));
         if (plan.steps.isEmpty())
             throw Error("This event has no recorded launch inputs for the scene's starting state.");
         const int startupSelector = plan.steps.first().selector;
@@ -2258,6 +2330,17 @@ void ScenePreview::present() {
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
     const bool canAdvance=current_ && !current_->stopped && tick_ < 30000;
+    if (current_ && resources_) {
+        const auto &active = current_->playback.director();
+        const auto key = qMakePair(active.resourceKey(),active.isContinuation());
+        if (key != inputResource_) {
+            inputResource_ = key;
+            const auto &bank = key.second ? resources_->continuations() : resources_->entries();
+            const auto it = bank.constFind(key.first);
+            scriptInputControls_ = it != bank.cend() && std::any_of(it->program.commands.cbegin(),
+                it->program.commands.cend(), [](const auto &command) { return command.opcode == 0x57; });
+        }
+    }
     play_->setEnabled(current_.has_value());
     step_->setEnabled(canAdvance && !preparing_);
     position_->setEnabled(!preparing_);
@@ -2274,6 +2357,14 @@ void ScenePreview::present() {
     setProperty("sceneTick", tick_);
     setProperty("scenePreparing", preparing_);
     setProperty("sceneStopped", !current_ || current_->stopped);
+    int menuChoice = -1;
+    if (current_ && !current_->playback.panels().empty()) {
+        const auto &menu = current_->playback.panels().entities().last();
+        if (!menu.payload.isEmpty() && u32(menu.payload,0x600)==0x21003 &&
+            u8(menu.payload,0x5f0)==6 && u16(menu.record,0x18)==255 && !u16(menu.record,0x28))
+            menuChoice = u8(menu.record,0x22);
+    }
+    setProperty("sceneBriefingMenuChoice",menuChoice);
     setProperty("sceneFocusedDialogueState",
                 current_ && current_->dialogue
                     ? current_->dialogue->focusedState(current_->playback.dialogue()->resources)
@@ -2313,6 +2404,7 @@ void ScenePreview::present() {
         if (!panel.reward)
             continue;
         rewardUi_->show();
+        if (current_->playback.hasAnswerOutcome()) showGift(current_->playback.answerGift());
         const int item = reward_->findData(int(*panel.reward));
         const auto name = item >= 0 ? reward_->itemText(item) : ScenePanels::rewardName(rom_, *panel.reward);
         const auto source = reward_->currentData().toInt() >= 0 ? "Sample reward" : "Launch reward";
@@ -2320,6 +2412,8 @@ void ScenePreview::present() {
     }
     if (current_->reason.contains("Choose a preview reward"))
         rewardUi_->show();
+    if (menuChoice >= 0)
+        status_->setText(status_->text()+QString("\nBriefing menu · Option %1 selected. Use Up or Down, then A.").arg(menuChoice+1));
     if (current_->playback.hasAnswerOutcome() && !director.isContinuation()) {
         const auto reaction = resources_->entries().constFind(director.resourceKey());
         if (reaction != resources_->entries().cend())

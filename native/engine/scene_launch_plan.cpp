@@ -19,6 +19,15 @@ DirectorLaunchTranslations launchArguments(const SceneEventContext &context,
     }
     return arguments;
 }
+SceneGift eventGift(const SceneEvents &events, const SceneEventSite &site, const DirectorLaunchTranslations &arguments) {
+    SceneGift gift;
+    if (arguments.known[255]) gift.shown = arguments.values[255];
+    const auto effects = EventScript::giftEffects(events.program(site.row), site.offset);
+    gift.grants = effects.consumableGrants;
+    for (const auto &[id, set] : effects.flags)
+        gift.flags << (set ? "Set " : "Clear ") + events.flagName(id,site.row);
+    return gift;
+}
 }
 bool SceneLaunchPlan::fresh(const DirectorProgram &program) {
     const int kind = program.resourceClass();
@@ -84,6 +93,8 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
                                           .arg(site.name)
                                           .arg(context.invocation),
                                       chain(selector, &context, {}), -1, context.site};
+            if (usesRewardPanel(program(selector)))
+                result.last().gift = eventGift(events, site, result.last().steps.last().translations);
         } catch (const Error &) {
             // An alternate invocation may have a usable predecessor; retain it.
         }
@@ -125,7 +136,7 @@ QVector<SceneLaunchPlan> SceneLaunchPlan::choices(const Directors &resources,
 }
 void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom &rom,
                                       const ScenePrograms &scenes, const Directors &directors, const SceneEvents &events,
-                                      int selector) {
+                                      int selector, const QMap<int,bool> &sampleFlags) {
     struct Row {
         QByteArray bytes;
         QVector<StoryEvent> flow;
@@ -134,6 +145,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
     QMap<int, Row> rows;
     const auto &contexts = SceneEvents::contexts();
     for (auto &plan : plans) {
+        plan.decision.reset();
         if (plan.site.isEmpty())
             continue;
         const auto &site = SceneEvents::site(plan.site);
@@ -153,7 +165,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
                 {events.program(site.row), EventFlow::read(rom, events, scenes, site.row, false),
                  events.flagEdits()[QString::number(site.row)].toObject()["gates"].toObject()});
         const auto &row = rows.constFind(site.row).value();
-        auto decision = EventFlow::sceneDecision(row.flow, row.bytes, site, selector, row.gates);
+        auto decision = EventFlow::sceneDecision(row.flow, row.bytes, site, selector, row.gates, sampleFlags);
         if (!decision)
             continue;
         auto arguments = [&](SceneAnswerReaction &arm) {
@@ -179,6 +191,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
                                   arm.translations.values != translated.values))
                         return false;
                     arm.translations = translated;
+                    if (usesRewardPanel(resource->program)) arm.gift = eventGift(events, target, translated);
                     found = true;
                 }
             return found;
@@ -187,7 +200,7 @@ void SceneLaunchPlan::addAnswerRoutes(QVector<SceneLaunchPlan> &plans, const Rom
             decision->first = {};
         if (!arguments(decision->second))
             decision->second = {};
-        if (decision->first.selector >= 0 || decision->second.selector >= 0)
+        if (decision->first.selector >= 0 || decision->second.selector >= 0 || !decision->missingFlags.isEmpty())
             plan.decision = std::move(decision);
     }
 }

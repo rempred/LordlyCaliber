@@ -84,7 +84,7 @@ void EventFlowEditor::setRow(int row,int entryFilter) {
             if(std::any_of(events_.cbegin(),events_.cend(),[](const auto &e){
                 return std::any_of(e.actions.cbegin(),e.actions.cend(),[](const auto &a){return a.answerScene>=0;});})){
                 decisions_=EventFlow::playerDecisions(events_,program_,*project_->scenePrograms(),*project_->dialogues(),
-                    project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["gates"].toObject());
+                    project_->sceneEvents()->flagEdits()[QString::number(row)].toObject()["gates"].toObject(),row);
                 findChild<QPushButton *>("storyPlayerDecisions")->setVisible(!decisions_.isEmpty());
             }
         }
@@ -557,6 +557,7 @@ void EventFlowEditor::showDecisions(){
     auto body=new QWidget;auto columns=new QHBoxLayout(body);scroll->setWidget(body);
     std::array<QGroupBox *,2> cards;
     std::array<QLabel *,2> descriptions;
+    std::array<QPushButton *,2> inspectButtons;
     int inspect=-1;bool create=false,play=false;
     for(int i=0;i<2;++i){
         cards[i]=new QGroupBox;auto col=new QVBoxLayout(cards[i]);descriptions[i]=label({});
@@ -564,6 +565,7 @@ void EventFlowEditor::showDecisions(){
         descriptions[i]->setObjectName(QString("decisionEffects%1").arg(i));
         col->addWidget(descriptions[i]);col->addStretch();
         auto steps=new QPushButton("Edit outcome steps…");col->addWidget(steps);
+        inspectButtons[i]=steps;
         connect(swap,&QCheckBox::toggled,steps,&QPushButton::setDisabled);
         connect(steps,&QPushButton::clicked,&dialog,[&,i]{
             inspect=decisions_[variant->currentData().toInt()].answers[i].destination;dialog.reject();});
@@ -583,10 +585,20 @@ void EventFlowEditor::showDecisions(){
     auto preview=[&]{
         if(variant->currentIndex()<0)return;
         const auto &d=decisions_[variant->currentData().toInt()];
-        common->setVisible(!d.commonEffects.isEmpty());
-        common->setText("Before either outcome\n"+d.commonEffects.join("\n"));
+        const auto members=groups.value(question->currentData().toString());
+        const bool editable=!d.keptOutcome && !d.addedCondition && (!scope->currentData().toBool() ||
+            std::none_of(members.cbegin(),members.cend(),[&](int i){return decisions_[i].keptOutcome || decisions_[i].addedCondition;}));
+        swap->setEnabled(editable);
+        if(!editable)swap->setChecked(false);
+        QStringList details=d.commonEffects;
+        if(d.keptOutcome)details.prepend("Both answers use the retained branch. Restore the condition in Logic to separate them.");
+        else if(d.addedCondition)details.prepend("An added condition controls these outcomes.");
+        else if(!editable)details.prepend("Another use has an edited condition. Select this use only to swap its outcomes.");
+        common->setVisible(!details.isEmpty());
+        common->setText(details.join("\n"));
         for(int i=0;i<2;++i){
             cards[i]->setTitle(d.answers[i].text);
+            inspectButtons[i]->setText(d.addedCondition?"Edit condition…":"Edit outcome steps…");
             const auto &effects=d.answers[swap->isChecked()?1-i:i].effects;
             descriptions[i]->setText(effects.join("\n\n"));
         }
@@ -613,6 +625,7 @@ void EventFlowEditor::showDecisions(){
     };
     connect(question,&QComboBox::currentIndexChanged,&dialog,selectQuestion);
     connect(variant,&QComboBox::currentIndexChanged,&dialog,preview);
+    connect(scope,&QComboBox::currentIndexChanged,&dialog,preview);
     connect(swap,&QCheckBox::toggled,save,&QPushButton::setEnabled);
     connect(swap,&QCheckBox::toggled,&dialog,preview);
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);

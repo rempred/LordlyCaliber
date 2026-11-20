@@ -1,5 +1,6 @@
 #include "engine/event_reaction.h"
 #include "engine/effect_machine.h"
+#include "engine/retail_event_gate.h"
 #include "rebuild/accepted_rom.h"
 #include <array>
 namespace lordly {
@@ -8,7 +9,8 @@ struct UnknownEventInput {};
 }
 std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int group,
                                           int entry, int request, int answer,
-                                          const QJsonObject &gates) {
+                                          const QJsonObject &gates, const QMap<int,bool> &sampleFlags,
+                                          QSet<int> *missingFlags) {
     if (row <= 0 || group < 0 || group >= 6 || group * 2 + 2 > bytes.size() ||
         entry < 0 || request < entry || ((entry | request) & 1) || request + 2 > bytes.size() ||
         u8(bytes, request) != 0x10)
@@ -64,9 +66,13 @@ std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int
     });
     m.service(flagRead, [&] {
         const int key = qint16(m.registers[4]);
-        const auto it = result.flags.constFind(std::abs(key));
-        if (it == result.flags.cend()) throw UnknownEventInput{};
-        m.registers[2] = key < 0 ? !it.value() : it.value();
+        const int id = std::abs(key);
+        if (!result.flags.contains(id) && !sampleFlags.contains(id)) {
+            if (missingFlags) missingFlags->insert(id);
+            throw UnknownEventInput{};
+        }
+        const bool set = result.flags.value(id,sampleFlags.value(id));
+        m.registers[2] = key < 0 ? !set : set;
     });
     m.service(flagWrite, [&] {
         const int flag = qint16(m.registers[4]);
@@ -78,19 +84,47 @@ std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int
     m.mount(0x80197810, QByteArray(121 * 6, -1));
     enum Value { Unset, Known, Date };
     std::array<Value, 8> regs{};
+    std::array<Value, 8> savedKinds{};
+    std::array<quint16, 8> savedWords{};
+    bool saved = false;
     auto require = [&](int reg) { if (regs[reg] != Known) throw UnknownEventInput{}; };
     m.observe(0x80170954, [&] {
         if (m.registers[4] != program + entry) throw UnknownEventInput{};
     });
     m.observe(0x801709b0, [&] {
         const quint32 address = m.registers[2];
-        if (address < program + entry || address + 2 > program + bytes.size() ||
+        if (address < program + 12 || address + 2 > program + bytes.size() ||
             result.instructions.size() >= 256) throw UnknownEventInput{};
         const int pc = int(address - program);
-        if (gates.contains(QString::number(pc))) throw UnknownEventInput{};
         const int op = u8(bytes, pc), arg = u8(bytes, pc + 1), r = op & 7;
+        const auto gate = gates.constFind(QString::number(pc));
+        if (gate != gates.end()) {
+            const auto edit = gate.value().toObject();
+            if (!(edit["mode"] == "if" && op == 8) &&
+                !(edit["mode"] == "keep" && ((edit["outcome"] == "yes" && op == 1) ||
+                  (edit["outcome"] == "no" && op == 0 && arg == 0))))
+                throw UnknownEventInput{};
+        }
         result.instructions.append(pc);
-        if (op >= 0x68 && op <= 0x6f) {
+        if (op == 8) {
+            const auto dest = RetailEventGate::destination(bytes,pc);
+            if (!dest) throw UnknownEventInput{};
+            const int mode = RetailEventGate::transferMode(bytes,pc);
+            const auto words = m.registers[29] + 80;
+            if (mode == 1) {
+                if (saved) throw UnknownEventInput{};
+                savedKinds = regs;
+                for (int i=0;i<8;++i) savedWords[i] = m.half(words+2*i);
+                saved = true;
+            } else if (mode == 2) {
+                if (!saved) throw UnknownEventInput{};
+                regs = savedKinds;
+                for (int i=0;i<8;++i) m.half(words+2*i,savedWords[i]);
+                saved = false;
+            }
+            // Opcode eight reaches the resident VM's ordinary increment.
+            m.half(context+4,quint16((*dest-entry)/2-1));
+        } else if (op >= 0x68 && op <= 0x6f) {
             regs[r] = Known;
         } else if (op >= 0x88 && op <= 0x8f) {
             require(r);
@@ -111,7 +145,7 @@ std::optional<EventReaction> storyReaction(const QByteArray &bytes, int row, int
         } else if (op >= 0xa0 && ((op & 3) != 0 || (op & 0xc) == 0xc)) {
             require(op & 3);
             if ((op & 0xc) != 0xc) require((op & 0xc) >> 2);
-        } else if (op != 1) {
+        } else if (op != 0 && op != 1) {
             throw UnknownEventInput{};
         }
     });

@@ -867,6 +867,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         });
     }
     auto editors = std::make_shared<QVector<ValueEditor *>>();
+    QLabel *datedPriceNote = nullptr;
     QComboBox *equipmentLocks = nullptr;
     int equipmentLocksField = -1;
     QMap<QString, QFormLayout *> groups;
@@ -940,6 +941,13 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         editor->setEnabled(false);
         editors->push_back(editor);
         groups[f.group]->addRow(f.label, editor);
+        if (table == Table::Items && f.key == "price") {
+            auto info = new QLabel("Annihilation’s shop price depends on the campaign date. Check it in Shops → Purchase preview.");
+            datedPriceNote = info;
+            info->setObjectName("datedShopPriceNote");
+            info->setWordWrap(true);
+            groups[f.group]->addRow(info);
+        }
         if (table == Table::Items && f.key == "grade") {
             auto help = new QLabel(
                 "0 blocks selection in the Equip menu (used by special default gear). "
@@ -1063,9 +1071,10 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         addInspectorPage(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, editors, promotion, effects, model, addClass, newClass,
+    auto refresh = [this, table, selected, editors, datedPriceNote, promotion, effects, model, addClass, newClass,
                     addItem, newItem, renameClass, renameItem, description, actionDescriptions, actionId, setup,
                     weaponStatus, weaponStatusHelp, equipmentLocks, equipmentLocksField, leaderAffinity, uniqueName, choosePersonalName, deleteRecord, editIcon] {
+        if (datedPriceNote) datedPriceNote->setVisible(*selected == 250);
         if (deleteRecord) deleteRecord->setEnabled(*selected >= (table==Table::Classes?165:278) && !project_->contentDeleted(tableKey(table),*selected));
         if (newItem)
             newItem->setEnabled(project_->nextContentId("items",model->rowCount()) < ItemData::maximumCount);

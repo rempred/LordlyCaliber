@@ -1,4 +1,5 @@
 #include "engine/shops.h"
+#include "engine/game_calendar.h"
 #include "engine/shop_runtime.h"
 #include "engine/world_resources.h"
 #include <QJsonArray>
@@ -6,6 +7,23 @@
 #include <cmath>
 
 namespace lordly {
+// The first date compared by the shop is 251/4/2.
+int Shops::datedPrice(const QByteArray &months, int year, int month, int day) {
+    if (year < 251 || (year == 251 && (month < 4 || (month == 4 && day < 2))))
+        return 60000;
+    int elapsed = day - 2;
+    for (int y = 251, m = 4; y < year || (y == year && m < month);) {
+        elapsed += gameMonthLength(months, y, m);
+        if (elapsed >= 1500) return 60000;
+        if (++m == 16) { m = 1; ++y; }
+    }
+    return qMin(60000, 30000 + 20 * elapsed);
+}
+std::optional<int> Shops::purchaseLimit(int price, quint32 goth, int owned) {
+    if (price <= 0 || owned < 0 || owned > 99) return {};
+    // Retail stores the affordability quotient in a halfword before capping it.
+    return qMin(int(quint16(goth / quint32(price))), qMin(99 - owned, 99999 / price));
+}
 void Shops::validate(int id, const ShopStock &stock) {
     if (id < 0 || id >= 256 ||
         (id == 0 && (!stock.equipment.isEmpty() || !stock.consumables.isEmpty())))

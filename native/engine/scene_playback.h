@@ -67,6 +67,11 @@ class ScenePlayback {
     // its own counter, continuation and cursor. Event timing is approximate.
     void supplyLaunchPlan(const Directors &, const SceneLaunchPlan &);
     QStringList answerPath() const;
+    const SceneGift *answerGift() const {
+        if (!selectedAnswer_ || !answerDecision_) return nullptr;
+        const auto &gift = answerDecision_->reaction(*selectedAnswer_).gift;
+        return gift ? &*gift : nullptr;
+    }
     bool hasAnswerOutcome() const { return selectedAnswer_.has_value(); }
     bool storyFlag(int id) const { return storyFlags_.value(id,false); }
     const QMap<int, bool> &writtenStoryFlags() const { return storyFlags_; }

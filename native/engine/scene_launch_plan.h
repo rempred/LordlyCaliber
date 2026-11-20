@@ -14,9 +14,10 @@ struct SceneLaunchPlan {
     int tailCall = -1;
     QString site;
     std::optional<SceneAnswerDecision> decision;
+    std::optional<SceneGift> gift;
     static bool fresh(const DirectorProgram &);
     static QVector<SceneLaunchPlan> choices(const Directors &, const SceneEvents &, int selector);
     static void addAnswerRoutes(QVector<SceneLaunchPlan> &, const Rom &, const ScenePrograms &,
-                                const Directors &, const SceneEvents &, int selector);
+                                const Directors &, const SceneEvents &, int selector, const QMap<int,bool> &sampleFlags = {});
 };
 } // namespace lordly

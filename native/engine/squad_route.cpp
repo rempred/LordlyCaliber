@@ -86,7 +86,22 @@ QString SquadRoute::conditionName(const Eset &e, int id) {
         name = QString("Area (%1, %2)–(%3, %4) and state")
             .arg(u8(c, 2)).arg(u8(c, 3)).arg(u8(c, 4)).arg(u8(c, 5)); break;
     case 4: name = QString("Target %1 and state").arg(u8(c, 6)); break;
+    case 5:
+        name = QString("Source squad %1 inside area (%2, %3)–(%4, %5), edges included · unit state bits 0 and 4 both set")
+            .arg(u8(c,6)).arg(u8(c,2)).arg(u8(c,3)).arg(u8(c,4)).arg(u8(c,5)); break;
+    case 6: {
+        const int selector = u8(c,6);
+        const int flag = selector == 1 ? 0 : selector == 23 ? 14 :
+            selector >= 6 && selector <= 18 ? selector - 5 : -1;
+        name = flag >= 0
+            ? QString("Gameplay state flag %1 is on and a unit has state bits 0 and 4 set").arg(flag)
+            : QString("No flag test for selector %1 in the squad condition handler").arg(selector);
+        break;
+    }
     case 9: name = QString("1–%1 active scenario squads").arg(u8(c, 6)); break;
+    case 10:
+        name = QString("Source squad %1 · unit state bit 4 clear, or bit 24 set with bit 3 clear").arg(u8(c,6));
+        break;
     case 12: name = QString("Site %1 state flag").arg(u8(c, 6)); break;
     case 16: name = QString("This squad is in area (%1, %2)–(%3, %4)").arg(u8(c,2)).arg(u8(c,3)).arg(u8(c,4)).arg(u8(c,5)); break;
     default: name = QString("Original event (kind %1)").arg(u8(c, 1)); break;

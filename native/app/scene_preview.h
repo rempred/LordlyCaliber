@@ -133,6 +133,7 @@ class ScenePreview : public QWidget {
     void panelButton(quint16);
     bool hasDialogue() const;
     bool scriptInputControls_ = false;
+    std::optional<QPair<quint32,bool>> inputResource_;
     std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
     BodyAnimationData::Pointer bodyAnimations_;
@@ -221,11 +222,16 @@ class ScenePreview : public QWidget {
     QVector<SceneLaunchPlan> launchPlans_;
     QWidget *launchContextUi_;
     QComboBox *launchContext_;
+    QPushButton *sampleFlagsButton_;
+    QMap<int,bool> sampleFlags_;
+    std::function<void()> refreshAnswers_;
     bool preparing_ = false, resumeAfterPrepare_ = false;
     QString contextSummary_;
     QMap<int, QString> flagNames_;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
+    QLabel *rewardEffects_;
+    void showGift(const SceneGift *);
     QComboBox *reward_;
     std::array<QLineEdit *, 4> dialogueNames_{};
 };

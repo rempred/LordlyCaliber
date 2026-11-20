@@ -2,6 +2,7 @@
 #include <QByteArray>
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include <QVector>
 #include <optional>
 namespace lordly {
@@ -16,5 +17,6 @@ struct EventReaction {
 // supplied answer and flags written during this invocation remain unknown.
 std::optional<EventReaction> storyReaction(const QByteArray &program, int row, int group,
                                           int entry, int requestOffset, int answer,
-                                          const QJsonObject &gates);
+                                          const QJsonObject &gates, const QMap<int,bool> &sampleFlags = {},
+                                          QSet<int> *missingFlags = nullptr);
 }

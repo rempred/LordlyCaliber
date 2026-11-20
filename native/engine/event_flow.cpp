@@ -1048,24 +1048,30 @@ QVector<QPair<int,QString>> EventFlow::questionAnswers(int selector,const SceneP
     return verifiedQuestion(selector,scenes,dialogues).answers;
 }
 QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &flow,const QByteArray &bytes,
-    const ScenePrograms &scenes,const Dialogues &dialogues,const QJsonObject &gates){
+    const ScenePrograms &scenes,const Dialogues &dialogues,const QJsonObject &gates,int row){
     QVector<PlayerDecision> result;
     for(const auto &event:flow)for(const auto &action:event.actions){
-        if(action.answerScene<0 || action.instructions.isEmpty() || action.target<0 || action.otherwise<0)continue;
+        if(action.answerScene<0 || action.instructions.isEmpty() || action.target<0)continue;
         const int pc=action.instructions.last(), op=u8(bytes,pc);
-        if((op!=0xab && op!=0xbb) || gates.contains(QString::number(pc)))continue;
+        const auto edit=gates.value(QString::number(pc)).toObject();
+        const bool kept=edit["mode"]=="keep" && (op==0 || op==1);
+        const bool added=edit["mode"]=="if" && op==8;
+        const bool ordinary=!kept && !added;
+        if(ordinary && (action.otherwise<0 || (op!=0xab && op!=0xbb) || !edit.isEmpty()))continue;
         const auto source=verifiedQuestion(action.answerScene,scenes,dialogues);
         const auto &answers=source.answers;
         if(answers.size()!=2)continue;
         const auto &fields=action.condition.fields;
         const auto field=std::find_if(fields.cbegin(),fields.cend(),[](const StoryField &f){return f.kind=="dialogue-answer";});
-        if(field==fields.cend())continue;
-        PlayerDecision d;d.entry=event.entry;d.group=event.group;d.answerField=*field;d.selector=action.answerScene;
+        if(ordinary && field==fields.cend())continue;
+        PlayerDecision d;d.entry=event.entry;d.group=event.group;d.keptOutcome=kept;d.selector=action.answerScene;
+        d.addedCondition=added;
+        if(ordinary)d.answerField=*field;
         d.archive=source.archive;d.dialogue=source.entry;
         for(int i=0;i<2;++i){
             d.answers[i].value=answers[i].first;d.answers[i].text=answers[i].second;
         }
-        if(field->value!=d.answers[0].value && field->value!=d.answers[1].value)continue;
+        if(ordinary && field->value!=d.answers[0].value && field->value!=d.answers[1].value)continue;
         for(const auto &a:event.actions){
             if(&a==&action)break;
             if(a.scene==action.answerScene){
@@ -1079,8 +1085,21 @@ QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &fl
         d.answerField.choices.clear();
         for(auto &answer:d.answers){
             d.answerField.choices[answer.value]=answer.text;
-            const bool taken=(answer.value==field->value)==(op==0xab);
-            answer.destination=taken?action.target:action.otherwise;
+            if(added) {
+                QSet<int> missing;
+                const auto run=storyReaction(bytes,row,event.group,event.entry,d.questionOffset,answer.value,gates,{},&missing);
+                answer.destination=pc;
+                if(run && run->readAnswer) {
+                    answer.effects << QString("Next scene · %1").arg(run->selector);
+                    answer.effects += choiceEffects(event,bytes,run->requestOffset,gates);
+                } else if(!missing.isEmpty()) {
+                    for(int id:missing)answer.effects << QString("Depends on %1").arg(EventScript::flagName(id,row));
+                    answer.effects << "Use Preview decision to test a campaign state.";
+                } else answer.effects << "The added condition needs more event state.";
+                continue;
+            }
+            if(kept)answer.destination=pc+2+(op==1?qint8(u8(bytes,pc+1))*2:0);
+            else answer.destination=((answer.value==field->value)==(op==0xab))?action.target:action.otherwise;
             answer.effects=choiceEffects(event,bytes,answer.destination,gates);
         }
         result<<d;
@@ -1089,7 +1108,7 @@ QVector<PlayerDecision> EventFlow::playerDecisions(const QVector<StoryEvent> &fl
 }
 std::optional<SceneAnswerDecision>
 EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &bytes,
-                         const SceneEventSite &site, int selector, const QJsonObject &gates) {
+                         const SceneEventSite &site, int selector, const QJsonObject &gates, const QMap<int,bool> &sampleFlags) {
     if (site.offset < 0 || site.offset + 2 > bytes.size() || u8(bytes, site.offset) != 0x10)
         return {};
     for (const auto &event : flow) {
@@ -1099,9 +1118,9 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
         });
         if (at == actions.cend())
             continue;
-        const auto first = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 1, gates);
-        const auto second = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 255, gates);
         SceneAnswerDecision decision;
+        const auto first = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 1, gates, sampleFlags, &decision.missingFlags);
+        const auto second = storyReaction(bytes, site.row, event.group, event.entry, site.offset, 255, gates, sampleFlags, &decision.missingFlags);
         decision.selector = selector;
         QMap<int, QString> effects;
         for (const auto &action : actions) {
@@ -1131,7 +1150,7 @@ EventFlow::sceneDecision(const QVector<StoryEvent> &flow, const QByteArray &byte
         };
         arm(first, decision.first);
         arm(second, decision.second);
-        if (decision.first.selector >= 0 || decision.second.selector >= 0)
+        if (decision.first.selector >= 0 || decision.second.selector >= 0 || !decision.missingFlags.isEmpty())
             return decision;
         return {};
     }

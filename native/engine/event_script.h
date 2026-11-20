@@ -51,6 +51,11 @@ class EventScript {
     static QString flagName(int flag, int eventRow = -1, int offset = -1);
     static QString groupName(int group);
     static QSet<int> instructionOffsets(int row);
+    struct GiftEffects {
+        QVector<QPair<int,bool>> flags;
+        QVector<int> consumableGrants;
+    };
+    static GiftEffects giftEffects(const QByteArray &program, int request);
     static std::optional<quint16> launchReward(const QByteArray &, int entry, int request);
     static QVector<EventParameter> parameters(const QByteArray &, int row, int offset);
     static QJsonObject parameterEdit(const QByteArray &, int row, int offset, const QString &key, int value);

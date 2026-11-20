@@ -54,6 +54,8 @@ bool ScenePlayback::updateDirectors() {
             if (value != 1 && value != 255)
                 return {};
             const auto &arm = answerDecision_->reaction(value);
+            if (arm.selector < 0 && !answerDecision_->missingFlags.isEmpty())
+                throw Error("Choose Test story flags to supply the campaign state for this answer.");
             if (arm.selector < 0)
                 throw Error("This answer returns to gameplay. Its next scene requires more event or launch information.");
             answer = value;

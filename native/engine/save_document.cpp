@@ -1,4 +1,5 @@
 #include "engine/save_document.h"
+#include "engine/game_calendar.h"
 #include "engine/movement_types.h"
 #include "engine/movement_runtime.h"
 extern "C" {
@@ -135,11 +136,7 @@ void SaveDocument::restoreMovementCache(QByteArray &ram) const {
         reinterpret_cast<const unsigned char*>(movementOrder_.constData()),unsigned(movementOrder_.size()));
 }
 int SaveDocument::daysInMonth(unsigned year, unsigned month) const {
-    if (month < 1 || month > 15)
-        throw Error("Calendar month must be 1–15");
-    const unsigned shifted = (year + 1748) & 65535;
-    const bool leap = shifted % 4 == 0 && (shifted % 100 != 0 || shifted % 400 == 0);
-    return quint8(monthLengths_[int(month) - 1]) + (month == 3 && leap ? 1 : 0);
+    return gameMonthLength(monthLengths_, year, month);
 }
 SaveDocument SaveDocument::newArmy(const Project &project) {
     SaveDocument result;

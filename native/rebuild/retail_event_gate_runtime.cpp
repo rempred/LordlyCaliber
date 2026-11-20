@@ -21,13 +21,21 @@ CompiledModule buildRetailEventGateRuntime(const Compiler &compiler,const QStrin
     // condition without consuming any of the native VM's 32 shared stack slots.
     const QByteArray source=R"C(
 extern unsigned short lc_event_gate_frame[];
-int lc_event_gate_lookup(const unsigned char *program, unsigned short *registers,
+extern unsigned char lc_event_phase;
+extern unsigned char *lc_mission_program;
+int lc_event_gate_lookup(const unsigned char *handler, unsigned short *registers,
                          unsigned int selector)
 {
-    unsigned int table, target, mode, i;
+    const unsigned char *program;
+    unsigned int table, target, mode, i, handlerOffset;
     const unsigned char *directory, *entry;
+    /* Mission dispatch passes the individual handler in s7. The directory
+       belongs to the row. Native cursors count words from the handler. */
+    if (lc_event_phase != 1 || !lc_mission_program) return -1;
+    program = lc_mission_program;
+    handlerOffset = (unsigned int)handler - (unsigned int)program;
     table = ((unsigned int)program[0] << 8) | program[1];
-    if (table < 1028U) return -1;
+    if (table < 1040U || handlerOffset < 12 || handlerOffset >= table - 1028U || (handlerOffset & 1U)) return -1;
     directory = program + table - 1028U;
     if (directory[0] != 'L' || directory[1] != 'C' ||
         directory[2] != 'J' || directory[3] != 'G') return -1;
@@ -40,11 +48,11 @@ int lc_event_gate_lookup(const unsigned char *program, unsigned short *registers
     } else if (mode == 2U) {
         for (i = 0; i < 8U; ++i) registers[i] = lc_event_gate_frame[i];
     }
-    return (int)target - 1;
+    return (unsigned short)(target - handlerOffset / 2U - 1U);
 }
 )C";
     auto result=compiler.compileModule(source,directory,"retail_event_gate_lookup",address+16,
-        {},{{"lc_event_gate_frame",address}});
+        {},{{"lc_event_gate_frame",address},{"lc_event_phase",0x80197b03},{"lc_mission_program",0x80197b18}});
     result.address=address;result.bytes.prepend(QByteArray(16,0));
     while(result.bytes.size()%16)result.bytes.append(char(0));
     result.bytes.append(marker);

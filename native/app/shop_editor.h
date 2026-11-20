@@ -8,6 +8,7 @@ class QLineEdit;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QSpinBox;
 namespace lordly {
 // One Undo step owns both stock creation and the stronghold's facility assignment.
 int addShop(Project *project, QUndoStack *undo, int townId = -1);
@@ -33,6 +34,7 @@ class ShopEditor : public QWidget {
     int selected() const;
     void refresh();
     void filter();
+    void updatePurchase();
     void edit(const QString &label, const ShopStock &stock);
     void change(bool equipment, int operation);
     Project *project_;
@@ -47,5 +49,8 @@ class ShopEditor : public QWidget {
     QLabel *scopeNotice_;
     int scenario_ = -1;
     Inventory equipment_, consumables_;
+    bool previewEquipment_ = true;
+    QSpinBox *year_, *month_, *day_, *goth_, *owned_;
+    QLabel *purchase_ = nullptr;
 };
 } // namespace lordly

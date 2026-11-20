@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
+#include <optional>
 
 namespace lordly {
 struct ShopStock {
@@ -13,6 +14,8 @@ class Shops {
   public:
     static constexpr int count = 36, equipmentCapacity = 50, consumableCapacity = 30;
     static Shops load(const Rom &rom);
+    static int datedPrice(const QByteArray &months, int year, int month, int day);
+    static std::optional<int> purchaseLimit(int price, quint32 goth, int owned);
     int size() const { return int(stock_.size()); }
     int addShop();
     const ShopStock &stock(int id) const;

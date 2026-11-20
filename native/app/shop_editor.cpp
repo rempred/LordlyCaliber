@@ -2,6 +2,8 @@
 #include "app/custom_content.h"
 #include "app/view_position.h"
 #include "app/shop_editor.h"
+#include "engine/game_calendar.h"
+#include <QSpinBox>
 #include "app/item_picker.h"
 #include <QButtonGroup>
 #include <QComboBox>
@@ -183,6 +185,30 @@ ShopEditor::ShopEditor(Project *project, QUndoStack *undo, std::function<void()>
     inventories->addWidget(makeInventory(true));
     inventories->addWidget(makeInventory(false));
     detail->addLayout(inventories, 1);
+    auto sample = new QGroupBox("Purchase preview");
+    auto sampleForm = new QVBoxLayout(sample);
+    auto inputs = new QHBoxLayout;
+    sampleForm->addLayout(inputs);
+    auto number = [&](const QString &title, int low, int high, int initial) {
+        inputs->addWidget(new QLabel(title));
+        auto spin = new QSpinBox;
+        spin->setObjectName("shopPreview" + title);
+        spin->setRange(low, high);
+        spin->setValue(initial);
+        inputs->addWidget(spin);
+        connect(spin, &QSpinBox::valueChanged, this, [this] { updatePurchase(); });
+        return spin;
+    };
+    year_ = number("Year", 1, 999, 251);
+    month_ = number("Month", 1, 15, 4);
+    day_ = number("Day", 1, 31, 2);
+    goth_ = number("Goth", 0, 9999999, 60000);
+    owned_ = number("Owned", 0, 99, 0);
+    purchase_ = new QLabel;
+    purchase_->setWordWrap(true);
+    purchase_->setObjectName("shopPurchaseResult");
+    sampleForm->addWidget(purchase_);
+    detail->addWidget(sample);
     auto actions = new QHBoxLayout;
     copyFrom_ = new QComboBox;
     copyFrom_->setObjectName("shopCopySource");
@@ -244,11 +270,38 @@ QWidget *ShopEditor::makeInventory(bool equipment) {
     connect(inventory.list, &QListWidget::currentRowChanged, this, [this, equipment] {
         auto &i = equipment ? equipment_ : consumables_;
         const auto row = i.list->currentRow();
+        if (row >= 0) previewEquipment_ = equipment;
+        updatePurchase();
         i.remove->setEnabled(row >= 0);
         i.up->setEnabled(row > 0);
         i.down->setEnabled(row >= 0 && row + 1 < i.list->count());
     });
+    connect(inventory.list, &QListWidget::itemClicked, this, [this,equipment] {
+        previewEquipment_ = equipment;
+        updatePurchase();
+    });
     return group;
+}
+void ShopEditor::updatePurchase() {
+    if (!purchase_) return;
+    const auto months = project_->rom().bytes().mid(0x5cf00, 15);
+    const QSignalBlocker block(day_);
+    day_->setMaximum(gameMonthLength(months, year_->value(), month_->value()));
+    auto item = (previewEquipment_ ? equipment_ : consumables_).list->currentItem();
+    if (!item) { purchase_->setText("Select a stocked item to check its price."); return; }
+    const int id = item->data(Qt::UserRole).toInt();
+    const auto table = previewEquipment_ ? Table::Items : Table::Consumables;
+    const bool dated = previewEquipment_ && id == 250;
+    const auto &spec = fields(table);
+    const auto field = std::find_if(spec.cbegin(), spec.cend(), [](const auto &f){ return f.key == "price"; });
+    if (field == spec.cend()) { purchase_->setText("Price unavailable."); return; }
+    const int price = dated ? Shops::datedPrice(months, year_->value(), month_->value(), day_->value())
+                            : project_->value(table, id, int(field - spec.cbegin()));
+    const auto limit = Shops::purchaseLimit(price, goth_->value(), owned_->value());
+    purchase_->setText(QString("%1 · %2 Goth each%3 · %4")
+        .arg(itemName(previewEquipment_, id)).arg(price)
+        .arg(dated ? " (set by game date)" : "")
+        .arg(limit ? QString("Can buy %1").arg(*limit) : QString("Quantity undefined at a zero price")));
 }
 QString ShopEditor::itemName(bool equipment, int id) const {
     if (equipment)
@@ -379,6 +432,7 @@ void ShopEditor::refresh() {
         const auto capacity = equipment ? 50 : 30;
         const auto previous =
             i.list->currentItem() ? i.list->currentItem()->data(Qt::UserRole).toInt() : -1;
+        const QSignalBlocker block(i.list);
         i.list->clear();
         for (auto item : ids) {
             auto row = new QListWidgetItem(
@@ -398,6 +452,9 @@ void ShopEditor::refresh() {
         i.up->setEnabled(row > 0);
         i.down->setEnabled(row >= 0 && row + 1 < i.list->count());
     }
+    if (!(previewEquipment_ ? equipment_ : consumables_).list->currentItem())
+        previewEquipment_ = equipment_.list->currentItem() != nullptr;
+    updatePurchase();
     notice_->clear();
 }
 void ShopEditor::edit(const QString &label, const ShopStock &stock) {

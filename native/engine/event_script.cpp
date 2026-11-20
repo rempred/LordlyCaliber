@@ -212,6 +212,41 @@ void annotate(QVector<EventStep> &steps, const QByteArray &bytes,
     }
 }
 }
+EventScript::GiftEffects EventScript::giftEffects(const QByteArray &bytes, int request) {
+    GiftEffects result;
+    if (request < 0 || request % 2 || request + 2 > bytes.size() || u8(bytes,request) != 0x10)
+        return result;
+    // The retail consumable award increments an existing stack below 99, or
+    // creates a stack in the first empty slot among 40. Match both writers
+    // and all their guards before reporting the award; R7 supplies its ID.
+    static const auto award = QByteArray::fromHex(
+        "780f 69ff 8901 a106 7a10 6b63 eb10 9a41 8210 010d "
+        "6a00 6928 f60a 781a bc06 871a 6e01 8612 6d00 8522 0102 9a41 01f4");
+    Registers regs{};
+    QSet<int> visited;
+    for (int at = request + 2; at >= 0 && at + 2 <= bytes.size() && !visited.contains(at);) {
+        visited.insert(at);
+        const int op = u8(bytes,at), arg = u8(bytes,at+1);
+        if (op == 1) { at += 2 + 2 * qint8(arg); continue; }
+        if (op == 0) { at += 2; continue; }
+        if (op == 0x78 && bytes.sliced(at).startsWith(award) && regs[7].kind == Value::Constant) {
+            result.consumableGrants << regs[7].number;
+            regs = {};
+            at += int(award.size());
+            continue;
+        }
+        if (op >= 0x70 && op <= 0x77 && (arg & 0xf8) == 0x60) {
+            const auto &flag = regs[arg & 7], &value = regs[op & 7];
+            if (flag.kind != Value::Constant || flag.number >= 768 || value.kind != Value::Constant) break;
+            result.flags.append({flag.number, value.number == 1});
+        } else if (!(op >= 0x60 && op <= 0x6f) && !(op >= 0x88 && op <= 0x8f)) {
+            break;
+        }
+        regs = advance(bytes, at, regs);
+        at += 2;
+    }
+    return result;
+}
 std::optional<quint16> EventScript::launchReward(const QByteArray &bytes, int entry, int request) {
     auto valid = [&](int at) { return at >= 0 && !(at & 1) && at + 1 < bytes.size(); };
     if (!valid(entry) || !valid(request) || u8(bytes, request) != 0x10)

@@ -79,7 +79,12 @@ class RetailEventGateTests final : public QObject {
                 QDir().mkpath(output);
                 auto write=[&](const QString &name,const QByteArray &bytes){QFile file(QDir(output).filePath(name));if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size())throw Error("Could not write the gate instruction fixture");};
                 write("program.bin",program);write("resident.bin",image.mid(0x39810,0x66e10-0x39810));
-                write("gate.json",QJsonDocument(QJsonObject{{"row",10},{"pc",pc},{"yes",pc+2+qint8(u8(original,pc+1))*2},{"no",pc+2},{"flag",34},{"bridge",double(runtime.entries.value("lc_event_gate_bridge"))}}).toJson());
+                int handler=-1;
+                for (const auto &h : EventScript::decode(original,10))
+                    for (const auto &step : h.steps)
+                        if (pc>=step.offset && pc<step.offset+step.length) handler=h.entry;
+                QVERIFY(handler>=12 && handler<=pc);
+                write("gate.json",QJsonDocument(QJsonObject{{"row",10},{"handler",handler},{"pc",pc},{"yes",pc+2+qint8(u8(original,pc+1))*2},{"no",pc+2},{"flag",34},{"bridge",double(runtime.entries.value("lc_event_gate_bridge"))}}).toJson());
             }
         }catch(const std::exception &e){QFAIL(e.what());}
     }
