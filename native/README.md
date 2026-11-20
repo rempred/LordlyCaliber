@@ -132,9 +132,12 @@ Full-game boot and hardware memory/device behavior remain unverified
 by the isolated instruction and save-file checks. Imported unsupported sections remain
 in the project and block export so they cannot be silently dropped.
 
-Projects are folders containing `project.json`. Sharing archives use
-`.lcproject` and omit the ROM. Existing browser Editor JSON projects can be
-imported through Open project after opening the matching source ROM.
+Load your source ROM, then choose **Load project file** on the toolbar to open
+a `.json` project or `.lcproject` sharing archive. For an older project folder,
+select its `project.json`. **Save project file** lets you choose a filename and
+location for your JSON project. Use **File → Save sharing archive** for a
+compressed copy that omits the source ROM. The loader also accepts existing
+browser editor JSON projects.
 
 Choose Review project changes from the File menu or toolbar to inspect the current
 changes, find text, copy the report or save a text changelog. The comparison uses

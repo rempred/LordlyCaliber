@@ -1947,7 +1947,7 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         QCOMPARE(pendingEdits(&window).size(), 1);
         int checked = 0;
         for (auto command : window.findChildren<QAction *>())
-            if (command->text() == "Save project &folderâ€¦" || command->text() == "Save sharing &archiveâ€¦" || command->text() == "Build and &export ROMâ€¦") {
+            if (command->objectName() == "saveProjectFile" || command->objectName() == "saveSharingArchive" || command->text().startsWith("Build and &export ROM")) {
                 prompted = false;
                 QTimer::singleShot(0, &window, [&] {
                     auto dialog = window.findChild<QDialog *>("pendingEditsDialog");

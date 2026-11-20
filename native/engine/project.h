@@ -132,6 +132,7 @@ class Project {
     const std::optional<IconArtwork> &iconArtwork() const { return icons_; }
     void setIconArtwork(const QJsonObject &);
     void saveFolder(const QString &folder) const;
+    void saveJsonFile(const QString &path) const;
     static QJsonObject readProject(const QString &path);
     void saveArchive(const QString &path) const;
     const QJsonObject &catalog() const {

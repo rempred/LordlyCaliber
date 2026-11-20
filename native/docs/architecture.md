@@ -5553,7 +5553,8 @@ Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,
 browser APIs, JavaScript, or an external Decomp checkout. The browser Editor is
 a feature and format reference, not the implementation architecture.
 
-Projects are folders containing a manifest, authored data, and assets. Sharing
+JSON project files contain the manifest, authored data, and assets. Older
+project folders store the same document as `project.json`. Sharing
 archives omit the user's ROM and temporary build output. Original bytes and
 unrecognized imported project fields remain available until an edit replaces
 them. Builds occur on a copy and never overwrite the source ROM.

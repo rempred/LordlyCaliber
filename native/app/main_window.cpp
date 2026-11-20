@@ -181,7 +181,7 @@ MainWindow::MainWindow(QWidget *parent, bool agentSession)
     if (catalog.open(QIODevice::ReadOnly))
         catalog_ = QJsonDocument::fromJson(catalog.readAll()).object();
     auto file = menuBar()->addMenu("&File");
-    auto open = file->addAction("Open &ROM…", this, [this] {
+    auto open = file->addAction("Load &ROM…", this, [this] {
         if (!confirmDiscard())
             return;
         auto path = QFileDialog::getOpenFileName(this, "Open Ogre Battle 64 ROM", {},
@@ -190,13 +190,14 @@ MainWindow::MainWindow(QWidget *parent, bool agentSession)
             loadRom(path);
     });
     open->setShortcut(QKeySequence::Open);
-    file->addAction("Open &project…", this, &MainWindow::openProject)
-        ->setObjectName("openSavedProject");
+    auto loadProject = file->addAction("Load &project file…", this, &MainWindow::openProject);
+    loadProject->setObjectName("openSavedProject");
+    auto save = file->addAction("Save project &file…", this, [this] { saveProject(false); });
+    save->setObjectName("saveProjectFile");
+    save->setShortcut(QKeySequence::Save);
     file->addAction("Project code patches…", this, [this] {
         if (project_) showCodePatches(this,*project_,*undo_);
     })->setObjectName("showProjectCodePatches");
-    auto save = file->addAction("Save project &folder…", this, [this] { saveProject(false); });
-    save->setShortcut(QKeySequence::Save);
     file->addAction("Save sharing &archive…", this, [this] { saveProject(true); })
         ->setObjectName("saveSharingArchive");
     auto review = file->addAction("Review project &changes…", this, [this] {
@@ -226,6 +227,7 @@ MainWindow::MainWindow(QWidget *parent, bool agentSession)
     toolbar->setFloatable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
     toolbar->addAction(open);
+    toolbar->addAction(loadProject);
     toolbar->addAction(save);
     toolbar->addAction(build);
     toolbar->addAction(review);
@@ -1231,7 +1233,7 @@ void MainWindow::openProject() {
         report("Open a ROM before opening a project.");
         return;
     }
-    auto path = QFileDialog::getOpenFileName(this, "Open project manifest or sharing archive", {},
+    auto path = QFileDialog::getOpenFileName(this, "Load project file", {},
                                              "Lordly projects (*.json *.lcproject);;All files (*)");
     if (path.isEmpty())
         return;
@@ -1320,9 +1322,23 @@ bool MainWindow::saveProjectTo(QString path, bool archive) {
         report("Correct invalid text input before saving.");
         return false;
     }
-    if (path.isEmpty()) path = archive ? QFileDialog::getSaveFileName(this, "Save sharing archive", {},
-                                                       "Lordly project (*.lcproject)")
-                        : QFileDialog::getExistingDirectory(this, "Choose project folder");
+    const bool chooseJsonFile = path.isEmpty() && !archive;
+    if (chooseJsonFile) {
+        QFileDialog dialog(this, "Save project file");
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        dialog.setNameFilter("Project files (*.json)");
+        dialog.setDefaultSuffix("json");
+        const auto name = QFileInfo(projectLabel_).completeBaseName();
+        dialog.selectFile((name.isEmpty() ? QString("project") : name) + ".json");
+        if (dialog.exec() != QDialog::Accepted)
+            return false;
+        path = dialog.selectedFiles().value(0);
+        if (!path.isEmpty() && !path.endsWith(".json", Qt::CaseInsensitive)) {
+            report("Choose a filename ending in .json");
+            return false;
+        }
+    } else if (path.isEmpty())
+        path = QFileDialog::getSaveFileName(this, "Save sharing archive", {}, "Lordly project (*.lcproject)");
     if (path.isEmpty())
         return false;
     try {
@@ -1332,6 +1348,8 @@ bool MainWindow::saveProjectTo(QString path, bool archive) {
         const auto &saved = recorded ? *recorded : *project_;
         if (archive)
             saved.saveArchive(path);
+        else if (chooseJsonFile)
+            saved.saveJsonFile(path);
         else
             saved.saveFolder(path);
         if (recorded) {

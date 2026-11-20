@@ -69,7 +69,7 @@ class StoryAuthoringTests : public QObject {
             QSKIP("US Rev 0 ROM required");
         QTemporaryDir temporary;
         QDir out(qEnvironmentVariable("LORDLY_STORY_OUTPUT", temporary.path()));
-        QVERIFY(QDir().mkpath(out.filePath("project")));
+        QVERIFY(QDir().mkpath(out.absolutePath()));
         const auto archive = out.filePath("The Last Ferry.lcproject");
         const auto filename = out.filePath(QFileInfo(input).fileName());
         QVERIFY2(!QFileInfo::exists(filename), "Use a fresh output folder");
@@ -252,11 +252,13 @@ class StoryAuthoringTests : public QObject {
             QTimer::singleShot(0, [path] { chooseFile(path); });
             a->trigger();
         };
-        file("Save project folder", out.filePath("project"));
-        QVERIFY(QFileInfo::exists(out.filePath("project/project.json")));
+        const auto jsonProject = out.filePath("The Last Ferry.json");
+        file("Save project file", jsonProject);
+        QVERIFY(QFileInfo(jsonProject).isFile());
+        file("Load project file", jsonProject);
         file("Save sharing archive", archive);
         QVERIFY(QFileInfo::exists(archive));
-        file("Open project", archive);
+        file("Load project file", archive);
         auto exportAction = fileAction(window, "Build and export ROM");
         QVERIFY(exportAction);
         QTimer::singleShot(0, [&] {

@@ -10,7 +10,7 @@ In **Tools → Agents**, copy the **CLI path**. Paste it into a message like thi
 
 > Run `[CLI path]` with `--guide` and tell me what I can edit.
 
-That first command works before you choose a ROM. When you’re ready to edit, give the agent your source ROM path. To continue an existing project, save it first and include the path to its project folder or `.lcproject` archive.
+That first command works before you choose a ROM. When you’re ready to edit, give the agent your source ROM path. To continue an existing project, save it first and include the path to the project file.
 
 > Use my ROM at [ROM path] and my project at [project path]. Save your edits as a new .lcproject and tell me where to open it.
 
@@ -25,7 +25,7 @@ That first command works before you choose a ROM. When you’re ready to edit, g
 - **Work with assembly.** “Walk me through the shipped actor-identity example. Build the assembly predicate and its C caller together, show which instructions changed, and save a project where I can toggle each patch.”
 - **Check an export.** “Start a fresh project from my source ROM, export it with zero edits, and compare the files byte for byte. Report their SHA-256 hashes.”
 
-Open the returned archive with **File → Open project…**. **Tools → Agents** shows its recorded edits and **Project code patches** opens the editable patch source.
+Choose **Load project file** next to **Load ROM** to open the returned JSON file or archive. **Tools → Agents** shows its recorded edits and **Project code patches** opens the editable patch source.
 
 ## Report problems with the CLI or editor
 

@@ -2339,10 +2339,16 @@ void atomicWrite(const QString &path, const QByteArray &data) {
 void Project::saveFolder(const QString &folder) const {
     if (!QDir().mkpath(folder))
         throw Error("Cannot create project folder");
+    saveJsonFile(QDir(folder).filePath("project.json"));
+}
+void Project::saveJsonFile(const QString &path) const {
+    const QFileInfo file(path);
+    if (!rom_.sourcePath().isEmpty() && file.exists() && file == QFileInfo(rom_.sourcePath()))
+        throw Error("A project file cannot overwrite the source ROM");
     const auto bytes = QJsonDocument(manifest()).toJson();
     if (bytes.size() > 512 * 1024 * 1024)
         throw Error("Project exceeds the 512 MiB document limit");
-    atomicWrite(QDir(folder).filePath("project.json"), bytes);
+    atomicWrite(path, bytes);
 }
 QJsonObject Project::readProject(const QString &path) {
     constexpr qsizetype limit = 512 * 1024 * 1024;
