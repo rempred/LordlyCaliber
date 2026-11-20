@@ -60,17 +60,23 @@ for(const name of names){
 }\n`;
  }
  if(name==='func_001AD0E4'){
-  s='extern void *func_000453e0(int);\n'+s;
+  s='extern int lc_fixed_heal(int,int);\nextern const unsigned short lc_effect_parameters[];\n'+s;
   replace('    u32 stat_member, masked_member;\n    switch (item) {',`    u32 stat_member, masked_member;
-    if(lc_tree_has(item)) {
-        func_802027DC();
-        func_80179034(func_000453e0(item),x+10,y+0x2e);
-        current=member<100?D_80193BC0[member].field18:*(u16 *)(0x80190EBCU+member*2);
-        maximum=member<100?D_80193BC0[member].field16:*(u16 *)0x80190F82;
-        func_802028A4(x+6,y+0x50,current,maximum);
+    int custom = lc_tree_has(item);
+    int amount = lc_fixed_heal(item, member);
+    if (custom && amount < 0) {
+        if (!lc_tree_allowed(item,member,1))
+            func_80179034(D_8021DF80, x + 0x10, y + 0x46);
         return;
     }
-    switch (item) {`);
+    switch (custom ? 1 : item) {`);
+  replace('        invalid = eligible ^ 1;',`        if (custom) eligible = lc_tree_allowed(item,member,1);
+        invalid = eligible ^ 1;`);
+  const start=s.indexOf('            if (item == 1) {'), end=s.indexOf('            heal_y =', start);
+  if(start<0 || end<0) throw Error('Missing retail HP prediction');
+  replace(s.slice(start,end),`            if (!custom) amount = lc_effect_parameters[item-1];
+            next = current + amount > cap ? cap : current + amount;
+`);
  }
  if(name==='func_001A9290'){
   s='extern unsigned char *D_80214A6C, *D_80214EAC;\n'+s;

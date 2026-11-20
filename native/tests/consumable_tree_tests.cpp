@@ -19,6 +19,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QProcess>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QSpinBox>
@@ -133,6 +134,79 @@ class ConsumableTreeTests : public QObject {
         QCOMPARE(p.manifest(), before);
         undo.redo();
         QCOMPARE(p.manifest(), changed);
+    }
+    void assignEffectAndAnimation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM not supplied");
+        auto p = Project::fromRom(Rom::open(path));
+        p.loadConsumableEffects();
+        QUndoStack undo;
+        ConsumableEditor editor(&p,&undo,[]{});
+        editor.selectConsumable(1);
+        const auto before=p.manifest();
+        auto assign=editor.findChild<QPushButton *>("assignConsumableUse");
+        auto choose=[&](QString type,int animation,int amount,bool save) {
+            QTimer::singleShot(0,&editor,[&,type,animation,amount,save] {
+                auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dialog) return;
+                auto effect=dialog->findChild<QComboBox *>("assignmentEffect");
+                auto visual=dialog->findChild<QComboBox *>("assignmentAnimation");
+                if (!type.isEmpty()) effect->setCurrentIndex(effect->findData(type));
+                auto value=dialog->findChild<QSpinBox *>("assignmentAmount");
+                value->setValue(amount);
+                visual->setCurrentIndex(animation);
+                const auto capture = qEnvironmentVariable("LORDLY_CONSUMABLE_UI_CAPTURE");
+                if (!capture.isEmpty() && type == "heal" && amount == 37) {
+                    dialog->adjustSize();
+                    dialog->grab().save(capture);
+                }
+                dialog->findChild<QDialogButtonBox *>()->button(save ? QDialogButtonBox::Save : QDialogButtonBox::Cancel)->click();
+            });
+            assign->click();
+        };
+        choose("revive",2,250,false);
+        QCOMPARE(p.manifest(),before);
+        choose("revive",2,250,true);
+        QCOMPARE(undo.count(),1);
+        QVERIFY(p.consumableEffects()->tree(1).size()==1);
+        QCOMPARE(p.consumableEffects()->tree(1).first().toObject()["minimum"].toInt(),250);
+        QCOMPARE(p.consumableEffects()->tree(1).first().toObject()["type"].toString(),QString("revive"));
+        const auto pink=ConsumableVisual::retail(p.rom(),6);
+        QCOMPARE(ConsumableVisual::fromJson(p.consumableEffects()->visuals()["1"].toObject()).palette,pink.palette);
+        QCOMPARE(p.textBanks()["consumables"].text(1), QString("Revive with 250 HP.\nRemove petrification."));
+        const auto paired=p.manifest();
+        undo.undo();QCOMPARE(p.manifest(),before);
+        undo.redo();QCOMPARE(p.manifest(),paired);
+        choose({},1,0,true);
+        QVERIFY(!p.consumableEffects()->visuals().contains("1"));
+        QCOMPARE(p.consumableEffects()->tree(1).first().toObject()["minimum"].toInt(),250);
+        undo.undo();
+        choose("heal",0,37,true);
+        QCOMPARE(p.consumableEffects()->tree(1).first().toObject()["minimum"].toInt(),37);
+        QCOMPARE(ConsumableVisual::fromJson(p.consumableEffects()->visuals()["1"].toObject()).palette,pink.palette);
+        QCOMPARE(p.textBanks()["consumables"].text(1), QString("Restore 37 HP."));
+        editor.selectConsumable(4);
+        choose("maxHp",0,100,true);
+        QCOMPARE(p.textBanks()["consumables"].text(4), QString("Raise maximum HP by 100."));
+        if (const auto folder=qEnvironmentVariable("LORDLY_CONSUMABLE_UI_PROJECT");!folder.isEmpty()) p.saveFolder(folder);
+        const auto fruitAssignment=p.manifest();
+        editor.findChild<QPushButton *>("restoreConsumableTree")->click();
+        QVERIFY(!p.consumableEffects()->trees().contains("4"));
+        QCOMPARE(p.textBanks()["consumables"].entries[4].bytes,p.textBanks()["consumables"].entries[4].original);
+        undo.undo();
+        QCOMPARE(p.manifest(),fruitAssignment);
+        p.setText("consumables",4,"The captain's secret.");
+        choose("heal",0,55,true);
+        QCOMPARE(p.textBanks()["consumables"].text(4), QString("The captain's secret."));
+        choose({},2,0,true);
+        QCOMPARE(p.textBanks()["consumables"].text(4), QString("The captain's secret."));
+        editor.selectConsumable(20);
+        QVERIFY(!assign->isHidden());
+        choose({},3,0,true);
+        QCOMPARE(p.consumableEffects()->visuals()["20"],p.consumableEffects()->visuals()["1"]);
+        QVERIFY(!p.consumableEffects()->trees().contains("20"));
+        editor.selectConsumable(39);
+        QVERIFY(assign->isHidden());
     }
     void editOnlyClickedBranch() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -474,9 +548,13 @@ class ConsumableTreeTests : public QObject {
         p.setConsumableEffects(e.json());
         e.setTree(3, {QJsonObject{{"type", "heal"}, {"minimum", 90}, {"maximum", 90}},
                       QJsonObject{{"type", "fatigue"}, {"minimum", 5}, {"maximum", 5}}});
+        e.setTree(10,{QJsonObject{{"type","heal"},{"minimum",37},{"maximum",37}}});
+        e.setTree(4,{QJsonObject{{"type","revive"},{"minimum",250},{"maximum",250}}});
+        e.setTree(5,{QJsonObject{{"type","revive"},{"minimum",25},{"maximum",25},{"percent",true}}});
+        e.setTree(9,{QJsonObject{{"type","heal"},{"minimum",1},{"maximum",1},{"percent",true}}});
         p.setConsumableEffects(e.json());
         if (!authoredTrees)
-            for (const int id : {1, 3, 7})
+            for (const int id : {1, 3, 4, 5, 7, 9, 10})
                 e.restoreTree(id);
         QImage art(64, 32, QImage::Format_RGBA8888);
         art.fill(Qt::red);

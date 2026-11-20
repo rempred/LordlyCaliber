@@ -250,6 +250,9 @@ class TreeDialog : public QDialog {
         auto kindLabel = qobject_cast<QLabel *>(form->labelForField(kind));
         kindLabel->setText(condition ? "Condition" : "Effect");
         const bool numeric = active && !condition && type != "cure";
+        const auto bounds=ConsumableTree::amountRange(type,fields["percent"].toBool());
+        low->setRange(bounds.first,bounds.second);
+        high->setRange(bounds.first,bounds.second);
         low->setValue(fields["minimum"].toInt(1));
         high->setValue(fields["maximum"].toInt(low->value()));
         randomRange->setChecked(low->value() != high->value());
@@ -428,7 +431,7 @@ class TreeDialog : public QDialog {
         error->setWordWrap(true);
         root->addWidget(error);
         root->addWidget(new QLabel(
-            "Consumes one item after confirmation. Random amounts are rolled once per target."));
+            "Conditions use the target's state before any effects run. Effects run in order, with one roll per random amount."));
         auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         root->addWidget(buttons);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -449,7 +452,15 @@ class TreeDialog : public QDialog {
         for (auto s : {low, high, value})
             connect(s, &QSpinBox::valueChanged, this, [this] { update(); });
         connect(invert, &QCheckBox::toggled, this, [this] { update(); });
-        connect(percent, &QCheckBox::toggled, this, [this] { update(); });
+        connect(percent, &QCheckBox::toggled, this, [this](bool checked) {
+            if (busy) return;
+            const auto bounds=ConsumableTree::amountRange(kind->currentData().toString(),checked);
+            busy=true;
+            low->setRange(bounds.first,bounds.second);
+            high->setRange(bounds.first,bounds.second);
+            busy=false;
+            update();
+        });
         auto initial = when;
         for (int index : path) {
             initial = initial->child(index);

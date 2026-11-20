@@ -301,7 +301,7 @@ target_sources(lordly_ui PRIVATE app/rom_build_dialog.cpp app/rom_build_dialog.h
 target_sources(lordly_ui PRIVATE app/project_recovery.cpp app/diagnostics.cpp app/recovery_draft.cpp)
 target_sources(lordly_ui PRIVATE app/pending_edits.cpp app/pending_edits.h app/class_setup.cpp app/class_setup.h app/shared_impact.h)
 target_sources(lordly_ui PRIVATE app/theme.cpp app/formation_board.cpp app/formation_board.h app/squad_members_editor.cpp app/squad_members_editor.h)
-target_sources(lordly_ui PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/consumable_tree_dialog.cpp app/consumable_visual_dialog.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp app/persuasion_editor.cpp)
+target_sources(lordly_ui PRIVATE app/shop_editor.cpp app/consumable_editor.cpp app/consumable_assignment.cpp app/consumable_tree_dialog.cpp app/consumable_visual_dialog.cpp app/encounter_editor.cpp app/encounter_rewards.cpp app/encounter_scenarios.cpp app/custom_squad_editor.cpp app/persuasion_editor.cpp)
 target_sources(lordly_ui PRIVATE app/attack_editor.cpp app/attack_editor.h app/attack_caption_editor.cpp app/attack_caption_editor.h)
 target_sources(lordly_ui PRIVATE app/attack_effect_editor.cpp app/attack_effect_editor.h)
 target_sources(lordly_ui PRIVATE app/effect_artwork.cpp app/effect_library_editor.cpp app/effect_library_editor.h app/effect_composer.cpp app/effect_composer.h)

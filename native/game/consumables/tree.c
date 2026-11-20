@@ -21,6 +21,16 @@ static s32 maximum(s32 id){return id<100?D_80193BC0[id].field16:D_80190EBC[99];}
 static s32 limit(s32 id){s32 n,cap;if(id<100)return maximum(id);n=func_00040FF4(0,id);cap=maximum(id)/3*n;if(n==3)cap+=maximum(id)%3;return cap;}
 static s32 clamp(s32 v,s32 cap){if(v<0)return 0;if(v>cap)return cap;return v;}
 int lc_tree_has(int item){return item>0&&item<45&&lc_tree_index[item]!=0;}
+/* Preview only a deterministic heal. Painting a menu must never roll RNG or prepare a plan. */
+int lc_fixed_heal(int item, int id) {
+    const u8 *step;
+    int amount;
+    if (!lc_tree_has(item) || id <= 0 || id >= 220) return -1;
+    step = (const u8 *)lc_tree_index[item];
+    if (step[0] != 1 || step[16] || *(const s16 *)(step+2) != *(const s16 *)(step+4)) return -1;
+    amount = *(const s16 *)(step+2);
+    return step[1] ? maximum(id)*amount/100 : amount;
+}
 void lc_tree_context(int context){CONTEXT=context;}
 /* Copy into the menu's own resource buffers. Keep their ownership/lifetime and
  * every icon beyond the four sparkle frames. Both colour variants receive the
@@ -64,17 +74,24 @@ static int predicate(int op,int value,int id,int context){
     case 12:return context==0;case 13:return context==1;
     }return 0;
 }
-static int possible(int op,int lo,int hi,int id){
-    ScenarioCharacter *c=&D_80193BC0[id];s32 v,cap;
-    if(op==1)return hp(id)>0&&hp(id)<limit(id)&&hi>0;
+/* Stat effects share the same bounds for eligibility, the result number and application. */
+static s32 stat_change(int op, int amount, ScenarioCharacter *c) {
+    s32 before, minimum = op == 6 ? 1 : 0, maximum = op >= 13 ? 100 : 999;
+    if (op == 6) before = c->field16;
+    else if (op <= 12) before = c->fields1C[op-7];
+    else if (op == 13) before = c->field1B;
+    else before = c->field28;
+    return minimum + clamp(before + amount - minimum, maximum - minimum) - before;
+}
+static int possible(int op,int lo,int hi,int id,int percent){
+    ScenarioCharacter *c=&D_80193BC0[id];
+    if(op==1)return hp(id)>0&&hp(id)<limit(id)&&(percent?maximum(id)*hi/100:hi)>0;
     if(op==3)return (status(id)&4)!=0;
     if(id>=100)return 0;
     if(op==2)return c->field32>0&&hi>0;
     if(op==4)return hp(id)==0;
     if(op==5)return c->field13<99;
-    cap=op>=13?100:999;
-    if(op==6)v=c->field16;else if(op<=12)v=c->fields1C[op-7];else if(op==13)v=c->field1B;else v=c->field28;
-    return (lo<0&&v>0)||(hi>0&&v<cap);
+    return stat_change(op,lo,c)!=0 || stat_change(op,hi,c)!=0;
 }
 /* Conditions are checked against the activation state; actions apply in order. */
 int lc_tree_prepare(int item,int id,int context,int query){
@@ -88,13 +105,13 @@ int lc_tree_prepare(int item,int id,int context,int query){
         if(op==127){pc=*(const u16 *)(n+4);continue;}
         if(op>=128){value=predicate(op-128,*(const u16 *)(n+2),id,context);if(n[1])value=!value;pc=value?pc+1:*(const u16 *)(n+4);continue;}
         lo=*(const s16 *)(n+2);hi=*(const s16 *)(n+4);pc++;
-        if(!query){if(possible(op,lo,hi,id))return 1;continue;}
+        if(!query){if(possible(op,lo,hi,id,n[1]))return 1;continue;}
         if(id>=100&&op!=1&&op!=3)continue;
         if(count>=16){plan->valid=0;return 0;}
         value=lo;if(hi!=lo)value=lo+(u32)rand()%(hi-lo+1);
         if(op==5&&lo==hi)rand(); /* Retail level-up preparation advances RNG. */
         plan->steps[count].op=op;plan->steps[count].percent=n[1];plan->steps[count].amount=value;
-        if(!shown&&possible(op,lo,hi,id)) {
+        if(!shown&&possible(op,lo,hi,id,n[1])) {
             first=value;shown=1;
             if((op==1||op==4)&&n[1])first=maximum(id)*value/100;
             if(op==1)first=clamp(first,limit(id)-hp(id));
@@ -102,6 +119,7 @@ int lc_tree_prepare(int item,int id,int context,int query){
             else if(op==3)first=0;
             else if(op==4){first=clamp(first,maximum(id));if(first<1)first=1;}
             else if(op==5)first=clamp(first,99-D_80193BC0[id].field13);
+            else first=stat_change(op,value,&D_80193BC0[id]);
         }
         count++;
     }
@@ -117,9 +135,14 @@ static void apply_step(int id,Step *s){
     if(op==2){c->field32=clamp(c->field32-n,255);return;}
     if(op==4){if(c->field18==0){value=s->percent?c->field16*n/100:n;if(value<1)value=1;c->field18=clamp(value,c->field16);c->field33&=~4;}return;}
     if(op==5){for(i=0;i<n&&c->field13<99;i++)func_00044aa4(c);return;}
-    if(op==6){c->field16=clamp(c->field16+n,999);return;}
-    if(op<=12){c->fields1C[op-7]=clamp(c->fields1C[op-7]+n,999);return;}
-    if(op==13)c->field1B=clamp(c->field1B+n,100);else if(op==14)c->field28=clamp(c->field28+n,100);
+    n=stat_change(op,n,c);
+    if(op==6){
+        c->field16+=n;
+        if(c->field18>c->field16)c->field18=c->field16;
+        return;
+    }
+    if(op<=12){c->fields1C[op-7]+=n;return;}
+    if(op==13)c->field1B+=n;else if(op==14)c->field28+=n;
 }
 s32 lc_tree_effect(u8 apply,s32 value,u16 item,u8 id){
     Plan *p;int i;

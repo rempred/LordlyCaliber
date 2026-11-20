@@ -13,9 +13,24 @@ int integer(const QJsonObject &o,const QString &key,int low,int high,int fallbac
 }
 }
 bool ConsumableTree::supported(int item){return item>=1&&item<=19&&item!=8;}
+QString ConsumableTree::targetSummary(int mode, int flags) {
+    if (mode != 1 && mode != 2)
+        return QString("Nonstandard target mode %1. Army %2. Battlefield selection and application may differ.")
+            .arg(mode).arg((flags & 1) ? "uses the squad" : "use disabled");
+    const QString target = mode == 1 ? "Selected member" : "Squad members";
+    return (flags & 1) ? target : "Battlefield map only · " + target;
+}
 QMap<QString,QString> ConsumableTree::actions(){return {{"heal","Restore HP"},{"fatigue","Reduce fatigue"},{"cure","Remove petrification"},{"revive","Revive and remove petrification"},{"level","Level up"},{"maxHp","Change maximum HP"},{"strength","Change strength"},{"vitality","Change vitality"},{"intelligence","Change intelligence"},{"mentality","Change mentality"},{"agility","Change agility"},{"dexterity","Change dexterity"},{"alignment","Change alignment"},{"luck","Change luck"}};}
 QMap<QString,QString> ConsumableTree::conditions(){return {{"retail","Original item use conditions"},{"alive","Target is alive"},{"dead","Target is dead"},{"injured","HP is below its limit"},{"petrified","Target is petrified"},{"ordinary","Target is a character"},{"soldier","Target is a Soldier group"},{"hpPercent","HP percentage is below"},{"class","Current class is"},{"fatigue","Fatigue is at least"},{"alignment","Alignment is at least"},{"luck","Luck is at least"},{"army","Used in Army Management"},{"map","Used on the battlefield map"}};}
 QJsonObject ConsumableTree::action(const QString &type){return {{"type",type},{"minimum",type=="heal"?100:1},{"maximum",type=="heal"?100:1}};}
+QPair<int,int> ConsumableTree::amountRange(const QString &type, bool percent) {
+    if (percent) return {1,100};
+    if (type=="revive") return {1,999};
+    if (type=="level") return {1,98};
+    if (type=="alignment" || type=="luck") return {-999,100};
+    if (effectIds().indexOf(type)>=5) return {-999,999};
+    return {0,999};
+}
 QJsonObject ConsumableTree::condition(const QString &type){return {{"type",type},{"value",type=="hpPercent"?50:1},{"not",false}};}
 QString ConsumableTree::retailUse(int id){
     if (id >= 1 && id <= 3)
@@ -35,6 +50,7 @@ QString ConsumableTree::retailUse(int id){
     return QString("Original use condition for item %1").arg(id);
 }
 QJsonArray ConsumableTree::retail(int item,const ConsumableEffects &effects){
+    if (!supported(item)) return {};
     QString type;QJsonObject values;
     for(const auto &v:ConsumableEffects::definitions()){const auto d=v.toObject();if(d["itemIds"].toArray().contains(item))values=effects.models()[d["key"].toString()].toObject();}
     if(item<=3)type="heal";else if(item<=5)type="fatigue";else if(item==6)type="cure";else if(item==7)type="revive";else if(item==9)type="level";else if(item==10)type="maxHp";else if(item<=16&&item>=11)type=effectIds()[item-5];else if(item==17||item==18)type="alignment";else if(item==19)type="luck";
@@ -86,8 +102,7 @@ QByteArray ConsumableTree::compile(const QJsonArray &tree){
             }else{
                 if(++actions>16)throw Error("An item effect supports up to sixteen actions");
                 int op=effectIds().indexOf(type);if(op<0)throw Error("Unsupported item effect");out[at]=char(op+1);
-                int low=(op>=5)?-999:0,high=op>=12?100:999; if(type=="level"){low=1;high=98;}
-                if(type=="revive"||n["percent"].toBool()){low=1;high=100;}
+                const auto [low,high]=amountRange(type,n["percent"].toBool());
                 const int lo=integer(n,"minimum",low,high,1),hi=integer(n,"maximum",low,high,lo);if(lo>hi)throw Error("Effect minimum cannot exceed maximum");
                 if(n["percent"].toBool()&&type!="heal"&&type!="revive")throw Error("Percentages apply to HP effects only");
                 put16(out,at+2,quint16(lo));put16(out,at+4,quint16(hi));out[at+1]=char(n["percent"].toBool());

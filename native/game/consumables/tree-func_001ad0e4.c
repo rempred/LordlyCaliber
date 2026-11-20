@@ -5,7 +5,8 @@ extern void lc_tree_context(int);
 extern int lc_tree_allowed(int,int,int);
 extern int lc_tree_prepare(int,int,int,int);
 extern void lc_item_visual_select(int,void *,void *);
-extern void *func_000453e0(int);
+extern int lc_fixed_heal(int,int);
+extern const unsigned short lc_effect_parameters[];
 #include "game/scenario_item_views.h"
 typedef struct { u32 w0, w1; } ItemGfx;
 extern u32 D_800E9BA0;
@@ -34,15 +35,14 @@ void func_001AD0E4(u16 item, s32 x, s32 y)
     u32 displayed_next;
     s32 i, row_y, heal_y;
     u32 stat_member, masked_member;
-    if(lc_tree_has(item)) {
-        func_802027DC();
-        func_80179034(func_000453e0(item),x+10,y+0x2e);
-        current=member<100?D_80193BC0[member].field18:*(u16 *)(0x80190EBCU+member*2);
-        maximum=member<100?D_80193BC0[member].field16:*(u16 *)0x80190F82;
-        func_802028A4(x+6,y+0x50,current,maximum);
+    int custom = lc_tree_has(item);
+    int amount = lc_fixed_heal(item, member);
+    if (custom && amount < 0) {
+        if (!lc_tree_allowed(item,member,1))
+            func_80179034(D_8021DF80, x + 0x10, y + 0x46);
         return;
     }
-    switch (item) {
+    switch (custom ? 1 : item) {
     case 1: case 2:
         eligible = 1;
         func_802027DC();
@@ -68,6 +68,7 @@ void func_001AD0E4(u16 item, s32 x, s32 y)
                 cap += total % 3;
             maximum = total;
         }
+        if (custom) eligible = lc_tree_allowed(item,member,1);
         invalid = eligible ^ 1;
         invalid |= ((u16)current == 0);
         if (invalid) {
@@ -76,17 +77,8 @@ void func_001AD0E4(u16 item, s32 x, s32 y)
             func_802028A4(x + 6, y + 0x50, (u16)current, maximum);
             func_802012D8(D_80210258);
             func_80200DD0(x + 0x30, y + 0x5A, 0x3E);
-            if (item == 1) {
-                if ((u16)current + 100 > (u16)cap)
-                    next = cap;
-                else
-                    next = current + 100;
-            } else {
-                if ((u16)current + 300 > (u16)cap)
-                    next = cap;
-                else
-                    next = current + 300;
-            }
+            if (!custom) amount = lc_effect_parameters[item-1];
+            next = current + amount > cap ? cap : current + amount;
             heal_y = y + 0x64;
             func_80200DD0(x + 0x20, heal_y, 2);
             displayed_next = next;

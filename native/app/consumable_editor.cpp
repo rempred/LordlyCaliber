@@ -1,5 +1,6 @@
 #include "app/content_refresh.h"
 #include "app/consumable_editor.h"
+#include "app/consumable_assignment.h"
 #include "app/pending_edits.h"
 #include "app/consumable_tree_dialog.h"
 #include "app/consumable_visual_dialog.h"
@@ -45,6 +46,18 @@ ConsumableEditor::ConsumableEditor(Project *project, QUndoStack *undo,
     target_->setWordWrap(true);
     layout->addWidget(heading_);
     layout->addWidget(target_);
+    assignUse_ = new QPushButton("Assign effect and animation…");
+    assignUse_->setObjectName("assignConsumableUse");
+    layout->addWidget(assignUse_);
+    connect(assignUse_,&QPushButton::clicked,this,[this] {
+        try {
+            if (!applyDrafts()) return;
+            auto next = *project_;
+            if (!assignConsumableUse(this, next, selected_) || next.manifest() == project_->manifest())
+                return;
+            undo_->push(new EffectCommand(project_,*project_,std::move(next)));
+        } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
+    });
     tree_ = createConsumableTreeView([this](QTreeWidgetItem *effect, QTreeWidgetItem *branch) {
         return moveEffect(effect, branch);
     });
@@ -52,7 +65,7 @@ ConsumableEditor::ConsumableEditor(Project *project, QUndoStack *undo,
     tree_->setHeaderHidden(true);
     tree_->setMinimumHeight(180);
     layout->addWidget(tree_, 1);
-    auto treeButtons=new QHBoxLayout;editTree_=new QPushButton("Edit effect tree…");editTree_->setObjectName("editConsumableTree");restoreTree_=new QPushButton("Restore loaded tree");restoreTree_->setObjectName("restoreConsumableTree");treeButtons->addWidget(editTree_);treeButtons->addWidget(restoreTree_);layout->addLayout(treeButtons);
+    auto treeButtons=new QHBoxLayout;editTree_=new QPushButton("Edit effects and conditions…");editTree_->setObjectName("editConsumableTree");restoreTree_=new QPushButton("Restore loaded rules");restoreTree_->setObjectName("restoreConsumableTree");treeButtons->addWidget(editTree_);treeButtons->addWidget(restoreTree_);layout->addLayout(treeButtons);
     connect(editTree_, &QPushButton::clicked, this, [this] {
         auto *row = tree_->currentItem();
         openTree(row ? row->data(0, Qt::UserRole).value<QList<int>>() : QList<int>{});
@@ -62,9 +75,35 @@ ConsumableEditor::ConsumableEditor(Project *project, QUndoStack *undo,
         if (path.isValid())
             openTree(path.value<QList<int>>());
     });
-    connect(restoreTree_,&QPushButton::clicked,this,[this]{
-        auto effects=*project_->consumableEffects();const auto loaded=ConsumableEffects::load(project_->rom());effects.setTree(selected_,loaded.tree(selected_));auto next=*project_;next.setConsumableEffects(effects.json());
-        if(next.manifest()!=project_->manifest())undo_->push(new EffectCommand(project_,*project_,std::move(next)));
+    connect(restoreTree_, &QPushButton::clicked, this, [this] {
+        try {
+            auto effects = *project_->consumableEffects();
+            const auto loaded = ConsumableEffects::load(project_->rom());
+            const auto previousWording = fixedConsumableDescription(effects.tree(selected_));
+            if (loaded.trees().contains(QString::number(selected_)))
+                effects.setTree(selected_, loaded.tree(selected_));
+            else
+                effects.restoreTree(selected_);
+            auto next = *project_;
+            next.setConsumableEffects(effects.json());
+            if (!previousWording.isEmpty()) {
+                next.loadTexts();
+                const auto &bank = next.textBanks().constFind("consumables").value();
+                if (bank.text(selected_) == previousWording) {
+                    if (effects.tree(selected_) == loaded.tree(selected_)) {
+                        const auto original = bank.entries[selected_].original;
+                        next.replaceTextBytes("consumables", selected_, original);
+                    } else if (!loaded.trees().contains(QString::number(selected_))) {
+                        // A shared original-ROM amount may already have been edited in this project.
+                        const auto retailRule = effects.tree(selected_).first().toObject();
+                        const auto wording = fixedConsumableDescription(retailRule["then"].toArray());
+                        if (!wording.isEmpty()) next.setText("consumables", selected_, wording);
+                    }
+                }
+            }
+            if (next.manifest() != project_->manifest())
+                undo_->push(new EffectCommand(project_, *project_, std::move(next)));
+        } catch (const std::exception &e) { notice_->setText(QString::fromUtf8(e.what())); }
     });
     visualName_ = new QLabel; visualName_->setWordWrap(true); layout->addWidget(visualName_);
     auto visualButtons = new QHBoxLayout; layout->addLayout(visualButtons);
@@ -220,10 +259,12 @@ void ConsumableEditor::refresh() {
     }
     const bool custom=project_->consumableEffects()->trees().contains(QString::number(selected_));
     const bool visualSupported = ConsumableTree::supported(selected_) || selected_ == 20;
+    assignUse_->setVisible(visualSupported);
+    assignUse_->setText(selected_==20 ? "Assign use animation…" : "Assign effect and animation…");
     editVisual_->setVisible(visualSupported); restoreVisual_->setVisible(visualSupported);
     const auto visuals = project_->consumableEffects()->visuals();
     visualName_->setText(visualSupported ? "Use animation · " + (visuals.contains(QString::number(selected_))
-        ? visuals[QString::number(selected_)].toObject()["name"].toString() : "Original sparkle effect")
+        ? visuals[QString::number(selected_)].toObject()["name"].toString() : (selected_==6 || selected_==7 ? "Pink sparkle" : "Gold sparkle"))
         : selected_ >= 39 ? "Combat visuals use the assigned attack effect." : QString());
     const bool supported = !definition_.isEmpty()&&!custom;
     originalSettings_->setVisible(advanced_ && supported);
@@ -237,7 +278,8 @@ void ConsumableEditor::refresh() {
     auto when = new QTreeWidgetItem(tree_, {trigger});
     if(ConsumableTree::supported(selected_)){
         when->setData(0, ConsumableBranchRole, QVariant::fromValue(QList<int>{}));
-        new QTreeWidgetItem(when,{u8(project_->record(Table::Consumables,selected_).bytes,8)==2?"TARGET: Squad members":"TARGET: Selected character"});
+        const auto record=project_->record(Table::Consumables,selected_).bytes;
+        new QTreeWidgetItem(when, {"TARGET: " + ConsumableTree::targetSummary(u8(record, 8), u8(record, 9))});
         std::function<void(QTreeWidgetItem *, const QJsonArray &, QList<int>)> add =
             [&](QTreeWidgetItem *parent, const QJsonArray &nodes, QList<int> parentPath) {
                 for (int i = 0; i < nodes.size(); ++i) {
@@ -261,28 +303,18 @@ void ConsumableEditor::refresh() {
                     }
                 }
             };
-        add(when,project_->consumableEffects()->tree(selected_),{});new QTreeWidgetItem(when,{"CONSUME: One item after confirmation"});
+        const auto steps = project_->consumableEffects()->tree(selected_);
+        add(when, steps, {});
+        new QTreeWidgetItem(when, {steps.isEmpty() ? "No effects assigned. No target can use this item."
+                                                   : "CONSUME: One item after confirmation"});
     }else{
-        static const QMap<int,QString> native={{8,"Return the squad to base"},{20,"Raise squad Unity by a random 1–5, up to 100"},{21,"Use the Silver Hourglass map effect"},{22,"Discover a remaining map treasure"},{23,"Use Love and Peace recruitment"},{24,"Increase Soldier progress"},{25,"Change the Soldier graduation choice"},{26,"Reduce marching fatigue accumulation"},{27,"Increase recovery rate"},{28,"Apply the Figurine's extra map update"},{29,"Increase battle experience"},{30,"Protect against Zombie conversion"},{31,"Enable the Charge Horn's combat command uses"}};
+        static const QMap<int,QString> native={{8,"Return the squad to base"},{20,"Raise squad Unity by a random 1–5, up to 100"},{21,"Use the Silver Hourglass map effect"},{22,"Discover a remaining map treasure"},{23,"Use Love and Peace recruitment"},{24,"Double the leader's Soldier graduation progress"},{25,"Change the Soldier graduation choice"},{26,"Reduce marching fatigue accumulation"},{27,"Recover faster while resting"},{28,"Move the squad faster on the battlefield map"},{29,"Double the experience earned in battle"},{30,"Protect against Zombie conversion"},{31,"Start each battle with three action points"}};
         if (selected_ > 0)
             new QTreeWidgetItem(when,{native.value(selected_,selected_>=39?"Invoke the assigned Pedra attack":"Used by story events")});
     }
     tree_->expandAll();
     heading_->setText(selected_ >= 0 ? project_->record(Table::Consumables, selected_).name
                                      : "Select a consumable");
-    static const QMap<QString, QString> targets = {
-        {"healLeaf", "Restores current HP to one target, up to its current limit."},
-        {"healSeed", "Restores current HP to one target, up to its current limit."},
-        {"healPack", "Restores current HP across the unit, up to each target's current limit."},
-        {"powerFruit",
-         "Reduces a character's fatigue, down to zero. Special targets are unchanged."},
-        {"angelFruit",
-         "Reduces a character's fatigue, down to zero. Special targets are unchanged."},
-        {"cupOfLife", "Adds a random amount to maximum HP, capped at 999."},
-        {"sharedStatBoosters11To16", "Adds a random amount to the item's stat, capped at 999."},
-        {"scrollOfDiscipline", "Raises alignment by a random amount, capped at 100."},
-        {"urnOfChaos", "Lowers alignment by a random amount, down to zero."},
-        {"gobletOfDestiny", "Changes luck by a random amount, within 0–100."}};
     target_->setText(custom?"Custom effect tree":ConsumableTree::supported(selected_)?QString():"Original game behavior");
     minimum_->setVisible(supported);
     minimumLabel_->setVisible(supported);

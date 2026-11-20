@@ -41,6 +41,7 @@ class ConsumableEditor : public QWidget {
     QPushButton *apply_, *restore_, *discard_;
     QTreeWidget *tree_;
     QPushButton *editTree_, *restoreTree_;
+    QPushButton *assignUse_;
     QPushButton *editVisual_, *restoreVisual_;
     QLabel *visualName_;
     QWidget *originalSettings_;

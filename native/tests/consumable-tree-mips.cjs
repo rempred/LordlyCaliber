@@ -44,7 +44,50 @@ for(const injured of [true,false]){
 }
 console.log('Independent item trees preserve retail Heal Pack eligibility.');
 
-// Execute every default tree against the unchanged accepted-C adaptation.
+// Revive units and percentage rounding use the authored amount.
+for (const [item, expected] of [[4,250],[5,150]]) {
+ const m=cpu(),target=characters+56;
+ m.w16(target+0x16,600);m.w16(target+0x18,0);
+ const query=run(m,item,1,0);
+ assert.equal(query,expected);
+ run(m,item,1,1,query);
+ assert.equal(m.r16(target+0x18),expected);
+ m.set('a0',item);m.set('a1',1);m.set('a2',0);m.call(0x802195bc);
+ assert.equal(m.get('v0'),0,'living character cannot use an item that only revives');
+}
+for (const [maximum,allowed] of [[99,0],[100,1]]) {
+ const m=cpu(),target=characters+56;
+ m.w16(target+0x16,maximum);m.w16(target+0x18,20);
+ m.set('a0',9);m.set('a1',1);m.set('a2',0);m.call(0x802195bc);
+ assert.equal(m.get('v0'),allowed,'one-percent healing must restore at least one HP');
+}
+// The field panel shows the selected target and the real predicted total without preparing an effect.
+{
+ const m=cpu(), target=characters+56, draws=[];
+ let groups=0x801971f2;
+ for(let at=rom.indexOf('LC07CAPA',0x2800000);at>=0;at=rom.indexOf('LC07CAPA',at+8))
+  if(at%16===0&&rom.readUInt32BE(at+12)===at){groups=rom.readUInt32BE(at+24)+0x3802;break;}
+ m.w8(groups,1);m.w16(target+0x16,97);m.w16(target+0x18,25);
+ for(const pc of [0x802027dc,0x802012d8,0x80200dd0,0x80179034])m.trap(pc,()=>{});
+ m.trap(0x802028a4,c=>draws.push(['current',c.get('a2'),c.get('a3')]));
+ m.trap(0x802001a8,c=>draws.push(['number',c.get('a2')]));
+ m.set('a0',10);m.set('a1',180);m.set('a2',24);m.call(0x80218dd4);
+ assert.deepEqual(draws,[['current',25,97],['number',62],['number',97]]);
+ run(m,10,1,1);assert.equal(m.r16(target+0x18),25,'drawing cannot arm an application');
+}
+// A fixed custom stat change displays the delta the target can receive.
+for (const [op,field,initial,amount,expected] of [[7,0x1c,998,10,1],[7,0x1c,3,-10,-3],[6,0x16,3,-10,-2]]) {
+ const m=cpu(),target=characters+56,program=Buffer.alloc(32);
+ program[0]=op;program.writeInt16BE(amount,2);program.writeInt16BE(amount,4);
+ m.load(0x80380000,program);m.w32(address+32+4,0x80380000);
+ m.w16(target+field,initial);m.w16(target+0x18,3);
+ const shown=run(m,1,1,0);
+ assert.equal(shown|0,expected);
+ run(m,1,1,1,shown);
+ assert.equal(m.r16(target+field),initial+expected);
+ if(op===6)assert.equal(m.r16(target+0x18),1,'current HP cannot exceed the reduced maximum');
+}
+// Compare default item state and RNG with the unchanged accepted-C adaptation.
 // Compare character/Soldier state and RNG/growth calls, not the preview number:
 // custom previews intentionally cap that number to the actual HP/fatigue change.
 const retailPrograms=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));

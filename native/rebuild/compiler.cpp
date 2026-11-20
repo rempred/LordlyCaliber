@@ -923,7 +923,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     quint32 sceneLogicEntry=0;
     const bool customStoryFlags = sceneLogic || (p.sceneEvents() && p.sceneEvents()->hasCustomFlags()) ||
         (priorClassPlacement && priorClassPlacement->layout.customFlags);
-    const bool itemTrees = p.consumableEffects() && (p.consumableEffects()->hasTrees() || p.consumableEffects()->hasVisuals());
+    // The battlefield panel has independent retail constants for Heal Leaf and Heal Seed.
+    const auto &itemEffects = p.consumableEffects();
+    const bool itemTrees = itemEffects &&
+        (itemEffects->hasTrees() || itemEffects->hasVisuals() ||
+         itemEffects->models()["healLeaf"].toObject()["magnitude"].toInt() != 100 ||
+         itemEffects->models()["healSeed"].toObject()["magnitude"].toInt() != 300);
     // An imported project can remove scenario metadata while the opened ROM
     // still owns private map assets. Keep their native loaders and model table
     // valid when rebuilding another resident feature or removing its last hook.

@@ -699,13 +699,21 @@ The existing eight-decimal precision and later-check explanation remain.
 
 Description editing starts with the selected record: Classes, Items and
 Consumables show a preview and Edit description button in their inspector.
+For an ordinary consumable, select **Assign effect and animation…** to pick a
+gameplay effect, enter its amount and preview the four animation frames. Select
+gold or pink sparkle, reuse another item's artwork, or keep the current animation.
+Choosing a gameplay effect replaces the item's conditions. Keeping the current
+effect lets you change the artwork alone. Review the in-game description beside
+the amount. The checkbox supplies wording for a fixed effect, or you can keep
+and edit the existing wording. **Save** commits the assignment in one Undo step.
+On the battlefield, a fixed heal shows the selected member's current and resulting HP.
+
 Click a condition or action in the Consumables overview to open that step in the
 effect tree. Select an IF to add to its THEN branch, ELSE to add an alternative,
 or **WHEN item used** to add a top-level step. In the overview or the tree editor,
 drag an existing effect onto THEN, ELSE or WHEN to move it to the end of that branch.
 Selecting an action inserts the
-next step immediately below it in the same branch. Each numeric action has its own fixed amount or random range. **Edit
-effect tree** also opens the tree for adding and moving steps. Base-use
+next step immediately below it in the same branch. Each numeric action has its own fixed amount or random range. **Edit effects and conditions…** also opens the tree for adding and moving steps. Base-use
 items (1–19, excluding Quit Gate) support nested IF/ELSE, named conditions,
 ordered healing, fatigue, petrification cure, revival, level-up, permanent stat,
 alignment and luck effects. HP effects can use percentages and numeric effects
