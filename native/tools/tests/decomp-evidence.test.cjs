@@ -125,6 +125,18 @@ test('dry run does not create a destination', t => {
   const f = fixture(t); importAccepted(f.root, f.destination);
   assert.equal(fs.existsSync(f.destination), false);
 });
+test('separate verified build authenticates sources in the selected checkout', t => {
+  const proof = fixture(t, 7), checkout = fixture(t, 6);
+  const stateFile = path.join(proof.root, 'build/current/state.json');
+  const manifest = importAccepted(checkout.root, checkout.destination, false, stateFile);
+  assert.equal(manifest.evidenceSchemaVersion, 7);
+  assert.equal(manifest.counts.functions, 3);
+  checkout.write('include/pair.h', 'different header');
+  assert.throws(() => importAccepted(checkout.root, checkout.destination, true, stateFile), /Checkout differs/);
+  assert.equal(fs.existsSync(checkout.destination), false);
+  const older = path.join(checkout.root, 'build/current/state.json');
+  assert.throws(() => readAcceptedEvidence(proof.root, older), /requires hash-bound schema 7/);
+});
 test('accepted hybrid C imports intact and still rejects altered source bytes', t => {
   const f = fixture(t, 7);
   for (let i = 0; i < f.fresh.targets.length; ++i) {

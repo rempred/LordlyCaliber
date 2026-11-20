@@ -15,16 +15,17 @@ function files(directory) {
     entry.isDirectory() ? files(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
 }
 function main(args) {
-  let decomp, json = false, requireClean = false, requireWholeOwners = false;
+  let decomp, stateFile, json = false, requireClean = false, requireWholeOwners = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--decomp' && args[i + 1]) decomp = path.resolve(args[++i]);
+    else if (args[i] === '--state' && args[i + 1]) stateFile = path.resolve(args[++i]);
     else if (args[i] === '--json') json = true;
     else if (args[i] === '--require-clean') requireClean = true;
     else if (args[i] === '--require-whole-owners') requireWholeOwners = true;
-    else throw Error('Use --decomp <checkout> [--json] [--require-clean | --require-whole-owners]');
+    else throw Error('Use --decomp <checkout> [--state <verified state.json>] [--json] [--require-clean | --require-whole-owners]');
   }
   if (!decomp) throw Error('--decomp is required; absence of evidence is not a clean audit');
-  const evidence = readAcceptedEvidence(decomp), {state} = evidence;
+  const evidence = readAcceptedEvidence(decomp, stateFile), {state} = evidence;
   const accepted = evidence.targets;
   const authenticated = new Set();
   for (const target of accepted) {
@@ -87,6 +88,10 @@ function main(args) {
   const dataRules = new Set(['tactics', 'elements', 'weapons', 'soldierPopulation']);
   const partialRules = new Set(['deployment', 'deploymentMenu', 'deploymentMessage', 'trainingXp', 'resistance']);
   for (const [name, owner] of Object.entries(game('tools/game-rules.json'))) {
+    if (name === 'clock') {
+      check(name, owner.offset, owner.size, 'adapted-c', 'rebuild/compiler.cpp', 'game/tools/clock.c');
+      continue;
+    }
     if (name === 'goth') {
       const c = game('tools/goth-owner.json').plain;
       check(name, c.start, c.size + 16, 'adapted-c', 'rebuild/goth_runtime.cpp', 'game/' + c.source);
@@ -173,7 +178,6 @@ tools/goth-retail.s tools/goth-reward.s tools/high-attack-bootstrap.s tools/high
 tools/high-attack-hooks.s tools/high-attack-module.s tools/luck-bootstrap.s tools/luck-module.s
 tools/luck-templates.s tools/reserve-bootstrap.s tools/reserve-xp.s`.split(/\s+/));
   const whole = new Set(checks.map(row => row.source).filter(value => value.endsWith('.s')).map(value => value.slice(5)));
-  for (const name of ['tools/clock.s', 'tools/clock-retail.s']) whole.add(name);
   const unused = new Set(['consumables/effects.s', 'promotion/family-menu.s', 'promotion/family-lookup.s', 'shops/producer.s',
     'shops/consumers.s', 'shops/selection-guard.s', 'tools/goth-retail.s', 'tools/goth-reward.s',
     'tools/reserve-bootstrap.s', 'tools/chaos-hook.s',

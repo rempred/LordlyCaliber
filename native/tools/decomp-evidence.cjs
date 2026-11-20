@@ -46,11 +46,12 @@ function exactOwners(owners, symbol) {
     'Missing exact physical owner: ' + symbol);
   }
 }
-function readAcceptedEvidence(root) {
-  const reportPaths = [path.join(root, 'build/current/state.json')];
+function readAcceptedEvidence(root, stateFile) {
+  const reportPaths = [stateFile ? path.resolve(stateFile) : path.join(root, 'build/current/state.json')];
   const raw = [fs.readFileSync(reportPaths[0])];
   const state = JSON.parse(raw[0]);
   const version = state.schemaVersion;
+  if (stateFile) requireEvidence(version === 7, 'Separate state file requires hash-bound schema 7 evidence');
   for (const [name, field] of [['verification', 'verificationReport'], ['fresh-compilation', 'freshCompilationReport']]) {
     if (version === 7) {
       requireEvidence(typeof state.output === 'string' && path.isAbsolute(state.output) &&

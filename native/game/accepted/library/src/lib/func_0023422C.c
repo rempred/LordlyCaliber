@@ -1,0 +1,77 @@
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef struct BattleObj {
+    u8 unk00[0x18];
+    s32 unk18;
+    u8 unk1C[0x28];
+    s32 unk44;
+} BattleObj;
+typedef struct BattleUnit {
+    struct BattleObj *obj;
+    u8 unk04[0x1C];
+    u16 hp;
+    u16 maxHp;
+    u16 str;
+    u16 vit;
+    u8 unk28[6];
+    u16 dex;
+    u8 unk30;
+    u8 unk31[2];
+    u8 unk33;
+    u8 unk34[2];
+    u16 items[4];
+    u8 unk3E;
+    u8 unk3F;
+    u32 flags;
+    u8 unk44[4];
+    s32 unk48;
+    s32 cls;
+    s32 unk50;
+    s32 lane;
+    s32 unk58;
+    u8 unk5C[0xC];
+    s32 target;
+    s32 actsUsed;
+    s32 actsMax;
+    u8 unk74[4];
+    u8 actionKind;
+    u8 unk79[3];
+    s32 attack;
+    s32 unk80;
+    u8 unk84[0x10];
+    s32 unk94;
+    u8 unk98[0x60];
+} BattleUnit;
+u8 D_801C9FA4(s32 a);
+s32 D_801C8B68(BattleUnit *u);
+u16 D_8016DF88(u8 a, u8 cls);
+u16 D_8016DFDC(u8 a, u8 cls);
+u16 D_8016E030(u8 a, u8 cls);
+u16 D_8016E084(u8 a, u8 cls);
+u8 D_8016E338(u8 a, u8 cls, u8 c);
+s32 D_801C8BA4(BattleUnit *u);
+s32 D_801BE138(s32 a, s32 cls, s32 c, s32 d);
+void D_801E15E0(BattleUnit *u, s32 cls);
+inline void func_0023422C(BattleUnit *u, s32 cls) {
+    BattleObj *o;
+    s32 v;
+    s32 x;
+    if (u->cls == u->unk48) {
+        u->unk48 = cls;
+    }
+    u->cls = cls;
+    u->items[0] = D_8016DF88(u->unk48, cls);
+    u->items[1] = D_8016DFDC(u->unk48, cls);
+    u->items[2] = D_8016E030(u->unk48, cls);
+    u->items[3] = D_8016E084(u->unk48, cls);
+    u->actsMax = D_8016E338(u->unk48, u->cls, D_801C9FA4(u->unk58));
+    x = D_801C8B68(u);
+    v = D_801BE138(u->unk48, cls, x, D_801C8BA4(u));
+    o = u->obj;
+    u->unk50 = v;
+    o->unk44 = v;
+    o->unk18 = v;
+    D_801E15E0(u, cls);
+}

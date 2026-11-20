@@ -1,0 +1,33 @@
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+extern s32 D_8022A950;
+void func_00283FA8(s32 a, s32 b);
+extern u8 *D_8023DE34;
+extern u8 D_80197778[];
+extern s32 D_8018F1A4;
+void memcpy_aligned(u8 *dst, u8 *src, u32 n);
+void D_801707F4(void);
+void D_8017230C(s32 a, s32 b, u8 c);
+void D_80172394(void);
+void D_801725B4(s32 a);
+extern u8 D_801936A8;
+u8 *D_8022EC34(u8 i);
+s16 D_802394A0(s32 line);
+void func_00286544(void) {
+    u8 *e;
+    D_8018F1A4 = (s32)D_80197778;
+    *(s32 *)D_80197778 = D_8022A950;
+    memcpy_aligned(D_80197778 + 0x44, D_8023DE34 + 0x18, 6);
+    memcpy_aligned(D_80197778 + 0x4A, D_8023DE34 + 0x1E, 6);
+    memcpy_aligned(D_80197778 + 4, D_8023DE34 + 0x24, 0x40);
+    e = D_8022EC34(D_802394A0(*(u16 *)(D_8023DE34 + 0x1C)));
+    D_801936A8 = 0x42;
+    D_801725B4(-1);
+    D_80172394();
+    D_8017230C(1, 0, *e);
+    D_801707F4();
+    func_00283FA8(3, 1);
+}

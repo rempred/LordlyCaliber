@@ -4,8 +4,8 @@
 const fs = require('node:fs'), path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {readAcceptedEvidence, sourcePath, digest, same} = require('./decomp-evidence.cjs');
-function importAccepted(root, native, write = false) {
-    const evidence = readAcceptedEvidence(root), {state} = evidence;
+function importAccepted(root, native, write = false, stateFile) {
+    const evidence = readAcceptedEvidence(root, stateFile), {state} = evidence;
     const files = new Map(), producers = new Map();
     function retain(relative, expected) {
         files.set(relative, evidence.readSource(relative, expected));
@@ -83,9 +83,11 @@ function main(args) {
     const native = path.resolve(__dirname, '..');
     const write = args.includes('--write');
     const index = args.indexOf('--decomp');
-    if (index < 0 || !args[index + 1]) throw Error('Use --decomp <checkout> [--write]');
+    const stateIndex = args.indexOf('--state');
+    if (index < 0 || !args[index + 1] || (stateIndex >= 0 && !args[stateIndex + 1]))
+        throw Error('Use --decomp <source checkout> [--state <verified state.json>] [--write]');
     const root = path.resolve(args[index + 1]);
-    const manifest = importAccepted(root, native, write);
+    const manifest = importAccepted(root, native, write, stateIndex >= 0 ? args[stateIndex + 1] : undefined);
     console.log(JSON.stringify({mode: write ? 'imported' : 'checked', verifiedAt: manifest.verifiedAt, ...manifest.counts}));
 }
 if (require.main === module) {

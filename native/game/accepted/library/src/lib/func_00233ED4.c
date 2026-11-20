@@ -1,0 +1,58 @@
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef struct BattleObj {
+    u8 unk00[0x18];
+    s32 unk18;
+    u8 unk1C[0x28];
+    s32 unk44;
+} BattleObj;
+typedef struct BattleUnit {
+    struct BattleObj *obj;
+    u8 unk04[0x1C];
+    u16 hp;
+    u16 maxHp;
+    u16 str;
+    u16 vit;
+    u8 unk28[6];
+    u16 dex;
+    u8 unk30;
+    u8 unk31[2];
+    u8 unk33;
+    u8 unk34[2];
+    u16 items[4];
+    u8 unk3E;
+    u8 unk3F;
+    u32 flags;
+    u8 unk44[4];
+    s32 unk48;
+    s32 cls;
+    s32 unk50;
+    s32 lane;
+    s32 unk58;
+    u8 unk5C[0xC];
+    s32 target;
+    s32 actsUsed;
+    s32 actsMax;
+    u8 unk74[4];
+    u8 actionKind;
+    u8 unk79[3];
+    s32 attack;
+    s32 unk80;
+    u8 unk84[0x10];
+    s32 unk94;
+    u8 unk98[0x60];
+} BattleUnit;
+s32 D_801C8B84(BattleUnit *u);
+s32 D_801CA29C(BattleUnit *u);
+s32 func_002337E4(BattleUnit **out, s32 start, s32 lane);
+BattleUnit *func_00233D0C(BattleUnit *self, BattleUnit **list, s32 n);
+s32 func_00233ED4(BattleUnit *u) {
+    BattleUnit *list[6];
+    s32 n = func_002337E4(list, (-(D_801C8B84(u) == 0) & 6) | 2, u->lane);
+    if (n != 0) {
+        return D_801CA29C(func_00233D0C(u, list, n));
+    }
+    return -1;
+}

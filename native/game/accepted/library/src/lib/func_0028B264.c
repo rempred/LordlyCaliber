@@ -1,0 +1,48 @@
+typedef unsigned char u8;
+typedef signed int s32;
+extern u8 D_8023DF0C;
+extern u8 D_8023DE3C;
+extern u8 D_800E7A0C;
+extern u8 D_8018FC00[];
+void func_00019e10(void);
+void func_00019eb0(void *p, s32 n);
+void D_8016CD5C(s32 a);
+extern u8 *D_8023DE30;
+void *func_00001330(s32 size);
+void *func_000016C4(void *p);
+void bzero(void *p, s32 n);
+typedef struct {
+    void *unk00;
+    u8 *pixels;
+    u8 *tex;
+    void *chunk0C;
+    void *sprite;
+    void *chunk14;
+} Res28;
+extern Res28 *D_8023DE34;
+extern s32 D_8023DE40;
+extern s32 D_8023DE44;
+void func_0028CA1C(u8 a);
+void func_0028BCB8(u8 a, u8 b);
+void func_0028CFD8(u8 a, u8 b);
+void func_0028DC98(u8 a, u8 b);
+void bzero(void *p, s32 n);
+void bzero(void *p, s32 n);
+void func_0028B264(void) {
+    func_00019e10();
+    func_00019eb0(D_8018FC00, 2);
+    func_00019e10();
+    D_8016CD5C(1);
+    D_800E7A0C = 0;
+    D_8023DE3C = 0;
+    func_000016C4(D_8023DE34->chunk14);
+    D_8023DE34->chunk14 = ((void *)0);
+    D_8023DE30 = func_00001330(0x248);
+    bzero(D_8023DE30, 0x248);
+    D_8023DE40 = 0x34;
+    D_8023DE44 = 0x36;
+    func_0028CA1C(D_8023DF0C);
+    func_0028BCB8(D_8023DE30[0x244], D_8023DE30[0x245]);
+    func_0028CFD8(D_8023DE30[0x244], D_8023DE30[0x245]);
+    func_0028DC98(D_8023DE30[0x244], D_8023DE30[0x245]);
+}

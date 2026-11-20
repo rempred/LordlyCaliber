@@ -1,0 +1,182 @@
+typedef signed char s8;
+typedef unsigned char u8;
+typedef signed short s16;
+typedef unsigned short u16;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef float f32;
+typedef struct {
+    s32 unk00;
+    s32 unk04;
+    void *pdata;
+    s32 unk0C;
+    s32 unk10;
+    s32 unk14;
+    s32 unk18;
+    s32 unk1C;
+    f32 vib_amount;
+    f32 unk24;
+    f32 unk28;
+    f32 unk2C;
+    f32 unk30;
+    u8 *ppitchbend;
+    u8 *pvolume;
+    s32 unk3C;
+    s32 unk40;
+    s32 handle;
+    s32 unk48;
+    f32 unk4C;
+    f32 unk50;
+    s32 unk54;
+    f32 unk58;
+    f32 unk5C;
+    f32 unk60;
+    s32 unk64;
+    f32 unk68;
+    f32 unk6C;
+    f32 unk70;
+    void *unk74;
+    void *unk78;
+    s32 unk7C;
+    u8 *pbase;
+    s32 unk84;
+    u8 *ppitchbendbase;
+    u8 *pvolumebase;
+    f32 unk90;
+    s32 unk94;
+    s16 unk98;
+    u16 unk9A;
+    u16 unk9C;
+    s16 unk9E;
+    u16 unkA0;
+    u16 unkA2;
+    u16 unkA4;
+    u16 unkA6;
+    u16 unkA8;
+    u16 unkAA;
+    u16 length;
+    u16 unkAE;
+    s16 unkB0;
+    u16 unkB2;
+    u16 unkB4;
+    u8 vib_delay;
+    u8 unkB7;
+    u8 porta;
+    u8 unkB9;
+    u8 unkBA;
+    u8 unkBB;
+    u8 unkBC;
+    u8 unkBD;
+    u8 unkBE;
+    u8 unkBF;
+    u8 unkC0;
+    u8 unkC1;
+    u8 unkC2;
+    u8 unkC3;
+    u8 unkC4;
+    u8 unkC5;
+    u8 unkC6;
+    u8 unkC7;
+    u8 unkC8;
+    u8 unkC9;
+    u8 unkCA;
+    u8 unkCB;
+    u8 unkCC;
+    u8 unkCD;
+    u8 wobble;
+    u8 unkCF;
+    u8 unkD0;
+    s8 unkD1;
+    u8 velon;
+    u8 unkD3;
+    u8 unkD4;
+    u8 vib_speed;
+    u8 env;
+    u8 trigger;
+    u8 unkD8;
+    u8 sweep_timer;
+    u8 unkDA;
+    u8 depth;
+    f32 vib_precalc;
+    u8 *loopptr[4];
+    u8 *loopvol[4];
+    u8 *looppb[4];
+    u16 loopA2[4];
+    u16 loopA4[4];
+    u8 loopcount[4];
+    u8 loopBC[4];
+    f32 loop70[4];
+    u8 pad138[0x4];
+} MusChannel;
+typedef struct {
+    s32 unk00;
+    s32 count;
+    u8 pad08[4];
+    s32 flags;
+    void *ptrbank;
+    u32 unk14;
+    struct {
+        u32 ptr;
+        u32 unk4;
+    } entries[1];
+} MusFxBank;
+extern void *D_800B1828;
+extern MusFxBank *D_800B1838;
+extern MusFxBank *D_800B183C;
+extern s32 D_800B1804;
+s32 func_00013f24(MusFxBank *bank, s32 number, s32 volume, s32 pan, s32 priority);
+s32 func_00013e74(MusChannel *cp, MusFxBank *bank, s32 number, s32 volume, s32 pan, s32 priority);
+extern MusChannel *D_800B1810;
+void func_80083738(MusChannel *cp);
+extern s32 D_800B1820;
+s32 func_00011bf0(s32 number, s32 volume, s32 pan, s32 restartflag, s32 priority) {
+    MusFxBank *bank;
+    MusFxBank *next = D_800B183C;
+    MusChannel *cp;
+    s32 i;
+    s32 ret;
+    if (next != ((void *)0)) {
+        bank = next;
+        D_800B183C = ((void *)0);
+    } else {
+        bank = D_800B1838;
+        if (bank == ((void *)0)) {
+            D_800B1828 = ((void *)0);
+            return 0;
+        }
+    }
+    if (D_800B1828 == ((void *)0)) {
+        D_800B1828 = bank->ptrbank;
+    }
+    if (restartflag) {
+        cp = D_800B1810;
+        for (i = 4; i < D_800B1804; i++, cp++) {
+            if (cp->unkA6 == number && cp->unk78 == bank) {
+                if (priority == -1) {
+                    priority = bank->entries[number].unk4;
+                }
+                ret = func_00013e74(cp, bank, number, volume, pan, priority);
+                D_800B1828 = ((void *)0);
+                return ret;
+            }
+        }
+    }
+    ret = func_00013f24(bank, number, volume, pan, priority);
+    D_800B1828 = ((void *)0);
+    return ret;
+}
+extern inline s32 func_00013e74(MusChannel *cp, MusFxBank *bank, s32 number, s32 volume, s32 pan, s32 priority) {
+    func_80083738(cp);
+    cp->unkA6 = number;
+    cp->unk78 = bank;
+    cp->unk9E = volume;
+    cp->unkB0 = pan;
+    cp->handle = D_800B1820++;
+    cp->unk48 = priority;
+    if (bank->ptrbank != ((void *)0)) {
+        cp->unk7C = (s32)bank->ptrbank;
+    }
+    cp->unk04 = (s32)(cp->pbase = (u8 *)bank->entries[number].ptr);
+    return cp->handle;
+}
+s32 func_00013f24(MusFxBank *bank, s32 number, s32 volume, s32 pan, s32 priority);

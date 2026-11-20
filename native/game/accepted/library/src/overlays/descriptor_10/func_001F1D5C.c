@@ -1,0 +1,30 @@
+typedef signed short s16;
+typedef signed int s32;
+typedef float f32;
+extern s16 D_801D071C;
+extern s16 D_801D0820;
+extern f32 D_801D06F0;
+extern f32 D_801D0718;
+extern f32 D_801D0740;
+extern f32 D_801D0764;
+extern f32 D_801D0768;
+extern f32 D_801D0814;
+extern s32 D_801D0838;
+extern s32 D_801D0734;
+extern s32 D_801D070C;
+extern void *D_801CEAB0;
+s32 func_00201B4C(void *p);
+s32 func_00201B6C(void *p);
+s32 func_00201B8C(void *p);
+void func_001F1D5C(void) {
+    s32 v;
+    D_801D0838 = func_00201B4C(D_801CEAB0);
+    D_801D0734 = func_00201B6C(D_801CEAB0);
+    v = func_00201B8C(D_801CEAB0);
+    D_801D0768 = D_801D06F0 = D_801D0838;
+    D_801D0718 = D_801D0740 = D_801D0734;
+    D_801D070C = v;
+    D_801D0814 = D_801D0764 = v;
+    D_801D071C = 0xFF;
+    D_801D0820 = 0;
+}

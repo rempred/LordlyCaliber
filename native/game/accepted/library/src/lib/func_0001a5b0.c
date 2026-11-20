@@ -1,0 +1,41 @@
+typedef unsigned char u8;
+typedef signed int s32;
+typedef unsigned int u32;
+typedef struct {
+    u32 w0;
+    u32 w1;
+} Gfx;
+extern void *D_800A9EE0[];
+extern void *g_resource_state_word;
+extern void *D_800C4CE0;
+extern u8 D_800A9EB0[];
+extern u8 D_000A9EF0[];
+void func_0001b4b0(void);
+void func_00019eb0(void **framebuf, u32 num);
+void func_00019dd0(void *func);
+void func_0001b510(void *gfxTask);
+void func_00019a60(void);
+void func_00019c04(void *gfxList_ptr, u32 gfxListSize, u32 ucode, u32 flag);
+void func_00019e10(void);
+void func_0001a5b0(void) {
+    Gfx gfxList[0x101];
+    Gfx *gfxList_ptr;
+    func_0001b4b0();
+    func_00019eb0(D_800A9EE0, 3);
+    g_resource_state_word = (void *)0x80000400;
+    func_00019dd0(func_0001b510);
+    D_800C4CE0 = D_800A9EB0;
+    func_00019a60();
+    gfxList_ptr = gfxList;
+    gfxList_ptr->w0 = 0xDE000000;
+    gfxList_ptr->w1 = (u32)D_000A9EF0;
+    gfxList_ptr++;
+    gfxList_ptr->w0 = 0xE9000000;
+    gfxList_ptr->w1 = 0;
+    gfxList_ptr++;
+    gfxList_ptr->w0 = 0xDF000000;
+    gfxList_ptr->w1 = 0;
+    gfxList_ptr++;
+    func_00019c04(gfxList, (s32)(gfxList_ptr - gfxList) * sizeof(Gfx), 0, 0);
+    func_00019e10();
+}

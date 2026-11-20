@@ -3,8 +3,8 @@
 // Upstream is read-only; only its named, hash-bound proofs supply placement.
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const {readAcceptedEvidence, digest} = require('./decomp-evidence.cjs');
-function generate(root, native) {
-  const evidence = readAcceptedEvidence(root);
+function generate(root, native, stateFile) {
+  const evidence = readAcceptedEvidence(root, stateFile);
   const imports = JSON.parse(fs.readFileSync(path.join(native, 'game/accepted/library-imports.json')));
   assert.equal(imports.fingerprint, evidence.state.fingerprint, 'Import accepted sources first');
   const groups = new Map();
@@ -122,7 +122,7 @@ function generate(root, native) {
 }
 if (require.main === module) {
   const native = path.resolve(__dirname, '..');
-  const result = generate(path.resolve(process.argv[2]), native);
+  const result = generate(path.resolve(process.argv[2]), native, process.argv[3]);
   fs.writeFileSync(path.join(native, 'game/accepted/rom-owners.json'), JSON.stringify(result, null, 2) + '\n');
   console.log('Qualified ' + result.sources.length + ' complete accepted C sources');
 }

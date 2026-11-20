@@ -1,0 +1,24 @@
+typedef signed int s32;
+extern void *D_8022D100;
+extern void *D_8022D104;
+extern void *D_8022D108;
+extern void *D_8022D10C;
+extern void *D_8022D110;
+extern void *D_8022D114;
+extern void *D_8022D118;
+extern void *D_8022D11C;
+extern void *D_8022D120;
+void *D_8009DD38(s32 id);
+void D_8017BDC0(void);
+void func_0027FC24(void) {
+    D_8022D108 = D_8009DD38(0x1DB3672);
+    D_8022D10C = D_8009DD38(0x1DBB2AC);
+    D_8022D110 = D_8009DD38(0x1DB47A0);
+    D_8022D114 = D_8009DD38(0x1DC3320);
+    D_8022D118 = D_8009DD38(0x1DF98EA);
+    D_8022D11C = D_8009DD38(0x1DB156C);
+    D_8022D120 = D_8009DD38(0x1DC2EE8);
+    D_8022D100 = D_8009DD38(0x1DC873E);
+    D_8022D104 = D_8009DD38(0x1DCB92C);
+    D_8017BDC0();
+}

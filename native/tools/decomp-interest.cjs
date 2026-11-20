@@ -10,22 +10,24 @@ const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').toUpperCase();
 
 function main(args) {
-  let decomp, query = '', ready = false, json = false, all = false;
+  let decomp, stateFile, query = '', ready = false, json = false, all = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--decomp' || arg === '--match') {
+    if (arg === '--decomp' || arg === '--match' || arg === '--state') {
       if (!args[i + 1] || args[i + 1].startsWith('--')) throw Error(`Missing value for ${arg}`);
       if (arg === '--decomp') decomp = path.resolve(args[++i]);
+      else if (arg === '--state') stateFile = path.resolve(args[++i]);
       else query = key(args[++i]).replaceAll('\\', '/');
     } else if (arg === '--ready') ready = true;
     else if (arg === '--all') all = true;
     else if (arg === '--json') json = true;
     else if (arg === '--help') {
-      console.log('node native/tools/decomp-interest.cjs [--decomp <checkout>] [--match <symbol-or-file>] [--all] [--ready] [--json]');
+      console.log('node native/tools/decomp-interest.cjs [--decomp <checkout> [--state <verified state.json>]] [--match <symbol-or-file>] [--all] [--ready] [--json]');
       return;
     } else throw Error(`Unknown argument: ${arg}`);
   }
   if (ready && !decomp) throw Error('--ready needs --decomp to read existing matching records');
+  if (stateFile && !decomp) throw Error('--state needs --decomp for accepted source files');
   const catalog = read(path.join(native, 'game/decomp-interest.json'));
   if (catalog.schemaVersion !== 1) throw Error('Unsupported interest catalog schema');
   const imported = new Map(), library = new Map();
@@ -53,7 +55,7 @@ function main(args) {
   if (decomp) {
     const registry = read(path.join(decomp, 'config/matching-c-targets.json'));
     for (const entry of registry.targets) sources.set(key(entry.symbol), entry.source);
-    snapshot = readAcceptedEvidence(decomp);
+    snapshot = readAcceptedEvidence(decomp, stateFile);
     for (const target of snapshot.targets) evidence.set(key(target.symbol), target);
     // Some accepted owners contain several functions. Use their recorded body
     // names, not guessed addresses or merely registered compilation groups.
