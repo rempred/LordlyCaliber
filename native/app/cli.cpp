@@ -1,5 +1,6 @@
 #include "app/agent_commands.h"
 #include "app/agent_workspace.h"
+#include "app/project_save_target.h"
 #include "engine/director.h"
 #include "engine/project.h"
 #include "rebuild/compiler.h"
@@ -55,7 +56,7 @@ int main(int argc, char **argv) {
          {"settings-dir", "Use private INI preferences for this desktop workspace.", "folder"},
          {"commands", "Execute an ordered JSON array of editor operations (use - for stdin).",
           "path"},
-         {"save-project", "Save the resulting native project folder or .lcproject archive.",
+         {"save-project", "Save the project as a .json file, folder, or .lcproject archive.",
           "path"},
          {"library", "Directory containing packaged game and reference folders.", "path"},
          {"build-plan", "Run the export checks and report active source modules, addresses, "
@@ -137,8 +138,8 @@ int main(int argc, char **argv) {
              (parser.isSet("output") && samePath(parser.value("report"), parser.value("output")))))
             throw lordly::Error("Choose a report path separate from the source and exported ROM");
         const auto savePath = parser.value("save-project");
-        const bool archive = savePath.endsWith(".lcproject", Qt::CaseInsensitive);
-        const auto savedFile = archive ? savePath : QDir(savePath).filePath("project.json");
+        const lordly::ProjectSaveTarget saveTarget(savePath);
+        const auto savedFile = saveTarget.filePath();
         QStringList inputs{sourcePath};
         if (parser.isSet("project")) {
             const auto path = parser.value("project");
@@ -302,10 +303,7 @@ int main(int argc, char **argv) {
             report["build"] = QJsonArray::fromStringList(result.report);
         }
         if (parser.isSet("save-project")) {
-            if (archive)
-                project.saveArchive(savePath);
-            else
-                project.saveFolder(savePath);
+            saveTarget.save(project);
             report["savedProject"] = savePath;
         }
         if (parser.isSet("commands"))

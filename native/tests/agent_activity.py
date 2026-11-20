@@ -1,4 +1,4 @@
-"""Verify CLI edit history through commands, the desktop changelog and both project formats."""
+"""Verify CLI edits and history through the desktop changelog and all project save formats."""
 import argparse
 import base64
 import json
@@ -30,6 +30,22 @@ def command_history(client, archive, folder):
     manifest = json.loads(manifest_path.read_text("utf8"))
     assert len(manifest["agentActivity"]) == 1
     assert manifest["codePatches"][0]["source"] == PATCH["source"]
+
+    named = client.work / "Named campaign.JSON"
+    saved = client.commands([], "--project", folder, "--save-project", named)
+    assert saved["savedProject"] == str(named)
+    assert json.loads(named.read_text("utf8")) == manifest
+    edit = dict(FIELD_EDIT, values={"strBase": 302})
+    client.commands([edit], "--project", named, "--save-project", named)
+    read_values = dict(op="records", table="classes", ids=[5, 6], fields=["strBase"])
+    reopened, rows = client.commands([{"op": "manifest"}, read_values], "--project", named)["results"]
+    assert [row["values"]["strBase"] for row in rows] == [302, 302]
+    assert reopened["codePatches"] == manifest["codePatches"]
+    assert len(reopened["agentActivity"]) == len(manifest["agentActivity"]) + 1
+    legacy = client.work / "Batch folder.json"
+    legacy.mkdir()
+    client.commands([], "--project", named, "--save-project", legacy)
+    assert json.loads((legacy / "project.json").read_text("utf8")) == reopened
 
     noop = client.commands([FIELD_EDIT, ADD_PATCH, HISTORY], "--project", folder,
                            "--save-project", folder)["results"][-1]
@@ -69,7 +85,13 @@ def check_changelog(ui, work):
 
 
 def workspace_history(client, folder, updated):
+    named = client.work / "Workspace edits.json"
+    legacy = client.work / "Workspace folder.json"
+    legacy.mkdir()
+    plain_folder = client.work / "Workspace folder"
     with client.workspace("--project", folder) as ui:
+        ui.call("save", path=str(named))
+        assert json.loads(named.read_text("utf8"))["codePatches"][0]["source"] == PATCH["source"]
         ui.page("Tools", "Agents")
         ui.call("focus", name="agentsCliPath")
         ui.call("key", name="agentsCliPath", key="Ctrl+A")
@@ -104,14 +126,41 @@ def workspace_history(client, folder, updated):
             assert any("Pending save" in row for row in items) == (label == "Redo"), items
         screenshot = ui.call("image")
         (client.work / "tools-agents.png").write_bytes(base64.b64decode(screenshot["base64"]))
-        ui.call("save", path=str(updated))
+        ui.call("save", path=str(named))
         assert all("Pending save" not in row for row in ui.call("items", name="agentsEdits")["items"])
-        ui.call("save", path=str(updated))
+        for path in (plain_folder, legacy, updated):
+            ui.call("save", path=str(path))
 
+    manifest = json.loads(named.read_text("utf8"))
+    for path in (plain_folder, legacy):
+        assert json.loads((path / "project.json").read_text("utf8")) == manifest
+    assert updated.read_bytes().startswith(b"LC05PACK\n")
+    for path in (named, plain_folder, legacy, updated):
+        assert client.commands([{"op": "manifest"}], "--project", path)["results"][0] == manifest
     history, changelog = client.commands([HISTORY, CHANGELOG], "--project", updated)["results"]
     assert len(history) == 4 and history[0]["source"] == "CLI workspace"
     assert "Disabled" in history[0]["description"] and "Disabled" in changelog
     assert sum(r["status"] == "Earlier edit" for r in history) == 1
+
+
+def protect_command_files(client):
+    path = client.work / "Commands.json"
+    for option, contents, expected in (
+        ("--commands", "[]", "overlaps the command file"),
+        ("--report", "prior report", "distinct project, report and ROM destinations"),
+        ("--workspace", json.dumps({"op": "save", "path": str(path)}),
+         "overlaps the workspace command file"),
+    ):
+        path.write_text(contents, encoding="utf8")
+        args = [str(client.cli), "--rom", str(client.rom), option, str(path)]
+        if option == "--workspace":
+            args.extend(["--settings-dir", str(client.work / "preferences")])
+        else:
+            args.extend(["--save-project", str(path)])
+        run = subprocess.run(args, capture_output=True, encoding="utf8", cwd=client.work,
+                             env=client.env, timeout=90)
+        assert run.returncode != 0 and expected in run.stdout + run.stderr, run
+        assert path.read_text("utf8") == contents
 
 
 def later_changes(client, folder, manifest):
@@ -150,6 +199,7 @@ if __name__ == "__main__":
     folder = client.work / "Project folder"
     manifest = command_history(client, client.work / "First agent edits.lcproject", folder)
     workspace_history(client, folder, client.work / "Workspace edits.lcproject")
+    protect_command_files(client)
     later_changes(client, folder, manifest)
     print("Verified copying the CLI path, desktop and terminal examples, saved changelog, patch source, Undo/Redo, repeated saves, "
-          "legacy history and both project formats.")
+          "legacy history, named JSON files, folders, archives and overlapping destinations.")

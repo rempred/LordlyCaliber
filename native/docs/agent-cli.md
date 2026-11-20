@@ -1,6 +1,6 @@
 # Using Lordly Caliber from an agent
 
-Use the portable editor and your own game ROM. The CLI runs locally. Its structured commands and the desktop share the project model, compiler and ROM export checks. An independent desktop session gives agents access to dialogs, preview controls, file imports, drawing tools, Undo and Save. A running graphical editor can open the resulting project folder or sharing archive.
+Use the portable editor and your own game ROM. The CLI runs locally. Its structured commands and the desktop share the project model, compiler and ROM export checks. An independent desktop session gives agents access to dialogs, preview controls, file imports, drawing tools, Undo and Save. A running graphical editor can open the saved project file.
 
 ## Give your agent a task
 
@@ -12,7 +12,7 @@ In **Tools → Agents**, copy the **CLI path**. Paste it into a message like thi
 
 That first command works before you choose a ROM. When you’re ready to edit, give the agent your source ROM path. To continue an existing project, save it first and include the path to the project file.
 
-> Use my ROM at [ROM path] and my project at [project path]. Save your edits as a new .lcproject and tell me where to open it.
+> Use my ROM at [ROM path] and my project at [project path]. Save your edits as a new .json project file and tell me where to open it.
 
 ### Example prompts
 
@@ -39,13 +39,13 @@ If the user chooses Discord, give them the text to post. File the report on GitH
 
 ## Discover and edit
 
-The same tab and **File → Review project changes…** show CLI activity saved in the project folder or sharing archive. Use `{"op":"agent.edits"}` to read it as JSON and `{"op":"changes"}` for the changelog. It records effective project changes, including bulk field edits, source patch changes, and edits made in the CLI desktop workspace. Reads and repeat saves create no entries. Individual fields and patches have their own status. Compound edits compare the saved section as a whole. A later edit can replace or revert a recorded value. An older project can still list its custom patches even when it has no attribution history. To retain source and activity, save the project as well as exporting the game.
+The same tab and **File → Review project changes…** show CLI activity saved in the project. Use `{"op":"agent.edits"}` to read it as JSON and `{"op":"changes"}` for the changelog. It records effective project changes, including bulk field edits, source patch changes, and edits made in the CLI desktop workspace. Reads and repeat saves create no entries. Individual fields and patches have their own status. Compound edits compare the saved section as a whole. A later edit can replace or revert a recorded value. An older project can still list its custom patches even when it has no attribution history. To retain source and activity, save the project as well as exporting the game.
 
 Run `LordlyCaliber-cli --guide` to read this guide in a terminal, including before opening a ROM. The install includes the [game-code reference](agent-game-code.md) and a [runnable C and assembly example](agent-patch-example.py). With a ROM open, the `read` command accepts their paths under `reference/`. Search the supplied documentation by gameplay terms with `{"op":"lookup","query":"actor identity"}`. Each hit gives its file, line and passage. Search matches all supplied words within the same passage.
 
 Run `LordlyCaliber-cli --capabilities` to list operations. Pass `--commands` a UTF-8 JSON file containing an array, or use `--commands -` to read the array from standard input. The result at each index in `results` belongs to the command at the same index. Add `"page":{"start":0,"limit":20}` to a list command to receive its total and one page. A failed command identifies its index and exits before writing a project or ROM.
 
-Here is a PowerShell example that sets two classes' base strength to 300, keeps all other fields, saves a sharing archive and exports the ROM. Set `$rom` to your own input path.
+Here is a PowerShell example that sets two classes' base strength to 300, keeps all other fields, saves a named JSON project file and exports the ROM. Set `$rom` to your own input path.
 
 ```powershell
 $cli = '.\LordlyCaliber-cli.exe'
@@ -55,10 +55,18 @@ $cli = '.\LordlyCaliber-cli.exe'
   {"op":"records","table":"classes","ids":[5,6],"fields":["strBase"]},
   {"op":"set","table":"classes","ids":[5,6],"values":{"strBase":300}}
 ]
-'@ | & $cli --rom $rom --commands - --save-project .\TwoClasses.lcproject --output .\edited.v64
+'@ | & $cli --rom $rom --commands - --save-project .\TwoClasses.json --output .\edited.v64
 ```
 
-Add `--project <folder-or-archive>` when editing an existing project. `fields` lists record keys, labels, ranges and choices. `domains` lists the names supported by `domain` and `domain.set`. Read a domain, modify its JSON, and send the updated value to its existing setter. Some domain documents store edits relative to retail. Use `records`, `scene`, `text`, `icon`, the ROM inspection commands or a desktop session to inspect the underlying content. `manifest` and `apply` exchange complete native project documents. `changes` returns the editor's change report. `uses` finds project references. `issues` reviews export problems. Pass a returned location to the workspace `navigate` command to open the corresponding editor.
+Both `--save-project` and the workspace `save` command use the destination path to choose the format.
+
+| Destination | What the CLI writes |
+| --- | --- |
+| `My Campaign.json` | A JSON project file at that exact path. Saving again updates the same file. |
+| `My Campaign.lcproject` | A compressed sharing archive. |
+| `My Campaign` or an existing directory | A folder containing `project.json`. An existing directory named `My Campaign.json` also keeps this layout. |
+
+Use `--project <path>` to reopen any of these saves. `fields` lists record keys, labels, ranges and choices. `domains` lists the names supported by `domain` and `domain.set`. Read a domain, modify its JSON, and send the updated value to its existing setter. Some domain documents store edits relative to retail. Use `records`, `scene`, `text`, `icon`, the ROM inspection commands or a desktop session to inspect the underlying content. `manifest` and `apply` exchange complete native project documents. `changes` returns the editor's change report. `uses` finds project references. `issues` reviews export problems. Pass a returned location to the workspace `navigate` command to open the corresponding editor.
 
 ## Find game code and assets
 
@@ -138,6 +146,6 @@ Run `LordlyCaliber-cli --rom <rom> --project <project> --workspace -`. The proje
 {"op":"controls","query":"Save"}
 ```
 
-Use the returned Save button's numeric `id` with `activate`, then send `{"op":"save","path":"MyProject.lcproject"}`. Each open dialog becomes the active root. A reply with `state` set to `awaitingDesktopInteraction` means the action opened another desktop interaction. Inspect its controls to continue. `controls` returns IDs, names, labels, geometry, visibility through the current window and enabled state. IDs last for that object in that session. `items` pages through a combo, tabs or view model. A tree path uses zero-based row ordinals and an optional column. `expand`, `select` and `edit` operate on that model. `inspect` returns a control's state. `image` returns a PNG of a control or the current window.
+Use the returned Save button's numeric `id` with `activate`, then send `{"op":"save","path":"My Campaign.json"}`. Each open dialog becomes the active root. A reply with `state` set to `awaitingDesktopInteraction` means the action opened another desktop interaction. Inspect its controls to continue. `controls` returns IDs, names, labels, geometry, visibility through the current window and enabled state. IDs last for that object in that session. `items` pages through a combo, tabs or view model. A tree path uses zero-based row ordinals and an optional column. `expand`, `select` and `edit` operate on that model. `inspect` returns a control's state. `image` returns a PNG of a control or the current window.
 
 Use `focus` and `key` for keyboard commands, `pointer` with `press`, `move`, `release`, `double` or `context` for canvas tools, and `wheel` with angle deltas for scrolling. Coordinates are local to the target widget. Item views and canvases commonly receive input on their viewport. Pointer and wheel commands accept `modifiers` from `shift`, `ctrl`, `alt` and `meta`. `drop` accepts file `paths`, `text`, or `mime` and `base64`. `file` selects a `path` in an open file dialog. `reject` cancels a dialog. `clipboard` reads or sets text. For long-running actions, inspect the active controls until the relevant result is ready.

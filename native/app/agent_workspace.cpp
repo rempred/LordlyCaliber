@@ -1,5 +1,6 @@
 #include "app/agent_workspace.h"
 #include "app/main_window.h"
+#include "app/project_save_target.h"
 #include "app/theme.h"
 #include "app/view_drop.h"
 #include <QAbstractButton>
@@ -49,7 +50,8 @@ void send(const QJsonObject &o) {
 }
 class Workspace {
   public:
-    explicit Workspace(MainWindow &window) : window_(window) {}
+    Workspace(MainWindow &window, const QString &commandFile)
+        : window_(window), commandFile_(commandFile) {}
     QJsonValue handle(const QJsonObject &command) {
         const auto op = command["op"].toString();
         auto root = QApplication::activePopupWidget();
@@ -189,8 +191,10 @@ class Workspace {
                 throw Error("Finish the open dialog before saving");
             const auto path = command["path"].toString();
             if (path.isEmpty())
-                throw Error("save needs a destination folder or .lcproject archive");
-            if (!window_.saveProjectTo(path, path.endsWith(".lcproject", Qt::CaseInsensitive)))
+                throw Error("save needs a .json file, folder, or .lcproject archive path");
+            if (!commandFile_.isEmpty() && QFileInfo(ProjectSaveTarget(path).filePath()) == QFileInfo(commandFile_))
+                throw Error("Project destination overlaps the workspace command file");
+            if (!window_.saveProjectTo(path, false))
                 throw Error("The editor did not save the project");
             return path;
         }
@@ -713,6 +717,7 @@ class Workspace {
         return index;
     }
     MainWindow &window_;
+    QString commandFile_;
     QPointer<QWidget> preferred_;
     QVector<QPointer<QObject>> objects_;
     QHash<QObject *, int> ids_;
@@ -731,7 +736,7 @@ int runAgentWorkspace(QApplication &app, Project project, const QString &input) 
     MainWindow window(nullptr, true);
     window.installProject(std::move(project));
     window.show();
-    Workspace workspace(window);
+    Workspace workspace(window, script.fileName());
     send({{"ready", true}, {"protocol", 1}});
     QSemaphore replied;
     bool failed = false;

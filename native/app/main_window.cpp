@@ -20,6 +20,7 @@
 #include "app/agents_page.h"
 #include "engine/agent_activity.h"
 #include "app/project_review_dialog.h"
+#include "app/project_save_target.h"
 #include "app/combat_editor.h"
 #include "app/combat_animation_editor.h"
 #include "app/attack_editor.h"
@@ -1348,10 +1349,8 @@ bool MainWindow::saveProjectTo(QString path, bool archive) {
         const auto &saved = recorded ? *recorded : *project_;
         if (archive)
             saved.saveArchive(path);
-        else if (chooseJsonFile)
-            saved.saveJsonFile(path);
         else
-            saved.saveFolder(path);
+            ProjectSaveTarget(path).save(saved);
         if (recorded) {
             project_->setAgentActivity(recorded->agentActivity());
             *agentBaseline_ = *project_;
